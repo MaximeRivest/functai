@@ -6,7 +6,17 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    { name = "FunctAI Contributors" }
+    { name = "Maxime Rivest", email = "maxime.rivest@gmail.com" }
+]
+keywords = [
+    "dspy",
+    "ai",
+    "llm",
+    "decorators",
+    "machine-learning",
+    "artificial-intelligence",
+    "prompt-engineering",
+    "function-decorators",
 ]
 classifiers = [
     "Development Status :: 3 - Alpha",
@@ -17,10 +27,18 @@ classifiers = [
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 dependencies = [
     "dspy>=3.0.2",
 ]
+
+[project.urls]
+"Homepage" = "https://github.com/maximerivest/functai"
+"Bug Tracker" = "https://github.com/maximerivest/functai/issues"
+"Documentation" = "https://github.com/maximerivest/functai#readme"
+"Source" = "https://github.com/maximerivest/functai"
 
 [project.optional-dependencies]
 dev = [

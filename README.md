@@ -197,6 +197,39 @@ print(pred.reasoning)    # when available (e.g., ReAct extract stage)
 print(pred.trajectory)   # full tool-use trace for ReAct
 ```
 
+## Inspect & Preview Prompts
+
+Preview the adapter-formatted messages without making a call:
+
+```python
+from functai import format_prompt
+preview = format_prompt(analyze, text="Hello world")
+print(preview["render"])        # nice human-readable view
+print(preview["messages"])      # list of {role, content}
+print(preview["demos"])         # extracted demos (if any)
+```
+
+After a call, view the provider-level history via DSPy:
+
+```python
+from functai import inspect_history_text
+print(inspect_history_text())    # captures dspy.inspect_history() output
+```
+
+## Examples
+
+See the `examples/` directory:
+- `01_format_preview.qmd`: Preview adapter-formatted prompts (with demos)
+- `02_history.qmd`: Inspect provider-level history after a call
+- `03_optimization.qmd`: Optimize a function with DSPy
+- `04_react_agent.qmd`: Build an agent with tools via ReAct
+
+Render with Quarto or open as Markdown:
+
+```bash
+quarto preview examples/01_format_preview.qmd
+```
+
 ## Linting Tips
 
 Some linters (e.g., Ruff F841) flag variables assigned but not used. This is common with `step()` markers that are consumed by the LLM, not Python. Two options:

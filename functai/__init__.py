@@ -12,6 +12,8 @@ from functai.core import (
     optimize,
     parallel,
     use,
+    format_prompt,
+    inspect_history_text,
 )
 
 __version__ = "0.1.2"
@@ -23,4 +25,6 @@ __all__ = [
     "optimize",
     "parallel",
     "use",
+    "format_prompt",
+    "inspect_history_text",
 ]

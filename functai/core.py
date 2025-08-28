@@ -925,6 +925,8 @@ __all__ = [
     "final",
     "optimize",
     "parallel",
+    "format_prompt",
+    "inspect_history_text",
 ]
 
 
@@ -936,3 +938,186 @@ def use(*_args):
         use(sentiment)
     """
     return None
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Prompt formatting and history helpers
+# -----------------------------------------------------------------------------
+
+def _default_user_content(sig: Signature, inputs: Dict[str, Any]) -> str:
+    lines = []
+    doc = (getattr(sig, "__doc__", "") or "").strip()
+    if doc:
+        lines.append(doc)
+        lines.append("")
+    if inputs:
+        lines.append("Inputs:")
+        for k, v in inputs.items():
+            lines.append(f"- {k}: {v}")
+        lines.append("")
+    outs = getattr(sig, "output_fields", {}) or {}
+    if outs:
+        lines.append("Please produce the following outputs:")
+        for k in outs.keys():
+            lines.append(f"- {k}")
+    return "\n".join(lines).strip()
+
+
+def format_prompt(fn_or_wrapper, /, **inputs) -> Dict[str, Any]:
+    """Return a best-effort preview of adapter-formatted messages for a call.
+
+    Attempts to use the configured adapter's formatting (e.g., ChatAdapter.format_user_message_content).
+    Falls back to a readable text rendering if adapter-specific hooks are not available.
+    """
+    if not hasattr(fn_or_wrapper, "__dspy__"):
+        raise TypeError("format_prompt(...) expects a @magic-decorated function.")
+
+    spec: ParsedSpec = fn_or_wrapper.__dspy__.spec  # type: ignore[attr-defined]
+    sig: Signature = fn_or_wrapper.__dspy__.signature  # type: ignore[attr-defined]
+    adapter_inst = getattr(fn_or_wrapper.__dspy__, "adapter", None)  # type: ignore[attr-defined]
+    adapter_inst = adapter_inst or getattr(dspy.settings, "adapter", None) or dspy.ChatAdapter()
+
+    # Normalize inputs to text the same way the runtime would.
+    in_text = {k: CallContext._to_text(v) for k, v in inputs.items() if k in (sig.input_fields or {})}
+
+    # Try adapter-native formatting.
+    system_content = (getattr(sig, "__doc__", "") or "").strip()
+    user_content = None
+    try:
+        if hasattr(adapter_inst, "format_user_message_content"):
+            user_content = adapter_inst.format_user_message_content(sig, in_text)
+    except Exception:
+        user_content = None
+    if not user_content:
+        user_content = _default_user_content(sig, in_text)
+
+    messages = []
+    if system_content:
+        messages.append({"role": "system", "content": system_content})
+    messages.append({"role": "user", "content": user_content})
+
+    # Human-friendly rendering
+    render_lines = []
+    render_lines.append(f"Adapter: {type(adapter_inst).__name__}")
+    render_lines.append(f"Module: {type(getattr(fn_or_wrapper.__dspy__, 'module', None)).__name__}")
+    if system_content:
+        render_lines.append("")
+        render_lines.append("System:")
+        render_lines.append(system_content)
+    render_lines.append("")
+    render_lines.append("User:")
+    render_lines.append(user_content)
+
+    # Best-effort demo extraction
+    def _maybe_to_plain(val):
+        try:
+            if isinstance(val, (str, int, float, bool)) or val is None:
+                return val
+            return json.dumps(val)
+        except Exception:
+            return str(val)
+
+    def _demo_io_from_obj(obj) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+        # If it exposes explicit inputs/outputs
+        for attr in ("inputs", "input"):
+            din = getattr(obj, attr, None)
+            if isinstance(din, dict):
+                dout = getattr(obj, "outputs", None) or getattr(obj, "output", None)
+                if isinstance(dout, dict):
+                    return din, dout
+        # If it's mapping-like, split by signature fields
+        if isinstance(obj, dict):
+            in_keys = set((sig.input_fields or {}).keys())
+            out_keys = set((sig.output_fields or {}).keys())
+            din = {k: obj[k] for k in obj.keys() if k in in_keys}
+            dout = {k: obj[k] for k in obj.keys() if k in out_keys}
+            if din or dout:
+                return din, dout
+        # Fallback: try dict(obj)
+        try:
+            od = dict(obj)
+            return _demo_io_from_obj(od)
+        except Exception:
+            return {}, {}
+
+    demos = []
+    demo_renders = []
+    try:
+        mod = getattr(fn_or_wrapper.__dspy__, "module", None)
+        # Look for a top-level demos attr or nested in common submodules
+        candidate_lists = []
+        for attr in ("demos", "demo", "trainset"):
+            if hasattr(mod, attr):
+                candidate_lists.append(getattr(mod, attr))
+        for sub in ("predict", "react", "extract", "program", "backbone"):
+            if hasattr(mod, sub):
+                obj = getattr(mod, sub)
+                for attr in ("demos", "demo"):
+                    if hasattr(obj, attr):
+                        candidate_lists.append(getattr(obj, attr))
+        # Flatten and normalize
+        flat = []
+        for c in candidate_lists:
+            if c is None:
+                continue
+            try:
+                flat.extend(list(c))
+            except Exception:
+                continue
+        # Deduplicate by id
+        seen = set()
+        for ex in flat:
+            if id(ex) in seen:
+                continue
+            seen.add(id(ex))
+            din, dout = _demo_io_from_obj(ex)
+            if not (din or dout):
+                continue
+            demos.append({"inputs": din, "outputs": dout})
+        if demos:
+            render_lines.append("")
+            render_lines.append(f"Demos ({len(demos)}):")
+            for i, d in enumerate(demos, 1):
+                render_lines.append(f"- Demo {i}:")
+                if d["inputs"]:
+                    render_lines.append("  Inputs:")
+                    for k, v in d["inputs"].items():
+                        render_lines.append(f"    - {k}: {_maybe_to_plain(v)}")
+                if d["outputs"]:
+                    render_lines.append("  Outputs:")
+                    for k, v in d["outputs"].items():
+                        render_lines.append(f"    - {k}: {_maybe_to_plain(v)}")
+    except Exception:
+        pass
+
+    render = "\n".join(render_lines).strip()
+
+    return {
+        "adapter": type(adapter_inst).__name__,
+        "module": type(getattr(fn_or_wrapper.__dspy__, "module", None)).__name__,
+        "inputs": in_text,
+        "messages": messages,
+        "render": render,
+        "signature": sig,
+        "demos": demos,
+    }
+
+
+def inspect_history_text() -> str:
+    """Return dspy.inspect_history() as text (best effort).
+
+    Captures stdout output of dspy.inspect_history() for convenience.
+    """
+    import io
+    import contextlib as _ctx
+
+    buf = io.StringIO()
+    try:
+        with _ctx.redirect_stdout(buf):
+            try:
+                dspy.inspect_history()
+            except Exception:
+                pass
+    except Exception:
+        return ""
+    return buf.getvalue()
