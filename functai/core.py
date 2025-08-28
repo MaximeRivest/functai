@@ -150,6 +150,7 @@ def _parse_markers(fn) -> ParsedSpec:
     outputs: List[OutputDef] = []
 
     for node in fdef.body:
+        # Pattern 1: Annotated assignment: var: Type = step(...)/final(...)
         if isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name) and isinstance(node.value, ast.Call):
             tgt = node.target.id
             callee = node.value.func
@@ -161,6 +162,33 @@ def _parse_markers(fn) -> ParsedSpec:
                         if isinstance(kw.value.value, str):
                             desc = kw.value.value
                 # Sanitize field base name for DSPy (strip leading underscores to appease linters)
+                field_base = tgt.lstrip('_') or tgt
+                tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
+                outputs.append(
+                    OutputDef(
+                        var_name=tgt,
+                        field_name=field_base,
+                        typ=vtype,
+                        is_final=(callee.id == "final"),
+                        desc=desc,
+                        dspy_fields=dspy_fields,
+                        kind=kind,
+                        type_name=(tname or None),
+                        field_types=(ftypes or None),
+                    )
+                )
+            continue
+        # Pattern 2: Unannotated assignment: var = step(...)/final(...)
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name) and isinstance(node.value, ast.Call):
+            tgt = node.targets[0].id
+            callee = node.value.func
+            if isinstance(callee, ast.Name) and callee.id in ("step", "final"):
+                vtype = typing.Any
+                desc = ""
+                for kw in node.value.keywords or []:
+                    if isinstance(kw, ast.keyword) and kw.arg == "desc" and isinstance(kw.value, ast.Constant):
+                        if isinstance(kw.value.value, str):
+                            desc = kw.value.value
                 field_base = tgt.lstrip('_') or tgt
                 tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
                 outputs.append(
@@ -330,6 +358,24 @@ def _patched_adapter(adapter_instance: Optional[dspy.Adapter]):
         dspy.settings.adapter = prev
 
 
+@contextlib.contextmanager
+def _patched_lm(lm_instance: Optional[Any]):
+    """Temporarily patch dspy.settings.lm for the duration of one call.
+
+    This ensures nested modules (e.g., ReAct's internal Predict) see an LM
+    even if their own `.lm` isn't set.
+    """
+    if lm_instance is None:
+        yield
+        return
+    prev = getattr(dspy.settings, "lm", None)
+    try:
+        dspy.settings.lm = lm_instance
+        yield
+    finally:
+        dspy.settings.lm = prev
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Call context and lazy proxies
 # -----------------------------------------------------------------------------
@@ -383,13 +429,16 @@ class CallContext:
             return
         in_kwargs = {k: self._to_text(v) for k, v in self.inputs.items()}
         # Ensure the chosen adapter is used even if the module looks at dspy.settings.adapter.
-        with _patched_adapter(self.adapter):
+        with _patched_adapter(self.adapter), _patched_lm(getattr(self.module, "lm", None)):
             self._pred = self.module(**in_kwargs)
         pm = dict(self._pred)
 
         for o in self.spec.outputs:
             if o.kind == "simple":
                 raw = pm.get(o.field_name)
+                # Fallback: some modules (e.g., ReAct) return only 'result' as the final field.
+                if raw is None and o.is_final and "result" in pm:
+                    raw = pm.get("result")
                 self._cache[o.var_name] = _from_text(raw, o.typ)
             else:
                 data = {}
@@ -636,7 +685,7 @@ def magic(
             in_kwargs = {k: v for k, v in bound.arguments.items() if k in spec.inputs}
 
             if spec.mode == "minimal":
-                with _patched_adapter(adapter_inst):
+                with _patched_adapter(adapter_inst), _patched_lm(getattr(mod, "lm", None)):
                     pred: Prediction = mod(**{k: CallContext._to_text(v) for k, v in in_kwargs.items()})
                 if _prediction:
                     return pred
@@ -706,7 +755,7 @@ def optimize(fn_or_wrapper, *, optimizer: Optional[Any] = None, trainset: Option
             )
             bound.apply_defaults()
             in_kwargs = {k: v for k, v in bound.arguments.items() if k in compiled.signature.input_fields}
-            with _patched_adapter(adapter_inst):
+            with _patched_adapter(adapter_inst), _patched_lm(getattr(compiled, "lm", None)):
                 pred: Prediction = compiled(**{k: CallContext._to_text(v) for k, v in in_kwargs.items()})
             if _prediction:
                 return pred
@@ -744,7 +793,7 @@ class _AdapterBoundCallable:
         self.signature = getattr(module, "signature", None)
 
     def __call__(self, *args, **kwargs):
-        with _patched_adapter(self._adapter):
+        with _patched_adapter(self._adapter), _patched_lm(getattr(self._module, "lm", None)):
             return self._module(*args, **kwargs)
 
 
@@ -784,7 +833,10 @@ def parallel(fn_or_wrapper, inputs: List[Dict[str, Any]], *, prediction: bool = 
             odef = next((o for o in spec.outputs if o.var_name == spec.final_var), None)
             if odef:
                 if odef.kind == "simple":
-                    out.append(_from_text(pm.get(odef.field_name), odef.typ))
+                    val = pm.get(odef.field_name)
+                    if val is None and "result" in pm:
+                        val = pm.get("result")
+                    out.append(_from_text(val, odef.typ))
                 else:
                     data = {}
                     for full in odef.dspy_fields:
@@ -802,7 +854,10 @@ def parallel(fn_or_wrapper, inputs: List[Dict[str, Any]], *, prediction: bool = 
         record = {}
         for o in spec.outputs:
             if o.kind == "simple":
-                record[o.var_name] = _from_text(pm.get(o.field_name), o.typ)
+                val = pm.get(o.field_name)
+                if val is None and o.is_final and "result" in pm:
+                    val = pm.get("result")
+                record[o.var_name] = _from_text(val, o.typ)
             else:
                 data = {}
                 for full in o.dspy_fields:

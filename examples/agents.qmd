@@ -1,4 +1,5 @@
 
+
 ```{python}
 from functai import magic, step, final
 import dspy
@@ -9,10 +10,14 @@ def see_surprise() -> str:
     return "it's a new golden magical tool!"
 
 # Example 1
-@magic(lm="gpt-4.1", module=dspy.ReAct, tools= [see_surprise])
+@magic(lm="gpt-4.1", module=dspy.ReAct, tools=[see_surprise])
 def agent(question: str) -> str:
-    ...
+    _a_intermediary_joke = step()
+    answer = final()
+    return answer
 
 agent("What is the surpise")
 
+
+agent("What is the surpise!!", _prediction = True)
 ```
