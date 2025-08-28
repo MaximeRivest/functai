@@ -25,11 +25,8 @@ from contextvars import ContextVar
 import contextlib
 from types import SimpleNamespace
 
-try:
-    import dspy
-    from dspy import Signature, InputField, OutputField, Prediction
-except Exception as e:
-    raise ImportError("FunnyDSPy requires `dspy` to be installed. Try: pip install dspy-ai") from e
+import dspy
+from dspy import Signature, InputField, OutputField, Prediction
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -39,16 +36,22 @@ except Exception as e:
 _current_ctx: ContextVar["CallContext|None"] = ContextVar("funnydspy_ctx", default=None)
 
 
-def step(*, desc: str = "") -> Any:
-    """Declare and request the next STEP output (lazy proxy)."""
+def step(*args, desc: str = "") -> Any:
+    """Declare and request the next STEP output (lazy proxy).
+
+    Accepts `step("desc")` or `step(desc="desc")`.
+    """
     ctx = _current_ctx.get()
     if ctx is None:
         raise RuntimeError("step() can only be used inside a @magic function call.")
     return ctx.request_proxy(kind="step")
 
 
-def final(*, desc: str = "") -> Any:
-    """Declare and request the (single) FINAL output (lazy proxy)."""
+def final(*args, desc: str = "") -> Any:
+    """Declare and request the (single) FINAL output (lazy proxy).
+
+    Accepts `final("desc")` or `final(desc="desc")`.
+    """
     ctx = _current_ctx.get()
     if ctx is None:
         raise RuntimeError("final() can only be used inside a @magic function call.")
@@ -128,6 +131,20 @@ def _parse_markers(fn) -> ParsedSpec:
 
     ret_ann = hints.get("return", sig.return_annotation if sig.return_annotation is not inspect._empty else typing.Any)
 
+    def _extract_desc_from_call(call: ast.Call) -> str:
+        desc_s = ""
+        # Keyword form: final(desc="...") / step(desc="...")
+        for kw in call.keywords or []:
+            if isinstance(kw, ast.keyword) and kw.arg == "desc" and isinstance(kw.value, ast.Constant):
+                if isinstance(kw.value.value, str):
+                    desc_s = kw.value.value
+        # Positional form: final("...") / step("...")
+        if not desc_s and getattr(call, "args", None):
+            first = call.args[0]
+            if isinstance(first, ast.Constant) and isinstance(first.value, str):
+                desc_s = first.value
+        return desc_s
+
     try:
         src = textwrap.dedent(inspect.getsource(fn))
         mod = ast.parse(src)
@@ -156,11 +173,7 @@ def _parse_markers(fn) -> ParsedSpec:
             callee = node.value.func
             if isinstance(callee, ast.Name) and callee.id in ("step", "final"):
                 vtype = _eval_type_expr(node.annotation, g) if node.annotation is not None else typing.Any
-                desc = ""
-                for kw in node.value.keywords or []:
-                    if isinstance(kw, ast.keyword) and kw.arg == "desc" and isinstance(kw.value, ast.Constant):
-                        if isinstance(kw.value.value, str):
-                            desc = kw.value.value
+                desc = _extract_desc_from_call(node.value)
                 # Sanitize field base name for DSPy (strip leading underscores to appease linters)
                 field_base = tgt.lstrip('_') or tgt
                 tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
@@ -184,11 +197,7 @@ def _parse_markers(fn) -> ParsedSpec:
             callee = node.value.func
             if isinstance(callee, ast.Name) and callee.id in ("step", "final"):
                 vtype = typing.Any
-                desc = ""
-                for kw in node.value.keywords or []:
-                    if isinstance(kw, ast.keyword) and kw.arg == "desc" and isinstance(kw.value, ast.Constant):
-                        if isinstance(kw.value.value, str):
-                            desc = kw.value.value
+                desc = _extract_desc_from_call(node.value)
                 field_base = tgt.lstrip('_') or tgt
                 tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
                 outputs.append(
@@ -208,11 +217,42 @@ def _parse_markers(fn) -> ParsedSpec:
     explicit_finals = [o for o in outputs if o.is_final]
     ret_final: Optional[str] = None
     if not explicit_finals:
+        # Case A: return <name> where <name> is a declared output
         for node in ast.walk(fdef):
             if isinstance(node, ast.Return) and isinstance(node.value, ast.Name):
                 if any(o.var_name == node.value.id for o in outputs):
                     ret_final = node.value.id
                     break
+        # Case B: return final(...) — synthesize a default final output named 'result'
+        if ret_final is None:
+            final_calls = []
+            for node in ast.walk(fdef):
+                if isinstance(node, ast.Return) and isinstance(node.value, ast.Call):
+                    callee = node.value.func
+                    if isinstance(callee, ast.Name) and callee.id == "final":
+                        final_calls.append(node)
+            if len(final_calls) > 1:
+                raise ValueError(f"{fn.__name__}: multiple final() markers found; only one is allowed.")
+            if len(final_calls) == 1:
+                fnode = final_calls[0]
+                desc = _extract_desc_from_call(fnode.value)
+                vtype = ret_ann
+                field_base = "result"
+                tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
+                outputs.append(
+                    OutputDef(
+                        var_name=field_base,
+                        field_name=field_base,
+                        typ=vtype,
+                        is_final=True,
+                        desc=desc,
+                        dspy_fields=dspy_fields,
+                        kind=kind,
+                        type_name=(tname or None),
+                        field_types=(ftypes or None),
+                    )
+                )
+                ret_final = field_base
     else:
         if len(explicit_finals) > 1:
             raise ValueError(f"{fn.__name__}: multiple final() markers found; only one is allowed.")
