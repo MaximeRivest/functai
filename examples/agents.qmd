@@ -1,0 +1,18 @@
+
+```{python}
+from functai import magic, step, final
+import dspy
+
+
+def see_surprise() -> str:
+    "run to see the surprise"
+    return "it's a new golden magical tool!"
+
+# Example 1
+@magic(lm="gpt-4.1", module=dspy.ReAct, tools= [see_surprise])
+def agent(question: str) -> str:
+    ...
+
+agent("What is the surpise")
+
+```

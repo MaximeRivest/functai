@@ -11,9 +11,10 @@ from functai.core import (
     final,
     optimize,
     parallel,
+    use,
 )
 
-__version__ = "0.1.0"
+__version__ = "0.1.1"
 
 __all__ = [
     "magic",
@@ -21,4 +22,5 @@ __all__ = [
     "final",
     "optimize",
     "parallel",
+    "use",
 ]

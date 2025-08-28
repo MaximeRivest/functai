@@ -20,7 +20,7 @@ import json
 import textwrap
 import typing
 from dataclasses import is_dataclass, fields as dataclass_fields
-from typing import Any, Dict, List, Optional, Tuple, Type
+from typing import Any, Dict, List, Optional, Tuple
 from contextvars import ContextVar
 import contextlib
 from types import SimpleNamespace
@@ -29,9 +29,7 @@ try:
     import dspy
     from dspy import Signature, InputField, OutputField, Prediction
 except Exception as e:
-    raise ImportError(
-        "FunnyDSPy requires `dspy` to be installed. Try: pip install dspy-ai"
-    ) from e
+    raise ImportError("FunnyDSPy requires `dspy` to be installed. Try: pip install dspy-ai") from e
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -40,12 +38,14 @@ except Exception as e:
 
 _current_ctx: ContextVar["CallContext|None"] = ContextVar("funnydspy_ctx", default=None)
 
+
 def step(*, desc: str = "") -> Any:
     """Declare and request the next STEP output (lazy proxy)."""
     ctx = _current_ctx.get()
     if ctx is None:
         raise RuntimeError("step() can only be used inside a @magic function call.")
     return ctx.request_proxy(kind="step")
+
 
 def final(*, desc: str = "") -> Any:
     """Declare and request the (single) FINAL output (lazy proxy)."""
@@ -59,20 +59,23 @@ def final(*, desc: str = "") -> Any:
 # Spec and parsing: collect markers & types at DECORATION time (no execution)
 # -----------------------------------------------------------------------------
 
+
 @dataclasses.dataclass
 class OutputDef:
-    var_name: str
+    var_name: str  # Python variable name as written by user
+    field_name: str  # DSPy output field base name (sanitized)
     typ: Any
     is_final: bool
     desc: str
-    dspy_fields: List[str]
-    kind: str                     # "simple" | "dataclass" | "namedtuple"
+    dspy_fields: List[str]  # DSPy output fields (sanitized)
+    kind: str  # "simple" | "dataclass" | "namedtuple"
     type_name: Optional[str] = None
     field_types: Optional[Dict[str, Any]] = None
 
+
 @dataclasses.dataclass
 class ParsedSpec:
-    mode: str                     # "minimal" or "markers"
+    mode: str  # "minimal" or "markers"
     inputs: Dict[str, Any]
     outputs: List[OutputDef]
     return_ann: Any
@@ -89,11 +92,13 @@ def _eval_type_expr(expr: ast.expr, g: Dict[str, Any]) -> Any:
     except Exception:
         return typing.Any
 
+
 def _is_namedtuple_type(tp: Any) -> bool:
     try:
         return isinstance(tp, type) and issubclass(tp, tuple) and hasattr(tp, "_fields")
     except Exception:
         return False
+
 
 def _expand_struct_for_var(var: str, typ: Any) -> Tuple[str, Dict[str, Any], List[str], str]:
     tname = getattr(typ, "__name__", "Struct")
@@ -108,6 +113,7 @@ def _expand_struct_for_var(var: str, typ: Any) -> Tuple[str, Dict[str, Any], Lis
         fields = [f"{prefix}_{fname}" for fname in ftypes]
         return tname, ftypes, fields, "namedtuple"
     return "", {}, [var], "simple"
+
 
 def _parse_markers(fn) -> ParsedSpec:
     sig = inspect.signature(fn)
@@ -150,15 +156,24 @@ def _parse_markers(fn) -> ParsedSpec:
             if isinstance(callee, ast.Name) and callee.id in ("step", "final"):
                 vtype = _eval_type_expr(node.annotation, g) if node.annotation is not None else typing.Any
                 desc = ""
-                for kw in (node.value.keywords or []):
+                for kw in node.value.keywords or []:
                     if isinstance(kw, ast.keyword) and kw.arg == "desc" and isinstance(kw.value, ast.Constant):
                         if isinstance(kw.value.value, str):
                             desc = kw.value.value
-                tname, ftypes, dspy_fields, kind = _expand_struct_for_var(tgt, vtype)
+                # Sanitize field base name for DSPy (strip leading underscores to appease linters)
+                field_base = tgt.lstrip('_') or tgt
+                tname, ftypes, dspy_fields, kind = _expand_struct_for_var(field_base, vtype)
                 outputs.append(
                     OutputDef(
-                        var_name=tgt, typ=vtype, is_final=(callee.id == "final"), desc=desc,
-                        dspy_fields=dspy_fields, kind=kind, type_name=(tname or None), field_types=(ftypes or None)
+                        var_name=tgt,
+                        field_name=field_base,
+                        typ=vtype,
+                        is_final=(callee.id == "final"),
+                        desc=desc,
+                        dspy_fields=dspy_fields,
+                        kind=kind,
+                        type_name=(tname or None),
+                        field_types=(ftypes or None),
                     )
                 )
 
@@ -182,13 +197,14 @@ def _parse_markers(fn) -> ParsedSpec:
         outputs=outputs,
         return_ann=ret_ann,
         final_var=(ret_final if mode == "markers" else "result"),
-        doc=(fn.__doc__ or "")
+        doc=(fn.__doc__ or ""),
     )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Signature builder
 # -----------------------------------------------------------------------------
+
 
 def _mk_signature(fn_name: str, spec: ParsedSpec, *, system: Optional[str], name: Optional[str], module_kind: str):
     class_dict: Dict[str, Any] = {}
@@ -204,11 +220,11 @@ def _mk_signature(fn_name: str, spec: ParsedSpec, *, system: Optional[str], name
     else:
         for o in spec.outputs:
             if o.kind == "simple":
-                class_dict[o.var_name] = OutputField(desc=o.desc or "")
-                ann_map[o.var_name] = o.typ
+                class_dict[o.field_name] = OutputField(desc=o.desc or "")
+                ann_map[o.field_name] = o.typ
             else:
                 for full in o.dspy_fields:
-                    base_field = full.split('_')[-1]
+                    base_field = full.split("_")[-1]
                     ftyp = (o.field_types or {}).get(base_field, typing.Any)
                     class_dict[full] = OutputField(desc=o.desc or "")
                     ann_map[full] = ftyp
@@ -224,6 +240,7 @@ def _mk_signature(fn_name: str, spec: ParsedSpec, *, system: Optional[str], name
 # ──────────────────────────────────────────────────────────────────────────────
 # Materialization helpers (text → typed)
 # -----------------------------------------------------------------------------
+
 
 def _from_text(txt: Any, typ: Any) -> Any:
     if not isinstance(txt, str):
@@ -243,14 +260,20 @@ def _from_text(txt: Any, typ: Any) -> Any:
         if origin is list and args:
             inner = args[0]
             s = txt.strip()
-            data = json.loads(s) if (s.startswith("[") and s.endswith("]")) else [x.strip() for x in txt.split(",") if x.strip()]
+            data = (
+                json.loads(s)
+                if (s.startswith("[") and s.endswith("]"))
+                else [x.strip() for x in txt.split(",") if x.strip()]
+            )
             return [_from_text(x if isinstance(x, str) else json.dumps(x), inner) for x in data]
         if origin is dict and args:
             kt, vt = args
             s = txt.strip()
             data = json.loads(s) if (s.startswith("{") and s.endswith("}")) else {}
-            return { _from_text(str(k), kt): _from_text(v if isinstance(v, str) else json.dumps(v), vt)
-                     for k, v in data.items() }
+            return {
+                _from_text(str(k), kt): _from_text(v if isinstance(v, str) else json.dumps(v), vt)
+                for k, v in data.items()
+            }
         if is_dataclass(typ):
             data = json.loads(txt) if txt.strip().startswith("{") else {}
             vals = {}
@@ -269,6 +292,7 @@ def _from_text(txt: Any, typ: Any) -> Any:
 # ──────────────────────────────────────────────────────────────────────────────
 # Adapter helpers  (NEW)
 # -----------------------------------------------------------------------------
+
 
 def _select_adapter(adapter: Any, adapter_kwargs: Optional[Dict[str, Any]]) -> Optional[dspy.Adapter]:
     if adapter is None:
@@ -310,8 +334,11 @@ def _patched_adapter(adapter_instance: Optional[dspy.Adapter]):
 # Call context and lazy proxies
 # -----------------------------------------------------------------------------
 
+
 class CallContext:
-    def __init__(self, *, module: dspy.Module, spec: ParsedSpec, inputs: Dict[str, Any], adapter: Optional[dspy.Adapter]):
+    def __init__(
+        self, *, module: dspy.Module, spec: ParsedSpec, inputs: Dict[str, Any], adapter: Optional[dspy.Adapter]
+    ):
         self.module = module
         self.spec = spec
         self.inputs = inputs
@@ -362,12 +389,12 @@ class CallContext:
 
         for o in self.spec.outputs:
             if o.kind == "simple":
-                raw = pm.get(o.var_name)
+                raw = pm.get(o.field_name)
                 self._cache[o.var_name] = _from_text(raw, o.typ)
             else:
                 data = {}
                 for full in o.dspy_fields:
-                    base_field = full.split('_')[-1]
+                    base_field = full.split("_")[-1]
                     raw = pm.get(full)
                     ftyp = (o.field_types or {}).get(base_field, typing.Any)
                     data[base_field] = _from_text(raw, ftyp)
@@ -403,6 +430,7 @@ class CallContext:
 
 class _Proxy:
     """Lazy proxy for a step()/final() output. Materializes all model outputs on first use."""
+
     __slots__ = ("_ctx", "_odef")
 
     def __init__(self, ctx: CallContext, odef: OutputDef):
@@ -425,47 +453,92 @@ class _Proxy:
         v = self.value
         return v if isinstance(v, str) else str(v)
 
-    def __int__(self): return int(self.value)
-    def __float__(self): return float(self.value)
-    def __bool__(self): return bool(self.value)
-    def __len__(self): return len(self.value)
-    def __iter__(self): return iter(self.value)
-    def __getitem__(self, k): return self.value[k]
-    def __contains__(self, k): return k in self.value
+    def __int__(self):
+        return int(self.value)
 
-    def __add__(self, other): return self.value + other
-    def __radd__(self, other): return other + self.value
-    def __sub__(self, other): return self.value - other
-    def __rsub__(self, other): return other - self.value
-    def __mul__(self, other): return self.value * other
-    def __rmul__(self, other): return other * self.value
-    def __truediv__(self, other): return self.value / other
-    def __rtruediv__(self, other): return other / self.value
+    def __float__(self):
+        return float(self.value)
 
-    def __eq__(self, other): return self.value == other
-    def __ne__(self, other): return self.value != other
-    def __lt__(self, other): return self.value < other
-    def __le__(self, other): return self.value <= other
-    def __gt__(self, other): return self.value > other
-    def __ge__(self, other): return self.value >= other
+    def __bool__(self):
+        return bool(self.value)
+
+    def __len__(self):
+        return len(self.value)
+
+    def __iter__(self):
+        return iter(self.value)
+
+    def __getitem__(self, k):
+        return self.value[k]
+
+    def __contains__(self, k):
+        return k in self.value
+
+    def __add__(self, other):
+        return self.value + other
+
+    def __radd__(self, other):
+        return other + self.value
+
+    def __sub__(self, other):
+        return self.value - other
+
+    def __rsub__(self, other):
+        return other - self.value
+
+    def __mul__(self, other):
+        return self.value * other
+
+    def __rmul__(self, other):
+        return other * self.value
+
+    def __truediv__(self, other):
+        return self.value / other
+
+    def __rtruediv__(self, other):
+        return other / self.value
+
+    def __eq__(self, other):
+        return self.value == other
+
+    def __ne__(self, other):
+        return self.value != other
+
+    def __lt__(self, other):
+        return self.value < other
+
+    def __le__(self, other):
+        return self.value <= other
+
+    def __gt__(self, other):
+        return self.value > other
+
+    def __ge__(self, other):
+        return self.value >= other
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module selection / building
 # -----------------------------------------------------------------------------
 
-def _select_module(module) -> dspy.Module:
+
+def _select_module(module):
+    """Normalize the `module` arg.
+
+    Returns either a dspy.Module subclass (class) or an instance.
+    Do not instantiate here to allow passing `module_kwargs` later.
+    """
     if isinstance(module, str):
         m = module.lower()
         if m in ("predict", "p"):
-            return dspy.Predict(None)
+            return dspy.Predict
         if m in ("chainofthought", "cot"):
-            return dspy.ChainOfThought(None)
+            return dspy.ChainOfThought
         if m in ("react", "ra"):
-            return dspy.ReAct(None)
+            return dspy.ReAct
         raise ValueError(f"Unknown module string '{module}'.")
     if isinstance(module, type) and issubclass(module, dspy.Module):
-        return module(None)
+        return module
     if isinstance(module, dspy.Module):
         return module
     raise TypeError("module must be a string, a dspy.Module subclass, or a dspy.Module instance.")
@@ -474,6 +547,7 @@ def _select_module(module) -> dspy.Module:
 # ──────────────────────────────────────────────────────────────────────────────
 # The decorator: @magic
 # -----------------------------------------------------------------------------
+
 
 def magic(
     _fn=None,
@@ -487,6 +561,8 @@ def magic(
     # NEW: per-function adapter
     adapter: Any = None,
     adapter_kwargs: Optional[Dict[str, Any]] = None,
+    # Convenience: allow passing `tools=[...]` directly for modules like ReAct
+    tools: Optional[List[Any]] = None,
 ):
     """
     Turn a typed function with body markers into a single-call DSPy program.
@@ -497,26 +573,50 @@ def magic(
       - `adapter`: string | dspy.Adapter subclass | instance (e.g., "json", dspy.JSONAdapter()).
       - `adapter_kwargs`: passed if `adapter` is a subclass or "two_step".
     """
+
     def _decorate(fn):
+        # Merge convenience kwargs into module_kwargs
+        mk = dict(module_kwargs or {})
+        if tools is not None:
+            mk.setdefault("tools", tools)
+
         spec = _parse_markers(fn)
         Sig = _mk_signature(fn.__name__, spec, system=system, name=name, module_kind=str(module))
 
         mod = _select_module(module)
-        if getattr(mod, "signature", None) is None:
+        # If a class was provided/selected, instantiate it with our signature and module kwargs
+        if isinstance(mod, type) and issubclass(mod, dspy.Module):
             try:
-                MCls = type(mod)
-                mod = MCls(Sig, **(module_kwargs or {}))
-            except Exception:
-                mod.signature = Sig
+                mod = mod(Sig, **mk)
+            except TypeError as e:
+                raise TypeError(
+                    f"Failed to instantiate module {mod.__name__}: {e}. "
+                    f"Pass required args via module_kwargs, e.g., module_kwargs={{'tools': [...]}}."
+                ) from e
         else:
-            try:
-                mod.signature = Sig
-            except Exception:
-                pass
+            # Instance provided; try to set or rebuild with signature
+            if getattr(mod, "signature", None) is None:
+                try:
+                    MCls = type(mod)
+                    mod = MCls(Sig, **mk)
+                except Exception:
+                    try:
+                        mod.signature = Sig
+                    except Exception:
+                        pass
+            else:
+                try:
+                    mod.signature = Sig
+                except Exception:
+                    pass
 
         if lm is not None:
             try:
-                mod.lm = lm
+                # If a string is provided, let DSPy resolve the provider via dspy.LM(thestr)
+                if isinstance(lm, str):
+                    mod.lm = dspy.LM(lm)
+                else:
+                    mod.lm = lm
             except Exception:
                 pass
         if gen:
@@ -581,6 +681,7 @@ def magic(
 # Optimizer / Parallel integration
 # -----------------------------------------------------------------------------
 
+
 def optimize(fn_or_wrapper, *, optimizer: Optional[Any] = None, trainset: Optional[List[Any]] = None):
     """
     Compile the underlying DSPy module with a teleprompter/optimizer.
@@ -612,7 +713,9 @@ def optimize(fn_or_wrapper, *, optimizer: Optional[Any] = None, trainset: Option
             raw = dict(pred).get("result")
             return _from_text(raw, spec.return_ann)
 
-        bound = inspect.signature(fn_or_wrapper).bind_partial(*args, **{k: v for k, v in kwargs.items() if k != "_prediction"})
+        bound = inspect.signature(fn_or_wrapper).bind_partial(
+            *args, **{k: v for k, v in kwargs.items() if k != "_prediction"}
+        )
         bound.apply_defaults()
         in_kwargs = {k: v for k, v in bound.arguments.items() if k in spec.inputs}
 
@@ -633,6 +736,7 @@ def optimize(fn_or_wrapper, *, optimizer: Optional[Any] = None, trainset: Option
 
 class _AdapterBoundCallable:
     """Tiny callable wrapper used in parallel() to ensure per-item adapter usage."""
+
     def __init__(self, module: Any, adapter_inst: Optional[dspy.Adapter]):
         self._module = module
         self._adapter = adapter_inst
@@ -680,11 +784,11 @@ def parallel(fn_or_wrapper, inputs: List[Dict[str, Any]], *, prediction: bool = 
             odef = next((o for o in spec.outputs if o.var_name == spec.final_var), None)
             if odef:
                 if odef.kind == "simple":
-                    out.append(_from_text(pm.get(odef.var_name), odef.typ))
+                    out.append(_from_text(pm.get(odef.field_name), odef.typ))
                 else:
                     data = {}
                     for full in odef.dspy_fields:
-                        base_field = full.split('_')[-1]
+                        base_field = full.split("_")[-1]
                         raw = pm.get(full)
                         ftyp = (odef.field_types or {}).get(base_field, typing.Any)
                         data[base_field] = _from_text(raw, ftyp)
@@ -698,11 +802,11 @@ def parallel(fn_or_wrapper, inputs: List[Dict[str, Any]], *, prediction: bool = 
         record = {}
         for o in spec.outputs:
             if o.kind == "simple":
-                record[o.var_name] = _from_text(pm.get(o.var_name), o.typ)
+                record[o.var_name] = _from_text(pm.get(o.field_name), o.typ)
             else:
                 data = {}
                 for full in o.dspy_fields:
-                    base_field = full.split('_')[-1]
+                    base_field = full.split("_")[-1]
                     raw = pm.get(full)
                     ftyp = (o.field_types or {}).get(base_field, typing.Any)
                     data[base_field] = _from_text(raw, ftyp)
@@ -727,3 +831,13 @@ __all__ = [
     "optimize",
     "parallel",
 ]
+
+
+def use(*_args):
+    """No-op helper to mark variables as 'used' for linters.
+
+    Example:
+        sentiment: str = step(...)
+        use(sentiment)
+    """
+    return None
