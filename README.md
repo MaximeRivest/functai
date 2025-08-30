@@ -71,13 +71,6 @@ Install FunctAI and its core dependency, DSPy.
 
 ```bash
 pip install functai
-pip install dspy-ai
-```
-
-If you plan to use providers like OpenAI, install their respective libraries:
-
-```bash
-pip install openai
 ```
 
 ### 1.2. Configuration
@@ -85,22 +78,11 @@ pip install openai
 Before using FunctAI, you must configure a default Language Model (LM). This requires initializing a DSPy LM provider.
 
 ```python
-import dspy
 from functai import configure
 
-# Initialize a DSPy LM provider (e.g., OpenAI GPT-4o)
-# Ensure your OPENAI_API_KEY environment variable is set
-gpt4o = dspy.OpenAI(model='gpt-4o')
-
 # Configure FunctAI globally
-configure(
-    lm=gpt4o,
-    temperature=0.0,
-    adapter="json" # Highly recommended for robust, structured output
-)
+configure(lm="gpt-4.1", temperature=1.0, api_key="<YOUR_API_KEY>")
 ```
-
-Setting `adapter="json"` instructs the LM to return structured JSON, which FunctAI uses to ensure outputs strictly adhere to your type hints.
 
 ### 1.3. Your First AI Function
 

@@ -487,8 +487,23 @@ class _AISentinel:
             raise RuntimeError("`_ai[...]` can only be used inside an @ai-decorated function call.")
         ctx.request_ai()
         if isinstance(spec, str):
-            name = _derive_output_name(spec)
+            # Treat bare string as description only. Try to bind the proxy's
+            # name to the variable declared in the function (via AST), falling
+            # back to a derived placeholder if no AST binding exists (e.g., in
+            # non-assignment usages).
             desc = spec
+            bound_name: Optional[str] = None
+            try:
+                # Match by exact description string from the function's AST-collected outputs
+                for n, _t, d in _collect_ast_outputs(ctx.program._fn):
+                    if d == desc:
+                        bound_name = n
+                        break
+            except Exception:
+                bound_name = None
+
+            name = bound_name if bound_name else _derive_output_name(desc)
+            # Record the output request with the chosen name and description.
             ctx.declare_output(name=name, typ=str, desc=desc)
             return _AIFieldProxy(ctx, name=name, typ=str)
         if isinstance(spec, tuple) and len(spec) >= 2:
