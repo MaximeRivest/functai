@@ -135,7 +135,8 @@ def _patched_lm(lm_instance: Optional[Any]):
 
 def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
                   extra_outputs: Optional[List[Tuple[str, Any, str]]] = None,
-                  main_output: Optional[Tuple[str, Any, str]] = None) -> type[Signature]:
+                  main_output: Optional[Tuple[str, Any, str]] = None,
+                  include_history_input: bool = False) -> type[Signature]:
     """Create a dspy.Signature from function params and declared outputs."""
     sig = inspect.signature(fn)
     hints = typing.get_type_hints(fn, include_extras=True) if hasattr(typing, "get_type_hints") else {}
@@ -149,6 +150,15 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
         ann = hints.get(pname, p.annotation if p.annotation is not inspect._empty else str)
         class_dict[pname] = InputField()
         ann_map[pname] = ann
+
+    # Optionally add conversation history input (stateful programs)
+    if include_history_input and "history" not in class_dict:
+        try:
+            class_dict["history"] = InputField()
+            ann_map["history"] = dspy.History
+        except Exception:
+            # If dspy.History is unavailable for some reason, skip gracefully.
+            pass
 
     # Extra outputs
     if extra_outputs:
@@ -398,21 +408,61 @@ class _CallContext:
             except Exception:
                 pass
 
-        # Wire History (DSPy handles how/if it renders)
-        if self.program.history is not None:
-            try:
-                setattr(mod, "history", self.program.history)
-            except Exception:
-                pass
-
         # Normalize inputs (strings or pass through)
-        in_kwargs = {k: self._to_text(v) for k, v in self.inputs.items() if k in (mod.signature.input_fields or {})}
+        try:
+            expected_inputs = (self.Sig.input_fields or {})
+        except Exception:
+            expected_inputs = {}
+        in_kwargs = {k: self._to_text(v) for k, v in self.inputs.items() if k in expected_inputs}
+
+        # Inject conversation history as an input for stateful programs
+        needs_history = ("history" in expected_inputs) or bool(getattr(self.program, "_stateful", False))
+        if needs_history:
+            if self.program.history is None:
+                try:
+                    self.program.history = dspy.History(messages=[])
+                except Exception:
+                    self.program.history = None
+            if self.program.history is not None:
+                in_kwargs["history"] = self.program.history
 
         with _patched_adapter(self.adapter), _patched_lm(getattr(mod, "lm", None)):
             self._pred = mod(**in_kwargs)
 
         self._value = dict(self._pred).get(self.main_output_name)
         self._materialized = True
+
+        # Append this turn to the persistent history if enabled
+        if needs_history and self.program.history is not None:
+            try:
+                turn: Dict[str, Any] = {}
+                try:
+                    for k in expected_inputs.keys():
+                        if k == "history":
+                            continue
+                        if k in in_kwargs:
+                            turn[k] = in_kwargs[k]
+                except Exception:
+                    pass
+                try:
+                    turn.update(dict(self._pred))
+                except Exception:
+                    pass
+                self.program.history.messages.append(turn)  # type: ignore[attr-defined]
+                # Trim window if configured
+                try:
+                    win = int(getattr(self.program, "_state_window", 0) or 0)
+                except Exception:
+                    win = 0
+                if win > 0:
+                    msgs = self.program.history.messages  # type: ignore[attr-defined]
+                    while isinstance(msgs, list) and len(msgs) > win:
+                        try:
+                            msgs.pop(0)
+                        except Exception:
+                            break
+            except Exception:
+                pass
 
     @staticmethod
     def _to_text(v: Any) -> Any:
@@ -591,11 +641,12 @@ class FunctAIFunc:
         self._module_kwargs: Dict[str, Any] = dict(module_kwargs or {})
 
         # History (DSPy)
+        self._stateful: bool = bool(stateful if stateful is not None else defs.stateful)
+        self._state_window: int = int(defs.state_window or 0)
         self.history: Optional[dspy.History] = None
-        use_state = stateful if stateful is not None else defs.stateful
-        if use_state:
+        if self._stateful:
             try:
-                self.history = dspy.History(window=int(defs.state_window))
+                self.history = dspy.History(messages=[])
             except Exception:
                 self.history = None
 
@@ -854,60 +905,6 @@ def _default_user_content(sig: Signature, inputs: Dict[str, Any]) -> str:
             lines.append(f"- {k}")
     return "\n".join(lines).strip()
 
-def format_prompt(fn_or_prog, /, **inputs) -> Dict[str, Any]:
-    """Return a minimal preview of adapter-formatted messages for a call."""
-    prog: FunctAIFunc
-    if isinstance(fn_or_prog, FunctAIFunc):
-        prog = fn_or_prog
-    elif hasattr(fn_or_prog, "__wrapped__") and isinstance(getattr(fn_or_prog, "__wrapped__"), FunctAIFunc):
-        prog = getattr(fn_or_prog, "__wrapped__")
-    elif hasattr(fn_or_prog, "__dspy__") and hasattr(fn_or_prog.__dspy__, "program"):  # type: ignore
-        prog = fn_or_prog.__dspy__.program  # type: ignore
-    else:
-        raise TypeError("format_prompt(...) expects an @ai-decorated function/program.")
-
-    Sig = prog.signature
-    adapter_inst = prog._adapter_instance or getattr(dspy.settings, "adapter", None) or dspy.ChatAdapter()
-
-    in_text = {k: str(v) for k, v in inputs.items() if k in (Sig.input_fields or {})}
-
-    # Adapter-native formatting if available
-    system_content = (getattr(Sig, "__doc__", "") or "").strip()
-    user_content = None
-    try:
-        if hasattr(adapter_inst, "format_user_message_content"):
-            user_content = adapter_inst.format_user_message_content(Sig, in_text)
-    except Exception:
-        user_content = None
-    if not user_content:
-        user_content = _default_user_content(Sig, in_text)
-
-    messages = []
-    if system_content:
-        messages.append({"role": "system", "content": system_content})
-    messages.append({"role": "user", "content": user_content})
-
-    render_lines = []
-    render_lines.append(f"Adapter: {type(adapter_inst).__name__}")
-    render_lines.append(f"Module: {prog._module_kind.__class__.__name__ if isinstance(prog._module_kind, dspy.Module) else str(prog._module_kind)}")
-    if system_content:
-        render_lines.append("")
-        render_lines.append("System:")
-        render_lines.append(system_content)
-    render_lines.append("")
-    render_lines.append("User:")
-    render_lines.append(user_content)
-    render = "\n".join(render_lines).strip()
-
-    return {
-        "adapter": type(adapter_inst).__name__,
-        "module": prog._module_kind.__class__.__name__ if isinstance(prog._module_kind, dspy.Module) else str(prog._module_kind),
-        "inputs": in_text,
-        "messages": messages,
-        "render": render,
-        "signature": Sig,
-    }
-
 # ──────────────────────────────────────────────────────────────────────────────
 # Signature helpers
 # ──────────────────────────────────────────────────────────────────────────────
@@ -952,7 +949,15 @@ def compute_signature(fn_or_prog):
         main_desc = ""
 
     extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str), ast_map[n][1]) for n in order_names if n != main_name]
-    Sig = _mk_signature(prog._fn.__name__, prog._fn, doc=sysdoc, return_type=prog._return_type, extra_outputs=extras, main_output=(main_name, main_typ, main_desc))
+    Sig = _mk_signature(
+        prog._fn.__name__,
+        prog._fn,
+        doc=sysdoc,
+        return_type=prog._return_type,
+        extra_outputs=extras,
+        main_output=(main_name, main_typ, main_desc),
+        include_history_input=bool(getattr(prog, "_stateful", False)),
+    )
     return Sig
 
 def signature_text(fn_or_prog) -> str:
@@ -1003,7 +1008,6 @@ __all__ = [
     "ai",
     "_ai",
     "configure",
-    "format_prompt",
     "inspect_history_text",
     "settings",
     "compute_signature",

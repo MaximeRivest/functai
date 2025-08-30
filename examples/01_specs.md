@@ -1,38 +1,48 @@
 # FunctAI Specification: The Function-is-the-Prompt Paradigm
 
 
-- [FunctAI Specification: The Function-is-the-Prompt Paradigm](#functai-specification-the-function-is-the-prompt-paradigm)
-- [FunctAI: The Function-is-the-Prompt Paradigm](#functai-the-function-is-the-prompt-paradigm)
-  - [1. Getting Started](#1-getting-started)
-    - [1.1. Installation](#11-installation)
-    - [1.2. Configuration](#12-configuration)
-    - [1.3. Your First AI Function](#13-your-first-ai-function)
-  - [2. Core Concepts](#2-core-concepts)
-    - [2.1. The `@ai` Decorator](#21-the-ai-decorator)
-    - [2.2. The `_ai` Sentinel](#22-the-_ai-sentinel)
-    - [2.3. Post-processing and Validation](#23-post-processing-and-validation)
-  - [3. Structured Output and Type System](#3-structured-output-and-type-system)
-    - [3.1. Basic Types](#31-basic-types)
-    - [3.2. Dataclasses and Complex Structures](#32-dataclasses-and-complex-structures)
-    - [3.3. Restricted Choices](#33-restricted-choices)
-  - [4. Configuration and Flexibility](#4-configuration-and-flexibility)
-    - [4.1. The Configuration Cascade](#41-the-configuration-cascade)
-    - [4.2. Global Configuration](#42-global-configuration)
-    - [4.3. Per-Function Configuration](#43-per-function-configuration)
-    - [4.4. Contextual Overrides](#44-contextual-overrides)
-  - [5. Advanced Execution Strategies](#5-advanced-execution-strategies)
-    - [5.1. Chain of Thought (CoT) Reasoning](#51-chain-of-thought-cot-reasoning)
-    - [5.2. Accessing Intermediate Steps](#52-accessing-intermediate-steps)
-    - [5.3. Multiple Explicit Outputs](#53-multiple-explicit-outputs)
-    - [5.4. Tool Usage (ReAct Agents)](#54-tool-usage-react-agents)
-  - [6. Stateful Interactions (Memory)](#6-stateful-interactions-memory)
-  - [7. Optimization (In-place Compilation)](#7-optimization-in-place-compilation)
-    - [7.1. The Optimization Workflow](#71-the-optimization-workflow)
-    - [7.2. Reverting Optimization](#72-reverting-optimization)
-  - [8. Inspection and Debugging](#8-inspection-and-debugging)
-  - [10. Real-World Examples](#10-real-world-examples)
-    - [10.1. Data Extraction Pipeline](#101-data-extraction-pipeline)
-    - [10.2. Research Assistant Agent](#102-research-assistant-agent)
+-   [FunctAI: The Function-is-the-Prompt
+    Paradigm](#functai-the-function-is-the-prompt-paradigm)
+    -   [1. Getting Started](#getting-started)
+        -   [1.1. Installation](#installation)
+        -   [1.2. Configuration](#configuration)
+        -   [1.3. Your First AI Function](#your-first-ai-function)
+    -   [2. Core Concepts](#core-concepts)
+        -   [2.1. The `@ai` Decorator](#the-ai-decorator)
+        -   [2.2. The `_ai` Sentinel](#the-_ai-sentinel)
+        -   [2.3. Post-processing and
+            Validation](#post-processing-and-validation)
+    -   [3. Structured Output and Type
+        System](#structured-output-and-type-system)
+        -   [3.1. Basic Types](#basic-types)
+        -   [3.2. Dataclasses and Complex
+            Structures](#dataclasses-and-complex-structures)
+        -   [3.3. Restricted Choices](#restricted-choices)
+    -   [4. Configuration and
+        Flexibility](#configuration-and-flexibility)
+        -   [4.1. The Configuration Cascade](#the-configuration-cascade)
+        -   [4.2. Global Configuration](#global-configuration)
+        -   [4.3. Per-Function
+            Configuration](#per-function-configuration)
+        -   [4.4. Contextual Overrides](#contextual-overrides)
+    -   [5. Advanced Execution
+        Strategies](#advanced-execution-strategies)
+        -   [5.1. Chain of Thought (CoT)
+            Reasoning](#chain-of-thought-cot-reasoning)
+        -   [5.2. Accessing Intermediate
+            Steps](#accessing-intermediate-steps)
+        -   [5.3. Multiple Explicit Outputs](#multiple-explicit-outputs)
+        -   [5.4. Tool Usage (ReAct Agents)](#tool-usage-react-agents)
+    -   [6. Stateful Interactions
+        (Memory)](#stateful-interactions-memory)
+    -   [7. Optimization (In-place
+        Compilation)](#optimization-in-place-compilation)
+        -   [7.1. The Optimization Workflow](#the-optimization-workflow)
+        -   [7.2. Reverting Optimization](#reverting-optimization)
+    -   [8. Inspection and Debugging](#inspection-and-debugging)
+    -   [10. Real-World Examples](#real-world-examples)
+        -   [10.1. Data Extraction Pipeline](#data-extraction-pipeline)
+        -   [10.2. Research Assistant Agent](#research-assistant-agent)
 
 # FunctAI: The Function-is-the-Prompt Paradigm
 

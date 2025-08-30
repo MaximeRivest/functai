@@ -3,6 +3,8 @@ title: "FunctAI Specification: The Function-is-the-Prompt Paradigm"
 format:
   html:
     code-fold: true
+  md:
+    toc: true
 ---
 # FunctAI: The Function-is-the-Prompt Paradigm
 
@@ -15,56 +17,6 @@ The core philosophy of FunctAI is simple yet powerful:
 By leveraging Python’s native features—docstrings for instructions, type hints for structure, and variable assignments for logic flow—you can define sophisticated AI behaviors with minimal boilerplate.
 
 FunctAI is built on the powerful [DSPy](https://github.com/stanfordnlp/dspy) framework, unlocking advanced strategies like Chain-of-Thought, automatic optimization, and agentic tool usage through an ergonomic, decorator-based API.
-
------
-
-## Table of Contents
-
-- [FunctAI: The Function-is-the-Prompt Paradigm](#functai-the-function-is-the-prompt-paradigm)
-  - [Table of Contents](#table-of-contents)
-  - [1. Getting Started](#1-getting-started)
-    - [1.1. Installation](#11-installation)
-    - [1.2. Configuration](#12-configuration)
-    - [1.3. Your First AI Function](#13-your-first-ai-function)
-  - [2. Core Concepts](#2-core-concepts)
-    - [2.1. The `@ai` Decorator](#21-the-ai-decorator)
-    - [2.2. The `_ai` Sentinel](#22-the-_ai-sentinel)
-    - [2.3. Post-processing and Validation](#23-post-processing-and-validation)
-  - [3. Structured Output and Type System](#3-structured-output-and-type-system)
-    - [3.1. Basic Types](#31-basic-types)
-    - [3.2. Dataclasses and Complex Structures](#32-dataclasses-and-complex-structures)
-    - [3.3. Enums and Restricted Choices](#33-enums-and-restricted-choices)
-  - [4. Configuration and Flexibility](#4-configuration-and-flexibility)
-    - [4.1. The Configuration Cascade](#41-the-configuration-cascade)
-    - [4.2. Global Configuration](#42-global-configuration)
-    - [4.3. Per-Function Configuration](#43-per-function-configuration)
-    - [4.4. Contextual Overrides](#44-contextual-overrides)
-    - [4.5. Personas and Live Modification](#45-personas-and-live-modification)
-  - [5. Advanced Execution Strategies](#5-advanced-execution-strategies)
-    - [5.1. Chain of Thought (CoT) Reasoning](#51-chain-of-thought-cot-reasoning)
-    - [5.2. Accessing Intermediate Steps](#52-accessing-intermediate-steps)
-    - [5.3. Multiple Explicit Outputs](#53-multiple-explicit-outputs)
-    - [5.4. Tool Usage (ReAct Agents)](#54-tool-usage-react-agents)
-  - [6. Stateful Interactions (Memory)](#6-stateful-interactions-memory)
-  - [7. Optimization (In-place Compilation)](#7-optimization-in-place-compilation)
-    - [7.1. The Optimization Workflow](#71-the-optimization-workflow)
-    - [7.2. Reverting Optimization](#72-reverting-optimization)
-  - [8. Inspection and Debugging](#8-inspection-and-debugging)
-    - [8.1. Previewing the Prompt](#81-previewing-the-prompt)
-    - [8.2. Inspecting the Signature](#82-inspecting-the-signature)
-    - [8.3. Viewing History](#83-viewing-history)
-  - [9. Best Practices](#9-best-practices)
-  - [10. Real-World Examples](#10-real-world-examples)
-    - [10.1. Data Extraction Pipeline](#101-data-extraction-pipeline)
-    - [10.2. Research Assistant Agent](#102-research-assistant-agent)
-  - [11. Migration Guide](#11-migration-guide)
-    - [11.1. From OpenAI Functions/Chat API](#111-from-openai-functionschat-api)
-    - [11.2. From LangChain](#112-from-langchain)
-  - [12. API Reference](#12-api-reference)
-    - [Core](#core)
-    - [Configuration](#configuration)
-    - [`FunctAIFunc` Object](#functaifunc-object)
-    - [Utilities](#utilities)
 
 -----
 
@@ -453,8 +405,10 @@ print(functai.inspect_history_text())
 By default, `@ai` functions are stateless; each call is independent. To maintain context across calls (e.g., in a chatbot scenario), set `stateful=True`.
 
 ```{python}
-@ai(stateful=True)
-def assistant(message: str) -> str:
+from functai import ai, _ai
+
+@ai(lm="gpt-4.1", stateful=True)
+def assistant(message):
     """A friendly AI assistant that remembers the conversation history."""
     return _ai
 
@@ -466,15 +420,18 @@ print(f"Output2: {response2}")
 
 ```
 
-**Behavior:** When `stateful=True`, FunctAI automatically includes the history of previous inputs and outputs in the context of the next call.
-
-You can manage the state explicitly using the `.state` attribute:
 
 ```{python}
-assistant.state.clear() # Reset the conversation history
+#| echo: False
+import functai
+print(functai.inspect_history_text())
 ```
 
+**Behavior:** When `stateful=True`, FunctAI automatically includes the history of previous inputs and outputs in the context of the next call.
+
 ## 7\. Optimization (In-place Compilation)
+
+**WARNING: optimization is still a work in progress**
 
 FunctAI integrates seamlessly with DSPy's optimization capabilities (Teleprompters). Optimization (often called compilation in DSPy) improves the quality and reliability of your AI functions by using a dataset of examples.
 
@@ -483,8 +440,11 @@ The optimizer can automatically generate effective few-shot examples or refine i
 ### 7.1. The Optimization Workflow
 
 ```{python}
+import dspy
 from dspy import Example
 from functai import ai, _ai
+
+dspy.configure(lm = dspy.LM("gpt-4.1"))
 
 # 1. Define the function
 @ai
@@ -503,7 +463,7 @@ trainset = [
 # 3. Optimize the function in place
 # strategy="launch" typically uses a default like BootstrapFewShot
 print("Optimizing...")
-classify_intent.opt(trainset=trainset, strategy="launch")
+classify_intent.opt(trainset=trainset)
 print("Optimization complete.")
 
 # 4. The function is now optimized (it includes generated few-shot examples in its prompt)
@@ -522,64 +482,16 @@ classify_intent.undo_opt(steps=1)
 
 ## 8\. Inspection and Debugging
 
-Understanding what happens under the hood is crucial. FunctAI provides utilities to inspect the prompts being sent to the LM and the execution history.
+**More to come**
 
-### 8.1. Previewing the Prompt
-
-Use `functai.format_prompt` to preview the exact messages that will be sent to the LM for a given set of inputs, without actually calling the LM.
-
-```{python}
-from functai import format_prompt
-
-preview = format_prompt(summarize, text="A long document...", focus="technical details")
-print(preview['render'])
-```
-
-This output will show you how the adapter, module, persona, and inputs combine to form the final prompt.
-
-### 8.2. Inspecting the Signature
-
-FunctAI automatically computes a DSPy Signature based on your Python function definition. You can inspect this derived signature using `functai.signature_text`.
-
-```{python}
-from functai import signature_text
-
-# Inspect the signature of the CoT function from section 5.1
-print(signature_text(solve_math_problem))
-```
-
-**Example Output:**
-
-```
-Signature: SolveMathProblemSig
-Doc: Solves a math word problem and returns the numerical answer.
-Inputs:
-- question: <class 'str'>
-Outputs:
-- reasoning: <class 'str'> (Description: Step-by-step thinking process...)
-- result: <class 'float'> (primary)
-```
-
-### 8.3. Viewing History
-
-To see the history of recent LM calls, including the actual prompts sent and the raw responses received, use `functai.inspect_history_text()`.
+To see the last call, use `functai.inspect_history_text()`.
 
 ```{python}
 from functai import inspect_history_text
 
 # After running some AI functions...
-print(inspect_history_text(n=1)) # Show the last call
+print(inspect_history_text()) # Show the last call
 ```
-
-## 9\. Best Practices
-
-1.  **Clear and Specific Docstrings:** The docstring is the primary instruction. Be descriptive. If you need a specific format, tone, or constraint, mention it explicitly in the docstring.
-2.  **Type Hints Are Contracts:** Always provide comprehensive type hints. They guide the AI, validate outputs, and make your code robust. Use `dataclasses` for complex structures and `Enum` for classifications.
-3.  **Use `adapter="json"` for Structure:** When extracting data (lists, dataclasses, dicts), configure the adapter to "json" for maximum reliability.
-4.  **Post-Process for Reliability:** Don't trust the AI blindly for critical applications. Use the function body to validate and clean the AI's output (e.g., checking bounds, validating email formats).
-5.  **Use Lower Temperatures for Facts:** For deterministic tasks (like data extraction or calculation), use `temperature=0.0` or `0.1`. Use higher temperatures (e.g., `0.7`) for creative tasks.
-6.  **Leverage Explicit Chain of Thought:** For any non-trivial task, explicitly defining a `reasoning: str = _ai["..."]` step will almost always improve the result and make debugging easier.
-7.  **Optimize for Production:** Before deploying a critical AI function, create a small dataset and use `.opt()` to improve its performance with few-shot examples.
 
 ## 10\. Real-World Examples
 
@@ -593,7 +505,7 @@ from typing import List
 from functai import ai, _ai, configure
 
 # Ensure deterministic extraction
-configure(temperature=0.0, adapter="json")
+configure(lm = "gpt-4.1", temperature=0.0, adapter="json")
 
 # 1. Define the target structure
 @dataclass
@@ -650,6 +562,10 @@ else:
 This example builds a sophisticated agent using tools and structured internal outputs.
 
 ```{python}
+from functai import ai, _ai, configure
+
+configure(lm = "gpt-4.1")
+
 # Define Tools (Placeholders)
 def search_web(query: str) -> str:
     """Search the web for information."""
@@ -678,87 +594,5 @@ def research_assistant(query: str) -> str:
     return f"{answer}\n\nConfidence: {confidence}\nSources: {', '.join(sources)}"
 
 # Execution
-result = research_assistant("What are the latest breakthroughs in quantum computing?")
+research_assistant("What are the latest breakthroughs in quantum computing?")
 ```
-
-## 11\. Migration Guide
-
-FunctAI simplifies patterns commonly used in other frameworks by removing boilerplate.
-
-### 11.1. From OpenAI Functions/Chat API
-
-Traditional interaction requires explicit prompt construction and response handling.
-
-```{python}
-# Before (Conceptual)
-import openai
-client = openai.OpenAI()
-
-def summarize_text(text):
-    prompt = f"Summarize the following text in one sentence:\n\n{text}"
-    response = client.chat.completions.create(
-        model="gpt-4o",
-        messages=[{"role": "user", "content": prompt}],
-    )
-    return response.choices[0].message.content
-
-# After (FunctAI)
-from functai import ai, _ai
-
-@ai(lm="gpt-4o")
-def summarize(text: str) -> str:
-    """Summarize the text in one sentence."""
-    return _ai
-```
-
-### 11.2. From LangChain
-
-LangChain often requires assembling Chains and PromptTemplates explicitly.
-
-```{python}
-# Before (Conceptual LangChain)
-# Requires defining LLM, PromptTemplate, and LLMChain...
-# chain = LLMChain(llm=llm, prompt=prompt_template)
-# result = chain.run(input=input_text)
-
-# After (FunctAI)
-@ai
-def my_chain(input: str) -> str:
-    """Template instructions here."""
-    return _ai
-```
-
-## 12\. API Reference
-
-### Core
-
-  * `@ai(_fn=None, **cfg)`: Decorator to create an AI function (`FunctAIFunc`).
-      * Config options: `lm`, `temperature`, `adapter` ("json", "chat"), `module` ("predict", "cot", "react"), `tools` (list of functions), `stateful` (bool), `persona` (str).
-  * `_ai`: Sentinel object representing the LM output.
-      * `_ai["description"]`: Used within the function body (e.g., `var: type = _ai["desc"]`) to define intermediate (e.g., CoT) or explicit output fields with specific instructions.
-
-### Configuration
-
-  * `configure(**cfg)`: Set global defaults.
-  * `defaults(**overrides)`: Context manager for temporary default overrides.
-  * `settings`: Direct access to the global configuration object.
-
-### `FunctAIFunc` Object
-
-The callable object returned by `@ai`.
-
-  * `__call__(*args, all=False, **kwargs)`: Executes the AI program.
-      * If `all=True`, returns the full `dspy.Prediction` object containing all intermediate and final outputs.
-  * `.opt(trainset, strategy="launch", **opts)`: Optimize the function in place using a dataset (list of `dspy.Example`).
-  * `.undo_opt(steps=1)`: Revert optimization steps.
-  * `.state`: Access state management (for `stateful=True` functions).
-      * `.state.clear()`: Resets the conversation history.
-      * `.state.history`: Access the raw history data.
-  * Mutable properties: `lm`, `temperature`, `adapter`, `module`, `tools`, `persona` can be modified after the function is defined.
-
-### Utilities
-
-  * `format_prompt(fn_or_prog, /, **inputs)`: Preview the formatted prompt for given inputs without calling the LM. Returns a dictionary including the rendered prompt string.
-  * `compute_signature(fn_or_prog)`: Compute and return the underlying `dspy.Signature`.
-  * `signature_text(fn_or_prog)`: Return a human-readable summary of the signature.
-  * `inspect_history_text(n=5)`: Return the recent LM call history (prompts and responses) as text.

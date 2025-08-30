@@ -5,14 +5,13 @@ API:
 - Decorator: @ai        (bare or with options)
 - Sentinel:  _ai        (bare; docstring + type hints drive outputs)
 - Defaults:  configure(...) (global and context manager)
-- Utils:     format_prompt(...), inspect_history_text()
+- Utils:     inspect_history_text()
 """
 
 from .core import (
     ai,
     _ai,
     configure,
-    format_prompt,
     inspect_history_text,
     settings,
     compute_signature,
@@ -25,7 +24,6 @@ __all__ = [
     "ai",
     "_ai",
     "configure",
-    "format_prompt",
     "inspect_history_text",
     "settings",
     "compute_signature",
