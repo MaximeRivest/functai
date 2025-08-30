@@ -15,6 +15,7 @@ from .core import (
     defaults,
     format_prompt,
     inspect_history_text,
+    settings,
 )
 
 __version__ = "0.2.0"
@@ -26,4 +27,5 @@ __all__ = [
     "defaults",
     "format_prompt",
     "inspect_history_text",
+    "settings",
 ]
