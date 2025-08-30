@@ -50,56 +50,6 @@ def good_or_bad(text_for_analysis) -> Literal['good', 'bad']:
 good_or_bad("That's is horrible", _prediction = True)
 ```
 
-```{python}
-import functai
-from functai import ai, _ai
-
-functai.settings.lm = "gpt-4.1"
-
-@ai
-def sentiment_analyzer(text_for_analysis):
-    ...
-
-sentiment_analyzer("that is a great library!")
-```
-
-
-```{python}
-import functai
-from functai import ai, _ai
-
-functai.settings.lm = "gpt-4.1"
-
-@ai
-def sentiment_analyzer(text_for_analysis):
-    _ai
-
-sentiment_analyzer("that is a great library!")
-```
-
-
-```{python}
-import functai
-from functai import ai, _ai
-from typing import List, Literal
-
-functai.settings.lm = "gpt-4.1"
-
-@ai
-def sentiment_analyzer(text_for_analysis) -> Literal['good', 'bad']:
-    "A function that does sentiment analysis"
-    think: str = _ai
-    sentiment = _ai
-    return sentiment
-
-```
-
-
-
-```{python}
-sentiment_analyzer("this is great!!")
-```
-
 
 ```{python}
 import functai

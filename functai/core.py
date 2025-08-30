@@ -28,13 +28,17 @@ INCLUDE_FN_NAME_IN_INSTRUCTIONS_DEFAULT = True
 class _Defaults:
     lm: Any = None                 # str | dspy.LM | None
     temperature: Optional[float] = None
-    adapter: Any = None            # "json" | "chat" | dspy.Adapter subclass | instance | None
-    module: Any = "predict"        # "predict" | "cot" | "react" | dspy.Module subclass | instance | None
+    # "json" | "chat" | dspy.Adapter subclass | instance | None
+    adapter: Any = None
+    # "predict" | "cot" | "react" | dspy.Module subclass | instance | None
+    module: Any = "predict"
     stateful: bool = False
     include_fn_name_in_instructions: bool = INCLUDE_FN_NAME_IN_INSTRUCTIONS_DEFAULT
 
+
 _GLOBAL_DEFAULTS = _Defaults()
-_CTX_DEFAULTS: ContextVar[_Defaults] = ContextVar("functai_defaults_ctx", default=None)  # type: ignore
+_CTX_DEFAULTS: ContextVar[_Defaults] = ContextVar(
+    "functai_defaults_ctx", default=None)  # type: ignore
 
 
 def configure(*, lm: Any = None, temperature: Optional[float] = None,
@@ -52,7 +56,8 @@ def configure(*, lm: Any = None, temperature: Optional[float] = None,
     if stateful is not None:
         _GLOBAL_DEFAULTS.stateful = bool(stateful)
     if include_fn_name_in_instructions is not None:
-        _GLOBAL_DEFAULTS.include_fn_name_in_instructions = bool(include_fn_name_in_instructions)
+        _GLOBAL_DEFAULTS.include_fn_name_in_instructions = bool(
+            include_fn_name_in_instructions)
 
 
 @contextlib.contextmanager
@@ -95,7 +100,8 @@ def _select_adapter(adapter: Any) -> Optional[dspy.Adapter]:
         return adapter()
     if isinstance(adapter, dspy.Adapter):
         return adapter
-    raise TypeError("adapter must be a string, a dspy.Adapter subclass, or a dspy.Adapter instance.")
+    raise TypeError(
+        "adapter must be a string, a dspy.Adapter subclass, or a dspy.Adapter instance.")
 
 
 @contextlib.contextmanager
@@ -121,55 +127,6 @@ def _patched_lm(lm_instance: Optional[Any]):
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Type coercion helper
-# ──────────────────────────────────────────────────────────────────────────────
-
-def _from_text(txt: Any, typ: Any) -> Any:
-    if typ is Any or typ is None:
-        return txt
-    if not isinstance(txt, str):
-        return txt
-
-    try:
-        origin = get_origin(typ)
-        args = get_args(typ)
-
-        if typ is str:
-            return txt
-        if typ is float:
-            return float(txt)
-        if typ is int:
-            s = txt.strip()
-            return int(float(s)) if "." in s else int(s)
-        if typ is bool:
-            return txt.strip().lower() in {"true", "1", "yes", "y"}
-
-        if origin is list and args:
-            inner = args[0]
-            s = txt.strip()
-            data = json.loads(s) if s.startswith("[") and s.endswith("]") else [x.strip() for x in txt.split(",") if x.strip()]
-            return [_from_text(x if isinstance(x, str) else json.dumps(x), inner) for x in data]
-
-        if origin is dict and args:
-            kt, vt = args
-            s = txt.strip()
-            data = json.loads(s) if s.startswith("{") and s.endswith("}") else {}
-            return { _from_text(str(k), kt): _from_text(v if isinstance(v, str) else json.dumps(v), vt) for k, v in data.items() }
-
-        if is_dataclass(typ):
-            data = json.loads(txt) if txt.strip().startswith("{") else {}
-            vals = {}
-            for f in dataclass_fields(typ):
-                vals[f.name] = _from_text(data.get(f.name), f.type) if f.name in data else None
-            return typ(**vals)  # type: ignore
-
-    except Exception:
-        return txt
-
-    return txt
-
-
-# ──────────────────────────────────────────────────────────────────────────────
 # Signature building (docstring-driven)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -183,7 +140,8 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
     (name, type, description) tuples.
     """
     sig = inspect.signature(fn)
-    hints = typing.get_type_hints(fn, include_extras=True) if hasattr(typing, "get_type_hints") else {}
+    hints = typing.get_type_hints(fn, include_extras=True) if hasattr(
+        typing, "get_type_hints") else {}
     class_dict: Dict[str, Any] = {}
     ann_map: Dict[str, Any] = {}
 
@@ -191,7 +149,8 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
     for pname, p in sig.parameters.items():
         if pname in {"_prediction"}:
             continue
-        ann = hints.get(pname, p.annotation if p.annotation is not inspect._empty else str)  # default str
+        ann = hints.get(
+            pname, p.annotation if p.annotation is not inspect._empty else str)  # default str
         class_dict[pname] = InputField()
         ann_map[pname] = ann
 
@@ -201,7 +160,8 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
             # Do not shadow inputs
             if name in class_dict:
                 continue
-            class_dict[name] = OutputField(desc=str(desc) if desc is not None else "")
+            class_dict[name] = OutputField(
+                desc=str(desc) if desc is not None else "")
             ann_map[name] = typ if typ is not None else str
 
     # Primary output
@@ -215,7 +175,8 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
     if mo_name in class_dict:
         # If the main name shadows an input, rename fallback to default
         mo_name = MAIN_OUTPUT_DEFAULT_NAME
-    class_dict[mo_name] = OutputField(desc=str(mo_desc) if mo_desc is not None else "")
+    class_dict[mo_name] = OutputField(
+        desc=str(mo_desc) if mo_desc is not None else "")
     ann_map[mo_name] = mo_type
 
     # Attach doc
@@ -310,11 +271,13 @@ def _collect_ast_outputs(fn: Any) -> List[Tuple[str, Any, str]]:
             if val is None:
                 continue
             is_ai = isinstance(val, ast.Name) and val.id == "_ai"
-            is_ai_sub = isinstance(val, ast.Subscript) and isinstance(val.value, ast.Name) and val.value.id == "_ai"
+            is_ai_sub = isinstance(val, ast.Subscript) and isinstance(
+                val.value, ast.Name) and val.value.id == "_ai"
             if not (is_ai or is_ai_sub):
                 continue
             # Type
-            typ = _eval_annotation(node.annotation, env) if node.annotation is not None else str
+            typ = _eval_annotation(
+                node.annotation, env) if node.annotation is not None else str
             # Desc from subscript if any
             desc = _extract_desc_from_subscript(val) if is_ai_sub else ""
             # preserve order and de-dupe by name (first occurrence wins)
@@ -326,7 +289,8 @@ def _collect_ast_outputs(fn: Any) -> List[Tuple[str, Any, str]]:
                 continue
             val = node.value
             is_ai = isinstance(val, ast.Name) and val.id == "_ai"
-            is_ai_sub = isinstance(val, ast.Subscript) and isinstance(val.value, ast.Name) and val.value.id == "_ai"
+            is_ai_sub = isinstance(val, ast.Subscript) and isinstance(
+                val.value, ast.Name) and val.value.id == "_ai"
             if not (is_ai or is_ai_sub):
                 continue
             desc = _extract_desc_from_subscript(val) if is_ai_sub else ""
@@ -427,7 +391,8 @@ def _instantiate_module(module_kind: Any, Sig: type[Signature], *, tools: Option
         except Exception:
             # fallback: rebuild a fresh instance of its class
             return type(module_kind)(Sig, **mk)
-    raise TypeError("module must be a string, a dspy.Module subclass, or an instance.")
+    raise TypeError(
+        "module must be a string, a dspy.Module subclass, or an instance.")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -455,7 +420,7 @@ class _State:
     def add_turn(self, inputs: Dict[str, Any], outputs: Any) -> None:
         self._turns.append({"inputs": inputs, "outputs": outputs})
         if self.window and len(self._turns) > self.window:
-            del self._turns[0 : len(self._turns) - self.window]
+            del self._turns[0: len(self._turns) - self.window]
 
     @property
     def history(self) -> List[Dict[str, Any]]:
@@ -488,7 +453,8 @@ class _CallContext:
         self._value: Any = None
         self._ai_requested = False  # whether `_ai` has been accessed
         self.collect_only: bool = False  # pre-scan to collect requested outputs
-        self._requested_outputs: Dict[str, Tuple[Any, str]] = {}  # name -> (type, desc)
+        # name -> (type, desc)
+        self._requested_outputs: Dict[str, Tuple[Any, str]] = {}
 
     def request_ai(self):
         """Mark that `_ai` is being used and return self for Proxy access."""
@@ -509,7 +475,8 @@ class _CallContext:
         if self._materialized:
             return
         if self.collect_only:
-            raise RuntimeError("_ai value accessed before model run; declare outputs with _ai[""desc""] and return _ai.")
+            raise RuntimeError(
+                "_ai value accessed before model run; declare outputs with _ai[""desc""] and return _ai.")
         # Build/refresh module for this call
         mod = _instantiate_module(
             self.program._module_kind,  # may be compiled instance swapped by .opt()
@@ -531,19 +498,20 @@ class _CallContext:
                 pass
 
         # Normalize inputs to strings where needed
-        in_kwargs = {k: self._to_text(v) for k, v in self.inputs.items() if k in (mod.signature.input_fields or {})}
+        in_kwargs = {k: self._to_text(v) for k, v in self.inputs.items() if k in (
+            mod.signature.input_fields or {})}
 
         with _patched_adapter(self.adapter), _patched_lm(getattr(mod, "lm", None)):
             self._pred = mod(**in_kwargs)
 
-        # Extract main output
-        raw = dict(self._pred).get(self.main_output_name)
-        self._value = _from_text(raw, self.program._return_type)
+        # Extract main output (typed by DSPy via Signature annotations)
+        self._value = dict(self._pred).get(self.main_output_name)
         self._materialized = True
 
         # Record state
         if self.program.state.enabled:
-            self.program.state.add_turn(inputs=self.inputs, outputs=self._value)
+            self.program.state.add_turn(
+                inputs=self.inputs, outputs=self._value)
 
     @staticmethod
     def _to_text(v: Any) -> Any:
@@ -563,11 +531,12 @@ class _CallContext:
         if self._pred is None:
             return None
         data = dict(self._pred)
-        raw = data.get(name)
-        return _from_text(raw, typ or str)
+        return data.get(name)
+
 
 # Active call ctx (per-thread/async)
-_ACTIVE_CALL: ContextVar[Optional[_CallContext]] = ContextVar("functai_active_call", default=None)
+_ACTIVE_CALL: ContextVar[Optional[_CallContext]] = ContextVar(
+    "functai_active_call", default=None)
 
 
 class _AISentinel:
@@ -584,7 +553,8 @@ class _AISentinel:
     def __getattr__(self, name):
         ctx = _ACTIVE_CALL.get()
         if ctx is None:
-            raise RuntimeError("`_ai` can only be used inside an @ai-decorated function call.")
+            raise RuntimeError(
+                "`_ai` can only be used inside an @ai-decorated function call.")
         val = ctx.request_ai().value
         return getattr(val, name)
 
@@ -592,15 +562,16 @@ class _AISentinel:
     def _val(self):
         ctx = _ACTIVE_CALL.get()
         if ctx is None:
-            raise RuntimeError("`_ai` can only be used inside an @ai-decorated function call.")
+            raise RuntimeError(
+                "`_ai` can only be used inside an @ai-decorated function call.")
         return ctx.request_ai().value
 
-    def __str__(self):   return str(self._val())
-    def __int__(self):   return int(self._val())
+    def __str__(self): return str(self._val())
+    def __int__(self): return int(self._val())
     def __float__(self): return float(self._val())
-    def __bool__(self):  return bool(self._val())
-    def __len__(self):   return len(self._val())
-    def __iter__(self):  return iter(self._val())
+    def __bool__(self): return bool(self._val())
+    def __len__(self): return len(self._val())
+    def __iter__(self): return iter(self._val())
     def __getitem__(self, k): return self._val()[k]
     def __contains__(self, k): return k in self._val()
 
@@ -608,7 +579,8 @@ class _AISentinel:
     def __getitem__(self, spec):
         ctx = _ACTIVE_CALL.get()
         if ctx is None:
-            raise RuntimeError("`_ai[...]` can only be used inside an @ai-decorated function call.")
+            raise RuntimeError(
+                "`_ai[...]` can only be used inside an @ai-decorated function call.")
         ctx.request_ai()
         # Accept strings for desc; derive name by sanitizing leading token
         if isinstance(spec, str):
@@ -623,7 +595,8 @@ class _AISentinel:
             typ = spec[2] if len(spec) >= 3 else str
             ctx.declare_output(name=name, typ=typ, desc=desc)
             return _AIFieldProxy(ctx, name=name, typ=typ)
-        raise TypeError("_ai[...] expects a string description or (name, desc[, type]) tuple.")
+        raise TypeError(
+            "_ai[...] expects a string description or (name, desc[, type]) tuple.")
 
 
 class _AIFieldProxy:
@@ -632,6 +605,7 @@ class _AIFieldProxy:
     During pre-scan (collect_only), any attempt to use this value will raise.
     During the actual run, it resolves to the model-produced output field.
     """
+
     def __init__(self, ctx: _CallContext, *, name: str, typ: Any = str):
         self._ctx = ctx
         self._name = name
@@ -639,7 +613,8 @@ class _AIFieldProxy:
 
     def _resolve(self):
         if self._ctx.collect_only:
-            raise RuntimeError(f"Output '{self._name}' value is not available during signature collection.")
+            raise RuntimeError(
+                f"Output '{self._name}' value is not available during signature collection.")
         return self._ctx.output_value(self._name, self._typ)
 
     def __repr__(self):
@@ -649,12 +624,12 @@ class _AIFieldProxy:
         except Exception:
             return f"<_ai[{self._name!s}]>"
 
-    def __str__(self):   return str(self._resolve())
-    def __int__(self):   return int(self._resolve())
+    def __str__(self): return str(self._resolve())
+    def __int__(self): return int(self._resolve())
     def __float__(self): return float(self._resolve())
-    def __bool__(self):  return bool(self._resolve())
-    def __len__(self):   return len(self._resolve())
-    def __iter__(self):  return iter(self._resolve())
+    def __bool__(self): return bool(self._resolve())
+    def __len__(self): return len(self._resolve())
+    def __iter__(self): return iter(self._resolve())
     def __getitem__(self, k): return self._resolve()[k]
     def __contains__(self, k): return k in self._resolve()
 
@@ -672,20 +647,20 @@ def _derive_output_name(desc: str) -> str:
     return s.split()[0]
 
     # Arithmetic-ish
-    def __add__(self, other):   return self._val() + other
-    def __radd__(self, other):  return other + self._val()
-    def __sub__(self, other):   return self._val() - other
-    def __rsub__(self, other):  return other - self._val()
-    def __mul__(self, other):   return self._val() * other
-    def __rmul__(self, other):  return other * self._val()
-    def __truediv__(self, other):  return self._val() / other
+    def __add__(self, other): return self._val() + other
+    def __radd__(self, other): return other + self._val()
+    def __sub__(self, other): return self._val() - other
+    def __rsub__(self, other): return other - self._val()
+    def __mul__(self, other): return self._val() * other
+    def __rmul__(self, other): return other * self._val()
+    def __truediv__(self, other): return self._val() / other
     def __rtruediv__(self, other): return other / self._val()
-    def __eq__(self, other):    return self._val() == other
-    def __ne__(self, other):    return self._val() != other
-    def __lt__(self, other):    return self._val() < other
-    def __le__(self, other):    return self._val() <= other
-    def __gt__(self, other):    return self._val() > other
-    def __ge__(self, other):    return self._val() >= other
+    def __eq__(self, other): return self._val() == other
+    def __ne__(self, other): return self._val() != other
+    def __lt__(self, other): return self._val() < other
+    def __le__(self, other): return self._val() <= other
+    def __gt__(self, other): return self._val() > other
+    def __ge__(self, other): return self._val() >= other
 
 
 # Public sentinel instance
@@ -708,15 +683,17 @@ class FunctAIFunc:
         self._fn = fn
         self._sig = inspect.signature(fn)
         self._return_type = (typing.get_type_hints(fn, include_extras=True) or {}).get("return",
-                           self._sig.return_annotation if self._sig.return_annotation is not inspect._empty else Any)  # type: ignore
+                                                                                       self._sig.return_annotation if self._sig.return_annotation is not inspect._empty else Any)  # type: ignore
 
         # Defaults cascade
         defs = _effective_defaults()
         self._lm = lm if lm is not None else defs.lm
         self._adapter = adapter if adapter is not None else defs.adapter
-        self._module_kind = _select_module_kind(module if module is not None else defs.module, tools)
+        self._module_kind = _select_module_kind(
+            module if module is not None else defs.module, tools)
         self._tools: List[Any] = list(tools or [])
-        self.temperature: Optional[float] = (float(temperature) if temperature is not None else defs.temperature)
+        self.temperature: Optional[float] = (
+            float(temperature) if temperature is not None else defs.temperature)
         self.state = _State()
         if stateful if stateful is not None else defs.stateful:
             self.state.enable(window=5)
@@ -739,13 +716,17 @@ class FunctAIFunc:
     # ----- properties (live-mutable) -----
     @property
     def lm(self): return self._lm
+
     @lm.setter
-    def lm(self, v): self._lm = v; self._lm_instance = self._to_lm(v); self._compiled = None
+    def lm(self, v): self._lm = v; self._lm_instance = self._to_lm(
+        v); self._compiled = None
 
     @property
     def adapter(self): return self._adapter
+
     @adapter.setter
-    def adapter(self, v): self._adapter = v; self._adapter_instance = _select_adapter(v); self._compiled = None
+    def adapter(self, v): self._adapter = v; self._adapter_instance = _select_adapter(
+        v); self._compiled = None
 
     @property
     def module(self): return self._module_kind
@@ -754,6 +735,7 @@ class FunctAIFunc:
 
     @property
     def tools(self): return list(self._tools)
+
     @tools.setter
     def tools(self, seq):
         self._tools = list(seq or [])
@@ -765,17 +747,22 @@ class FunctAIFunc:
     # ----- callable -----
     def __call__(self, *args, _prediction: bool = False, **kwargs):
         # Bind args
-        bound = self._sig.bind_partial(*args, **{k: v for k, v in kwargs.items() if k != "_prediction"})
+        bound = self._sig.bind_partial(
+            *args, **{k: v for k, v in kwargs.items() if k != "_prediction"})
         bound.apply_defaults()
-        inputs = {k: v for k, v in bound.arguments.items() if k in self._sig.parameters}
+        inputs = {k: v for k, v in bound.arguments.items()
+                  if k in self._sig.parameters}
 
         # Compose dynamic system doc (docstring + persona + state)
         state_block = self.state.render_block()
-        sysdoc = _compose_system_doc(self._fn, self.persona, state_block, include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
+        sysdoc = _compose_system_doc(self._fn, self.persona, state_block, include_fn_name=bool(
+            _effective_defaults().include_fn_name_in_instructions))
 
         # Phase 1: pre-scan to collect dynamic outputs via _ai["..."] without running the model
-        pre_sig = _mk_signature(self._fn.__name__, self._fn, doc=sysdoc, return_type=self._return_type)
-        pre_ctx = _CallContext(program=self, Sig=pre_sig, inputs=inputs, adapter=self._adapter_instance)
+        pre_sig = _mk_signature(
+            self._fn.__name__, self._fn, doc=sysdoc, return_type=self._return_type)
+        pre_ctx = _CallContext(program=self, Sig=pre_sig,
+                               inputs=inputs, adapter=self._adapter_instance)
         pre_ctx.collect_only = True
         token1 = _ACTIVE_CALL.set(pre_ctx)
         try:
@@ -820,12 +807,14 @@ class FunctAIFunc:
 
         # Validate/resolve types and merge extras
         # Convert to dict for easy lookup
-        ast_map: Dict[str, Tuple[Any, str]] = {n: (t, d) for n, t, d in ast_outputs}
+        ast_map: Dict[str, Tuple[Any, str]] = {
+            n: (t, d) for n, t, d in ast_outputs}
         # Main output type: must match function return type if annotated on var
         if main_name in ast_map:
             t0, d0 = ast_map[main_name]
             if t0 is not None and t0 != self._return_type:
-                raise TypeError(f"Type of '{main_name}' ({t0}) conflicts with function return type ({self._return_type}).")
+                raise TypeError(
+                    f"Type of '{main_name}' ({t0}) conflicts with function return type ({self._return_type}).")
             main_typ = self._return_type
             main_desc = d0
         else:
@@ -852,7 +841,8 @@ class FunctAIFunc:
         )
 
         # Build real call context
-        ctx = _CallContext(program=self, Sig=Sig, inputs=inputs, adapter=self._adapter_instance, main_output_name=main_name)
+        ctx = _CallContext(program=self, Sig=Sig, inputs=inputs,
+                           adapter=self._adapter_instance, main_output_name=main_name)
 
         # Materialize prediction up-front so proxies can resolve during re-run
         ctx.ensure_materialized()
@@ -885,17 +875,22 @@ class FunctAIFunc:
             main_name = order_names[-1]
         else:
             main_name = MAIN_OUTPUT_DEFAULT_NAME
-        ast_map: Dict[str, Tuple[Any, str]] = {n: (t, d) for n, t, d in ast_outputs}
+        ast_map: Dict[str, Tuple[Any, str]] = {
+            n: (t, d) for n, t, d in ast_outputs}
         if main_name in ast_map:
             t0, d0 = ast_map[main_name]
             if t0 is not None and t0 != self._return_type:
-                raise TypeError(f"Type of '{main_name}' ({t0}) conflicts with function return type ({self._return_type}).")
+                raise TypeError(
+                    f"Type of '{main_name}' ({t0}) conflicts with function return type ({self._return_type}).")
             main_desc = d0
         else:
             main_desc = ""
-        extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str), ast_map[n][1]) for n in order_names if n != main_name]
-        Sig = _mk_signature(self._fn.__name__, self._fn, doc=sysdoc, return_type=self._return_type, extra_outputs=extras, main_output=(main_name, self._return_type, main_desc))
-        ctx = _CallContext(program=self, Sig=Sig, inputs=inputs, adapter=self._adapter_instance, main_output_name=main_name)
+        extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str),
+                   ast_map[n][1]) for n in order_names if n != main_name]
+        Sig = _mk_signature(self._fn.__name__, self._fn, doc=sysdoc, return_type=self._return_type,
+                            extra_outputs=extras, main_output=(main_name, self._return_type, main_desc))
+        ctx = _CallContext(program=self, Sig=Sig, inputs=inputs,
+                           adapter=self._adapter_instance, main_output_name=main_name)
         token = _ACTIVE_CALL.set(ctx)
         try:
             result = self._fn(*args, **kwargs)
@@ -921,11 +916,13 @@ class FunctAIFunc:
                 self._fn,
                 self.persona,
                 self.state.render_block(),
-                include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions),
+                include_fn_name=bool(
+                    _effective_defaults().include_fn_name_in_instructions),
             ),
             return_type=self._return_type,
         )
-        base_mod = _instantiate_module(self._module_kind, Sig, tools=self._tools, module_kwargs=self._module_kwargs)
+        base_mod = _instantiate_module(
+            self._module_kind, Sig, tools=self._tools, module_kwargs=self._module_kwargs)
 
         # Choose optimizer
         if strategy == "launch":
@@ -1014,10 +1011,12 @@ def format_prompt(fn_or_prog, /, **inputs) -> Dict[str, Any]:
     elif hasattr(fn_or_prog, "__dspy__") and hasattr(fn_or_prog.__dspy__, "program"):  # type: ignore
         prog = fn_or_prog.__dspy__.program  # type: ignore
     else:
-        raise TypeError("format_prompt(...) expects an @ai-decorated function/program.")
+        raise TypeError(
+            "format_prompt(...) expects an @ai-decorated function/program.")
 
     # Compose signature
-    sysdoc = _compose_system_doc(prog._fn, prog.persona, prog.state.render_block(), include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
+    sysdoc = _compose_system_doc(prog._fn, prog.persona, prog.state.render_block(
+    ), include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
     # Include AST-declared outputs and main in preview
     ast_outputs = _collect_ast_outputs(prog._fn)
     ret_info = _collect_return_info(prog._fn)
@@ -1030,24 +1029,30 @@ def format_prompt(fn_or_prog, /, **inputs) -> Dict[str, Any]:
         main_name = order_names[-1]
     else:
         main_name = MAIN_OUTPUT_DEFAULT_NAME
-    ast_map: Dict[str, Tuple[Any, str]] = {n: (t, d) for n, t, d in ast_outputs}
+    ast_map: Dict[str, Tuple[Any, str]] = {
+        n: (t, d) for n, t, d in ast_outputs}
     if main_name in ast_map:
         main_desc = ast_map[main_name][1]
     else:
         main_desc = ""
-    extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str), ast_map[n][1]) for n in order_names if n != main_name]
-    Sig = _mk_signature(prog._fn.__name__, prog._fn, doc=sysdoc, return_type=prog._return_type, extra_outputs=extras, main_output=(main_name, prog._return_type, main_desc))
-    adapter_inst = prog._adapter_instance or getattr(dspy.settings, "adapter", None) or dspy.ChatAdapter()
+    extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str),
+               ast_map[n][1]) for n in order_names if n != main_name]
+    Sig = _mk_signature(prog._fn.__name__, prog._fn, doc=sysdoc, return_type=prog._return_type,
+                        extra_outputs=extras, main_output=(main_name, prog._return_type, main_desc))
+    adapter_inst = prog._adapter_instance or getattr(
+        dspy.settings, "adapter", None) or dspy.ChatAdapter()
 
     # Normalize inputs
-    in_text = {k: str(v) for k, v in inputs.items() if k in (Sig.input_fields or {})}
+    in_text = {k: str(v) for k, v in inputs.items()
+               if k in (Sig.input_fields or {})}
 
     # Try adapter-native formatting
     system_content = (getattr(Sig, "__doc__", "") or "").strip()
     user_content = None
     try:
         if hasattr(adapter_inst, "format_user_message_content"):
-            user_content = adapter_inst.format_user_message_content(Sig, in_text)
+            user_content = adapter_inst.format_user_message_content(
+                Sig, in_text)
     except Exception:
         user_content = None
     if not user_content:
@@ -1060,7 +1065,8 @@ def format_prompt(fn_or_prog, /, **inputs) -> Dict[str, Any]:
 
     render_lines = []
     render_lines.append(f"Adapter: {type(adapter_inst).__name__}")
-    render_lines.append(f"Module: {prog._module_kind.__class__.__name__ if isinstance(prog._module_kind, dspy.Module) else str(prog._module_kind)}")
+    render_lines.append(
+        f"Module: {prog._module_kind.__class__.__name__ if isinstance(prog._module_kind, dspy.Module) else str(prog._module_kind)}")
     if system_content:
         render_lines.append("")
         render_lines.append("System:")
