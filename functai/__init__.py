@@ -1,30 +1,29 @@
 """
-FunctAI - DSPy-powered function decorators for AI-enhanced programming.
+FunctAI — DSPy-powered, single-call AI functions.
 
-A library that seamlessly integrates AI capabilities into Python functions
-using DSPy's powerful prompting and optimization framework.
+New API:
+- Decorator: @ai  (works bare or with options)
+- Sentinel:  _ai  (bare; docstring + return type drive behavior)
+- Defaults:  configure(...), defaults(...)
+- Utils:     format_prompt(...), inspect_history_text()
 """
 
-from functai.core import (
-    magic,
-    step,
-    final,
-    optimize,
-    parallel,
-    use,
+from .core import (
+    ai,
+    _ai,
+    configure,
+    defaults,
     format_prompt,
     inspect_history_text,
 )
 
-__version__ = "0.1.2"
+__version__ = "0.2.0"
 
 __all__ = [
-    "magic",
-    "step", 
-    "final",
-    "optimize",
-    "parallel",
-    "use",
+    "ai",
+    "_ai",
+    "configure",
+    "defaults",
     "format_prompt",
     "inspect_history_text",
 ]

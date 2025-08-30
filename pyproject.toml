@@ -32,6 +32,7 @@ classifiers = [
 ]
 dependencies = [
     "dspy>=3.0.2",
+    "typing>=3.10.0.0",
 ]
 
 [project.urls]

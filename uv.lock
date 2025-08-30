@@ -459,18 +459,6 @@ wheels = [
 ]
 
 [[package]]
-name = "dspy-ai"
-version = "3.0.2"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "dspy" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/a6/d2/c965e4b0eaf73e448278ec8a20c68e6b001faca2520b5e54baaf48eafe6b/dspy_ai-3.0.2.tar.gz", hash = "sha256:2c3088761de225153015c1d18deb58c71d8c80db3b686fbd18f65713535f2d0f", size = 1121, upload-time = "2025-08-22T11:17:05.634Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/a8/66/bee35553f5361dd43a8993792301f220ba339b13c68a36414d03cef61bcb/dspy_ai-3.0.2-py3-none-any.whl", hash = "sha256:2b3cbf6d0046ab5d6c7e6fdf6307f5160ba1f046b98882b794024e85c995d4bd", size = 1095, upload-time = "2025-08-22T11:17:04.775Z" },
-]
-
-[[package]]
 name = "exceptiongroup"
 version = "1.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -596,11 +584,11 @@ wheels = [
 
 [[package]]
 name = "functai"
-version = "0.1.1"
+version = "0.1.2"
 source = { editable = "." }
 dependencies = [
     { name = "dspy" },
-    { name = "dspy-ai" },
+    { name = "typing" },
 ]
 
 [package.optional-dependencies]
@@ -614,11 +602,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "dspy", specifier = ">=3.0.2" },
-    { name = "dspy-ai", specifier = ">=2.0.0" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=4.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
+    { name = "typing", specifier = ">=3.10.0.0" },
 ]
 provides-extras = ["dev"]
 
@@ -2143,6 +2131,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/a8/4b/29b4ef32e036bb34e4ab51796dd745cdba7ed47ad142a9f4a1eb8e0c744d/tqdm-4.67.1.tar.gz", hash = "sha256:f8aef9c52c08c13a65f30ea34f4e5aac3fd1a34959879d7e59e63027286627f2", size = 169737, upload-time = "2024-11-24T20:12:22.481Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/d0/30/dc54f88dd4a2b5dc8a0279bdd7270e735851848b762aeb1c1184ed1f6b14/tqdm-4.67.1-py3-none-any.whl", hash = "sha256:26445eca388f82e72884e0d580d5464cd801a3ea01e63e5601bdff9ba6a48de2", size = 78540, upload-time = "2024-11-24T20:12:19.698Z" },
+]
+
+[[package]]
+name = "typing"
+version = "3.10.0.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/b0/1b/835d4431805939d2996f8772aca1d2313a57e8860fec0e48e8e7dfe3a477/typing-3.10.0.0.tar.gz", hash = "sha256:13b4ad211f54ddbf93e5901a9967b1e07720c1d1b78d596ac6a439641aa1b130", size = 78962, upload-time = "2021-05-01T18:03:58.186Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f2/5d/865e17349564eb1772688d8afc5e3081a5964c640d64d1d2880ebaed002d/typing-3.10.0.0-py3-none-any.whl", hash = "sha256:12fbdfbe7d6cca1a42e485229afcb0b0c8259258cfb919b8a5e2a5c953742f89", size = 26320, upload-time = "2021-05-01T18:03:56.398Z" },
 ]
 
 [[package]]

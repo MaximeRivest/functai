@@ -1,36 +1,22 @@
----
-title: "FunctAI: Prompt Formatting Preview"
-format:
-  html:
-    code-fold: true
----
 
-This example shows how to preview the adapter-formatted prompt that will be sent to the model, without making a call.
+```{python}
+from functai import ai, _ai
+from typing import List, Literal
 
-Prereqs:
-
-- Install this repo (e.g., `uv pip install -e .`)
-- Set your provider API key (e.g., `export OPENAI_API_KEY=...`)
-
-```python
-from functai import magic, step, final, format_prompt
-from typing import List
-
-@magic(adapter="json", lm="gpt-4.1")
-def analyze(text: str) -> dict:
-    _sentiment: str = step("Determine sentiment")
-    _keywords: List[str] = step("Extract keywords")
-    summary: dict = final("Combine analysis")
-    return summary
-
-preview = format_prompt(analyze, text="FunctAI is delightful")
-print(preview["render"])     # Human-friendly view (adapter + module + system + user + demos)
-print(preview["messages"])   # Provider-style messages (system/user contents)
-print(preview["demos"])      # Extracted demos (if any)
+@ai(lm="gpt-4.1")
+def analyze(text: str) -> Literal['good', 'bad']:
+    "A function that does sentiment analysis"
+    think: str = _ai["think!"]
+    return _ai
 ```
 
-Notes:
 
-- `format_prompt` uses the configured adapter's formatting when available, with a clean fallback otherwise.
-- Demos are discovered on the underlying DSPy module or common submodules (e.g., `predict`, `react`, `extract`).
 
+```{python}
+analyze("this is great", _prediction = True)
+```
+
+
+```{python}
+analyze.__dspy__.program._sig
+```
