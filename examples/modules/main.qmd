@@ -1,0 +1,76 @@
+
+```{python}
+from functai import *
+
+# Configure LM once (FunctAI configure also updates DSPy)
+configure(lm="groq/openai/gpt-oss-120b")
+
+@ai
+def generate_query(claim: str, key_facts: list[str]) -> str:
+    """Produce a follow-up search query from a claim and current key facts."""
+    return _ai
+
+@ai
+def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[str]:
+    """Extend key facts with new learnings extracted from new_docs."""
+    return _ai
+
+@module
+def research_hop(claim: str, k: int, hops: int):
+    key_facts: list[str] = []
+    retrieved_docs: list[str] = []
+    for i in range(hops):
+        query = generate_query(claim, key_facts) if i else claim
+        # Mock retrieval for the example
+        search_results = [f"doc about: {query}"][:k]
+        retrieved_docs.extend(search_results)
+        if i == hops - 1:
+            break
+        key_facts = append_notes(claim, key_facts, search_results)
+    return key_facts, retrieved_docs
+
+# Normal call
+research_hop("The park at which Tivolis Koncertsal is located opened on 15 August 1843", 4, 2)
+```
+
+```{python}
+import dspy
+# Prepare a tiny trainset and a metric that reads Prediction(result=...)
+trainset = [
+    dspy.Example(
+        claim="The Eiffel Tower is in Paris.",
+        result=(['fact: paris'], ['doc about: The Eiffel Tower is in Paris.'])
+    ).with_inputs("claim"),
+        dspy.Example(
+        claim="The Eiffel Tower is in Paris.",
+        result=(['fact: paris'], ['doc about: The Eiffel Tower is in Paris.'])
+    ).with_inputs("claim")
+]
+
+def metric(example, prediction, trace = None):
+    # simple non-zero score if key facts list is non-empty
+    try:
+        key_facts, _ = dict(prediction).get('result', ([], []))
+    except Exception:
+        key_facts = []
+    return 1.0 if key_facts else 0.0
+
+# Optimize the called @ai functions together with a single metric
+research_hop.opt(
+    trainset=trainset,
+    metric=metric,
+    optimizer=dspy.MIPROv2,
+    call_defaults=dict(k=2, hops=2),  # provide defaults for orchestrator args during optimization
+)
+```
+
+
+
+```{python}
+research_hop("The park at which Koncertsal is located opened on 15 August 1843", 4, 2)
+```
+
+
+```{python}
+print(inspect_history_text())
+```

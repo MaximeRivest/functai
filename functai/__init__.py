@@ -17,6 +17,7 @@ from .core import (
     compute_signature,
     signature_text,
 )
+from .module import module, FunctAIModule
 
 __version__ = "0.3.0"
 
@@ -28,4 +29,6 @@ __all__ = [
     "settings",
     "compute_signature",
     "signature_text",
+    "module",
+    "FunctAIModule",
 ]
