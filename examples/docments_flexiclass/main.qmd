@@ -412,13 +412,10 @@ exp = {'_module': ('This is a module.', ''),
 test_eq(extract_docstrings(sample_code), exp)
 
 ```{python}
-from functai import ai,configure
+from functai import ai
 
-configure(lm = "gpt-4.1")
-
-@ai
+@ai(lm = "gpt-4.1")
 def translator(english) -> "french": ...
-
 
 translator("Hi how are you?")
 ```

@@ -185,7 +185,7 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
                   include_history_input: bool = False) -> type[Signature]:
     """Create a dspy.Signature from function params and declared outputs."""
     sig = inspect.signature(fn)
-    hints = typing.get_type_hints(fn, include_extras=True) if hasattr(typing, "get_type_hints") else {}
+    hints = _safe_get_type_hints(fn)
     class_dict: Dict[str, Any] = {}
     ann_map: Dict[str, Any] = {}
 
@@ -359,6 +359,51 @@ def _collect_return_info(fn: Any) -> _ReturnInfo:
             else:
                 ret = {"mode": "other", "name": None}
     return ret
+
+def _safe_get_type_hints(fn: Any) -> Dict[str, Any]:
+    """Best-effort type_hints that won't error on unknown/forward-ref annotations.
+    Falls back to raw __annotations__ if evaluation fails.
+    """
+    try:
+        return typing.get_type_hints(fn, include_extras=True)
+    except Exception:
+        anns = getattr(fn, "__annotations__", {}) or {}
+        return dict(anns)
+
+def _return_label_from_ast(fn: Any) -> Optional[str]:
+    """Extract a textual label from the return annotation (e.g., -> "french")."""
+    try:
+        src = inspect.getsource(fn)
+        tree = ast.parse(src)
+    except Exception:
+        # Fallback: inspect raw annotations
+        try:
+            anns = getattr(fn, "__annotations__", {}) or {}
+            ret = anns.get("return")
+            if isinstance(ret, str):
+                return ret
+        except Exception:
+            pass
+        return None
+
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
+            ann = node.returns
+            if isinstance(ann, ast.Name):
+                return ann.id
+            if isinstance(ann, ast.Attribute):
+                # attr chain like lang.French -> "French" or "lang.French"
+                parts: List[str] = []
+                cur = ann
+                while isinstance(cur, ast.Attribute):
+                    parts.append(cur.attr)
+                    cur = cur.value
+                if isinstance(cur, ast.Name):
+                    parts.append(cur.id)
+                return ".".join(reversed(parts)) if parts else None
+            if isinstance(ann, ast.Constant) and isinstance(ann.value, str):
+                return str(ann.value)
+    return None
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Module selection
@@ -703,10 +748,21 @@ class FunctAIFunc:
         functools.update_wrapper(self, fn)
         self._fn = fn
         self._sig = inspect.signature(fn)
-        self._return_type = (typing.get_type_hints(fn, include_extras=True) or {}).get(
+        hints_rt = _safe_get_type_hints(fn)
+        raw_ret = hints_rt.get(
             "return",
             self._sig.return_annotation if self._sig.return_annotation is not inspect._empty else Any  # type: ignore
         )
+        # Coerce unknown/forward-ref/string annotations to str
+        try:
+            from typing import ForwardRef  # type: ignore
+            if isinstance(raw_ret, ForwardRef):
+                raw_ret = str
+        except Exception:
+            pass
+        if not isinstance(raw_ret, type):
+            raw_ret = str
+        self._return_type = raw_ret
 
         # Defaults cascade
         defs = _effective_defaults()
@@ -1087,28 +1143,31 @@ def compute_signature(fn_or_prog):
     sysdoc = _compose_system_doc(prog._fn, include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
 
     ast_outputs = _collect_ast_outputs(prog._fn)
+    ret_label = _return_label_from_ast(prog._fn)
     ret_info = _collect_return_info(prog._fn)
     order_names = [n for n, _, _ in ast_outputs]
 
     if ret_info.get("mode") == "name" and ret_info.get("name") in order_names:
         main_name = typing.cast(str, ret_info.get("name"))
-    elif ret_info.get("mode") in {"sentinel", "ellipsis", "empty"}:
-        main_name = MAIN_OUTPUT_DEFAULT_NAME
     elif order_names:
         main_name = order_names[-1]
     else:
-        main_name = MAIN_OUTPUT_DEFAULT_NAME
+        # No explicit outputs declared; use textual return label if provided.
+        if ret_label and str(ret_label).isidentifier():
+            main_name = str(ret_label)
+        else:
+            main_name = MAIN_OUTPUT_DEFAULT_NAME
 
     ast_map: Dict[str, Tuple[Any, str]] = {n: (t, d) for n, t, d in ast_outputs}
     if main_name in ast_map:
         t0, d0 = ast_map[main_name]
         if ret_info.get("mode") in {"sentinel", "ellipsis"} or (ret_info.get("mode") == "name" and ret_info.get("name") == main_name):
-            main_typ = prog._return_type
+            main_typ = prog._return_type if isinstance(prog._return_type, type) else str
         else:
             main_typ = t0 if t0 is not None else str
         main_desc = d0
     else:
-        main_typ = prog._return_type
+        main_typ = prog._return_type if isinstance(prog._return_type, type) else str
         main_desc = ""
 
     extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str), ast_map[n][1]) for n in order_names if n != main_name]

@@ -8,12 +8,12 @@ configure(lm="groq/openai/gpt-oss-120b")
 @ai
 def generate_query(claim: str, key_facts: list[str]) -> str:
     """Produce a follow-up search query from a claim and current key facts."""
-    return _ai
+    ...
 
 @ai
 def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[str]:
     """Extend key facts with new learnings extracted from new_docs."""
-    return _ai
+    ...
 
 @module
 def research_hop(claim: str, k: int, hops: int):
@@ -31,6 +31,13 @@ def research_hop(claim: str, k: int, hops: int):
 
 # Normal call
 research_hop("The park at which Tivolis Koncertsal is located opened on 15 August 1843", 4, 2)
+
+research_hop.opt(
+    trainset=trainset,
+    metric=metric,
+    optimizer=dspy.MIPROv2,
+    call_defaults=dict(k=2, hops=2),  # provide defaults for orchestrator args during optimization
+)
 ```
 
 ```{python}
