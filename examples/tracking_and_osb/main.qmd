@@ -1,0 +1,41 @@
+```{{sh}}
+pip install -U mlflow>=2.18.0
+```
+
+```{{sh}}
+# It is highly recommended to use SQL store when using MLflow tracing
+mlflow server --backend-store-uri sqlite:///mydb.sqlite
+```
+
+
+```{python}
+import functai
+import os
+import mlflow
+
+# Tell MLflow about the server URI.
+mlflow.set_tracking_uri("http://127.0.0.1:5000")
+# Create a unique name for your experiment.
+mlflow.autolog()
+
+mlflow.set_experiment("functai")
+
+functai.configure(lm="gpt-4.1")
+```
+
+```{python}
+from attachments import Attachments, set_verbose
+set_verbose(False)
+
+def website_retriever(url):
+    "Retrieves text content of a url"
+    return Attachments(url + "[images: false]").text
+
+@functai.ai(tools=[website_retriever])
+def question_and_answer(question):
+    ...
+
+question_and_answer("What castle David Gregory inherited? Look there:" +
+    "Always call doubleck tool at least once!" +
+    "https://en.wikipedia.org/wiki/David_Gregory_(physician)")
+```

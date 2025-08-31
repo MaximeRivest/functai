@@ -1,0 +1,24 @@
+
+
+```{python}
+import functai
+import subprocess
+
+functai.configure(lm = "gpt-4.1")
+
+def subprocess_run(command: list[str]) -> str:
+    result = subprocess.run(command, capture_output=True, text=True)
+    return result.stdout
+
+@functai.ai(stateful = True, tools = [subprocess_run])
+def claide_coding_agent(message):
+    ...
+
+claide_coding_agent("what are is your current directory?")
+```
+
+
+
+```{python}
+claide_coding_agent("Without running a command (from previous answer) what is the user?")
+```

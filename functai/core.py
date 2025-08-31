@@ -1,5 +1,3 @@
-# functai.py — v1.0 (refined vision)
-
 from __future__ import annotations
 
 import contextlib
@@ -102,6 +100,10 @@ def _select_adapter(adapter: Any) -> Optional[dspy.Adapter]:
             return dspy.JSONAdapter()
         if key in ("chat", "chatadapter"):
             return dspy.ChatAdapter()
+        if key in ("xml", "xmladapter"):
+            return dspy.XMLAdapter()
+        if key in ("two", "twostepadapter"):
+            return dspy.TwoStepAdapter()
         raise ValueError(f"Unknown adapter string '{adapter}'.")
     if isinstance(adapter, type) and issubclass(adapter, dspy.Adapter):
         return adapter()
@@ -146,7 +148,7 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
     # Inputs (skip FunctAI-reserved names if they existed in user params by accident)
     for pname, p in sig.parameters.items():
         if pname in {"_prediction", "all"}:
-            continue
+            raise ValueError(f"Function parameter name '{pname}' is reserved by FunctAI.")
         ann = hints.get(pname, p.annotation if p.annotation is not inspect._empty else str)
         class_dict[pname] = InputField()
         ann_map[pname] = ann
@@ -188,8 +190,9 @@ def _mk_signature(fn_name: str, fn: Any, *, doc: str, return_type: Any,
     Sig = type(f"{fn_name.title()}Sig", (Signature,), class_dict)
     return Sig
 
+
 def _compose_system_doc(fn: Any, *, include_fn_name: bool) -> str:
-    # Persona/history are removed. Docstring is the instruction; optional function name.
+    # history are removed. Docstring is the instruction; optional function name.
     parts = []
     if include_fn_name and getattr(fn, "__name__", None):
         parts.append(f"Function: {fn.__name__}")
