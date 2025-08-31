@@ -7,7 +7,7 @@ import inspect
 import json
 import ast
 import typing
-from typing import Any, Dict, Optional, List, Tuple, TypedDict
+from typing import Any, Dict, Optional, List, Tuple, TypedDict, Callable
 
 import dspy
 from dspy import Signature, InputField, OutputField, Prediction
@@ -56,9 +56,12 @@ def _apply_overrides(target: _Defaults, **overrides):
             setattr(target, k, v)
 
 class _ConfigContext:
-    def __init__(self, snapshot: _Defaults):
+    def __init__(self, snapshot: _Defaults, *, prev_dspy_lm: Any = None, prev_dspy_adapter: Any = None):
         # full snapshot of previous defaults (by value)
         self._prev = dataclasses.replace(snapshot)
+        # capture previous DSPy settings to restore on exit for context usage
+        self._prev_dspy_lm = prev_dspy_lm
+        self._prev_dspy_adapter = prev_dspy_adapter
 
     def __enter__(self):
         return self
@@ -66,6 +69,11 @@ class _ConfigContext:
     def __exit__(self, exc_type, exc, tb):
         # restore field-by-field
         _apply_overrides(_GLOBAL_DEFAULTS, **dataclasses.asdict(self._prev))
+        # restore DSPy global config (LM/adapter) if captured
+        try:
+            dspy.configure(lm=self._prev_dspy_lm, adapter=self._prev_dspy_adapter)
+        except Exception:
+            pass
         return False
 
 class _ConfigureFacade:
@@ -76,10 +84,46 @@ class _ConfigureFacade:
     def __call__(self, **overrides):
         # capture snapshot BEFORE applying changes (for potential with-usage)
         snapshot = dataclasses.replace(_GLOBAL_DEFAULTS)
+        # capture previous DSPy settings
+        try:
+            prev_dspy_lm = getattr(dspy.settings, "lm", None)
+        except Exception:
+            prev_dspy_lm = None
+        try:
+            prev_dspy_adapter = getattr(dspy.settings, "adapter", None)
+        except Exception:
+            prev_dspy_adapter = None
         # apply global changes immediately (setter semantics)
         _apply_overrides(_GLOBAL_DEFAULTS, **overrides)
+        # propagate relevant settings to DSPy global settings
+        try:
+            # LM propagation: accept str or LM instance
+            if "lm" in overrides:
+                v = overrides.get("lm")
+                ak = overrides.get("api_key", _GLOBAL_DEFAULTS.api_key)
+                lm_inst = None
+                try:
+                    if v is None:
+                        lm_inst = None
+                    elif isinstance(v, str):
+                        try:
+                            lm_inst = dspy.LM(v, api_key=ak) if ak is not None else dspy.LM(v)
+                        except TypeError:
+                            lm_inst = dspy.LM(v)
+                    else:
+                        lm_inst = v
+                except Exception:
+                    lm_inst = v
+                dspy.configure(lm=lm_inst)
+            # Adapter propagation: accept string or adapter instance
+            if "adapter" in overrides:
+                adapter_inst = _select_adapter(overrides.get("adapter"))
+                dspy.configure(adapter=adapter_inst)
+        except Exception:
+            # best-effort; do not block configuration if DSPy is unavailable or incompatible
+            pass
         # return a context that will restore to the snapshot on exit
-        return _ConfigContext(snapshot)
+        return _ConfigContext(snapshot, prev_dspy_lm=prev_dspy_lm, prev_dspy_adapter=prev_dspy_adapter)
 
 # Public configure
 configure = _ConfigureFacade()
@@ -429,8 +473,38 @@ class _CallContext:
             if self.program.history is not None:
                 in_kwargs["history"] = self.program.history
 
-        with _patched_adapter(self.adapter), _patched_lm(getattr(mod, "lm", None)):
-            self._pred = mod(**in_kwargs)
+        # Prefer setting attributes on the module rather than mutating global dspy.settings
+        # to avoid cross-thread issues when evaluating with parallel executors.
+        try:
+            adapter_inst = self.program._adapter_instance
+            if adapter_inst is not None:
+                if hasattr(mod, "adapter"):
+                    try:
+                        mod.adapter = adapter_inst
+                    except Exception:
+                        pass
+                else:
+                    # Fallback: set adapter on each predictor if supported
+                    try:
+                        for _, predictor in getattr(mod, "named_predictors", lambda: [])():
+                            try:
+                                setattr(predictor, "adapter", adapter_inst)
+                            except Exception:
+                                pass
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+
+        # Ensure callbacks attribute is a list (DSPy 3.0.2 may mis-set this)
+        try:
+            cb = getattr(mod, "callbacks", [])
+            if not isinstance(cb, list):
+                setattr(mod, "callbacks", [])
+        except Exception:
+            pass
+
+        self._pred = mod(**in_kwargs)
 
         self._value = dict(self._pred).get(self.main_output_name)
         self._materialized = True
@@ -664,6 +738,7 @@ class FunctAIFunc:
         self._compiled: Optional[dspy.Module] = None
         self._opt_stack: List[dspy.Module] = []
         self._initial_module_kind = self._module_kind
+        self._modules_history: List[dspy.Module] = []  # all compiled/programs that backed this function
 
         # Debug (preview)
         self._debug = bool(defs.debug)
@@ -794,11 +869,14 @@ class FunctAIFunc:
             _ACTIVE_CALL.reset(token)
 
     # ----- optimization -----
-    def opt(self, *, trainset: Optional[List[Any]] = None, optimizer: Any = None, **opts) -> None:
+    def opt(self, *, trainset: Optional[List[Any]] = None, optimizer: Any = None, metric: Optional[Callable] = None, **opts) -> None:
         """
         Compile with a DSPy optimizer and mutate in place.
         - optimizer: instance or factory; if None, uses self.optimizer or global default.
         - trainset: list of (inputs, outputs) pairs or DSPy's preferred format.
+        - metric: a Callable metric passed to optimizers that accept/require it
+          (e.g., SIMBA, MIPROv2). Required when the chosen optimizer's constructor
+          needs a metric.
         Additional **opts are forwarded to the optimizer constructor if it is a factory.
         """
         Sig = self.signature
@@ -820,10 +898,37 @@ class FunctAIFunc:
 
         # Pick optimizer
         opt = optimizer if optimizer is not None else (self._optimizer if self._optimizer is not None else dspy.BootstrapFewShot)
+
+        # If the optimizer accepts a 'metric' argument, require the caller to provide it
+        # when the parameter is required (no default). Otherwise, pass it through when given.
         if isinstance(opt, type):
-            optimizer_instance = opt(**opts)  # factory/class
+            ctor_kwargs = dict(opts)
+            try:
+                sig = inspect.signature(opt.__init__)
+                # Require/pass metric when appropriate
+                if "metric" in sig.parameters:
+                    param = sig.parameters["metric"]
+                    required = param.default is inspect._empty
+                    if required and metric is None:
+                        raise ValueError("This optimizer requires a 'metric'. Please call .opt(metric=...) with a callable metric.")
+                    if metric is not None:
+                        ctor_kwargs["metric"] = metric
+                # Provide prompt_model / task_model from our program LM if requested
+                for name in ("prompt_model", "task_model"):
+                    if name in sig.parameters and name not in ctor_kwargs and self._lm_instance is not None:
+                        ctor_kwargs[name] = self._lm_instance
+            except (ValueError, TypeError):
+                # if signature inspection fails, just pass through opts
+                pass
+            optimizer_instance = opt(**ctor_kwargs)  # factory/class
         else:
             optimizer_instance = opt           # already an instance; opts ignored
+            # If instance exposes a 'metric' attribute and user provided one, set it.
+            if metric is not None:
+                try:
+                    setattr(optimizer_instance, "metric", metric)
+                except Exception:
+                    pass
 
         new_prog = optimizer_instance.compile(base_mod, trainset=trainset)
 
@@ -831,6 +936,10 @@ class FunctAIFunc:
         if self._compiled is not None:
             self._opt_stack.append(self._compiled)
         self._compiled = new_prog
+        try:
+            self._modules_history.append(new_prog)
+        except Exception:
+            pass
         self._module_kind = self._compiled  # instance; signature will rebind per call
 
     def undo_opt(self, steps: int = 1) -> None:
@@ -857,6 +966,57 @@ class FunctAIFunc:
                 # older DSPy may not accept api_key kwarg
                 return dspy.LM(v)
         return v
+
+    # ----- export / history helpers -----
+    def programs(self) -> List[dspy.Module]:
+        """Return a list of all DSPy modules that have backed this function via .opt()."""
+        items = list(self._modules_history)
+        if self._compiled is not None and (not items or items[-1] is not self._compiled):
+            items.append(self._compiled)
+        return items
+
+    def latest_program(self, fresh: bool = False) -> dspy.Module:
+        """Return the latest DSPy module.
+        - If compiled, return the compiled program (unless fresh=True).
+        - Otherwise, instantiate a fresh module with the current signature and config.
+        """
+        if self._compiled is not None and not fresh:
+            return self._compiled
+        Sig = self.signature
+        mod = _instantiate_module(self._module_kind, Sig, tools=self._tools, module_kwargs=self._module_kwargs)
+        try:
+            if self._lm_instance is not None:
+                mod.lm = self._lm_instance
+        except Exception:
+            pass
+        try:
+            if self._adapter_instance is not None and hasattr(mod, "adapter"):
+                mod.adapter = self._adapter_instance
+        except Exception:
+            pass
+        try:
+            if self.temperature is not None:
+                setattr(mod, "temperature", float(self.temperature))
+        except Exception:
+            pass
+        # Ensure callbacks attribute is a list to be compatible with DSPy callback wrapper.
+        try:
+            cb = getattr(mod, "callbacks", [])
+            if not isinstance(cb, list):
+                setattr(mod, "callbacks", [])
+        except Exception:
+            pass
+        return mod
+
+    def to_dspy(self, deepcopy: bool = False) -> dspy.Module:
+        """Convenience: export the latest module for direct DSPy use.
+        If deepcopy=True, returns a deep-copied module.
+        """
+        mod = self.latest_program(fresh=False)
+        try:
+            return mod.deepcopy() if deepcopy and hasattr(mod, "deepcopy") else mod
+        except Exception:
+            return mod
 
 class SimpleNamespace:
     def __init__(self, **kw): self.__dict__.update(kw)

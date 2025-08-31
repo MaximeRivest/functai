@@ -1,0 +1,89 @@
+
+```{python}
+from functai import *
+from dataclasses import dataclass
+import dspy
+
+# Configure FunctAI LM; this also propagates to DSPy under the hood
+configure(lm = "groq/openai/gpt-oss-120b")
+
+@ai
+def translator(english):
+    ...
+```
+
+```{python}
+import dspy
+
+examples = [
+    dspy.Example(english="I'm going to the convenience store.", result="Je m'en vais au dépanneur."),
+    dspy.Example(english="It's really cold out today.", result="Il fait frette en maudit aujourd'hui."),
+    dspy.Example(english="Can you help me move this weekend?", result="Tu peux m'aider à déménager ce weekend?"),
+    dspy.Example(english="We were stuck in traffic for two hours.", result="On était pognés dans le trafic pendant deux heures."),
+    dspy.Example(english="She's my girlfriend.", result="C'est ma blonde."),
+    dspy.Example(english="That car is so cool!", result="C'est ben l'fun ce char-là!"),
+    dspy.Example(english="I'll call you tonight.", result="Je vais t'appeler ce soir."),
+    dspy.Example(english="He's always bragging.", result="Il se vente tout l'temps."),
+    dspy.Example(english="We grabbed a coffee at Tim's.", result="On a pris un café au Tim."),
+    dspy.Example(english="Close the window, it's chilly.", result="Ferme la fenêtre, y fait frette."),
+    dspy.Example(english="I have an appointment at 3.", result="J'ai un rendez-vous à trois heures."),
+    dspy.Example(english="They're celebrating their birthday.", result="Ils fêtent leur fête."),
+    dspy.Example(english="I parked in the back.", result="J'ai stationné dans l'fond."),
+    dspy.Example(english="The metro is packed.", result="Le métro est plein à craquer."),
+    dspy.Example(english="We watched a movie last night.", result="On a écouté un film hier soir."),
+    dspy.Example(english="I need to do my groceries.", result="J'dois faire mon épicerie."),
+    dspy.Example(english="Don't forget your boots.", result="Oublie pas tes bottes."),
+    dspy.Example(english="It's snowing again.", result="Il neige encore."),
+    dspy.Example(english="I'll take the bus.", result="J'va prendre l'bus."),
+    dspy.Example(english="We're out of milk.", result="On est à court de lait."),
+]
+
+trainset = [x.with_inputs('english') for x in examples]
+```
+
+```{python}
+@ai
+def judge(example, prediction) -> float:
+    "High if prediction is similar to example, very low otherwise"
+    score: float = _ai["Between 0 and 1"]
+    return max(0.0, min(1.0, float(score)))
+```
+
+```{python}
+eval = dspy.Evaluate(devset=trainset, metric=judge, provide_traceback=True, num_threads=4)
+eval(translator)
+```
+
+```{python}
+
+translator.opt(
+    trainset=trainset,
+    metric=judge,
+    optimizer=dspy.MIPROv2,
+    max_bootstrapped_demos=0,
+    max_labeled_demos=0,
+)
+
+```
+
+ 
+
+```{python}
+translator("Hi what is the weather?")
+```
+
+
+```{python}
+print(inspect_history_text())
+```
+
+
+
+```{python}
+translator.programs()
+```
+
+
+```{python}
+translator.to_dspy()
+```
