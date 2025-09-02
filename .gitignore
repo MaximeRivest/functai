@@ -39,3 +39,10 @@ Thumbs.db
 .pypirc
 examples/modules/wiki.abstracts.2017.jsonl
 examples/modules/._wiki.abstracts.2017.jsonl
+
+mlartifacts/
+mydb.sqlite
+
+prompt.md
+
+examples/custom_adapters/

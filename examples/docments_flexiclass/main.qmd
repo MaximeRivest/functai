@@ -76,7 +76,7 @@ def extract_account(
 # Usage
 extract_account("ID: 123, email: alice@example.com ")
 
-# > Account(id=123, email='alice@example.com') 
+# > Account(id=123, email='alice@example') 
 ```
 
 
@@ -233,5 +233,15 @@ Response:
 
 
 
+```{python}
+from functai import ai, _ai
 
+@ai(lm = "gpt-4.1")
+def extract_account(text):
+    id = _ai
+    email = _ai
+    return id, email
+    
+extract_account("ID: 123, email: alice@example.com ")
 
+```
