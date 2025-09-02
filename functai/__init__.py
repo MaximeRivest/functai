@@ -5,14 +5,14 @@ API:
 - Decorator: @ai        (bare or with options)
 - Sentinel:  _ai        (bare; docstring + type hints drive outputs)
 - Defaults:  configure(...) (global and context manager)
-- Utils:     inspect_history_text()
+- Utils:     phistory()
 """
 
 from .core import (
     ai,
     _ai,
     configure,
-    inspect_history_text,
+    phistory,
     settings,
     compute_signature,
     signature_text,
@@ -32,13 +32,13 @@ from .core import (
 )
 from .module import module, FunctAIModule
 
-__version__ = "0.8.1"
+__version__ = "0.9.0"
 
 __all__ = [
     "ai",
     "_ai",
     "configure",
-    "inspect_history_text",
+    "phistory",
     "settings",
     "compute_signature",
     "signature_text",
