@@ -151,6 +151,82 @@ MAIN_OUTPUT_DEFAULT_NAME = "result"
 INCLUDE_FN_NAME_IN_INSTRUCTIONS_DEFAULT = True
 
 # ──────────────────────────────────────────────────────────────────────────────
+# Helpers for robust type-hint detection & compatibility
+# ──────────────────────────────────────────────────────────────────────────────
+def _is_type_hint_like(tp: Any) -> bool:
+    """Return True if tp looks like a usable type hint (builtins, typing generics, PEP 585 generics)."""
+    if tp is None or tp is inspect._empty:
+        return False
+    try:
+        if isinstance(tp, type):
+            return True
+    except Exception:
+        pass
+    try:
+        # typing.List[str], list[str], Union, Annotated, etc.
+        if typing.get_origin(tp) is not None:
+            return True
+    except Exception:
+        pass
+    # Fall back: many typing constructs live under typing.*
+    mod = getattr(tp, "__module__", "")
+    return mod.startswith("typing")
+
+def _raw_return_annotation(fn: Any) -> Any:
+    """Return the raw function return annotation if present, else None (do not coerce)."""
+    sig = inspect.signature(fn)
+    hints = _safe_get_type_hints(fn)
+    if "return" in hints:
+        return hints["return"]
+    return sig.return_annotation if sig.return_annotation is not inspect._empty else None
+
+def _strip_annotated_optional(tp: Any) -> Any:
+    """Remove Annotated[...] and Optional[...] (Union[..., None]) wrappers for comparison."""
+    try:
+        origin = typing.get_origin(tp)
+        args = typing.get_args(tp)
+        # Annotated[T, ...] -> T
+        if origin is typing.Annotated and args:
+            return _strip_annotated_optional(args[0])
+        # Optional[T] -> T ; Union[T, None] -> T
+        if origin is typing.Union and args:
+            core = [a for a in args if a is not type(None)]  # noqa: E721
+            if len(core) == 1:
+                return _strip_annotated_optional(core[0])
+    except Exception:
+        pass
+    return tp
+
+def _is_any(tp: Any) -> bool:
+    return tp is Any or str(tp) == "typing.Any"
+
+def _types_compatible(a: Any, b: Any) -> bool:
+    """Conservatively decide if two hints are compatible."""
+    if a is None or b is None:
+        return True
+    if _is_any(a) or _is_any(b):
+        return True
+    a = _strip_annotated_optional(a)
+    b = _strip_annotated_optional(b)
+    oa, aa = typing.get_origin(a), typing.get_args(a)
+    ob, ab = typing.get_origin(b), typing.get_args(b)
+    # Plain types
+    if oa is None and ob is None:
+        return a == b
+    # Generics must share origin and have pairwise compatible args
+    if oa != ob:
+        return False
+    if len(aa) != len(ab):
+        return False
+    return all(_types_compatible(x, y) for x, y in zip(aa, ab))
+
+def _hint_str(tp: Any) -> str:
+    try:
+        return getattr(tp, "__name__", str(tp))
+    except Exception:
+        return str(tp)
+
+# ──────────────────────────────────────────────────────────────────────────────
 # Lightweight "docments" utilities (inline-comment powered)
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -1493,18 +1569,17 @@ class FunctAIFunc:
         hints_rt = _safe_get_type_hints(fn)
         raw_ret = hints_rt.get(
             "return",
-            self._sig.return_annotation if self._sig.return_annotation is not inspect._empty else Any  # type: ignore
+            self._sig.return_annotation if self._sig.return_annotation is not inspect._empty else None  # type: ignore
         )
-        # Coerce unknown/forward-ref/string annotations to str
+        # If it's a meaningful type hint (including typing generics), keep it; else fall back to str.
         try:
             from typing import ForwardRef  # type: ignore
             if isinstance(raw_ret, ForwardRef):
+                # Avoid leaking unresolved forward refs into schema
                 raw_ret = str
         except Exception:
             pass
-        if not isinstance(raw_ret, type):
-            raw_ret = str
-        self._return_type = raw_ret
+        self._return_type = raw_ret if _is_type_hint_like(raw_ret) else str
 
         # Defaults cascade
         defs = _effective_defaults()
@@ -1995,8 +2070,13 @@ def compute_signature(fn_or_prog):
     ret_info = _collect_return_info(prog._fn)
     order_names = [n for n, _, _ in ast_outputs]
 
-    if ret_info.get("mode") == "name" and ret_info.get("name") in order_names:
+    # Decide main output name based on return style
+    mode = ret_info.get("mode")
+    if mode == "name" and ret_info.get("name") in order_names:
         main_name = typing.cast(str, ret_info.get("name"))
+    elif mode in {"sentinel", "ellipsis"}:
+        # Caller returned _ai / ... → use default primary name (keep declared _ai vars as extras)
+        main_name = MAIN_OUTPUT_DEFAULT_NAME
     elif order_names:
         main_name = order_names[-1]
     else:
@@ -2008,22 +2088,44 @@ def compute_signature(fn_or_prog):
 
     # Merge _ai[...] desc with comments after _ai lines
     ai_inline = _harvest_ai_output_inline_comments(prog._fn)
-    ast_map: Dict[str, Tuple[Any, str]] = {n: (t if t is not None else str, (d or "")) for n, t, d in ast_outputs}
+    # Keep t=None for outputs that had no explicit annotation; we'll resolve later.
+    ast_map: Dict[str, Tuple[Any, str]] = {n: (t, (d or "")) for n, t, d in ast_outputs}
     for nm, (t, d) in list(ast_map.items()):
         extra = ai_inline.get(nm)
         if extra and d:
             ast_map[nm] = (t, f"{d} — {extra}")
         elif extra:
             ast_map[nm] = (t, extra)
+    # Choose main type with clear precedence & validation
+    fn_ret_raw = _raw_return_annotation(prog._fn)
+    fn_ret_hint = fn_ret_raw if _is_type_hint_like(fn_ret_raw) else None
     if main_name in ast_map:
         t0, d0 = ast_map[main_name]
-        if ret_info.get("mode") in {"sentinel", "ellipsis"} or (ret_info.get("mode") == "name" and ret_info.get("name") == main_name):
-            main_typ = prog._return_type if isinstance(prog._return_type, type) else str
+        explicit_var_t = t0 if _is_type_hint_like(t0) else None
+        if mode == "name" and ret_info.get("name") == main_name:
+            # Returning a specific variable (e.g., `return res`)
+            # Prefer the variable's explicit annotation; else inherit function return type; else str.
+            if explicit_var_t is not None and fn_ret_hint is not None and not _types_compatible(explicit_var_t, fn_ret_hint):
+                raise TypeError(
+                    f"Type mismatch for main output '{main_name}': "
+                    f"function return is {_hint_str(fn_ret_hint)} but '{main_name}' is annotated as {_hint_str(explicit_var_t)}. "
+                    f"Fix one of: (a) annotate '{main_name}: {_hint_str(fn_ret_hint)} = _ai', "
+                    f"(b) remove the variable annotation to inherit the function return type, "
+                    f"(c) change the function return annotation."
+                )
+            main_typ = (explicit_var_t or fn_ret_hint or str)
+            main_desc = d0
+        elif mode in {"sentinel", "ellipsis"}:
+            # `return _ai` → the function's return annotation defines the primary output type.
+            main_typ = (fn_ret_hint or str)
+            main_desc = ""
         else:
-            main_typ = t0 if t0 is not None else str
-        main_desc = d0
+            # Fallback: taking the last declared _ai as primary (no explicit return target)
+            main_typ = (explicit_var_t or fn_ret_hint or str)
+            main_desc = d0
     else:
-        main_typ = prog._return_type if isinstance(prog._return_type, type) else str
+        # No declared _ai for the main → rely on function return type or str.
+        main_typ = (fn_ret_hint or str)
         main_desc = ""
 
     # If main output is a plain class with annotations, convert it in-place to a dataclass
@@ -2041,14 +2143,14 @@ def compute_signature(fn_or_prog):
         for n in order_names:
             if n == main_name:
                 continue
-            t_extra = ast_map[n][0]
+            t_extra = ast_map[n][0] if _is_type_hint_like(ast_map[n][0]) else str
             if isinstance(t_extra, type) and getattr(t_extra, "__annotations__", None) and not dataclasses.is_dataclass(t_extra):
                 flexiclass(t_extra)
             _ensure_schema_types(t_extra)
     except Exception:
         pass
 
-    extras = [(n, (ast_map[n][0] if ast_map[n][0] is not None else str), ast_map[n][1]) for n in order_names if n != main_name]
+    extras = [(n, (ast_map[n][0] if _is_type_hint_like(ast_map[n][0]) else str), ast_map[n][1]) for n in order_names if n != main_name]
 
     # Append docments-derived guidance to the system doc
     appendix = _build_instruction_appendix(
@@ -2095,20 +2197,10 @@ def signature_text(fn_or_prog) -> str:
         lines.append(" | Outputs: " + ", ".join(f"{k}{'*' if k == main_name else ''}" for k in outputs))
     return "".join(lines).strip()
 
-def inspect_history_text() -> str:
+def phistory(n = 1) -> str:
     """Return dspy.inspect_history() as text (best effort)."""
-    import io
-    import contextlib as _ctx
-    buf = io.StringIO()
-    try:
-        with _ctx.redirect_stdout(buf):
-            try:
-                dspy.inspect_history()
-            except Exception:
-                pass
-    except Exception:
-        return ""
-    return buf.getvalue()
+    print(dspy.inspect_history(n))
+    return
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Public API
@@ -2118,7 +2210,7 @@ __all__ = [
     "ai",
     "_ai",
     "configure",
-    "inspect_history_text",
+    "phistory",
     "settings",
     "compute_signature",
     "signature_text",
