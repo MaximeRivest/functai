@@ -720,8 +720,19 @@ settings = _GLOBAL_DEFAULTS
 # ──────────────────────────────────────────────────────────────────────────────
 
 def _select_adapter(adapter: Any) -> Optional[dspy.Adapter]:
+    """
+    Accept multiple adapter forms:
+    - String aliases ("json", "chat", "xml", "two").
+    - A dspy.Adapter subclass or instance.
+    - Any callable instance (duck-typed adapter), or a class that instantiates
+      to a callable instance. This relaxes strict type coupling across
+      different dspy import paths (e.g., dspy.adapters.Adapter) so users can
+      pass custom adapters like MaxAdapter() without type errors.
+    """
     if adapter is None:
         return None
+
+    # Strings → known adapters
     if isinstance(adapter, str):
         key = adapter.lower().replace("-", "_")
         if key in ("json", "jsonadapter"):
@@ -733,11 +744,37 @@ def _select_adapter(adapter: Any) -> Optional[dspy.Adapter]:
         if key in ("two", "twostepadapter"):
             return dspy.TwoStepAdapter()
         raise ValueError(f"Unknown adapter string '{adapter}'.")
-    if isinstance(adapter, type) and issubclass(adapter, dspy.Adapter):
-        return adapter()
-    if isinstance(adapter, dspy.Adapter):
-        return adapter
-    raise TypeError("adapter must be a string, a dspy.Adapter subclass, or a dspy.Adapter instance.")
+
+    # Classes → try recognized dspy.Adapter subclass first; otherwise instantiate
+    # and accept if the instance is callable (duck-typed adapter).
+    if isinstance(adapter, type):
+        try:
+            if issubclass(adapter, dspy.Adapter):  # type: ignore[arg-type]
+                return adapter()
+        except Exception:
+            # Not a dspy.Adapter subclass (or dspy not available here)
+            pass
+        try:
+            inst = adapter()
+            if callable(inst):
+                return inst  # type: ignore[return-value]
+        except Exception:
+            pass
+
+    # Instances → prefer exact dspy.Adapter instance; otherwise accept any
+    # callable instance (duck-typed adapter).
+    try:
+        if isinstance(adapter, dspy.Adapter):
+            return adapter
+    except Exception:
+        # dspy.Adapter may not be import-compatible; fall through to callable check
+        pass
+    if callable(adapter):
+        return adapter  # type: ignore[return-value]
+
+    raise TypeError(
+        "adapter must be a string, a dspy.Adapter subclass/instance, or any callable adapter instance."
+    )
 
 @contextlib.contextmanager
 def _patched_adapter(adapter_instance: Optional[dspy.Adapter]):
@@ -944,6 +981,45 @@ def _collect_return_info(fn: Any) -> _ReturnInfo:
                 ret = {"mode": "other", "name": None}
     return ret
 
+def _extract_return_names(fn: Any) -> List[str]:
+    """Best-effort: extract variable names referenced in `return (...)` or
+    `return [...]` constructs. Used to map bare `_ai` placeholders to concrete
+    output field names by position.
+
+    Example: for `return (id, email)`, returns ["id", "email"].
+    """
+    try:
+        src = inspect.getsource(fn)
+        tree = ast.parse(src)
+    except Exception:
+        return []
+    fn_node: Optional[ast.AST] = None
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
+            fn_node = node
+            break
+    if fn_node is None:
+        return []
+    names: List[str] = []
+    last_ret: Optional[ast.Return] = None
+    for node in ast.walk(fn_node):
+        if isinstance(node, ast.Return):
+            last_ret = node
+    if last_ret is None or last_ret.value is None:
+        return []
+    val = last_ret.value
+    elts: List[ast.AST] = []
+    if isinstance(val, (ast.Tuple, ast.List)):
+        elts = list(val.elts)
+    elif isinstance(val, ast.Name):
+        return [val.id]
+    else:
+        return []
+    for e in elts:
+        if isinstance(e, ast.Name):
+            names.append(e.id)
+    return names
+
 def _safe_get_type_hints(fn: Any) -> Dict[str, Any]:
     """Best-effort type_hints that won't error on unknown/forward-ref annotations.
     Falls back to raw __annotations__ if evaluation fails.
@@ -1133,7 +1209,16 @@ class _CallContext:
         except Exception:
             pass
 
-        self._pred = mod(**in_kwargs)
+        # Execute with a temporary adapter override so DSPy modules that read
+        # from global settings (e.g., Predict/CoT/ReAct) pick up per-call
+        # adapters provided via @ai(adapter=...). This mirrors project-wide
+        # functai.configure(adapter=...) but scoped to this invocation.
+        try:
+            adapter_inst = self.program._adapter_instance
+        except Exception:
+            adapter_inst = None
+        with _patched_adapter(adapter_inst):
+            self._pred = mod(**in_kwargs)
 
         self._value = dict(self._pred).get(self.main_output_name)
         self._materialized = True
@@ -1562,19 +1647,56 @@ class FunctAIFunc:
             if result is _ai or result is Ellipsis:
                 return ctx.request_ai().value
 
-            # Unwrap proxies if the user returned them directly/nested
-            def _unwrap(x):
+            # Unwrap proxies and realize bare `_ai` placeholders inside containers.
+            def _has_bare_ai(x):
+                if x is _ai:
+                    return True
+                if isinstance(x, (list, tuple)):
+                    return any(_has_bare_ai(i) for i in x)
+                if isinstance(x, dict):
+                    return any(_has_bare_ai(v) for v in x.values())
+                return False
+
+            # Pre-compute return field order for mapping bare `_ai` occurrences.
+            ret_names = _extract_return_names(self._fn)
+            if not ret_names:
+                try:
+                    ret_names = [n for n, _t, _d in _collect_ast_outputs(self._fn)]
+                except Exception:
+                    ret_names = []
+            names_pool = list(ret_names)
+
+            def _next_name():
+                return names_pool.pop(0) if names_pool else None
+
+            def _unwrap_and_realize(x):
+                # Field-specific proxies
                 if isinstance(x, _AIFieldProxy):
                     return x._resolve()
+                # Bare `_ai` placeholder: map by return position/name
+                if x is _ai:
+                    # Ensure prediction is ready
+                    ctx.request_ai().value
+                    name = _next_name()
+                    if not name:
+                        try:
+                            outs2 = list((getattr(Sig, "output_fields", {}) or {}).keys())
+                            name = outs2[-1] if outs2 else MAIN_OUTPUT_DEFAULT_NAME
+                        except Exception:
+                            name = MAIN_OUTPUT_DEFAULT_NAME
+                    return ctx.output_value(name)
                 if isinstance(x, list):
-                    return [_unwrap(i) for i in x]
+                    return [_unwrap_and_realize(i) for i in x]
                 if isinstance(x, tuple):
-                    return tuple(_unwrap(i) for i in x)
+                    return tuple(_unwrap_and_realize(i) for i in x)
                 if isinstance(x, dict):
-                    return {k: _unwrap(v) for k, v in x.items()}
+                    return {k: _unwrap_and_realize(v) for k, v in x.items()}
                 return x
 
-            result = _unwrap(result)
+            if _has_bare_ai(result):
+                # Prepare prediction once
+                ctx.request_ai().value
+            result = _unwrap_and_realize(result)
             if result is None and not ctx._ai_requested:
                 return ctx.request_ai().value
             return result

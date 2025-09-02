@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1
+
+- Adapters: accept duck-typed adapters and classes; allow per-call `@ai(adapter=...)` by scoping DSPy settings during invocation.
+- _ai returns: resolve bare `_ai` placeholders inside tuples/lists/dicts (e.g., `return (id, email)`) to concrete values using return-order mapping.
+
 ## 0.8.0
 
 - Add `flexiclass` to convert classes with annotations into dataclasses in place.
