@@ -74,7 +74,7 @@ translator("Hi what is the weather?")
 
 
 ```{python}
-print(inspect_history_text())
+print(phistory())
 ```
 
 

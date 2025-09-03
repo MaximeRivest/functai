@@ -1,0 +1,107 @@
+
+```{python}
+from functai import *
+
+@ai(lm = "gpt-4.1")
+def extract(text) -> list[str]:
+    ...
+
+extract("here is a list: apple, orange, banana")
+```
+
+```{python}
+from functai import *
+import typing
+
+@ai(lm = "gpt-4.1")
+def extract(text) -> typing.List[str]:
+    ...
+
+extract("here is a list: apple, orange, banana")
+```
+
+
+
+```{python}
+from functai import *
+
+@ai(lm = "gpt-4.1")
+def extract(text) -> dict[str, list[str]]:
+    ...
+
+extract("json apple, orange, banana")
+```
+
+
+```{python}
+from functai import *
+
+@ai(lm = "gpt-4.1")
+def extract(text) -> list[int]:
+    ...
+
+extract("count letters apple, orange, banana")
+```
+
+
+
+```{python}
+from functai import *
+
+@ai(lm = "gpt-4.1")
+def extract(text) -> list[int]:
+    thinking = _ai
+    return _ai
+
+extract("count letters apple, orange, banana")
+```
+
+
+```{python}
+@ai(lm="gpt-4.1")
+def extract(text) -> list[int]:
+    "count letters"
+    thinking = _ai
+    res = _ai
+    return res
+
+extract("apple, orange, banana")
+```
+
+
+```{python}
+@ai(lm="gpt-4.1")
+def extract(text):
+    "count letters"
+    res: list[int] = _ai
+    return res
+
+extract("apple, orange, banana")
+```
+
+
+```{python}
+@ai(lm="gpt-4.1")
+def extract(text) -> list[int]:
+    res: str = _ai
+    return res
+
+extract("apple, orange, banana")
+```
+
+
+```{python}
+@ai(lm="gpt-4.1")
+def extract(
+    text # unstructured text
+    ) -> 'extacted_list': # list of fruit first and quantity after
+    ...
+
+extract("""
+I'll go shopping for:
+
+    2 apple,one orange,a dozen banana
+""")
+
+# > 'apple 2, orange 1, banana 12'
+```

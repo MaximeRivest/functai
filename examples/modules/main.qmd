@@ -79,5 +79,5 @@ research_hop("The park at which Koncertsal is located opened on 15 August 1843",
 
 
 ```{python}
-print(inspect_history_text())
+print(phistory())
 ```

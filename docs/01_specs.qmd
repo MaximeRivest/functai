@@ -395,7 +395,7 @@ answer = research_assistant("What is the result of (15 * 23) + 10?")
 ```{python}
 import functai
 #| echo: false
-print(functai.inspect_history_text())
+print(functai.phistory())
 ```
 
 **Behavior:** The function will iteratively think about the task, decide which tool to use, execute the tool, observe the results, and repeat until it can provide the final answer.
@@ -424,7 +424,7 @@ print(f"Output2: {response2}")
 ```{python}
 #| echo: False
 import functai
-print(functai.inspect_history_text())
+print(functai.phistory())
 ```
 
 **Behavior:** When `stateful=True`, FunctAI automatically includes the history of previous inputs and outputs in the context of the next call.
@@ -484,13 +484,13 @@ classify_intent.undo_opt(steps=1)
 
 **More to come**
 
-To see the last call, use `functai.inspect_history_text()`.
+To see the last call, use `functai.phistory()`.
 
 ```{python}
-from functai import inspect_history_text
+from functai import phistory
 
 # After running some AI functions...
-print(inspect_history_text()) # Show the last call
+print(phistory()) # Show the last call
 ```
 
 ## 10\. Real-World Examples

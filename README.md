@@ -495,7 +495,7 @@ answer = research_assistant("What is the result of (15 * 23) + 10?")
 ``` python
 import functai
 #| echo: false
-print(functai.inspect_history_text())
+print(functai.phistory())
 ```
 
 
@@ -740,13 +740,13 @@ classify_intent.undo_opt(steps=1)
 
 **More to come**
 
-To see the last call, use `functai.inspect_history_text()`.
+To see the last call, use `functai.phistory()`.
 
 ``` python
-from functai import inspect_history_text
+from functai import phistory
 
 # After running some AI functions...
-print(inspect_history_text()) # Show the last call
+print(phistory()) # Show the last call
 ```
 
 
