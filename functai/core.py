@@ -15,6 +15,8 @@ from typing import Any, Dict, Optional, List, Tuple, TypedDict, Callable
 
 import dspy
 from dspy import Signature, InputField, OutputField, Prediction
+import warnings
+import time
 
 # ──────────────────────────────────────────────────────────────────────────────
 # UNSET sentinel and flexiclass
@@ -705,6 +707,17 @@ class _Defaults:
     # Debug/preview
     debug: bool = False
 
+    # ── Teacher & auto compile/instruction defaults ───────────────────────────
+    teacher: Any = None            # str | dspy.LM | FunctAIFunc | dspy.Module | None
+    teacher_lm: Any = None         # str | dspy.LM | None
+    autocompile: bool = True       # compile once at creation (instruction-only)
+    autoinstruct: bool = True      # if True, the first compile is instruction-only
+    instruction_lm: Any = None     # override LM to write the instruction
+    autocompile_n: int = 0         # reserved for future synth at creation (kept off)
+    autogen_instructions: bool = True  # when synthesizing gold later, render spec from code
+    instruction_autorefine_calls: int = 2  # improve instruction on first N calls
+    instruction_autorefine_max_examples: int = 20  # cap of observed noisy examples kept for refinement
+
 _GLOBAL_DEFAULTS = _Defaults()
 
 def _effective_defaults() -> _Defaults:
@@ -1331,6 +1344,18 @@ class _CallContext:
             except Exception:
                 pass
 
+        # Record this call's inputs/outputs and maybe refine instruction
+        try:
+            obs_inputs = {k: v for k, v in in_kwargs.items() if k != "history"}
+            obs_outputs = {}
+            try:
+                obs_outputs = dict(self._pred) if self._pred is not None else {}
+            except Exception:
+                obs_outputs = {}
+            self.program._record_and_maybe_refine(obs_inputs, obs_outputs)
+        except Exception:
+            pass
+
     @staticmethod
     def _to_text(v: Any) -> Any:
         # Normalize structured inputs for the model
@@ -1562,7 +1587,16 @@ class FunctAIFunc:
     """Callable function-like object with live knobs, history, optimizer, and in-place .opt()."""
 
     def __init__(self, fn, *, lm=None, adapter=None, module=None, tools: Optional[List[Any]] = None,
-                 temperature: Optional[float] = None, stateful: Optional[bool] = None, module_kwargs: Optional[Dict[str, Any]] = None):
+                 temperature: Optional[float] = None, stateful: Optional[bool] = None, module_kwargs: Optional[Dict[str, Any]] = None,
+                 # teacher & instruction knobs
+                 teacher: Any = None, teacher_lm: Any = None,
+                 autocompile: Optional[bool] = None, n_auto_examples: Optional[int] = None,
+                 autogen_instructions: Optional[bool] = None, autoinstruct: Optional[bool] = None,
+                 instruction_lm: Any = None,
+                 # autorefine knobs
+                 autoinstruct_improve_calls: Optional[int] = None,
+                 instruction_autorefine_calls: Optional[int] = None,
+                 instruction_autorefine_max_examples: Optional[int] = None):
         functools.update_wrapper(self, fn)
         self._fn = fn
         self._sig = inspect.signature(fn)
@@ -1607,17 +1641,68 @@ class FunctAIFunc:
         self._lm_instance = self._to_lm(self._lm)
         self._adapter_instance = _select_adapter(self._adapter)
 
+        # Instruction/teacher wiring
+        defs = _effective_defaults()
+        self._instruction_override: Optional[str] = None
+        self._autoinstruct = bool(defs.autoinstruct if autoinstruct is None else autoinstruct)
+        self._instruction_lm_instance = self._to_lm(instruction_lm if instruction_lm is not None else defs.instruction_lm)
+
+        self._teacher = teacher if teacher is not None else defs.teacher
+        self._teacher_lm = teacher_lm if teacher_lm is not None else defs.teacher_lm
+        self._autogen_instructions = bool(defs.autogen_instructions if autogen_instructions is None else autogen_instructions)
+        self._autocompile = bool(defs.autocompile if autocompile is None else autocompile)
+        try:
+            self._autocompile_n = int(n_auto_examples if n_auto_examples is not None else defs.autocompile_n or 0)
+        except Exception:
+            self._autocompile_n = 0
+
+        # Resolve teacher LM/program for later .opt use (not needed for autoinstruction)
+        self._teacher_lm_instance, self._teacher_program = self._resolve_teacher(self._teacher, self._teacher_lm)
+
+        # Autorefine state
+        calls_cfg = (
+            autoinstruct_improve_calls
+            if autoinstruct_improve_calls is not None
+            else (instruction_autorefine_calls if instruction_autorefine_calls is not None else defs.instruction_autorefine_calls)
+        )
+        try:
+            self._instr_refine_remaining = int(calls_cfg or 0)
+        except Exception:
+            self._instr_refine_remaining = 0
+        try:
+            self._instr_obs_cap = int(
+                instruction_autorefine_max_examples if instruction_autorefine_max_examples is not None else defs.instruction_autorefine_max_examples
+            )
+        except Exception:
+            self._instr_obs_cap = 20
+        self._instr_observed: List[Dict[str, Any]] = []
+        self._instr_frozen: bool = False
+
         # Compiled module (by .opt) and optimization history
         self._compiled: Optional[dspy.Module] = None
         self._opt_stack: List[dspy.Module] = []
         self._initial_module_kind = self._module_kind
         self._modules_history: List[dspy.Module] = []  # all compiled/programs that backed this function
+        self._opt_runs: List[Dict[str, Any]] = []      # per .opt run logs (trainsets, meta)
 
         # Debug (preview)
         self._debug = bool(defs.debug)
 
         # Expose a dunder for helpers (format_prompt / inspection)
         self.__dspy__ = SimpleNamespace(fn=self._fn, program=self)
+
+        # ── Autoinstruction “first compile” (no optimizer) ─────────────────────
+        try:
+            if self._autocompile and self._autoinstruct:
+                # pick LM to write instructions: instruction_lm > teacher_lm > self.lm
+                instr_lm = self._instruction_lm_instance or self._teacher_lm_instance or self._lm_instance
+                if instr_lm is not None:
+                    self._compile_with_instruction(instr_lm)
+                elif self._debug:
+                    warnings.warn("[FunctAI] autoinstruct requested but no LM available; skipping.")
+        except Exception as _e:
+            if self._debug:
+                warnings.warn(f"[FunctAI] autoinstruct failed: {_e}")
 
     # Signature (live)
     @property
@@ -1783,13 +1868,52 @@ class FunctAIFunc:
         """
         Compile with a DSPy optimizer and mutate in place.
         - optimizer: instance or factory; if None, uses self.optimizer or global default.
-        - trainset: list of (inputs, outputs) pairs or DSPy's preferred format.
-        - metric: a Callable metric passed to optimizers that accept/require it
-          (e.g., SIMBA, MIPROv2). Required when the chosen optimizer's constructor
-          needs a metric.
+        - trainset: list of DSPy examples, (inputs, outputs) pairs, or dicts.
+        - metric: a Callable metric passed to optimizers that accept/require it.
+
+        Extended:
+        - teacher: str | dspy.LM | FunctAIFunc | dspy.Module (optional)
+        - teacher_lm: str | dspy.LM (optional; overrides LM derived from `teacher`)
+        - n_synth: int (optional; synthesize this many examples when > 0)
+        - autogen: bool (optional; render task spec from code/doc-comments for synthesis)
+
         Additional **opts are forwarded to the optimizer constructor if it is a factory.
         """
+        teacher = opts.pop("teacher", None)
+        teacher_lm = opts.pop("teacher_lm", None)
+        n_synth = int(opts.pop("n_synth", 0) or 0)
+        autogen = bool(opts.pop("autogen", True))
+
+        # Resolve / inherit teacher settings
+        t_lm, t_prog = self._resolve_teacher(
+            teacher if teacher is not None else self._teacher,
+            teacher_lm if teacher_lm is not None else self._teacher_lm,
+        )
+
         Sig = self.signature
+
+        # Build trainset (explicit + synthesized)
+        final_examples: List[Any] = []
+        if trainset:
+            final_examples.extend(self._coerce_examples(trainset, Sig))
+
+        if n_synth > 0:
+            if t_prog is not None and t_lm is None:
+                # Try extracting LM from the teacher program if not provided explicitly.
+                t_lm = self._extract_lm_from_program(t_prog) or t_lm
+
+            if t_prog is not None and t_lm is not None:
+                synth = self._synthesize_with_teacher_program(Sig, teacher_prog=t_prog, teacher_lm=t_lm, n=n_synth, autogen=autogen)
+                final_examples.extend(synth)
+            elif t_lm is not None:
+                synth = self._synthesize_with_teacher_lm(Sig, teacher_lm=t_lm, n=n_synth, autogen=autogen)
+                final_examples.extend(synth)
+            else:
+                if self._debug:
+                    warnings.warn("[FunctAI] n_synth > 0 requested but no teacher LM available; skipping synthesis.")
+
+        # If nothing to train on, fall back to provided (may be None)
+        trainset = final_examples if final_examples else trainset
 
         # Build a base module to optimize
         if self._compiled is not None:
@@ -1809,8 +1933,7 @@ class FunctAIFunc:
         # Pick optimizer
         opt = optimizer if optimizer is not None else (self._optimizer if self._optimizer is not None else dspy.BootstrapFewShot)
 
-        # If the optimizer accepts a 'metric' argument, require the caller to provide it
-        # when the parameter is required (no default). Otherwise, pass it through when given.
+        # If the optimizer accepts a 'metric' argument, require/pass metric
         if isinstance(opt, type):
             ctor_kwargs = dict(opts)
             try:
@@ -1820,7 +1943,7 @@ class FunctAIFunc:
                     param = sig.parameters["metric"]
                     required = param.default is inspect._empty
                     if required and metric is None:
-                        raise ValueError("This optimizer requires a 'metric'. Please call .opt(metric=...) with a callable metric.")
+                        metric = metric or self._default_metric(Sig)
                     if metric is not None:
                         ctor_kwargs["metric"] = metric
                 # Provide prompt_model / task_model from our program LM if requested
@@ -1828,7 +1951,6 @@ class FunctAIFunc:
                     if name in sig.parameters and name not in ctor_kwargs and self._lm_instance is not None:
                         ctor_kwargs[name] = self._lm_instance
             except (ValueError, TypeError):
-                # if signature inspection fails, just pass through opts
                 pass
             optimizer_instance = opt(**ctor_kwargs)  # factory/class
         else:
@@ -1851,6 +1973,24 @@ class FunctAIFunc:
         except Exception:
             pass
         self._module_kind = self._compiled  # instance; signature will rebind per call
+
+        # Log this optimization run
+        try:
+            used_examples = []
+            if final_examples:
+                used_examples = list(final_examples)
+            elif trainset:
+                used_examples = self._coerce_examples(trainset, Sig)
+            self._opt_runs.append({
+                "ts": time.time(),
+                "optimizer": (optimizer_instance.__class__.__name__ if not isinstance(optimizer, type) else optimizer.__name__),
+                "metric": (getattr(metric, "__name__", str(metric)) if metric is not None else None),
+                "n_examples": len(used_examples),
+                "examples": used_examples,
+                "synthesized": bool(n_synth > 0),
+            })
+        except Exception:
+            pass
 
     def undo_opt(self, steps: int = 1) -> None:
         steps = max(1, int(steps))
@@ -1927,6 +2067,390 @@ class FunctAIFunc:
             return mod.deepcopy() if deepcopy and hasattr(mod, "deepcopy") else mod
         except Exception:
             return mod
+
+    # Public: retrieve `.opt` run logs (trainsets included)
+    def optimization_runs(self) -> List[Dict[str, Any]]:
+        return list(self._opt_runs)
+
+    # ─────────────────────────────────────────────────────────────────────
+    # Teacher helpers & synthesis
+    # ─────────────────────────────────────────────────────────────────────
+    def freeze(self) -> "FunctAIFunc":
+        """Stop further auto-instruction refinement immediately."""
+        self._instr_frozen = True
+        self._instr_refine_remaining = 0
+        return self
+
+    def _record_and_maybe_refine(self, inputs: Dict[str, Any], outputs: Dict[str, Any]) -> None:
+        """Record one noisy observation (inputs→outputs) and optionally refine instruction.
+
+        Outputs are NOT gold; treat them as noisy signals to improve clarity and robustness.
+        """
+        try:
+            # Keep bounded buffer of observations
+            self._instr_observed.append({"inputs": inputs, "outputs": outputs})
+            if len(self._instr_observed) > max(1, int(self._instr_obs_cap or 20)):
+                self._instr_observed = self._instr_observed[-int(self._instr_obs_cap or 20):]
+        except Exception:
+            pass
+
+        if self._instr_frozen or (int(self._instr_refine_remaining or 0) <= 0):
+            return
+
+        # Select LM for refinement
+        lm_for_instruction = self._instruction_lm_instance or self._teacher_lm_instance or self._lm_instance
+        if lm_for_instruction is None:
+            return
+
+        # Build current context
+        try:
+            Sig = compute_signature(self)
+            current_doc = (getattr(Sig, "__doc__", "") or "").strip()
+        except Exception:
+            current_doc = (self._instruction_override or "").strip()
+
+        # Prepare examples text
+        latest = self._instr_observed[-min(len(self._instr_observed), max(1, int(self._instr_obs_cap or 20))):]
+        lines: List[str] = []
+        for i, ex in enumerate(latest, 1):
+            try:
+                lines.append(f"Example {i}:")
+                ins = ex.get("inputs", {})
+                outs = ex.get("outputs", {})
+                lines.append("  Inputs:")
+                for k, v in (ins or {}).items():
+                    lines.append(f"    - {k}: {v}")
+                lines.append("  Outputs (noisy, not gold):")
+                for k, v in (outs or {}).items():
+                    lines.append(f"    - {k}: {v}")
+            except Exception:
+                continue
+        examples_text = "\n".join(lines)
+
+        # Signature summary to keep field names tight
+        try:
+            sig_summary = signature_text(self)
+        except Exception:
+            sig_summary = ""
+
+        # Refinement prompt
+        class _InstrRefine(Signature):
+            context = InputField()
+            improved = OutputField(desc="A single improved system instruction. Keep output field names exact.")
+            __annotations__ = {"context": str, "improved": str}
+
+        refiner = dspy.Predict(_InstrRefine)
+        try:
+            refiner.lm = lm_for_instruction
+        except Exception:
+            pass
+        context = (
+            "You will refine a system instruction for an AI function.\n"
+            "Important: The observed outputs are NOT ground truth. Treat them as noisy hints\n"
+            "to improve clarity, constraints, and failure handling. Keep exact output field names.\n\n"
+            f"Signature: {sig_summary}\n\n"
+            "Current instruction:\n" + (current_doc or "(empty)") + "\n\n"
+            "Recent (noisy) examples:\n" + (examples_text or "(none)") + "\n\n"
+            "Produce only the revised instruction text."
+        )
+        try:
+            res = refiner(context=context)
+            new_text = getattr(res, "improved", None)
+            if isinstance(new_text, str) and new_text.strip():
+                self._instruction_override = new_text.strip()
+                # Decrement budget
+                try:
+                    self._instr_refine_remaining = int(self._instr_refine_remaining) - 1
+                except Exception:
+                    self._instr_refine_remaining = 0
+        except Exception:
+            # Non-fatal; keep going
+            return
+    def _compile_with_instruction(self, lm_for_instruction: Any) -> None:
+        """One LLM call to write a clean instruction, store it, and compile a program."""
+        Sig = compute_signature(self)  # initial spec (code-derived)
+        ins, outs = self._sig_io(Sig)
+
+        # Build instruction-writer signature (simple text out)
+        class _InstrSig(Signature):
+            context = InputField()
+            instruction = OutputField(desc="A crisp, complete system instruction for an AI to perform the task.")
+            __annotations__ = {"context": str, "instruction": str}
+
+        writer = dspy.Predict(_InstrSig)
+        try:
+            writer.lm = lm_for_instruction
+        except Exception:
+            pass
+        # Compose context: function name, code, I/O schema, and current guidance
+        fn_src = get_source(self._fn) or ""
+        doc = (getattr(Sig, "__doc__", "") or "").strip()
+        ctx_lines = [
+            f"Function name: {getattr(self._fn, '__name__', 'unknown')}",
+            "",
+            "Goal: Write a single, clear system instruction for an AI to fulfill this function.",
+            "It must reference the exact output variables and constraints, and explain the approach briefly.",
+            "",
+            "Inputs:",
+            *([f"- {k}" for k in ins] if ins else ["- (none)"]),
+            "",
+            "Outputs:",
+            *([f"- {k}" for k in outs] if outs else ["- (none)"]),
+        ]
+        if doc:
+            ctx_lines += ["", "Existing guidance (from code):", doc]
+        if fn_src:
+            ctx_lines += ["", "Source (for context):", "```python", fn_src.strip(), "```"]
+        context = "\n".join(ctx_lines)
+        res = writer(context=context)
+        text = getattr(res, "instruction", None)
+        if not text or not isinstance(text, str):
+            raise RuntimeError("Instruction writer did not return text.")
+        self._instruction_override = text.strip()
+
+        # Create a compiled program that uses this instruction as Signature doc
+        mod = self.latest_program(fresh=True)  # will pick up the override in compute_signature()
+        self._compiled = mod
+        try:
+            self._modules_history.append(mod)
+        except Exception:
+            pass
+
+    def _resolve_teacher(self, teacher: Any, teacher_lm: Any) -> Tuple[Optional[Any], Optional[Any]]:
+        """Return (teacher_lm_instance, teacher_program_or_None)."""
+        # teacher_lm explicit wins
+        if teacher_lm is not None:
+            return (self._to_lm(teacher_lm), None)
+        if teacher is None:
+            return (None, None)
+        # teacher may be str (LM), dspy.LM, FunctAIFunc, dspy.Module
+        try:
+            # string → LM
+            if isinstance(teacher, str):
+                return (self._to_lm(teacher), None)
+        except Exception:
+            pass
+        # DSPy LM instance (duck-typed)
+        try:
+            if hasattr(teacher, "generate") or teacher.__class__.__name__.lower().endswith("lm"):
+                return (teacher, None)
+        except Exception:
+            pass
+        # FunctAIFunc or DSPy Module
+        if isinstance(teacher, FunctAIFunc):
+            lm = getattr(teacher, "_lm_instance", None) or self._extract_lm_from_program(teacher.latest_program(fresh=False))
+            return (lm, teacher.latest_program(fresh=False))
+        try:
+            import dspy as _d
+            if isinstance(teacher, _d.Module):
+                return (self._extract_lm_from_program(teacher), teacher)
+        except Exception:
+            pass
+        return (None, None)
+
+    def _extract_lm_from_program(self, prog: Any) -> Optional[Any]:
+        """Try to pull an LM off a DSPy module (or a compatible object)."""
+        if prog is None:
+            return None
+        try:
+            lm = getattr(prog, "lm", None)
+            if lm is not None:
+                return lm
+        except Exception:
+            pass
+        # Scan predictors for a common LM (best-effort)
+        try:
+            n2p = {n: p for n, p in prog.named_predictors()}
+            lms = {id(getattr(p, "lm", None)): getattr(p, "lm", None) for p in n2p.values() if getattr(p, "lm", None) is not None}
+            vals = [x for x in lms.values() if x is not None]
+            if len(vals) == 1:
+                return vals[0]
+        except Exception:
+            pass
+        # Fallback to global
+        try:
+            return getattr(dspy.settings, "lm", None)
+        except Exception:
+            return None
+
+    def _sig_io(self, Sig: type[Signature]) -> Tuple[List[str], List[str]]:
+        ins = list((getattr(Sig, "input_fields", {}) or {}).keys())
+        outs = list((getattr(Sig, "output_fields", {}) or {}).keys())
+        # Remove 'history' if present
+        ins = [k for k in ins if k != "history"]
+        return ins, outs
+
+    def _task_context_text(self, Sig: type[Signature]) -> str:
+        """Render a concise task spec using the system doc and output guidance."""
+        doc = (getattr(Sig, "__doc__", "") or "").strip()
+        inputs, outputs = self._sig_io(Sig)
+        lines = []
+        if doc:
+            lines.append(doc)
+            lines.append("")
+        lines.append("You will produce synthetic training examples for this function.")
+        lines.append("Use EXACT field names.")
+        lines.append("")
+        lines.append("Inputs (keys): " + ", ".join(inputs) if inputs else "Inputs: (none)")
+        lines.append("Outputs (keys): " + ", ".join(outputs) if outputs else "Outputs: (none)")
+        return "\n".join(lines).strip()
+
+    def _synthesize_with_teacher_lm(self, Sig: type[Signature], *, teacher_lm: Any, n: int, autogen: bool) -> List[Any]:
+        """Generate full input+output examples directly from teacher LM."""
+        inputs, outputs = self._sig_io(Sig)
+
+        # Build a tiny signature to ask the teacher LM for examples (JSON).
+        class _ExGen(Signature):
+            context = InputField()
+            n = InputField()
+            examples = OutputField(desc="JSON array of examples; each example must have the exact input and output keys.")
+            __annotations__ = {"context": str, "n": int, "examples": list}
+
+        gen = dspy.Predict(_ExGen)
+        # Prefer JSON adapter for structured outputs
+        try:
+            json_adapter = dspy.JSONAdapter()
+        except Exception:
+            json_adapter = None
+        if json_adapter is not None:
+            try:
+                gen.adapter = json_adapter
+            except Exception:
+                pass
+        try:
+            gen.lm = teacher_lm
+        except Exception:
+            pass
+
+        ctx = self._task_context_text(Sig) if autogen else ""
+        with _patched_adapter(json_adapter):
+            res = gen(context=ctx, n=int(n))
+        examples = getattr(res, "examples", None)
+        return self._coerce_json_examples(examples, inputs, outputs)
+
+    def _synthesize_with_teacher_program(self, Sig: type[Signature], *, teacher_prog: Any, teacher_lm: Any, n: int, autogen: bool) -> List[Any]:
+        """Generate inputs with teacher LM, then label them with teacher program."""
+        inputs, outputs = self._sig_io(Sig)
+
+        # Ask teacher LM to propose only inputs
+        class _InputGen(Signature):
+            context = InputField()
+            n = InputField()
+            inputs_only = OutputField(desc="JSON array of input objects; each object must contain exactly the input keys.")
+            __annotations__ = {"context": str, "n": int, "inputs_only": list}
+
+        igen = dspy.Predict(_InputGen)
+        try:
+            json_adapter = dspy.JSONAdapter()
+        except Exception:
+            json_adapter = None
+        if json_adapter is not None:
+            try:
+                igen.adapter = json_adapter
+            except Exception:
+                pass
+        try:
+            igen.lm = teacher_lm
+        except Exception:
+            pass
+
+        ctx = self._task_context_text(Sig) if autogen else ""
+        with _patched_adapter(json_adapter):
+            res = igen(context=ctx, n=int(n))
+        input_objs = getattr(res, "inputs_only", None)
+        input_list: List[Dict[str, Any]] = []
+        if isinstance(input_objs, list):
+            for it in input_objs:
+                if isinstance(it, dict):
+                    inp = {k: it.get(k) for k in inputs}
+                    if all((k in inp) for k in inputs):
+                        input_list.append(inp)
+
+        # Label with teacher program
+        labeled: List[Any] = []
+        for inp in input_list:
+            try:
+                pred = None
+                if isinstance(teacher_prog, FunctAIFunc):
+                    pred = teacher_prog(**inp, all=True)
+                else:
+                    pred = teacher_prog(**inp)
+                data = dict(pred) if pred is not None else {}
+                out = {k: data.get(k) for k in outputs}
+                ex = dspy.Example(**{**inp, **out}).with_inputs(*inputs)
+                labeled.append(ex)
+            except Exception:
+                continue
+        return labeled
+
+    def _coerce_json_examples(self, examples: Any, inputs: List[str], outputs: List[str]) -> List[Any]:
+        """Map JSON-like examples to DSPy Example list. Drops malformed items."""
+        out: List[Any] = []
+        if not isinstance(examples, list):
+            return out
+        for e in examples:
+            if not isinstance(e, dict):
+                continue
+            inp = {k: e.get(k) for k in inputs if k in e}
+            # Allow nesting under "inputs"/"outputs" if LM structured that way
+            if not inp and isinstance(e.get("inputs"), dict):
+                inp = {k: e["inputs"].get(k) for k in inputs if k in e["inputs"]}
+            outp = {k: e.get(k) for k in outputs if k in e}
+            if not outp and isinstance(e.get("outputs"), dict):
+                outp = {k: e["outputs"].get(k) for k in outputs if k in e["outputs"]}
+            # Only keep fully keyed examples
+            if all(k in inp for k in inputs) and all(k in outp for k in outputs):
+                try:
+                    ex = dspy.Example(**{**inp, **outp}).with_inputs(*inputs)
+                    out.append(ex)
+                except Exception:
+                    continue
+        return out
+
+    def _coerce_examples(self, trainset: List[Any], Sig: type[Signature]) -> List[Any]:
+        """Accept DSPy Examples, dicts, or (inputs, outputs) tuples."""
+        inputs, outputs = self._sig_io(Sig)
+        out: List[Any] = []
+        for item in trainset:
+            try:
+                # DSPy Example passthrough
+                if hasattr(item, "inputs") and hasattr(item, "outputs"):
+                    out.append(item)
+                    continue
+                # dict with exact keys
+                if isinstance(item, dict):
+                    ex = dspy.Example(**item).with_inputs(*inputs)
+                    out.append(ex)
+                    continue
+                # pair (in_dict, out_dict)
+                if isinstance(item, (list, tuple)) and len(item) == 2:
+                    in_dict, out_dict = item
+                    if isinstance(in_dict, dict) and isinstance(out_dict, dict):
+                        ex = dspy.Example(**{**in_dict, **out_dict}).with_inputs(*inputs)
+                        out.append(ex)
+                        continue
+            except Exception:
+                continue
+        return out
+
+    def _default_metric(self, Sig: type[Signature]) -> Callable[..., float]:
+        """Conservative metric: exact match on the full outputs dict as strings."""
+        _, outputs = self._sig_io(Sig)
+        def _m(example, pred) -> float:
+            try:
+                gold = {k: getattr(example, k) if hasattr(example, k) else example[k] for k in outputs}
+            except Exception:
+                gold = {}
+            try:
+                got = {k: pred[k] for k in outputs}
+            except Exception:
+                try:
+                    got = dict(pred)
+                except Exception:
+                    got = {}
+                got = {k: got.get(k) for k in outputs}
+            return 1.0 if json.dumps(got, sort_keys=True) == json.dumps(gold, sort_keys=True) else 0.0
+        return _m
 
 class SimpleNamespace:
     def __init__(self, **kw): self.__dict__.update(kw)
@@ -2063,7 +2587,11 @@ def compute_signature(fn_or_prog):
     else:
         raise TypeError("compute_signature(...) expects an @ai-decorated function/program.")
 
-    sysdoc_base = _compose_system_doc(prog._fn, include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
+    # Prefer a bespoke instruction if available
+    if getattr(prog, "_instruction_override", None):
+        sysdoc_base = (prog._instruction_override or "").strip()
+    else:
+        sysdoc_base = _compose_system_doc(prog._fn, include_fn_name=bool(_effective_defaults().include_fn_name_in_instructions))
 
     ast_outputs = _collect_ast_outputs(prog._fn)
     ret_label = _return_label_from_ast(prog._fn)
@@ -2152,14 +2680,17 @@ def compute_signature(fn_or_prog):
 
     extras = [(n, (ast_map[n][0] if _is_type_hint_like(ast_map[n][0]) else str), ast_map[n][1]) for n in order_names if n != main_name]
 
-    # Append docments-derived guidance to the system doc
-    appendix = _build_instruction_appendix(
-        prog._fn,
-        main_name=main_name,
-        order_names=order_names,
-        ast_map=ast_map,
-        main_output_type=main_typ,
-    )
+    # Append guidance only when no bespoke instruction override exists
+    if getattr(prog, "_instruction_override", None):
+        appendix = ""
+    else:
+        appendix = _build_instruction_appendix(
+            prog._fn,
+            main_name=main_name,
+            order_names=order_names,
+            ast_map=ast_map,
+            main_output_type=main_typ,
+        )
     sysdoc = sysdoc_base if not appendix else (sysdoc_base + ("\n\n" if sysdoc_base else "") + appendix)
     Sig = _mk_signature(
         prog._fn.__name__,

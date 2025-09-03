@@ -2,7 +2,7 @@
 FunctAI — DSPy-powered, single-call AI functions.
 
 API:
-- Decorator: @ai        (bare or with options)
+- Decorator: @ai        (bare or with options; supports teacher / teacher_lm / autocompile)
 - Sentinel:  _ai        (bare; docstring + type hints drive outputs)
 - Defaults:  configure(...) (global and context manager)
 - Utils:     phistory()
@@ -32,7 +32,7 @@ from .core import (
 )
 from .module import module, FunctAIModule
 
-__version__ = "0.9.0"
+__version__ = "0.11.0"
 
 __all__ = [
     "ai",

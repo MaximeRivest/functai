@@ -3,7 +3,7 @@
 from functai import *
 
 @ai(lm = "gpt-4.1")
-def extract(text) -> list[str]:
+def extract(text):
     ...
 
 extract("here is a list: apple, orange, banana")
