@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.11.0
+
+- Auto-instruction: generate a first-pass system instruction from function code and types when creating an AI function. Controlled by `autocompile`/`autoinstruct`; enabled by default.
+- Instruction refinement: improve the instruction over the first N calls using recent inputs/outputs as noisy hints (not gold). Configure via `instruction_autorefine_calls` and `instruction_autorefine_max_examples`; disable by calling `.freeze()`.
+- Teacher modes: support `teacher` and/or `teacher_lm` on `@ai(...)` and `.opt(...)` to synthesize examples with `n_synth` for optimization. Accepts teacher programs (`FunctAIFunc`) or bare LMs.
+- Example ingestion: `.opt(...)` now accepts DSPy `Example`s, JSON-like dicts, or `(inputs, outputs)` pairs; auto-coerces into a trainset.
+- Default metric: when an optimizer requires a `metric` and none is provided, fall back to a conservative exact-match metric over all output fields.
+- Optimization logs: record `.opt(...)` runs, including example counts and whether synthesis was used; retrieve via `optimization_runs()`.
+- Bespoke instruction override: runtime overrides are honored in signatures; docstring-derived appendix is skipped when an override is set.
+- History helper: new `phistory(n=1)` to quickly print `dspy.inspect_history()` for recent calls.
+- Docs and examples: README/specs updated to use `phistory`; added `examples/typing_and_extraction` showing type-directed extraction patterns.
+
 ## 0.10.0
 
 - Type-directed outputs: preserve function return annotations and variable annotations (including typing generics like `list[int]`, `dict[str, int]`), and pass them intact to DSPy.
