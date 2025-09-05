@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.11.1
+
+- Fix: do not convert Pydantic `BaseModel` subclasses to dataclasses when building signatures; avoids corrupting Pydantic internals.
+- Feature: coerce JSON/dict model outputs back into declared output types (Pydantic models, dataclasses, or lists thereof).
+- Feature: accept Pydantic v1 inputs by using `.dict()` when `.model_dump()` is unavailable.
+
 ## 0.11.0
 
 - Auto-instruction: generate a first-pass system instruction from function code and types when creating an AI function. Controlled by `autocompile`/`autoinstruct`; enabled by default.
