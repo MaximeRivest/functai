@@ -2,11 +2,26 @@
 ```{python}
 from functai import *
 
-@ai(lm = "gpt-4.1")
+@ai(lm="gpt-4.1", autocompile=True, autoinstruct_improve_calls=3)
 def extract(text):
     ...
 
+print(extract.signature.instructions)
 extract("here is a list: apple, orange, banana")
+print(extract.signature.instructions)
+extract("1 apple,2 orange,12 banana")
+print(extract.signature.instructions)
+extract("To day I want to the grocery stoe and I go some apples and onions and a sandwich pre made, return the list in french!!!")
+print(extract.signature.instructions)
+```
+
+```{python}
+extract("1 apple,2 orange,12 banana")
+```
+
+
+```{python}
+extract("To day I want to the grocery stoe and I go some apples and onions and a sandwich pre made, return the list in french!!!")
 ```
 
 ```{python}

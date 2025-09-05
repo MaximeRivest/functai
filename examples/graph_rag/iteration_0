@@ -1,0 +1,10 @@
+// Knowledge Graph
+digraph {
+	3 [label=professor color=lightgreen]
+	1 [label="quantum mechanics" color=orange]
+	2 [label=physicist color=lightgreen]
+	0 [label=Jason color=lightblue]
+	0 -> 1 [label="knows a lot about" color=black]
+	0 -> 2 [label="is a" color=black]
+	0 -> 3 [label="is a" color=black]
+}

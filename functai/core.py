@@ -1208,6 +1208,52 @@ class _CallContext:
         self.collect_only: bool = False
         self._requested_outputs: Dict[str, Tuple[Any, str]] = {}
 
+    def _coerce_to_declared_type(self, name: str, value: Any) -> Any:
+        """
+        Best-effort: coerce a raw value (often a dict from JSON) into the type
+        declared on the Signature for output `name`. Supports:
+          - Pydantic BaseModel subclasses (v1 & v2)
+          - dataclasses
+          - list[T] where T is one of the above
+        """
+        try:
+            ann = (getattr(self.Sig, "__annotations__", {}) or {}).get(name)
+        except Exception:
+            ann = None
+        if ann is None or value is None:
+            return value
+
+        def _is_pydantic_model_class(tp: Any) -> bool:
+            try:
+                from pydantic import BaseModel as _BM  # type: ignore
+                return isinstance(tp, type) and issubclass(tp, _BM)
+            except Exception:
+                return False
+
+        def _coerce_one(x: Any, tp: Any) -> Any:
+            # dataclass
+            try:
+                if dataclasses.is_dataclass(tp) and isinstance(x, dict):
+                    return tp(**x)
+            except Exception:
+                pass
+            # Pydantic
+            try:
+                if _is_pydantic_model_class(tp) and isinstance(x, dict):
+                    return tp(**x)
+            except Exception:
+                pass
+            return x
+
+        origin = typing.get_origin(ann)
+        args = typing.get_args(ann) or ()
+        if origin in (list, typing.List):
+            elem = args[0] if args else typing.Any
+            if isinstance(value, list):
+                return [_coerce_one(v, elem) for v in value]
+            return value
+        return _coerce_one(value, ann)
+
     def request_ai(self):
         self._ai_requested = True
         return self
@@ -1309,7 +1355,8 @@ class _CallContext:
         with _patched_adapter(adapter_inst):
             self._pred = mod(**in_kwargs)
 
-        self._value = dict(self._pred).get(self.main_output_name)
+        raw = dict(self._pred).get(self.main_output_name)
+        self._value = self._coerce_to_declared_type(self.main_output_name, raw)
         self._materialized = True
 
         # Append this turn to the persistent history if enabled
@@ -1366,6 +1413,12 @@ class _CallContext:
                     return v.model_dump()
                 except Exception:
                     pass
+            # Pydantic v1 fallback
+            if hasattr(v, "dict") and callable(getattr(v, "dict")) and not inspect.isclass(v):
+                try:
+                    return v.dict()
+                except Exception:
+                    pass
             # Dataclass instance
             if dataclasses.is_dataclass(v) and not isinstance(v, type):
                 try:
@@ -1390,7 +1443,7 @@ class _CallContext:
         if self._pred is None:
             return None
         data = dict(self._pred)
-        return data.get(name)
+        return self._coerce_to_declared_type(name, data.get(name))
 
 # Active call ctx
 from contextvars import ContextVar
@@ -2656,9 +2709,21 @@ def compute_signature(fn_or_prog):
         main_typ = (fn_ret_hint or str)
         main_desc = ""
 
-    # If main output is a plain class with annotations, convert it in-place to a dataclass
+    # If main output is a plain class with annotations, convert it to a dataclass
+    # BUT NEVER mutate Pydantic BaseModel subclasses.
     try:
-        if isinstance(main_typ, type) and getattr(main_typ, "__annotations__", None) and not dataclasses.is_dataclass(main_typ):
+        def _is_pydantic_model_class(tp: Any) -> bool:
+            try:
+                from pydantic import BaseModel as _BM  # type: ignore
+                return isinstance(tp, type) and issubclass(tp, _BM)
+            except Exception:
+                return False
+        if (
+            isinstance(main_typ, type)
+            and getattr(main_typ, "__annotations__", None)
+            and not dataclasses.is_dataclass(main_typ)
+            and not _is_pydantic_model_class(main_typ)
+        ):
             flexiclass(main_typ)
     except Exception:
         pass
@@ -2666,13 +2731,24 @@ def compute_signature(fn_or_prog):
     # Recursively ensure nested types inside main output are dataclass/base-model friendly
     _ensure_schema_types(main_typ)
 
-    # Ensure any extra output typed classes are dataclasses as well
+    # Ensure any extra output typed classes are dataclasses as well (skip Pydantic models)
     try:
         for n in order_names:
             if n == main_name:
                 continue
             t_extra = ast_map[n][0] if _is_type_hint_like(ast_map[n][0]) else str
-            if isinstance(t_extra, type) and getattr(t_extra, "__annotations__", None) and not dataclasses.is_dataclass(t_extra):
+            def _is_pydantic_model_class(tp: Any) -> bool:
+                try:
+                    from pydantic import BaseModel as _BM  # type: ignore
+                    return isinstance(tp, type) and issubclass(tp, _BM)
+                except Exception:
+                    return False
+            if (
+                isinstance(t_extra, type)
+                and getattr(t_extra, "__annotations__", None)
+                and not dataclasses.is_dataclass(t_extra)
+                and not _is_pydantic_model_class(t_extra)
+            ):
                 flexiclass(t_extra)
             _ensure_schema_types(t_extra)
     except Exception:

@@ -1,0 +1,17 @@
+// Knowledge Graph
+digraph {
+	5 [label=Sarah color=lightblue]
+	0 [label=Jason color=lightblue]
+	1 [label="quantum mechanics" color=orange]
+	2 [label=physicist color=lightgreen]
+	3 [label=professor color=lightgreen]
+	4 [label=smart color=yellow]
+	6 [label=student color=lightgreen]
+	0 -> 1 [label="knows a lot about" color=black]
+	0 -> 2 [label="is a" color=black]
+	5 -> 6 [label="is a" color=black]
+	5 -> 0 [label="student of" color=black]
+	3 -> 4 [label=are color=black]
+	5 -> 0 [label=knows color=black]
+	0 -> 3 [label="is a" color=black]
+}
