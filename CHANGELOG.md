@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.12.0
+
+- Includes the Pydantic compatibility fix and structured output/input improvements introduced after 0.11.0.
+- See 0.11.1 notes below for details.
+
 ## 0.11.1
 
 - Fix: do not convert Pydantic `BaseModel` subclasses to dataclasses when building signatures; avoids corrupting Pydantic internals.
