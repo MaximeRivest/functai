@@ -75,6 +75,16 @@ Find everything a program depends on, save it to a folder, prove it runs elsewhe
 | [load](load.md#functai.load) | Load a saved program, ready to call. |
 | [file](file.md#functai.file) | A data file the program reads: ``open(functai.file("data/stopwords.txt"))``. |
 
+## The call log
+
+Keep every call on disk, mark answers right or wrong, and turn the corrections into rows with known answers.
+
+| | |
+| --- | --- |
+| [calls](calls.md#functai.calls) | Every logged call, as a table. |
+| [rate](rate.md#functai.rate) | Say whether a call's answer is right, and if not, what it should have been. |
+| [rated](rated.md#functai.rated) | The calls people rated, as rows with known answers. |
+
 ## Baking into weights
 
 Train a small model that answers an AI function, then run the same function on it.

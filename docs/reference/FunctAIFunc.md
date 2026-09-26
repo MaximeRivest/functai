@@ -22,6 +22,7 @@ A typed Python function whose body is a model call. Build with ``@ai``.
 | --- | --- |
 | `instructions` | The instruction the model gets: an optimized one, or the one written from the code. |
 | `signature` | The lmcc signature: inputs, outputs, instruction. |
+| `version` | The function's version: a fingerprint of what it sends besides its inputs. |
 
 ## Methods
 

@@ -65,10 +65,10 @@ functai.calls(team).select("message", "pred_result", "seconds", "input_tokens")
 │ ---                                            ┆ ---         ┆ ---      ┆ ---          │
 │ str                                            ┆ str         ┆ f64      ┆ i64          │
 ╞════════════════════════════════════════════════╪═════════════╪══════════╪══════════════╡
-│ I was charged twice for one order.             ┆ billing     ┆ 0.653086 ┆ 58           │
-│ The chair arrived with a snapped leg.          ┆ product     ┆ 0.714316 ┆ 58           │
-│ The kettle's handle came off on the first day. ┆ product     ┆ 0.574426 ┆ 61           │
-│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.636193 ┆ 61           │
+│ I was charged twice for one order.             ┆ billing     ┆ 0.727858 ┆ 58           │
+│ The chair arrived with a snapped leg.          ┆ product     ┆ 0.650876 ┆ 58           │
+│ The kettle's handle came off on the first day. ┆ product     ┆ 0.989774 ┆ 61           │
+│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.600924 ┆ 61           │
 └────────────────────────────────────────────────┴─────────────┴──────────┴──────────────┘
 ```
 
@@ -97,7 +97,7 @@ functai.rate(p, "wrong", answer="shipping", note="Broken on the way is shipping:
 ```
 
 ```output
-{'functai_rating': 1, 'id': '01a0e019-d009-710c-82fd-3aec2727bc9c', 'call': '01a0e019-ccd1-7072-8fa8-6f363a09d9db', 'at': '2026-09-26T23:43:03.177826Z', 'by': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
+{'functai_rating': 1, 'id': '01a0e020-192a-73da-a880-40e3bf56ea04', 'call': '01a0e020-168d-7268-a7ae-cf76ebeb0325', 'at': '2026-09-26T23:49:55.114322Z', 'by': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
 ```
 
 **Right means correct for this input, not "nice".** A wrong answer can
@@ -181,9 +181,9 @@ draw.select("message", "pred_result", "call")
 │ ---                                      ┆ ---         ┆ ---                                  │
 │ str                                      ┆ str         ┆ str                                  │
 ╞══════════════════════════════════════════╪═════════════╪══════════════════════════════════════╡
-│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0e019-eb8f-7137-bffe-92249cad481e │
-│ I was charged twice for one order.       ┆ billing     ┆ 01a0e019-c25c-75f3-ab40-7030cc214101 │
-│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0e019-c4ea-7368-8dea-c5c1d82cc204 │
+│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0e020-3193-7134-aa66-5b3817ebdea0 │
+│ I was charged twice for one order.       ┆ billing     ┆ 01a0e020-0955-750b-89ee-10038e1b3415 │
+│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0e020-0c2e-715a-8f7e-89ec4edc493c │
 └──────────────────────────────────────────┴─────────────┴──────────────────────────────────────┘
 ```
 
@@ -209,7 +209,7 @@ team.version
 ```
 
 ```output
-'sha256:ca7da20ed7362c4e778524d2b2e817c07cc861cd46fe413e13ff3968747b6f11'
+'sha256:2c0f223e977c2b9b1757cd3248d199f0f92f7f2a811d8b39ca82100ae78ec59d'
 ```
 
 A version names everything the function sends besides its inputs: the
@@ -229,8 +229,8 @@ functai.calls(team).group_by("version").summarise(calls=n())
 │ ---                                                                     ┆ ---   │
 │ str                                                                     ┆ i64   │
 ╞═════════════════════════════════════════════════════════════════════════╪═══════╡
-│ sha256:872051d812c97624747d741f16ff94e5f813bf97873c2e72cedbb9357cf3ac87 ┆ 14    │
-│ sha256:ca7da20ed7362c4e778524d2b2e817c07cc861cd46fe413e13ff3968747b6f11 ┆ 1     │
+│ sha256:2c0f223e977c2b9b1757cd3248d199f0f92f7f2a811d8b39ca82100ae78ec59d ┆ 1     │
+│ sha256:eaab1cfef6d2e40b914233e8b7aa3e620350362da7bc48fddacbaa92d02b3de7 ┆ 14    │
 └─────────────────────────────────────────────────────────────────────────┴───────┘
 ```
 
@@ -280,7 +280,7 @@ functai.calls(fix_grammar).select("seconds", "input_tokens", "output_tokens", "m
 │ ---      ┆ ---          ┆ ---           ┆ ---          │
 │ f64      ┆ i64          ┆ i64           ┆ str          │
 ╞══════════╪══════════════╪═══════════════╪══════════════╡
-│ 0.740273 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
+│ 0.990621 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
 └──────────┴──────────────┴───────────────┴──────────────┘
 ```
 
@@ -305,7 +305,7 @@ last = json.loads(sorted(folder.rglob("*.jsonl"))[-1].read_text().splitlines()[-
 ```
 
 ```output
-{'program': {'name': 'fix_grammar', 'kind': 'ai', 'module': '__main__', 'version': 'sha256:8850bf9c601a0ed79d0c79132521e5cc029b4402ed672879ccf042af62ef71e3', 'signature': 'sha256:9ec51586f281ad6e0fb45345cb0acfcffe8b94e38e9c8e0177c01b6d5e71da27', 'answer': 'result', 'file': 'call-log.md', 'line': 1}, 'content': False, 'sizes': {'inputs': {'text': 27}, 'outputs': {'result': 29}}, 'model': 'gpt-4.1-mini', 'usage': {'input_tokens': 55, 'output_tokens': 13, 'total_tokens': 68, 'cache_read_tokens': 0, 'cache_write_tokens': 0, 'reasoning_tokens': 0}}
+{'program': {'name': 'fix_grammar', 'kind': 'ai', 'module': '__main__', 'version': 'sha256:31aa7b9383baa3df5bce6d6e20ad353ec7073b7fe9a4fe473cec6ee7befed8dd', 'signature': 'sha256:9ec51586f281ad6e0fb45345cb0acfcffe8b94e38e9c8e0177c01b6d5e71da27', 'answer': 'result', 'file': '<rat-cell-15>', 'line': 1}, 'content': False, 'sizes': {'inputs': {'text': 27}, 'outputs': {'result': 29}}, 'model': 'gpt-4.1-mini', 'usage': {'input_tokens': 55, 'output_tokens': 13, 'total_tokens': 68, 'cache_read_tokens': 0, 'cache_write_tokens': 0, 'reasoning_tokens': 0}}
 ```
 
 The log only grows. To keep it small, delete old day folders.

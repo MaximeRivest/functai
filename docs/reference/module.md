@@ -30,6 +30,12 @@ module.FunctAIModule(fn, *, requires=())
 
 Callable wrapper for an orchestrator function that calls @ai functions.
 
+#### Attributes
+
+| Name | Description |
+| --- | --- |
+| `version` | The module's version: a fingerprint of its code and its AI functions. |
+
 #### Methods
 
 | Name | Description |

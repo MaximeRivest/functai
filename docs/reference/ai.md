@@ -32,6 +32,8 @@ the body. Use it bare (``@ai``) or with settings (``@ai(lm=...)``).
 | examples    | list                | Worked examples shown before the question: pairs ``("input", "output")`` or rows ``{"text": ..., "result": ...}``.                                                                 | _required_ |
 | retries     | int                 | How many times an unreadable reply is asked again (default 1).                                                                                                                     | _required_ |
 | api_retries | int                 | How many times a provider error is re-sent (default 3).                                                                                                                            | _required_ |
+| log_calls   | bool or folder      | Keep this function's calls in the call log (see ``functai.calls``); ``False`` keeps them out, whatever ``configure`` says.                                                         | _required_ |
+| log_content | bool                | ``False``: log only sizes, times and tokens, never the values (for a function that sees secrets).                                                                                  | _required_ |
 | **settings  |                     | Any other setting ``configure`` takes (``api_key``, ``client``, ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An unknown setting is an error.                      | _required_ |
 
 ## Returns {.doc-section .doc-section-returns}

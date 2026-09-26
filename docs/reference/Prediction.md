@@ -21,6 +21,7 @@ Everything one call produced.
 - ``pred.response`` / ``pred.responses``: the lm15 responses
 - ``pred.usage``: tokens summed over every model call
 - ``pred.repairs``: what the reader forgave in the reply
+- ``pred.call_id``: the call's id, for ``functai.rate`` and the call log
 
 ## Attributes
 

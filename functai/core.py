@@ -596,11 +596,13 @@ class FunctAIFunc:
 
     @property
     def version(self) -> str:
-        """Which version of the function this is: ``sha256:`` of its code and of
-        what it sends besides the inputs (instruction, worked examples, layout,
-        tools). Optimizing it, editing its docstring or changing its layout
-        makes a new version; choosing another model does not. Calls in the
-        log carry it, and a saved folder names the version it holds."""
+        """The function's version: a fingerprint of what it sends besides its inputs.
+
+        ``sha256:`` of its code and of the request it renders for a sample
+        input (instruction, worked examples, layout, tools). Optimizing it,
+        editing its docstring or changing its layout makes a new version;
+        choosing another model does not. Logged calls carry it, and a saved
+        folder names the version it holds."""
         return calllog.ai_version(self)
 
     def _layout(self, settings: Dict[str, Any]) -> adapters.Layout:
@@ -1200,10 +1202,12 @@ def ai(_fn=None, **cfg):
         How many times an unreadable reply is asked again (default 1).
     api_retries : int
         How many times a provider error is re-sent (default 3).
-    log_calls, log_content : optional
-        Keep this function's calls in the call log (``False``: never), and
-        whether with their values (``log_content=False``: sizes, times and
-        tokens only, for a function that sees secrets). See ``functai.calls``.
+    log_calls : bool or folder, optional
+        Keep this function's calls in the call log (see ``functai.calls``);
+        ``False`` keeps them out, whatever ``configure`` says.
+    log_content : bool, optional
+        ``False``: log only sizes, times and tokens, never the values (for a
+        function that sees secrets).
     **settings
         Any other setting ``configure`` takes (``api_key``, ``client``,
         ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An

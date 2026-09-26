@@ -65,9 +65,11 @@ class FunctAIModule:
 
     @property
     def version(self) -> str:
-        """Which version of the module this is: ``sha256:`` of the code it
-        reaches and the versions of the AI functions it calls, so optimizing
-        one of them is a new version of the module."""
+        """The module's version: a fingerprint of its code and its AI functions.
+
+        ``sha256:`` of the code it reaches and of the versions of the AI
+        functions it calls, so optimizing one of them is a new version of the
+        module."""
         from . import calllog
         return calllog.module_version(self)
 
