@@ -1,6 +1,6 @@
 [project]
 name = "functai"
-version = "1.0.0"
+version = "1.0.1"
 description = "Typed Python functions whose body is a language model call: the function is the prompt, the body is the program"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -85,9 +85,3 @@ dev = [
     "pydantic>=2",
     "dpyr>=1.10",
 ]
-
-# Development: the sibling checkouts (lmcc 0.8.3 is not on PyPI yet; dpyr is
-# developed alongside the evaluation tables).
-[tool.uv.sources]
-lmcc = { path = "../lmcc/python", editable = true }
-dpyr = { path = "../r_ports_to_py/dpyr", editable = true }

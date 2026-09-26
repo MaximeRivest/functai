@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.1
+
+- An AI function used as a metric (a judge) gets plain data: typed
+  parameters (`row: dict, prediction: dict`) are written into its prompt as
+  JSON. Before, the prediction arrived as a `Prediction` object and every
+  row failed with "Prediction is not JSON data".
+- AI functions on columns work in modules with `from __future__ import
+  annotations`: the return type is resolved, not read as the text `'str'`.
+- Documentation: a runnable tutorial (`docs/tutorial.md`), every example
+  rewritten for 1.0 and rendered with real outputs, and `tests/docs_live.py`
+  to check that the README's code runs and to re-render them.
+
 ## 1.0.0
 
 FunctAI no longer depends on DSPy. It is built on lmcc (layout: how values are

@@ -1,18 +1,15 @@
----
-title: "Types in, types out: extraction with FunctAI"
-format: gfm
-output-file: README.md
-jupyter: python3
----
+# Types in, types out: extraction with FunctAI
+
 
 The return type of an AI function is a contract: the model is shown what
 shape to produce, and the reply is read back into that type (or the
 model is asked again). This page walks through the types you can use,
 from a list of strings to nested pydantic models.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
+Rendered from [`main.qmd`](main.qmd); every output below is a real
+reply.
 
-```{python}
+``` python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -21,7 +18,7 @@ from functai import ai, _ai
 
 ## Containers
 
-```{python}
+``` python
 @ai
 def fruits(text: str) -> list[str]:
     """The fruits mentioned, in order."""
@@ -29,7 +26,9 @@ def fruits(text: str) -> list[str]:
 fruits("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 ```
 
-```{python}
+    ['apples', 'orange', 'bananas']
+
+``` python
 @ai
 def quantities(text: str) -> dict[str, int]:
     """How many of each fruit, by fruit name."""
@@ -37,12 +36,14 @@ def quantities(text: str) -> dict[str, int]:
 quantities("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 ```
 
+    {'apples': 2, 'orange': 1, 'bananas': 12}
+
 ## Post-processing with plain Python
 
-`_ai` stands for the model's answer, typed as the variable it is assigned
-to. The rest of the body is ordinary Python:
+`_ai` stands for the model’s answer, typed as the variable it is
+assigned to. The rest of the body is ordinary Python:
 
-```{python}
+``` python
 @ai
 def total_items(text: str) -> int:
     """The total number of items to buy."""
@@ -52,18 +53,22 @@ def total_items(text: str) -> int:
 total_items("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 ```
 
-The model returned `counts`; your code computed the total. `all=True`
-returns what the model produced instead of the function's return value:
+    15
 
-```{python}
+The model returned `counts`; your code computed the total. `all=True`
+returns what the model produced instead of the function’s return value:
+
+``` python
 total_items("2 apples, one orange and a dozen bananas", all=True)
 ```
+
+    Prediction(counts={'apples': 2, 'oranges': 1, 'bananas': 12})
 
 ## Several outputs
 
 Each `_ai` assignment is one output; return them however you like:
 
-```{python}
+``` python
 @ai
 def critique_and_improve(text: str) -> tuple[str, str]:
     """Criticize the text constructively, then improve it."""
@@ -76,9 +81,12 @@ print(critique)
 print(improved)
 ```
 
+    The text is too informal and lacks politeness, which may come across as rude or demanding.
+    Could you please fix this as soon as possible? It appears to be broken. Thank you!
+
 ## Choices: `Enum` and `Literal`
 
-```{python}
+``` python
 from enum import Enum
 from typing import Literal
 
@@ -98,9 +106,11 @@ def sentiment(review: str) -> Literal["positive", "negative", "mixed"]:
 priority("The production database is down."), sentiment("Great food, rude waiter.")
 ```
 
+    (<Priority.HIGH: 'high'>, 'mixed')
+
 ## Dataclasses and nesting
 
-```{python}
+``` python
 from dataclasses import dataclass
 
 @dataclass
@@ -122,13 +132,17 @@ def extract_patient(clinical_note: str) -> Patient:
 extract_patient("John Doe, 45, lives at 123 Main St, Anytown. US resident.")
 ```
 
-```{python}
+    Patient(name='John Doe', age=45, address=Address(street='123 Main St', city='Anytown', country='US'))
+
+``` python
 extract_patient("Seen today: Marie Tremblay, 62 years old. No address on file.")
 ```
 
+    Patient(name='Marie Tremblay', age=62, address=None)
+
 ## Pydantic models, as outputs and as inputs
 
-```{python}
+``` python
 from pydantic import BaseModel, Field
 
 class LineItem(BaseModel):
@@ -155,9 +169,11 @@ invoice = extract_invoice("""
 invoice
 ```
 
+    Invoice(number='INV-2025-101', vendor='TechCorp Inc.', items=[LineItem(description='Laptop', quantity=5, unit_price=1000.0), LineItem(description='Monitor', quantity=2, unit_price=300.0)], currency='USD')
+
 An input can be a model too; it is shown to the model as JSON:
 
-```{python}
+``` python
 @ai
 def invoice_total(invoice: Invoice) -> float:
     """The invoice's total amount."""
@@ -165,16 +181,23 @@ def invoice_total(invoice: Invoice) -> float:
 invoice_total(invoice)
 ```
 
-(For arithmetic you'd use Python: `sum(i.quantity * i.unit_price for i in
-invoice.items)` is exact and free. Let the model do what code can't.)
+    5600.0
 
-## When the reply doesn't fit
+(For arithmetic you’d use Python:
+`sum(i.quantity * i.unit_price for i in invoice.items)` is exact and
+free. Let the model do what code can’t.)
 
-A reply that can't be read into the type is sent back to the model once,
+## When the reply doesn’t fit
+
+A reply that can’t be read into the type is sent back to the model once,
 with what was wrong (`retries=1` by default). Small misspellings of the
 layout are forgiven and recorded:
 
-```{python}
+``` python
 p = extract_patient("Jane Roe, 30, 5 Queen St, Toronto, Canada.", all=True)
 p.result, p.repairs, p.attempts
 ```
+
+    (Patient(name='Jane Roe', age=30, address=Address(street='5 Queen St', city='Toronto', country='CA')),
+     [],
+     1)

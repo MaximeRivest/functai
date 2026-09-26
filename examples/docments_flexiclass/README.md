@@ -1,18 +1,15 @@
----
-title: "Comments are prompts"
-format: gfm
-output-file: README.md
-jupyter: python3
----
+# Comments are prompts
+
 
 In an AI function, the comments you would write for a colleague are
 passed to the model: on parameters, on the return line, on the fields of
 a class, and on each `_ai` output. This page shows each kind, with the
 prompt it produces.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
+Rendered from [`main.qmd`](main.qmd); every output below is a real
+reply.
 
-```{python}
+``` python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -21,7 +18,7 @@ from functai import ai, _ai
 
 ## Parameters and the return line
 
-```{python}
+``` python
 @ai
 def translate(
     english: str,  # informal, as people text each other
@@ -31,18 +28,57 @@ def translate(
 translate("Where's the corner store? I need milk lol")
 ```
 
+    "C'est où l'épicerie du coin? J'ai besoin de lait lol"
+
 The comments land in the instruction, under the item they describe:
 
-```{python}
+``` python
 print(functai.phistory())
 ```
+
+    [2026-09-26T13:13:45] translate → gpt-4.1-mini
+
+    System message:
+
+    Function: translate
+
+    Translate the message.
+
+    Parameter guidance:
+    - english: informal, as people text each other
+
+    Output guidance:
+    - result: Quebec French, same tone
+
+    Return guidance: Quebec French, same tone
+
+    Reply in exactly this form:
+    <result>
+    ...
+    </result>
+
+
+    User message:
+
+    <english>
+    Where's the corner store? I need milk lol
+    </english>
+
+
+    Response:
+
+    <result>
+    C'est où l'épicerie du coin? J'ai besoin de lait lol
+    </result>
+
+    (finish: stop; tokens in 84, out 24)
 
 ## Naming the output
 
 A string return annotation names the output, which the model sees in the
 reply layout:
 
-```{python}
+``` python
 @ai
 def to_french(english: str) -> "french":  # Quebec French
     ...
@@ -50,13 +86,15 @@ def to_french(english: str) -> "french":  # Quebec French
 to_french("It's really cold out today.")
 ```
 
+    "Il fait vraiment froid aujourd'hui."
+
 ## Fields of a class
 
 A plain class with annotations becomes a dataclass when an AI function
 uses it (no decorator needed), and its field comments describe the
 fields:
 
-```{python}
+``` python
 class Account:
     id: int      # the numeric user ID
     email: str   # the part before the @ only
@@ -68,7 +106,9 @@ def extract_account(text: str) -> Account:
 extract_account("ID: 123, email: alice@example.com")
 ```
 
-```{python}
+    Account(id=123, email='alice')
+
+``` python
 from typing import List
 
 class Movie:
@@ -83,12 +123,14 @@ def extract_movie(description: str) -> Movie:
 extract_movie("Inception, the 2010 sci-fi heist film starring Leonardo DiCaprio.")
 ```
 
+    Movie(title='Inception', year=2010, genres=['sci-fi', 'heist'])
+
 ## Outputs declared in the body
 
 A comment on an `_ai` line describes that output, like the text in
 `_ai["..."]` does:
 
-```{python}
+``` python
 @ai
 def is_question(text: str) -> bool:  # True if it asks something
     """Is this sentence a question?"""
@@ -98,15 +140,71 @@ def is_question(text: str) -> bool:  # True if it asks something
 is_question("Who are you?", all=True)
 ```
 
-```{python}
+    Prediction(clues='"Who" at the beginning and the question mark "?"', result=True)
+
+``` python
 print(functai.phistory())
 ```
+
+    [2026-09-26T13:13:48] is_question → gpt-4.1-mini
+
+    System message:
+
+    Function: is_question
+
+    Is this sentence a question?
+
+    Output guidance:
+    - clues: the words or symbols that mark a question
+    - result: True if it asks something
+
+    Return guidance: True if it asks something
+
+    Reply in exactly this form:
+    <clues>
+    ...
+    </clues>
+    <result>
+    (boolean)
+    </result>
+
+
+    User message:
+
+    <text>
+    Who are you?
+    </text>
+
+
+    Response:
+
+    <clues>
+    "Who" at the beginning and the question mark "?"
+    </clues>
+    <result>
+    True
+    </result>
+
+    (finish: stop; tokens in 88, out 29)
 
 ## Seeing a prompt without calling the model
 
 `render` builds the exact request a call would send, and sends nothing:
 
-```{python}
+``` python
 request = extract_account.render("ID: 7, email: bob@example.org")
 print(request.system)
 ```
+
+    Function: extract_account
+
+    Extract the account details.
+
+    Account fields:
+    - Account.id: the numeric user ID
+    - Account.email: the part before the @ only
+
+    Reply in exactly this form:
+    <result>
+    JSON matching this schema: {"type": "object", "properties": {"id": {"type": "integer"}, "email": {"type": "string"}}, "required": ["id", "email"]}
+    </result>

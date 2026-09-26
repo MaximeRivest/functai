@@ -1,18 +1,15 @@
----
-title: "Building a knowledge graph, one chunk at a time"
-format: gfm
-output-file: README.md
-jupyter: python3
----
+# Building a knowledge graph, one chunk at a time
+
 
 Text arrives in chunks; we want one knowledge graph out of all of them.
 An AI function reads a chunk together with the graph so far and returns
 only what is new; plain Python merges it in. Pydantic models are the
 contract on both sides.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
+Rendered from [`main.qmd`](main.qmd); every output below is a real
+reply.
 
-```{python}
+``` python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -21,7 +18,7 @@ from functai import ai
 
 ## The graph
 
-```{python}
+``` python
 from pydantic import BaseModel
 
 class Node(BaseModel, frozen=True):
@@ -49,7 +46,7 @@ class KnowledgeGraph(BaseModel):
 The graph so far is an input like any other: it is shown to the model as
 JSON, and the reply is read back as a `KnowledgeGraph`.
 
-```{python}
+``` python
 @ai
 def new_facts(text: str, graph: KnowledgeGraph) -> KnowledgeGraph:
     """Extract the entities and relations in the text that are not in the
@@ -59,7 +56,7 @@ def new_facts(text: str, graph: KnowledgeGraph) -> KnowledgeGraph:
 
 ## Building it
 
-```{python}
+``` python
 chunks = [
     "Jason knows a lot about quantum mechanics. He is a physicist and a professor.",
     "Professors teach at universities.",
@@ -74,11 +71,13 @@ for chunk in chunks:
 len(graph.nodes), len(graph.edges)
 ```
 
+    (8, 8)
+
 ## Looking at it
 
 A [Mermaid](https://mermaid.js.org) diagram renders directly on GitHub:
 
-```{python}
+``` python
 def mermaid(g: KnowledgeGraph) -> str:
     lines = ["graph LR"]
     lines += [f'  n{n.id}["{n.label}"]' for n in g.nodes]
@@ -86,9 +85,28 @@ def mermaid(g: KnowledgeGraph) -> str:
     return "\n".join(lines)
 ```
 
-```{python}
-#| output: asis
+``` python
 print("```mermaid\n" + mermaid(graph) + "\n```")
+```
+
+``` mermaid
+graph LR
+  n1["Jason"]
+  n2["quantum mechanics"]
+  n3["physicist"]
+  n4["professor"]
+  n5["university"]
+  n6["Sarah"]
+  n7["University of Toronto"]
+  n8["Canada"]
+  n1 -- "knows about" --> n2
+  n1 -- "is a" --> n3
+  n1 -- "is a" --> n4
+  n4 -- "teach at" --> n5
+  n6 -- "knows" --> n1
+  n6 -- "student of" --> n1
+  n6 -- "studies at" --> n7
+  n7 -- "is in" --> n8
 ```
 
 ## Asking it questions
@@ -96,7 +114,7 @@ print("```mermaid\n" + mermaid(graph) + "\n```")
 The graph is data now. Another AI function can answer from it, with no
 access to the original text:
 
-```{python}
+``` python
 @ai
 def ask(graph: KnowledgeGraph, question: str) -> str:
     """Answer from the graph only. Say so when the graph doesn't tell."""
@@ -104,6 +122,10 @@ def ask(graph: KnowledgeGraph, question: str) -> str:
 ask(graph, "In which country does Jason's student study?")
 ```
 
-```{python}
+    "Jason's student, Sarah, studies at the University of Toronto, which is in Canada."
+
+``` python
 ask(graph, "How old is Sarah?")
 ```
+
+    "The graph doesn't tell how old Sarah is."

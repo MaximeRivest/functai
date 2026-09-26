@@ -1,18 +1,42 @@
+---
+title: "Optimizing a prompt: English to Québécois French"
+format: gfm
+output-file: README.md
+jupyter: python3
+---
+
+A small model translates English into standard French. We want everyday
+Québécois French ("dépanneur", "frette", "char"), and we have twenty
+examples of it. An AI judge scores translations, and an optimizer
+searches for the instruction that raises the score. Every step is
+measured, with its uncertainty.
+
+Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
 
 ```{python}
-import functai
-from functai import ai, _ai, evaluate, compare, InstructionSearch
-from dpyr import col, read   # pip install "functai[data]"
-
-functai.configure(lm="groq:openai/gpt-oss-120b")
-
-@ai
-def translator(english):
-    ...
+#| include: false
+get_ipython().display_formatter.formatters["text/html"].enabled = False
+import polars as pl
+pl.Config(tbl_cols=12, tbl_width_chars=110, fmt_str_lengths=45).__enter__()
 ```
 
 ```{python}
-# One dict per row; `english` is the translator's input, `result` the expected output.
+import functai
+functai.configure(lm="gpt-4.1-mini", temperature=0)
+
+from functai import ai, _ai
+
+@ai(lm="gpt-4.1-nano")
+def translator(english: str) -> str:
+    """Translate to French."""
+```
+
+## The examples
+
+One dict per row: `english` is the translator's input, `result` the
+translation we want.
+
+```{python}
 rows = [
     {"english": "I'm going to the convenience store.", "result": "Je m'en vais au dépanneur."},
     {"english": "It's really cold out today.", "result": "Il fait frette en maudit aujourd'hui."},
@@ -38,39 +62,73 @@ rows = [
 train, dev = rows[:10], rows[10:]
 ```
 
+## The judge
+
+Exact match is too strict for translations, so the metric is an AI
+function too. It reads the row (with the expected `result`) and the
+prediction:
+
 ```{python}
 @ai
-def judge(row, prediction) -> float:
-    "High if the prediction says the same thing as row['result'] in the same register, very low otherwise"
-    score: float = _ai["Between 0 and 1"]
-    return max(0.0, min(1.0, float(score)))
+def judge(row: dict, prediction: dict) -> float:
+    """How well the prediction matches row['result']: the same meaning,
+    in the same everyday Québécois register. 1 is as good, 0 is wrong or
+    in standard French."""
+    score: float = _ai["Between 0 and 1."]
+    return max(0.0, min(1.0, score))
+```
+
+## Before
+
+```{python}
+before = functai.evaluate(translator, dev, judge, num_threads=5)
+before
 ```
 
 ```{python}
-before = evaluate(translator, dev, judge, num_threads=4)
-before          # the judge's mean, with a 95% interval
-```
+from dpyr import col
 
-```{python}
-# The worst translations first
 before.table.arrange(col.judge).select(col.english, col.result, col.pred_result, col.judge)
 ```
 
+## Searching for a better instruction
+
+`InstructionSearch` asks a model (`prompt_lm`) to propose instructions
+from the function's code and a few examples, then tries them on
+minibatches of the data and keeps the best. Setting both demo limits to 0
+means only the instruction changes.
+
 ```{python}
-opt = InstructionSearch(num_candidates=4, num_trials=8, max_bootstrapped_demos=0, max_labeled_demos=0)
+from functai import InstructionSearch
+
+opt = InstructionSearch(num_candidates=4, num_trials=8, minibatch_size=5,
+                        max_bootstrapped_demos=0, max_labeled_demos=0,
+                        prompt_lm="gpt-4.1-mini")
 translator.opt(trainset=train, metric=judge, optimizer=opt)
-read(opt.trials)   # every trial: which instruction, which demos, its minibatch score
+print(translator.instructions)
 ```
 
-```{python}
-after = evaluate(translator, dev, judge, num_threads=4)
-compare(before, after)   # per example: did the new instruction help? (diff with a 95% interval)
-```
+Every trial is a row (`combo` says which instruction and which demo set):
 
 ```{python}
-translator("Hi what is the weather?")
+from dpyr import read
+
+read(opt.trials)
 ```
 
+## After
+
 ```{python}
-print(functai.phistory())
+after = functai.evaluate(translator, dev, judge, num_threads=5)
+functai.compare(before, after)
 ```
+
+`diff` is the change in the judge's mean over the same ten examples, with
+its 95% interval; `better`, `worse` and `same` count examples.
+
+```{python}
+translator("Hi, what's the weather like? I'm going to the convenience store.")
+```
+
+`translator.undo_opt()` brings the old instruction back;
+`translator.save("translator.json")` keeps the new one.
