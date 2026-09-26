@@ -348,3 +348,65 @@ def test_a_program_on_baked_weights_saves_loads_and_verifies(baked, tmp_path, mo
     weights.write_bytes(weights.read_bytes()[:-8] + b"\0" * 8)
     with pytest.raises(functai.LoadRefused, match="changed since it was saved"):
         functai.load(target, trust=True)
+
+
+# ------------------------------------------------------------------ generative students
+
+
+def _tiny_chat_model(path):
+    """A 2-layer chat model with random weights and Qwen3.5's tokenizer and chat template."""
+    from transformers import AutoTokenizer, Qwen2Config, Qwen2ForCausalLM
+    tok = AutoTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B", local_files_only=True)
+    cfg = Qwen2Config(vocab_size=len(tok), hidden_size=32, intermediate_size=64, num_hidden_layers=1,
+                      num_attention_heads=2, num_key_value_heads=1, max_position_embeddings=512,
+                      tie_word_embeddings=True, eos_token_id=tok.convert_tokens_to_ids("<|im_end|>"),
+                      pad_token_id=tok.pad_token_id)
+    torch.manual_seed(0)
+    Qwen2ForCausalLM(cfg).save_pretrained(path)
+    tok.save_pretrained(path)
+    return str(path)
+
+
+def _have_qwen_tokenizer() -> bool:
+    try:
+        from transformers import AutoTokenizer
+        AutoTokenizer.from_pretrained("Qwen/Qwen3.5-0.8B", local_files_only=True)
+        return True
+    except Exception:
+        return False
+
+
+@ai
+def capital(country: str) -> str:
+    """The capital city of the country."""
+
+
+@pytest.mark.skipif(not _have_qwen_tokenizer(), reason="Qwen3.5's tokenizer is not in the local cache")
+def test_a_generative_student_learns_the_layouts_reply_and_keeps_its_layout(tmp_path):
+    from functai.bake.sft import chat_messages, example_ids, prompt_ids, template_kwargs
+    student = _tiny_chat_model(tmp_path / "tiny")
+    rows = [{"country": c, "result": p} for c, p in [("France", "Paris"), ("Japan", "Tokyo"), ("Peru", "Lima")]] * 5
+    b = capital.bake(rows, test=rows[:3], method="sft", student=student, device="cpu", epochs=2, lora=False,
+                     path=tmp_path / "b", local_files_only=True, log=None)
+    assert b.kind == "generative" and b.meta["layout"]["name"] == "functai_xml"
+    h = b.report.training["history"]
+    assert len(h) == 2 and h[1]["train_loss"] < h[0]["train_loss"]
+    # the training target is the layout's reply, and the loss starts after the prompt
+    tok = b._tokenizer
+    request = capital.using(lm=b).render("Japan")
+    msgs = chat_messages(lm15.serde.request_to_dict(request))
+    assert msgs[0]["role"] == "system" and "Reply in exactly this form" in msgs[0]["content"]
+    full, start = example_ids(tok, msgs, "<result>\nTokyo\n</result>", template_kwargs(tok))
+    assert full[:start] == prompt_ids(tok, msgs, template_kwargs(tok))
+    assert tok.decode(full[start:]).startswith("<result>\nTokyo\n</result>")
+    # a later template on the function does not change what the student reads
+    templated = capital.using(template=[functai.system("Answer. {instruction}"), functai.user("{country}")])
+    assert templated.using(lm=b).render("Japan").system == request.system
+    # it runs through functai (an untrained 2-layer model's reply is noise; the path is what is tested)
+    try:
+        capital.using(lm=b, retries=0)("Japan")
+    except Exception as exc:  # noqa: BLE001 — an unreadable reply is expected from random weights
+        assert "parse" in str(exc) or "Refusal" in type(exc).__name__
+    assert functai.inspect_history(1)[0].model == "baked:capital"
+    reloaded = load(b.path)
+    assert reloaded.kind == "generative" and reloaded.meta["max_new_tokens"] >= 16

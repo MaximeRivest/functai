@@ -88,9 +88,10 @@ class BakeReport:
         ]
         t = self.training
         if t:
+            unit = "inputs up to" if not self.label_source.endswith("(generated answers)") else "answers up to"
             lines.append(f"  training: {t.get('passes_run', '?')} passes (best {t.get('best_epoch', '?')}), "
                          f"{t.get('seconds', 0):.0f} s on {self.device} ({t.get('mixed_precision', 'fp32')}), "
-                         f"inputs up to {self.max_length} tokens")
+                         f"{unit} {self.max_length} tokens")
         lines.append("")
         head = "accuracy" if self.truth == "labeled" else "agrees with the teacher"
         teacher_col = self.teacher and any(f.teacher_accuracy is not None for f in self.fields)
@@ -102,8 +103,9 @@ class BakeReport:
                          (_pct(f.teacher_accuracy) if f.teacher_accuracy is not None else ""))
             if f.top3 is not None:
                 lines.append(f"  {'top-3':<28}{_pct(f.top3)}")
-            lines.append(f"  {'calibration error (ECE)':<28}{f.ece:.3f} (was {f.ece_raw:.3f}; temperature "
-                         f"{f.temperature:.2f})")
+            if not math.isnan(f.ece):
+                lines.append(f"  {'calibration error (ECE)':<28}{f.ece:.3f} (was {f.ece_raw:.3f}; temperature "
+                             f"{f.temperature:.2f})")
             if f.agreement is not None:
                 lines.append(f"  {'agrees with the teacher':<28}{_pct(f.agreement)}")
         if self.coverage:

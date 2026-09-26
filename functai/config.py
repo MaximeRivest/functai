@@ -41,6 +41,8 @@ DEFAULTS: Dict[str, Any] = {
     "api_retries": 3,           # re-sends after a transient provider error (rate limit, 5xx, timeout)
     "max_steps": 8,             # model calls per tool loop
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
+    "on_unreadable": "raise",   # "raise" | "record": keep an unreadable reply as a turn with no values
+                                # (prediction.refusal says why); for rollouts that must go on
     "cache_replies": False,     # True: reuse the reply to an identical request (in memory); lm15's `cache` is prompt caching
 
     # escalation: when the model is less sure than escalate_below (its probability for

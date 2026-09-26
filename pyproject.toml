@@ -48,6 +48,18 @@ dependencies = [
 data = [
     "dpyr>=1.10",
 ]
+# baking functions into weights you own: training, running and serving models
+bake = [
+    "torch>=2.4",
+    "transformers>=4.57",
+    "safetensors>=0.4",
+    "peft>=0.13",
+]
+# reinforcement learning and distillation on Prime Intellect (functai_verifiers,
+# functai_rows); tested with verifiers at commit 1863cfbd (its v1 API moves fast)
+prime = [
+    "verifiers>=0.3.1",
+]
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
@@ -58,7 +70,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build]
-packages = ["functai"]
+packages = ["functai", "functai_verifiers", "functai_rows"]
 
 [tool.ruff]
 line-length = 120

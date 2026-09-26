@@ -60,6 +60,13 @@ def _gold(row: Dict[str, Any], fields: Sequence[HeadField]) -> Optional[List[Lis
     return out
 
 
+def _gold_values(row: Dict[str, Any], outputs: Sequence[str]) -> Optional[Dict[str, Any]]:
+    """A row's own values for every output, or None when one is missing."""
+    if any(row.get(n) is None for n in outputs):
+        return None
+    return {n: row[n] for n in outputs}
+
+
 def _split(items: List[Any], share: float, lo: int, hi: int, seed: int) -> Tuple[List[Any], List[Any]]:
     items = list(items)
     random.Random(seed).shuffle(items)

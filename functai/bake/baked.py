@@ -129,7 +129,8 @@ class Baked:
         self._model = None
         self._tokenizer = None
         self._lock = threading.Lock()
-        self._batcher = _Batcher(self._run_texts)
+        self._batcher = _Batcher(self._run_texts if self.kind == "head" else self._generate, max_batch=64)
+        self._server = None
         self._report = None
         self.endpoint: Optional[str] = None       # generative students served elsewhere (serve())
 
@@ -218,6 +219,33 @@ class Baked:
         for r in range(len(texts)):
             out.append({f.name: dict(zip(f.keys, softmax(zs[i][r], temps[i]))) for i, f in enumerate(self.fields)})
         return out
+
+    def _generate(self, items: Sequence[Any]) -> List[str]:
+        from . import sft
+        return sft.generate_batch(self, items)
+
+    def serve(self, **options) -> str:
+        """Serve a generative student with vLLM and send calls there (see ``sft.serve``)."""
+        if self.kind == "head":
+            raise BakeError("serve() is for generative students; a head model runs in-process at full speed")
+        from . import sft
+        return sft.serve(self, **options)
+
+    def stop(self) -> None:
+        """Stop the vLLM server ``serve()`` started; calls run in-process again."""
+        if self._server is not None:
+            import signal
+            try:
+                os.killpg(self._server.pid, signal.SIGTERM)
+                self._server.wait(timeout=60)
+            except ProcessLookupError:
+                pass
+            except Exception:  # noqa: BLE001 — it did not stop in time
+                try:
+                    os.killpg(self._server.pid, signal.SIGKILL)
+                except ProcessLookupError:
+                    pass
+        self._server, self.endpoint = None, None
 
     def probabilities(self, texts: Sequence[str]) -> List[Dict[str, Dict[str, float]]]:
         """Per text, the probability of every answer, per field (texts as the layout writes them)."""

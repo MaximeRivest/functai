@@ -402,8 +402,21 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
     max_steps = max(1, int(settings.get("max_steps") or 1))
     for _ in range(max_steps):
         rendered = plan.render(turn, turns=list(past))
-        response, reading = _complete(plan, rendered, router=router, model=model, settings=settings,
-                                      function=function, responses=responses)
+        try:
+            response, reading = _complete(plan, rendered, router=router, model=model, settings=settings,
+                                          function=function, responses=responses)
+        except lmcc.Refusal as err:
+            if settings.get("on_unreadable") != "record" or not err.code.startswith("parse-") or not responses:
+                raise
+            # Keep the reply as it came, with no values: a verbatim replay still writes it into
+            # the next request, so a multi-turn exchange stays one conversation (lmcc D-48).
+            last = responses[-1]
+            turn = turn.with_step(lmcc.ModelStep({}, message_to_dict(last.message),
+                                                 lmcc.turn.sha256(rendered.request()), plan.calls_field))
+            turn = dataclasses.replace(turn.finish(), meta={**turn.meta, "refusal": err.describe()})
+            pred = Prediction({}, turn=turn, response=last, responses=responses, attempts=len(responses))
+            object.__setattr__(pred, "refusal", err)
+            return pred
         turn = turn.with_step(_model_step(plan, rendered, response, reading.values))
         calls = reading.values.get("calls") or []
         if not calls:

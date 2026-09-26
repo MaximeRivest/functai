@@ -72,13 +72,14 @@ class Prediction(_Record):
     """
 
     __slots__ = ("turn", "response", "responses", "repairs", "attempts", "probabilities",
-                 "measured_by", "escalated", "first")
+                 "measured_by", "escalated", "first", "refusal")
 
     def __init__(self, values: Dict[str, Any], *, turn=None, response=None, responses: Iterable = (),
                  repairs: Iterable = (), attempts: int = 1, probabilities=None, measured_by=None):
         super().__init__(values)
         object.__setattr__(self, "escalated", False)   # True: a first model was unsure; .first is its answer
         object.__setattr__(self, "first", None)
+        object.__setattr__(self, "refusal", None)      # on_unreadable="record": why the reply had no values
         object.__setattr__(self, "turn", turn)
         object.__setattr__(self, "response", response)
         object.__setattr__(self, "responses", list(responses))
