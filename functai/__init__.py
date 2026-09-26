@@ -12,6 +12,7 @@ API:
 - Templates: system(...), user(...), assistant(...), developer(...), turns()  → @ai(template=[...])
 - Programs:  @module; fn.opt(...), fn.map(table), and the optimizers
 - Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
+- Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Utils:     phistory(), inspect_history(), clear_cache()
 """
 
@@ -45,7 +46,9 @@ from .core import (
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
 from .evaluation import Evaluation, compare, evaluate, exact_match, runs
+from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module
+from .saved import LoadRefused, Verification, file, load, save, verify
 from .optimizers import (
     BootstrapFewShot,
     BootstrapFewShotWithRandomSearch,
@@ -75,6 +78,16 @@ __all__ = [
     "signature_text",
     "module",
     "FunctAIModule",
+    "check",
+    "save",
+    "load",
+    "verify",
+    "file",
+    "Report",
+    "Problem",
+    "Refused",
+    "LoadRefused",
+    "Verification",
     "FunctAIFunc",
     "ProgramState",
     "Prediction",

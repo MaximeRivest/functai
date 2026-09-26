@@ -15,48 +15,32 @@ The metric sees ``Prediction(result=<what the module returned>)``.
 
 from __future__ import annotations
 
-import ast
-import inspect
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional
 
 from .core import FunctAIFunc
 
 
-def _find_functai_calls_with_names(fn: Callable[..., Any], globals_dict: Mapping[str, Any]) -> List[Tuple[str, FunctAIFunc]]:
-    """(name, FunctAIFunc) for each direct call to a name that resolves to an AI function."""
+def _reachable_ai_functions(fn: Callable[..., Any]) -> List[FunctAIFunc]:
+    """Every AI function the code reaches: called by name or under another name,
+    through plain helper functions, tools and closures (functai.graph reads the
+    code; nothing runs)."""
+    from .graph import Analysis
+    a = Analysis(discover=True)
     try:
-        tree = ast.parse(_dedented_source(fn))
-    except Exception:
+        a.program(fn)
+    except TypeError:
         return []
-    closure = {}
-    try:
-        closure = inspect.getclosurevars(fn).nonlocals
-    except Exception:
-        pass
-    out: List[Tuple[str, FunctAIFunc]] = []
-    seen = set()
-    for node in ast.walk(tree):
-        if isinstance(node, ast.Call) and isinstance(node.func, ast.Name):
-            name = node.func.id
-            obj = closure.get(name, globals_dict.get(name))
-            if isinstance(obj, FunctAIFunc) and id(obj) not in seen:
-                out.append((name, obj))
-                seen.add(id(obj))
-    return out
-
-
-def _dedented_source(fn: Callable[..., Any]) -> str:
-    import textwrap
-    return textwrap.dedent(inspect.getsource(fn))
+    return [n.obj for n in a.nodes.values() if isinstance(n.obj, FunctAIFunc)]
 
 
 class FunctAIModule:
     """Callable wrapper for an orchestrator function that calls @ai functions."""
 
-    def __init__(self, fn: Callable[..., Any]):
+    def __init__(self, fn: Callable[..., Any], *, requires: Any = ()):
         if not callable(fn):
             raise TypeError("@module must wrap a callable function")
         self._fn = fn
+        self._requires = tuple(requires or ())
         self.__name__ = getattr(fn, "__name__", "module")
         self.__doc__ = fn.__doc__
         self.__wrapped__ = fn
@@ -90,9 +74,15 @@ class FunctAIModule:
     # ----- the AI functions it calls -----
 
     def named_ai_functions(self) -> Dict[str, FunctAIFunc]:
-        """The @ai functions the body calls by name (looked up when asked, so
-        functions defined after the module are found)."""
-        return {name: obj for name, obj in _find_functai_calls_with_names(self._fn, self._globals)}
+        """Every @ai function this module reaches: called by name, under another
+        name, or through helper functions (looked up when asked, so functions
+        defined after the module are found). Keys are function names, qualified by
+        module when two share a name."""
+        fns = _reachable_ai_functions(self._fn)
+        counts: Dict[str, int] = {}
+        for f in fns:
+            counts[f.__name__] = counts.get(f.__name__, 0) + 1
+        return {(f.__name__ if counts[f.__name__] == 1 else f"{f._fn.__module__}.{f.__name__}"): f for f in fns}
 
     def ai_functions(self) -> List[FunctAIFunc]:
         return list(self.named_ai_functions().values())
@@ -144,7 +134,9 @@ class FunctAIModule:
         return out
 
 
-def module(fn: Callable[..., Any] | None = None):
+def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
+    """``@module`` (or ``@module(requires=["numpy>=2"])``): a Python function that
+    calls @ai functions, optimized and saved as one program."""
     if fn is None:
-        return lambda real_fn: FunctAIModule(real_fn)
-    return FunctAIModule(fn)
+        return lambda real_fn: FunctAIModule(real_fn, requires=requires)
+    return FunctAIModule(fn, requires=requires)

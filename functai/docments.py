@@ -12,6 +12,7 @@ import dataclasses
 import inspect
 import linecache
 import re
+import textwrap
 import typing
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -149,9 +150,52 @@ def get_source(s: Any) -> str:
     if isinstance(s, str):
         return s
     try:
-        return inspect.getsource(s)
+        return class_source(s) if isinstance(s, type) else inspect.getsource(s)
     except Exception:
         return ""
+
+
+def class_source(cls: type) -> str:
+    """A class's source, also for classes defined in notebook cells (where
+    ``inspect.getsource`` cannot find the file): the cell of one of its methods,
+    else the most recent cell defining a class of that name at that line with
+    those fields."""
+    try:
+        found = inspect.getsource(cls)
+        tree = ast.parse(textwrap.dedent(found))
+        if tree.body and isinstance(tree.body[0], ast.ClassDef) and tree.body[0].name == cls.__name__:
+            return found
+    except (OSError, TypeError, SyntaxError):
+        pass            # not found, or found in the wrong file (a class made in a notebook)
+    marker = f"class {cls.__name__}"
+    files: List[str] = []
+    for v in vars(cls).values():                  # a method written in the class points to its cell
+        f = getattr(v, "__func__", v)
+        code = getattr(f, "__code__", None)
+        if code is not None and marker in "".join(linecache.getlines(code.co_filename)):
+            files.append(code.co_filename)
+    files += [k for k in reversed(list(linecache.cache))
+              if ("ipykernel" in k or "ipython-input" in k) and k not in files]
+    first = getattr(cls, "__firstlineno__", None)
+    fields = list(getattr(cls, "__annotations__", {}) or {})
+    for name in files:
+        text = "".join(linecache.getlines(name))
+        try:
+            tree = ast.parse(text)
+        except SyntaxError:
+            continue
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.ClassDef) and node.name == cls.__name__):
+                continue
+            start = min([d.lineno for d in node.decorator_list] + [node.lineno])
+            if first is not None and first not in (node.lineno, start):
+                continue
+            declared = [s.target.id for s in node.body if isinstance(s, ast.AnnAssign) and isinstance(s.target, ast.Name)]
+            if fields and declared != fields:
+                continue
+            lines = text.splitlines(keepends=True)
+            return "".join(lines[start - 1:node.end_lineno])
+    raise OSError(f"no source for class {cls.__name__}")
 
 
 def docstring(sym: Any) -> str:
@@ -429,9 +473,12 @@ def _class_field_docments(cls: Any) -> Dict[str, str]:
                 acc = []
         return out
 
-    # Strategy 1: direct class source
-    src = get_source(cls)
-    parsed = _parse(src)
+    # Strategy 1: the class's own source (also found in notebook cells)
+    try:
+        src = class_source(cls)
+    except (OSError, TypeError):
+        src = ""
+    parsed = _parse(textwrap.dedent(src))
     if parsed:
         return parsed
 
