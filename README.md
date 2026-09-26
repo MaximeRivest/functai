@@ -598,8 +598,33 @@ compare(before, after)   # per metric: before, after, diff with its 95% interval
 
 `evaluate(..., log="runs/")` writes each run to `runs/<run>.parquet`;
 `functai.runs("runs/")` reads them all back as one table (columns lined up by
-name). `fn.map(table)` runs a function over a table and returns it with the
-`pred_*` columns, for batch work without a metric.
+name).
+
+**AI functions on columns.** Called with a dpyr column instead of a value,
+an AI function is a column expression, usable in `mutate()` and `filter()`
+like any other; columns and constants mix freely:
+
+```python
+from dpyr import read, col, n
+
+reviews = read("reviews.parquet")
+(reviews
+    .mutate(topic=classify(col.text),
+            reply=answer(col.question, context=col.doc, tone="formal"))
+    .filter(is_complaint(col.text))
+    .group_by(col.topic)
+    .summarize(n=n()))
+```
+
+Nothing runs when the line is written, but the column's type (the return
+annotation; text when there is none) is checked. Each distinct input is
+sent to the model once, 8 at a time, and the answers are remembered for the
+session; a displayed dataframe only asks for the rows it shows. A row that
+fails raises after every row ran, and running again retries only the
+failures. The column uses the prompt the function had when the line was
+written, so optimizing it later never mixes old and new answers. Options:
+`classify.vectorize(threads=16, errors="null")(col.text)`. `fn.map(table)`
+returns the whole run table instead (tokens, errors, timing per row).
 
 **Optimization** tunes what the function sends besides its inputs: the
 **instruction** and the **demos** (worked examples). It never edits your

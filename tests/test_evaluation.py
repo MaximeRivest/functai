@@ -301,3 +301,95 @@ def test_without_dpyr_the_score_works_and_tables_say_what_to_install(fake, monke
         evaluate(f, "dev.parquet")
     f.opt(trainset=ROWS)                                     # optimizing needs no tables
     assert f.demos
+
+
+# ------------------------------------------------------------------ AI functions on columns
+
+
+def test_an_ai_function_called_on_a_column_is_a_column(fake):
+    r = fake(responder=answer)
+    f = make_classifier()
+    frame = dpyr.read(ROWS).mutate(intent=f(col.user_query))
+    assert frame.schema["intent"] == dpyr.STR and r.requests == []      # nothing runs yet
+    got = frame.collect()
+    assert got["intent"].to_list() == ["booking", "information", "information", "booking"]
+    assert len(r.requests) == 4
+    frame.collect()
+    dpyr.read(ROWS).mutate(intent=f(col.user_query)).filter(col.intent == "booking").collect()
+    assert len(r.requests) == 4                                           # remembered
+
+
+def test_several_inputs_columns_and_constants(fake):
+    @ai
+    def answer_in(question: str, context: str, language: str) -> str:
+        """Answer from the context."""
+
+    def responder(req):
+        text = "".join(p.text for p in req.messages[-1].parts)
+        lang = re.search(r"<language>\n(.*?)\n</language>", text, re.S).group(1)
+        ctx = re.search(r"<context>\n(.*?)\n</context>", text, re.S).group(1)
+        return f"<result>\n{lang}:{ctx}\n</result>"
+
+    fake(responder=responder)
+    t = dpyr.read([{"q": "a", "doc": "x"}, {"q": "b", "doc": "y"}])
+    got = t.mutate(a=answer_in(col.q, context=col.doc, language="fr")).collect()
+    assert got["a"].to_list() == ["fr:x", "fr:y"]
+
+
+def test_the_column_keeps_the_prompt_it_was_written_with(fake):
+    def responder(req):
+        return "<result>\n" + ("B" if "Be terse" in (req.system or "") else "A") + "\n</result>"
+
+    fake(responder=responder)
+    f = make_classifier()
+    before = dpyr.read(ROWS).mutate(x=f(col.user_query))
+    f.instructions = "Be terse."
+    after = dpyr.read(ROWS).mutate(x=f(col.user_query))
+    assert before.collect()["x"].unique().to_list() == ["A"]
+    assert after.collect()["x"].unique().to_list() == ["B"]
+
+
+def test_structured_outputs_and_filters_on_columns(fake):
+    @dataclasses.dataclass
+    class Entity:
+        name: str
+        kind: str
+
+    @ai
+    def extract(text: str) -> list[Entity]:
+        """The entities."""
+
+    @ai
+    def is_booking(user_query: str) -> bool:
+        """Is it a booking?"""
+
+    fake(responder=lambda req: '<result>\n[{"name": "Paris", "kind": "city"}]\n</result>'
+         if "entities" in (req.system or "") else
+         "<result>\n" + str(label(query_of(req)) == "booking").lower() + "\n</result>")
+    t = dpyr.read(ROWS)
+    assert t.filter(is_booking(col.user_query)).shape[0] == 2
+    e = t.mutate(e=extract(col.user_query))
+    assert e.schema["e"] == dpyr.dtypes.nested("List(Struct(name: Str, kind: Str))")
+
+
+def test_failed_rows_raise_after_all_ran_or_become_null(fake):
+    fake(responder=lambda req: RuntimeError("down") if "room" in query_of(req) else answer(req))
+    functai.configure(api_retries=0)
+    f = make_classifier()
+    with pytest.raises(dpyr.DpyrError, match="failed on 1 of 4 rows"):
+        dpyr.read(ROWS).mutate(x=f(col.user_query)).collect()
+    with pytest.warns(UserWarning):
+        got = dpyr.read(ROWS).mutate(x=f.vectorize(errors="null")(col.user_query)).collect()
+    assert got["x"].to_list() == [None, "information", "information", "booking"]
+
+
+def test_a_module_on_a_column(fake):
+    @module
+    def shout_both(text: str) -> list[str]:
+        return [shout(text), shout(text + "!")]
+
+    fake(responder=lambda req: "<result>\nHEY\n</result>")
+    got = dpyr.read([{"t": "hey"}]).mutate(s=shout_both(col.t)).collect()
+    assert got["s"].to_list() == [["HEY", "HEY"]]
+    with pytest.raises(TypeError, match="no return annotation"):
+        shout_twice(col.t)

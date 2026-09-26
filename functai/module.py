@@ -63,9 +63,25 @@ class FunctAIModule:
         self._globals = getattr(fn, "__globals__", {})
         self.history: List[Any] = []
         self._opt_call_defaults: Dict[str, Any] = {}
+        self._vectorized: Dict[Any, Any] = {}
 
     def __call__(self, *args, **kwargs):
+        from .columns import has_column
+        if has_column(args, kwargs):                  # research(col.claim): a column, for dpyr
+            return self.vectorize()(*args, **kwargs)
         return self._invoke_original(*args, **kwargs)
+
+    def vectorize(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise"):
+        """This module as a dpyr row function (see ``FunctAIFunc.vectorize``);
+        its column type is the module's return annotation, or ``dtype``."""
+        from .columns import vectorize_module
+        return vectorize_module(self, dtype=dtype, threads=threads, errors=errors)
+
+    def __dpyr_vectorize__(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise",
+                           version: str = ""):
+        from .columns import vectorize_module
+        return vectorize_module(self, dtype=dtype, threads=threads, errors=errors,
+                                version=version)
 
     def __repr__(self) -> str:
         names = ", ".join(self.named_ai_functions())

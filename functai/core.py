@@ -335,6 +335,7 @@ class FunctAIFunc:
         self._plan_cache: Dict[Tuple, lmcc.Plan] = {}
         self._opt_stack: List[ProgramState] = []
         self._opt_runs: List[Dict[str, Any]] = []
+        self._vectorized: Dict[Any, Any] = {}                 # dpyr row functions, by prompt version
         self._states_history: List[ProgramState] = []
         self._instr_observed: List[Dict[str, Any]] = []
         self._instr_refined = 0
@@ -446,6 +447,7 @@ class FunctAIFunc:
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
         clone._opt_stack, clone._opt_runs, clone._states_history = [], [], []
+        clone._vectorized = {}
         return clone
 
     # ----- state (what optimizers change) -----
@@ -641,6 +643,11 @@ class FunctAIFunc:
         return pred
 
     def __call__(self, *args, all: bool = False, **kwargs):
+        from .columns import has_column
+        if has_column(args, kwargs):                  # classify(col.text): a column, for dpyr
+            if all:
+                raise TypeError("all=True gives one call's full prediction; on columns, use fn.map(table)")
+            return self.vectorize()(*args, **kwargs)
         # Back-compat: map deprecated _prediction to all
         if "_prediction" in kwargs:
             if kwargs.pop("_prediction"):
@@ -701,6 +708,22 @@ class FunctAIFunc:
             _ACTIVE_CALL.reset(token)
 
     # ----- optimization -----
+
+    def vectorize(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise"):
+        """This function as a dpyr row function, to call on columns:
+        ``df.mutate(topic=classify.vectorize(threads=16)(col.text))``.
+        (``classify(col.text)`` is the same with the defaults: 8 threads,
+        errors raised after every row ran.) The column type is the return
+        annotation (text when there is none); ``dtype`` overrides it. The
+        prompt in use now is the one the column is computed with."""
+        from .columns import vectorize_function
+        return vectorize_function(self, dtype=dtype, threads=threads, errors=errors)
+
+    def __dpyr_vectorize__(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise",
+                           version: str = ""):
+        from .columns import vectorize_function
+        return vectorize_function(self, dtype=dtype, threads=threads, errors=errors,
+                                  version=version)
 
     def map(self, data: Any, *, num_threads: int = 1):
         """Run on every row of a table; returns the rows with the predictions

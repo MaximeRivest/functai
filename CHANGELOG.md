@@ -33,6 +33,13 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
   in the score. `compare(before, after)` pairs examples; `log=` and
   `functai.runs(folder)` keep runs as parquet files; `fn.map(table)`.
   Tables need `pip install "functai[data]"` (dpyr); scores do not.
+- AI functions on columns: `df.mutate(topic=classify(col.text))`, with any
+  mix of columns and constants as arguments, in `mutate()` and `filter()`
+  (dpyr's `vectorize`). One model call per distinct input, 8 at a time,
+  remembered for the session; displays only run the shown rows; the column
+  is pinned to the prompt in use when it was written. `fn.vectorize(threads=,
+  errors=, dtype=)` for options; @modules too (their return annotation types
+  the column).
 - Settings resolve at call time with a thread-safe cascade (`using` >
   function > `with configure` block > `configure`); unknown settings raise;
   any lm15 `Config` field is a setting.

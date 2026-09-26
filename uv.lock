@@ -22,7 +22,7 @@ wheels = [
 
 [[package]]
 name = "dpyr"
-version = "1.9.0"
+version = "1.10.0"
 source = { editable = "../r_ports_to_py/dpyr" }
 dependencies = [
     { name = "duckdb" },
