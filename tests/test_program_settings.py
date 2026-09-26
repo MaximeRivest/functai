@@ -6,7 +6,7 @@ import pytest
 
 import functai
 from conftest import FakeRouter
-from functai import _ai, ai, system, turns, user
+from functai import _ai, ai, system, user
 
 XML = "<result>\nok\n</result>"
 QA = lmcc.adapter(messages=[
