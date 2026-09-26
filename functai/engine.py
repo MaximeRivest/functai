@@ -127,6 +127,14 @@ def _part_text(part: Any) -> str:
     if kind == "tool_call" or type(part).__name__ == "ToolCallPart":
         args = getattr(part, "input", None)
         return f"[tool call {getattr(part, 'name', '?')}({json.dumps(args, ensure_ascii=False, default=str)})]"
+    if kind == "data" or type(part).__name__ == "DataPart":
+        text = json.dumps(getattr(part, "value", None), ensure_ascii=False, default=str)
+        probs = getattr(part, "probabilities", None) or {}
+        for field, dist in probs.items():
+            top = sorted(dist.items(), key=lambda kv: -kv[1])[:3]
+            text += f"\n  {field}: " + ", ".join(f"{k} {p:.3f}" for k, p in top) + \
+                (f"  ({getattr(part, 'method', '')})" if getattr(part, "method", None) else "")
+        return text
     if kind == "tool_result" or type(part).__name__ == "ToolResultPart":
         content = getattr(part, "content", None)
         inner = " ".join(_part_text(p) for p in content) if isinstance(content, (list, tuple)) else str(content)

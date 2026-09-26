@@ -10,7 +10,7 @@ Every fact is overridable: ``@ai(capabilities={"native_reasoning": False})``.
 from __future__ import annotations
 
 import threading
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Optional, Tuple
 
 import lm15
 from lm15.router import openai_chat_model_string
@@ -97,6 +97,10 @@ def model_string(lm: Any) -> str:
     return lm
 
 
+def _is_baked(obj: Any) -> bool:
+    return getattr(type(obj), "__functai_baked__", False) is True
+
+
 def _is_bound_client(obj: Any) -> bool:
     """lm15's BoundClient (a login's connection and one model), duck-typed."""
     selection = getattr(obj, "selection", None)
@@ -118,7 +122,7 @@ def _is_async(obj: Any) -> bool:
 
 def check_lm(lm: Any) -> None:
     """Refuse, with the fix, an ``lm`` value functai cannot use."""
-    if lm is None or isinstance(lm, str) or _is_bound_client(lm):
+    if lm is None or isinstance(lm, str) or _is_bound_client(lm) or _is_baked(lm):
         return
     if _is_provider_lm(lm):
         raise TypeError(
@@ -152,10 +156,11 @@ def _is_router(obj: Any) -> bool:
 
 
 class _Route:
-    """What functai needs to know about where a request goes."""
+    """What functai needs to know about where a request goes. ``capabilities``:
+    what the destination declares itself (a baked model), instead of the table."""
 
-    def __init__(self, provider: str, model: str):
-        self.provider, self.model = provider, model
+    def __init__(self, provider: str, model: str, capabilities: Optional[Dict[str, bool]] = None):
+        self.provider, self.model, self.capabilities = provider, model, capabilities
 
     def __repr__(self) -> str:
         return f"{self.provider}:{self.model}"
@@ -209,6 +214,9 @@ def resolve(settings: Dict[str, Any]) -> Tuple[Any, str, Any]:
     environment and CLI logins (lm15's own rules)."""
     from . import accounts
     lm, client = settings.get("lm"), settings.get("client")
+    if _is_baked(lm):
+        # weights of our own: the model is its own client, and says what it can do
+        return lm, lm.model, _Route(lm.provider, lm.name, lm.capabilities)
     if _is_bound_client(lm):
         # its own connection: a client= from configure does not apply to it (both
         # in one place is refused by config.check, where the contradiction is written)
@@ -293,6 +301,9 @@ def adjust(settings: Dict[str, Any], route: Any) -> Dict[str, Any]:
 
 
 def model_capabilities(settings: Dict[str, Any], route: Any) -> Dict[str, bool]:
+    declared = getattr(route, "capabilities", None)
+    if declared is not None:
+        return {**declared, **(settings.get("capabilities") or {})}
     caps = capabilities(route.provider, route.model)
     temperature = settings.get("temperature")
     if route.provider in ("anthropic", "claude-code") and caps.get("native_reasoning") and temperature not in (None, 1, 1.0):

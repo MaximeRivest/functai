@@ -43,6 +43,11 @@ DEFAULTS: Dict[str, Any] = {
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
     "cache_replies": False,     # True: reuse the reply to an identical request (in memory); lm15's `cache` is prompt caching
 
+    # escalation: when the model is less sure than escalate_below (its probability for
+    # its own answer), escalate_to answers instead (a model name, a baked model, an AI function)
+    "escalate_to": None,
+    "escalate_below": None,     # default 0.9 when escalate_to is set
+
     # memory
     "stateful": False,
     "state_window": 5,
@@ -69,6 +74,8 @@ DEFAULTS: Dict[str, Any] = {
 KNOWN = frozenset(DEFAULTS) | CONFIG_FIELDS
 
 _GLOBAL: Dict[str, Any] = {}
+_LOCK = __import__("threading").Lock()
+_ABSENT = object()
 _SCOPED: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("functai_scoped", default={})
 _FORCED: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("functai_forced", default={})
 
@@ -87,8 +94,17 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
             models.check_lm(settings["lm"])
         if settings.get("client") is not None:
             models.check_client(settings["client"])
-            if models._is_bound_client(settings.get("lm")):
-                raise TypeError("lm is an lm15 BoundClient, which brings its own connection: drop client=")
+            if models._is_bound_client(settings.get("lm")) or models._is_baked(settings.get("lm")):
+                raise TypeError(f"lm is a {type(settings['lm']).__name__}, which brings its own connection: "
+                                f"drop client=")
+        esc = settings.get("escalate_to")
+        if esc is not None:
+            from .core import FunctAIFunc
+            if not (isinstance(esc, (str, FunctAIFunc)) or models._is_baked(esc)):
+                raise TypeError("escalate_to is a model name, a baked model, or an AI function")
+        below = settings.get("escalate_below")
+        if below is not None and not (isinstance(below, (int, float)) and 0 < below <= 1):
+            raise ValueError(f"escalate_below is a probability in (0, 1], not {below!r}")
         if settings.get("adapter") is not None:
             adapters.resolve_adapter(settings["adapter"])
     except (TypeError, ValueError) as exc:
@@ -110,14 +126,21 @@ class configure:
 
     def __init__(self, **overrides):
         self._overrides = check(overrides, "configure")
-        self._before = dict(_GLOBAL)
-        _GLOBAL.update(self._overrides)
+        with _LOCK:
+            self._before = {k: _GLOBAL.get(k, _ABSENT) for k in self._overrides}
+            _GLOBAL.update(self._overrides)
         self._token = None
 
     def __enter__(self):
-        # Used as a block: undo the process-wide change, scope it instead.
-        _GLOBAL.clear()
-        _GLOBAL.update(self._before)
+        # Used as a block: undo this process-wide change (only the keys it set, and
+        # only where no other thread has set them since), and scope it instead.
+        with _LOCK:
+            for k, old in self._before.items():
+                if _GLOBAL.get(k, _ABSENT) is self._overrides[k]:
+                    if old is _ABSENT:
+                        _GLOBAL.pop(k, None)
+                    else:
+                        _GLOBAL[k] = old
         self._token = _SCOPED.set({**_SCOPED.get(), **self._overrides})
         return self
 
@@ -129,6 +152,17 @@ class configure:
 
     def __repr__(self) -> str:
         return f"configure({', '.join(f'{k}={v!r}' for k, v in self._overrides.items())})"
+
+
+@contextlib.contextmanager
+def scoped(**overrides) -> Iterator[None]:
+    """Like ``with configure(...)``, without ever touching the process-wide settings
+    (functai's own internal use)."""
+    token = _SCOPED.set({**_SCOPED.get(), **check(overrides, "scoped")})
+    try:
+        yield
+    finally:
+        _SCOPED.reset(token)
 
 
 @contextlib.contextmanager

@@ -33,6 +33,7 @@ from .data import Prediction
 from .docments import (UNSET, docments, docstring, extract_docstrings, flexiclass,  # noqa: F401
                        get_dataclass_source, get_name, get_source, isdataclass, parse_docstring,
                        qual_name, sig2str)
+from .bake.baked import is_baked
 from .engine import inspect_history, phistory  # noqa: F401 — re-exported
 from .signature import (MAIN_OUTPUT_DEFAULT_NAME, Spec, _collect_ast_outputs, _extract_return_names,
                         build_spec, describe_signature)
@@ -529,8 +530,9 @@ class FunctAIFunc:
         s = self._effective()
         if instructions is None:
             instructions = self._current_state().instructions
-        key = (instructions, bool(s.get("include_fn_name_in_instructions")),
-               _module_name(s.get("module")) == "cot", bool(self._tools))
+        baked = s.get("lm") if is_baked(s.get("lm")) else None
+        cot = _module_name(s.get("module")) == "cot" and (baked is None or bool(baked.meta.get("reasoning")))
+        key = (instructions, bool(s.get("include_fn_name_in_instructions")), cot, bool(self._tools))
         spec = self._spec_cache.get(key)
         if spec is None:
             spec = build_spec(self._fn, instructions=instructions, include_fn_name=key[1], reasoning=key[2],
@@ -551,7 +553,14 @@ class FunctAIFunc:
     def _plan_for(self, spec: Spec, settings: Dict[str, Any]):
         router, model, route = models.resolve(settings)
         caps = models.model_capabilities(settings, route)
-        layout = self._layout(settings)
+        baked = settings.get("lm") if is_baked(settings.get("lm")) else None
+        if baked is not None:
+            # A baked model reads its inputs through the layout it was trained on,
+            # whatever this function's own adapter or template says.
+            _check_baked_signature(self, spec, baked)
+            layout = adapters.Layout(adapter=baked.layout)
+        else:
+            layout = self._layout(settings)
         key = (layout.key(), json.dumps(caps, sort_keys=True), spec.signature.instructions,
                spec.reasoning, spec.tools, route.provider)
         plan = self._plan_cache.get(key)
@@ -618,21 +627,16 @@ class FunctAIFunc:
         return dict(bound.arguments)
 
     def _run(self, inputs: Dict[str, Any], spec: Spec) -> Prediction:
-        """One model call (or tool loop) for these inputs; used by the body's `_ai`."""
+        """One call for these inputs (the model, the tool loop, and escalation when
+        the first model is unsure); used by the body's `_ai`."""
         s = self._effective()
         if (s.get("autocompile") or s.get("autoinstruct")) and not self._autoinstructed:
             self._autoinstruct(s)
             spec = self._spec()
-        plan, router, model, route = self._plan_for(spec, s)
-        rec = engine.RECORDING.get()
-        if rec is not None and s.get("lm") is not None:
-            rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
-                [route.provider, route.model, model]
-        s = models.adjust(s, route)
-        past = self._past(plan, spec, s)
-        pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
-                          router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},
-                          tool_specs=self._tool_specs)
+        pred, model, plan = self._call_model(inputs, spec, s)
+        escalate_to = s.get("escalate_to")
+        if escalate_to is not None:
+            pred, model, plan = self._maybe_escalate(pred, inputs, s, escalate_to, (model, plan))
         if s.get("stateful"):
             with self._lock:
                 self.history.append(pred.turn)
@@ -644,10 +648,52 @@ class FunctAIFunc:
             trace.append((self, pred))
         if s.get("debug"):
             print(f"[functai] {self.__name__}: model={model}; adapter={plan.adapter.name}; "
-                  f"outputs={list(pred)} (primary={spec.main}); tokens={pred.usage}")
+                  f"outputs={list(pred)} (primary={spec.main}); tokens={pred.usage}"
+                  + (f"; escalated (first answer's confidence {pred.first.confidence:.2f})" if pred.escalated else ""))
         if int(s.get("instruction_autorefine_calls") or 0) > 0 and not self._instr_frozen:
             self._record_and_maybe_refine(inputs, dict(pred), s)
         return pred
+
+    def _maybe_escalate(self, pred: Prediction, inputs: Dict[str, Any], s: Dict[str, Any], escalate_to: Any,
+                        first: Tuple[Any, Any]):
+        """When the first model is less sure than ``escalate_below``, ask ``escalate_to``
+        (a model, a baked model, or an AI function) and return its answer, with the
+        first one kept as ``.first``."""
+        from .config import forced
+        conf = pred.confidence
+        if conf is None:
+            raise ValueError(f"{self.__name__}: escalate_to needs a first model that measures its confidence (a baked "
+                             f"model, Jev, or probabilities='required'); {first[0]} gave no probabilities")
+        threshold = float(s.get("escalate_below") if s.get("escalate_below") is not None else 0.9)
+        if conf >= threshold:
+            return pred, first[0], first[1]
+        if isinstance(escalate_to, FunctAIFunc):
+            # the target follows its own escalate_to (a longer chain), never a global one
+            from .config import scoped
+            with scoped(escalate_to=None):
+                second = escalate_to(**inputs, all=True)
+            model, plan = escalate_to.__name__, first[1]
+        else:
+            # This call only: the escalation model, and no second escalation from it.
+            with forced(lm=escalate_to, escalate_to=None):
+                s2 = self._effective()
+                second, model, plan = self._call_model(inputs, self._spec(), s2)
+        object.__setattr__(second, "escalated", True)
+        object.__setattr__(second, "first", pred)
+        return second, model, plan
+
+    def _call_model(self, inputs: Dict[str, Any], spec: Spec, s: Dict[str, Any]):
+        plan, router, model, route = self._plan_for(spec, s)
+        rec = engine.RECORDING.get()
+        if rec is not None and s.get("lm") is not None:
+            rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
+                [route.provider, route.model, model]
+        s = models.adjust(s, route)
+        past = self._past(plan, spec, s)
+        pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
+                          router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},
+                          tool_specs=self._tool_specs)
+        return pred, model, plan
 
     def __call__(self, *args, all: bool = False, **kwargs):
         from .columns import has_column
@@ -765,6 +811,13 @@ class FunctAIFunc:
             if log is not None:
                 self._opt_runs.append(log)
 
+    def bake(self, data: Any, **options):
+        """Train weights that answer this function; returns the baked model.
+        ``fast = fn.using(lm=baked)`` runs the function on them. See
+        ``functai.bake.bake`` for the options (student, teacher, labels, test, ...)."""
+        from .bake import bake
+        return bake(self, data, **options)
+
     def undo_opt(self, steps: int = 1) -> None:
         """Revert the last ``steps`` optimizations."""
         for _ in range(max(1, int(steps))):
@@ -824,6 +877,24 @@ class FunctAIFunc:
                 warnings.warn(f"[functai] {self.__name__}: instruction refinement failed ({exc})")
             return
         self._state = dataclasses.replace(self._state, instructions=text)
+
+
+def _check_baked_signature(fn: "FunctAIFunc", spec: Spec, baked: Any) -> None:
+    """A baked model answers the signature it was trained for, or refuses."""
+    from .bake.examples import BakeError, head_fields, head_signature
+    if baked.kind == "head":
+        try:
+            signature = head_signature(spec, head_fields(spec))
+        except BakeError as exc:
+            raise BakeError(f"{fn.__name__} cannot run on the baked model {baked.name!r}: {exc}") from None
+    else:
+        signature = spec.signature
+    if lmcc.signature_fingerprint(signature) != baked.fingerprint:
+        was = {f.name: (f.direction, f.type) for f in baked.signature.fields}
+        now = {f.name: (f.direction, f.type) for f in signature.fields}
+        diff = sorted(set(was.items()) ^ set(now.items()))
+        raise BakeError(f"{fn.__name__} has changed since {baked.name!r} was baked (inputs, outputs or their "
+                        f"answers differ: {diff[:6]}); bake it again")
 
 
 # ──────────────────────────────────────────────────────────────────────────────
