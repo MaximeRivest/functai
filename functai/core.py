@@ -272,6 +272,21 @@ _SETTING_ALIASES = {
 }
 
 
+_KEEP = object()   # `using` left the template as it was
+
+
+def _checked_template(messages: Any) -> Optional[tuple]:
+    """A template as stored (a tuple of messages), refused now if lmcc cannot
+    compile it; None for no template."""
+    if messages is None:
+        return None
+    if isinstance(messages, (str, dict)):
+        raise TypeError("a template is a list of messages: [system(...), turns(), user(...)]")
+    checked = tuple(messages)
+    adapters.template_adapter(checked)
+    return checked
+
+
 def _module_name(module: Any) -> str:
     if module is None:
         return "predict"
@@ -310,9 +325,7 @@ class FunctAIFunc:
         template = template if template is not None else messages
         if template is not None and "adapter" in self._settings:
             raise TypeError("give adapter=... or template=[...], not both: a template is an adapter")
-        self._template = tuple(template) if template is not None else None
-        if self._template is not None:
-            adapters.template_adapter(self._template)       # template syntax errors surface now
+        self._template = _checked_template(template)        # template syntax errors surface now
         self._tools: List[Callable] = list(tools or [])
         self._tool_specs = [engine.tool_spec(t) for t in self._tools]
         self._state = ProgramState()
@@ -337,6 +350,8 @@ class FunctAIFunc:
         return effective(self._settings)
 
     def _set(self, name: str, value: Any) -> None:
+        if value is not None:
+            check({name: value}, f"{self.__name__}.{name}")
         with self._lock:
             if value is None:
                 self._settings.pop(name, None)
@@ -353,18 +368,23 @@ class FunctAIFunc:
     def adapter(self): return self._settings.get("adapter")
     @adapter.setter
     def adapter(self, v):
-        self._template = None
+        """A layout: a name ('xml', 'chat', 'json'), an lmcc adapter, or a saved
+        adapter artifact. Setting one replaces the function's template."""
         self._set("adapter", v)
+        self._template = None
 
     @property
     def template(self): return self._template
     @template.setter
     def template(self, messages):
-        self._template = tuple(messages) if messages is not None else None
-        if self._template is not None:
-            adapters.template_adapter(self._template)
-            self._settings.pop("adapter", None)
-        self._plan_cache.clear()
+        """A chat template; it replaces the function's adapter. None removes it
+        (the function then uses its adapter setting, or the default layout)."""
+        checked = _checked_template(messages)
+        with self._lock:
+            self._template = checked
+            if checked is not None:
+                self._settings.pop("adapter", None)
+            self._plan_cache.clear()
 
     @property
     def module(self): return self._effective().get("module")
@@ -395,15 +415,33 @@ class FunctAIFunc:
     @debug.setter
     def debug(self, v: bool): self._set("debug", bool(v))
 
-    def using(self, **settings) -> "FunctAIFunc":
-        """A copy of this function with other settings (``f.using(lm="gpt-4.1")(x)``).
-        The copy starts with the same instruction and demos; the original is untouched."""
+    def using(self, *, template: Any = _KEEP, **settings) -> "FunctAIFunc":
+        """A copy of this function with other settings or another layout:
+        ``f.using(lm="gpt-4.1")(x)``, ``f.using(adapter="chat")``,
+        ``f.using(template=[system(...), user(...)])``, ``f.using(client=...)``.
+
+        A setting given as None is no longer set by the copy: it comes from
+        ``configure`` or the defaults. An adapter replaces the template and a
+        template replaces the adapter, as on the function itself. The copy starts
+        with the same instruction and demos; the original is untouched."""
+        checked = check(settings, "using")
+        if template is not _KEEP and checked.get("adapter") is not None and template is not None:
+            raise TypeError("give adapter=... or template=[...], not both: a template is an adapter")
         clone = object.__new__(FunctAIFunc)
         clone.__dict__.update(self.__dict__)
-        clone._settings = {**self._settings,
-                           **{k: v for k, v in check(settings, "using").items() if v is not None}}
-        if "module" in settings:
-            clone._settings["module"] = _module_name(settings["module"])
+        merged = dict(self._settings)
+        for k, v in checked.items():
+            if v is None:
+                merged.pop(k, None)
+            else:
+                merged[k] = _module_name(v) if k == "module" else v
+        clone._settings = merged
+        if template is not _KEEP:
+            clone._template = _checked_template(template)
+            if clone._template is not None:
+                merged.pop("adapter", None)
+        elif checked.get("adapter") is not None:
+            clone._template = None
         clone.history = []
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}

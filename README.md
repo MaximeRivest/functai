@@ -213,6 +213,46 @@ summarize.using(lm="gemini-2.5-flash")("...")    # this call
 
 `functai.settings.lm` reads the effective value.
 
+### Changing a function's model, connection and layout
+
+Everything can be set when the function is defined, changed on it later, or
+changed on a copy (`using`), which leaves the original alone:
+
+| | at definition | afterwards | on a copy |
+|---|---|---|---|
+| model | `@ai(lm="gpt-4.1")` | `fn.lm = "gpt-4.1"` | `fn.using(lm="gpt-4.1")` |
+| connection | `@ai(client=...)` | `fn.using(client=...)` | `fn.using(client=...)` |
+| layout by name, lmcc adapter, or saved adapter JSON | `@ai(adapter="chat")` | `fn.adapter = my_adapter` | `fn.using(adapter=my_adapter)` |
+| chat template | `@ai(template=[...])` | `fn.template = [...]` | `fn.using(template=[...])` |
+
+- An adapter replaces the function's template, and a template replaces its
+  adapter. `template=None` goes back to the adapter setting (or the default).
+- In `using`, a setting given as `None` is no longer set by the copy: it comes
+  from `configure` or the defaults.
+- A bad value (an unknown layout name, a template lmcc cannot read, a DSPy
+  adapter, a connection object where a model name belongs) is refused where you
+  write it, before anything changes.
+
+**The model and the connection are separate.** `lm=` is the model's name.
+`client=` is how to reach it, when you build that yourself with lm15: a
+router, or one provider's LM, which does not know which model to use.
+
+```python
+import lm15
+
+@ai(lm="gpt-4.1-mini", client=lm15.OpenAILM(api_key=OTHER_KEY))
+def f(text: str) -> str: ...
+
+f.using(lm="claude:claude-haiku-4-5", client=lm15.ClaudeCodeLM.from_claude_code(credentials_path=...))
+```
+
+A model prefix naming another provider than the client's is refused;
+a bare model name is sent as written. lm15's `BoundClient` (a login plus one
+model) goes in `lm=`, since it carries both; a `client=` set more widely (in
+`configure`) does not apply to it, and giving both in one place is refused.
+You do not need any of this for the usual cases: model names, `api_key=`,
+and `functai.login(...)` cover them.
+
 ### Models
 
 Any [lm15](https://github.com/lm15-dev/lm15-python) model string:
@@ -227,7 +267,7 @@ lm15 reads it.
 | `lm` | the model |
 | `api_key`, `base_url` | for the provider `lm` routes to (an explicit key beats everything) |
 | `auth` | saved logins: default on; a path for another credentials file; `False` to never use them |
-| `router` | any lm15 router, for full control |
+| `client` | the lm15 connection, when you build it yourself (below) |
 | `temperature`, `max_tokens`, `seed`, `top_p`, `stop`, … | any lm15 `Config` field |
 | `adapter` | the layout (§5); a chat template is given per function, `@ai(template=[...])` |
 | `module` | `"predict"`, `"cot"` (§6), `"react"` (tools) |

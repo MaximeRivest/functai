@@ -37,6 +37,13 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
 - Settings a model refuses are left out with one warning: `temperature`/`top_p`
   for OpenAI reasoning models, those and `max_tokens` for the ChatGPT backend;
   no stop sequences for xAI.
+- Model, connection and layout on the program: `fn.lm`, `fn.adapter`, `fn.template`
+  setters and `fn.using(lm=, client=, adapter=, template=)`; an adapter replaces a
+  template and back (a copy's `adapter=` was ignored when the function had a
+  template); `None` in `using` means inherit. `client=` takes an lm15 router or one
+  provider's LM (`OpenAILM(api_key=...)`, `ClaudeCodeLM(...)`); `lm=` takes a model
+  name or an lm15 `BoundClient`. Bad layouts, templates, models and clients are
+  refused where they are written (a DSPy adapter now at definition).
 - Inspection: `phistory()`, `inspect_history()`, `fn.render()`, `fn.explain()`.
 - Types: tuples, sets, TypedDicts, `Any`, `Annotated[T, "description"]`;
   JSON integers read into `float` fields become floats.

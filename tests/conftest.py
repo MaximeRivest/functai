@@ -76,9 +76,9 @@ def clean():
 
 @pytest.fixture
 def fake():
-    """``router = fake("<result>\\nhi\\n</result>")`` — configure a model and a fake router."""
+    """``router = fake("<result>\\nhi\\n</result>")`` — configure a model and a fake client."""
     def make(*replies, responder=None, provider="openai", lm="gpt-4.1-mini"):
         r = FakeRouter(*replies, responder=responder, provider=provider)
-        functai.configure(lm=lm, router=r)
+        functai.configure(lm=lm, client=r)
         return r
     return make

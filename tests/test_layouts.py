@@ -143,11 +143,11 @@ def test_dspy_adapters_and_modules_are_refused_with_a_way_forward():
         pass
     FakeDspyAdapter.__module__ = "dspy.adapters.chat_adapter"
 
-    @ai(adapter=FakeDspyAdapter())
-    def f(x: str) -> str: ...
-    functai.configure(lm="gpt-4.1-mini")
-    with pytest.raises(TypeError, match="adapter='chat'"):
-        f.plan()
+    with pytest.raises(TypeError, match="adapter='chat'"):      # at definition, not at the first call
+        @ai(adapter=FakeDspyAdapter())
+        def f(x: str) -> str: ...
+    with pytest.raises(ValueError, match="unknown adapter"):
+        functai.configure(adapter="yaml")
     with pytest.raises(TypeError, match="module"):
         @ai(module="ProgramOfThought")
         def g(x: str) -> str: ...

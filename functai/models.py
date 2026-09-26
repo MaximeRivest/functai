@@ -87,16 +87,97 @@ def model_string(lm: Any) -> str:
     """The lm15 model string for an ``lm`` setting: a string as given (with the
     friendly account prefixes: ``claude:`` → ``claude-code:``, ``chatgpt:`` →
     ``openai-codex:``, ``copilot:`` → ``github-copilot:``, ``kimi:`` → ``kimi-code:``),
-    or the ``.model`` of an object that has one (a DSPy/litellm LM, for migration)."""
+    or the ``.model`` of a DSPy/litellm LM object (for migration)."""
     if not isinstance(lm, str):
-        lm = getattr(lm, "model", None)
-        if not isinstance(lm, str):
-            raise TypeError("lm must be a model string like 'gpt-4.1-mini', 'claude:claude-sonnet-4-5' or "
-                            f"'groq:openai/gpt-oss-120b', not {type(lm).__name__}")
+        check_lm(lm)
+        lm = lm.model
     head, sep, rest = lm.partition(":")
     if sep and head.lower() in MODEL_PREFIXES:
         return f"{MODEL_PREFIXES[head.lower()]}:{rest}"
     return lm
+
+
+def _is_bound_client(obj: Any) -> bool:
+    """lm15's BoundClient (a login's connection and one model), duck-typed."""
+    selection = getattr(obj, "selection", None)
+    return selection is not None and callable(getattr(obj, "complete", None)) \
+        and isinstance(getattr(selection, "routed", None), str)
+
+
+def _is_provider_lm(obj: Any) -> bool:
+    """One provider's lm15 LM (OpenAILM, ClaudeCodeLM, ...), duck-typed: lm15's
+    ``ProviderLM`` is a protocol that cannot be checked with isinstance."""
+    return isinstance(getattr(obj, "provider", None), str) and callable(getattr(obj, "complete", None)) \
+        and not callable(getattr(obj, "resolve", None)) and not _is_bound_client(obj)
+
+
+def _is_async(obj: Any) -> bool:
+    import inspect
+    return inspect.iscoroutinefunction(getattr(obj, "complete", None))
+
+
+def check_lm(lm: Any) -> None:
+    """Refuse, with the fix, an ``lm`` value functai cannot use."""
+    if lm is None or isinstance(lm, str) or _is_bound_client(lm):
+        return
+    if _is_provider_lm(lm):
+        raise TypeError(
+            f"lm is the model; an lm15 {type(lm).__name__} is a connection to {lm.provider!r} that does not know "
+            f"which model to use. Pass it as client= and the model name as lm=, e.g. "
+            f"@ai(lm='gpt-4.1', client=lm15.OpenAILM(api_key=...))")
+    if isinstance(getattr(lm, "model", None), str):
+        return                                      # a DSPy/litellm LM: its model name is read
+    raise TypeError("lm must be a model name like 'gpt-4.1-mini', 'claude:claude-sonnet-4-5' or "
+                    f"'groq:openai/gpt-oss-120b', or an lm15 BoundClient; not {type(lm).__name__}")
+
+
+def check_client(client: Any) -> None:
+    """Refuse, with the fix, a ``client`` value functai cannot send through."""
+    if client is None or _is_router(client):
+        return
+    if _is_bound_client(client):
+        raise TypeError("an lm15 BoundClient carries its model: pass it as lm=, not client=")
+    if _is_provider_lm(client):
+        if _is_async(client):
+            name = type(client).__name__
+            raise TypeError(f"{name} is asynchronous; functai calls are synchronous: use the synchronous "
+                            f"lm15.{name[5:] if name.startswith('Async') else name}")
+        return
+    raise TypeError(f"client must be an lm15 LMRouter or provider LM (OpenAILM, AnthropicLM, ClaudeCodeLM, ...), "
+                    f"not {type(client).__name__}")
+
+
+def _is_router(obj: Any) -> bool:
+    return callable(getattr(obj, "resolve", None)) and callable(getattr(obj, "complete", None))
+
+
+class _Route:
+    """What functai needs to know about where a request goes."""
+
+    def __init__(self, provider: str, model: str):
+        self.provider, self.model = provider, model
+
+    def __repr__(self) -> str:
+        return f"{self.provider}:{self.model}"
+
+
+def _one_provider(client: Any, model: str) -> Tuple[str, "_Route"]:
+    """The wire model for a provider LM: its own prefix (or a friendly one for
+    it) is dropped; another provider's prefix is a mistake, said as one."""
+    provider = client.provider
+    head, sep, rest = model.partition(":")
+    if sep and (head == provider or MODEL_PREFIXES.get(head) == provider):
+        model = rest
+    elif sep and (head in MODEL_PREFIXES.values() or head in _known_providers()):
+        raise ValueError(f"lm={model!r} names provider {head!r}, but client is a {provider!r} connection "
+                         f"({type(client).__name__}); write lm={rest!r}, or pass a client for {head!r}")
+    return model, _Route(provider, model)
+
+
+def _known_providers() -> frozenset:
+    from lm15.registry import PROVIDERS
+    from lm15.login.declared import DECLARED_PROVIDERS
+    return frozenset(PROVIDERS) | frozenset(d.id for d in DECLARED_PROVIDERS)
 
 
 # Account-style prefixes a model string may use (lm15 names always work too).
@@ -122,23 +203,32 @@ def resolve(settings: Dict[str, Any]) -> Tuple[Any, str, Any]:
     string lm15 routes (litellm's ``provider/model`` is read the way lm15's
     own ingest reads it); ``route`` has ``.provider`` and ``.model``.
 
-    Which credential a call uses, first match wins: ``router=`` as given;
-    ``api_key=``; the saved login (``functai.login``) for the model's provider;
-    the environment and CLI logins (lm15's own rules)."""
+    Where a call goes, first match wins: ``lm=`` an lm15 BoundClient (its login
+    and model); ``client=`` (an lm15 router, or one provider's LM); ``api_key=``;
+    the saved login (``functai.login``) for the model's provider; the
+    environment and CLI logins (lm15's own rules)."""
     from . import accounts
-    if settings.get("lm") is None:
+    lm, client = settings.get("lm"), settings.get("client")
+    if _is_bound_client(lm):
+        # its own connection: a client= from configure does not apply to it (both
+        # in one place is refused by config.check, where the contradiction is written)
+        return lm, lm.selection.routed, _Route(lm.provider, lm.model)
+    if lm is None:
         raise RuntimeError("no model configured: call functai.configure(lm='gpt-4.1-mini') "
                            "or pass lm=... to @ai (functai.logins() shows what you can use)")
-    model = model_string(settings["lm"])
-    if settings.get("router") is not None:
-        router = settings["router"]
+    model = model_string(lm)
+    if client is not None:
+        check_client(client)
+        if not _is_router(client):
+            wire, route = _one_provider(client, model)
+            return client, wire, route
         try:
-            return router, model, router.resolve(model)
+            return client, model, client.resolve(model)
         except lm15.UnknownModelError:
             if ":" in model or "/" not in model:
                 raise
             model = openai_chat_model_string(model)
-            return router, model, router.resolve(model)
+            return client, model, client.resolve(model)
     auth = accounts.auth_for(settings.get("auth"))
     # A router that knows every provider lm15 can connect (declared ones like
     # github-copilot included) resolves the name; no credential is read here.

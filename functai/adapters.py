@@ -207,7 +207,7 @@ class Layout:
         return ("adapter", self.adapter if isinstance(self.adapter, (str, type(None))) else id(self.adapter))
 
 
-def _named(adapter: Any) -> lmcc.Adapter:
+def resolve_adapter(adapter: Any) -> lmcc.Adapter:
     if isinstance(adapter, lmcc.Adapter):
         return adapter
     if isinstance(adapter, dict):
@@ -250,7 +250,7 @@ def bind(layout: Layout, signature: lmcc.SignatureCore, capabilities: Dict[str, 
         return plan
     if layout.adapter is None and provider in _judgment_providers():
         return judgment_adapter(signature).bind(judgment_signature(signature), capabilities, registry=REGISTRY)
-    adapter = _named(layout.adapter if layout.adapter is not None else "xml")
+    adapter = resolve_adapter(layout.adapter if layout.adapter is not None else "xml")
     return adapter.bind(signature, capabilities, registry=REGISTRY)
 
 

@@ -26,11 +26,12 @@ CONFIG_FIELDS = frozenset(lm15.Config.__dataclass_fields__)
 
 DEFAULTS: Dict[str, Any] = {
     # which model, and how to reach it
-    "lm": None,                 # "gpt-4.1-mini", "claude-haiku-4-5", "groq:openai/gpt-oss-120b", "openai/gpt-4o"
+    "lm": None,                 # the model: "gpt-4.1-mini", "claude:claude-sonnet-4-5", "groq:openai/gpt-oss-120b",
+                                # "openai/gpt-4o", or an lm15 BoundClient (a login's connection and model)
     "api_key": None,            # a key for the provider `lm` routes to (beats saved logins and the environment)
     "auth": None,               # saved logins: None/True (lm15's credentials file) | a file path | False (never)
     "base_url": None,           # a base URL for that provider
-    "router": None,             # any lm15 router (resolve/complete); overrides the three above
+    "client": None,             # the lm15 connection: an LMRouter, or one provider's LM (OpenAILM(api_key=...))
     "capabilities": None,       # lmcc capability facts that override functai's model table
 
     # how the call is laid out and run
@@ -73,11 +74,25 @@ _FORCED: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("functa
 
 
 def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
+    """Unknown names, and values functai could only refuse later, refuse now."""
     unknown = set(settings) - KNOWN
     if unknown:
+        hint = " (the connection setting is client= since functai 1.0)" if "router" in unknown else ""
         raise TypeError(
-            f"{where}: unknown setting(s) {sorted(unknown)}. functai settings: {sorted(DEFAULTS)}; "
+            f"{where}: unknown setting(s) {sorted(unknown)}{hint}. functai settings: {sorted(DEFAULTS)}; "
             f"lm15 Config fields: {sorted(CONFIG_FIELDS)}")
+    from . import adapters, models
+    try:
+        if settings.get("lm") is not None:
+            models.check_lm(settings["lm"])
+        if settings.get("client") is not None:
+            models.check_client(settings["client"])
+            if models._is_bound_client(settings.get("lm")):
+                raise TypeError("lm is an lm15 BoundClient, which brings its own connection: drop client=")
+        if settings.get("adapter") is not None:
+            adapters.resolve_adapter(settings["adapter"])
+    except (TypeError, ValueError) as exc:
+        raise type(exc)(f"{where}: {exc}") from None
     return dict(settings)
 
 
