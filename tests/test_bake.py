@@ -219,7 +219,7 @@ def test_a_measuring_teacher_gives_soft_labels_and_the_report_compares(tmp_path,
     assert r.label_source == "teacher (soft)" and r.labeling["rows"] == r.rows["train"] + r.rows["validation"]
     assert r.fields[0].teacher_accuracy == 1.0 and r.fields[0].agreement is not None
     assert r.labeling["dollars"] == pytest.approx(r.labeling["rows"] * 10 * 0.042 / 1e6)
-    assert any("teacher labels cap it" in n for n in r.notes) or r.fields[0].accuracy > r.fields[0].teacher_accuracy
+    assert any("can at best match it" in n for n in r.notes) or r.fields[0].accuracy > r.fields[0].teacher_accuracy
 
 
 def test_a_text_teacher_gives_hard_labels_for_unlabeled_rows(tmp_path):
