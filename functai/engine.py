@@ -10,6 +10,7 @@ here; every byte of the request comes from the plan.
 from __future__ import annotations
 
 import collections
+import contextvars
 import dataclasses
 import datetime as _dt
 import hashlib
@@ -23,7 +24,7 @@ from typing import Any, Callable, Dict, List, Optional, Sequence
 import lm15
 import lmcc
 import lmcc_lm15
-from lm15.serde import message_to_dict, request_to_dict
+from lm15.serde import message_to_dict, request_to_dict, response_to_dict
 from lmcc_std.tools import Tool, ToolCall
 
 from .config import CONFIG_FIELDS
@@ -213,6 +214,17 @@ def clear_cache() -> None:
 # ------------------------------------------------------------------ sending
 
 
+# functai.save(runs=...) records every exchange of a run here, to replay it in verify.
+RECORDING: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("functai_recording",
+                                                                                        default=None)
+
+
+def _remember(request: Any, response: Any) -> None:
+    rec = RECORDING.get()
+    if rec is not None:
+        rec["exchanges"].append({"request": request_to_dict(request), "response": response_to_dict(response)})
+
+
 def send(router: Any, request: Any, *, function: str, model: str, settings: Dict[str, Any]) -> Any:
     """One model call: from the cache when allowed, else through the router,
     re-sent after transient errors (rate limit, 5xx, timeout) with backoff."""
@@ -222,6 +234,7 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
         hit = CACHE.get(key)
         if hit is not None:
             _record(CallRecord(function, model, request, hit, cached=True))
+            _remember(request, hit)
             return hit
     retries = max(0, int(settings.get("api_retries") or 0))
     for attempt in range(retries + 1):
@@ -242,6 +255,7 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
                 raise friendly from exc
             raise
     _record(CallRecord(function, model, request, response))
+    _remember(request, response)
     if key is not None and response.finish_reason not in ("error",):
         CACHE.put(key, response)
     return response

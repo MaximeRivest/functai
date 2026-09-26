@@ -44,6 +44,18 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
   provider's LM (`OpenAILM(api_key=...)`, `ClaudeCodeLM(...)`); `lm=` takes a model
   name or an lm15 `BoundClient`. Bad layouts, templates, models and clients are
   refused where they are written (a DSPy adapter now at definition).
+- Saving programs with their dependencies: `functai.check(program)` (the dependency
+  graph and every problem with its fix), `save(program, folder, runs=[...])` (code,
+  settings, demos, data files, pinned requirements and a full lock; refuses while
+  there are errors; all or nothing), `verify(folder, trust=True)` (a fresh uv
+  environment from the lock alone: byte-identical rendered requests, and recorded
+  runs replayed to the same results, no model called), `load(folder, trust=True)`
+  (hash, package and prompt checks first), `functai.file("data/x.txt")`,
+  `@ai(requires=...)`, `@module(requires=...)`, `python -m functai verify <folder>`.
+- `@module` finds AI functions called under another name or through helper
+  functions (it missed them before).
+- Notebooks: a dataclass's field comments now reach the prompt (they were lost for
+  classes defined in cells).
 - Inspection: `phistory()`, `inspect_history()`, `fn.render()`, `fn.explain()`.
 - Types: tuples, sets, TypedDicts, `Any`, `Annotated[T, "description"]`;
   JSON integers read into `float` fields become floats.

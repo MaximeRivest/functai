@@ -301,8 +301,11 @@ class FunctAIFunc:
     """A typed Python function whose body is a model call. Build with ``@ai``."""
 
     def __init__(self, fn, *, tools: Optional[List[Any]] = None, template: Any = None, messages: Any = None,
-                 module_kwargs: Optional[Dict[str, Any]] = None, examples: Any = None, **cfg):
+                 module_kwargs: Optional[Dict[str, Any]] = None, examples: Any = None,
+                 requires: Optional[List[str]] = None, **cfg):
         functools.update_wrapper(self, fn)
+        # requirements the code reaches in ways functai.check cannot see ("numpy>=2")
+        self._requires: Tuple[str, ...] = tuple(requires or ())
         self._fn = fn
         self._sig = inspect.signature(fn)
         for old, new in _SETTING_ALIASES.items():
@@ -610,6 +613,10 @@ class FunctAIFunc:
             self._autoinstruct(s)
             spec = self._spec()
         plan, router, model, route = self._plan_for(spec, s)
+        rec = engine.RECORDING.get()
+        if rec is not None and s.get("lm") is not None:
+            rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
+                [route.provider, route.model, model]
         s = models.adjust(s, route)
         past = self._past(plan, spec, s)
         pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,

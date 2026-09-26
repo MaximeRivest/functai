@@ -11,6 +11,7 @@ API:
 - Accounts:  login("claude"), logins(), logout(...)  (subscriptions, OpenRouter, API keys)
 - Templates: system(...), user(...), assistant(...), developer(...), turns()  → @ai(template=[...])
 - Programs:  @module; fn.opt(...), evaluate(...), and the optimizers
+- Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Utils:     phistory(), inspect_history(), clear_cache()
 """
 
@@ -43,7 +44,9 @@ from .core import (
 )
 from .data import Example, Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
+from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module
+from .saved import LoadRefused, Verification, file, load, save, verify
 from .optimizers import (
     BootstrapFewShot,
     BootstrapFewShotWithRandomSearch,
@@ -77,6 +80,16 @@ __all__ = [
     "signature_text",
     "module",
     "FunctAIModule",
+    "check",
+    "save",
+    "load",
+    "verify",
+    "file",
+    "Report",
+    "Problem",
+    "Refused",
+    "LoadRefused",
+    "Verification",
     "FunctAIFunc",
     "ProgramState",
     "Example",

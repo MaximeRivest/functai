@@ -26,6 +26,7 @@ Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-fr
 - [7. Memory](#7-memory)
 - [8. Evaluation and optimization](#8-evaluation-and-optimization)
 - [9. Modules: programs of several AI functions](#9-modules-programs-of-several-ai-functions)
+- [9b. Saving a program with its dependencies](#9b-saving-a-program-with-its-dependencies)
 - [10. Inspection](#10-inspection)
 - [11. When the model gets it wrong](#11-when-the-model-gets-it-wrong)
 - [12. Migrating from 0.x](#12-migrating-from-0x)
@@ -612,6 +613,115 @@ research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=2))
 The metric sees `Prediction(result=<what the module returned>)`. Bootstrapping
 records every inner call; a run the metric accepts gives a demo to each AI
 function it went through.
+
+## 9b. Saving a program with its dependencies
+
+A functai program is code plus a contract, like a Spark UDF: its inputs and
+outputs are typed, and everything it depends on must be known to ship it.
+functai reads the code to find all of it.
+
+```python
+import functai
+
+functai.check(fact_check)
+```
+
+    fact_check  @module  [prog]
+    ├── generate_query  AI function (claim: str → str)  [prog]
+    │   └── tool search  function  [prog]
+    │       ├── clean  function  [helpers]
+    │       │   ├── SPACES = __import__('re').compile('\\s+')
+    │       │   └── file data/stop.txt
+    │       └── json  (stdlib)
+    ├── judge  AI function (evidence: Evidence → Verdict)  [prog]
+    │   ├── Evidence  class  [kinds]
+    │   │   └── dataclasses  (stdlib)
+    │   └── Verdict  class  [kinds]
+    │       └── enum  (stdlib)
+    ├── Evidence  (see above)
+    ├── search  (see above)
+    ├── Verdict  (see above)
+    └── DEFAULT = Verdict.FALSE
+
+    requirements: functai==1.0.0
+    no problems: ready to save
+
+`check` follows every name the code reaches: AI functions and `@module`s
+(also called under another name, or through helper functions), their tools,
+your functions and classes (in files or notebook cells), the types in the
+signatures, constants, and data files read with `functai.file("...")`. Each
+dependency is one of:
+
+| found | saved as |
+|---|---|
+| an AI function or `@module` | its code, settings, instruction and demos; followed the same way |
+| a function or class from your code | its source, verbatim |
+| a module or name from an installed package | a pinned requirement |
+| the standard library | nothing |
+| a constant (numbers, text, lists, dicts, Enum members, compiled patterns, lmcc adapters) | its value |
+| a file read with `functai.file("data/x.txt")` | a copy |
+
+And what stops a clean save, each with its fix:
+
+| problem | example | fix |
+|---|---|---|
+| `hidden-state` | a tool writes `CACHE[q] = ...` into a global | pass it in, return it, or `save(allow=["hidden-state"])` to save its current value |
+| `untyped-input`, `untyped-output` | `def f(text):`, a `@module` with no return type | annotate it |
+| `unsaveable-value` | a global client, lock or open file | create it inside the function, or pass it in |
+| `lambda`, `no-source`, `name-conflict` | a lambda tool; two nested `def f` | a named `def`; distinct names |
+| `local-import-inside` | `import helpers` inside a function | import it at the top of the module |
+| warnings | `getattr(module, name)`, `eval`, a `Path` global, an `api_key` or `client=` (never saved) | reported; `verify` catches what they hide |
+
+### Save, verify, load
+
+```python
+functai.save(fact_check, "fact_check/", runs=[{"claim": "Paris is the capital of France"}])
+functai.verify("fact_check/", trust=True)        # verified in a fresh environment
+fact_check = functai.load("fact_check/", trust=True)
+```
+
+The saved folder is readable and diffable:
+
+    fact_check/
+      functai.json          entry; each AI function's settings, instruction, demos,
+                            signature and fingerprints; versions; file hashes
+      code/prog.py          the code the program reaches, one file per module
+      code/helpers.py       (a notebook or script becomes code/main.py): functions
+      code/kinds.py         and classes verbatim, constants by value, imports
+      files/data/stop.txt   data files read with functai.file(...)
+      requirements.txt      the packages the code reaches, pinned
+      requirements.lock     those and everything they pull in, as installed here
+      runs.json             recorded runs (with runs=...)
+
+- **`save`** refuses while `check` finds errors, and writes the folder whole or
+  not at all. Credentials and connections (`api_key=`, `client=`, logins) are
+  never saved: the loading machine's own are used.
+- **`verify`** is the proof: it builds a new environment with `uv` from
+  `requirements.lock` alone, loads the program there from an empty folder (so
+  nothing from your project can leak in), and checks two things. First, every
+  AI function renders byte-identical requests (instruction, layout, demos,
+  tools). Second, each recorded run replays to the same result against its
+  recorded model replies, tools and helpers included. No model is called;
+  it takes about a second once uv's cache is warm. `fresh=False` checks in the
+  current environment instead (weaker).
+- **`load`** checks before it runs anything: file hashes (catching accidental
+  edits), missing packages, and afterwards that every AI function still renders
+  the requests it rendered when saved; `check_env="warn"` loads anyway.
+- **`trust=True`** is required by `load` and `verify` because they run the saved
+  Python code. The hashes catch accidents, not an attacker who edits both the
+  code and `functai.json`.
+
+Prompt layout (`adapter`, `module`, `include_fn_name_in_instructions`) is saved
+with its effective value, even when it came from `configure()`, because it is
+part of what the program means. Model and sampling settings are saved only when
+the function sets them itself; otherwise the loading program uses `configure()`.
+
+What reading code cannot see: names looked up at run time (`getattr`,
+`importlib`, `eval`), functions passed in as arguments, and data files not read
+through `functai.file`. `check` points at them, `@ai(requires=["numpy>=2"])` or
+`save(requires=[...])` declares packages by hand, `save(include=["myproject"])`
+saves an editable-installed project as code, and `verify` with recorded `runs`
+catches anything still missing.
 
 ## 10. Inspection
 
