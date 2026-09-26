@@ -1,5 +1,47 @@
 # Changelog
 
+## Unreleased (1.1.0)
+
+New:
+
+- **A default model.** With no model configured, functai picks one this
+  machine can use (API keys first: `gpt-4.1-mini`, `claude-haiku-4-5`,
+  `gemini-2.5-flash`, Groq, OpenRouter; then Claude, ChatGPT or Copilot
+  subscriptions) and says which, once. Choosing one explicitly is unchanged.
+- **`expected=`** in `evaluate` and `.opt`: the column holding the right
+  answers, when it isn't named like the output (`expected="category"`), or
+  a dict per output or answer field.
+- **Records, field by field.** When the answer is a record (dataclass,
+  pydantic, TypedDict) and the data has columns named like its fields,
+  `evaluate` scores each field (`species_match`, …) as well as the whole
+  (`exact_match`), and the run table has `pred_<field>` columns instead of
+  one `pred_result` holding the record.
+- **`fn.unpack(col.x)`**: one column per field of a record answer, for
+  `table.mutate(**fn.unpack(col.note))`, still one model call per row.
+- **`functai.datasets`**: `tickets()` (80 support messages, labelled by
+  team and order number) and `field_notes()` (60 bird survey notes,
+  labelled by species, count and behaviour), to learn with.
+- `fn.state()` prints the instruction and the worked examples readably.
+- The documentation website, with three ways in (a table of text, notes
+  and documents, a prompt you already have).
+
+Fixed:
+
+- **A bare `_ai` is always the answer.** After a named output
+  (`reasoning: str = _ai["..."]`), `return round(_ai, 2)`, `return
+  _ai.upper()` and `return critique, _ai` used the named output instead of
+  asking for the answer, silently. The answer is now its own output (typed
+  by the return annotation, or by its place in a returned tuple).
+- **`label = _ai` is the output `label`.** A plainly named output used later
+  in the body (`return label if confidence > 0.7 else ...`) gave the
+  answer's value instead of its own. Such lines are now bound the way
+  `_ai["..."]` is.
+- **Values are checked against their types all the way down.** A choice
+  outside a `Literal` inside a record (`behaviour="swimming"`), text where a
+  number goes, or a value outside an `Enum` is now an unreadable reply: the
+  model is asked again once with what was wrong, then it raises. Before,
+  the first slipped through silently and the last raised without a retry.
+
 ## 1.0.1
 
 - An AI function used as a metric (a judge) gets plain data: typed

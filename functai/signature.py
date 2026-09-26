@@ -16,6 +16,7 @@ import dataclasses
 import enum
 import inspect
 import textwrap
+import types
 import typing
 from typing import Any, Dict, List, Optional, Tuple, TypedDict
 
@@ -229,44 +230,152 @@ def _collect_return_info(fn: Any) -> _ReturnInfo:
                 ret = {"mode": "other", "name": None}
     return ret
 
-def _extract_return_names(fn: Any) -> List[str]:
-    """Best-effort: extract variable names referenced in `return (...)` or
-    `return [...]` constructs. Used to map bare `_ai` placeholders to concrete
-    output field names by position.
-
-    Example: for `return (id, email)`, returns ["id", "email"].
-    """
+def _fn_node(fn: Any) -> Optional[ast.AST]:
     try:
-        src = textwrap.dedent(inspect.getsource(fn))
-        tree = ast.parse(src)
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
     except Exception:
-        return []
-    fn_node: Optional[ast.AST] = None
+        return None
     for node in ast.walk(tree):
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == fn.__name__:
-            fn_node = node
-            break
-    if fn_node is None:
+            return node
+    return None
+
+
+def _is_ai(node: Optional[ast.AST]) -> bool:
+    return isinstance(node, ast.Name) and node.id == "_ai"
+
+
+def _uses_bare_ai(fn: Any) -> bool:
+    """Does the body use ``_ai`` itself as a value (``round(_ai, 2)``,
+    ``_ai.upper()``, ``return critique, _ai``, ``return _ai``)? A bare ``_ai``
+    is always the answer. Not bare: ``x = _ai`` and ``x: T = _ai`` (they declare
+    the output ``x``) and ``_ai["..."]`` (an output described in brackets)."""
+    node = _fn_node(fn)
+    if node is None:
+        return False
+    declaring = set()
+    for n in ast.walk(node):
+        if isinstance(n, (ast.Assign, ast.AnnAssign, ast.Subscript)) and _is_ai(n.value):
+            declaring.add(id(n.value))       # `x = _ai`, `x: T = _ai`, `_ai[...]`
+    return any(_is_ai(n) and id(n) not in declaring for n in ast.walk(node))
+
+
+def bind_named_outputs(fn: Any) -> Any:
+    """``fn`` with each ``x = _ai`` / ``x: T = _ai`` in its body bound to the
+    output ``x``, the way ``_ai["..."]`` is: using ``x`` later in the body then
+    gives that output's value, not the answer's.
+
+    Plain ``_ai`` is one object, so without this ``label = _ai`` makes
+    ``label`` another name for the answer. The body is recompiled from its
+    source with those lines as ``_ai[("x", "", None)]``; the source, line
+    numbers, globals and defaults stay the same. A function with no such line,
+    without source, or using variables of an enclosing function is returned
+    as is."""
+    if getattr(fn, "__code__", None) is None or fn.__code__.co_freevars:
+        return fn
+    try:
+        lines, first = inspect.getsourcelines(fn)
+        tree = ast.parse(textwrap.dedent("".join(lines)))
+    except Exception:  # noqa: BLE001 — no source: nothing to bind
+        return fn
+    node = next((n for n in tree.body if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                 and n.name == fn.__name__), None)
+    if node is None:
+        return fn
+
+    def bound(name: str, like: ast.AST) -> ast.AST:
+        spec = ast.Tuple([ast.Constant(name), ast.Constant(""), ast.Constant(None)], ast.Load())
+        return ast.copy_location(ast.Subscript(ast.Name("_ai", ast.Load()), spec, ast.Load()), like)
+
+    changed = False
+    todo = list(node.body)
+    while todo:                                  # this body only: nested defs keep their own `_ai`
+        stmt = todo.pop()
+        if isinstance(stmt, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef, ast.Lambda)):
+            continue
+        if isinstance(stmt, ast.AnnAssign) and _is_ai(stmt.value) and isinstance(stmt.target, ast.Name):
+            stmt.value = bound(stmt.target.id, stmt.value)
+            changed = True
+        elif isinstance(stmt, ast.Assign) and _is_ai(stmt.value) and len(stmt.targets) == 1 \
+                and isinstance(stmt.targets[0], ast.Name):
+            stmt.value = bound(stmt.targets[0].id, stmt.value)
+            changed = True
+        for field in ("body", "orelse", "finalbody", "handlers"):
+            todo.extend(getattr(stmt, field, None) or [])
+    if not changed:
+        return fn
+    node.decorator_list = []
+    ast.fix_missing_locations(tree)
+    ast.increment_lineno(tree, first - 1)
+    try:
+        module = compile(tree, fn.__code__.co_filename, "exec", dont_inherit=True,
+                         flags=fn.__code__.co_flags & _FUTURE_FLAGS)
+    except SyntaxError:
+        return fn
+    code = next((c for c in module.co_consts if isinstance(c, types.CodeType) and c.co_name == fn.__name__), None)
+    if code is None or code.co_freevars:
+        return fn
+    new = types.FunctionType(code, fn.__globals__, fn.__name__, fn.__defaults__, fn.__closure__)
+    new.__kwdefaults__ = fn.__kwdefaults__
+    new.__qualname__, new.__module__, new.__doc__ = fn.__qualname__, fn.__module__, fn.__doc__
+    new.__annotations__ = dict(getattr(fn, "__annotations__", {}) or {})
+    new.__dict__.update(getattr(fn, "__dict__", {}) or {})
+    return new
+
+
+_FUTURE_FLAGS = 0
+for _name in ("annotations", "generator_stop", "division"):
+    _feature = getattr(__import__("__future__"), _name, None)
+    if _feature is not None:
+        _FUTURE_FLAGS |= _feature.compiler_flag
+
+
+def _bare_ai_return_position(fn: Any) -> Optional[Tuple[int, int]]:
+    """``(position, length)`` when the last return is a tuple with a bare
+    ``_ai`` in it (``return critique, _ai`` → ``(1, 2)``), else None."""
+    node = _fn_node(fn)
+    if node is None:
+        return None
+    last = None
+    for n in ast.walk(node):
+        if isinstance(n, ast.Return):
+            last = n
+    if last is None or not isinstance(last.value, ast.Tuple):
+        return None
+    elts = last.value.elts
+    hits = [i for i, e in enumerate(elts) if _is_ai(e)]
+    return (hits[0], len(elts)) if len(hits) == 1 else None
+
+
+def _return_slots(fn: Any) -> List[Optional[str]]:
+    """For a body that returns a tuple or list (``return critique, _ai``): which
+    output each position holds, where the value there is ``_ai`` itself at run
+    time: ``None`` for a bare ``_ai`` (the answer), the name for a variable
+    assigned plainly from it (``x = _ai``). Other positions are left out: they
+    hold their own values (``_ai["..."]`` gives one that knows its output)."""
+    node = _fn_node(fn)
+    if node is None:
         return []
-    names: List[str] = []
-    last_ret: Optional[ast.Return] = None
-    for node in ast.walk(fn_node):
-        if isinstance(node, ast.Return):
-            last_ret = node
-    if last_ret is None or last_ret.value is None:
+    plain = set()
+    for n in ast.walk(node):
+        if isinstance(n, ast.Assign) and _is_ai(n.value):
+            plain.update(t.id for t in n.targets if isinstance(t, ast.Name))
+        elif isinstance(n, ast.AnnAssign) and _is_ai(n.value) and isinstance(n.target, ast.Name):
+            plain.add(n.target.id)
+    last = None
+    for n in ast.walk(node):
+        if isinstance(n, ast.Return):
+            last = n
+    if last is None or not isinstance(last.value, (ast.Tuple, ast.List)):
         return []
-    val = last_ret.value
-    elts: List[ast.AST] = []
-    if isinstance(val, (ast.Tuple, ast.List)):
-        elts = list(val.elts)
-    elif isinstance(val, ast.Name):
-        return [val.id]
-    else:
-        return []
-    for e in elts:
-        if isinstance(e, ast.Name):
-            names.append(e.id)
-    return names
+    slots: List[Optional[str]] = []
+    for e in last.value.elts:
+        if _is_ai(e):
+            slots.append(None)
+        elif isinstance(e, ast.Name) and e.id in plain:
+            slots.append(e.id)
+    return slots
+
 
 def _safe_get_type_hints(fn: Any) -> Dict[str, Any]:
     """Best-effort type_hints that won't error on unknown/forward-ref annotations.
@@ -453,6 +562,72 @@ def coerce(ann: Any, value: Any) -> Any:
     return value
 
 
+def mismatch(ann: Any, value: Any, where: str) -> Optional[str]:
+    """Why ``value`` does not fit ``ann``, or None. Checks what reading a reply
+    does not: the allowed values of a ``Literal`` and the scalar types
+    (int, float, bool, str), inside records, lists, dicts and Optionals.
+    Types it doesn't know (dates, pydantic models, which validate themselves)
+    pass."""
+    ann, _ = unannotate(ann)
+    if ann is None or ann is typing.Any:
+        return None
+    origin, args = typing.get_origin(ann), typing.get_args(ann)
+    if value is None:
+        optional = origin in _UNION_TYPES and type(None) in args
+        return None if optional or ann is type(None) else f"{where} is missing (null), and it may not be"
+    if origin in _UNION_TYPES:
+        real = [a for a in args if a is not type(None)]
+        if len(real) == 1:
+            return mismatch(real[0], value, where)
+        problems = [mismatch(a, value, where) for a in real]
+        return None if any(p is None for p in problems) else problems[0]
+    if origin is typing.Literal:
+        return None if value in args else f"{where} is {value!r}, which is not one of {list(args)}"
+    if ann is bool:
+        return None if isinstance(value, bool) else f"{where} is {value!r}, not true or false"
+    if ann is int:
+        ok = isinstance(value, int) and not isinstance(value, bool)
+        return None if ok else f"{where} is {value!r}, not a whole number"
+    if ann is float:
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        return None if ok else f"{where} is {value!r}, not a number"
+    if ann is str:
+        return None if isinstance(value, str) else f"{where} is {value!r}, not text"
+    if isinstance(ann, type) and dataclasses.is_dataclass(ann) and isinstance(value, ann):
+        hints = _safe_hints(ann)
+        for f in dataclasses.fields(value):
+            problem = mismatch(hints.get(f.name), getattr(value, f.name), f"{where}.{f.name}")
+            if problem:
+                return problem
+        return None
+    if isinstance(ann, type) and typing.is_typeddict(ann) and isinstance(value, dict):
+        hints = _safe_hints(ann)
+        for k, v in value.items():
+            problem = mismatch(hints.get(k), v, f"{where}.{k}")
+            if problem:
+                return problem
+        return None
+    if origin in _SEQUENCES and isinstance(value, (list, tuple)) and args:
+        for i, v in enumerate(value):
+            problem = mismatch(args[0], v, f"{where}[{i}]")
+            if problem:
+                return problem
+        return None
+    if origin in _MAPPINGS and isinstance(value, dict) and len(args) == 2:
+        for k, v in value.items():
+            problem = mismatch(args[1], v, f"{where}[{k!r}]")
+            if problem:
+                return problem
+    return None
+
+
+def _safe_hints(tp: Any) -> Dict[str, Any]:
+    try:
+        return typing.get_type_hints(tp)
+    except Exception:  # noqa: BLE001 — unresolvable names: check nothing rather than guess
+        return {}
+
+
 def _field(name: str, direction: str, ann: Any, registry: Any, *, desc: Optional[str] = None,
            purpose: str = "plain", output: bool = False) -> lmcc_core.Field:
     base, adesc = unannotate(ann)
@@ -541,7 +716,8 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
     mode = ret_info.get("mode")
     if mode == "name" and ret_info.get("name") in order_names:
         main_name = typing.cast(str, ret_info.get("name"))
-    elif mode in {"sentinel", "ellipsis"}:
+    elif mode in {"sentinel", "ellipsis"} or (order_names and _uses_bare_ai(fn)):
+        # a bare `_ai` is the answer: an output of its own, after the named ones
         main_name = MAIN_OUTPUT_DEFAULT_NAME
     elif order_names:
         main_name = order_names[-1]
@@ -579,6 +755,11 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
             main_typ, main_desc = (explicit_var_t or fn_ret_hint or str), d0
     else:
         main_typ = fn_ret_hint or str
+        # `return critique, _ai` with `-> tuple[str, str]`: the answer is one item
+        where = _bare_ai_return_position(fn) if main_name == MAIN_OUTPUT_DEFAULT_NAME else None
+        items = typing.get_args(fn_ret_hint) if typing.get_origin(fn_ret_hint) is tuple else ()
+        if where and len(items) == where[1] and Ellipsis not in items:
+            main_typ = items[where[0]]
     if not main_desc and ret_cmt:
         main_desc = ret_cmt
 

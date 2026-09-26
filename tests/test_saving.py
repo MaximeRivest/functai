@@ -471,3 +471,14 @@ def test_an_ai_function_can_be_a_tool_of_another(project, tmp_path):
     functai.save(mods["tooly"].explain, tmp_path / "s")
     loaded = functai.load(tmp_path / "s", trust=True)
     assert loaded._tools[0].__name__ == "lookup"
+
+
+def test_a_class_defined_in_any_notebook_cell_has_its_source():
+    # rat (like IPython) keeps each cell's code in linecache with no mtime
+    import linecache
+    from functai.docments import class_source
+    code = "from dataclasses import dataclass\n\n@dataclass\nclass CellThing:\n    name: str\n"
+    linecache.cache["<rat-cell-9999>"] = (len(code), None, code.splitlines(True), "<rat-cell-9999>")
+    ns = {"__name__": "__main__"}
+    exec(compile(code, "<rat-cell-9999>", "exec"), ns)
+    assert class_source(ns["CellThing"]).startswith("@dataclass\nclass CellThing:")

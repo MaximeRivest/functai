@@ -23,7 +23,8 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .config import forced
 from .core import FunctAIFunc, ProgramState
-from .evaluation import Metric, _Target, evaluate, parallel, resolve_metrics, rows_of, run_row
+from .evaluation import (Metric, _Target, evaluate, expected_columns, expected_metrics, parallel,
+                         resolve_metrics, rows_of, run_row, with_expected)
 
 States = Dict[FunctAIFunc, ProgramState]
 Row = Dict[str, Any]
@@ -417,7 +418,7 @@ def _instantiate(opt: Any, metric: Optional[Callable], opts: Dict[str, Any]) -> 
 
 def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimizer: Any = None,
              metric: Optional[Callable] = None, valset: Optional[Sequence[Any]] = None,
-             call_defaults: Optional[Dict[str, Any]] = None, **opts) -> States:
+             call_defaults: Optional[Dict[str, Any]] = None, expected: Any = None, **opts) -> States:
     """What ``fn.opt(...)`` and ``module.opt(...)`` do: build the trainset (and
     synthesize examples with a teacher when ``n_synth`` > 0), run the optimizer,
     apply the new states (each function keeps the old one for ``undo_opt``)."""
@@ -455,6 +456,12 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
     opt = _instantiate(choice, metric, opts)
     target.check(examples)
     val = rows_of(valset) if valset is not None else None
+    mapping = expected_columns(target, expected, examples)
+    if mapping:                                 # the right answers under the outputs' names
+        examples = with_expected(examples, mapping, target)
+        val = with_expected(val, mapping, target) if val is not None else None
+        if metric is None:
+            opt.metric = expected_metrics(mapping, target)[0].fn
     states = opt.compile(program, trainset=examples, valset=val)
     import time
     for fn, state in states.items():

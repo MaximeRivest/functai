@@ -157,6 +157,15 @@ def get_source(s: Any) -> str:
         return ""
 
 
+def _is_cell(name: str) -> bool:
+    """A notebook cell's code, kept in memory: IPython, Jupyter and rat
+    register each cell in linecache with no modification time (so it is never
+    reloaded from disk). A file's entry has one."""
+    entry = linecache.cache.get(name)
+    in_memory = isinstance(entry, tuple) and len(entry) == 4 and entry[1] is None
+    return in_memory or "ipykernel" in name or "ipython-input" in name
+
+
 def class_source(cls: type) -> str:
     """A class's source, also for classes defined in notebook cells (where
     ``inspect.getsource`` cannot find the file): the cell of one of its methods,
@@ -176,8 +185,7 @@ def class_source(cls: type) -> str:
         code = getattr(f, "__code__", None)
         if code is not None and marker in "".join(linecache.getlines(code.co_filename)):
             files.append(code.co_filename)
-    files += [k for k in reversed(list(linecache.cache))
-              if ("ipykernel" in k or "ipython-input" in k) and k not in files]
+    files += [k for k in reversed(list(linecache.cache)) if _is_cell(k) and k not in files]
     first = getattr(cls, "__firstlineno__", None)
     fields = list(getattr(cls, "__annotations__", {}) or {})
     for name in files:

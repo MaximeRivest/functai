@@ -12,6 +12,11 @@ model. dpyr runs it once per distinct row of arguments, remembers the
 results for the session, and in a displayed dataframe only runs the rows it
 shows. Options: ``classify.vectorize(threads=16, errors="null")(col.text)``.
 
+A function whose answer is a record (a dataclass, a pydantic model) gives
+one column per field with ``unpack``, and still one model call per row::
+
+    notes.mutate(**observe.unpack(col.note))       # species, count, behaviour
+
 The column is computed with the prompt the function had when the
 expression was written: its instruction, its demos, its model. Optimizing
 the function afterwards gives new expressions new results, and never mixes
@@ -20,8 +25,10 @@ remembered answers from before and after.
 
 from __future__ import annotations
 
+import enum
 import hashlib
 import inspect
+import threading
 import typing
 from typing import Any, Dict, Optional
 
@@ -56,19 +63,13 @@ def _version(*parts: Any) -> str:
     return hashlib.sha256(repr(parts).encode()).hexdigest()[:12]
 
 
-def vectorize_function(fn: Any, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise",
-                       version: str = "") -> Any:
-    """A dpyr RowFunction for an @ai function, pinned to its current
-    instruction, demos and settings."""
-    dpyr = _dpyr()
+def _pinned(fn: Any) -> Any:
+    """``(key, run)``: the function as it is now (instruction, demos, settings,
+    template), callable later, and a key that changes when any of those does."""
     from .evaluation import with_states
     state = fn.state()
     settings = fn._effective()
-    key = (_version(state, sorted((k, repr(v)) for k, v in settings.items()), fn._template), version,
-           repr(dtype), threads, errors)
-    cached = fn._vectorized.get(key)
-    if cached is not None:
-        return cached
+    key = _version(state, sorted((k, repr(v)) for k, v in settings.items()), fn._template)
     pinned = fn.using(lm=settings["lm"]) if settings.get("lm") is not None else fn.using()
 
     def run(*args: Any, **kwargs: Any) -> Any:
@@ -76,10 +77,23 @@ def vectorize_function(fn: Any, *, dtype: Any = None, threads: Optional[int] = N
             return pinned(*args, **kwargs)
 
     run.__name__ = fn.__name__
+    return key, run
+
+
+def vectorize_function(fn: Any, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise",
+                       version: str = "") -> Any:
+    """A dpyr RowFunction for an @ai function, pinned to its current
+    instruction, demos and settings."""
+    dpyr = _dpyr()
+    prompt_key, run = _pinned(fn)
+    key = (prompt_key, version, repr(dtype), threads, errors)
+    cached = fn._vectorized.get(key)
+    if cached is not None:
+        return cached
     out_type = dtype if dtype is not None else _return_type(fn._fn, str)   # no annotation: text, as in a call
     try:
         rf = dpyr.RowFunction(run, dtype=out_type, threads=threads or _THREADS, errors=errors,
-                              version="-".join(filter(None, (key[0], version))), name=fn.__name__)
+                              version="-".join(filter(None, (prompt_key, version))), name=fn.__name__)
     except dpyr.ExprTypeError as err:
         raise TypeError(f"{fn.__name__} returns {out_type!r}, which is not a column type ({err}); "
                         f"use {fn.__name__}.map(table), or {fn.__name__}.vectorize(dtype=...)") from None
@@ -116,3 +130,48 @@ def vectorize_module(mod: Any, *, dtype: Any = None, threads: Optional[int] = No
                           version="-".join(filter(None, (key[0], version))), name=mod.__name__)
     mod._vectorized[key] = rf
     return rf
+
+
+def unpack_function(fn: Any, args: tuple, kwargs: Dict[str, Any], *, threads: Optional[int] = None,
+                    errors: str = "raise", prefix: str = "") -> Dict[str, Any]:
+    """``{field: column expression}`` for a record answer: one dpyr RowFunction
+    per field, sharing one model call per distinct row of arguments."""
+    dpyr = _dpyr()
+    from .evaluation import record_fields
+    typ = _return_type(fn._fn, None)
+    fields = record_fields(typ)
+    if not fields:
+        raise TypeError(f"{fn.__name__} returns {typ!r}, not a record: unpack() needs a dataclass, a pydantic "
+                        f"model or a TypedDict answer (for one column, call {fn.__name__}(col....) directly)")
+    try:
+        hints = typing.get_type_hints(typ)
+    except Exception:  # noqa: BLE001
+        hints = {}
+    prompt_key, run = _pinned(fn)
+    answers: Dict[str, Any] = {}
+    locks: Dict[str, threading.Lock] = {}
+    guard = threading.Lock()
+
+    def answer(*a: Any, **k: Any) -> Any:
+        key = repr((a, sorted(k.items())))
+        with guard:
+            lock = locks.setdefault(key, threading.Lock())
+        with lock:                                   # the other fields of this row wait for the one call
+            if key not in answers:
+                answers[key] = run(*a, **k)
+            return answers[key]
+
+    def field_of(name: str):
+        def get(*a: Any, **k: Any) -> Any:
+            value = answer(*a, **k)
+            got = value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+            return got.value if isinstance(got, enum.Enum) else got
+        get.__name__ = f"{fn.__name__}.{name}"
+        return get
+
+    out = {}
+    for name in fields:
+        rf = dpyr.RowFunction(field_of(name), dtype=hints.get(name, str), threads=threads or _THREADS,
+                              errors=errors, version=f"{prompt_key}-unpack-{name}", name=f"{fn.__name__}.{name}")
+        out[prefix + name] = rf(*args, **kwargs)
+    return out

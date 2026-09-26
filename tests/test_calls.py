@@ -95,6 +95,56 @@ def test_bare_sentinels_in_a_returned_tuple_map_by_name(fake):
     assert split("user 42 a@b.c") == ("42", "a@b.c")
 
 
+def test_a_bare_sentinel_in_an_expression_is_the_answer(fake):
+    # `_ai` itself is always the answer, even after named outputs: the answer is
+    # asked for (last, with the return type) and `round(_ai, 2)` gets it
+    @ai
+    def solve(question: str) -> float:
+        """Solve."""
+        reasoning: str = _ai["Step by step."]
+        return round(_ai, 2)
+
+    r = fake("<reasoning>\n1.2 / 3 * 10\n</reasoning>\n<result>\n4.004\n</result>")
+    assert [f.name for f in solve.signature.outputs] == ["reasoning", "result"]
+    assert solve("10 pencils?") == 4.0
+    assert r.system().index("<reasoning>") < r.system().index("<result>")
+
+
+def test_a_bare_sentinel_method_call_is_the_answer(fake):
+    @ai
+    def capital(question: str) -> str:
+        """Answer in one word."""
+        reasoning: str = _ai["Think first."]
+        return _ai.upper()
+
+    fake("<reasoning>\nIt is Paris.\n</reasoning>\n<result>\nParis\n</result>")
+    assert capital("France?") == "PARIS"
+
+
+def test_a_bare_sentinel_next_to_a_described_output_in_a_tuple(fake):
+    @ai
+    def critique_and_fix(text: str) -> tuple[str, str]:
+        """Criticize the text, then improve it."""
+        critique: str = _ai["What is wrong."]
+        return critique, _ai
+
+    fake("<critique>\nToo curt.\n</critique>\n<result>\nCould you fix it?\n</result>")
+    assert critique_and_fix("fix it") == ("Too curt.", "Could you fix it?")
+
+
+def test_post_processing_a_named_output_keeps_it_as_the_answer(fake):
+    # no bare `_ai`: the last named output is the answer (no extra `result`)
+    @ai
+    def score(text: str) -> float:
+        """How positive, 0 to 1."""
+        s = _ai
+        return max(0.0, min(1.0, float(s)))
+
+    fake("<s>\n1.7\n</s>")
+    assert [f.name for f in score.signature.outputs] == ["s"]
+    assert score("great") == 1.0
+
+
 def test_returning_a_named_output_uses_its_annotation(fake):
     @ai
     def keywords(article: str) -> list[str]:
@@ -296,11 +346,35 @@ def test_unknown_settings_are_refused():
         def f(x: str) -> str: ...
 
 
-def test_no_model_is_a_clear_error():
+def _no_credentials(monkeypatch):
+    from functai import accounts
+    for k in [k for k in __import__("os").environ if k.endswith("_API_KEY")]:
+        monkeypatch.delenv(k)
+    monkeypatch.setattr(accounts, "CLI_LOGINS", {})
+    configure(auth=False)
+
+
+def test_no_model_and_nothing_to_pick_is_a_clear_error(monkeypatch):
+    _no_credentials(monkeypatch)
+
     @ai
     def f(x: str) -> str: ...
-    with pytest.raises(RuntimeError, match="no model configured"):
+    with pytest.raises(RuntimeError, match="no model configured, and no API key or login found"):
         f("x")
+
+
+def test_with_no_model_configured_a_usable_one_is_picked_and_named(monkeypatch, capsys):
+    from functai import accounts
+    _no_credentials(monkeypatch)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+    assert accounts.default_model(False) == ("claude-haiku-4-5", "environment ($ANTHROPIC_API_KEY)")
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")         # API keys in a fixed order: OpenAI first
+    assert accounts.default_model(False)[0] == "gpt-4.1-mini"
+    monkeypatch.setattr(accounts, "_DEFAULT_SAID", {})
+    accounts.say_default("gpt-4.1-mini", "environment ($OPENAI_API_KEY)")
+    accounts.say_default("gpt-4.1-mini", "environment ($OPENAI_API_KEY)")   # said once
+    err = capsys.readouterr().err
+    assert err.count("using gpt-4.1-mini") == 1 and "functai.configure(lm=" in err
 
 
 def test_litellm_style_model_strings_route_through_lm15():
@@ -391,3 +465,82 @@ def test_render_shows_the_request_without_sending(fake):
     r = fake()
     req = f.render("hi")
     assert "<x>\nhi\n</x>" in req.messages[0].parts[0].text and not r.requests
+
+
+# ------------------------------------------------------------------ values that don't fit their type
+
+
+@dataclasses.dataclass
+class _Sighting:
+    behaviour: Literal["feeding", "resting"]
+    count: Optional[int]
+
+
+def test_a_value_outside_its_type_inside_a_record_is_asked_again(fake):
+    @ai
+    def sighting(note: str) -> _Sighting:
+        """The observation."""
+
+    r = fake('<result>\n{"behaviour": "swimming", "count": "three"}\n</result>',
+             '<result>\n{"behaviour": "resting", "count": 3}\n</result>')
+    assert sighting("x") == _Sighting("resting", 3)
+    hint = "".join(p.text for p in r.requests[1].messages[-1].parts)
+    assert "result.behaviour is 'swimming', which is not one of ['feeding', 'resting']" in hint
+
+
+def test_an_invalid_enum_inside_a_record_is_asked_again_too(fake):
+    class Kind(enum.Enum):
+        A = "a"
+
+    @dataclasses.dataclass
+    class Thing:
+        kind: Kind
+
+    @ai
+    def thing(text: str) -> Thing:
+        """The thing."""
+
+    fake('<result>\n{"kind": "zzz"}\n</result>', '<result>\n{"kind": "a"}\n</result>')
+    assert thing("x") == Thing(Kind.A)
+
+
+def test_a_value_that_still_does_not_fit_after_the_retry_is_refused(fake):
+    @ai
+    def sighting(note: str) -> _Sighting:
+        """The observation."""
+
+    fake('<result>\n{"behaviour": "swimming", "count": 1}\n</result>',
+         '<result>\n{"behaviour": "flying", "count": 1}\n</result>')
+    with pytest.raises(lmcc.Refusal, match="not one of"):
+        sighting("x")
+
+
+def test_a_plainly_named_output_used_in_the_body_is_that_output(fake):
+    # `label = _ai` binds `label` to its own output, like `_ai["..."]` does
+    @ai
+    def confident_label(text: str) -> str:
+        """Is the review positive or negative?"""
+        label: str = _ai          # 'positive' or 'negative'
+        confidence: float = _ai   # how sure, from 0 to 1
+        return label if confidence >= 0.7 else "unsure"
+
+    fake("<label>\npositive\n</label>\n<confidence>\n0.9\n</confidence>",
+         "<label>\nnegative\n</label>\n<confidence>\n0.4\n</confidence>")
+    assert [f.name for f in confident_label.signature.outputs] == ["label", "confidence"]
+    assert confident_label("great") == "positive"
+    assert confident_label("meh") == "unsure"
+
+
+def test_binding_keeps_the_source_and_line_numbers(fake):
+    @ai
+    def f(text: str) -> str:
+        """x"""
+        a = _ai
+        raise ValueError(a)
+
+    import inspect as _inspect
+    assert "a = _ai" in _inspect.getsource(f._fn)
+    fake("<a>\nboom\n</a>")
+    with pytest.raises(ValueError, match="boom") as info:
+        f("x")
+    assert info.traceback[-1].statement.lines[0].strip() == "raise ValueError(a)"

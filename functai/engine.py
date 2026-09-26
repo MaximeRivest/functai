@@ -29,7 +29,7 @@ from lmcc_std.tools import Tool, ToolCall
 
 from .config import CONFIG_FIELDS
 from .data import Prediction
-from .signature import Spec, coerce, shape_of
+from .signature import Spec, coerce, mismatch, shape_of
 
 
 class LoginRequired(RuntimeError):
@@ -359,7 +359,18 @@ def _model_step(plan: lmcc.Plan, rendered: Any, response: Any, values: Dict[str,
                           plan.calls_field)
 
 
-def _complete(plan, rendered, *, router, model, settings, function, responses) -> tuple:
+def _misfit(annotations: Dict[str, Any], values: Dict[str, Any]) -> Optional[str]:
+    """The first output value that does not fit its declared type (a choice
+    outside a Literal inside a record, text where a number goes), or None."""
+    for name, value in values.items():
+        if name in annotations:
+            problem = mismatch(annotations[name], value, name)
+            if problem:
+                return problem
+    return None
+
+
+def _complete(plan, rendered, *, router, model, settings, function, responses, annotations=None) -> tuple:
     """One model call; after an unreadable reply, up to ``retries`` follow-ups
     that send the reader's hint back (a cut reply is re-sent with twice the
     token budget instead)."""
@@ -370,13 +381,17 @@ def _complete(plan, rendered, *, router, model, settings, function, responses) -
         response = send(router, request, function=function, model=model, settings=settings)
         responses.append(response)
         try:
-            return response, lmcc_lm15.read(plan, response)
+            reading = lmcc_lm15.read(plan, response)
+            problem = _misfit(annotations or {}, reading.values)
+            if problem:
+                raise lmcc.Refusal("parse-value", problem)
+            return response, reading
         except lmcc.Refusal as err:
             thought = getattr(response.usage, "reasoning_tokens", None) or 0
             if err.code == "parse-truncated" and thought:
                 err = lmcc.Refusal(err.code, f"{err.hint} (the model spent {thought} of its tokens thinking "
                                              f"first; raise max_tokens)", fix=err.fix, partial=err.partial)
-            if attempt == retries or not err.code.startswith("parse-"):
+            if attempt == retries or not (err.code.startswith("parse-") or err.code == "format-read-error"):
                 raise err
             if err.code == "parse-truncated" and "max_tokens" in (settings.get("_dropped") or ()):
                 raise err                     # this provider takes no token budget to raise
@@ -432,7 +447,7 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
         rendered = plan.render(turn, turns=list(past))
         try:
             response, reading = _complete(plan, rendered, router=router, model=model, settings=settings,
-                                          function=function, responses=responses)
+                                          function=function, responses=responses, annotations=spec.annotations)
         except lmcc.Refusal as err:
             if settings.get("on_unreadable") != "record" or not err.code.startswith("parse-") or not responses:
                 raise

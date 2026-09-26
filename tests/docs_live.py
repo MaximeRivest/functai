@@ -2,21 +2,16 @@
 
     set -a; source ~/Projects/lm15-dev/.env; set +a
     .venv/bin/python tests/docs_live.py            # the README's code blocks, in order
-    .venv/bin/python tests/docs_live.py --render   # and re-render the examples and the website
-    .venv/bin/python tests/docs_live.py --render --refresh   # the website re-runs every page
+    .venv/bin/python tests/docs_live.py --render   # and every docs page, run again on rat
 
 README: every ```python block runs, top to bottom, in one namespace, in a
-scratch folder, except those right after a `<!-- skip: reason -->` line
-(sign-ins, other people's keys, multi-file projects).
+scratch folder, except those right after a `<!-- skip: reason -->` line.
 
-The examples are Quarto documents (examples/*/main.qmd); rendering runs
-every cell and writes the Markdown next to them (README.md). The website
-(docs/, a Quarto project) renders after them, since it shows those
-READMEs: every page's code runs, and the outputs are kept in
-docs/_freeze/ (committed), so a page runs again only when its source
-changed (--refresh: all of them). A failing cell fails the render.
-Quarto runs cells on the Python named by $QUARTO_PYTHON (default: this
-one), which needs the docs group: `uv sync --group docs`.
+The docs are Markdown notebooks (MRMD, the format Chattering writes):
+`--render` runs each page of docs/ on a fresh rat kernel and writes the
+new outputs into it (tools/docs.py run), so a failing cell fails it. The
+examples (examples/*/README.md) are notebooks too, run one at a time on
+purpose: `python tools/docs.py run examples/modules/README.md`.
 """
 
 from __future__ import annotations
@@ -65,34 +60,14 @@ def run_readme() -> int:
     return failures
 
 
-def render_all(refresh: bool = False) -> int:
-    quarto = os.environ.get("QUARTO", "quarto")
-    env = {**os.environ, "QUARTO_PYTHON": os.environ.get("QUARTO_PYTHON", sys.executable)}
-    failures = 0
-    tracked = subprocess.run(["git", "ls-files", "examples/*/main.qmd"], cwd=ROOT,
-                             capture_output=True, text=True, check=True).stdout.split()
-    new = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "examples/*/main.qmd"],
-                         cwd=ROOT, capture_output=True, text=True).stdout.split()
-    for qmd in sorted(ROOT / f for f in [*tracked, *new]):   # not ignored scratch folders
-        done = subprocess.run([quarto, "render", qmd.name], cwd=qmd.parent, env=env,
-                              capture_output=True, text=True)
-        ok = done.returncode == 0
-        failures += not ok
-        print(f"  {'ok  ' if ok else 'FAIL'}  {qmd.relative_to(ROOT)}")
-        if not ok:
-            print(done.stderr[-2000:])
-    site = subprocess.run([quarto, "render", *(["--cache-refresh"] if refresh else [])], cwd=ROOT / "docs",
-                          env=env, capture_output=True, text=True, check=False)
-    failures += site.returncode != 0
-    print(f"  {'ok  ' if site.returncode == 0 else 'FAIL'}  docs/ (the website, in docs/_site)")
-    if site.returncode != 0:
-        print(site.stderr[-3000:])
-    return failures
+def render_all() -> int:
+    done = subprocess.run([sys.executable, str(ROOT / "tools" / "docs.py"), "run"], cwd=ROOT, check=False)
+    return done.returncode
 
 
 if __name__ == "__main__":
     failures = run_readme()
     if "--render" in sys.argv:
-        failures += render_all(refresh="--refresh" in sys.argv)
+        failures += render_all()
     print(f"\n{failures} failure(s)")
     sys.exit(1 if failures else 0)

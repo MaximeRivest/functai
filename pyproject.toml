@@ -86,15 +86,16 @@ dev = [
     "pydantic>=2",
     "dpyr>=1.10",
 ]
-# the documentation website (docs/): Quarto runs every page's code on this
-# kernel, and quartodoc writes the reference pages from the docstrings
+# the documentation (docs/): Markdown notebooks run on rat (python tools/docs.py run),
+# the reference written from the docstrings by quartodoc, the site built by Zensical
 docs = [
-    "ipykernel>=6",
-    "nbformat>=5",
-    "nbclient>=0.10",
-    "pyyaml>=6",
     "pydantic>=2",
     "dpyr>=1.10",
+    "pandas>=2",
+    "pyyaml>=6",
     "quartodoc>=0.11",
     "griffe>=1,<2",   # quartodoc 0.11 breaks on griffe 2
+    "zensical==0.0.65",
+    "ipython>=8",     # rat notebooks: the kernel and its completion (rat ensure adds them too)
+    "jedi>=0.19",
 ]

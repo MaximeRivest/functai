@@ -28,6 +28,7 @@ import math
 import os
 import secrets
 import time
+import typing
 import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
@@ -112,6 +113,23 @@ class _Target:
         if not self.single:
             return ["result"]
         return list(self.predictors[0]._spec().outputs)
+
+    @property
+    def main_output(self) -> str:
+        return self.predictors[0]._spec().main if self.single else "result"
+
+    @property
+    def answer_fields(self) -> Optional[List[str]]:
+        """The field names when the answer is a record (a dataclass, a pydantic
+        model, a TypedDict), else None."""
+        if self.single:
+            spec = self.predictors[0]._spec()
+            field = next((f for f in spec.signature.outputs if f.name == spec.main), None)
+            typ = getattr(field, "annotation", None)
+        else:
+            from .columns import _return_type
+            typ = _return_type(self.program._fn, None)
+        return record_fields(typ)
 
     def inputs_of(self, row: Mapping[str, Any]) -> Dict[str, Any]:
         return {k: row[k] for k in self.input_names if k in row}
@@ -231,6 +249,103 @@ def exact_match(row: Mapping[str, Any], pred: Mapping[str, Any]) -> float:
     return float(all(_norm(row[k]) == _norm(pred[k]) for k in keys))
 
 
+def record_fields(typ: Any) -> Optional[List[str]]:
+    """The fields of a record type (dataclass, pydantic model, TypedDict), else None."""
+    if typ is None or not isinstance(typ, type):
+        return None
+    if dataclasses.is_dataclass(typ):
+        return [f.name for f in dataclasses.fields(typ)]
+    fields = getattr(typ, "model_fields", None)
+    if isinstance(fields, Mapping):
+        return list(fields)
+    if typing.is_typeddict(typ):
+        return list(typing.get_type_hints(typ))
+    return None
+
+
+def answer_part(pred: Mapping[str, Any], key: str, main: str) -> Any:
+    """An output of the prediction, or a field of its answer when the answer is a record."""
+    if key in pred:
+        return pred[key]
+    ans = pred.get(main)
+    if isinstance(ans, Mapping):
+        return ans.get(key)
+    return getattr(ans, key, None)
+
+
+def expected_columns(target: "_Target", expected: Any, rows: Sequence[Mapping[str, Any]]) -> Dict[str, str]:
+    """Where the right answers are, as ``{output or answer field: column}``.
+
+    ``expected="category"``: the answer is in that column. A list of names:
+    outputs, or fields of a record answer, each in the column of the same
+    name. A dict: ``{output or field: column}``. None: the columns named like
+    an output; or, for a record answer, like its fields."""
+    outs, main = target.output_names, target.main_output
+    fields = target.answer_fields or []
+    columns = {k for r in rows for k in r}
+    if expected is None:
+        if any(o in columns for o in outs):
+            return {}                                        # the classic case: exact_match on outputs
+        return {f: f for f in fields if f in columns}
+    if isinstance(expected, str):
+        mapping = {main: expected}
+    elif isinstance(expected, Mapping):
+        mapping = {str(k): str(v) for k, v in expected.items()}
+    elif isinstance(expected, (list, tuple)):
+        mapping = {str(k): str(k) for k in expected}
+    else:
+        raise TypeError("expected= is a column name (the answer's), a list of names, or a dict {name: column}")
+    unknown = [k for k in mapping if k not in outs and k not in fields]
+    if unknown:
+        known = outs + [f"{main}.{f}" for f in fields]
+        raise ValueError(f"expected=: {target.name} has no output or answer field {unknown[0]!r} "
+                         f"(it has: {', '.join(known)})")
+    missing = [c for c in mapping.values() if c not in columns]
+    if missing:
+        raise ValueError(f"expected={missing[0]!r}: the data has no such column "
+                         f"(columns: {sorted(columns)})")
+    return mapping
+
+
+def with_expected(rows: Sequence[Mapping[str, Any]], mapping: Mapping[str, str], target: "_Target"
+                  ) -> List[Dict[str, Any]]:
+    """The rows with the right answers also under the outputs' names (answer
+    fields gathered into one record), which is how optimizers read labels."""
+    main, outs = target.main_output, target.output_names
+    out = []
+    for r in rows:
+        r2 = dict(r)
+        record = {}
+        for key, c in mapping.items():
+            if c not in r:
+                continue
+            if key in outs:
+                r2[key] = r[c]
+            else:
+                record[key] = r[c]
+        if record:
+            r2[main] = record
+        out.append(r2)
+    return out
+
+
+def expected_metrics(mapping: Mapping[str, str], target: "_Target") -> List["Metric"]:
+    """Exact match on every expected column (``exact_match``), and, when there
+    are several, one metric per column (``<name>_match``)."""
+    main = target.main_output
+
+    def on(keys: Sequence[str]) -> Callable:
+        def exact_match(row: Mapping[str, Any], pred: Mapping[str, Any]) -> float:
+            return float(all(_norm(row.get(mapping[k])) == _norm(answer_part(pred, k, main)) for k in keys))
+        return exact_match
+
+    keys = list(mapping)
+    metrics = [Metric("exact_match", fn=on(keys))]
+    if len(keys) > 1:
+        metrics += [Metric(f"{k}_match", fn=on([k])) for k in keys]
+    return metrics
+
+
 @dataclasses.dataclass
 class Metric:
     """A resolved metric: a Python callable ``metric(row, prediction)``, run
@@ -279,10 +394,14 @@ def _check_arity(fn: Callable, name: str) -> None:
                         f"{inspect.signature(fn)}")
 
 
-def resolve_metrics(metric: Any, target: _Target, rows: Sequence[Mapping[str, Any]]) -> List[Metric]:
-    """``metric`` as a list of named metrics. None: exact match when the data
-    has a column for an output, else no metric. Accepts one metric, a list,
-    or a dict of name → metric; a metric is a callable or a dpyr expression."""
+def resolve_metrics(metric: Any, target: _Target, rows: Sequence[Mapping[str, Any]],
+                    expected: Optional[Mapping[str, str]] = None) -> List[Metric]:
+    """``metric`` as a list of named metrics. None: exact match against the
+    ``expected`` columns, or the columns named like an output; else no metric.
+    Accepts one metric, a list, or a dict of name → metric; a metric is a
+    callable or a dpyr expression."""
+    if metric is None and expected:
+        return expected_metrics(expected, target)
     if metric is None:
         outs = set(target.output_names)
         labeled = any(k in outs for r in rows for k in r)
@@ -362,6 +481,14 @@ def _cell(v: Any) -> Any:
     return str(v)
 
 
+def spread_fields(target: "_Target") -> List[str]:
+    """A record answer's fields, when each gets its own ``pred_<field>`` column
+    (none of them named like another output); else []."""
+    fields = target.answer_fields or []
+    others = set(target.output_names) - {target.main_output}
+    return [] if any(f in others for f in fields) else fields
+
+
 def _records(target: _Target, rows: Sequence[Mapping[str, Any]], runs: Sequence[RowRun],
              metrics: Sequence[Metric], values: Mapping[str, Sequence[Optional[float]]],
              run_id: str) -> Tuple[List[str], List[Dict[str, Any]]]:
@@ -371,13 +498,20 @@ def _records(target: _Target, rows: Sequence[Mapping[str, Any]], runs: Sequence[
         for k in (run.pred or {}):
             if k not in outs:
                 outs.append(k)
-    pred_cols = [f"pred_{k}" for k in outs]
+    main, fields = target.main_output, spread_fields(target)
+    pred_cols = [c for k in outs for c in ([f"pred_{f}" for f in fields] if k == main and fields
+                                            else [f"pred_{k}"])]
     names = ["example", *data_cols, *pred_cols, *(m.name for m in metrics), *_RUN_COLUMNS]
     records = []
     for i, (row, run) in enumerate(zip(rows, runs)):
         usage = run.usage
         rec = {"example": i, **{k: _cell(row.get(k)) for k in data_cols}}
-        rec.update({f"pred_{k}": _cell(run.pred.get(k)) if run.pred is not None else None for k in outs})
+        for k in outs:
+            if k == main and fields:
+                rec.update({f"pred_{f}": _cell(answer_part(run.pred, f, main)) if run.pred is not None else None
+                            for f in fields})
+            else:
+                rec[f"pred_{k}"] = _cell(run.pred.get(k)) if run.pred is not None else None
         rec.update({m.name: values[m.name][i] for m in metrics})
         rec.update(error=run.error, seconds=run.seconds, input_tokens=usage.get("input_tokens"),
                    output_tokens=usage.get("output_tokens"), model=run.model, run=run_id)
@@ -573,13 +707,13 @@ def _new_run_id(name: str) -> str:
 def _check_names(target: _Target, rows: Sequence[Mapping[str, Any]], metrics: Sequence[Metric]) -> None:
     columns = set(k for r in rows for k in r)
     added = {"example", *_RUN_COLUMNS, *(m.name for m in metrics),
-             *(f"pred_{k}" for k in target.output_names)}
+             *(f"pred_{k}" for k in target.output_names), *(f"pred_{f}" for f in spread_fields(target))}
     clash = sorted(columns & added)
     if clash:
         raise ValueError(f"the data has column(s) {clash}, which the run table adds; rename them first")
 
 
-def evaluate(program: Any, data: Any, metric: Any = None, *, num_threads: int = 1,
+def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = None, num_threads: int = 1,
              max_errors: Optional[int] = None, log: "str | os.PathLike | None" = None,
              call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None) -> Evaluation:
     '''Run a program on rows with known answers, and score it.
@@ -597,7 +731,13 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, num_threads: int = 
         parquet or CSV path, a pandas or polars dataframe, a Hugging Face
         dataset). Columns named like the parameters are the inputs; a column
         named like an output (``result`` for the return value) is its
-        expected answer; other columns are kept.
+        expected answer, unless ``expected=`` names another; other columns
+        are kept.
+    expected : str or dict, optional
+        The column holding the right answers, when it isn't named like the
+        output: ``expected="category"``. A dict names a column per output:
+        ``{"result": "category", "order_id": "order"}``. The default metric is
+        then exact match against these columns.
     metric : function, dpyr expression, AI function, list or dict
         How to score a row: ``metric(row, prediction)`` returning a number or a bool, a
         dpyr expression over the table (``col.pred_result == col.result``),
@@ -632,27 +772,22 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, num_threads: int = 
     from dpyr import col
 
     @ai
-    def category(message: str) -> Literal["shipping", "billing", "product"]:
-        """The support category of the message."""
+    def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
+        """Which team should answer this customer message?"""
 
-    rows = [
-        {"message": "The mug arrived in pieces.", "result": "shipping"},
-        {"message": "Refund the blender please, it stopped working.", "result": "billing"},
-        {"message": "Toaster burns one side of the bread.", "result": "product"},
-        {"message": "Tracking hasn't moved in a week.", "result": "shipping"},
-    ]
-    ev = evaluate(category, rows, num_threads=4)
+    tickets = functai.datasets.tickets().slice_head(n=20)
+    ev = evaluate(team, tickets, expected="category", num_threads=8)
     ev
     ```
 
     ```python
-    ev.table.select(col.message, col.result, col.pred_result, col.exact_match)
+    ev.table.filter(col.exact_match == 0).select(col.message, col.category, col.pred_result)
     ```
     '''
     target = _Target(program, call_defaults=call_defaults)
     rows = rows_of(data)
     target.check(rows)
-    metrics = resolve_metrics(metric, target, rows)
+    metrics = resolve_metrics(metric, target, rows, expected_columns(target, expected, rows))
     _check_names(target, rows, metrics)
     if log is not None or any(m.expr is not None for m in metrics):
         _dpyr()                                            # fail now, not after the model calls

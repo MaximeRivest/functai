@@ -221,6 +221,14 @@ def resolve(settings: Dict[str, Any]) -> Tuple[Any, str, Any]:
         # its own connection: a client= from configure does not apply to it (both
         # in one place is refused by config.check, where the contradiction is written)
         return lm, lm.selection.routed, _Route(lm.provider, lm.model)
+    if lm is None and client is None:
+        picked = accounts.default_model(settings.get("auth"))
+        if picked is None:
+            raise RuntimeError("no model configured, and no API key or login found to pick one: "
+                               "set OPENAI_API_KEY (or ANTHROPIC_API_KEY, GEMINI_API_KEY, ...), or sign in "
+                               "with functai.login(), or name a model: functai.configure(lm='gpt-4.1-mini')")
+        lm = picked[0]
+        accounts.say_default(*picked)
     if lm is None:
         raise RuntimeError("no model configured: call functai.configure(lm='gpt-4.1-mini') "
                            "or pass lm=... to @ai (functai.logins() shows what you can use)")

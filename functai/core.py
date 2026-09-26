@@ -35,7 +35,7 @@ from .docments import (UNSET, docments, docstring, extract_docstrings, flexiclas
                        qual_name, sig2str)
 from .bake.baked import is_baked
 from .engine import inspect_history, phistory  # noqa: F401 — re-exported
-from .signature import (MAIN_OUTPUT_DEFAULT_NAME, Spec, _collect_ast_outputs, _extract_return_names,
+from .signature import (MAIN_OUTPUT_DEFAULT_NAME, Spec, _collect_ast_outputs, _return_slots, bind_named_outputs,
                         build_spec, describe_signature)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -57,6 +57,27 @@ class ProgramState:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "ProgramState":
         return cls(instructions=data.get("instructions"), demos=tuple(data.get("demos") or ()))
+
+    def __repr__(self) -> str:
+        def short(v: Any) -> str:
+            text = repr(v)
+            return text if len(text) <= 70 else text[:67] + "..."
+
+        def io(d: Any) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+            if isinstance(d, lmcc.Turn):
+                return dict(d.inputs), dict(d.outputs or {})
+            if isinstance(d, dict) and "signature" in d:           # a saved turn
+                return dict(d.get("inputs") or {}), dict(d.get("outputs") or {})
+            return dict(d.get("inputs") or {}), dict(d.get("outputs") or {})
+
+        lines = ["instruction: " + ("(written from the code)" if self.instructions is None
+                                     else short(self.instructions))]
+        lines.append(f"examples: {len(self.demos)}" if self.demos else "examples: none")
+        for i, d in enumerate(self.demos, 1):
+            ins, outs = io(d)
+            lines.append(f"  {i}. " + ", ".join(f"{k}={short(v)}" for k, v in ins.items())
+                         + "  →  " + ", ".join(f"{k}={short(v)}" for k, v in outs.items()))
+        return "\n".join(lines)
 
 
 # Optimizers try candidate states without touching the function: id(fn) → state.
@@ -258,10 +279,10 @@ def _derive_output_name(desc: str) -> str:
 _ai = _AISentinel()
 """The model's answer, inside an AI function's body.
 
-``return _ai`` returns it. ``x: T = _ai["description"]`` declares an
-output named ``x`` (the last one declared is the answer, unless the body
-returns ``_ai``); name it to post-process it: ``score: float = _ai`` then
-``return min(score, 1.0)``."""
+A bare ``_ai`` is always the answer, and behaves like the value it stands
+for: ``return _ai``, ``return round(_ai, 2)``, ``return critique, _ai``.
+``x: T = _ai`` declares one more output, named ``x`` and written before the
+answer; a comment on the line (or ``_ai["..."]``) describes it."""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -313,7 +334,7 @@ class FunctAIFunc:
         functools.update_wrapper(self, fn)
         # requirements the code reaches in ways functai.check cannot see ("numpy>=2")
         self._requires: Tuple[str, ...] = tuple(requires or ())
-        self._fn = fn
+        self._fn = bind_named_outputs(fn)     # `label = _ai` is the output `label`
         self._sig = inspect.signature(fn)
         for old, new in _SETTING_ALIASES.items():
             if old in cfg:
@@ -785,9 +806,10 @@ class FunctAIFunc:
                     return any(_has_bare_ai(v) for v in x.values())
                 return False
 
-            # Return field order for mapping bare `_ai` occurrences.
-            ret_names = _extract_return_names(self._fn) or [n for n, _t, _d in _collect_ast_outputs(self._fn)]
-            names_pool = [n for n in ret_names if n in spec.outputs]
+            # Which output each `_ai` left in a returned tuple or list holds: a
+            # bare `_ai` is the answer, `x = _ai` is the output `x`.
+            names_pool = [spec.main if n is None or n not in spec.outputs else n
+                          for n in _return_slots(self._fn)]
 
             def _next_name():
                 return names_pool.pop(0) if names_pool else None
@@ -857,6 +879,57 @@ class FunctAIFunc:
         from .columns import vectorize_function
         return vectorize_function(self, dtype=dtype, threads=threads, errors=errors)
 
+    def unpack(self, *args: Any, threads: Optional[int] = None, errors: str = "raise", prefix: str = "",
+               **kwargs: Any) -> Dict[str, Any]:
+        '''One column per field of the answer, to spread into a table.
+
+        For a function whose answer is a record (a dataclass, a pydantic
+        model, a TypedDict): ``table.mutate(**fn.unpack(col.text))`` adds
+        one column per field. Each distinct row still costs one model call.
+
+        Parameters
+        ----------
+        *args, **kwargs
+            The inputs, as columns (``col.note``) or constants.
+        threads : int, optional
+            How many rows run at once (default 8).
+        errors : str
+            ``"raise"`` (default) or ``"null"``, as for ``vectorize``.
+        prefix : str
+            Put before each column's name (``prefix="ai_"`` → ``ai_species``).
+
+        Returns
+        -------
+        dict
+            ``{field: column expression}``, for ``mutate(**...)``.
+
+        See Also
+        --------
+        FunctAIFunc.vectorize : the whole answer as one column.
+
+        Examples
+        --------
+        ```python
+        from dataclasses import dataclass
+        from dpyr import read, col
+
+        @dataclass
+        class Contact:
+            name: str
+            city: str | None   # None when the text does not say
+
+        @ai
+        def contact(text: str) -> Contact:
+            """The person the text is about."""
+
+        people = read([{"text": "Ada Lovelace wrote to us from London."},
+                       {"text": "Grace Hopper called."}])
+        people.mutate(**contact.unpack(col.text))
+        ```
+        '''
+        from .columns import unpack_function
+        return unpack_function(self, args, kwargs, threads=threads, errors=errors, prefix=prefix)
+
     def __dpyr_vectorize__(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise",
                            version: str = ""):
         from .columns import vectorize_function
@@ -912,6 +985,9 @@ class FunctAIFunc:
         trainset : list of dict, or a table
             Rows as for ``evaluate``: columns named like the parameters are the
             inputs, the others the expected outputs.
+        expected : str or dict, optional
+            The column holding the right answers, as for ``evaluate``:
+            ``expected="category"``.
         optimizer : optimizer class or instance
             Default ``BootstrapFewShot``. See the Optimizers section.
         metric : function or dpyr expression
@@ -1131,19 +1207,19 @@ def ai(_fn=None, **cfg):
     sentiment("The update broke my favourite feature.")
     ```
 
-    ``_ai`` in the body: an extra output written before the answer, and
-    plain Python after it.
+    ``_ai`` in the body: ``reasoning: str = _ai`` is one more output, written
+    before the answer (its comment describes it); a bare ``_ai`` is the
+    answer, and plain Python runs on it.
 
     ```python
     @ai
     def solve(question: str) -> float:
         """Solve the word problem."""
-        reasoning: str = _ai["Step by step, the calculation."]
-        answer: float = _ai
-        return round(answer, 2)
+        reasoning: str = _ai     # step by step, the calculation
+        return round(_ai, 2)
 
     p = solve("3 pencils cost $1.20. How much do 10 cost?", all=True)
-    p.answer, p.reasoning
+    p.result, p.reasoning
     ```
 
     Settings in the decorator:

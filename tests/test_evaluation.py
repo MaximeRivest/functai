@@ -57,6 +57,29 @@ def test_score_is_a_fraction_with_an_interval(fake):
     assert s["low"] == pytest.approx(0.3006, abs=1e-4) and s["high"] == pytest.approx(0.9544, abs=1e-4)
 
 
+def test_expected_names_the_column_with_the_right_answers(fake):
+    fake(responder=answer)
+    rows = [{"user_query": r["user_query"], "intent": r["result"], "lang": r["lang"]} for r in ROWS]
+    ev = evaluate(make_classifier(), rows, expected="intent")
+    assert ev.score == 0.75
+    cols = ev.table.collect().columns
+    assert "intent" in cols and "result" not in cols           # the data's columns, as they were
+    with pytest.raises(ValueError, match="no such column"):
+        evaluate(make_classifier(), rows, expected="label")
+    with pytest.raises(ValueError, match="has no output or answer field 'answer'"):
+        evaluate(make_classifier(), rows, expected={"answer": "intent"})
+
+
+def test_expected_in_opt_gives_labeled_demos(fake):
+    fake(responder=answer)
+    fn = make_classifier()
+    rows = [{"user_query": r["user_query"], "intent": r["result"]} for r in ROWS]
+    fn.opt(trainset=rows, expected="intent", optimizer=functai.LabeledFewShot(k=2))
+    assert len(fn.demos) == 2
+    assert all(d["outputs"]["result"] in {"booking", "information", "cancelation"} for d in fn.demos)
+    assert "examples: 2" in repr(fn.state()) and "→  result=" in repr(fn.state())
+
+
 def test_intervals_wilson_for_0_1_and_student_t_otherwise():
     from functai.evaluation import interval
     assert interval([1.0, 1.0, 1.0, 1.0])[1:] == (pytest.approx(0.5101, abs=1e-4), 1.0)
@@ -427,3 +450,63 @@ def test_columns_work_in_modules_with_postponed_annotations(fake, tmp_path, monk
     frame = dpyr.read([{"t": "x"}]).mutate(l=postponed.label(col.t))
     assert frame.schema["l"] == dpyr.dtypes.nested("List(Str)")
     assert frame.collect()["l"].to_list() == [["a"]]
+
+
+# ------------------------------------------------------------------ record answers
+
+
+@dataclasses.dataclass
+class Sighting:
+    species: str
+    count: int | None
+
+
+def make_observer():
+    @ai
+    def observe(note: str) -> Sighting:
+        """The bird in the note."""
+    return observe
+
+
+def sighting(req):
+    text = "".join(p.text for p in req.messages[-1].parts)
+    count = "null" if "few" in text else "2"
+    return '<result>\n{"species": "robin", "count": ' + count + '}\n</result>'
+
+
+NOTES = [
+    {"note": "A pair of robins.", "species": "robin", "count": 2},
+    {"note": "A few robins.", "species": "robin", "count": None},
+    {"note": "Three robins.", "species": "robin", "count": 3},
+]
+
+
+def test_a_record_answer_is_scored_field_by_field_against_columns_named_like_its_fields(fake):
+    fake(responder=sighting)
+    ev = evaluate(make_observer(), NOTES)
+    assert ev.metrics == ["exact_match", "species_match", "count_match"]
+    assert ev.score == pytest.approx(2 / 3)
+    assert ev.scores("species_match") == [1.0, 1.0, 1.0]
+    t = ev.table.collect()
+    assert "pred_species" in t.columns and "pred_count" in t.columns and "pred_result" not in t.columns
+    assert t["pred_count"].to_list() == [2, None, 2]
+
+
+def test_expected_points_answer_fields_at_other_columns(fake):
+    fake(responder=sighting)
+    rows = [{"note": r["note"], "bird": r["species"], "n": r["count"]} for r in NOTES]
+    ev = evaluate(make_observer(), rows, expected={"species": "bird", "count": "n"})
+    assert ev.score == pytest.approx(2 / 3)
+    with pytest.raises(ValueError, match="no output or answer field 'colour'"):
+        evaluate(make_observer(), rows, expected={"colour": "bird"})
+
+
+def test_unpack_gives_a_column_per_field_and_one_call_per_row(fake):
+    r = fake(responder=sighting)
+    notes = dpyr.read([{"note": n["note"]} for n in NOTES])
+    out = notes.mutate(**make_observer().unpack(col.note)).collect()
+    assert out.columns == ["note", "species", "count"]
+    assert out["count"].to_list() == [2, None, 2]
+    assert len(r.requests) == 3
+    with pytest.raises(TypeError, match="not a record"):
+        make_classifier().unpack(col.user_query)

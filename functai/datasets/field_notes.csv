@@ -1,0 +1,61 @@
+id,site,date,note,species,count,behaviour
+1,Marsh boardwalk,2026-04-12,"Great blue heron standing in the shallows, stabbing at fish. Caught one.",great blue heron,1,feeding
+2,North field,2026-04-12,A pair of robins pulling worms on the lawn.,American robin,2,feeding
+3,Creek trail,2026-04-12,"Heard a chickadee calling 'chick-a-dee-dee' from the pines, didn't see it.",black-capped chickadee,1,calling
+4,Old orchard,2026-04-13,Downy woodpecker drumming on a dead branch.,downy woodpecker,1,calling
+5,Marsh boardwalk,2026-04-13,"About 40 Canada geese flying over in a V, heading north.",Canada goose,40,flying
+6,North field,2026-04-13,"Red-tailed hawk perched on the fence post, just sitting there for ten minutes.",red-tailed hawk,1,resting
+7,Creek trail,2026-04-14,3 blue jays squabbling at the feeder over peanuts.,blue jay,3,feeding
+8,Old orchard,2026-04-14,Male cardinal singing from the top of the apple tree.,northern cardinal,1,calling
+9,Marsh boardwalk,2026-04-15,"Mallards, a few of them, dabbling near the reeds.",mallard,,feeding
+10,North field,2026-04-15,"Barn swallows swooping low over the grass, maybe 6.",barn swallow,6,flying
+11,Creek trail,2026-04-16,Song sparrow singing on a shrub by the bridge.,song sparrow,1,calling
+12,Old orchard,2026-04-16,"Crows, a whole noisy flock, going to roost in the oaks.",American crow,,resting
+13,Marsh boardwalk,2026-04-18,Turkey vulture circling high over the marsh.,other,1,flying
+14,North field,2026-04-18,Robin carrying mud and grass into the hedge. Nest in progress!,American robin,1,nesting
+15,Creek trail,2026-04-19,"Two chickadees at the suet, taking turns.",black-capped chickadee,2,feeding
+16,Old orchard,2026-04-19,Pair of downies (male + female) excavating a hole in the old pear tree.,downy woodpecker,2,nesting
+17,Marsh boardwalk,2026-04-20,Heron flew across the pond and landed out of sight.,great blue heron,1,flying
+18,North field,2026-04-20,"Canada goose sitting on eggs on the island, mate standing guard next to her.",Canada goose,2,nesting
+19,Creek trail,2026-04-21,"Blue jay screaming its alarm call, probably at a cat.",blue jay,1,calling
+20,Old orchard,2026-04-21,Cardinal pair feeding on sunflower seeds under the feeder.,northern cardinal,2,feeding
+21,Marsh boardwalk,2026-04-22,"Red-winged blackbirds everywhere on the cattails, singing.",other,,calling
+22,North field,2026-04-22,hawk (red tail seen clearly) soaring in circles,red-tailed hawk,1,flying
+23,Creek trail,2026-04-23,"Several song sparrows hopping in the brush pile, picking at seeds.",song sparrow,,feeding
+24,Old orchard,2026-04-23,One crow sitting quietly on the barn roof.,American crow,1,resting
+25,Marsh boardwalk,2026-04-25,Mallard hen with 9 ducklings swimming along the edge.,mallard,10,resting
+26,North field,2026-04-25,"Swallows going in and out of the barn rafters with mud, at least 4.",barn swallow,4,nesting
+27,Creek trail,2026-04-26,Chickadee pecking at birch catkins.,black-capped chickadee,1,feeding
+28,Old orchard,2026-04-26,"Woodpecker (downy, small, short bill) resting on the trunk in the rain.",downy woodpecker,1,resting
+29,Marsh boardwalk,2026-04-27,"Great blue herons, 3 of them, roosting in the dead trees.",great blue heron,3,resting
+30,North field,2026-04-27,Robin singing at dawn from the roof antenna.,American robin,1,calling
+31,Creek trail,2026-04-28,"Wild turkey crossing the trail with its head down, pecking.",other,1,feeding
+32,Old orchard,2026-04-28,Two blue jays carrying twigs into the spruce.,blue jay,2,nesting
+33,Marsh boardwalk,2026-05-02,Geese: 12 adults grazing on the lawn by the parking lot.,Canada goose,12,feeding
+34,North field,2026-05-02,Heard two cardinals countersinging across the field.,northern cardinal,2,calling
+35,Creek trail,2026-05-03,"Sparrow (song) sitting fluffed up on a branch, not moving.",song sparrow,1,resting
+36,Old orchard,2026-05-03,Lots of crows mobbing a hawk and cawing like crazy.,American crow,,calling
+37,Marsh boardwalk,2026-05-05,Mallard drake preening on a log.,mallard,1,resting
+38,North field,2026-05-05,Red-tail sitting on the nest in the tall cottonwood.,red-tailed hawk,1,nesting
+39,Creek trail,2026-05-06,A dozen barn swallows skimming the creek for insects.,barn swallow,12,feeding
+40,Old orchard,2026-05-06,Chickadee pair taking turns bringing food into a nest hole.,black-capped chickadee,2,nesting
+41,Marsh boardwalk,2026-05-08,Osprey hovering then diving into the pond!,other,1,feeding
+42,North field,2026-05-08,"Robins, three adults and two speckled juveniles, on the lawn doing nothing much.",American robin,5,resting
+43,Creek trail,2026-05-09,"Heard a downy woodpecker's whinny call, never found it.",downy woodpecker,1,calling
+44,Old orchard,2026-05-09,"Blue jay flew over, one.",blue jay,1,flying
+45,Marsh boardwalk,2026-05-11,Heron stalking frogs at the edge of the lily pads.,great blue heron,1,feeding
+46,North field,2026-05-11,"Several Canada geese flying low over the field, honking.",Canada goose,,flying
+47,Creek trail,2026-05-12,Song sparrow carrying a caterpillar into the thicket (nest nearby?).,song sparrow,1,nesting
+48,Old orchard,2026-05-12,Cardinal (female) resting in the lilac.,northern cardinal,1,resting
+49,Marsh boardwalk,2026-05-15,~25 swallows perched on the wire over the boardwalk.,barn swallow,25,resting
+50,North field,2026-05-15,"Crow pair building a nest high in the pine, carrying sticks.",American crow,2,nesting
+51,Creek trail,2026-05-16,A couple of mallards flew upstream.,mallard,2,flying
+52,Old orchard,2026-05-16,Baltimore oriole singing in the maple.,other,1,calling
+53,Marsh boardwalk,2026-05-18,Two red-tailed hawks calling to each other over the marsh.,red-tailed hawk,2,calling
+54,North field,2026-05-18,"Chickadees, a few, flying from the hedge into the woods.",black-capped chickadee,,flying
+55,Creek trail,2026-05-19,Robin feeding worms to 3 chicks in the nest by the bridge.,American robin,4,nesting
+56,Old orchard,2026-05-19,Downy woodpecker at the suet feeder.,downy woodpecker,1,feeding
+57,Marsh boardwalk,2026-05-21,"Goose family: 2 adults, 5 goslings, swimming.",Canada goose,7,resting
+58,North field,2026-05-21,Blue jays (4) eating acorns under the oak.,blue jay,4,feeding
+59,Creek trail,2026-05-22,"One great blue heron flying downstream, slow wingbeats.",great blue heron,1,flying
+60,Old orchard,2026-05-22,"Song sparrow and its mate singing from the fence, two birds.",song sparrow,2,calling

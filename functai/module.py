@@ -97,12 +97,12 @@ class FunctAIModule:
 
     def opt(self, *, trainset: Any, metric: Any = None, optimizer: Any = None,
             call_defaults: Optional[Dict[str, Any]] = None, valset: Any = None,
-            **optimizer_kwargs) -> "FunctAIModule":
+            expected: Any = None, **optimizer_kwargs) -> "FunctAIModule":
         """Tune every @ai function this module calls, against one metric on the
         module's output. ``call_defaults`` fill module arguments the examples lack."""
         from .optimizers import optimize
         optimize(self, trainset=trainset, optimizer=optimizer, metric=metric, valset=valset,
-                 call_defaults=call_defaults, **optimizer_kwargs)
+                 call_defaults=call_defaults, expected=expected, **optimizer_kwargs)
         return self
 
     def undo_opt(self, steps: int = 1) -> None:

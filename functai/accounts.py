@@ -222,6 +222,47 @@ def logins(*, auth: Any = None) -> Logins:
     return out
 
 
+# ------------------------------------------------------------------ the default model
+
+# When no model is configured: the first of these you can use. API keys first
+# (billed per call, the way programs are meant to run), each with a small,
+# capable model; subscriptions last, with their smallest model.
+DEFAULT_MODEL: Tuple[Tuple[str, str], ...] = (
+    ("openai", "gpt-4.1-mini"),
+    ("anthropic", "claude-haiku-4-5"),
+    ("gemini", "gemini-2.5-flash"),
+    ("groq", "groq:openai/gpt-oss-120b"),
+    ("openrouter", "openrouter:openai/gpt-4.1-mini"),
+    ("claude-code", "claude:claude-haiku-4-5"),
+    ("openai-codex", "chatgpt:gpt-5.5"),
+    ("github-copilot", "copilot:gpt-4.1"),
+)
+
+_DEFAULT_LOCK = threading.Lock()
+_DEFAULT_SAID: Dict[Any, str] = {}
+
+
+def default_model(auth: Any = None) -> Optional[Tuple[str, str]]:
+    """``(model, how)`` for the first entry of ``DEFAULT_MODEL`` usable on this
+    machine (the way ``logins()`` sees it: files and environment only), or None."""
+    usable = {x.provider: x for x in logins(auth=auth)
+              if x.status in ("ready", "found") or x.status.startswith("ready")}
+    for provider, model in DEFAULT_MODEL:
+        if provider in usable:
+            return model, usable[provider].source
+    return None
+
+
+def say_default(model: str, how: str) -> None:
+    """Say once per process which model was picked, and how to choose another."""
+    with _DEFAULT_LOCK:
+        if _DEFAULT_SAID.get(model) == how:
+            return
+        _DEFAULT_SAID[model] = how
+    print(f"functai: no model chosen, so using {model} ({how}). "
+          f"Choose one with functai.configure(lm=...).", file=sys.stderr, flush=True)
+
+
 # ------------------------------------------------------------------ login / logout
 
 

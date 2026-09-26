@@ -14,6 +14,7 @@ API:
 - Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
 - Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Utils:     phistory(), inspect_history(), clear_cache()
+- Data:      datasets.tickets(), datasets.field_notes()  (small labelled tables to learn with)
 """
 
 from .accounts import login, login_methods, logins, logout
@@ -45,6 +46,7 @@ from .core import (
 )
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
+from . import datasets  # noqa: F401  (functai.datasets.tickets(), ...)
 from .evaluation import Evaluation, compare, evaluate, exact_match, runs
 from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module
