@@ -242,8 +242,17 @@ class Metric:
         if run.pred is None:
             return None
         if self.fn is not None:
+            if _is_program(self.fn):
+                # an AI judge gets plain data, so typed parameters (row: dict,
+                # prediction: dict) can be written into its prompt as JSON
+                return as_score(self.fn(_cell(dict(row)), _cell(dict(run.pred))))
             return as_score(self.fn(dict(row), run.pred))
         return expr_scores(self, target, [row], [run])[0]
+
+
+def _is_program(fn: Any) -> bool:
+    from .module import FunctAIModule
+    return isinstance(fn, (FunctAIFunc, FunctAIModule))
 
 
 def as_score(value: Any) -> float:

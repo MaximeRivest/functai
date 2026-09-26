@@ -393,3 +393,37 @@ def test_a_module_on_a_column(fake):
     assert got["s"].to_list() == [["HEY", "HEY"]]
     with pytest.raises(TypeError, match="no return annotation"):
         shout_twice(col.t)
+
+
+def test_an_ai_judge_with_typed_parameters_gets_plain_data(fake):
+    @ai
+    def typed_judge(row: dict, prediction: dict) -> float:
+        """Between 0 and 1: how close the prediction is to the row's result."""
+
+    seen = []
+
+    def responder(req):
+        if "how close" in (req.system or ""):
+            seen.append("".join(p.text for p in req.messages[-1].parts))
+            return "<result>\n1.0\n</result>"
+        return answer(req)
+
+    fake(responder=responder)
+    ev = evaluate(make_classifier(), ROWS[:1], typed_judge)
+    assert ev.errors == [] and ev.score == 1.0
+    assert '"result": "booking"' in seen[0]
+
+
+def test_columns_work_in_modules_with_postponed_annotations(fake, tmp_path, monkeypatch):
+    (tmp_path / "postponed.py").write_text(
+        "from __future__ import annotations\n"
+        "from functai import ai\n\n"
+        "@ai\n"
+        "def label(text: str) -> list[str]:\n"
+        '    """Labels."""\n')
+    monkeypatch.syspath_prepend(str(tmp_path))
+    import postponed
+    fake(responder=lambda req: '<result>\n["a"]\n</result>')
+    frame = dpyr.read([{"t": "x"}]).mutate(l=postponed.label(col.t))
+    assert frame.schema["l"] == dpyr.dtypes.nested("List(Str)")
+    assert frame.collect()["l"].to_list() == [["a"]]

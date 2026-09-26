@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import typing
 from typing import Any, Dict, Optional
 
 _THREADS = 8        # model calls wait on the network; providers' rate limits are retried with backoff
@@ -41,6 +42,12 @@ def _dpyr():
 
 
 def _return_type(fn: Any, default: Any) -> Any:
+    try:                                   # resolves `from __future__ import annotations` strings
+        hints = typing.get_type_hints(fn)
+    except Exception:  # noqa: BLE001 — unresolvable names: fall back to the raw annotation
+        hints = {}
+    if "return" in hints:
+        return hints["return"]
     ann = inspect.signature(fn).return_annotation
     return default if ann is inspect.Signature.empty else ann
 

@@ -1,6 +1,6 @@
 [project]
 name = "functai"
-version = "1.0.0"
+version = "1.0.1"
 description = "Typed Python functions whose body is a language model call: the function is the prompt, the body is the program"
 readme = "README.md"
 requires-python = ">=3.11"
