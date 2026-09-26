@@ -214,7 +214,7 @@ def clear_cache() -> None:
 # ------------------------------------------------------------------ sending
 
 
-# functai.save(runs=...) records every exchange of a run here, to replay it in verify.
+# functai.save(record=...) records every model exchange here, to replay it in verify.
 RECORDING: "contextvars.ContextVar[Optional[Dict[str, Any]]]" = contextvars.ContextVar("functai_recording",
                                                                                         default=None)
 

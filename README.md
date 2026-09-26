@@ -675,7 +675,7 @@ And what stops a clean save, each with its fix:
 ### Save, verify, load
 
 ```python
-functai.save(fact_check, "fact_check/", runs=[{"claim": "Paris is the capital of France"}])
+functai.save(fact_check, "fact_check/", record=[{"claim": "Paris is the capital of France"}])
 functai.verify("fact_check/", trust=True)        # verified in a fresh environment
 fact_check = functai.load("fact_check/", trust=True)
 ```
@@ -691,7 +691,7 @@ The saved folder is readable and diffable:
       files/data/stop.txt   data files read with functai.file(...)
       requirements.txt      the packages the code reaches, pinned
       requirements.lock     those and everything they pull in, as installed here
-      runs.json             recorded runs (with runs=...)
+      recordings.json       model replies recorded with save(record=...)
 
 - **`save`** refuses while `check` finds errors, and writes the folder whole or
   not at all. Credentials and connections (`api_key=`, `client=`, logins) are
@@ -700,7 +700,7 @@ The saved folder is readable and diffable:
   `requirements.lock` alone, loads the program there from an empty folder (so
   nothing from your project can leak in), and checks two things. First, every
   AI function renders byte-identical requests (instruction, layout, demos,
-  tools). Second, each recorded run replays to the same result against its
+  tools). Second, each recording replays to the same result against its
   recorded model replies, tools and helpers included. No model is called;
   it takes about a second once uv's cache is warm. `fresh=False` checks in the
   current environment instead (weaker).
@@ -720,7 +720,7 @@ What reading code cannot see: names looked up at run time (`getattr`,
 `importlib`, `eval`), functions passed in as arguments, and data files not read
 through `functai.file`. `check` points at them, `@ai(requires=["numpy>=2"])` or
 `save(requires=[...])` declares packages by hand, `save(include=["myproject"])`
-saves an editable-installed project as code, and `verify` with recorded `runs`
+saves an editable-installed project as code, and `verify` with recordings
 catches anything still missing.
 
 ## 10. Inspection

@@ -391,14 +391,14 @@ def test_load_refuses_edited_code_missing_packages_and_changed_prompts(project, 
 # ------------------------------------------------------------------ verify
 
 
-def test_recorded_runs_replay_and_catch_behavior_changes(project, tmp_path):
+def test_recordings_replay_and_catch_behavior_changes(project, tmp_path):
     mods = project(PIPELINE, DATA)
     prog = mods["prog"]
     target = tmp_path / "s"
     functai.configure(lm="gpt-4.1-mini", client=pipeline_model())
-    functai.save(prog.fact_check, target, runs=[{"claim": "Paris is the capital of France"}])
-    runs = json.loads((target / "runs.json").read_text())
-    assert len(runs["runs"][0]["exchanges"]) == 3 and runs["runs"][0]["output"] == {"json": "true"}
+    functai.save(prog.fact_check, target, record=[{"claim": "Paris is the capital of France"}])
+    rec = json.loads((target / "recordings.json").read_text())
+    assert len(rec["recordings"][0]["exchanges"]) == 3 and rec["recordings"][0]["output"] == {"json": "true"}
     functai.configure(client=None)
     assert functai.verify(target, trust=True, fresh=False).ok
 
@@ -417,7 +417,7 @@ def test_recorded_runs_replay_and_catch_behavior_changes(project, tmp_path):
 def test_verify_in_a_fresh_environment(project, tmp_path):
     prog = project(PIPELINE, DATA)["prog"]
     functai.configure(lm="gpt-4.1-mini", client=pipeline_model())
-    functai.save(prog.fact_check, tmp_path / "s", runs=[{"claim": "Paris is the capital of France"}])
+    functai.save(prog.fact_check, tmp_path / "s", record=[{"claim": "Paris is the capital of France"}])
     v = functai.verify(tmp_path / "s", trust=True)
     assert v.ok and v.fresh, v.log[-2000:]
 

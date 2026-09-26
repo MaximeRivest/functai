@@ -398,12 +398,12 @@ def _output_json(value: Any) -> Any:
         return {"repr": repr(value)}
 
 
-def _record_runs(program: Any, runs: List[Dict[str, Any]]) -> Dict[str, Any]:
+def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
     """Run the program on each input, for real, and keep every model exchange."""
     from . import engine
     recorded = []
     routes: Dict[str, Any] = {}
-    for inputs in runs:
+    for inputs in inputs_list:
         rec: Dict[str, Any] = {"exchanges": [], "routes": routes}
         token = engine.RECORDING.set(rec)
         try:
@@ -412,12 +412,12 @@ def _record_runs(program: Any, runs: List[Dict[str, Any]]) -> Dict[str, Any]:
             engine.RECORDING.reset(token)
         recorded.append({"inputs": lmcc.turn.to_json(inputs, where="run inputs"), "output": _output_json(output),
                          "exchanges": rec["exchanges"]})
-    return {"settings": _global_settings(), "routes": routes, "runs": recorded}
+    return {"settings": _global_settings(), "routes": routes, "recordings": recorded}
 
 
 def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str] = (),
          requires: Iterable[str] = (), allow: Iterable[str] = (), examples: Iterable[Dict[str, Any]] = (),
-         runs: Iterable[Dict[str, Any]] = (), overwrite: bool = False):
+         record: Iterable[Dict[str, Any]] = (), overwrite: bool = False):
     """Save ``program`` (an @ai function, an @module, or a Python function that
     calls them) with its code, data files and pinned requirements, to a folder.
 
@@ -426,10 +426,10 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
     ``include`` / ``requires``: as for ``check``. ``examples``: inputs of the
     program (an AI function) to fingerprint, besides its demos.
 
-    ``runs``: inputs to run the program on now, for real (this calls the model);
-    every model reply is recorded, and ``verify`` replays them to check that the
-    saved program, tools and helpers included, produces the same results in a
-    fresh environment, without calling a model. Writes a new folder whole or
+    ``record``: inputs to run the program on now, for real (this calls the
+    model); every model reply is recorded, and ``verify`` replays the recordings
+    to check that the saved program, tools and helpers included, produces the
+    same results in a fresh environment, without calling a model. Writes a new folder whole or
     not at all. Returns the report."""
     from .graph import Refused, check, lock
     report = check(program, include=include, requires=requires)
@@ -446,7 +446,7 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
     for given, (_saved, src) in files.items():
         if not src.exists():
             raise FileNotFoundError(f"functai.file({given!r}): {src} does not exist")
-    recorded = _record_runs(program, list(runs)) if runs else None
+    recorded = _record(program, list(record)) if record else None
     manifest = _manifest(report, examples, allowed)
     manifest["data_files"] = {given: saved for given, (saved, _src) in files.items()}
     tmp = Path(tempfile.mkdtemp(prefix=f".{target.name}.", dir=target.parent))
@@ -478,8 +478,8 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
                 hashes[f"files/{saved}"] = _sha256(dest.read_bytes())
         if recorded is not None:
             text = json.dumps(recorded, indent=1, ensure_ascii=False) + "\n"
-            (tmp / "runs.json").write_text(text)
-            hashes["runs.json"] = _sha256(text.encode())
+            (tmp / "recordings.json").write_text(text)
+            hashes["recordings.json"] = _sha256(text.encode())
         direct = "\n".join(manifest["requirements"]) + "\n"
         locked = "\n".join(r.spec for r in lock(report.requirements.values())) + "\n"
         (tmp / "requirements.txt").write_text(direct)
@@ -699,8 +699,8 @@ def _no_bytecode():
 class Verification:
     """What ``verify`` found. ``ok`` means: a fresh environment built from the
     saved requirements alone loaded the program, every AI function rendered
-    exactly the requests it rendered when saved, and each recorded run
-    (``save(runs=...)``) produced the same result against its recorded replies."""
+    exactly the requests it rendered when saved, and each recording
+    (``save(record=...)``) produced the same result against its recorded replies."""
     ok: bool
     fresh: bool
     problems: List[str]
@@ -723,7 +723,7 @@ class _Replay:
         self.finals = {v[2]: v for v in self.routes.values()}
         self.replies: Dict[str, List[Dict[str, Any]]] = {}
         self.requests: Dict[str, Dict[str, Any]] = {}
-        for run in recorded["runs"]:
+        for run in recorded["recordings"]:
             for ex in run["exchanges"]:
                 key = _canonical(ex["request"])
                 self.replies.setdefault(key, []).append(ex["response"])
@@ -770,9 +770,9 @@ def _closest(request: Dict[str, Any], recorded: Iterable[Dict[str, Any]]) -> str
     return "the program sent a request it did not send when saved:\n" + "\n".join(diff)
 
 
-def _replay_runs(root: Path, entry: Any) -> List[str]:
+def _replay(root: Path, entry: Any) -> List[str]:
     from .config import configure
-    path = root / "runs.json"
+    path = root / "recordings.json"
     if not path.exists():
         return []
     recorded = json.loads(path.read_text())
@@ -780,19 +780,19 @@ def _replay_runs(root: Path, entry: Any) -> List[str]:
     problems = []
     settings = _settings_from_json(recorded.get("settings", {}))
     with configure(**{**settings, "client": replay, "cache_replies": False, "api_retries": 0}):
-        for i, run in enumerate(recorded["runs"]):
+        for i, run in enumerate(recorded["recordings"]):
             try:
                 output = entry(**run["inputs"])
             except _ReplayMiss as exc:
-                problems.append(f"run {i}: {exc}")
+                problems.append(f"recording {i}: {exc}")
                 continue
             except Exception as exc:  # noqa: BLE001 — the finding
                 hint = f" (declare {exc.name!r} with requires=)" if isinstance(exc, ModuleNotFoundError) else ""
-                problems.append(f"run {i}: the program raised {type(exc).__name__}: {exc}{hint}")
+                problems.append(f"recording {i}: the program raised {type(exc).__name__}: {exc}{hint}")
                 continue
             now = _output_json(output)
             if _canonical(now) != _canonical(run["output"]):
-                problems.append(f"run {i}: returned {now} but returned {run['output']} when saved")
+                problems.append(f"recording {i}: returned {now} but returned {run['output']} when saved")
     return problems
 
 
@@ -806,7 +806,7 @@ def verify_here(path: "str | os.PathLike[str]") -> Verification:
         if isinstance(exc, ModuleNotFoundError):
             hint = f" (the saved requirements do not provide {exc.name!r}: declare it with requires=)"
         return Verification(False, False, [f"loading failed: {type(exc).__name__}: {exc}{hint}"])
-    problems = _replay_runs(Path(path).expanduser().resolve(), entry)
+    problems = _replay(Path(path).expanduser().resolve(), entry)
     return Verification(not problems, False, problems)
 
 
