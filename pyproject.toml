@@ -73,9 +73,3 @@ dev = [
     "pydantic>=2",
     "dpyr>=1.10",
 ]
-
-# Development: the sibling checkouts (lmcc 0.8.3 is not on PyPI yet; dpyr is
-# developed alongside the evaluation tables).
-[tool.uv.sources]
-lmcc = { path = "../lmcc/python", editable = true }
-dpyr = { path = "../r_ports_to_py/dpyr", editable = true }
