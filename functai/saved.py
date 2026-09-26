@@ -845,8 +845,10 @@ def verify(path: "str | os.PathLike[str]", *, trust: bool = False, fresh: bool =
                  if " @ file://" in line]
         refresh = [arg for name in local for arg in ("--refresh-package", name)]
         steps = [[uv, "venv", "-q", "--python", version, str(env_dir)],
-                 [uv, "pip", "install", "-q", *refresh, "--python", str(env_dir / "bin" / "python"), "-r",
-                  str(root / "requirements.lock")]]
+                 # --no-sources: a package built from a folder must not pull its own development
+                 # sources (tool.uv.sources); the lock alone decides what is installed.
+                 [uv, "pip", "install", "-q", "--no-sources", *refresh, "--python", str(env_dir / "bin" / "python"),
+                  "-r", str(root / "requirements.lock")]]
         for cmd in steps:
             if run(cmd).returncode != 0:
                 return Verification(False, True, [f"building the environment failed: {log[-1].strip()[-800:]}"],
