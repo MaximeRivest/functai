@@ -1,38 +1,40 @@
 [project]
 name = "functai"
-version = "0.12.0"
-description = "DSPy-powered function decorators for AI-enhanced programming"
+version = "1.0.0"
+description = "Typed Python functions whose body is a language model call: the function is the prompt, the body is the program"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 license = {text = "MIT"}
 authors = [
     { name = "Maxime Rivest", email = "maxime.rivest@gmail.com" }
 ]
 keywords = [
-    "dspy",
     "ai",
     "llm",
     "decorators",
-    "machine-learning",
-    "artificial-intelligence",
     "prompt-engineering",
+    "prompt-optimization",
+    "structured-output",
     "function-decorators",
+    "lmcc",
+    "lm15",
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 5 - Production/Stable",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries :: Python Modules",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
+# lmcc lays out each call and reads each reply; lm15 talks to the providers.
+# lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
-    "dspy>=3.0.2",
-    "typing>=3.10.0.0",
+    "lmcc>=0.8.3,<0.9",
+    "lm15>=1.0.1,<2",
 ]
 
 [project.urls]
@@ -44,9 +46,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0.0",
-    "pytest-cov>=4.0.0",
     "ruff>=0.1.0",
-    "mypy>=1.0.0",
 ]
 
 [build-system]
@@ -58,16 +58,17 @@ packages = ["functai"]
 
 [tool.ruff]
 line-length = 120
-target-version = "py310"
+target-version = "py311"
 
-
-[tool.mypy]
-python_version = "3.10"
-warn_return_any = true
-warn_unused_configs = true
+[tool.pytest.ini_options]
+testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
-    "nbclient>=0.10.2",
-    "nbformat>=5.10.4",
+    "pytest>=7.0.0",
+    "pydantic>=2",
 ]
+
+# Development: lmcc 0.8.3 is not on PyPI yet; use the sibling checkout.
+[tool.uv.sources]
+lmcc = { path = "../lmcc/python", editable = true }

@@ -1,5 +1,44 @@
 # Changelog
 
+## 1.0.0
+
+FunctAI no longer depends on DSPy. It is built on lmcc (layout: how values are
+written into prompts and read back) and lm15 (one wire for every provider).
+The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
+`tools`, `module="cot"`, `.opt`, `undo_opt`, `@module`, `phistory`, docments.
+
+- Chat templates in the decorator: `@ai(template=[system(...), turns(), user(...)])`,
+  with lmcc's template language. The reply pattern in a template is also its
+  parser; a template with no pattern and one output reads the whole reply.
+- Layouts by name: `adapter=None|"xml"` (tags), `"chat"` (DSPy's sections),
+  `"json"` (provider-enforced JSON), or any `lmcc.Adapter`.
+- `module="cot"` uses a model's own thinking channel where it has one, a
+  written reasoning section otherwise.
+- Tools run in a tool loop (native tool calls where the model has them, text
+  calls otherwise) instead of switching the program to ReAct; `max_steps`,
+  `tool_errors`, `StepLimit`.
+- Memory is kept as lmcc turns (`fn.history`, `fn.reset()`).
+- Own evaluation and optimizers: `Example`, `Prediction`, `evaluate`/`Evaluate`,
+  `LabeledFewShot`, `BootstrapFewShot`, `BootstrapFewShotWithRandomSearch`,
+  `InstructionSearch` (MIPRO-style). Optimizers change only instructions and
+  demos; `fn.state()`, `fn.save()`/`fn.load()`, `@module` save/load.
+- Settings resolve at call time with a thread-safe cascade (`using` >
+  function > `with configure` block > `configure`); unknown settings raise;
+  any lm15 `Config` field is a setting.
+- Reliability: one re-ask after an unreadable reply (`retries=1`), backoff on
+  transient provider errors (`api_retries=3`), an in-memory reply cache
+  (`cache_replies=True`), misspelled layouts repaired and reported.
+- Inspection: `phistory()`, `inspect_history()`, `fn.render()`, `fn.explain()`.
+- Types: tuples, sets, TypedDicts, `Any`, `Annotated[T, "description"]`;
+  JSON integers read into `float` fields become floats.
+- Breaking: automatic instruction writing (`autoinstruct`) and refinement are
+  now opt-in and run at the first call, not at definition; `to_dspy()` is
+  removed; `fn.signature` is an lmcc signature; DSPy adapters, modules and
+  optimizers are refused with a pointer to their replacement.
+- Requires Python 3.11+ (lmcc's type registry fails on 3.10's generic aliases).
+- Fixes: `_ai` declarations in functions defined inside other functions are
+  found; a user `__post_init__` error in a `flexiclass` is no longer swallowed.
+
 ## 0.12.0
 
 - Includes the Pydantic compatibility fix and structured output/input improvements introduced after 0.11.0.

@@ -1,224 +1,130 @@
-# FunctAI Specification: The Function-is-the-Prompt Paradigm
+# FunctAI: the function is the prompt
 
+FunctAI turns typed Python functions into calls to a language model.
 
-- [FunctAI Specification: The Function-is-the-Prompt Paradigm](#functai-specification-the-function-is-the-prompt-paradigm)
-- [FunctAI: The Function-is-the-Prompt Paradigm](#functai-the-function-is-the-prompt-paradigm)
-  - [1. Getting Started](#1-getting-started)
-    - [1.1. Installation](#11-installation)
-    - [1.2. Configuration](#12-configuration)
-    - [1.3. Your First AI Function](#13-your-first-ai-function)
-  - [2. Core Concepts](#2-core-concepts)
-    - [2.1. The `@ai` Decorator](#21-the-ai-decorator)
-    - [2.2. The `_ai` Sentinel](#22-the-_ai-sentinel)
-    - [2.3. Post-processing and Validation](#23-post-processing-and-validation)
-  - [3. Structured Output and Type System](#3-structured-output-and-type-system)
-    - [3.1. Basic Types](#31-basic-types)
-    - [3.2. Dataclasses and Complex Structures](#32-dataclasses-and-complex-structures)
-    - [3.3. Restricted Choices](#33-restricted-choices)
-  - [4. Configuration and Flexibility](#4-configuration-and-flexibility)
-    - [4.1. The Configuration Cascade](#41-the-configuration-cascade)
-    - [4.2. Global Configuration](#42-global-configuration)
-    - [4.3. Per-Function Configuration](#43-per-function-configuration)
-    - [4.4. Contextual Overrides](#44-contextual-overrides)
-  - [5. Advanced Execution Strategies](#5-advanced-execution-strategies)
-    - [5.1. Chain of Thought (CoT) Reasoning](#51-chain-of-thought-cot-reasoning)
-    - [5.2. Accessing Intermediate Steps](#52-accessing-intermediate-steps)
-    - [5.3. Multiple Explicit Outputs](#53-multiple-explicit-outputs)
-    - [5.4. Tool Usage (ReAct Agents)](#54-tool-usage-react-agents)
-  - [6. Stateful Interactions (Memory)](#6-stateful-interactions-memory)
-  - [7. Optimization (In-place Compilation)](#7-optimization-in-place-compilation)
-    - [7.1. The Optimization Workflow](#71-the-optimization-workflow)
-    - [7.2. Reverting Optimization](#72-reverting-optimization)
-  - [8. Inspection and Debugging](#8-inspection-and-debugging)
-  - [10. Real-World Examples](#10-real-world-examples)
-    - [10.1. Data Extraction Pipeline](#101-data-extraction-pipeline)
-    - [10.2. Research Assistant Agent](#102-research-assistant-agent)
+> **The function definition *is* the prompt, and the function body *is* the program.**
 
-# FunctAI: The Function-is-the-Prompt Paradigm
+Docstrings are instructions, type hints are the output contract, and
+variables assigned from `_ai` are extra outputs (chain of thought, several
+answers). Behind the decorator, FunctAI stands on two small libraries:
 
-Welcome to FunctAI. This library reimagines how Python developers
-integrate Large Language Models (LLMs) into their applications. FunctAI
-allows you to treat AI models as reliable, typed Python functions,
-abstracting away the complexities of prompt engineering and output
-parsing.
+| layer | question it answers | library |
+|---|---|---|
+| wire | what bytes go to which provider | [**lm15**](https://github.com/lm15-dev/lm15-python) (OpenAI, Anthropic, Gemini, Groq, OpenRouter, Ollama, … no SDKs) |
+| layout | how each value is written into the prompt and read back | [**lmcc**](https://github.com/MaximeRivest/lmcc) (templates, typed readers, reasoning, tools) |
+| program | your function, its tools, memory, evaluation and optimization | **functai** |
 
-The core philosophy of FunctAI is simple yet powerful:
+Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-from-0x).
 
-> **The function definition *is* the prompt, and the function body *is*
-> the program definition.**
-
-By leveraging Python’s native features—docstrings for instructions, type
-hints for structure, and variable assignments for logic flow—you can
-define sophisticated AI behaviors with minimal boilerplate.
-
-FunctAI is built on the powerful
-[DSPy](https://github.com/stanfordnlp/dspy) framework, unlocking
-advanced strategies like Chain-of-Thought, automatic optimization, and
-agentic tool usage through an ergonomic, decorator-based API.
+- [1. Getting started](#1-getting-started)
+- [2. Core concepts](#2-core-concepts)
+- [3. Types are the contract](#3-types-are-the-contract)
+- [4. Configuration](#4-configuration)
+- [5. Chat templates and layouts](#5-chat-templates-and-layouts)
+- [6. Reasoning, several outputs, tools](#6-reasoning-several-outputs-tools)
+- [7. Memory](#7-memory)
+- [8. Evaluation and optimization](#8-evaluation-and-optimization)
+- [9. Modules: programs of several AI functions](#9-modules-programs-of-several-ai-functions)
+- [10. Inspection](#10-inspection)
+- [11. When the model gets it wrong](#11-when-the-model-gets-it-wrong)
+- [12. Migrating from 0.x](#12-migrating-from-0x)
+- [13. A real pipeline](#13-a-real-pipeline)
 
 ------------------------------------------------------------------------
 
-## 1. Getting Started
+## 1. Getting started
 
-### 1.1. Installation
-
-Install FunctAI and its core dependency, DSPy.
-
-``` bash
-pip install functai
+```bash
+pip install functai          # Python 3.11+
 ```
 
-### 1.2. Configuration
+Keys come from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
+`GEMINI_API_KEY`, `GROQ_API_KEY`, …) or from `configure(api_key=...)`.
 
-Before using FunctAI, you must configure a default Language Model (LM).
-This requires initializing a DSPy LM provider.
+```python
+from functai import ai, _ai, configure
 
-``` python
-from functai import configure
-
-# Configure FunctAI globally
-configure(lm="gpt-4.1", temperature=1.0, api_key="<YOUR_API_KEY>")
-```
-
-### 1.3. Your First AI Function
-
-Creating an AI function is as simple as defining a standard Python
-function with type hints and a docstring, then decorating it with `@ai`.
-
-``` python
-from functai import ai, _ai
+configure(lm="gpt-4.1-mini", temperature=0)
 
 @ai
 def summarize(text: str, focus: str = "key points") -> str:
     """Summarize the text in one concise sentence,
     concentrating on the specified focus area."""
-    # The _ai sentinel represents the LLM output
     return _ai
 
-# Call it exactly like a normal Python function
-long_text = "FunctAI bridges the gap between Python's expressive syntax and the dynamic capabilities of LLMs. It allows developers to focus on logic rather than boilerplate."
-summarize(long_text, focus="developer benefits")
+summarize("FunctAI bridges the gap between Python's expressive syntax and the dynamic "
+          "capabilities of LLMs. It allows developers to focus on logic rather than boilerplate.",
+          focus="developer benefits")
 ```
 
-    "FunctAI enables developers to concentrate on core logic by reducing boilerplate and leveraging Python's syntax with LLM capabilities."
+    "FunctAI benefits developers by enabling them to concentrate on logic instead of boilerplate code through its integration of Python's syntax with LLM capabilities."
 
-**What happens when you call `summarize`?**
+When you call `summarize`, FunctAI builds the signature (inputs `text`,
+`focus`; output `result: str`; the docstring as instruction), lays the call
+out with lmcc, sends it with lm15, reads the reply back into a `str`, and
+returns it.
 
-1.  FunctAI intercepts the call.
-2.  It constructs a prompt using the docstring and the inputs (`text`,
-    `focus`).
-3.  It invokes the configured LM (GPT-4.1).
-4.  It parses the LM’s response and returns the result, ensuring it
-    matches the return type (`str`).
+## 2. Core concepts
 
-## 2. Core Concepts
+### The `@ai` decorator
 
-### 2.1. The `@ai` Decorator
+`@ai` reads the function's parameters, return type, docstring and body.
+A body that is only a docstring, `...`, or `return _ai` means “the model's
+answer is the return value”.
 
-The `@ai` decorator is the magic wand. It transforms a Python function
-into an LLM-powered program. It analyzes the function’s signature
-(parameters, return type, and docstring) to understand the task
-requirements and a prompt is automatically constructed out of that for
-you.
-
-``` python
+```python
 @ai
 def sentiment(text: str) -> str:
-    """Analyze the sentiment of the given text.
-    Return 'positive', 'negative', or 'neutral'."""
-    ... # An empty body or Ellipsis also works like returning _ai
+    """Analyze the sentiment. Return 'positive', 'negative', or 'neutral'."""
 ```
 
-### 2.2. The `_ai` Sentinel
+### The `_ai` sentinel
 
-The `_ai` object is a special sentinel used within an `@ai` function. It
-represents the value(s) that will be generated by the AI. It acts as a
-proxy, deferring the actual LM execution.
+`_ai` stands for the model's output inside the body. It behaves like the
+value it stands for, so you can post-process it with plain Python:
 
-Returning `_ai` directly indicates that the LLM’s output is the
-function’s final result.
-
-``` python
-@ai
-def extract_price(description: str) -> float:
-    """Extract the price from a product description."""
-    return _ai
-```
-
-### 2.3. Post-processing and Validation
-
-FunctAI encourages writing robust code. You can assign `_ai` to a
-variable and apply standard Python operations before returning. `_ai`
-behaves dynamically as if it were the expected return type.
-
-This allows you to combine the power of AI with the reliability of code
-for validation, cleaning, or transformation.
-
-``` python
+```python
 @ai
 def sentiment_score(text: str) -> float:
     """Returns a sentiment score between 0.0 (negative) and 1.0 (positive)."""
-
-    # _ai behaves like a float here due to the return type hint
     score = _ai
-
-    # Post-processing: ensure the score is strictly within bounds
     return max(0.0, min(1.0, float(score)))
 
 sentiment_score("I think that FunctAI is amazing!")
 ```
 
-    0.95
+    0.9
 
-## 3. Structured Output and Type System
+The variable's name becomes the output's name (`score` here): name
+outputs the way you would name them for a colleague.
 
-FunctAI excels at extracting structured data. Python type hints serve as
-the contract between your code and the LLM.
+## 3. Types are the contract
 
-### 3.1. Basic Types
+Scalars, lists, dicts, tuples, sets, `Optional`, `Literal`, `Enum`,
+dataclasses, TypedDicts and pydantic models all work, as inputs and
+outputs. Structured values travel as JSON; the model is shown their schema.
 
-FunctAI handles standard Python types (`int`, `float`, `bool`, `str`,
-`list`, `dict`).
-
-``` python
+```python
 @ai
-def calculate(expression) -> int:
-    """Evaluate the mathematical expression."""
-    return _ai
-
-result = calculate("What is 15 times 23?")
-print(result)
-```
-
-    345
-
-``` python
-@ai
-def get_keywords(article) -> list[str]:
+def get_keywords(article: str) -> list[str]:
     """Extract 5 key terms from the article."""
     keywords: list[str] = _ai
-    # Post-processing example: ensure lowercase
     return [k.lower() for k in keywords]
 
-get_keywords("FunctAI excels at extracting structured data. Python type hints serve as the contract between your code and the LLM.")
+get_keywords("FunctAI excels at extracting structured data. Python type hints "
+             "serve as the contract between your code and the LLM.")
 ```
 
     ['functai', 'structured data', 'python type hints', 'contract', 'llm']
 
-### 3.2. Dataclasses and Complex Structures
-
-For complex data extraction, define a `dataclass` (or Pydantic model)
-and use it as the return type.
-
-``` python
+```python
 from dataclasses import dataclass
-from typing import List
 
 @dataclass
 class ProductInfo:
     name: str
     price: float
-    features: List[str]
+    features: list[str]
     in_stock: bool
 
 @ai
@@ -226,21 +132,25 @@ def extract_product(description: str) -> ProductInfo:
     """Extract product information from the description."""
     return _ai
 
-info = extract_product("iPhone 15 Pro - $999, 5G, titanium design, available now")
-
-# The output is a validated ProductInfo instance
-print(info)
+extract_product("iPhone 15 Pro - $999, 5G, titanium design, available now")
 ```
 
     ProductInfo(name='iPhone 15 Pro', price=999.0, features=['5G', 'titanium design'], in_stock=True)
 
-### 3.3. Restricted Choices
+A plain class with annotations is made a dataclass for you
+(`flexiclass`). Comments document fields:
 
-Use `Enum` to restrict the LM’s output to a predefined set of values,
-increasing reliability for classification tasks.
+```python
+class Person:
+    name: str   # full name, as written
+    age: int    # in years
+```
 
-``` python
+Restricted choices:
+
+```python
 from enum import Enum
+from typing import Literal
 
 class TicketPriority(Enum):
     LOW = "low"
@@ -250,638 +160,437 @@ class TicketPriority(Enum):
 @ai
 def classify_priority(issue_description: str) -> TicketPriority:
     """Analyzes the issue and classifies its priority level."""
-    return _ai
 
-result = classify_priority(issue_description="The main database is unresponsive.")
-result
-```
-
-    <TicketPriority.HIGH: 'high'>
-
-You can also use typing `Literal`:
-
-``` python
-from typing import Literal
+classify_priority("The main database is unresponsive.")   # <TicketPriority.HIGH: 'high'>
 
 @ai
-def categorize(text: str) -> Literal["sport", "fashion"]:
-    ...
-
-categorize("Vibe Coding as been declared a sport")
+def categorize(text: str) -> Literal["sport", "fashion"]: ...
 ```
 
-    'sport'
+Comments on parameters and on the return line become guidance in the
+instruction:
 
-## 4. Configuration and Flexibility
+```python
+@ai
+def translate(
+    text: str,        # English, informal
+    register: str,    # "formal" or "casual"
+) -> str:             # French, same length as the input
+    """Translate the text to French."""
+```
 
-### 4.1. The Configuration Cascade
+## 4. Configuration
 
-FunctAI uses a flexible, cascading configuration system. Settings are
-applied in the following order of precedence (highest to lowest):
+### The cascade
 
-1.  **Function-Level** (e.g., `@ai(temperature=0.1)`)
-2.  **Contextual** (e.g., `with configure(temperature=0.1):`)
-3.  **Global** (e.g., `configure(temperature=0.1)`)
+Settings are resolved at every call, innermost first:
 
-### 4.2. Global Configuration
+1. `fn.using(...)`: a copy of the function with other settings
+2. the function: `@ai(temperature=0.1)`, or `fn.temperature = 0.1`
+3. a block: `with configure(temperature=0.1):` (this thread/context only)
+4. process-wide: `configure(temperature=0.1)`
 
-Use `functai.configure()` for project-wide defaults.
-
-``` python
+```python
 import functai
 
-# Example using GPT-3.5-Turbo as a default
-functai.configure(
-    lm="groq/openai/gpt-oss-120b",
-    temperature=0.5
-)
+functai.configure(lm="gpt-4.1-mini", temperature=0.5)
 
-@ai
-def math(formal):
-    ...
+@ai(temperature=0.0, lm="claude-haiku-4-5")      # this function
+def legal_analysis(document): ...
 
-math("2+2")
+with functai.configure(lm="gpt-4.1"):             # this block
+    summarize("...")
+
+summarize.using(lm="gemini-2.5-flash")("...")    # this call
 ```
 
-    2025/08/30 13:32:38 WARNING dspy.adapters.json_adapter: Failed to use structured output format, falling back to JSON mode.
+`functai.settings.lm` reads the effective value.
 
-    4
+### Models
 
-### 4.3. Per-Function Configuration
+Any [lm15](https://github.com/lm15-dev/lm15-python) model string:
+`"gpt-4.1-mini"`, `"claude-haiku-4-5"`, `"gemini-2.5-flash"`,
+`"groq:openai/gpt-oss-120b"`, `"openrouter:qwen/qwen3-32b"`,
+`"ollama:qwen3:8b"`. The litellm/DSPy spelling `"openai/gpt-4o"`,
+`"anthropic/claude-sonnet-4-5"`, `"groq/openai/gpt-oss-120b"` is read the way
+lm15 reads it.
 
-Override defaults for specific functions directly in the decorator. This
-is useful when different tasks require different models or creativity
-levels.
+| setting | meaning |
+|---|---|
+| `lm` | the model |
+| `api_key`, `base_url` | for the provider `lm` routes to (default: environment) |
+| `router` | any lm15 router, for full control |
+| `temperature`, `max_tokens`, `seed`, `top_p`, `stop`, … | any lm15 `Config` field |
+| `adapter` | the layout (§5); a chat template is given per function, `@ai(template=[...])` |
+| `module` | `"predict"`, `"cot"` (§6), `"react"` (tools) |
+| `tools`, `max_steps`, `tool_errors` | the tool loop (§6) |
+| `stateful`, `state_window` | memory (§7) |
+| `retries`, `api_retries`, `cache_replies` | reliability (§11) |
+| `capabilities` | what the model can do, when you know better than functai's table |
+| `optimizer`, `teacher`, `teacher_lm` | optimization defaults (§8) |
+| `debug` | print a line per call |
 
-``` python
-# Deterministic task requiring a powerful model
-@ai(temperature=0.0, lm="openai/gpt-4o")
-def legal_analysis(document):
-    """Provide precise legal analysis of the document."""
+An unknown setting is an error, not a silent no-op.
+
+## 5. Chat templates and layouts
+
+By default the model sees the instruction and a reply pattern in the
+system message, earlier turns as messages, and the inputs in tags:
+
+    System:  Function: summarize
+             Summarize the text in one concise sentence, ...
+             Reply in exactly this form:
+             <result>
+             ...
+             </result>
+    User:    <text>
+             ...
+             </text>
+
+To write the conversation yourself, put a chat template in the decorator.
+It uses lmcc's template language: `{instruction}`, `{input_name}`, loops over
+`inputs` and `outputs`, and `turns()` for where examples and the
+conversation so far go.
+
+```python
+from functai import ai, system, user, turns, assistant
+
+@ai(template=[
+    system("You are a helpful pirate. {instruction}"),
+    user("Text: {text}"),
+])
+def pirate_summarize(text: str) -> str:
+    """Summarize in 10 words."""
+
+pirate_summarize("Foundation models are now mature enough to be used in real-world applications.")
+```
+
+    'Foundation models mature, now usable in practical, real-world applications.'
+
+With one output and no reply pattern in the template, the whole reply is
+the value. With several outputs, spell the pattern; **the same pattern is
+the parser**, so the prompt and the reader cannot drift apart:
+
+```python
+@ai(template=[
+    system("{instruction}\n\nAnswer in this form:\n"
+           "{% for f in outputs %}{f.name}: {f.value}\n{% endfor %}"),
+    turns(),
+    user("Review: {review}"),
+])
+def rate(review: str) -> int:
+    """Rate the review from 1 to 5 stars."""
+    verdict: str = _ai["One short sentence."]
     return _ai
 
-# Creative task using a different provider
-@ai(temperature=0.9, lm="anthropic/claude-sonnet-4-20250514")
-def creative_story(prompt):
-    """Write a creative story based on the prompt."""
-    return _ai
+dict(rate("Great tacos, loud music. I'll be back.", all=True))
 ```
 
-### 4.4. Contextual Overrides
+    {'verdict': 'Positive and concise review with a clear intention to return.', 'result': 4}
 
-Use the `functai.configure()` context manager to temporarily override
-defaults for a block of code.
+The prompt that was sent:
 
-``` python
-from functai import configure
+    System message:
 
-@ai
-def analyze(data): return _ai
+    Function: rate
 
-analyze("data1") # Uses global defaults
+    Rate the review from 1 to 5 stars.
 
-# Temporarily switch model and temperature
-with configure(temperature=0.0, lm="gpt-4o"):
-    print(analyze("data2")) # Uses GPT-4.1, Temp 0.0
+    Output guidance:
+    - verdict: One short sentence.
 
-analyze("data3") # Back to global defaults
-```
+    Answer in this form:
+    verdict: ...
+    result: (integer)
 
-    2025/08/30 13:32:43 WARNING dspy.adapters.json_adapter: Failed to use structured output format, falling back to JSON mode.
-    2025/08/30 13:32:49 WARNING dspy.adapters.json_adapter: Failed to use structured output format, falling back to JSON mode.
+    User message:
 
-    data2
+    Review: Great tacos, loud music. I'll be back.
 
-    'data3'
+More in templates:
 
-## 5. Advanced Execution Strategies
+- `{% if context %}…{% endif %}` shows a block only when an input has a value.
+- A last `assistant("<answer>")` is a **prefill**: sent to models that
+  continue it, read as the start of the reply either way.
+- OpenAI-style dicts work too: `template=[{"role": "system", "content": "..."}, ...]`.
+- Without `turns()`, examples and memory go right before the last user message.
+- A template that cannot be read back is refused when the function is
+  defined or first bound, before any model call.
 
-FunctAI truly shines by allowing developers to define complex execution
-strategies directly within the function body, adhering to the “function
-body is the program definition” philosophy.
+### Shipped layouts
 
-### 5.1. Chain of Thought (CoT) Reasoning
+| `adapter=` | layout |
+|---|---|
+| `None` / `"xml"` | tagged sections (the default above) |
+| `"chat"` | DSPy's `[[ ## name ## ]]` sections, ending with `[[ ## completed ## ]]` |
+| `"json"` | one JSON object the provider enforces with a schema (models with native structured output) |
+| an `lmcc.Adapter` | any lmcc adapter, including one loaded from a JSON artifact |
 
-Eliciting step-by-step reasoning (Chain of Thought) often significantly
-improves the quality and accuracy of the final answer, especially for
-complex tasks.
+## 6. Reasoning, several outputs, tools
 
-In FunctAI, you define CoT by declaring intermediate reasoning steps
-within the function body using `_ai` assignments with descriptions.
+### Chain of thought
 
-``` python
+Declare the reasoning in the body; it is written before the answer:
+
+```python
 @ai
 def solve_math_problem(question: str) -> float:
     """Solves a math word problem and returns the numerical answer."""
-
-    # Define the reasoning step:
-    # 1. The variable name ('reasoning') becomes the field name.
-    # 2. The type hint (str) defines the output type for this step.
-    # 3. The subscript _ai["..."] provides specific instructions for the LLM.
     reasoning: str = _ai["Step-by-step thinking process to reach the solution."]
-
-    # The final return value (float) is the main output
     return _ai
 ```
 
-**Behavior:** FunctAI analyzes the function body, detects the
-intermediate `reasoning` assignment, and automatically configures the
-execution to generate the reasoning *before* attempting to generate the
-final result.
+Or ask for it with `@ai(module="cot")`: models with a thinking channel
+(o-series, GPT-5, Claude 4.x, Gemini 2.5+) use it; the others write a
+`reasoning` section first. Same program either way.
 
-*(Note: You can also enable a generic CoT by setting
-`@ai(module="cot")`, but the explicit definition above offers more
-control.)*
+### Everything, with `all=True`
 
-### 5.2. Accessing Intermediate Steps
-
-While the function call normally returns only the final result, you can
-access the intermediate steps (like `reasoning`) by adding the special
-argument `all=True` to the function call.
-
-This returns the raw prediction object containing all generated fields.
-
-``` python
-question = "If a train travels 120 miles in 2 hours, what is its speed?"
-prediction = solve_math_problem(question, all=True)
-
-print("--- Reasoning ---")
-print(prediction.reasoning)
-
-print("\n--- Answer ---")
-# When _ai is returned directly, the main output is stored in the 'result' attribute
-print(prediction.result)
+```python
+p = solve_math_problem("If a train travels 120 miles in 2 hours, what is its speed?", all=True)
+p.reasoning     # 'To find the speed ... Speed = 120 miles / 2 hours = 60 miles per hour'
+p.result        # 60.0
+p.usage         # tokens, summed over every model call
+p.turn          # the lmcc turn: inputs, every model and tool step, outputs
 ```
 
-    --- Reasoning ---
-    Speed is calculated by dividing distance by time. The train travels 120 miles in 2 hours, so speed = 120 miles / 2 hours = 60 miles per hour.
+### Several outputs
 
-    --- Answer ---
-    60.0
-
-### 5.3. Multiple Explicit Outputs
-
-You can define and return multiple distinct outputs from a single
-function call by declaring them inline, similar to the CoT pattern.
-
-``` python
-from typing import Tuple
-
-@ai()
-def critique_and_improve(text: str) -> Tuple[str, str, int]:
-    """
-    Analyze the text, provide constructive criticism, and suggest an improved version.
-    """
-    # Define explicit output fields using _ai[...]
+```python
+@ai
+def critique_and_improve(text: str) -> tuple[str, str]:
+    """Analyze the text, criticize it constructively, and improve it."""
     critique: str = _ai["Constructive criticism focusing on clarity and tone."]
     improved_text: str = _ai["The improved version of the text."]
+    return critique, improved_text
 
-    # Return the materialized fields (Python handles the Tuple structure)
-    return critique, improved_text, 1.0
-
-critique, improved, number = critique_and_improve(text="U should fix this asap, it's broken.")
-
-
-print("--- Critique ---")
-print(critique)
-print("--- Improved ---")
-print(improved)
+critique, improved = critique_and_improve("U should fix this asap, it's broken.")
 ```
 
-    --- Critique ---
-    The original message is overly informal and uses shorthand ('U') and vague urgency ('asap') that may come across as unprofessional. It lacks specific details about what is broken, which can make it harder for the recipient to address the issue efficiently. A clearer, more courteous tone with a brief description of the problem would improve communication.
-    --- Improved ---
-    Please address this issue as soon as possible; the current functionality appears to be broken.
+### Tools
 
-### 5.4. Tool Usage (ReAct Agents)
+Tools are typed Python functions. With tools, a call runs the loop: ask
+the model, run the tools it calls, give it the results, until it answers
+(at most `max_steps`, default 8).
 
-FunctAI supports the ReAct (Reasoning + Acting) pattern for creating
-agents that can interact with external tools. Tools are standard, typed
-Python functions.
-
-When the `tools` argument is provided to the `@ai` decorator, the
-execution strategy automatically upgrades to an agentic loop (using
-`dspy.ReAct`).
-
-``` python
-# 1. Define tools
+```python
 def search_web(query: str) -> str:
-    """Searches the web for information. (Mock implementation)"""
-    print(f"[Tool executing: Searching for '{query}']")
-    # In a real scenario, this would call a search API
+    """Searches the web for information."""
     return f"Mock search results for {query}."
 
 def calculate(expression: str) -> float:
-     """Performs mathematical calculations. (Mock implementation)"""
-     print(f"[Tool executing: Calculating '{expression}']")
-     # WARNING: eval() is unsafe in production. Use a safe math library.
-     return eval(expression)
+    """Performs mathematical calculations."""
+    return eval(expression)   # a demo: never eval untrusted text
 
-# 2. Define the AI function with access to the tools
 @ai(tools=[search_web, calculate])
 def research_assistant(question: str) -> str:
     """Answer questions using available tools to gather data and perform calculations."""
-    return _ai
 
-# 3. Execute the agent
-# The AI will potentially use search_web and then calculate.
-answer = research_assistant("What is the result of (15 * 23) + 10?")
+research_assistant("What is the result of (15 * 23) + 10?")
 ```
 
     [Tool executing: Calculating '(15 * 23) + 10']
+    'The result of (15 * 23) + 10 is 355.'
 
-    2025/08/30 13:32:58 WARNING dspy.adapters.json_adapter: Failed to use structured output format, falling back to JSON mode.
+Native tool calls where the model has them, fenced text calls otherwise:
+the prompt style never changes because you added a tool. A tool that
+raises is reported to the model (`tool_errors="raise"` to stop instead).
 
-``` python
-import functai
-#| echo: false
-print(functai.phistory())
-```
+## 7. Memory
 
-
-
-
-
-    [2025-08-30T13:32:58.957207]
-
-    System message:
-
-    Your input fields are:
-    1. `question` (str): 
-    2. `trajectory` (str):
-    Your output fields are:
-    1. `reasoning` (str): 
-    2. `result` (str):
-    All interactions will be structured in the following way, with the appropriate values filled in.
-
-    Inputs will have the following structure:
-
-    [[ ## question ## ]]
-    {question}
-
-    [[ ## trajectory ## ]]
-    {trajectory}
-
-    Outputs will be a JSON object with the following fields.
-
-    {
-      "reasoning": "{reasoning}",
-      "result": "{result}"
-    }
-    In adhering to this structure, your objective is: 
-            Function: research_assistant
-            
-            Answer questions using available tools to gather data and perform calculations.
-
-
-    User message:
-
-    [[ ## question ## ]]
-    What is the result of (15 * 23) + 10?
-
-    [[ ## trajectory ## ]]
-    [[ ## thought_0 ## ]]
-    I need to compute the arithmetic expression (15 * 23) + 10.
-
-    [[ ## tool_name_0 ## ]]
-    calculate
-
-    [[ ## tool_args_0 ## ]]
-    {"expression": "(15 * 23) + 10"}
-
-    [[ ## observation_0 ## ]]
-    355
-
-    [[ ## thought_1 ## ]]
-    The calculation is complete; the result of (15 * 23) + 10 is 355.
-
-    [[ ## tool_name_1 ## ]]
-    finish
-
-    [[ ## tool_args_1 ## ]]
-    {}
-
-    [[ ## observation_1 ## ]]
-    Completed.
-
-    Respond with a JSON object in the following order of fields: `reasoning`, then `result`.
-
-
-    Response:
-
-    {"reasoning":"I used the calculate tool to evaluate the expression (15 * 23) + 10, which gave 355. No further steps are needed.","result":"355"}
-
-
-
-
-**Behavior:** The function will iteratively think about the task, decide
-which tool to use, execute the tool, observe the results, and repeat
-until it can provide the final answer.
-
-## 6. Stateful Interactions (Memory)
-
-By default, `@ai` functions are stateless; each call is independent. To
-maintain context across calls (e.g., in a chatbot scenario), set
-`stateful=True`.
-
-``` python
-from functai import ai, _ai
-
-@ai(lm="gpt-4.1", stateful=True)
+```python
+@ai(stateful=True)
 def assistant(message):
     """A friendly AI assistant that remembers the conversation history."""
-    return _ai
 
-response1 = assistant("Hello, my name is Alex.")
-print(f"Output1: {response1}")
-
-response2 = assistant("What is my name?")
-print(f"Output2: {response2}")
+assistant("Hello, my name is Alex.")   # 'Hello Alex! How can I assist you today?'
+assistant("What is my name?")          # 'Your name is Alex.'
 ```
 
-    Output1: Hello Alex! It's nice to meet you. How can I assist you today?
-    Output2: Your name is Alex.
+The conversation is kept as lmcc turns in `assistant.history` (the last
+`state_window`, default 5) and written through the function's own layout.
+`assistant.reset()` forgets it.
 
+## 8. Evaluation and optimization
 
+An optimizer tunes what the function sends besides its inputs: the
+**instruction** and the **demos** (worked examples). It never edits your
+code, types or layout. Optimization happens in place; `undo_opt()` reverts.
 
+```python
+from functai import ai, _ai, Example, evaluate, exact_match
 
-
-    [2025-08-30T13:32:59.675591]
-
-    System message:
-
-    Your input fields are:
-    1. `message` (str): 
-    2. `history` (History):
-    Your output fields are:
-    1. `result` (Any):
-    All interactions will be structured in the following way, with the appropriate values filled in.
-
-    Inputs will have the following structure:
-
-    [[ ## message ## ]]
-    {message}
-
-    [[ ## history ## ]]
-    {history}
-
-    Outputs will be a JSON object with the following fields.
-
-    {
-      "result": "{result}        # note: the value you produce must adhere to the JSON schema: {}"
-    }
-    In adhering to this structure, your objective is: 
-            Function: assistant
-            
-            A friendly AI assistant that remembers the conversation history.
-
-
-    User message:
-
-    [[ ## message ## ]]
-    Hello, my name is Alex.
-
-
-    Assistant message:
-
-    {
-      "result": "Hello Alex! It's nice to meet you. How can I assist you today?"
-    }
-
-
-    User message:
-
-    [[ ## message ## ]]
-    What is my name?
-
-    Respond with a JSON object in the following order of fields: `result` (must be formatted as a valid Python Any).
-
-
-    Response:
-
-    {
-      "result": "Your name is Alex."
-    }
-
-
-
-
-**Behavior:** When `stateful=True`, FunctAI automatically includes the
-history of previous inputs and outputs in the context of the next call.
-
-## 7. Optimization (In-place Compilation)
-
-**WARNING: optimization is still a work in progress**
-
-FunctAI integrates seamlessly with DSPy’s optimization capabilities
-(Teleprompters). Optimization (often called compilation in DSPy)
-improves the quality and reliability of your AI functions by using a
-dataset of examples.
-
-The optimizer can automatically generate effective few-shot examples or
-refine instructions. This happens *in place* using the `.opt()` method
-on the function object.
-
-### 7.1. The Optimization Workflow
-
-``` python
-import dspy
-from dspy import Example
-from functai import ai, _ai
-
-dspy.configure(lm = dspy.LM("gpt-4.1"))
-
-# 1. Define the function
 @ai
 def classify_intent(user_query: str) -> str:
     """Classify user intent as 'booking', 'cancelation', or 'information'."""
     return _ai
 
-# 2. Define the training data (List of DSPy Examples)
-# .with_inputs() specifies which keys are inputs to the function
 trainset = [
     Example(user_query="I need to reserve a room.", result="booking").with_inputs("user_query"),
     Example(user_query="How do I get there?", result="information").with_inputs("user_query"),
     Example(user_query="I want to cancel my reservation.", result="cancelation").with_inputs("user_query"),
 ]
 
-# 3. Optimize the function in place
-# strategy="launch" typically uses a default like BootstrapFewShot
-print("Optimizing...")
-classify_intent.opt(trainset=trainset)
-print("Optimization complete.")
-
-# 4. The function is now optimized (it includes generated few-shot examples in its prompt)
-result = classify_intent("Can I book a suite for next Tuesday?")
-# Output: "booking"
+evaluate(classify_intent, trainset, exact_match, num_threads=4)   # EvaluationResult(score=..., n=3)
+classify_intent.opt(trainset=trainset)                           # BootstrapFewShot by default
+classify_intent.undo_opt()
 ```
 
-    Optimizing...
+Training data can be `Example`s, dicts (`{"user_query": ..., "result": ...}`),
+`(inputs, outputs)` pairs, or DSPy `Example`s. A metric is
+`metric(example, prediction[, trace]) -> float | bool`; it can itself be an
+AI function:
 
-      0%|          | 0/3 [00:00<?, ?it/s]100%|██████████| 3/3 [00:00<00:00, 36.98it/s]
-
-    Bootstrapped 3 full traces after 2 examples for up to 1 rounds, amounting to 3 attempts.
-    Optimization complete.
-
-
-    2025/08/30 13:33:04 WARNING dspy.adapters.json_adapter: Failed to use structured output format, falling back to JSON mode.
-
-### 7.2. Reverting Optimization
-
-FunctAI tracks optimization steps. If the results are not satisfactory,
-you can revert using `.undo_opt()`.
-
-``` python
-# Revert the last optimization step
-classify_intent.undo_opt(steps=1)
+```python
+@ai
+def judge(example, prediction) -> float:
+    """Between 0 and 1: how close the prediction is to the example's result."""
 ```
 
-## 8. Inspection and Debugging
+| optimizer | what it does |
+|---|---|
+| `LabeledFewShot(k=16)` | labeled examples as demos |
+| `BootstrapFewShot(metric, max_bootstrapped_demos=4, max_labeled_demos=16, teacher=None)` | runs the program on examples; the runs the metric accepts become demos, whole turns included (reasoning, tool calls) |
+| `BootstrapFewShotWithRandomSearch(metric, num_candidate_programs=8)` | many demo sets, keeps the best on `valset` |
+| `InstructionSearch(metric, num_candidates=6, num_trials=12, prompt_lm=None)` | proposed instructions × demo sets, searched on minibatches, finalists scored on `valset` (MIPRO-style; random/greedy search, not Bayesian) |
 
-**More to come**
+```python
+from functai import InstructionSearch
 
-To see the last call, use `functai.phistory()`.
-
-``` python
-from functai import phistory
-
-# After running some AI functions...
-print(phistory()) # Show the last call
+translator.opt(trainset=trainset, metric=judge,
+               optimizer=InstructionSearch, num_candidates=3, num_trials=5,
+               max_bootstrapped_demos=0, max_labeled_demos=0, prompt_lm="gpt-4.1-mini")
 ```
 
+On a 5-example Québécois-French task with `gpt-4.1-nano` and the `judge`
+above, this took the score from 0% to 80% by rewriting the instruction.
 
+More:
 
+- `teacher_lm="gpt-4.1"` (or `teacher=`): a stronger model produces the demos.
+- `n_synth=20` with a teacher: synthesize training examples first.
+- `fn.state()`, `fn.instructions`, `fn.demos`: what is in use; `fn.programs()`:
+  every state optimization produced; `fn.optimization_runs()`: the log.
+- `fn.save("f.json")` / `fn.load("f.json")`: the instruction and demos as JSON.
+- `@ai(examples=[("I love it", "positive"), ...])`: demos by hand.
 
+## 9. Modules: programs of several AI functions
 
-    [2025-08-30T13:33:06.742620]
+```python
+from functai import ai, module
 
-    System message:
+@ai
+def generate_query(claim: str, key_facts: list[str]) -> str:
+    """Produce a follow-up search query from a claim and current key facts."""
 
-    Your input fields are:
-    1. `user_query` (str):
-    Your output fields are:
-    1. `result` (str):
-    All interactions will be structured in the following way, with the appropriate values filled in.
+@ai
+def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[str]:
+    """Extend key facts with new learnings extracted from new_docs."""
 
-    Inputs will have the following structure:
+@module
+def research_hop(claim: str, hops: int = 2):
+    key_facts: list[str] = []
+    for i in range(hops):
+        query = generate_query(claim, key_facts)
+        key_facts = append_notes(claim, key_facts, search(query))
+    return key_facts
 
-    [[ ## user_query ## ]]
-    {user_query}
+research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=2))
+```
 
-    Outputs will be a JSON object with the following fields.
+The metric sees `Prediction(result=<what the module returned>)`. Bootstrapping
+records every inner call; a run the metric accepts gives a demo to each AI
+function it went through.
 
-    {
-      "result": "{result}"
-    }
-    In adhering to this structure, your objective is: 
-            Function: classify_intent
-            
-            Classify user intent as 'booking', 'cancelation', or 'information'.
+## 10. Inspection
 
+```python
+import functai
 
-    User message:
+print(functai.phistory())          # the last call: every message sent, and the reply
+functai.inspect_history(3)         # the last 3 as records (lm15 Request and Response)
+summarize.render("some text")      # the exact lm15 request, without sending it
+print(summarize.explain())         # the layout: reader, transports, formats
+functai.signature_text(summarize)  # 'Signature: summarize | Inputs: text:str, focus:str | Outputs: result*'
+summarize.signature                # the lmcc signature
+```
 
-    [[ ## user_query ## ]]
-    I need to reserve a room.
+## 11. When the model gets it wrong
 
+- **Misspelled layout** (`<Result>` for `<result>`, `**answer**`): read
+  anyway, by one rule, and reported in `prediction.repairs`.
+- **Unreadable reply**: asked again once with the reader's hint (`retries=1`;
+  `retries=0` raises `lmcc.Refusal` with `.code` and `.hint`). A reply cut
+  at the token limit is re-sent with twice the budget.
+- **Transient provider errors** (rate limit, 5xx, timeout): re-sent with
+  backoff (`api_retries=3`).
+- **Identical requests** are answered from an in-memory cache
+  (`cache_replies=True`): re-running a notebook cell or an evaluation costs
+  nothing. `cache_replies=False` to sample again; `functai.clear_cache()`.
+- **Impossible layouts** (several outputs in a template with no pattern, a
+  JSON layout on a model without structured output) are refused before any
+  request is sent.
 
-    Assistant message:
+## 12. Migrating from 0.x
 
-    {
-      "result": "booking"
-    }
+1.0 keeps the API (`@ai`, `_ai`, `configure`, `all=True`, `stateful`,
+`tools`, `module="cot"`, `.opt`, `undo_opt`, `@module`, `phistory`, the
+docments utilities) and replaces DSPy underneath.
 
+| 0.x | 1.0 |
+|---|---|
+| `configure(lm=dspy.LM("openai/gpt-4.1"))` | `configure(lm="gpt-4.1")` (litellm strings still work; a DSPy LM's `.model` is read) |
+| `dspy.Example(...)` | `functai.Example(...)` (DSPy Examples are still accepted as data) |
+| `optimizer=dspy.BootstrapFewShot` / `dspy.MIPROv2` | `functai.BootstrapFewShot` / `functai.InstructionSearch` |
+| `dspy.Evaluate(...)` | `functai.evaluate(...)` or `functai.Evaluate(...)` |
+| `adapter="json"`, `adapter="chat"` | same names, now lmcc layouts |
+| custom DSPy adapter classes | `template=[system(...), turns(), user(...)]` or an `lmcc.Adapter` |
+| tools switch the program to `dspy.ReAct` | tools run in a tool loop; the prompt does not change |
+| `fn.signature` (a DSPy Signature) | an lmcc `SignatureCore` |
+| `fn.to_dspy()` | removed; `fn.state()` / `fn.save(path)` |
+| `stateful` history in `dspy.History` | lmcc turns in `fn.history` |
 
-    User message:
+Behavior changes:
 
-    [[ ## user_query ## ]]
-    How do I get there?
+- **Automatic instruction writing is opt-in.** In 0.x every new function
+  asked the model to rewrite its own instruction (`autoinstruct`), and the
+  first calls refined it again. That spent money at import time and made
+  prompts change by themselves. Now `@ai(autoinstruct=True)` or
+  `@ai(instruction_autorefine_calls=2)` turns them on; they run at the first
+  call, not at definition.
+- Prompts are laid out by lmcc, so their text differs from DSPy's.
+- Unknown settings raise instead of being ignored.
 
+## 13. A real pipeline
 
-    Assistant message:
-
-    {
-      "result": "information"
-    }
-
-
-    User message:
-
-    [[ ## user_query ## ]]
-    I want to cancel my reservation.
-
-
-    Assistant message:
-
-    {
-      "result": "cancelation"
-    }
-
-
-    User message:
-
-    [[ ## user_query ## ]]
-    Can I book a suite for next Tuesday?
-
-    Respond with a JSON object in the following order of fields: `result`.
-
-
-    Response:
-
-    {
-      "result": "booking"
-    }
-
-
-
-
-## 10. Real-World Examples
-
-### 10.1. Data Extraction Pipeline
-
-This example demonstrates chaining multiple AI functions to process
-unstructured data reliably.
-
-``` python
+```python
 from dataclasses import dataclass
-from typing import List
 from functai import ai, _ai, configure
 
-# Ensure deterministic extraction
-configure(lm = "gpt-4.1", temperature=0.0, adapter="json")
+configure(lm="gpt-4.1-mini", temperature=0.0)
 
-# 1. Define the target structure
 @dataclass
 class Invoice:
     invoice_number: str
     vendor_name: str
     total: float
-    items: List[str]
+    items: list[str]
 
-# 2. Define the extraction function with CoT for accuracy
 @ai
 def extract_invoice(document_text: str) -> Invoice:
     """Extract invoice information from the document text.
-    Parse all relevant fields accurately. Convert amounts to float.
-    """
-    thought_process: str = _ai["Analyze the document layout and identify the location of each field before extracting."]
+    Parse all relevant fields accurately. Convert amounts to float."""
+    thought_process: str = _ai["Where each field is in the document."]
     return _ai
 
-# 3. Define a validation function
 @ai
 def validate_invoice(invoice: Invoice) -> bool:
-    """Validate if the invoice data is complete and reasonable.
-    Check if the total is positive and required fields are present.
-    """
-    return _ai
+    """Is the invoice complete and reasonable? The total must be positive."""
 
-# 4. Define a summarization function
 @ai
 def summarize_invoice(invoice: Invoice) -> str:
     """Create a brief, human-readable summary of the invoice."""
-    return _ai
 
-# 5. Execute the pipeline
 document = """
 INVOICE
 Vendor: TechCorp Inc.
@@ -891,59 +600,13 @@ Total: $5600.00
 """
 
 invoice = extract_invoice(document)
-
+# Invoice(invoice_number='INV-2025-101', vendor_name='TechCorp Inc.', total=5600.0,
+#         items=['5x Laptops', '2x Monitors'])
 if validate_invoice(invoice):
-    summary = summarize_invoice(invoice)
-    print("Invoice Validated Successfully!")
-    print(summary)
-else:
-    print("Invoice Validation Failed.")
+    print(summarize_invoice(invoice))
 ```
 
-    Invoice Validated Successfully!
-    Invoice INV-2025-101 from TechCorp Inc. totals $5,600.00 and includes 5 laptops and 2 monitors.
+------------------------------------------------------------------------
 
-### 10.2. Research Assistant Agent
-
-This example builds a sophisticated agent using tools and structured
-internal outputs.
-
-``` python
-from functai import ai, _ai, configure
-
-configure(lm = "gpt-4.1")
-
-# Define Tools (Placeholders)
-def search_web(query: str) -> str:
-    """Search the web for information."""
-    print(f"[Searching: {query}]")
-    return f"Mock search results for {query}."
-
-def read_paper(paper_id: str) -> str:
-    """Read the content of a specific research paper."""
-    print(f"[Reading: {paper_id}]")
-    return f"Mock content of paper {paper_id}."
-
-# Define the Agent
-@ai(tools=[search_web, read_paper])
-def research_assistant(query: str) -> str:
-    """Advanced research assistant.
-    Use available tools to gather information. Synthesize findings.
-    """
-    # Define intermediate outputs for better structure and inspection
-    research_notes: list[str] = _ai["Key findings gathered during the ReAct process."]
-    confidence: str = _ai["Confidence level: high/medium/low."]
-    sources: list[str] = _ai["Sources consulted during the ReAct process."]
-
-    answer = _ai
-
-    # Post-processing: Add metadata to the final response
-    return f"{answer}\n\nConfidence: {confidence}\nSources: {', '.join(sources)}"
-
-# Execution
-research_assistant("What are the latest breakthroughs in quantum computing?")
-```
-
-    [Searching: latest breakthroughs in quantum computing 2024]
-
-    "The latest breakthroughs in quantum computing as of 2024 include IBM's unveiling of the 1,121-qubit 'Condor' processor, which represents a major step forward in hardware scalability. Researchers at Google, Microsoft, and Quantinuum have achieved significant progress in quantum error correction, with logical qubits now outperforming physical qubits in some cases. Advances in quantum networking have enabled entanglement distribution over longer distances, moving closer to a functional quantum internet. Additionally, new quantum algorithms and hybrid approaches are being developed for practical applications in chemistry, optimization, and machine learning. Commercial access to quantum computing continues to grow, with more cloud-based services available to researchers and businesses.\n\nConfidence: high\nSources: https://www.ibm.com/blog/quantum-condor-1121-qubit-processor/, https://www.nature.com/articles/d41586-024-00000-0, https://www.quantamagazine.org/quantum-error-correction-breakthroughs-2024-20240110/, https://www.microsoft.com/en-us/research/blog/advances-in-fault-tolerant-quantum-computing-2024/, https://www.scientificamerican.com/article/quantum-internet-milestones-2024/"
+Development: `uv sync`, then `uv run pytest` (offline, a fake provider).
+Live checks against real models: `tests/live.py` (costs cents).
