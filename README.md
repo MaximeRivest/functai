@@ -524,9 +524,9 @@ summarize.signature                # the lmcc signature
   at the token limit is re-sent with twice the budget.
 - **Transient provider errors** (rate limit, 5xx, timeout): re-sent with
   backoff (`api_retries=3`).
-- **Identical requests** are answered from an in-memory cache
-  (`cache_replies=True`): re-running a notebook cell or an evaluation costs
-  nothing. `cache_replies=False` to sample again; `functai.clear_cache()`.
+- **Reply cache (off by default):** with `cache_replies=True`, an identical
+  request is answered from memory, so re-running a notebook cell or an
+  evaluation costs nothing. `functai.clear_cache()` empties it.
 - **Impossible layouts** (several outputs in a template with no pattern, a
   JSON layout on a model without structured output) are refused before any
   request is sent.

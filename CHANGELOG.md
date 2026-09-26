@@ -26,8 +26,8 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
   function > `with configure` block > `configure`); unknown settings raise;
   any lm15 `Config` field is a setting.
 - Reliability: one re-ask after an unreadable reply (`retries=1`), backoff on
-  transient provider errors (`api_retries=3`), an in-memory reply cache
-  (`cache_replies=True`), misspelled layouts repaired and reported.
+  transient provider errors (`api_retries=3`), an opt-in in-memory reply
+  cache (`cache_replies=True`; off by default), misspelled layouts repaired and reported.
 - Inspection: `phistory()`, `inspect_history()`, `fn.render()`, `fn.explain()`.
 - Types: tuples, sets, TypedDicts, `Any`, `Annotated[T, "description"]`;
   JSON integers read into `float` fields become floats.

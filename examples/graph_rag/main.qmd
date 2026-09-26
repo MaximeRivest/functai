@@ -69,8 +69,8 @@ def visualize_knowledge_graph(kg: KnowledgeGraph):
     dot.render("knowledge_graph.gv", view=True)
 
 
-graph = generate_graph("Teach me about quantum mechanics")
-visualize_knowledge_graph(graph)
+#graph = generate_graph("Teach me about quantum mechanics")
+#visualize_knowledge_graph(graph)
 ```
 
 

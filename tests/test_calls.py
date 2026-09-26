@@ -351,16 +351,16 @@ def test_misspelled_tags_are_repaired_and_reported(fake):
     assert pred.result == "ok" and [r["saw"] for r in pred.repairs] == ["**<Result>**", "</RESULT>"]
 
 
-def test_identical_calls_hit_the_cache_unless_disabled(fake):
+def test_the_reply_cache_is_off_unless_turned_on(fake):
     @ai
     def f(x: str) -> str: ...
     r = fake(responder=lambda req: "<result>\nok\n</result>")
     f("x"); f("x")
-    assert len(r.requests) == 1
-    with configure(cache_replies=False):
-        f("x")
-    assert len(r.requests) == 2
-    assert "(from cache)" in functai.phistory(3)
+    assert len(r.requests) == 2                      # off by default: every call reaches the model
+    with configure(cache_replies=True):
+        f("x"); f("x")
+    assert len(r.requests) == 3                      # the second identical call was answered from the cache
+    assert "(from cache)" in functai.phistory(1)
 
 
 def test_transient_errors_are_retried(fake, monkeypatch):

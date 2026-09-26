@@ -39,7 +39,7 @@ DEFAULTS: Dict[str, Any] = {
     "api_retries": 3,           # re-sends after a transient provider error (rate limit, 5xx, timeout)
     "max_steps": 8,             # model calls per tool loop
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
-    "cache_replies": True,      # reuse the reply to an identical request (in memory); lm15's `cache` is prompt caching
+    "cache_replies": False,     # True: reuse the reply to an identical request (in memory); lm15's `cache` is prompt caching
 
     # memory
     "stateful": False,
