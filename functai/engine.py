@@ -51,6 +51,8 @@ def _login_error(exc: Exception) -> Optional[LoginRequired]:
         return None
     if not isinstance(exc, (lm15.MissingCredentialError, lm15.AuthOperationError, lm15.AuthError)):
         return None
+    if isinstance(exc, lm15.AuthError) and getattr(exc, "status", None) not in (None, 401):
+        return None          # 403 and the like: the credential works but is not allowed this (a spent key)
     provider = getattr(exc, "provider", None)
     friendly = next((alias for alias, p in (("claude", "claude-code"), ("chatgpt", "openai-codex"),
                                             ("copilot", "github-copilot"), ("kimi", "kimi-code"))

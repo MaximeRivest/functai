@@ -27,6 +27,7 @@ Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-fr
 - [8. Evaluation and optimization](#8-evaluation-and-optimization)
 - [9. Modules: programs of several AI functions](#9-modules-programs-of-several-ai-functions)
 - [9b. Saving a program with its dependencies](#9b-saving-a-program-with-its-dependencies)
+- [9c. Baking a function into weights you own](#9c-baking-a-function-into-weights-you-own)
 - [10. Inspection](#10-inspection)
 - [11. When the model gets it wrong](#11-when-the-model-gets-it-wrong)
 - [12. Migrating from 0.x](#12-migrating-from-0x)
@@ -804,6 +805,129 @@ through `functai.file`. `check` points at them, `@ai(requires=["numpy>=2"])` or
 `save(requires=[...])` declares packages by hand, `save(include=["myproject"])`
 saves an editable-installed project as code, and `verify` with recordings
 catches anything still missing.
+
+## 9c. Baking a function into weights you own
+
+A function answered by a big model can be *baked*: a small model is trained
+to answer it, and the same function then runs on those weights. The function
+does not change; what executes it does. Needs `pip install "functai[bake]"`.
+
+```python
+from typing import Literal
+from functai import ai
+
+@ai
+def intent(text: str) -> Literal["card_arrival", "card_delivery_estimate", ...]:   # 77 intents
+    """The customer's intent."""
+
+baked = intent.bake(rows, student="jhu-clsp/ettin-encoder-17m")    # rows carry a "result" label
+print(baked.report)
+fast = intent.using(lm=baked)
+fast("my card still hasn't arrived")            # 'card_arrival'
+fast("...", all=True).probabilities             # {'result': {'card_arrival': 0.93, ...}}
+```
+
+    Baked intent: jhu-clsp/ettin-encoder-17m (16.9M parameters)
+      trained on 8,994 rows (the data's labels), validated on 999, tested on 3,076 labeled rows
+      training: 6 passes (best 5), 31 s on cuda:1 (bf16), inputs up to 56 tokens
+
+      on the test rows            student
+      accuracy                    90.8% (89.8%–91.8%)
+      top-3                       97.1%
+      calibration error (ECE)     0.011 (was 0.048; temperature 1.58)
+
+      answering only when sure:  most confident share → accuracy (confidence at the cut)
+          50% → 99.6%  (≥ 0.99)
+          80% → 98.0%  (≥ 0.89)
+          90% → 95.9%  (≥ 0.65)
+         100% → 90.8%  (≥ 0.17)
+        for 95% accuracy: escalate_below=0.58 keeps 92% of rows
+
+      speed on cuda:1: 18,707 rows/s batched (tokenizing included), 3.7 ms for one row
+
+That is banking77, all of it measured: it reproduces the Ettin-17M result of
+the September 2026 experiments (91.5% recorded, 97.1% top-3, ECE 0.011).
+
+**Two kinds of student.**
+
+| | `method="head"` (default) | `method="sft"` |
+|---|---|---|
+| for | outputs with a fixed set of answers: `Literal`, `Enum`, `bool`, a dataclass of them | any output: text, numbers, structures |
+| model | an encoder (Ettin, ModernBERT) or a decoder with a new answer layer | a small chat model (Qwen3.5-0.8B) |
+| reads | the input alone, no prompt | the function's full prompt, in its lmcc layout |
+| gives | a probability for every answer, calibrated | the reply, read back by lmcc |
+| speed (one 3090) | 16,000–43,000 rows/s | 12 rows/s in-process, 82 rows/s with `baked.serve()` (vLLM) |
+
+**Labels.** A column named like an output is a label; a `<output>__probs`
+column (`{answer: probability}`) is a soft label. Or a teacher labels the
+rows: `teacher="jev-latest"` (Jev measures a probability for every answer, so
+the student learns from the full distribution), or any model or AI function
+(its answers). `labels="teacher"` relabels every training row, keeping the
+data's labels for testing, which is how to measure what a teacher is worth:
+
+    on the test rows            student                 teacher (jev-latest)
+    accuracy                    75.2% (71.2%–78.8%)     80.4%
+    teacher labels: 2,000 rows from jev-latest in 6 s (1,852 tokens a row, $0.09)
+    break-even in money: after 2,016 rows
+    note: result: the student (75.2%) is below its teacher (80.4%); trained on teacher labels, it can
+          at best match it. Human labels lifted the same kind of student from 77% to 91.5% ...
+
+The report always says which kind of labels the numbers rest on, and says it
+loudly when a student is capped by its teacher: the strongest finding of those
+experiments was that a small model trained on human labels (91.5%) beat every
+teacher's labels (77–82%).
+
+**Escalation.** The confidence is what the model measured, so unsure answers
+can go to a bigger model:
+
+```python
+cut = baked.report.threshold(0.95)["threshold"]
+safe = intent.using(lm=baked, escalate_to="claude-opus-5.5", escalate_below=cut)
+p = safe("...", all=True)
+p.escalated, p.first.confidence       # True, 0.41 when Opus answered
+```
+
+On 500 banking77 test questions, the Jev-taught student alone scored 75.2%;
+escalating its unsure two thirds to Claude Opus 5.5 scored 90.2%, against 92%
+for Opus on everything. `escalate_to` takes a model name, a baked model, or an
+AI function (which follows its own `escalate_to`, never a global one).
+
+**Details that matter.**
+
+- The input a head reads is written by lmcc (the inputs alone: one bare, several
+  in tags), and the model keeps that layout: whatever the function's template
+  says later, the baked model reads what it was trained on. A generative
+  student keeps its training layout the same way.
+- A function whose inputs, outputs or answers changed since baking is refused.
+- Training follows what measured best: the whole model, AdamW, warmup then
+  cosine, early stopping on held-out rows, a temperature fitted on held-out
+  human labels when there are some. Defaults per model size; all overridable.
+- The GPU with the most free memory is used when it has room; memory held by
+  other programs is never taken. A chat model that does not fit is trained as
+  a LoRA adapter, merged into the saved weights.
+- Concurrent calls to a head are batched automatically (1,500 calls/s through
+  functai from threads, on a laptop CPU with a 4M model); `baked.predict(rows)`
+  is the fast path for tables.
+- A baked model is a folder (`baked.json`, the weights, the tokenizer, file
+  hashes, the report). `functai.bake.load(folder)`; `baked.save(folder)`.
+- `functai.save(program)` copies a program's baked weights into `models/`,
+  pins torch and transformers, and fingerprints what the weights answer;
+  `functai.verify` installs the lock in a fresh environment and checks the
+  weights answer the same there (13 s for the banking77 cascade).
+
+**Prime Intellect.** For reinforcement learning or distilling on Prime's
+hosted training, `functai.bake.prime.env_package(fn, rows, folder, name=...)`
+writes a verifiers environment holding the saved program and its rows, and
+`functai.bake.prime.config(fn, env=..., model=..., loss="rl" | "sft", teacher=...)`
+writes the `prime train` TOML. Rollouts run through the `functai-verifiers`
+harness (installed with `functai[prime]`): the model is called with the
+function's lmcc layout, past replies are replayed verbatim so a multi-turn
+rollout stays one training sample, unreadable replies are recorded with no
+values, and a thinking teacher's reasoning is dropped before the trace.
+`functai-rows` is a ready taskset for a function and a table:
+
+    vf-eval functai-rows --env.taskset.program mytask:classify --env.taskset.data rows.jsonl \
+        --env.agent.harness.id functai-verifiers --env.agent.harness.program mytask:classify
 
 ## 10. Inspection
 

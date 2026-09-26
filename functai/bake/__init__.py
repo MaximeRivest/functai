@@ -394,10 +394,12 @@ def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: 
     for fs in field_scores:
         if source.startswith("teacher") and fs.teacher_accuracy is not None and \
                 fs.accuracy <= fs.teacher_accuracy + 0.01:
-            notes.append(f"{fs.name}: the student ({fs.accuracy:.1%}) is about as accurate as its teacher "
-                         f"({fs.teacher_accuracy:.1%}): teacher labels cap it there. Human labels lifted the same "
-                         f"kind of student from 77% to 91.5% on banking77; label more rows by hand, or use a "
-                         f"stronger teacher")
+            where = "about as accurate as" if fs.accuracy >= fs.interval[0] and fs.teacher_accuracy <= fs.interval[1] \
+                else "below"
+            notes.append(f"{fs.name}: the student ({fs.accuracy:.1%}) is {where} its teacher "
+                         f"({fs.teacher_accuracy:.1%}); trained on teacher labels, it can at best match it. Human "
+                         f"labels lifted the same kind of student from 77% to 91.5% on banking77: label more rows by "
+                         f"hand, or use a stronger teacher")
     if truth == "labeled" and len(test_rows) < 200:
         lo, hi = field_scores[0].interval
         notes.append(f"only {len(test_rows)} test rows: accuracy is known to ±{(hi - lo) / 2:.0%}")

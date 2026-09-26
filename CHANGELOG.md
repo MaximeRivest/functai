@@ -70,6 +70,20 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
   recordings replayed to the same results, no model called), `load(folder, trust=True)`
   (hash, package and prompt checks first), `functai.file("data/x.txt")`,
   `@ai(requires=...)`, `@module(requires=...)`, `python -m functai verify <folder>`.
+- Baking (`functai[bake]`): `fn.bake(rows, student=..., teacher=..., labels=...)` trains
+  a head model (outputs with a fixed set of answers; calibrated probabilities) or
+  a generative student (`method="sft"`, LoRA when needed) and reports accuracy with
+  its interval, top-3, calibration, the confident-share curve, speed, the teacher's
+  accuracy on the same rows and break-even. `fn.using(lm=baked)` runs the function on
+  the weights (the model keeps its training layout; a changed function is refused;
+  concurrent calls are batched). `escalate_to` / `escalate_below` send unsure answers
+  to a bigger model; `prediction.confidence`, `.escalated`, `.first`. `baked.serve()`
+  serves a generative student with vLLM. Saved programs carry their weights
+  (`models/`), pin torch/transformers, and verify what the weights answer.
+- Prime Intellect (`functai[prime]`): the `functai-verifiers` harness, the
+  `functai-rows` taskset, `functai.bake.prime.env_package` and `.config`;
+  `on_unreadable="record"`, `prediction.refusal`.
+- A spent or forbidden key (HTTP 403) is no longer reported as a missing login.
 - `@module` finds AI functions called under another name or through helper
   functions (it missed them before).
 - Notebooks: a dataclass's field comments now reach the prompt (they were lost for

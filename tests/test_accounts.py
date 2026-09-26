@@ -105,3 +105,14 @@ def test_a_missing_credential_says_how_to_sign_in(fake):
     fake(lm15.MissingCredentialError("no key", provider="openai", env_keys=("OPENAI_API_KEY",)))
     with pytest.raises(functai.LoginRequired, match=r"functai.login\('openai'\), set \$OPENAI_API_KEY"):
         f("y")
+
+
+def test_a_spent_key_is_not_reported_as_a_missing_login(fake):
+    @ai
+    def f(x: str) -> str: ...
+    fake(lm15.AuthError("Key limit exceeded", status=403), lm="openrouter:x")
+    with pytest.raises(lm15.AuthError, match="limit exceeded"):
+        f("x")
+    fake(lm15.AuthError("invalid key", status=401), lm="openrouter:y")
+    with pytest.raises(functai.LoginRequired):
+        f("y")
