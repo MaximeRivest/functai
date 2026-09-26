@@ -1,14 +1,15 @@
-"""Example (training data) and Prediction (what one call produced).
+"""Prediction: what one call produced.
 
-Both are read-only mappings with attribute access, so ``dict(pred)``,
-``pred.result`` and ``pred["result"]`` all work, as they did with DSPy.
+A read-only mapping with attribute access, so ``dict(pred)``,
+``pred.result`` and ``pred["result"]`` all work. (Data for evaluation and
+optimization is plain rows: dicts, or a table; see ``functai.evaluation``.)
 """
 
 from __future__ import annotations
 
 import dataclasses
 from collections.abc import Mapping
-from typing import Any, Dict, Iterable, Iterator, Optional
+from typing import Any, Dict, Iterable, Iterator
 
 
 class _Record(Mapping):
@@ -45,62 +46,8 @@ class _Record(Mapping):
         inner = ", ".join(f"{k}={v!r}" for k, v in self._store.items())
         return f"{type(self).__name__}({inner})"
 
-    def toDict(self) -> Dict[str, Any]:  # noqa: N802 — DSPy's spelling, kept for migrants
+    def to_dict(self) -> Dict[str, Any]:
         return dict(self._store)
-
-    to_dict = toDict
-
-
-class Example(_Record):
-    """One training example: ``Example(question="2+2", result="4").with_inputs("question")``.
-
-    Keys named in ``with_inputs`` are inputs; the rest are labels. When no
-    inputs are marked, functai treats the keys that match the function's
-    parameters as inputs.
-    """
-
-    __slots__ = ("_input_keys",)
-
-    def __init__(self, base: Optional[Mapping] = None, **fields: Any):
-        store = dict(base or {})
-        store.update(fields)
-        super().__init__(store)
-        keys = getattr(base, "_input_keys", None) if base is not None else None
-        object.__setattr__(self, "_input_keys", frozenset(keys) if keys else None)
-
-    def with_inputs(self, *keys: str) -> "Example":
-        ex = Example(self._store)
-        object.__setattr__(ex, "_input_keys", frozenset(keys))
-        return ex
-
-    @property
-    def input_keys(self) -> Optional[frozenset]:
-        return self._input_keys
-
-    def inputs(self) -> "Example":
-        if self._input_keys is None:
-            raise ValueError("inputs() needs the input keys: call .with_inputs(...) first")
-        return Example({k: v for k, v in self._store.items() if k in self._input_keys}).with_inputs(
-            *self._input_keys)
-
-    def labels(self) -> "Example":
-        keys = self._input_keys or frozenset()
-        return Example({k: v for k, v in self._store.items() if k not in keys})
-
-    def copy(self, **fields: Any) -> "Example":
-        ex = Example({**self._store, **fields})
-        object.__setattr__(ex, "_input_keys", self._input_keys)
-        return ex
-
-    def without(self, *keys: str) -> "Example":
-        ex = Example({k: v for k, v in self._store.items() if k not in keys})
-        object.__setattr__(ex, "_input_keys", self._input_keys)
-        return ex
-
-    def __eq__(self, other: object) -> bool:
-        return isinstance(other, Example) and self._store == other._store
-
-    __hash__ = None  # mutable mapping semantics
 
 
 class Prediction(_Record):
@@ -138,26 +85,3 @@ class Prediction(_Record):
                 if isinstance(v, int):
                     total[k] = total.get(k, 0) + v
         return total
-
-
-def as_example(item: Any, input_names: Iterable[str]) -> Example:
-    """An Example from what users pass as training data: an Example, a
-    DSPy Example (duck-typed, no DSPy import), a dict, or an ``(inputs,
-    outputs)`` pair of dicts."""
-    names = list(input_names)
-    if isinstance(item, Example):
-        return item if item.input_keys is not None else item.with_inputs(*[k for k in item if k in names])
-    keys = getattr(item, "_input_keys", None)
-    to_dict = getattr(item, "toDict", None)
-    if callable(to_dict):                                   # dspy.Example
-        data = dict(to_dict())
-        return Example(data).with_inputs(*(keys or [k for k in data if k in names]))
-    if isinstance(item, Mapping):
-        if set(item) == {"inputs", "outputs"} and isinstance(item["inputs"], Mapping):
-            return Example({**item["inputs"], **item["outputs"]}).with_inputs(*item["inputs"])
-        return Example(dict(item)).with_inputs(*[k for k in item if k in names])
-    if isinstance(item, (list, tuple)) and len(item) == 2 and all(isinstance(x, Mapping) for x in item):
-        ins, outs = item
-        return Example({**ins, **outs}).with_inputs(*ins)
-    raise TypeError(f"a training example is an Example, a dict, or an (inputs, outputs) pair of dicts, "
-                    f"not {type(item).__name__}")

@@ -5,14 +5,14 @@ import re
 import pytest
 
 import functai
-from functai import (BootstrapFewShotWithRandomSearch, Evaluate, Example, InstructionSearch,
-                     LabeledFewShot, _ai, ai, evaluate, module)
+from functai import (BootstrapFewShotWithRandomSearch, InstructionSearch, LabeledFewShot, _ai, ai, evaluate,
+                     module)
 
 TRAIN = [
-    Example(user_query="I need to reserve a room.", result="booking").with_inputs("user_query"),
-    Example(user_query="How do I get there?", result="information").with_inputs("user_query"),
-    Example(user_query="Cancel my reservation.", result="cancelation").with_inputs("user_query"),
-    Example(user_query="Book me a suite.", result="booking").with_inputs("user_query"),
+    {"user_query": "I need to reserve a room.", "result": "booking"},
+    {"user_query": "How do I get there?", "result": "information"},
+    {"user_query": "Cancel my reservation.", "result": "cancelation"},
+    {"user_query": "Book me a suite.", "result": "booking"},
 ]
 
 
@@ -65,30 +65,20 @@ def test_labeled_few_shot(fake):
     assert len(f.demos) == 2 and all(isinstance(d, dict) for d in f.demos)
 
 
-def test_examples_can_be_dicts_or_pairs(fake):
+def test_training_data_can_be_a_table(fake, tmp_path):
+    import dpyr
     f = make_classifier()
     fake()
-    f.opt(trainset=[{"user_query": "a", "result": "booking"},
-                    ({"user_query": "b"}, {"result": "information"})], optimizer=LabeledFewShot(k=5))
-    assert {d["inputs"]["user_query"] for d in f.demos} == {"a", "b"}
+    dpyr.read(TRAIN).write(str(tmp_path / "train.parquet"))
+    f.opt(trainset=str(tmp_path / "train.parquet"), optimizer=LabeledFewShot(k=5))
+    assert {d["inputs"]["user_query"] for d in f.demos} == {r["user_query"] for r in TRAIN}
 
 
-def test_evaluate_scores_in_parallel(fake):
+def test_training_data_must_have_the_inputs(fake):
     f = make_classifier()
-    fake(responder=lambda req: "<result>\n" + _label(query_of(req)) + "\n</result>")
-    res = evaluate(f, TRAIN, functai.exact_match, num_threads=4)
-    assert res.score == 100.0 and len(res.results) == 4
-    res = Evaluate(devset=TRAIN, metric=lambda ex, pred: pred.result == "booking", num_threads=2)(f)
-    assert res.score == 50.0
-
-
-def test_evaluation_counts_errors_as_zero(fake):
-    f = make_classifier()
-    fake(responder=lambda req: RuntimeError("down") if "room" in query_of(req) else
-         "<result>\n" + _label(query_of(req)) + "\n</result>")
-    functai.configure(api_retries=0)
-    res = evaluate(f, TRAIN, functai.exact_match)
-    assert res.score == 75.0 and len(res.errors) == 1
+    fake()
+    with pytest.raises(ValueError, match="is 'user_querry' a typo"):
+        f.opt(trainset=[{"user_querry": "a", "result": "booking"}])
 
 
 def test_random_search_picks_the_best_candidate(fake):
@@ -102,8 +92,9 @@ def test_random_search_picks_the_best_candidate(fake):
     fake(responder=responder)
     opt = BootstrapFewShotWithRandomSearch(num_candidate_programs=2, max_labeled_demos=2)
     f.opt(trainset=TRAIN, optimizer=opt)
-    assert f.demos and max(opt.candidates)[1] != "zero-shot"
-    assert evaluate(f, TRAIN, functai.exact_match).score == 100.0
+    best = max(opt.candidates, key=lambda c: c["score"])
+    assert f.demos and best["candidate"] != "zero-shot"
+    assert evaluate(f, TRAIN, functai.exact_match).score == 1.0
 
 
 def test_instruction_search_finds_the_instruction_that_works(fake):
@@ -208,9 +199,9 @@ def test_a_module_is_optimized_as_one_program(fake):
 
     r = fake(responder=responder)
     assert set(research_hop.named_ai_functions()) == {"generate_query", "append_notes"}
-    trainset = [Example(claim="The Eiffel Tower is in Paris.", result=["fact: paris"]).with_inputs("claim")]
+    trainset = [{"claim": "The Eiffel Tower is in Paris.", "result": ["fact: paris"]}]
 
-    def metric(example, prediction, trace=None):
+    def metric(row, prediction):
         return 1.0 if prediction.result else 0.0
 
     research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=1))

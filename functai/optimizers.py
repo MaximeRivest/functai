@@ -1,4 +1,4 @@
-"""Evaluation and optimization.
+"""Optimization.
 
 An optimizer tunes what an AI function sends besides the inputs: its
 instruction and its demos (worked examples, as lmcc turns). It never edits
@@ -16,205 +16,44 @@ AI function; ``fn.opt(...)`` applies it in place and ``fn.undo_opt()`` reverts.
 
 from __future__ import annotations
 
-import concurrent.futures
-import contextlib
-import contextvars
 import dataclasses
 import inspect
 import random
-import traceback
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from .config import forced
-from .core import _STATE_OVERRIDE, _TRACE, FunctAIFunc, ProgramState
-from .data import Example, Prediction, as_example
+from .core import FunctAIFunc, ProgramState
+from .evaluation import Metric, _Target, evaluate, parallel, resolve_metrics, rows_of, run_row
 
 States = Dict[FunctAIFunc, ProgramState]
+Row = Dict[str, Any]
 
 
-# ------------------------------------------------------------------ metrics
+def _metric(metric: Any, target: _Target, rows: Sequence[Row], *, required: bool) -> Optional[Metric]:
+    """The one metric an optimizer scores with. None (no metric given, no
+    labels): every run is accepted, when ``required`` is False."""
+    if isinstance(metric, (list, tuple, Mapping)):
+        raise TypeError("an optimizer scores with one metric; pass a function or a dpyr expression")
+    resolved = resolve_metrics(metric, target, rows)
+    if resolved:
+        return resolved[0]
+    if required:
+        raise ValueError("this optimizer compares candidates, so it needs a metric: pass metric=..., or give "
+                         f"the data a column named {target.output_names[0]!r} to match exactly")
+    return None
 
 
-def _norm(v: Any) -> Any:
-    if isinstance(v, str):
-        return " ".join(v.split()).casefold()
-    if hasattr(v, "value") and type(v).__module__ != "builtins" and hasattr(type(v), "__members__"):
-        return _norm(v.value)                                   # Enum members compare by value
-    return v
-
-
-def exact_match(example: Example, prediction: Any, trace: Any = None) -> float:
-    """1.0 when every labeled output equals the prediction's (strings compared
-    ignoring case and repeated whitespace), else 0.0."""
-    keys = [k for k in example.labels() if k in prediction]
-    if not keys:
-        return 0.0
-    return float(all(_norm(example[k]) == _norm(prediction[k]) for k in keys))
-
-
-def _arity(metric: Callable) -> int:
-    try:
-        params = [p for p in inspect.signature(metric).parameters.values()
-                  if p.kind in (p.POSITIONAL_ONLY, p.POSITIONAL_OR_KEYWORD, p.VAR_POSITIONAL)]
-    except (TypeError, ValueError):
-        return 3
-    if any(p.kind is p.VAR_POSITIONAL for p in params):
-        return 3
-    return len(params)
-
-
-def score_of(metric: Callable, example: Example, prediction: Any, trace: Any = None) -> float:
-    """``metric(example, prediction[, trace])`` as a float (bools count 0/1)."""
-    if isinstance(metric, FunctAIFunc) or _arity(metric) < 3:
-        value = metric(example, prediction)
-    else:
-        value = metric(example, prediction, trace)
-    if isinstance(value, Prediction):
-        value = next(iter(value.values()), 0.0)
-    return float(value)
-
-
-def _passes(score: float, threshold: Optional[float]) -> bool:
+def _passes(score: Optional[float], threshold: Optional[float]) -> bool:
+    if score is None:
+        return False
     return score >= threshold if threshold is not None else bool(score)
 
 
-# ------------------------------------------------------------------ programs
-
-
-class _Target:
-    """What an optimizer runs: one AI function, or a module calling several."""
-
-    def __init__(self, program: Any, *, call_defaults: Optional[Dict[str, Any]] = None):
-        from .module import FunctAIModule
-        self.program = program
-        self.call_defaults = dict(call_defaults or {})
-        if isinstance(program, FunctAIFunc):
-            self.predictors: List[FunctAIFunc] = [program]
-            self.input_names = list(program._sig.parameters)
-            self.single = True
-        elif isinstance(program, FunctAIModule):
-            self.predictors = program.ai_functions()
-            self.input_names = list(inspect.signature(program._fn).parameters)
-            self.single = False
-            self.call_defaults = {**program._opt_call_defaults, **self.call_defaults}
-            if not self.predictors:
-                raise ValueError(f"@module {program.__name__} calls no @ai function this optimizer could tune")
-        else:
-            raise TypeError(f"optimizers tune an @ai function or a @module, not {type(program).__name__}")
-
-    def inputs_of(self, example: Example) -> Dict[str, Any]:
-        keys = example.input_keys if example.input_keys is not None else [k for k in example if k in self.input_names]
-        return {k: example[k] for k in keys}
-
-    def run(self, example: Example) -> Prediction:
-        inputs = self.inputs_of(example)
-        if self.single:
-            return self.program(**inputs, all=True)
-        return Prediction({"result": self.program(**{**self.call_defaults, **inputs})})
-
-
-@contextlib.contextmanager
-def with_states(states: Optional[States]):
-    """Run with candidate states in place of the functions' own (this context only)."""
-    if not states:
-        yield
-        return
-    token = _STATE_OVERRIDE.set({**_STATE_OVERRIDE.get(), **{id(fn): st for fn, st in states.items()}})
-    try:
-        yield
-    finally:
-        _STATE_OVERRIDE.reset(token)
-
-
-@contextlib.contextmanager
-def tracing():
-    trace: List[Tuple[FunctAIFunc, Prediction]] = []
-    token = _TRACE.set(trace)
-    try:
-        yield trace
-    finally:
-        _TRACE.reset(token)
-
-
-def _parallel(fn: Callable, items: Sequence[Any], num_threads: int) -> List[Any]:
-    """``fn`` over items, in order; each task runs in a copy of the caller's
-    context, so ``with configure(...)`` and candidate states reach the threads."""
-    if num_threads <= 1 or len(items) <= 1:
-        return [fn(x) for x in items]
-    with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as pool:
-        futures = [pool.submit(contextvars.copy_context().run, fn, x) for x in items]
-        return [f.result() for f in futures]
-
-
-# ------------------------------------------------------------------ evaluation
-
-
-@dataclasses.dataclass
-class EvaluationResult:
-    """``score`` is the mean metric in percent (as DSPy reports it); ``results``
-    holds ``(example, prediction, score)`` per example (prediction None on error)."""
-    score: float
-    results: List[Tuple[Example, Optional[Prediction], float]]
-    errors: List[Tuple[Example, str]] = dataclasses.field(default_factory=list)
-
-    @property
-    def mean(self) -> float:
-        return self.score / 100.0
-
-    def __float__(self) -> float:
-        return self.score
-
-    def __repr__(self) -> str:
-        return (f"EvaluationResult(score={self.score:.2f}, n={len(self.results)}"
-                + (f", errors={len(self.errors)}" if self.errors else "") + ")")
-
-
-def evaluate(program: Any, devset: Iterable[Any], metric: Callable, *, num_threads: int = 1,
-             display_progress: bool = False, max_errors: Optional[int] = None, provide_traceback: bool = False,
-             call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None) -> EvaluationResult:
-    """Run ``program`` on every example and score it with ``metric``. An example
-    whose run raises scores 0 (more than ``max_errors`` of them re-raises)."""
-    target = _Target(program, call_defaults=call_defaults)
-    examples = [as_example(x, target.input_names) for x in devset]
-
-    def one(ex: Example):
-        try:
-            with with_states(states):
-                pred = target.run(ex)
-            return ex, pred, score_of(metric, ex, pred), None
-        except Exception as exc:  # noqa: BLE001 — counted, reported
-            detail = traceback.format_exc() if provide_traceback else f"{type(exc).__name__}: {exc}"
-            return ex, None, 0.0, detail
-
-    rows = _parallel(one, examples, num_threads)
-    errors = [(ex, err) for ex, _p, _s, err in rows if err is not None]
-    if max_errors is not None and len(errors) > max_errors:
-        raise RuntimeError(f"evaluation: {len(errors)} examples failed; first: {errors[0][1]}")
-    results = [(ex, pred, s) for ex, pred, s, _e in rows]
-    score = 100.0 * sum(s for _e, _p, s in results) / len(results) if results else 0.0
-    if display_progress:
-        print(f"[functai] evaluated {len(results)} examples: {score:.1f}%"
-              + (f" ({len(errors)} errors)" if errors else ""))
-    return EvaluationResult(round(score, 2), results, errors)
-
-
-class Evaluate:
-    """DSPy-style evaluator: ``Evaluate(devset=..., metric=..., num_threads=4)(program)``."""
-
-    def __init__(self, *, devset: Iterable[Any], metric: Callable, num_threads: int = 1,
-                 display_progress: bool = False, max_errors: Optional[int] = None, provide_traceback: bool = False,
-                 **_ignored):
-        self.devset = list(devset)
-        self.metric = metric
-        self.num_threads = num_threads or 1
-        self.display_progress = display_progress
-        self.max_errors = max_errors
-        self.provide_traceback = provide_traceback
-
-    def __call__(self, program: Any, metric: Optional[Callable] = None, **kw) -> EvaluationResult:
-        return evaluate(program, self.devset, metric or self.metric, num_threads=self.num_threads,
-                        display_progress=self.display_progress, max_errors=self.max_errors,
-                        provide_traceback=self.provide_traceback, **kw)
+def _mean_score(program: Any, rows: Sequence[Row], metric: Metric, num_threads: int,
+                states: Optional[States]) -> float:
+    ev = evaluate(program, rows, {metric.name: metric.expr if metric.expr is not None else metric.fn},
+                  num_threads=num_threads, states=states)
+    return ev.score or 0.0
 
 
 # ------------------------------------------------------------------ optimizers
@@ -230,12 +69,12 @@ class Optimizer:
         raise NotImplementedError
 
 
-def _labeled_demo(fn: FunctAIFunc, target: _Target, ex: Example) -> Optional[Dict[str, Any]]:
+def _labeled_demo(fn: FunctAIFunc, target: _Target, row: Row) -> Optional[Dict[str, Any]]:
     outs = set(fn._spec().outputs) | {"reasoning"}
-    labels = {k: v for k, v in ex.labels().items() if k in outs}
+    labels = {k: v for k, v in row.items() if k in outs}
     if not labels:
         return None
-    return {"inputs": target.inputs_of(ex), "outputs": labels}
+    return {"inputs": target.inputs_of(row), "outputs": labels}
 
 
 class LabeledFewShot(Optimizer):
@@ -249,22 +88,11 @@ class LabeledFewShot(Optimizer):
         if not target.single:
             raise TypeError("LabeledFewShot needs labels per AI function; for a @module use BootstrapFewShot")
         fn = target.predictors[0]
-        examples = [as_example(x, target.input_names) for x in trainset]
+        examples = rows_of(trainset)
         chosen = random.Random(self.seed).sample(examples, min(self.k, len(examples))) if self.sample \
             else examples[: self.k]
         demos = tuple(d for d in (_labeled_demo(fn, target, ex) for ex in chosen) if d)
         return {fn: dataclasses.replace(fn.state(), demos=demos)}
-
-
-def _default_metric(examples: Sequence[Example], target: _Target) -> Optional[Callable]:
-    """Exact match when the examples are labeled with an output, else None (accept every run)."""
-    outs = set()
-    for fn in target.predictors:
-        outs |= set(fn._spec().outputs)
-    outs.add("result")
-    if any(k in outs for ex in examples for k in ex.labels()):
-        return exact_match
-    return None
 
 
 class BootstrapFewShot(Optimizer):
@@ -295,22 +123,27 @@ class BootstrapFewShot(Optimizer):
             o.update(cache_replies=False, temperature=1.0)
         return o
 
-    def _run_one(self, target: _Target, ex: Example, round_idx: int, metric) -> Tuple[bool, list, Optional[str]]:
+    def _run_one(self, target: _Target, row: Row, round_idx: int,
+                  metric: Optional[Metric]) -> Tuple[bool, list, Optional[str]]:
+        if isinstance(self.teacher, FunctAIFunc) and target.single:
+            teacher = _Target(self.teacher)
+            run = run_row(teacher, row)
+            traced = [(target.predictors[0], {"inputs": target.inputs_of(row), "outputs": dict(run.pred)})] \
+                if run.pred is not None else []
+        else:
+            with forced(**self._teacher_overrides(round_idx)):
+                run = run_row(target, row)
+            traced = [(fn, p.turn) for fn, p in run.trace]
+        if run.error:
+            return False, [], run.error
         try:
-            if isinstance(self.teacher, FunctAIFunc) and target.single:
-                pred = self.teacher(**target.inputs_of(ex), all=True)
-                trace = [(target.predictors[0], pred)]
-                own = {"inputs": target.inputs_of(ex), "outputs": dict(pred)}
-                ok = metric is None or _passes(score_of(metric, ex, pred, trace), self.metric_threshold)
-                return ok, [(target.predictors[0], own)], None
-            with forced(**self._teacher_overrides(round_idx)), tracing() as trace:
-                pred = target.run(ex)
-            ok = metric is None or _passes(score_of(metric, ex, pred, trace), self.metric_threshold)
-            return ok, [(fn, p.turn) for fn, p in trace], None
+            ok = metric is None or _passes(metric.score(target, row, run), self.metric_threshold)
         except Exception as exc:  # noqa: BLE001 — counted against max_errors
-            return False, [], f"{type(exc).__name__}: {exc}"
+            return False, [], f"metric {metric.name}: {type(exc).__name__}: {exc}"
+        return ok, traced, None
 
-    def bootstrap(self, target: _Target, examples: Sequence[Example], metric) -> Tuple[Dict[FunctAIFunc, list], set]:
+    def bootstrap(self, target: _Target, examples: Sequence[Row],
+                  metric: Optional[Metric]) -> Tuple[Dict[FunctAIFunc, list], set]:
         boot: Dict[FunctAIFunc, list] = {fn: [] for fn in target.predictors}
         used: set = set()
         errors: List[str] = []
@@ -323,8 +156,8 @@ class BootstrapFewShot(Optimizer):
                 if all(len(v) >= self.max_bootstrapped_demos for v in boot.values()):
                     return boot, used
                 chunk = pending[start:start + batch]
-                rows = _parallel(lambda i: self._run_one(target, examples[i], round_idx, metric), chunk,
-                                 self.num_threads)
+                rows = parallel(lambda i: self._run_one(target, examples[i], round_idx, metric), chunk,
+                                self.num_threads)
                 for i, (ok, traced, err) in zip(chunk, rows):
                     if err:
                         errors.append(err)
@@ -341,8 +174,8 @@ class BootstrapFewShot(Optimizer):
 
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
-        examples = [as_example(x, target.input_names) for x in trainset]
-        metric = self.metric if self.metric is not None else _default_metric(examples, target)
+        examples = rows_of(trainset)
+        metric = _metric(self.metric, target, examples, required=False)
         boot, used = self.bootstrap(target, examples, metric)
         states: States = {}
         rng = random.Random(self.seed)
@@ -362,7 +195,9 @@ class BootstrapFewShot(Optimizer):
 class BootstrapFewShotWithRandomSearch(Optimizer):
     """Several candidate demo sets (none, labeled only, bootstrapped, bootstrapped
     from shuffled examples), each scored on ``valset`` (default: the trainset);
-    the best one wins. ``candidates`` holds every candidate's score afterwards."""
+    the best one wins. ``candidates`` holds every candidate afterwards, as rows
+    (``{"candidate", "demos", "score"}``; ``dpyr.read(opt.candidates)`` makes
+    them a table)."""
 
     def __init__(self, metric: Optional[Callable] = None, *, metric_threshold: Optional[float] = None,
                  max_bootstrapped_demos: int = 4, max_labeled_demos: int = 16, max_rounds: int = 1,
@@ -379,13 +214,13 @@ class BootstrapFewShotWithRandomSearch(Optimizer):
         self.teacher = teacher
         self.seed = seed
         self.stop_at_score = stop_at_score
-        self.candidates: List[Tuple[float, str]] = []
+        self.candidates: List[Dict[str, Any]] = []
 
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
-        examples = [as_example(x, target.input_names) for x in trainset]
-        val = [as_example(x, target.input_names) for x in (valset or trainset)]
-        metric = self.metric if self.metric is not None else (_default_metric(examples, target) or exact_match)
+        examples = rows_of(trainset)
+        val = rows_of(valset) if valset is not None else examples
+        metric = _metric(self.metric, target, examples, required=True)
         base: States = {fn: fn.state() for fn in target.predictors}
         best: Tuple[float, States] = (-1.0, base)
         self.candidates = []
@@ -405,18 +240,23 @@ class BootstrapFewShotWithRandomSearch(Optimizer):
                     rng.shuffle(shuffled)
                     size = rng.randint(1, max(1, self.max_bootstrapped_demos))
                 label = "bootstrapped" if seed == -1 else f"bootstrapped (seed {seed}, {size} demos)"
-                states = BootstrapFewShot(metric, metric_threshold=self.metric_threshold,
+                states = BootstrapFewShot(self._metric_arg(metric), metric_threshold=self.metric_threshold,
                                           max_bootstrapped_demos=size, max_labeled_demos=self.max_labeled_demos,
                                           max_rounds=self.max_rounds, max_errors=self.max_errors,
                                           teacher=self.teacher, num_threads=self.num_threads,
                                           seed=self.seed + seed).compile(program, trainset=shuffled)
-            score = evaluate(program, val, metric, num_threads=self.num_threads, states=states).score
-            self.candidates.append((score, label))
+            score = _mean_score(program, val, metric, self.num_threads, states)
+            self.candidates.append({"candidate": label, "demos": sum(len(st.demos) for st in states.values()),
+                                    "score": score})
             if score > best[0]:
                 best = (score, states)
             if self.stop_at_score is not None and score >= self.stop_at_score:
                 break
         return best[1]
+
+    @staticmethod
+    def _metric_arg(metric: Metric) -> Any:
+        return metric.expr if metric.expr is not None else metric.fn
 
 
 _TIPS = [
@@ -436,7 +276,8 @@ class InstructionSearch(Optimizer):
     ``prompt_lm`` from the code, the signature and a few examples) × demo sets
     (bootstrapped, unless both demo limits are 0), searched over ``num_trials``
     minibatch evaluations; the top combinations are then scored on the whole
-    ``valset`` and the best wins. ``trials`` holds every trial afterwards.
+    ``valset`` and the best wins. ``trials`` holds every trial afterwards, as
+    rows (``dpyr.read(opt.trials)`` makes them a table).
 
     MIPRO-style; the search is random with greedy refinement, not Bayesian."""
 
@@ -459,7 +300,8 @@ class InstructionSearch(Optimizer):
         self.teacher = teacher
         self.trials: List[Dict[str, Any]] = []
 
-    def _instructions(self, fn: FunctAIFunc, examples: Sequence[Example], rng: random.Random) -> List[Optional[str]]:
+    def _instructions(self, fn: FunctAIFunc, examples: Sequence[Row], input_names: Sequence[str],
+                      rng: random.Random) -> List[Optional[str]]:
         from . import meta
         base = fn.state().instructions
         out: List[Optional[str]] = [base]
@@ -467,7 +309,8 @@ class InstructionSearch(Optimizer):
         sample = list(examples)
         for i in range(self.num_candidates - 1):
             rng.shuffle(sample)
-            text = meta.propose_instruction(fn, examples=meta.examples_text(sample), previous=list(proposals),
+            text = meta.propose_instruction(fn, examples=meta.examples_text(sample, input_names),
+                                            previous=list(proposals),
                                             tip=_TIPS[i % len(_TIPS)], lm=self.prompt_lm,
                                             base_instruction=fn.instructions)
             if text and text not in proposals:
@@ -475,7 +318,8 @@ class InstructionSearch(Optimizer):
                 out.append(text)
         return out
 
-    def _demo_sets(self, program, target: _Target, examples: Sequence[Example], metric) -> List[Dict[FunctAIFunc, tuple]]:
+    def _demo_sets(self, program, target: _Target, examples: Sequence[Row],
+                   metric: Metric) -> List[Dict[FunctAIFunc, tuple]]:
         base = {fn: tuple(fn.state().demos) for fn in target.predictors}
         if self.max_bootstrapped_demos <= 0 and self.max_labeled_demos <= 0:
             return [base]
@@ -483,7 +327,8 @@ class InstructionSearch(Optimizer):
         for k in range(self.num_candidates - 1):
             shuffled = list(examples)
             random.Random(self.seed + k).shuffle(shuffled)
-            states = BootstrapFewShot(metric, metric_threshold=self.metric_threshold,
+            states = BootstrapFewShot(BootstrapFewShotWithRandomSearch._metric_arg(metric),
+                                      metric_threshold=self.metric_threshold,
                                       max_bootstrapped_demos=self.max_bootstrapped_demos,
                                       max_labeled_demos=self.max_labeled_demos, max_errors=self.max_errors,
                                       teacher=self.teacher, num_threads=self.num_threads,
@@ -494,11 +339,11 @@ class InstructionSearch(Optimizer):
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
         rng = random.Random(self.seed)
-        examples = [as_example(x, target.input_names) for x in trainset]
-        val = [as_example(x, target.input_names) for x in (valset or trainset)]
-        metric = self.metric if self.metric is not None else (_default_metric(examples, target) or exact_match)
+        examples = rows_of(trainset)
+        val = rows_of(valset) if valset is not None else examples
+        metric = _metric(self.metric, target, examples, required=True)
         fns = target.predictors
-        instr = {fn: self._instructions(fn, examples, rng) for fn in fns}
+        instr = {fn: self._instructions(fn, examples, target.input_names, rng) for fn in fns}
         demo_sets = self._demo_sets(program, target, examples, metric)
 
         def states_of(combo: Tuple[int, ...]) -> States:
@@ -519,7 +364,7 @@ class InstructionSearch(Optimizer):
             else:
                 combo = tuple(rng.randrange(n) for n in sizes)
             batch = val if len(val) <= self.minibatch_size else rng.sample(val, self.minibatch_size)
-            score = evaluate(program, batch, metric, num_threads=self.num_threads, states=states_of(combo)).score
+            score = _mean_score(program, batch, metric, self.num_threads, states_of(combo))
             scores.setdefault(combo, []).append(score)
             self.trials.append({"trial": t, "combo": combo, "minibatch_score": score})
         ranked = sorted(scores, key=lambda c: sum(scores[c]) / len(scores[c]), reverse=True)
@@ -527,8 +372,7 @@ class InstructionSearch(Optimizer):
         if len(val) <= self.minibatch_size:
             best_combo = finalists[0]
         else:
-            full = {c: evaluate(program, val, metric, num_threads=self.num_threads, states=states_of(c)).score
-                    for c in finalists}
+            full = {c: _mean_score(program, val, metric, self.num_threads, states_of(c)) for c in finalists}
             best_combo = max(full, key=full.get)
             for trial in self.trials:
                 if trial["combo"] in full:
@@ -580,7 +424,7 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
     target = _Target(program, call_defaults=call_defaults)
     if isinstance(program, FunctAIModule) and call_defaults:
         program._opt_call_defaults = dict(call_defaults)
-    examples = [as_example(x, target.input_names) for x in (trainset or [])]
+    examples = rows_of(trainset) if trainset is not None else []
     settings = target.predictors[0]._effective()
     teacher = teacher if teacher is not None else settings.get("teacher")
     teacher_lm = teacher_lm if teacher_lm is not None else settings.get("teacher_lm")
@@ -594,7 +438,7 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
             raise ValueError("n_synth needs a teacher: pass teacher_lm='...' (or teacher=)")
         labeler = teacher if isinstance(teacher, FunctAIFunc) else None
         for item in meta.synthesize(fn, n_synth, lm=lm, labeler=labeler):
-            examples.append(Example({**item["inputs"], **item["outputs"]}).with_inputs(*item["inputs"]))
+            examples.append({**item["inputs"], **item["outputs"]})
     if not examples:
         raise ValueError("optimization needs examples: pass trainset=[...] (or n_synth with a teacher)")
     choice = optimizer if optimizer is not None else (settings.get("optimizer") or BootstrapFewShot)
@@ -603,7 +447,8 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
         if "teacher" in params and "teacher" not in opts and (teacher_lm or teacher) is not None:
             opts["teacher"] = teacher_lm or teacher
     opt = _instantiate(choice, metric, opts)
-    val = [as_example(x, target.input_names) for x in valset] if valset else None
+    target.check(examples)
+    val = rows_of(valset) if valset is not None else None
     states = opt.compile(program, trainset=examples, valset=val)
     import time
     for fn, state in states.items():
@@ -618,4 +463,4 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
 
 
 __all__ = ["Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch",
-           "InstructionSearch", "Evaluate", "EvaluationResult", "evaluate", "exact_match", "optimize"]
+           "InstructionSearch", "optimize"]

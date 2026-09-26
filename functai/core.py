@@ -479,20 +479,29 @@ class FunctAIFunc:
         self._state = dataclasses.replace(self._state, demos=tuple(self._example_demo(e) for e in (items or ())))
 
     def _example_demo(self, item: Any) -> Any:
-        """A demo as stored: a Turn as is, else ``{"inputs", "outputs"}``."""
+        """A demo as stored: a Turn as is, else ``{"inputs", "outputs"}``.
+
+        Written by hand, a demo is a row (``{"text": ..., "result": ...}``: the
+        keys named like parameters are inputs, the rest outputs) or an
+        ``(inputs, outputs)`` pair, each side a dict or a single value."""
         if isinstance(item, lmcc.Turn):
             return item
         if isinstance(item, dict) and "signature" in item and "inputs" in item:
-            return item
-        from .data import as_example
-        if isinstance(item, tuple) and len(item) == 2 and not isinstance(item[0], dict):
-            names = list(self._sig.parameters)
-            item = ({names[0]: item[0]}, {self._spec().main: item[1]})
-        elif isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], dict) and not isinstance(item[1], dict):
-            item = (item[0], {self._spec().main: item[1]})
-        ex = as_example(item, self._sig.parameters)
-        ins = {k: ex[k] for k in ex.input_keys or ()}
-        return {"inputs": ins, "outputs": {k: v for k, v in ex.items() if k not in ins}}
+            return item                                       # a saved Turn
+        names = list(self._sig.parameters)
+        if isinstance(item, dict) and set(item) == {"inputs", "outputs"} and isinstance(item["inputs"], dict) \
+                and "inputs" not in names:
+            return {"inputs": dict(item["inputs"]), "outputs": dict(item["outputs"])}
+        if isinstance(item, tuple) and len(item) == 2:
+            ins, outs = item
+            ins = dict(ins) if isinstance(ins, dict) else {names[0]: ins}
+            outs = dict(outs) if isinstance(outs, dict) else {self._spec().main: outs}
+            return {"inputs": ins, "outputs": outs}
+        if isinstance(item, dict):
+            return {"inputs": {k: v for k, v in item.items() if k in names},
+                    "outputs": {k: v for k, v in item.items() if k not in names}}
+        raise TypeError(f"a demo is a row dict ({{{names[0]!r}: ..., {self._spec().main!r}: ...}}) or an "
+                        f"(input, output) pair, not {type(item).__name__}")
 
     def save(self, path: "str | Path") -> None:
         """Write the instruction and demos to a JSON file (``load`` reads it back)."""
@@ -693,14 +702,23 @@ class FunctAIFunc:
 
     # ----- optimization -----
 
-    def opt(self, *, trainset: Optional[List[Any]] = None, optimizer: Any = None,
-            metric: Optional[Callable] = None, valset: Optional[List[Any]] = None, **opts) -> "FunctAIFunc":
+    def map(self, data: Any, *, num_threads: int = 1):
+        """Run on every row of a table; returns the rows with the predictions
+        as a dpyr dataframe (``pred_<output>`` columns, plus ``error``,
+        ``seconds``, tokens, ``model``). ``data``: a list of dicts, or anything
+        ``dpyr.read()`` takes. Needs dpyr (``pip install "functai[data]"``)."""
+        from .evaluation import evaluate
+        return evaluate(self, data, (), num_threads=num_threads).table
+
+    def opt(self, *, trainset: Any = None, optimizer: Any = None,
+            metric: Any = None, valset: Any = None, **opts) -> "FunctAIFunc":
         """Optimize the instruction and/or demos on examples, in place (``undo_opt`` reverts).
 
-        - ``trainset``: Examples, dicts, or ``(inputs, outputs)`` pairs
+        - ``trainset``: rows, as a list of dicts or a table (anything ``dpyr.read()``
+          takes); columns named like the parameters are inputs, the others labels
         - ``optimizer``: an optimizer class or instance (default ``BootstrapFewShot``)
-        - ``metric``: ``metric(example, prediction[, trace]) -> float | bool``
-          (default: exact match on the labeled outputs)
+        - ``metric``: ``metric(row, prediction) -> float | bool``, or a dpyr
+          expression (default: exact match on the labeled outputs)
         - ``teacher`` / ``teacher_lm``: a stronger model (or AI function) to learn from
         - ``n_synth``: first synthesize this many examples with the teacher
         - other keywords go to the optimizer class

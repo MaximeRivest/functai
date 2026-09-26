@@ -124,8 +124,8 @@ def test_unannotated_parameters_are_text_and_objects_are_written_as_text(fake):
         return _ai
 
     r = fake("<result>\n0.9\n</result>")
-    assert judge(functai.Example(q="a", result="b"), {"result": "b"}) == 0.9
-    assert "Example(q='a', result='b')" in r.user()
+    assert judge(functai.Prediction({"q": "a", "result": "b"}), {"result": "b"}) == 0.9
+    assert "Prediction(q='a', result='b')" in r.user()
     assert '"result": "b"' in r.user()
 
 

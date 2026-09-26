@@ -1,9 +1,9 @@
 
 ```{python}
-from functai import *
+import functai
+from functai import ai, module, evaluate
 
-# Configure LM once (FunctAI configure also updates DSPy)
-configure(lm="groq/openai/gpt-oss-120b")
+functai.configure(lm="groq:openai/gpt-oss-120b")
 
 @ai
 def generate_query(claim: str, key_facts: list[str]) -> str:
@@ -18,66 +18,37 @@ def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[
 @module
 def research_hop(claim: str, k: int, hops: int):
     key_facts: list[str] = []
-    retrieved_docs: list[str] = []
     for i in range(hops):
         query = generate_query(claim, key_facts) if i else claim
-        # Mock retrieval for the example
-        search_results = [f"doc about: {query}"][:k]
-        retrieved_docs.extend(search_results)
-        if i == hops - 1:
-            break
+        search_results = [f"doc about: {query}"][:k]      # mock retrieval
         key_facts = append_notes(claim, key_facts, search_results)
-    return key_facts, retrieved_docs
+    return key_facts
 
-# Normal call
 research_hop("The park at which Tivolis Koncertsal is located opened on 15 August 1843", 4, 2)
-
-research_hop.opt(
-    trainset=trainset,
-    metric=metric,
-    optimizer=dspy.MIPROv2,
-    call_defaults=dict(k=2, hops=2),  # provide defaults for orchestrator args during optimization
-)
 ```
 
 ```{python}
-import dspy
-# Prepare a tiny trainset and a metric that reads Prediction(result=...)
+# One dict per row: `claim` is the module's input; k and hops come from call_defaults.
 trainset = [
-    dspy.Example(
-        claim="The Eiffel Tower is in Paris.",
-        result=(['fact: paris'], ['doc about: The Eiffel Tower is in Paris.'])
-    ).with_inputs("claim"),
-        dspy.Example(
-        claim="The Eiffel Tower is in Paris.",
-        result=(['fact: paris'], ['doc about: The Eiffel Tower is in Paris.'])
-    ).with_inputs("claim")
+    {"claim": "The Eiffel Tower is in Paris."},
+    {"claim": "Mount Everest is the highest mountain on Earth."},
 ]
 
-def metric(example, prediction, trace = None):
-    # simple non-zero score if key facts list is non-empty
-    try:
-        key_facts, _ = dict(prediction).get('result', ([], []))
-    except Exception:
-        key_facts = []
-    return 1.0 if key_facts else 0.0
+def found_facts(row, prediction):
+    # the metric sees Prediction(result=<what the module returned>)
+    return 1.0 if prediction.result else 0.0
 
-# Optimize the called @ai functions together with a single metric
-research_hop.opt(
-    trainset=trainset,
-    metric=metric,
-    optimizer=dspy.MIPROv2,
-    call_defaults=dict(k=2, hops=2),  # provide defaults for orchestrator args during optimization
-)
+before = evaluate(research_hop, trainset, found_facts, call_defaults=dict(k=2, hops=2))
+research_hop.opt(trainset=trainset, metric=found_facts, call_defaults=dict(k=2, hops=2))
+after = evaluate(research_hop, trainset, found_facts, call_defaults=dict(k=2, hops=2))
+before, after
 ```
 
-
+```{python}
+# tokens add up every inner call
+after.table.select(after.table.c.claim, after.table.c.pred_result, after.table.c.input_tokens)
+```
 
 ```{python}
 research_hop("The park at which Koncertsal is located opened on 15 August 1843", 4, 2)
-```
-
-
-```{python}
-print(phistory())
 ```

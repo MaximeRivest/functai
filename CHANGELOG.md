@@ -18,10 +18,21 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
   calls otherwise) instead of switching the program to ReAct; `max_steps`,
   `tool_errors`, `StepLimit`.
 - Memory is kept as lmcc turns (`fn.history`, `fn.reset()`).
-- Own evaluation and optimizers: `Example`, `Prediction`, `evaluate`/`Evaluate`,
-  `LabeledFewShot`, `BootstrapFewShot`, `BootstrapFewShotWithRandomSearch`,
-  `InstructionSearch` (MIPRO-style). Optimizers change only instructions and
-  demos; `fn.state()`, `fn.save()`/`fn.load()`, `@module` save/load.
+- Own optimizers: `LabeledFewShot`, `BootstrapFewShot`,
+  `BootstrapFewShotWithRandomSearch`, `InstructionSearch` (MIPRO-style).
+  Optimizers change only instructions and demos; `fn.state()`,
+  `fn.save()`/`fn.load()`, `@module` save/load.
+- Data is rows, results are tables (no `Example` class). A dataset is a list of
+  dicts or any table dpyr reads (parquet, CSV, pandas/polars, Hugging Face);
+  columns named like the parameters are the inputs. `evaluate(program, data,
+  metric)` returns an `Evaluation`: `.score` (0 to 1), `.summary` (per metric,
+  with a 95% interval: Wilson for 0/1 scores, Student's t otherwise), `.table`
+  (one row per example: data, `pred_*`, metrics, error, seconds, tokens,
+  model, run). A metric is `metric(row, prediction)` or a dpyr expression;
+  several go in a list or dict. Failed rows are null in the table and count 0
+  in the score. `compare(before, after)` pairs examples; `log=` and
+  `functai.runs(folder)` keep runs as parquet files; `fn.map(table)`.
+  Tables need `pip install "functai[data]"` (dpyr); scores do not.
 - Settings resolve at call time with a thread-safe cascade (`using` >
   function > `with configure` block > `configure`); unknown settings raise;
   any lm15 `Config` field is a setting.

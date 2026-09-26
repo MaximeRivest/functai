@@ -44,6 +44,10 @@ dependencies = [
 "Source" = "https://github.com/maximerivest/functai"
 
 [project.optional-dependencies]
+# tables: evaluation results, fn.map(), reading datasets from files and dataframes
+data = [
+    "dpyr>=1.9",
+]
 dev = [
     "pytest>=7.0.0",
     "ruff>=0.1.0",
@@ -67,8 +71,11 @@ testpaths = ["tests"]
 dev = [
     "pytest>=7.0.0",
     "pydantic>=2",
+    "dpyr>=1.9",
 ]
 
-# Development: lmcc 0.8.3 is not on PyPI yet; use the sibling checkout.
+# Development: the sibling checkouts (lmcc 0.8.3 is not on PyPI yet; dpyr is
+# developed alongside the evaluation tables).
 [tool.uv.sources]
 lmcc = { path = "../lmcc/python", editable = true }
+dpyr = { path = "../r_ports_to_py/dpyr", editable = true }

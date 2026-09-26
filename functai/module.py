@@ -83,8 +83,14 @@ class FunctAIModule:
 
     # ----- optimization -----
 
-    def opt(self, *, trainset: List[Any], metric: Optional[Callable[..., float]] = None, optimizer: Any = None,
-            call_defaults: Optional[Dict[str, Any]] = None, valset: Optional[List[Any]] = None,
+    def map(self, data: Any, *, num_threads: int = 1, call_defaults: Optional[Dict[str, Any]] = None):
+        """Run on every row of a table; returns the rows with ``pred_result``
+        (what the module returned) as a dpyr dataframe. See ``FunctAIFunc.map``."""
+        from .evaluation import evaluate
+        return evaluate(self, data, (), num_threads=num_threads, call_defaults=call_defaults).table
+
+    def opt(self, *, trainset: Any, metric: Any = None, optimizer: Any = None,
+            call_defaults: Optional[Dict[str, Any]] = None, valset: Any = None,
             **optimizer_kwargs) -> "FunctAIModule":
         """Tune every @ai function this module calls, against one metric on the
         module's output. ``call_defaults`` fill module arguments the examples lack."""

@@ -10,7 +10,8 @@ API:
 - Defaults:  configure(...) (process-wide, or `with configure(...):` for a block)
 - Accounts:  login("claude"), logins(), logout(...)  (subscriptions, OpenRouter, API keys)
 - Templates: system(...), user(...), assistant(...), developer(...), turns()  → @ai(template=[...])
-- Programs:  @module; fn.opt(...), evaluate(...), and the optimizers
+- Programs:  @module; fn.opt(...), fn.map(table), and the optimizers
+- Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
 - Utils:     phistory(), inspect_history(), clear_cache()
 """
 
@@ -41,19 +42,16 @@ from .core import (
     sig2str,
     signature_text,
 )
-from .data import Example, Prediction
+from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
+from .evaluation import Evaluation, compare, evaluate, exact_match, runs
 from .module import FunctAIModule, module
 from .optimizers import (
     BootstrapFewShot,
     BootstrapFewShotWithRandomSearch,
-    Evaluate,
-    EvaluationResult,
     InstructionSearch,
     LabeledFewShot,
     Optimizer,
-    evaluate,
-    exact_match,
 )
 
 __version__ = "1.0.0"
@@ -79,12 +77,12 @@ __all__ = [
     "FunctAIModule",
     "FunctAIFunc",
     "ProgramState",
-    "Example",
     "Prediction",
     "StepLimit",
     "evaluate",
-    "Evaluate",
-    "EvaluationResult",
+    "Evaluation",
+    "compare",
+    "runs",
     "exact_match",
     "Optimizer",
     "LabeledFewShot",

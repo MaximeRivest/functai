@@ -36,7 +36,8 @@ Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-fr
 ## 1. Getting started
 
 ```bash
-pip install functai          # Python 3.11+
+pip install functai            # Python 3.11+
+pip install "functai[data]"    # + result tables for evaluation (dpyr: polars and duckdb)
 ```
 
 Keys come from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
@@ -524,38 +525,89 @@ The conversation is kept as lmcc turns in `assistant.history` (the last
 
 ## 8. Evaluation and optimization
 
-An optimizer tunes what the function sends besides its inputs: the
-**instruction** and the **demos** (worked examples). It never edits your
-code, types or layout. Optimization happens in place; `undo_opt()` reverts.
+Data is rows: a list of dicts, or any table. Columns named like the
+function's parameters are its inputs; the others are the expected outputs
+and whatever else you want to keep (a category, an id). Evaluation results
+are a table too, so the whole Python data stack applies to them: filter the
+failures, group by category, join two runs, save to parquet. Tables come
+from [dpyr](https://github.com/MaximeRivest/dpyr) (dplyr verbs over polars
+and duckdb): `pip install "functai[data]"`.
 
 ```python
-from functai import ai, _ai, Example, evaluate, exact_match
+from functai import ai, _ai, evaluate
+from dpyr import col
 
 @ai
 def classify_intent(user_query: str) -> str:
     """Classify user intent as 'booking', 'cancelation', or 'information'."""
     return _ai
 
-trainset = [
-    Example(user_query="I need to reserve a room.", result="booking").with_inputs("user_query"),
-    Example(user_query="How do I get there?", result="information").with_inputs("user_query"),
-    Example(user_query="I want to cancel my reservation.", result="cancelation").with_inputs("user_query"),
+dev = [
+    {"user_query": "I need to reserve a room.", "result": "booking", "lang": "en"},
+    {"user_query": "How do I get there?", "result": "information", "lang": "en"},
+    {"user_query": "Annuler ma réservation.", "result": "cancelation", "lang": "fr"},
 ]
+# or: dev = "dev.parquet", a pandas/polars dataframe, a Hugging Face dataset, ...
 
-evaluate(classify_intent, trainset, exact_match, num_threads=4)   # EvaluationResult(score=..., n=3)
-classify_intent.opt(trainset=trainset)                           # BootstrapFewShot by default
-classify_intent.undo_opt()
+ev = evaluate(classify_intent, dev, num_threads=8)
+ev                  # Evaluation(classify_intent, 3 examples: exact_match 0.67 [0.21, 0.94])
+ev.score            # 0.67, the first metric's mean
+ev.summary          # one row per metric: mean, 95% interval (low, high), n, failed
+ev.table            # one row per example: the data, pred_result, exact_match, error,
+                    # seconds, input_tokens, output_tokens, model, run
+
+ev.table.filter(col.exact_match == 0)                                  # read the misses
+ev.table.group_by(col.lang).summarize(acc=col.exact_match.mean())      # accuracy by language
+ev.write("runs/today.parquet")
 ```
 
-Training data can be `Example`s, dicts (`{"user_query": ..., "result": ...}`),
-`(inputs, outputs)` pairs, or DSPy `Example`s. A metric is
-`metric(example, prediction[, trace]) -> float | bool`; it can itself be an
-AI function:
+The interval matters: on 30 examples, 80% means "somewhere between 63% and
+90%". **A metric** is `metric(row, prediction) -> float | bool` (the row as
+a dict, the prediction with attribute access), or a dpyr expression over the
+table's columns; give several as a list or a dict. The default is exact
+match (case and spacing ignored) when the data has a column named like an
+output. A metric can itself be an AI function:
 
 ```python
 @ai
-def judge(example, prediction) -> float:
-    """Between 0 and 1: how close the prediction is to the example's result."""
+def judge(row, prediction) -> float:
+    """Between 0 and 1: how close the prediction is to the row's result."""
+
+ev = evaluate(translator, dev, {
+    "exact": col.pred_result == col.result,        # computed on the whole table at once
+    "judge": judge,                                # one model call per row
+    "short": lambda row, pred: len(pred.result) < 80,
+})
+```
+
+A row whose run fails (a provider error, an unreadable reply) keeps its
+message in `error`; its metrics are null in the table and count 0 in the
+score. A missing input column, an unknown metric signature or a column name
+the table would reuse is refused before any model is called.
+
+**Comparing two versions** of a prompt pairs the examples, which detects a
+real change with far fewer examples than two separate scores would:
+
+```python
+from functai import compare
+before = evaluate(classify_intent, dev)
+classify_intent.opt(trainset=train)
+after = evaluate(classify_intent, dev)
+compare(before, after)   # per metric: before, after, diff with its 95% interval, better/worse/same
+```
+
+`evaluate(..., log="runs/")` writes each run to `runs/<run>.parquet`;
+`functai.runs("runs/")` reads them all back as one table (columns lined up by
+name). `fn.map(table)` runs a function over a table and returns it with the
+`pred_*` columns, for batch work without a metric.
+
+**Optimization** tunes what the function sends besides its inputs: the
+**instruction** and the **demos** (worked examples). It never edits your
+code, types or layout. It happens in place; `undo_opt()` reverts.
+
+```python
+classify_intent.opt(trainset=train)    # BootstrapFewShot by default; any metric above works
+classify_intent.undo_opt()
 ```
 
 | optimizer | what it does |
@@ -574,7 +626,10 @@ translator.opt(trainset=trainset, metric=judge,
 ```
 
 On a 5-example Québécois-French task with `gpt-4.1-nano` and the `judge`
-above, this took the score from 0% to 80% by rewriting the instruction.
+above, this took the score from 0% to 80% by rewriting the instruction
+(with 5 examples, an interval that wide is worth checking on more data).
+The search's history is kept as rows: `dpyr.read(opt.trials)` (or
+`opt.candidates` for the random search).
 
 More:
 
@@ -583,7 +638,8 @@ More:
 - `fn.state()`, `fn.instructions`, `fn.demos`: what is in use; `fn.programs()`:
   every state optimization produced; `fn.optimization_runs()`: the log.
 - `fn.save("f.json")` / `fn.load("f.json")`: the instruction and demos as JSON.
-- `@ai(examples=[("I love it", "positive"), ...])`: demos by hand.
+- `@ai(examples=[("I love it", "positive"), ...])`: demos by hand (pairs, or
+  rows like `{"text": "I love it", "result": "positive"}`).
 
 ## 9. Modules: programs of several AI functions
 
@@ -609,7 +665,8 @@ def research_hop(claim: str, hops: int = 2):
 research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=2))
 ```
 
-The metric sees `Prediction(result=<what the module returned>)`. Bootstrapping
+The metric sees `Prediction(result=<what the module returned>)` (in the
+table: `pred_result`), and the table's tokens add up every inner call. Bootstrapping
 records every inner call; a run the metric accepts gives a demo to each AI
 function it went through.
 
@@ -651,9 +708,10 @@ docments utilities) and replaces DSPy underneath.
 | 0.x | 1.0 |
 |---|---|
 | `configure(lm=dspy.LM("openai/gpt-4.1"))` | `configure(lm="gpt-4.1")` (litellm strings still work; a DSPy LM's `.model` is read) |
-| `dspy.Example(...)` | `functai.Example(...)` (DSPy Examples are still accepted as data) |
+| `dspy.Example(...).with_inputs(...)` | a dict per row, or a table: columns named like the parameters are the inputs |
+| `metric(example, pred, trace=None)` | `metric(row, prediction)`, or a dpyr expression |
 | `optimizer=dspy.BootstrapFewShot` / `dspy.MIPROv2` | `functai.BootstrapFewShot` / `functai.InstructionSearch` |
-| `dspy.Evaluate(...)` | `functai.evaluate(...)` or `functai.Evaluate(...)` |
+| `dspy.Evaluate(...)` → a percentage | `functai.evaluate(program, data, metric)` → `.score` (0 to 1, with an interval), `.table` |
 | `adapter="json"`, `adapter="chat"` | same names, now lmcc layouts |
 | custom DSPy adapter classes | `template=[system(...), turns(), user(...)]` or an `lmcc.Adapter` |
 | tools switch the program to `dspy.ReAct` | tools run in a tool loop; the prompt does not change |

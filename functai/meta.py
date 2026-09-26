@@ -134,11 +134,10 @@ def synthesize(fn, n: int, *, lm: Any = None, labeler: Any = None) -> List[Dict[
     return out
 
 
-def examples_text(examples: List[Any], limit: int = 5) -> str:
+def examples_text(rows: List[Dict[str, Any]], input_names: List[str], limit: int = 5) -> str:
     lines: List[str] = []
-    for ex in examples[:limit]:
-        keys = ex.input_keys or ()
-        ins = {k: ex[k] for k in keys}
-        outs = {k: v for k, v in ex.items() if k not in keys}
+    for row in rows[:limit]:
+        ins = {k: v for k, v in row.items() if k in input_names}
+        outs = {k: v for k, v in row.items() if k not in input_names}
         lines.append(json.dumps({"inputs": ins, "outputs": outs}, ensure_ascii=False, default=str))
     return "\n".join(lines)

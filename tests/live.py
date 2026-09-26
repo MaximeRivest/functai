@@ -10,7 +10,7 @@ import sys
 from typing import Literal
 
 import functai
-from functai import Example, _ai, ai, system, user
+from functai import _ai, ai, system, user
 
 
 class Priority(enum.Enum):
@@ -120,13 +120,13 @@ def optimize(model: str) -> None:
         """Classify user intent as 'booking', 'cancelation', or 'information'."""
         return _ai
 
-    train = [Example(user_query=q, result=r).with_inputs("user_query") for q, r in [
+    train = [{"user_query": q, "result": r} for q, r in [
         ("I need to reserve a room.", "booking"), ("How do I get there?", "information"),
         ("I want to cancel my reservation.", "cancelation"), ("Is breakfast included?", "information")]]
-    before = functai.evaluate(classify_intent, train, functai.exact_match, num_threads=4)
+    before = functai.evaluate(classify_intent, train, num_threads=4)
     classify_intent.opt(trainset=train)
-    after = functai.evaluate(classify_intent, train, functai.exact_match, num_threads=4)
-    print(f"  opt  bootstrap: {before.score} → {after.score}; demos={len(classify_intent.demos)}")
+    after = functai.evaluate(classify_intent, train, num_threads=4)
+    print(f"  opt  bootstrap: {before!r} → {after!r}; demos={len(classify_intent.demos)}")
 
 
 if __name__ == "__main__":
