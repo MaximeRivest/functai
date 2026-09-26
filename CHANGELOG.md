@@ -4,6 +4,24 @@
 
 New:
 
+- **The call log.** `functai.configure(log_calls=True)` (or
+  `FUNCTAI_LOG_CALLS=1` in the environment) writes every call of an AI
+  function or module to `~/.local/share/functai/calls`, one line of JSON
+  each: the typed inputs and outputs, every request and reply, tokens,
+  time, the version, who called, and the call it ran in. Off unless asked
+  for; writing never slows or breaks a call. `log_content=False` keeps only
+  sizes, times and tokens (for programs that see secrets).
+- **Right or wrong.** `functai.rate(prediction, "right")`, or `"wrong"` with
+  the right `answer=`, writes a rating next to the call.
+  `functai.rated(fn)` turns ratings into rows with known answers, ready for
+  `evaluate` and `.opt`; `functai.calls(fn)` is the whole log as a table.
+- **`fn.version`**: a fingerprint of everything a function sends besides
+  its inputs (instruction, worked examples, layout, tools, code), the same
+  for a program and its saved-and-loaded copy; modules have one too.
+  `prediction.call_id` names the call that produced a prediction.
+- **The contract** (`contract/`): the log's format, JSON Schemas and test
+  cases, so FunctAI in other languages and other tools (Chattering) read
+  and write the same folder.
 - **A default model.** With no model configured, functai picks one this
   machine can use (API keys first: `gpt-4.1-mini`, `claude-haiku-4-5`,
   `gemini-2.5-flash`, Groq, OpenRouter; then Claude, ChatGPT or Copilot

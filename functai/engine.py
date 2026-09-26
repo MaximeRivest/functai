@@ -27,6 +27,7 @@ import lmcc_lm15
 from lm15.serde import message_to_dict, request_to_dict, response_to_dict
 from lmcc_std.tools import Tool, ToolCall
 
+from . import calllog
 from .config import CONFIG_FIELDS
 from .data import Prediction
 from .signature import Spec, coerce, mismatch, shape_of
@@ -271,13 +272,16 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
         if hit is not None:
             _record(CallRecord(function, model, request, hit, cached=True))
             _remember(request, hit)
+            calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True)
             return hit
     retries = max(0, int(settings.get("api_retries") or 0))
     for attempt in range(retries + 1):
+        started, t0 = time.time(), time.perf_counter()
         try:
             response = router.complete(request)
             break
         except lm15.RETRYABLE_ERRORS as exc:
+            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc)
             if attempt == retries:
                 _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
                 raise
@@ -285,11 +289,13 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
             time.sleep(float(wait) if isinstance(wait, (int, float)) and wait > 0
                        else min(30.0, 2 ** attempt) * (0.5 + random.random()))
         except Exception as exc:
+            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc)
             _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
             friendly = _login_error(exc)
             if friendly is not None:
                 raise friendly from exc
             raise
+    calllog.exchange(model, request, response, started=started, seconds=time.perf_counter() - t0)
     _record(CallRecord(function, model, request, response))
     _remember(request, response)
     if key is not None and response.finish_reason not in ("error",):

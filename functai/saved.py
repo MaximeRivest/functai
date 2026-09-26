@@ -59,7 +59,8 @@ PROBE_CAPABILITIES = {"instruct": True, "native_structured_output": True, "nativ
 # deployment's: only the function's own are saved, so configure() still reaches
 # the loaded program.
 LAYOUT_SETTINGS = ("adapter", "module", "include_fn_name_in_instructions")
-NOT_SAVED = ("client", "api_key", "auth", "optimizer", "teacher", "router")
+NOT_SAVED = ("client", "api_key", "auth", "optimizer", "teacher", "router",
+             "log_calls", "caller")      # where calls are logged and who calls: the deployment's
 
 
 # ------------------------------------------------------------------ data files
@@ -284,28 +285,46 @@ def _sample_inputs(spec) -> Dict[str, Any]:
     return {f.name: _sample(f.shape) for f in spec.signature.inputs if f.purpose == "plain"}
 
 
-def _fingerprints(fn, probes: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """What the program sends, as hashes: the signature, and the exact request
-    for each probe (instruction, layout, demos, tools) under fixed capabilities."""
-    from . import adapters, engine
-    spec = fn._spec()
-    settings = fn._effective()
+def probe_plan(fn, spec, settings: Dict[str, Any]) -> Tuple[Any, List[Any]]:
+    """The plan and worked examples an AI function renders probes with: its
+    layout under fixed capabilities (a baked model's own layout and facts), and
+    no conversation memory."""
+    from . import adapters
     baked = settings.get("lm") if _is_baked(settings.get("lm")) else None
     if baked is not None:      # the layout and facts the weights were trained with
         plan = adapters.bind(adapters.Layout(adapter=baked.layout), spec.signature, baked.capabilities,
                              baked.provider)
     else:
         plan = adapters.bind(fn._layout(settings), spec.signature, PROBE_CAPABILITIES, "probe")
-    past = fn._past(plan, spec, {**settings, "stateful": False})
+    return plan, fn._past(plan, spec, {**settings, "stateful": False})
+
+
+def probe_request(fn, spec, plan, past, inputs: Dict[str, Any]) -> Dict[str, Any]:
+    """The request an AI function renders for ``inputs`` (lmcc.Refusal when it cannot)."""
+    from . import engine
+    values = engine.prepare_inputs(spec, inputs)
+    if spec.tools:
+        values["tools"] = list(fn._tool_specs)
+    return plan.render(plan.turn(values), turns=past).request("probe")
+
+
+def request_fingerprint(request: Dict[str, Any]) -> str:
+    return "sha256:" + _sha256(_canonical(request).encode())
+
+
+def _fingerprints(fn, probes: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """What the program sends, as hashes: the signature, and the exact request
+    for each probe (instruction, layout, demos, tools) under fixed capabilities."""
+    spec = fn._spec()
+    settings = fn._effective()
+    baked = settings.get("lm") if _is_baked(settings.get("lm")) else None
+    plan, past = probe_plan(fn, spec, settings)
     renders = []
     requests = []
     for inputs in probes:
-        values = engine.prepare_inputs(spec, inputs)
-        if spec.tools:
-            values["tools"] = list(fn._tool_specs)
         try:
-            request = plan.render(plan.turn(values), turns=past).request("probe")
-            renders.append("sha256:" + _sha256(_canonical(request).encode()))
+            request = probe_request(fn, spec, plan, past, inputs)
+            renders.append(request_fingerprint(request))
             requests.append(request)
         except lmcc.Refusal as exc:
             renders.append(f"refused:{exc.code}")
@@ -689,6 +708,21 @@ _counter = itertools.count(1)
 _import_lock = threading.Lock()
 _programs: Dict[str, Dict[str, Any]] = {}          # package name → manifest
 _roots: Dict[str, str] = {}                         # package name → the saved folder
+_ids: Dict[str, str] = {}                           # package name → "sha256:" of its functai.json
+
+
+def origin(module: Optional[str]) -> Tuple[str, Optional[str]]:
+    """Where code comes from: for a module of a loaded saved program, the
+    module it was saved from and the saved folder's id (``sha256:`` of its
+    ``functai.json``); for any other module, itself (code with no module,
+    run with exec: ``__main__``) and None."""
+    module = module or "__main__"
+    package, _, flat = module.rpartition(".")
+    manifest = _programs.get(package)
+    if manifest is None:
+        return module, None
+    original = next((m for m in manifest.get("modules", {}) if _flat(m) == flat), module)
+    return original, _ids.get(package)
 
 
 def _manifest_of(fn: Any) -> Tuple[Dict[str, Any], str]:
@@ -863,6 +897,7 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
     pkg.__file__ = str(root / "code" / "__init__.py")
     _programs[package] = manifest
     _roots[package] = str(root)
+    _ids[package] = "sha256:" + _sha256((root / MANIFEST).read_bytes())
     with _import_lock, _no_bytecode():
         sys.modules[package] = pkg
         entry_module, _, entry_name = manifest["entry"].rpartition(":")

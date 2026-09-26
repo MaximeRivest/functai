@@ -15,6 +15,7 @@ The metric sees ``Prediction(result=<what the module returned>)``.
 
 from __future__ import annotations
 
+import inspect
 from typing import Any, Callable, Dict, List, Optional
 
 from .core import FunctAIFunc
@@ -53,7 +54,22 @@ class FunctAIModule:
         from .columns import has_column
         if has_column(args, kwargs):                  # research(col.claim): a column, for dpyr
             return self.vectorize()(*args, **kwargs)
-        return self._invoke_original(*args, **kwargs)
+        from . import calllog
+        from .config import effective
+        def inputs():
+            bound = inspect.signature(self._fn).bind(*args, **kwargs)
+            bound.apply_defaults()
+            return dict(bound.arguments)
+
+        return calllog.run(self, effective(), inputs, lambda: self._invoke_original(*args, **kwargs))
+
+    @property
+    def version(self) -> str:
+        """Which version of the module this is: ``sha256:`` of the code it
+        reaches and the versions of the AI functions it calls, so optimizing
+        one of them is a new version of the module."""
+        from . import calllog
+        return calllog.module_version(self)
 
     def vectorize(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise"):
         """This module as a dpyr row function (see ``FunctAIFunc.vectorize``);

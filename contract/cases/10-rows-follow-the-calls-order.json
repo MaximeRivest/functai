@@ -1,0 +1,249 @@
+{
+ "description": "Rows are in the order of the calls' started, then id (not the id alone, nor the order of the lines); structured values stay JSON.",
+ "records": [
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0002-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "order": {
+     "id": 7,
+     "items": [
+      "mug"
+     ]
+    }
+   },
+   "outputs": {
+    "result": "shipping"
+   },
+   "sizes": {
+    "inputs": {
+     "order": 24
+    },
+    "outputs": {
+     "result": 10
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "order": {
+     "id": 6,
+     "items": []
+    }
+   },
+   "outputs": {
+    "result": "billing"
+   },
+   "sizes": {
+    "inputs": {
+     "order": 19
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0003-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0003-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:00:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "order": {
+     "id": 5,
+     "items": [
+      "lamp",
+      "cord"
+     ]
+    }
+   },
+   "outputs": {
+    "result": "product"
+   },
+   "sizes": {
+    "inputs": {
+     "order": 32
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0003-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0002-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0003-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  }
+ ],
+ "rated": {
+  "name": "team",
+  "module": "support",
+  "signature": null,
+  "by": null
+ },
+ "expect": {
+  "rows": [
+   {
+    "order": {
+     "id": 5,
+     "items": [
+      "lamp",
+      "cord"
+     ]
+    },
+    "result": "product",
+    "call": "01926a8e-0003-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   },
+   {
+    "order": {
+     "id": 6,
+     "items": []
+    },
+    "result": "billing",
+    "call": "01926a8e-0001-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   },
+   {
+    "order": {
+     "id": 7,
+     "items": [
+      "mug"
+     ]
+    },
+    "result": "shipping",
+    "call": "01926a8e-0002-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}

@@ -958,6 +958,7 @@ prime = [
 [package.dev-dependencies]
 dev = [
     { name = "dpyr" },
+    { name = "jsonschema" },
     { name = "pydantic" },
     { name = "pytest" },
 ]
@@ -991,6 +992,7 @@ provides-extras = ["data", "bake", "prime", "dev"]
 [package.metadata.requires-dev]
 dev = [
     { name = "dpyr", specifier = ">=1.10" },
+    { name = "jsonschema", specifier = ">=4.18" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytest", specifier = ">=7.0.0" },
 ]

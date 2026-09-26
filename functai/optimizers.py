@@ -21,6 +21,7 @@ import inspect
 import random
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from . import calllog
 from .config import forced
 from .core import FunctAIFunc, ProgramState
 from .evaluation import (Metric, _Target, evaluate, expected_columns, expected_metrics, parallel,
@@ -416,6 +417,7 @@ def _instantiate(opt: Any, metric: Optional[Callable], opts: Dict[str, Any]) -> 
     return opt
 
 
+@calllog.tagged("optimization")                # logged calls say they were part of an optimization
 def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimizer: Any = None,
              metric: Optional[Callable] = None, valset: Optional[Sequence[Any]] = None,
              call_defaults: Optional[Dict[str, Any]] = None, expected: Any = None, **opts) -> States:

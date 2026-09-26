@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/call.schema.json",
+  "title": "One call of an AI function or module (functai call log, format 1)",
+  "type": "object",
+  "required": ["functai_call", "id", "parent", "root", "program", "started", "seconds", "content", "sizes",
+               "error", "model", "usage", "exchanges", "caller", "process"],
+  "properties": {
+    "functai_call": {"const": 1},
+    "id": {"$ref": "#/$defs/uuid"},
+    "parent": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+    "root": {"$ref": "#/$defs/uuid"},
+    "program": {
+      "type": "object",
+      "required": ["name", "kind", "module", "version", "answer"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["ai", "module"]},
+        "module": {"type": "string"},
+        "version": {"$ref": "#/$defs/sha256"},
+        "signature": {"$ref": "#/$defs/sha256"},
+        "answer": {"type": "string", "minLength": 1},
+        "saved": {"$ref": "#/$defs/sha256"},
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      }
+    },
+    "started": {"$ref": "#/$defs/time"},
+    "seconds": {"type": "number", "minimum": 0},
+    "content": {"type": "boolean"},
+    "inputs": {"type": "object"},
+    "outputs": {"oneOf": [{"type": "object"}, {"type": "null"}]},
+    "returned": {},
+    "sizes": {
+      "type": "object",
+      "required": ["inputs", "outputs"],
+      "properties": {
+        "inputs": {"$ref": "#/$defs/counts"},
+        "outputs": {"$ref": "#/$defs/counts"}
+      },
+      "additionalProperties": false
+    },
+    "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]},
+    "model": {"type": ["string", "null"]},
+    "usage": {"$ref": "#/$defs/counts"},
+    "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+    "probabilities": {
+      "type": "object",
+      "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}}
+    },
+    "escalated": {"const": true},
+    "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
+    "caller": {"type": "object"},
+    "process": {
+      "type": "object",
+      "required": ["host", "pid", "language", "runtime", "functai"],
+      "properties": {
+        "host": {"type": "string"},
+        "pid": {"type": "integer"},
+        "user": {"type": ["string", "null"]},
+        "language": {"type": "string"},
+        "runtime": {"type": "string"},
+        "functai": {"type": "string"}
+      }
+    },
+    "truncated": {"const": true}
+  },
+  "allOf": [
+    {"if": {"properties": {"content": {"const": false}}},
+     "then": {"not": {"anyOf": [{"required": ["inputs"]}, {"required": ["outputs"]}, {"required": ["returned"]},
+                                {"required": ["probabilities"]}]},
+              "properties": {"error": {"oneOf": [{"type": "null"},
+                                                 {"type": "object", "not": {"required": ["message"]}}]},
+                             "exchanges": {"items": {"not": {"anyOf": [{"required": ["request"]},
+                                                                        {"required": ["response"]}]}}}}}},
+    {"if": {"properties": {"content": {"const": true}}, "not": {"required": ["truncated"]}},
+     "then": {"required": ["inputs", "outputs"]}}
+  ],
+  "$defs": {
+    "uuid": {"type": "string",
+             "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "time": {"type": "string",
+             "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+    "counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "error": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "message": {"type": "string"},
+        "code": {"type": "string"}
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "required": ["model", "provider", "started", "seconds", "cached"],
+      "properties": {
+        "model": {"type": ["string", "null"]},
+        "provider": {"type": ["string", "null"]},
+        "started": {"$ref": "#/$defs/time"},
+        "seconds": {"type": "number", "minimum": 0},
+        "cached": {"type": "boolean"},
+        "finish": {"type": ["string", "null"]},
+        "usage": {"$ref": "#/$defs/counts"},
+        "error": {"$ref": "#/$defs/error"},
+        "request": {"type": "object"},
+        "response": {"type": "object"}
+      }
+    }
+  }
+}

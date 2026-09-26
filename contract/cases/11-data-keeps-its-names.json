@@ -1,0 +1,93 @@
+{
+ "description": "An input or output named like a column about the rating keeps its name; that column gets underscores in front until its name is free.",
+ "records": [
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "call": "support line",
+    "version": "2",
+    "_version": "draft"
+   },
+   "outputs": {
+    "result": "billing"
+   },
+   "sizes": {
+    "inputs": {
+     "call": 14,
+     "version": 3,
+     "_version": 7
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  }
+ ],
+ "rated": {
+  "name": "team",
+  "module": "support",
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "by": null
+ },
+ "expect": {
+  "rows": [
+   {
+    "call": "support line",
+    "version": "2",
+    "_version": "draft",
+    "result": "billing",
+    "_call": "01926a8e-0001-7000-8000-000000000000",
+    "__version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}

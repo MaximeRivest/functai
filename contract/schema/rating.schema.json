@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/rating.schema.json",
+  "title": "One person's judgement of one call (functai call log, format 1)",
+  "type": "object",
+  "required": ["functai_rating", "id", "call", "at", "by", "verdict"],
+  "properties": {
+    "functai_rating": {"const": 1},
+    "id": {"$ref": "call.schema.json#/$defs/uuid"},
+    "call": {"$ref": "call.schema.json#/$defs/uuid"},
+    "at": {"$ref": "call.schema.json#/$defs/time"},
+    "by": {"type": "string", "minLength": 1},
+    "verdict": {"enum": ["right", "wrong", null]},
+    "answer": {},
+    "outputs": {"type": "object"},
+    "reasons": {"type": "array", "items": {"type": "string"}},
+    "note": {"type": "string"},
+    "origin": {"type": "string", "minLength": 1},
+    "sample": {"type": "string", "minLength": 1}
+  },
+  "allOf": [
+    {"if": {"properties": {"verdict": {"not": {"const": "wrong"}}}},
+     "then": {"not": {"anyOf": [{"required": ["answer"]}, {"required": ["outputs"]}]}}}
+  ]
+}

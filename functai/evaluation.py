@@ -33,6 +33,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tuple
 
+from . import calllog
 from .core import _STATE_OVERRIDE, _TRACE, FunctAIFunc, ProgramState
 from .data import Prediction
 from .engine import LoginRequired
@@ -793,6 +794,8 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
         _dpyr()                                            # fail now, not after the model calls
     row_metrics = [m for m in metrics if m.fn is not None]
 
+    run_id = _new_run_id(target.name)
+
     def one(row: Dict[str, Any]) -> Tuple[RowRun, Dict[str, Optional[float]]]:
         with with_states(states):
             run = run_row(target, row)
@@ -808,15 +811,15 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
                 run.error = f"{run.error}; {note}" if run.error else note
         return run, vals
 
-    results = parallel(one, rows, max(1, num_threads))
+    with calllog.part_of("evaluation", run_id):           # logged calls say they answered known questions
+        results = parallel(one, rows, max(1, num_threads))
     runs = [r for r, _v in results]
     values: Dict[str, List[Optional[float]]] = {m.name: [v[m.name] for _r, v in results] for m in row_metrics}
     for m in metrics:
         if m.expr is not None:
             values[m.name] = expr_scores(m, target, rows, runs)
     values = {m.name: values[m.name] for m in metrics}          # metric order
-    ev = Evaluation(target=target, rows=rows, runs=runs, metrics=metrics, values=values,
-                    run_id=_new_run_id(target.name))
+    ev = Evaluation(target=target, rows=rows, runs=runs, metrics=metrics, values=values, run_id=run_id)
     failed = ev.errors
     if max_errors is not None and len(failed) > max_errors:
         raise RuntimeError(f"evaluation: {len(failed)} rows failed; first (row {failed[0][0]}): {failed[0][1]}")

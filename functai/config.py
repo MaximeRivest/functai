@@ -69,6 +69,12 @@ DEFAULTS: Dict[str, Any] = {
     "instruction_autorefine_calls": 0,
     "instruction_autorefine_max_examples": 20,
 
+    # the call log (contract/calls.md): every call, one line of JSON in a folder
+    "log_calls": None,         # None: as $FUNCTAI_LOG_CALLS says (off when unset) | True (that folder, else
+                                # ~/.local/share/functai/calls) | a folder | False (never)
+    "log_content": None,       # None/True: the values and messages too | False: sizes, times and tokens only
+    "caller": None,            # who is calling, added to $FUNCTAI_CALLER: {"kind": "agent", "conversation": ...}
+
     # debug
     "debug": False,
 }
@@ -109,6 +115,10 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
             raise ValueError(f"escalate_below is a probability in (0, 1], not {below!r}")
         if settings.get("adapter") is not None:
             adapters.resolve_adapter(settings["adapter"])
+        if settings.get("log_calls") is not None or settings.get("log_content") is not None \
+                or settings.get("caller") is not None:
+            from . import calllog
+            calllog.check_settings(settings)
     except (TypeError, ValueError) as exc:
         raise type(exc)(f"{where}: {exc}") from None
     return dict(settings)
@@ -137,7 +147,9 @@ class configure:
         ``api_key``, ``base_url``, ``auth``, ``client``, ``adapter``,
         ``module``, ``tools``, ``max_steps``, ``stateful``, ``retries``,
         ``api_retries``, ``cache_replies``, ``teacher_lm``, ``debug``...
-        An unknown setting raises ``TypeError``.
+        An unknown setting raises ``TypeError``. The call log:
+        ``log_calls`` (``True``, or a folder: keep every call),
+        ``log_content`` and ``caller`` (who is calling, a dict).
 
     Returns
     -------

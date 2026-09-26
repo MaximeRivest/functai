@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import lmcc
 
-from . import adapters, engine, models
+from . import adapters, calllog, engine, models
 from .config import DEFAULTS, check, configure, effective, settings  # noqa: F401 — re-exported
 from .data import Prediction
 from .docments import (UNSET, docments, docstring, extract_docstrings, flexiclass,  # noqa: F401
@@ -594,6 +594,15 @@ class FunctAIFunc:
         """The lmcc signature: inputs, outputs, instruction."""
         return self._spec().signature
 
+    @property
+    def version(self) -> str:
+        """Which version of the function this is: ``sha256:`` of its code and of
+        what it sends besides the inputs (instruction, worked examples, layout,
+        tools). Optimizing it, editing its docstring or changing its layout
+        makes a new version; choosing another model does not. Calls in the
+        log carry it, and a saved folder names the version it holds."""
+        return calllog.ai_version(self)
+
     def _layout(self, settings: Dict[str, Any]) -> adapters.Layout:
         if self._template is not None:
             return adapters.Layout(template=self._template)
@@ -728,6 +737,7 @@ class FunctAIFunc:
                   + (f"; escalated (first answer's confidence {pred.first.confidence:.2f})" if pred.escalated else ""))
         if int(s.get("instruction_autorefine_calls") or 0) > 0 and not self._instr_frozen:
             self._record_and_maybe_refine(inputs, dict(pred), s)
+        calllog.attach(self, pred)
         return pred
 
     def _maybe_escalate(self, pred: Prediction, inputs: Dict[str, Any], s: Dict[str, Any], escalate_to: Any,
@@ -765,6 +775,7 @@ class FunctAIFunc:
             rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
                 [route.provider, route.model, model]
         s = models.adjust(s, route)
+        calllog.route(route.provider)
         past = self._past(plan, spec, s)
         pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
                           router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},
@@ -772,6 +783,14 @@ class FunctAIFunc:
         return pred, model, plan
 
     def __call__(self, *args, all: bool = False, **kwargs):
+        from .columns import has_column
+        if has_column(args, kwargs):                  # a column expression is not a call
+            return self._call(*args, all=all, **kwargs)
+        return calllog.run(self, self._effective(),
+                           lambda: self._bind_inputs(args, {k: v for k, v in kwargs.items() if k != "_prediction"}),
+                           lambda: self._call(*args, all=all, **kwargs))
+
+    def _call(self, *args, all: bool = False, **kwargs):
         from .columns import has_column
         if has_column(args, kwargs):                  # classify(col.text): a column, for dpyr
             if all:
@@ -1181,6 +1200,10 @@ def ai(_fn=None, **cfg):
         How many times an unreadable reply is asked again (default 1).
     api_retries : int
         How many times a provider error is re-sent (default 3).
+    log_calls, log_content : optional
+        Keep this function's calls in the call log (``False``: never), and
+        whether with their values (``log_content=False``: sizes, times and
+        tokens only, for a function that sees secrets). See ``functai.calls``.
     **settings
         Any other setting ``configure`` takes (``api_key``, ``client``,
         ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An

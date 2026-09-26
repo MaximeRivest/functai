@@ -1,0 +1,223 @@
+{
+ "description": "A correction may give other outputs (after the answer, in the rating's order); the answer's name comes from the call's program.answer; a same-named program of another module is not this one; only corrected outputs become columns.",
+ "records": [
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "category"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "I was charged twice for one order."
+   },
+   "outputs": {
+    "reasoning": "They mention a charge.",
+    "category": "billing",
+    "priority": 1
+   },
+   "sizes": {
+    "inputs": {
+     "message": 36
+    },
+    "outputs": {
+     "reasoning": 24,
+     "category": 9,
+     "priority": 1
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0002-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "category"
+   },
+   "started": "2026-09-26T10:02:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "My parcel never came."
+   },
+   "outputs": {
+    "reasoning": "Lost parcel.",
+    "category": "shipping",
+    "priority": 1
+   },
+   "sizes": {
+    "inputs": {
+     "message": 23
+    },
+    "outputs": {
+     "reasoning": 14,
+     "category": 10,
+     "priority": 1
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0003-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0003-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "other",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:03:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "The kettle broke on day one."
+   },
+   "outputs": {
+    "result": "product"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 30
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "wrong",
+   "answer": "billing",
+   "outputs": {
+    "priority": 3
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0002-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0003-7000-8000-000000000000",
+   "call": "01926a8e-0003-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  }
+ ],
+ "rated": {
+  "name": "team",
+  "module": "support",
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "by": null
+ },
+ "expect": {
+  "rows": [
+   {
+    "message": "I was charged twice for one order.",
+    "category": "billing",
+    "priority": 3,
+    "call": "01926a8e-0001-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "wrong",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   },
+   {
+    "message": "My parcel never came.",
+    "category": "shipping",
+    "call": "01926a8e-0002-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}
