@@ -29,7 +29,16 @@ from .examples import HeadField
 _HEAD_PREFIXES = ("classifier", "score", "pre_classifier", "heads", "head.")
 
 
+def _nixos_triton() -> None:
+    """Triton finds the CUDA driver with /sbin/ldconfig, which NixOS does not have;
+    it reads TRITON_LIBCUDA_PATH first (ModernBERT/Ettin's GPU kernels, vLLM)."""
+    if "TRITON_LIBCUDA_PATH" not in os.environ and not os.path.exists("/sbin/ldconfig") and \
+            os.path.exists("/run/opengl-driver/lib/libcuda.so"):
+        os.environ["TRITON_LIBCUDA_PATH"] = "/run/opengl-driver/lib"
+
+
 def _torch():
+    _nixos_triton()
     try:
         import torch
         import transformers  # noqa: F401 (checked here; used by the callers)
