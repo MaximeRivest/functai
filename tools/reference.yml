@@ -66,6 +66,13 @@ quartodoc:
     - Verification
     - load
     - file
+  - title: The call log
+    desc: Keep every call on disk, mark answers right or wrong, and turn the corrections
+      into rows with known answers.
+    contents:
+    - calls
+    - rate
+    - rated
   - title: Baking into weights
     desc: Train a small model that answers an AI function, then run the same function
       on it.

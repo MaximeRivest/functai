@@ -42,6 +42,9 @@ rat:
 [Bake it into a small model](baking.md)
 : Train a small model to answer a function; send the unsure cases to a big one.
 
+[Every call, on record](call-log.md)
+: Keep each call, mark answers right or wrong, and learn from the corrections.
+
 ## Toolbox
 
 [How a function becomes a prompt](anatomy.md)

@@ -67,6 +67,7 @@ nav:
       - Ship:
           - articles/saving.md
           - articles/baking.md
+          - articles/call-log.md
       - Toolbox:
           - articles/anatomy.md
           - articles/types.md
