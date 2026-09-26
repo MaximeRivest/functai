@@ -14,7 +14,9 @@ answers). Behind the decorator, FunctAI stands on two small libraries:
 | layout | how each value is written into the prompt and read back | [**lmcc**](https://github.com/MaximeRivest/lmcc) (templates, typed readers, reasoning, tools) |
 | program | your function, its tools, memory, evaluation and optimization | **functai** |
 
-Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-from-0x).
+New here? The [tutorial](docs/tutorial.md) builds a small program step by
+step, with real outputs; the [examples](examples/) go deeper on one topic
+each. This README is the reference.
 
 - [1. Getting started](#1-getting-started)
 - [2. Core concepts](#2-core-concepts)
@@ -29,7 +31,7 @@ Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-fr
 - [9b. Saving a program with its dependencies](#9b-saving-a-program-with-its-dependencies)
 - [10. Inspection](#10-inspection)
 - [11. When the model gets it wrong](#11-when-the-model-gets-it-wrong)
-- [12. Migrating from 0.x](#12-migrating-from-0x)
+- [12. Upgrading from 0.x](#12-upgrading-from-0x)
 - [13. A real pipeline](#13-a-real-pipeline)
 
 ------------------------------------------------------------------------
@@ -45,6 +47,7 @@ Keys come from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `GEMINI_API_KEY`, `GROQ_API_KEY`, …). Or sign in once with your Claude,
 ChatGPT, GitHub Copilot or xAI subscription (§4b):
 
+<!-- skip: opens a browser to sign in -->
 ```python
 import functai
 functai.login("claude")
@@ -231,14 +234,15 @@ changed on a copy (`using`), which leaves the original alone:
   adapter. `template=None` goes back to the adapter setting (or the default).
 - In `using`, a setting given as `None` is no longer set by the copy: it comes
   from `configure` or the defaults.
-- A bad value (an unknown layout name, a template lmcc cannot read, a DSPy
-  adapter, a connection object where a model name belongs) is refused where you
-  write it, before anything changes.
+- A bad value (an unknown layout name, a template lmcc cannot read, an
+  object that is not an lmcc adapter, a connection object where a model name
+  belongs) is refused where you write it, before anything changes.
 
 **The model and the connection are separate.** `lm=` is the model's name.
 `client=` is how to reach it, when you build that yourself with lm15: a
 router, or one provider's LM, which does not know which model to use.
 
+<!-- skip: needs a second OpenAI key and a Claude Code login -->
 ```python
 import lm15
 
@@ -260,7 +264,7 @@ and `functai.login(...)` cover them.
 Any [lm15](https://github.com/lm15-dev/lm15-python) model string:
 `"gpt-4.1-mini"`, `"claude-haiku-4-5"`, `"gemini-2.5-flash"`,
 `"groq:openai/gpt-oss-120b"`, `"openrouter:qwen/qwen3-32b"`,
-`"ollama:qwen3:8b"`. The litellm/DSPy spelling `"openai/gpt-4o"`,
+`"ollama:qwen3:8b"`. The litellm spelling `"openai/gpt-4o"`,
 `"anthropic/claude-sonnet-4-5"`, `"groq/openai/gpt-oss-120b"` is read the way
 lm15 reads it.
 
@@ -284,6 +288,7 @@ An unknown setting is an error, not a silent no-op.
 
 ## 4b. Signing in: subscriptions and keys
 
+<!-- skip: opens a browser to sign in -->
 ```python
 import functai
 
@@ -300,6 +305,7 @@ functai.login()                # asks which
 Sign in once; every later session (and every tool built on lm15) uses it.
 Then name the model with the account's prefix:
 
+<!-- skip: needs those logins -->
 ```python
 functai.configure(lm="claude:claude-sonnet-4-5")
 functai.configure(lm="chatgpt:gpt-5.5")
@@ -435,7 +441,7 @@ More in templates:
 | `adapter=` | layout |
 |---|---|
 | `None` / `"xml"` | tagged sections (the default above) |
-| `"chat"` | DSPy's `[[ ## name ## ]]` sections, ending with `[[ ## completed ## ]]` |
+| `"chat"` | `[[ ## name ## ]]` sections, ending with `[[ ## completed ## ]]` |
 | `"json"` | one JSON object the provider enforces with a schema (models with native structured output) |
 | an `lmcc.Adapter` | any lmcc adapter, including one loaded from a JSON artifact |
 
@@ -502,7 +508,6 @@ def research_assistant(question: str) -> str:
 research_assistant("What is the result of (15 * 23) + 10?")
 ```
 
-    [Tool executing: Calculating '(15 * 23) + 10']
     'The result of (15 * 23) + 10 is 355.'
 
 Native tool calls where the model has them, fenced text calls otherwise:
@@ -559,7 +564,7 @@ ev.table            # one row per example: the data, pred_result, exact_match, e
 
 ev.table.filter(col.exact_match == 0)                                  # read the misses
 ev.table.group_by(col.lang).summarize(acc=col.exact_match.mean())      # accuracy by language
-ev.write("runs/today.parquet")
+ev.write("today.parquet")
 ```
 
 The interval matters: on 30 examples, 80% means "somewhere between 63% and
@@ -571,13 +576,13 @@ output. A metric can itself be an AI function:
 
 ```python
 @ai
-def judge(row, prediction) -> float:
-    """Between 0 and 1: how close the prediction is to the row's result."""
+def judge(row: dict, prediction: dict) -> float:
+    """Between 0 and 1: how well the prediction matches the row's result."""
 
-ev = evaluate(translator, dev, {
+ev = evaluate(classify_intent, dev, {
     "exact": col.pred_result == col.result,        # computed on the whole table at once
     "judge": judge,                                # one model call per row
-    "short": lambda row, pred: len(pred.result) < 80,
+    "short": lambda row, pred: len(pred.result) < 20,
 })
 ```
 
@@ -591,6 +596,14 @@ real change with far fewer examples than two separate scores would:
 
 ```python
 from functai import compare
+
+train = [
+    {"user_query": "Book me a double for Friday.", "result": "booking"},
+    {"user_query": "Is parking included?", "result": "information"},
+    {"user_query": "Please cancel booking #4411.", "result": "cancelation"},
+    {"user_query": "Je voudrais réserver une chambre.", "result": "booking"},
+]
+
 before = evaluate(classify_intent, dev)
 classify_intent.opt(trainset=train)
 after = evaluate(classify_intent, dev)
@@ -608,12 +621,24 @@ like any other; columns and constants mix freely:
 ```python
 from dpyr import read, col, n
 
-reviews = read("reviews.parquet")
-(reviews
-    .mutate(topic=classify(col.text),
-            reply=answer(col.question, context=col.doc, tone="formal"))
-    .filter(is_complaint(col.text))
-    .group_by(col.topic)
+@ai
+def reply(user_query: str, tone: str) -> str:
+    """A one-sentence reply to the guest, in the given tone."""
+
+@ai
+def is_complaint(user_query: str) -> bool:
+    """Is the guest unhappy about something?"""
+
+inbox = read([                                  # or read("inbox.parquet"), a dataframe, ...
+    {"user_query": "Book me a room for two nights."},
+    {"user_query": "The room was dirty and nobody answered the phone!"},
+    {"user_query": "Cancel my stay, the noise was unbearable."},
+])
+(inbox
+    .mutate(intent=classify_intent(col.user_query),
+            answer=reply(col.user_query, tone="formal"))
+    .filter(is_complaint(col.user_query))
+    .group_by(col.intent)
     .summarize(n=n()))
 ```
 
@@ -641,21 +666,19 @@ classify_intent.undo_opt()
 | `LabeledFewShot(k=16)` | labeled examples as demos |
 | `BootstrapFewShot(metric, max_bootstrapped_demos=4, max_labeled_demos=16, teacher=None)` | runs the program on examples; the runs the metric accepts become demos, whole turns included (reasoning, tool calls) |
 | `BootstrapFewShotWithRandomSearch(metric, num_candidate_programs=8)` | many demo sets, keeps the best on `valset` |
-| `InstructionSearch(metric, num_candidates=6, num_trials=12, prompt_lm=None)` | proposed instructions × demo sets, searched on minibatches, finalists scored on `valset` (MIPRO-style; random/greedy search, not Bayesian) |
+| `InstructionSearch(metric, num_candidates=6, num_trials=12, prompt_lm=None)` | instructions proposed by a model × demo sets, tried on minibatches, finalists scored on `valset` (random then greedy search) |
 
 ```python
 from functai import InstructionSearch
 
-translator.opt(trainset=trainset, metric=judge,
-               optimizer=InstructionSearch, num_candidates=3, num_trials=5,
-               max_bootstrapped_demos=0, max_labeled_demos=0, prompt_lm="gpt-4.1-mini")
+opt = InstructionSearch(num_candidates=3, num_trials=5, max_bootstrapped_demos=0,
+                        max_labeled_demos=0, prompt_lm="gpt-4.1-mini")
+classify_intent.opt(trainset=train, metric=judge, optimizer=opt)
+read(opt.trials)       # every trial as a row: which instruction and demos, and its score
 ```
 
-On a 5-example Québécois-French task with `gpt-4.1-nano` and the `judge`
-above, this took the score from 0% to 80% by rewriting the instruction
-(with 5 examples, an interval that wide is worth checking on more data).
-The search's history is kept as rows: `dpyr.read(opt.trials)` (or
-`opt.candidates` for the random search).
+The [translator example](examples/optimizing_translator/) runs this on
+English to Québécois French, with an AI judge, before and after.
 
 More:
 
@@ -680,15 +703,23 @@ def generate_query(claim: str, key_facts: list[str]) -> str:
 def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[str]:
     """Extend key facts with new learnings extracted from new_docs."""
 
+def search(query: str) -> list[str]:
+    """Your retriever: a vector store, a search API, ..."""
+    return [f"A document about {query}."]
+
 @module
-def research_hop(claim: str, hops: int = 2):
+def research_hop(claim: str, hops: int = 2) -> list[str]:
     key_facts: list[str] = []
     for i in range(hops):
         query = generate_query(claim, key_facts)
         key_facts = append_notes(claim, key_facts, search(query))
     return key_facts
 
-research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=2))
+def found_something(row, prediction):
+    return len(prediction.result) > 0
+
+claims = [{"claim": "The Eiffel Tower is in Paris."}, {"claim": "K2 is in Nepal."}]
+research_hop.opt(trainset=claims, metric=found_something, call_defaults=dict(hops=1))
 ```
 
 The metric sees `Prediction(result=<what the module returned>)` (in the
@@ -702,6 +733,7 @@ A functai program is code plus a contract, like a Spark UDF: its inputs and
 outputs are typed, and everything it depends on must be known to ship it.
 functai reads the code to find all of it.
 
+<!-- skip: fact_check is a program spread over several files -->
 ```python
 import functai
 
@@ -756,6 +788,7 @@ And what stops a clean save, each with its fix:
 
 ### Save, verify, load
 
+<!-- skip: fact_check is a program spread over several files -->
 ```python
 functai.save(fact_check, "fact_check/", record=[{"claim": "Paris is the capital of France"}])
 functai.verify("fact_check/", trust=True)        # verified in a fresh environment
@@ -834,25 +867,26 @@ summarize.signature                # the lmcc signature
   JSON layout on a model without structured output) are refused before any
   request is sent.
 
-## 12. Migrating from 0.x
+## 12. Upgrading from 0.x
 
 1.0 keeps the API (`@ai`, `_ai`, `configure`, `all=True`, `stateful`,
 `tools`, `module="cot"`, `.opt`, `undo_opt`, `@module`, `phistory`, the
-docments utilities) and replaces DSPy underneath.
+docments utilities); what runs underneath is new (lmcc and lm15), and so
+are data, metrics and optimizers.
 
 | 0.x | 1.0 |
 |---|---|
-| `configure(lm=dspy.LM("openai/gpt-4.1"))` | `configure(lm="gpt-4.1")` (litellm strings still work; a DSPy LM's `.model` is read) |
-| `dspy.Example(...).with_inputs(...)` | a dict per row, or a table: columns named like the parameters are the inputs |
+| `configure(lm=<an LM object>)` | `configure(lm="gpt-4.1")`: a model name (litellm spellings work) |
+| training data as `Example(...).with_inputs(...)` | a dict per row, or a table: columns named like the parameters are the inputs |
 | `metric(example, pred, trace=None)` | `metric(row, prediction)`, or a dpyr expression |
-| `optimizer=dspy.BootstrapFewShot` / `dspy.MIPROv2` | `functai.BootstrapFewShot` / `functai.InstructionSearch` |
-| `dspy.Evaluate(...)` → a percentage | `functai.evaluate(program, data, metric)` → `.score` (0 to 1, with an interval), `.table` |
+| optimizer classes from other libraries | `functai.BootstrapFewShot`, `functai.InstructionSearch`, ... |
+| an evaluator returning a percentage | `functai.evaluate(program, data, metric)`: `.score` (0 to 1, with an interval), `.table` |
 | `adapter="json"`, `adapter="chat"` | same names, now lmcc layouts |
-| custom DSPy adapter classes | `template=[system(...), turns(), user(...)]` or an `lmcc.Adapter` |
-| tools switch the program to `dspy.ReAct` | tools run in a tool loop; the prompt does not change |
-| `fn.signature` (a DSPy Signature) | an lmcc `SignatureCore` |
-| `fn.to_dspy()` | removed; `fn.state()` / `fn.save(path)` |
-| `stateful` history in `dspy.History` | lmcc turns in `fn.history` |
+| custom adapter classes | `template=[system(...), turns(), user(...)]` or an `lmcc.Adapter` |
+| tools switched the program to an agent module | tools run in a tool loop; the prompt does not change |
+| `fn.signature` | an lmcc `SignatureCore` |
+| exporting the program to another framework | removed; `fn.state()` / `fn.save(path)` |
+| `stateful` history in a separate object | lmcc turns in `fn.history` |
 
 Behavior changes:
 
@@ -862,7 +896,7 @@ Behavior changes:
   prompts change by themselves. Now `@ai(autoinstruct=True)` or
   `@ai(instruction_autorefine_calls=2)` turns them on; they run at the first
   call, not at definition.
-- Prompts are laid out by lmcc, so their text differs from DSPy's.
+- Prompts are laid out by lmcc, so their text differs from 0.x.
 - Unknown settings raise instead of being ignored.
 
 ## 13. A real pipeline

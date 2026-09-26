@@ -1,41 +1,128 @@
-```{{sh}}
-pip install -U mlflow>=2.18.0
-```
+---
+title: "Tracking and observability: what was sent, what it cost, how it went"
+format: gfm
+output-file: README.md
+jupyter: python3
+---
 
-```{{sh}}
-# It is highly recommended to use SQL store when using MLflow tracing
-mlflow server --backend-store-uri sqlite:///mydb.sqlite
-```
+FunctAI keeps a record of every model call, and every evaluation can be
+logged as a table. No server to run: the records are Python objects and
+parquet files.
 
+Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
+
+```{python}
+#| include: false
+get_ipython().display_formatter.formatters["text/html"].enabled = False
+import polars as pl
+pl.Config(tbl_cols=12, tbl_width_chars=110, fmt_str_lengths=40).__enter__()
+```
 
 ```{python}
 import functai
-import os
-import mlflow
+functai.configure(lm="gpt-4.1-mini", temperature=0)
 
-# Tell MLflow about the server URI.
-mlflow.set_tracking_uri("http://127.0.0.1:5000")
-# Create a unique name for your experiment.
-mlflow.autolog()
+from functai import ai, _ai
 
-mlflow.set_experiment("functai")
+@ai
+def headline(article: str) -> str:
+    """A headline for the article, at most 8 words."""
+    angle: str = _ai["The one fact a reader should remember."]
+    return _ai
+```
 
-functai.configure(lm="gpt-4.1")
+## One call
+
+`all=True` returns everything the call produced: each output, the tokens
+used across all model calls, and anything the reader had to forgive in
+the reply.
+
+```{python}
+p = headline("The city council voted 7-2 on Tuesday to turn the old rail yard "
+             "into a 12-hectare park, with construction starting next spring.", all=True)
+p.result, p.angle
 ```
 
 ```{python}
-from attachments import Attachments, set_verbose
-set_verbose(False)
+p.usage
+```
 
-def website_retriever(url):
-    "Retrieves text content of a url"
-    return Attachments(url + "[images: false]").text
+## The last calls
 
-@functai.ai(tools=[website_retriever])
-def question_and_answer(question):
-    ...
+`phistory` prints the conversation as it was sent; `inspect_history`
+returns the records (lm15 requests and responses), newest last:
 
-question_and_answer("What castle David Gregory inherited? Look there:" +
-    "Always call doubleck tool at least once!" +
-    "https://en.wikipedia.org/wiki/David_Gregory_(physician)")
+```{python}
+print(functai.phistory())
+```
+
+```{python}
+rec = functai.inspect_history(1)[0]
+rec.function, rec.model, rec.cached, rec.response.finish_reason, rec.response.usage.total_tokens
+```
+
+`debug=True` prints one line per call as it happens:
+
+```{python}
+with functai.configure(debug=True):
+    headline("A local bakery has baked the same sourdough loaf every day since 1952.")
+```
+
+## Evaluation runs, logged
+
+`evaluate(..., log=folder)` writes each run's table to the folder as
+parquet: one row per example, with the prediction, the metrics, the
+error if any, the time and the tokens.
+
+```{python}
+import tempfile
+runs_dir = tempfile.mkdtemp()
+
+articles = [
+    {"article": "The river flooded three villages overnight; no one was hurt."},
+    {"article": "A 14-year-old won the national chess championship in 9 rounds."},
+    {"article": "The museum returned 40 artifacts to their country of origin."},
+]
+
+def short(row, prediction):
+    return len(prediction.result.split()) <= 8
+
+functai.evaluate(headline, articles, short, log=runs_dir)
+headline.temperature = 1.0
+functai.evaluate(headline, articles, short, log=runs_dir)
+```
+
+`functai.runs` reads every logged run back as one table, so runs compare
+like any data (here with [dpyr](https://github.com/MaximeRivest/dpyr)):
+
+```{python}
+from dpyr import col, n
+
+log = functai.runs(runs_dir)
+log.group_by(col.run).summarize(
+    examples=n(),
+    short=col.short.mean(),
+    seconds=col.seconds.mean(),
+    tokens=col.output_tokens.sum(),
+)
+```
+
+```{python}
+log.select(col.run, col.article, col.pred_result).slice_head(6)
+```
+
+The files are plain parquet: pandas, polars, duckdb or a BI tool read
+them directly.
+
+## Not paying twice
+
+With `cache_replies=True`, an identical request is answered from memory
+(handy while iterating on a notebook); `inspect_history` marks it:
+
+```{python}
+with functai.configure(cache_replies=True):
+    headline.temperature = 0
+    headline("The river flooded three villages overnight; no one was hurt.")
+    headline("The river flooded three villages overnight; no one was hurt.")
+[r.cached for r in functai.inspect_history(2)]
 ```

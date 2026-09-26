@@ -46,3 +46,6 @@ mydb.sqlite
 prompt.md
 
 examples/custom_adapters/
+# quarto render artifacts (the tutorials render to .md)
+.quarto/
+*.quarto_ipynb

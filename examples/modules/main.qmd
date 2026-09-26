@@ -1,54 +1,138 @@
+---
+title: "Programs of several AI functions: a multi-hop fact checker"
+format: gfm
+output-file: README.md
+jupyter: python3
+---
+
+A `@module` is a plain Python function that calls AI functions: loops,
+ifs and ordinary helpers included. It is called, evaluated, optimized and
+saved as one program. This one checks a claim by searching a small
+library in hops, taking notes, then deciding.
+
+Rendered from [`main.qmd`](main.qmd); every output below is a real reply.
+
+```{python}
+#| include: false
+get_ipython().display_formatter.formatters["text/html"].enabled = False
+import polars as pl
+pl.Config(tbl_cols=12, tbl_width_chars=110, fmt_str_lengths=45).__enter__()
+```
 
 ```{python}
 import functai
-from functai import ai, module, evaluate
+functai.configure(lm="gpt-4.1-mini", temperature=0)
 
-functai.configure(lm="groq:openai/gpt-oss-120b")
-
-@ai
-def generate_query(claim: str, key_facts: list[str]) -> str:
-    """Produce a follow-up search query from a claim and current key facts."""
-    ...
-
-@ai
-def append_notes(claim: str, key_facts: list[str], new_docs: list[str]) -> list[str]:
-    """Extend key facts with new learnings extracted from new_docs."""
-    ...
-
-@module
-def research_hop(claim: str, k: int, hops: int):
-    key_facts: list[str] = []
-    for i in range(hops):
-        query = generate_query(claim, key_facts) if i else claim
-        search_results = [f"doc about: {query}"][:k]      # mock retrieval
-        key_facts = append_notes(claim, key_facts, search_results)
-    return key_facts
-
-research_hop("The park at which Tivolis Koncertsal is located opened on 15 August 1843", 4, 2)
+from functai import ai, module
 ```
 
+## A search engine (plain Python)
+
 ```{python}
-# One dict per row: `claim` is the module's input; k and hops come from call_defaults.
-trainset = [
-    {"claim": "The Eiffel Tower is in Paris."},
-    {"claim": "Mount Everest is the highest mountain on Earth."},
+LIBRARY = [
+    "The Eiffel Tower was completed in 1889 for the World's Fair in Paris.",
+    "Gustave Eiffel's company designed and built the Eiffel Tower.",
+    "The Statue of Liberty's internal frame was designed by Gustave Eiffel.",
+    "The Statue of Liberty was a gift from France to the United States in 1886.",
+    "Mount Everest, at 8,849 m, is the highest mountain above sea level.",
+    "K2 is the second-highest mountain on Earth, at 8,611 m.",
+    "The Great Wall of China is not visible to the naked eye from orbit.",
+    "Marie Curie won Nobel Prizes in both physics (1903) and chemistry (1911).",
 ]
 
-def found_facts(row, prediction):
-    # the metric sees Prediction(result=<what the module returned>)
-    return 1.0 if prediction.result else 0.0
+def search(query: str, k: int = 2) -> list[str]:
+    """The k passages sharing the most words with the query."""
+    words = set(query.lower().split())
+    return sorted(LIBRARY, key=lambda p: -len(words & set(p.lower().split())))[:k]
+```
 
-before = evaluate(research_hop, trainset, found_facts, call_defaults=dict(k=2, hops=2))
-research_hop.opt(trainset=trainset, metric=found_facts, call_defaults=dict(k=2, hops=2))
-after = evaluate(research_hop, trainset, found_facts, call_defaults=dict(k=2, hops=2))
-before, after
+## Three AI functions and the program
+
+```{python}
+from typing import Literal
+
+Verdict = Literal["supported", "refuted", "not enough info"]
+
+@ai
+def next_query(claim: str, notes: list[str]) -> str:
+    """A short search query for the fact still missing to check the claim."""
+
+@ai
+def take_notes(claim: str, notes: list[str], passages: list[str]) -> list[str]:
+    """The notes, plus what the passages say that bears on the claim."""
+
+@ai
+def decide(claim: str, notes: list[str]) -> Verdict:
+    """Is the claim supported or refuted by the notes?"""
+
+@module
+def check_claim(claim: str, hops: int = 2) -> Verdict:
+    notes: list[str] = []
+    for _ in range(hops):
+        notes = take_notes(claim, notes, search(next_query(claim, notes)))
+    return decide(claim, notes)
+
+check_claim("The man who designed the Eiffel Tower also worked on the Statue of Liberty.")
+```
+
+## Evaluating the whole program
+
+Rows name the module's inputs (`claim`) and the expected result. The
+metric sees what the module returned; the table's tokens add up every
+model call the program made.
+
+```{python}
+dev = [
+    {"claim": "The Eiffel Tower was finished before the Statue of Liberty was given to the US.", "result": "refuted"},
+    {"claim": "K2 is taller than Mount Everest.", "result": "refuted"},
+    {"claim": "Marie Curie won two Nobel Prizes in different sciences.", "result": "supported"},
+    {"claim": "The Great Wall of China can be seen from orbit with the naked eye.", "result": "refuted"},
+    {"claim": "Gustave Eiffel's company built a tower completed in 1889.", "result": "supported"},
+    {"claim": "The Eiffel Tower was built for a World's Fair.", "result": "supported"},
+]
+
+ev = functai.evaluate(check_claim, dev, num_threads=6)
+ev
 ```
 
 ```{python}
-# tokens add up every inner call
-after.table.select(after.table.c.claim, after.table.c.pred_result, after.table.c.input_tokens)
+from dpyr import col
+
+ev.table.select(col.claim, col.result, col.pred_result, col.input_tokens, col.seconds)
+```
+
+## Optimizing it
+
+Optimizing a module tunes every AI function it calls, against the one
+metric on the program's output. A run the metric accepts becomes a
+worked example (a "demo") for each AI function it went through.
+
+```{python}
+train = [
+    {"claim": "Mount Everest is higher than 8,000 m.", "result": "supported"},
+    {"claim": "The Statue of Liberty was a gift from Germany.", "result": "refuted"},
+    {"claim": "Marie Curie's chemistry Nobel came before her physics one.", "result": "refuted"},
+    {"claim": "Eiffel's company also designed part of the Statue of Liberty.", "result": "supported"},
+]
+
+check_claim.opt(trainset=train)
+{fn.__name__: len(fn.demos) for fn in check_claim.ai_functions()}
 ```
 
 ```{python}
-research_hop("The park at which Koncertsal is located opened on 15 August 1843", 4, 2)
+after = functai.evaluate(check_claim, dev, num_threads=6)
+functai.compare(ev, after)
+```
+
+`check_claim.undo_opt()` reverts every function it tuned;
+`check_claim.save("check_claim.json")` keeps their instructions and demos.
+
+## On a table
+
+A module with a return type works on columns like an AI function:
+
+```{python}
+from dpyr import read
+
+read(dev).mutate(verdict=check_claim(col.claim)).select(col.claim, col.verdict)
 ```

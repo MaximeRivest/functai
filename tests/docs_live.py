@@ -63,7 +63,11 @@ def render_all() -> int:
     quarto = os.environ.get("QUARTO", "quarto")
     env = {**os.environ, "QUARTO_PYTHON": os.environ.get("QUARTO_PYTHON", sys.executable)}
     failures = 0
-    for qmd in sorted([*ROOT.glob("docs/*.qmd"), *ROOT.glob("examples/*/main.qmd")]):
+    tracked = subprocess.run(["git", "ls-files", "docs/*.qmd", "examples/*/main.qmd"], cwd=ROOT,
+                             capture_output=True, text=True, check=True).stdout.split()
+    new = subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "docs/*.qmd",
+                          "examples/*/main.qmd"], cwd=ROOT, capture_output=True, text=True).stdout.split()
+    for qmd in sorted(ROOT / f for f in [*tracked, *new]):   # not ignored scratch folders
         done = subprocess.run([quarto, "render", qmd.name], cwd=qmd.parent, env=env,
                               capture_output=True, text=True)
         ok = done.returncode == 0
