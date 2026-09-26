@@ -208,8 +208,14 @@ def _generate(report, module: str) -> str:
 # ------------------------------------------------------------------ the manifest
 
 
-def _settings_json(fn, where: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
-    """(settings, lm15 config) as JSON, for one AI function."""
+def _is_baked(obj: Any) -> bool:
+    return getattr(type(obj), "__functai_baked__", False) is True
+
+
+def _settings_json(fn, where: str, node=None, models: Optional[Dict[str, str]] = None
+                   ) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """(settings, lm15 config) as JSON, for one AI function. A baked model is
+    ``{"baked": <name in models/>}``; an AI function to escalate to, ``{"node": key}``."""
     from .config import CONFIG_FIELDS, effective
     own = dict(fn._settings)
     eff = effective(own)
@@ -220,6 +226,12 @@ def _settings_json(fn, where: str) -> Tuple[Dict[str, Any], Dict[str, Any]]:
             continue
         if k in CONFIG_FIELDS:
             config[k] = v
+            continue
+        if _is_baked(v):
+            out[k] = {"baked": (models or {})[str(v.path)]}
+            continue
+        if k == "escalate_to" and not isinstance(v, str):
+            out[k] = {"node": getattr(node, "escalate", None)}
             continue
         if k == "lm" and not isinstance(v, str):
             from .models import model_string
@@ -278,9 +290,15 @@ def _fingerprints(fn, probes: List[Dict[str, Any]]) -> Dict[str, Any]:
     from . import adapters, engine
     spec = fn._spec()
     settings = fn._effective()
-    plan = adapters.bind(fn._layout(settings), spec.signature, PROBE_CAPABILITIES, "probe")
+    baked = settings.get("lm") if _is_baked(settings.get("lm")) else None
+    if baked is not None:      # the layout and facts the weights were trained with
+        plan = adapters.bind(adapters.Layout(adapter=baked.layout), spec.signature, baked.capabilities,
+                             baked.provider)
+    else:
+        plan = adapters.bind(fn._layout(settings), spec.signature, PROBE_CAPABILITIES, "probe")
     past = fn._past(plan, spec, {**settings, "stateful": False})
     renders = []
+    requests = []
     for inputs in probes:
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
@@ -288,19 +306,69 @@ def _fingerprints(fn, probes: List[Dict[str, Any]]) -> Dict[str, Any]:
         try:
             request = plan.render(plan.turn(values), turns=past).request("probe")
             renders.append("sha256:" + _sha256(_canonical(request).encode()))
+            requests.append(request)
         except lmcc.Refusal as exc:
             renders.append(f"refused:{exc.code}")
-    return {"signature": lmcc.signature_fingerprint(spec.signature), "requests": renders}
+    out = {"signature": lmcc.signature_fingerprint(spec.signature), "requests": renders}
+    if baked is not None and requests:
+        out["answers"] = _model_answers(baked, requests)
+    return out
 
 
-def _manifest(report, examples, allowed) -> Dict[str, Any]:
+def _model_answers(baked: Any, requests: List[Dict[str, Any]]) -> List[Any]:
+    """What the weights answer to the probe requests, computed on the CPU in fp32
+    (the same everywhere, up to float rounding): each field's probabilities for a
+    head, the greedy reply for a generative student."""
+    cpu = type(baked)(baked.path, device="cpu", check=False)
+    requests_ = [lm15.serde.request_from_dict(r) for r in requests]
+    if cpu.kind == "head":
+        from .bake.examples import request_text
+        dists = cpu.probabilities([request_text(r) for r in requests_])
+        return [{f: {k: round(p, 6) for k, p in d.items()} for f, d in dist.items()} for dist in dists]
+    return [cpu.complete(r).text for r in requests_]
+
+
+def _same_answers(was: List[Any], now: List[Any], tolerance: float = 2e-3) -> Optional[str]:
+    for i, (a, b) in enumerate(zip(was, now)):
+        if isinstance(a, dict):
+            for field, dist in a.items():
+                other = b.get(field, {})
+                if max(dist, key=dist.get) != max(other, key=other.get):
+                    return f"probe {i}: the weights answer {max(other, key=other.get)!r}, not {max(dist, key=dist.get)!r}"
+                gap = max(abs(dist[k] - other.get(k, 0.0)) for k in dist)
+                if gap > tolerance:
+                    return f"probe {i}: the weights' probabilities moved by {gap:.4f} (more than {tolerance})"
+        elif a != b:
+            return f"probe {i}: the weights reply {b!r}, not {a!r}"
+    return None
+
+
+def _baked_models(report) -> Dict[str, Any]:
+    """Every baked model the program uses: its folder → (name in models/, the model)."""
+    out: Dict[str, Any] = {}
+    taken: set = set()
+    for n in report.nodes.values():
+        for b in n.baked.values():
+            key = str(b.path)
+            if key in out:
+                continue
+            name, i = b.name, 1
+            while name in taken:
+                i += 1
+                name = f"{b.name}-{i}"
+            taken.add(name)
+            out[key] = (name, b)
+    return out
+
+
+def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     from .graph import state_to_json
     nodes: Dict[str, Any] = {}
     for key, n in report.nodes.items():
         entry: Dict[str, Any] = {"kind": n.kind, "module": n.module, "name": n.name}
         if n.kind == "ai":
             fn = n.obj
-            settings, config = _settings_json(fn, key)
+            settings, config = _settings_json(fn, key, n, models)
             probes = _probe_inputs(fn, fn._spec(), examples if key == report.entry else ())
             entry["ai"] = {
                 "settings": settings,
@@ -417,7 +485,7 @@ def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str] = (),
          requires: Iterable[str] = (), allow: Iterable[str] = (), examples: Iterable[Dict[str, Any]] = (),
-         record: Iterable[Dict[str, Any]] = (), overwrite: bool = False):
+         record: Iterable[Dict[str, Any]] = (), overwrite: bool = False, weights: str = "copy"):
     """Save ``program`` (an @ai function, an @module, or a Python function that
     calls them) with its code, data files and pinned requirements, to a folder.
 
@@ -447,7 +515,11 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
         if not src.exists():
             raise FileNotFoundError(f"functai.file({given!r}): {src} does not exist")
     recorded = _record(program, list(record)) if record else None
-    manifest = _manifest(report, examples, allowed)
+    if weights not in ("copy", "reference"):
+        raise ValueError(f"weights is 'copy' or 'reference', not {weights!r}")
+    baked = _baked_models(report)
+    manifest = _manifest(report, examples, allowed, {k: name for k, (name, _b) in baked.items()})
+    manifest["models"] = {}
     manifest["data_files"] = {given: saved for given, (saved, _src) in files.items()}
     tmp = Path(tempfile.mkdtemp(prefix=f".{target.name}.", dir=target.parent))
     try:
@@ -465,6 +537,17 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
                 text = _generate(report, n.module)
                 (tmp / rel).write_text(text)
                 hashes[rel] = _sha256(text.encode())
+        for _key, (name, b) in baked.items():
+            if weights == "copy":
+                shutil.copytree(b.path, tmp / "models" / name)
+                for f in sorted((tmp / "models" / name).rglob("*")):
+                    if f.is_file():
+                        hashes[f.relative_to(tmp).as_posix()] = _sha256(f.read_bytes())
+                manifest["models"][name] = {"folder": f"models/{name}", "student": b.student, "kind": b.kind}
+            else:
+                manifest["models"][name] = {"path": str(b.path), "student": b.student, "kind": b.kind,
+                                            "baked_json": _sha256((b.path / "baked.json").read_bytes()),
+                                            "hashes": b.meta.get("hashes", {})}
         for given, (saved, src) in files.items():
             dest = tmp / "files" / saved
             dest.parent.mkdir(parents=True, exist_ok=True)
@@ -558,6 +641,7 @@ def _check_environment(manifest: Dict[str, Any]) -> Tuple[List[str], List[str]]:
 _counter = itertools.count(1)
 _import_lock = threading.Lock()
 _programs: Dict[str, Dict[str, Any]] = {}          # package name → manifest
+_roots: Dict[str, str] = {}                         # package name → the saved folder
 
 
 def _manifest_of(fn: Any) -> Tuple[Dict[str, Any], str]:
@@ -578,6 +662,11 @@ def _rebuild_ai(fn: Any, key: str):
     manifest, package = _manifest_of(fn)
     data = manifest["nodes"][key]["ai"]
     settings = dict(data["settings"])
+    for k, v in list(settings.items()):
+        if isinstance(v, dict) and "baked" in v:
+            settings[k] = _baked_model(package, manifest, v["baked"])
+        elif isinstance(v, dict) and "node" in v:
+            settings.pop(k)                  # an AI function: set after every module is loaded
     if data.get("config"):
         config = lm15.serde.config_from_dict(data["config"])
         default = lm15.Config()
@@ -599,6 +688,27 @@ def _rebuild_ai(fn: Any, key: str):
                           **settings)
     program.load_state(ProgramState.from_dict(data["state"]))
     return program
+
+
+_models_loaded: Dict[Tuple[str, str], Any] = {}
+
+
+def _baked_model(package: str, manifest: Dict[str, Any], name: str):
+    """A saved program's baked model, loaded once (its files checked)."""
+    from .bake.baked import Baked
+    key = (package, name)
+    if key not in _models_loaded:
+        info = manifest["models"][name]
+        if "folder" in info:
+            path = Path(_roots[package]) / info["folder"]
+        else:
+            path = Path(info["path"])
+            if not (path / "baked.json").exists():
+                raise LoadRefused(f"the baked model {name!r} is referenced, not copied", [f"{path} does not exist"])
+            if _sha256((path / "baked.json").read_bytes()) != info["baked_json"]:
+                raise LoadRefused(f"the baked model {name!r} changed since saving", [f"{path}/baked.json"])
+        _models_loaded[key] = Baked(path)
+    return _models_loaded[key]
 
 
 def _rebuild_module(fn: Any, key: str):
@@ -626,6 +736,10 @@ def _verify_loaded(package: str, manifest: Dict[str, Any]) -> List[str]:
             if a != b:
                 problems.append(f"{key}: probe {i} renders a different request than when saved "
                                 f"(the prompt changed: {b} → {a})")
+        if "answers" in was:
+            moved = _same_answers(was["answers"], now.get("answers", []))
+            if moved:
+                problems.append(f"{key}: its baked model does not answer as it did when saved: {moved}")
     return problems
 
 
@@ -660,6 +774,7 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
     pkg.__package__ = package
     pkg.__file__ = str(root / "code" / "__init__.py")
     _programs[package] = manifest
+    _roots[package] = str(root)
     with _import_lock, _no_bytecode():
         sys.modules[package] = pkg
         entry_module, _, entry_name = manifest["entry"].rpartition(":")
@@ -669,6 +784,10 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
                 if node["kind"] == "ai" and node["ai"].get("teacher"):
                     _node_object(package, manifest, key)._settings["teacher"] = \
                         _node_object(package, manifest, node["ai"]["teacher"])
+                esc = node.get("ai", {}).get("settings", {}).get("escalate_to")
+                if isinstance(esc, dict) and esc.get("node"):
+                    _node_object(package, manifest, key)._settings["escalate_to"] = \
+                        _node_object(package, manifest, esc["node"])
         except BaseException:
             for name in [m for m in sys.modules if m == package or m.startswith(package + ".")]:
                 del sys.modules[name]

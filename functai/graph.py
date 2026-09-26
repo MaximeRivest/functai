@@ -153,6 +153,8 @@ class Node:
     uses: List[str] = dataclasses.field(default_factory=list)     # node keys, first-use order
     tools: List[Any] = dataclasses.field(default_factory=list)    # node keys or import refs or tool data
     teacher: Optional[str] = None
+    escalate: Optional[str] = None                                # node key of an escalate_to AI function
+    baked: Dict[str, Any] = dataclasses.field(default_factory=dict)   # setting ("lm", "escalate_to") → Baked
     requires: Tuple[str, ...] = ()
     future_annotations: bool = False
     files: List[str] = dataclasses.field(default_factory=list)    # functai.file("...") arguments
@@ -210,7 +212,9 @@ class Report:
                 return f"AI function (signature error: {exc})"
             ins = ", ".join(f"{f.name}: {f.type or 'Any'}" for f in spec.signature.inputs if f.purpose == "plain")
             main = next(f for f in spec.signature.outputs if f.name == spec.main)
-            return f"AI function ({ins} → {main.type or 'Any'})"
+            on = node.baked.get("lm")
+            where = f" on {on.model} ({on.student}, {on.size() / 1e6:,.0f} MB)" if on is not None else ""
+            return f"AI function ({ins} → {main.type or 'Any'}){where}"
         if node.kind == "module":
             return "@module"
         return node.kind
@@ -806,6 +810,19 @@ class Analysis:
                 except lmcc.Refusal as exc:
                     self.problem("unsaveable-value", node.key, f"its adapter cannot be written as data: {exc.hint}",
                                  "ship formats written in code with lmcc.ship, or name registered formats")
+            elif k in ("lm", "escalate_to") and _is_baked(v):
+                node.baked[k] = v
+                try:
+                    type(v)(v.path)              # its files are what was baked
+                except Exception as exc:  # noqa: BLE001 — reported as the problem it is
+                    self.problem("unsaveable-value", node.key, f"its baked model cannot be saved: {exc}",
+                                 "bake it again, or restore its folder")
+            elif k == "escalate_to" and isinstance(v, FunctAIFunc):
+                target = self.code(v, where=f"{node.key} escalate_to")
+                if target:
+                    node.escalate = target
+                    if target not in node.uses:
+                        node.uses.append(target)
             elif k in ("client",):
                 self.problem("connection-not-saved", node.key, "its client= connection is not saved",
                              "the loading machine's logins, keys or client= are used", "warning")
@@ -1064,6 +1081,10 @@ def _from_import(module: str, attr: str, name: str) -> str:
     return f"from {module} import {attr}" + ("" if name == attr else f" as {name}")
 
 
+def _is_baked(obj: Any) -> bool:
+    return getattr(type(obj), "__functai_baked__", False) is True
+
+
 def _typed_output(fn: FunctAIFunc, spec) -> bool:
     ret = fn._sig.return_annotation
     if ret is not inspect.Parameter.empty:
@@ -1115,7 +1136,12 @@ def requirement_of(name: str, reason: str = "") -> Optional[Requirement]:
         return Requirement(canonical, version, spec, None, reason)
     if url and url.get("url", "").startswith("file://"):
         return Requirement(canonical, version, f"{canonical} @ {url['url']}", url["url"][len("file://"):], reason)
+    if "+" in version:            # a local build (torch 2.10.0+cu128): the index's build of that version
+        return Requirement(canonical, version, f"{canonical}=={version.split('+')[0]}", None, reason)
     return Requirement(canonical, version, f"{canonical}=={version}", None, reason)
+
+
+BAKED_RUNTIME = ("torch", "transformers", "safetensors")
 
 
 def _requirement_names(dist: md.Distribution) -> List[str]:
@@ -1178,7 +1204,13 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
                       "annotate the return type, e.g. -> list[str]")
     # requirements: the runtime, every package reached, and what was declared
     reqs: Dict[str, Requirement] = {}
-    for dist in ["functai"] + sorted(set(a.packages.values())):
+    baked_models = [b for n in a.nodes.values() for b in n.baked.values()]
+    runtime = list(BAKED_RUNTIME) if baked_models else []
+    for dist in runtime:
+        if requirement_of(dist) is None:
+            a.problem("missing-package", "requirements", f"a baked model needs {dist}, which is not installed here",
+                      'pip install "functai[bake]"')
+    for dist in ["functai"] + runtime + sorted(set(a.packages.values())):
         r = requirement_of(dist, "reached by the code" if dist != "functai" else "runtime")
         if r is not None:
             reqs[r.distribution] = r
@@ -1188,6 +1220,13 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
         if m and requirement_of(m.group(1)) is None:
             a.problem("missing-package", "requires", f"{spec!r} is declared but not installed here",
                       "install it, so the program can be verified against it", "warning")
+    builds = [r for r in reqs.values() if "+" in r.version]
+    if builds:
+        a.problem("local-build", "requirements",
+                  "; ".join(f"{r.distribution} {r.version} is a local build: the program asks for {r.spec}"
+                            for r in builds),
+                  "install the matching build where the program runs (e.g. torch from the PyTorch index for "
+                  "your CUDA)", "warning")
     local = [r for r in lock(reqs.values()) if r.local_path]
     if local:
         a.problem("local-install", "requirements",

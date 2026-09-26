@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import random
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
@@ -81,6 +82,7 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
     tokens = {"input_tokens": 0, "output_tokens": 0}
     failures: List[str] = []
     done = [0]
+    lock = threading.Lock()        # the counters are shared by the labeling threads
     t0 = time.time()
 
     def one(row: Dict[str, Any]) -> Optional[List[List[float]]]:
@@ -89,23 +91,28 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
         except Exception as exc:  # noqa: BLE001 — a failed row is dropped and counted
             failures.append(f"{type(exc).__name__}: {exc}")
             return None
-        for k in tokens:
-            tokens[k] += pred.usage.get(k, 0)
+        usage = pred.usage
+        with lock:
+            for k in tokens:
+                tokens[k] += usage.get(k, 0)
         out = []
         for f in fields:
             dist = (pred.probabilities or {}).get(f.name)
             try:
                 if dist:
                     out.append(distribution(f, dist))
-                    soft[0] += 1
+                    with lock:
+                        soft[0] += 1
                 else:
                     out.append(one_hot(f, field_value(pred, f.name)))
             except (KeyError, ValueError):
                 failures.append(f"answer {field_value(pred, f.name)!r} is not one of the answers for {f.name}")
                 return None
-        done[0] += 1
-        if done[0] % 500 == 0:
-            say(f"teacher: {done[0]:,}/{len(rows):,} rows")
+        with lock:
+            done[0] += 1
+            n = done[0]
+        if n % 500 == 0:
+            say(f"teacher: {n:,}/{len(rows):,} rows")
         return out
 
     targets = parallel(one, rows, max(1, num_threads))

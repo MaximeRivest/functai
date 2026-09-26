@@ -291,3 +291,60 @@ def test_bake_needs_torch_only_when_used():
             "from functai.bake import Baked, bake; print('ok')")
     out = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True, env={**os.environ})
     assert out.stdout.strip() == "ok", out.stderr
+
+
+# ------------------------------------------------------------------ saving a program with its weights
+
+
+def test_a_program_on_baked_weights_saves_loads_and_verifies(baked, tmp_path, monkeypatch):
+    import importlib
+    import sys
+    import textwrap
+    root = tmp_path / "proj"
+    root.mkdir()
+    (root / "baked_prog.py").write_text(textwrap.dedent(f"""
+        from typing import Literal
+        import functai
+        from functai import ai
+
+        FAST = functai.bake.load({str(baked.path)!r})
+
+
+        @ai
+        def careful(text: str) -> Literal["positive", "negative", "neutral"]:
+            \"\"\"Judge the sentiment carefully.\"\"\"
+
+
+        @ai(lm=FAST, escalate_to=careful, escalate_below=0.9)
+        def sentiment(text: str) -> Literal["positive", "negative", "neutral"]:
+            \"\"\"The sentiment of the review.\"\"\"
+    """))
+    monkeypatch.syspath_prepend(str(root))
+    prog = importlib.import_module("baked_prog")
+    report = functai.check(prog.sentiment)
+    assert report.ok, report
+    assert {"torch", "transformers", "safetensors"} <= set(report.requirements)
+    assert "on baked:sentiment" in repr(report)
+    target = tmp_path / "saved"
+    functai.save(prog.sentiment, target)
+    assert (target / "models" / "sentiment" / "baked.json").exists()
+    manifest = json.loads((target / "functai.json").read_text())
+    node = manifest["nodes"]["baked_prog:sentiment"]["ai"]
+    assert node["settings"]["lm"] == {"baked": "sentiment"}
+    assert node["settings"]["escalate_to"] == {"node": "baked_prog:careful"}
+    assert node["fingerprints"]["answers"] and "positive" in node["fingerprints"]["answers"][0]["result"]
+
+    del sys.modules["baked_prog"]
+    r = FakeRouter(responder=lambda req: "<result>\nneutral\n</result>")
+    functai.configure(lm="gpt-4.1-mini", client=r)
+    loaded = functai.load(target, trust=True)
+    assert loaded("The pizza was amazing.") == "positive" and not r.requests       # the weights answered
+    assert loaded._settings["lm"].path == (target / "models" / "sentiment").resolve()
+    assert loaded.using(escalate_below=1.0)("Something happened.", all=True).escalated   # unsure: careful answers
+    assert "Judge the sentiment carefully." in r.requests[-1].system
+    assert functai.verify(target, trust=True, fresh=False).ok
+
+    weights = target / "models" / "sentiment" / "model" / "model.safetensors"
+    weights.write_bytes(weights.read_bytes()[:-8] + b"\0" * 8)
+    with pytest.raises(functai.LoadRefused, match="changed since it was saved"):
+        functai.load(target, trust=True)
