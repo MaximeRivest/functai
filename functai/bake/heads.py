@@ -328,7 +328,7 @@ def train(model, tokenizer, train_ids: Sequence[List[int]], train_targets: List[
             sched.step()
             step += 1
             running += loss.item()
-        val_loss = evaluate_loss(model, tokenizer, val_ids, val_targets, device) if val_ids else running
+        val_loss = calibrated_loss(model, tokenizer, val_ids, val_targets, device) if val_ids else running
         history.append({"epoch": epoch + 1, "train_loss": running / steps_per_epoch, "val_loss": val_loss,
                         "seconds": round(time.time() - t0, 1)})
         log(f"epoch {epoch + 1}/{cfg.epochs}: train loss {running / steps_per_epoch:.4f}, "
@@ -373,6 +373,18 @@ def evaluate_loss(model, tokenizer, ids, targets, device) -> float:
     for z, q in zip(zs, targets):
         total += float(torch.nn.functional.cross_entropy(torch.tensor(z), torch.tensor(q)))
     return total
+
+
+def calibrated_loss(model, tokenizer, ids, targets, device) -> float:
+    """Held-out cross-entropy after refitting the temperature: how well the model
+    ranks the answers, not how confident it has become. Plain validation loss
+    rises with overconfidence while accuracy still improves, and stops training
+    too early; a temperature is fitted after training anyway."""
+    torch = _torch()
+    zs = logits(model, tokenizer, ids, device)
+    temps = fit_temperatures(zs, targets)
+    return sum(float(torch.nn.functional.cross_entropy(torch.tensor(z) / t, torch.tensor(q)))
+               for z, q, t in zip(zs, targets, temps))
 
 
 def fit_temperatures(field_logits: List[List[List[float]]], field_targets: List[List[List[float]]]) -> List[float]:
