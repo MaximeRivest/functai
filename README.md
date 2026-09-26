@@ -20,6 +20,7 @@ Version 1.0 no longer depends on DSPy. See [Migrating from 0.x](#12-migrating-fr
 - [2. Core concepts](#2-core-concepts)
 - [3. Types are the contract](#3-types-are-the-contract)
 - [4. Configuration](#4-configuration)
+- [4b. Signing in: subscriptions and keys](#4b-signing-in-subscriptions-and-keys)
 - [5. Chat templates and layouts](#5-chat-templates-and-layouts)
 - [6. Reasoning, several outputs, tools](#6-reasoning-several-outputs-tools)
 - [7. Memory](#7-memory)
@@ -39,7 +40,13 @@ pip install functai          # Python 3.11+
 ```
 
 Keys come from the environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`GEMINI_API_KEY`, `GROQ_API_KEY`, …) or from `configure(api_key=...)`.
+`GEMINI_API_KEY`, `GROQ_API_KEY`, …). Or sign in once with your Claude,
+ChatGPT, GitHub Copilot or xAI subscription (§4b):
+
+```python
+import functai
+functai.login("claude")
+```
 
 ```python
 from functai import ai, _ai, configure
@@ -218,7 +225,8 @@ lm15 reads it.
 | setting | meaning |
 |---|---|
 | `lm` | the model |
-| `api_key`, `base_url` | for the provider `lm` routes to (default: environment) |
+| `api_key`, `base_url` | for the provider `lm` routes to (an explicit key beats everything) |
+| `auth` | saved logins: default on; a path for another credentials file; `False` to never use them |
 | `router` | any lm15 router, for full control |
 | `temperature`, `max_tokens`, `seed`, `top_p`, `stop`, … | any lm15 `Config` field |
 | `adapter` | the layout (§5); a chat template is given per function, `@ai(template=[...])` |
@@ -231,6 +239,69 @@ lm15 reads it.
 | `debug` | print a line per call |
 
 An unknown setting is an error, not a silent no-op.
+
+## 4b. Signing in: subscriptions and keys
+
+```python
+import functai
+
+functai.login("claude")        # your Claude Pro/Max subscription
+functai.login("chatgpt")       # ChatGPT Plus/Pro (the Codex backend)
+functai.login("copilot")       # GitHub Copilot
+functai.login("grok")          # xAI
+functai.login("openrouter")    # approve in the browser; OpenRouter mints a key
+functai.login("openai")        # asks for an API key and saves it
+functai.login("groq", key="gsk-...")
+functai.login()                # asks which
+```
+
+Sign in once; every later session (and every tool built on lm15) uses it.
+Then name the model with the account's prefix:
+
+```python
+functai.configure(lm="claude:claude-sonnet-4-5")
+functai.configure(lm="chatgpt:gpt-5.5")
+functai.configure(lm="copilot:gpt-4.1")
+```
+
+`functai.logins()` shows everything you can use right now, and a model to try:
+
+    provider        how                            status                            try
+    ──────────────  ─────────────────────────────  ────────────────────────────────  ────────────────────────
+    Claude          saved login                    ready until 2026-09-26 19:02 UTC  claude:claude-sonnet-4-5
+    GitHub Copilot  saved login                    ready until 2026-09-27 11:02 UTC  copilot:gpt-4.1
+    ChatGPT         Codex CLI                      found                             chatgpt:gpt-5.5
+    openai          environment ($OPENAI_API_KEY)  found                             gpt-4.1-mini
+
+How it works, and what to expect:
+
+- **A Claude Code or Codex CLI already signed in on this machine** is used as
+  is: no new login, nothing copied. `functai.login("claude")` just records
+  that choice.
+- **Which credential a call uses**: an explicit `api_key=` first; then the
+  saved login for that provider; then the environment and CLI logins. A saved
+  key therefore beats the same provider's environment variable.
+- **Logins renew themselves.** A saved login that expired and cannot renew
+  raises `functai.LoginRequired` with the command to type
+  (`functai.login('claude')`); it never switches to a paid key on its own. A
+  missing key raises the same error, saying which variable to set.
+- `functai.login("claude")` when you are already signed in says so and does
+  nothing; `again=True` signs in again. `functai.logout("claude")` forgets the
+  saved login; an environment key or CLI login for that provider, if you have
+  one, is used again afterwards (except xAI, which lm15 blocks on purpose).
+- A browser opens by itself when the machine has a screen; over SSH the link
+  (or device code) is printed for you to open anywhere.
+- Some sign-ins (GitHub Copilot, Kimi Code, the Claude and ChatGPT browser
+  logins) are not yet certified by lm15; functai says so before starting.
+  **Whether a provider allows its subscription to be used this way, and how it
+  bills it, is the provider's decision.**
+- Logins are saved in lm15's credentials file (`~/.config/lm15/credentials.json`,
+  or `$LM15_CREDENTIALS_PATH`); `configure(auth="path/to/file.json")` uses
+  another one, `configure(auth=False)` none.
+- The ChatGPT backend takes no `temperature`, `top_p` or `max_tokens`, and
+  OpenAI's reasoning models (o-series, GPT-5) take no `temperature`: functai
+  leaves them out of those requests and warns once, so one `configure(...)`
+  works across models.
 
 ## 5. Chat templates and layouts
 

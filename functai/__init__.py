@@ -8,11 +8,13 @@ API:
 - Decorator: @ai        (bare or with options)
 - Sentinel:  _ai        (bare, or _ai["description"] for extra outputs)
 - Defaults:  configure(...) (process-wide, or `with configure(...):` for a block)
+- Accounts:  login("claude"), logins(), logout(...)  (subscriptions, OpenRouter, API keys)
 - Templates: system(...), user(...), assistant(...), developer(...), turns()  → @ai(template=[...])
 - Programs:  @module; fn.opt(...), evaluate(...), and the optimizers
 - Utils:     phistory(), inspect_history(), clear_cache()
 """
 
+from .accounts import login, login_methods, logins, logout
 from .adapters import (assistant, chat_adapter, developer, json_adapter, system, template_adapter,  # noqa: F401
                        turns, user, xml_adapter)
 from .core import (
@@ -40,7 +42,7 @@ from .core import (
     signature_text,
 )
 from .data import Example, Prediction
-from .engine import StepLimit, clear_cache, clear_history  # noqa: F401
+from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
 from .module import FunctAIModule, module
 from .optimizers import (
     BootstrapFewShot,
@@ -63,6 +65,11 @@ __all__ = [
     "ai",
     "_ai",
     "configure",
+    "login",
+    "logins",
+    "logout",
+    "login_methods",
+    "LoginRequired",
     "phistory",
     "inspect_history",
     "settings",

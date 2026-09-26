@@ -28,6 +28,15 @@ The public API is kept: `@ai`, `_ai`, `configure`, `all=True`, `stateful`,
 - Reliability: one re-ask after an unreadable reply (`retries=1`), backoff on
   transient provider errors (`api_retries=3`), an opt-in in-memory reply
   cache (`cache_replies=True`; off by default), misspelled layouts repaired and reported.
+- Accounts: `functai.login("claude" | "chatgpt" | "copilot" | "grok" | "kimi" |
+  "openrouter" | "<provider>", key=...)`, `logins()`, `logout()`, `LoginRequired`;
+  model prefixes `claude:`, `chatgpt:`, `copilot:`, `kimi:`. Saved lm15 logins are
+  used automatically (after an explicit `api_key`, before the environment);
+  `configure(auth=False | path)`. Claude Code / Codex CLI logins are used in place.
+  Subscription providers get their API's abilities (native tools, thinking).
+- Settings a model refuses are left out with one warning: `temperature`/`top_p`
+  for OpenAI reasoning models, those and `max_tokens` for the ChatGPT backend;
+  no stop sequences for xAI.
 - Inspection: `phistory()`, `inspect_history()`, `fn.render()`, `fn.explain()`.
 - Types: tuples, sets, TypedDicts, `Any`, `Annotated[T, "description"]`;
   JSON integers read into `float` fields become floats.

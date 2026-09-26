@@ -509,11 +509,11 @@ class FunctAIFunc:
                 if len(self._plan_cache) > 64:
                     self._plan_cache.clear()
                 self._plan_cache[key] = plan
-        return plan, router, model
+        return plan, router, model, route
 
     def plan(self) -> lmcc.Plan:
         """The lmcc plan for the current model: ``.explain()``, ``.describe()``, ``.render(...)``."""
-        return self._plan_for(self._spec(), self._effective())[0]
+        return self._plan_for(self._spec(), self._effective())[0]  # (plan, router, model, route)
 
     def explain(self) -> str:
         """How calls are laid out for the current model: adapter, reader, transports, formats."""
@@ -531,7 +531,8 @@ class FunctAIFunc:
         """The exact lm15 request the first model call would send. No network."""
         inputs = self._bind_inputs(args, kwargs)
         spec, s = self._spec(), self._effective()
-        plan, _router, model = self._plan_for(spec, s)
+        plan, _router, model, route = self._plan_for(spec, s)
+        s = models.adjust(s, route)
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
             values["tools"] = list(self._tool_specs)
@@ -570,7 +571,8 @@ class FunctAIFunc:
         if (s.get("autocompile") or s.get("autoinstruct")) and not self._autoinstructed:
             self._autoinstruct(s)
             spec = self._spec()
-        plan, router, model = self._plan_for(spec, s)
+        plan, router, model, route = self._plan_for(spec, s)
+        s = models.adjust(s, route)
         past = self._past(plan, spec, s)
         pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
                           router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},

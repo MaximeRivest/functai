@@ -27,7 +27,8 @@ CONFIG_FIELDS = frozenset(lm15.Config.__dataclass_fields__)
 DEFAULTS: Dict[str, Any] = {
     # which model, and how to reach it
     "lm": None,                 # "gpt-4.1-mini", "claude-haiku-4-5", "groq:openai/gpt-oss-120b", "openai/gpt-4o"
-    "api_key": None,            # a key for the provider `lm` routes to (else the environment)
+    "api_key": None,            # a key for the provider `lm` routes to (beats saved logins and the environment)
+    "auth": None,               # saved logins: None/True (lm15's credentials file) | a file path | False (never)
     "base_url": None,           # a base URL for that provider
     "router": None,             # any lm15 router (resolve/complete); overrides the three above
     "capabilities": None,       # lmcc capability facts that override functai's model table

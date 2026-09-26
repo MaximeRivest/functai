@@ -31,6 +31,41 @@ from .data import Prediction
 from .signature import Spec, coerce, shape_of
 
 
+class LoginRequired(RuntimeError):
+    """No usable credential for the model's provider: sign in or pass a key.
+    ``.provider`` names it; ``__cause__`` is lm15's error."""
+
+    def __init__(self, message: str, provider: Optional[str] = None):
+        super().__init__(message)
+        self.provider = provider
+
+
+_SIGN_IN_REASONS = {"login_required", "credential_rejected", "indeterminate", "connection_changed"}
+
+
+def _login_error(exc: Exception) -> Optional[LoginRequired]:
+    """lm15's credential errors, said the functai way (what to type next)."""
+    from .accounts import ACCOUNTS, CLI_LOGINS
+    if isinstance(exc, lm15.AuthOperationError) and getattr(exc, "reason", None) not in _SIGN_IN_REASONS:
+        return None
+    if not isinstance(exc, (lm15.MissingCredentialError, lm15.AuthOperationError, lm15.AuthError)):
+        return None
+    provider = getattr(exc, "provider", None)
+    friendly = next((alias for alias, p in (("claude", "claude-code"), ("chatgpt", "openai-codex"),
+                                            ("copilot", "github-copilot"), ("kimi", "kimi-code"))
+                     if p == provider), provider)
+    is_account = provider in {p for p, _ in ACCOUNTS}
+    lines = [f"{provider}: {exc}"]
+    if provider:
+        lines.append(f"Sign in with functai.login({friendly!r})" if is_account
+                     else f"Save a key with functai.login({friendly!r}), set "
+                          + " or ".join(f"${k}" for k in (getattr(exc, 'env_keys', ()) or ())[:1] or ("its API key",))
+                          + ", or pass api_key=...")
+        if provider in CLI_LOGINS:
+            lines.append(f"(or sign in to the {CLI_LOGINS[provider][0]} on this machine)")
+    return LoginRequired("\n".join(lines), provider)
+
+
 class StepLimit(RuntimeError):
     """The tool loop reached ``max_steps`` without an answer. ``.turn`` is the turn so far."""
 
@@ -202,6 +237,9 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
                        else min(30.0, 2 ** attempt) * (0.5 + random.random()))
         except Exception as exc:
             _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
+            friendly = _login_error(exc)
+            if friendly is not None:
+                raise friendly from exc
             raise
     _record(CallRecord(function, model, request, response))
     if key is not None and response.finish_reason not in ("error",):
@@ -290,6 +328,8 @@ def _complete(plan, rendered, *, router, model, settings, function, responses) -
                                              f"first; raise max_tokens)", fix=err.fix, partial=err.partial)
             if attempt == retries or not err.code.startswith("parse-"):
                 raise err
+            if err.code == "parse-truncated" and "max_tokens" in (settings.get("_dropped") or ()):
+                raise err                     # this provider takes no token budget to raise
             if err.code == "parse-truncated":
                 current = (config_of(settings, overrides) or lm15.Config()).max_tokens or 1024
                 overrides["max_tokens"] = current * 2
@@ -385,5 +425,5 @@ def fit_turn(plan: lmcc.Plan, spec: Spec, demo: Any) -> Optional[lmcc.Turn]:
         return None
 
 
-__all__ = ["StepLimit", "CallRecord", "inspect_history", "phistory", "clear_cache", "clear_history", "run",
+__all__ = ["StepLimit", "LoginRequired", "CallRecord", "inspect_history", "phistory", "clear_cache", "clear_history", "run",
            "fit_turn", "tool_spec"]
