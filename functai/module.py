@@ -135,8 +135,48 @@ class FunctAIModule:
 
 
 def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
-    """``@module`` (or ``@module(requires=["numpy>=2"])``): a Python function that
-    calls @ai functions, optimized and saved as one program."""
+    '''Make a Python function that calls AI functions into one program.
+
+    The body is ordinary Python: loops, ifs, helpers, several AI functions.
+    As a module it can be evaluated, optimized (each AI function inside
+    learns from the runs the metric accepts), run on a table, and saved as
+    one program. Use it bare (``@module``) or with requirements.
+
+    Parameters
+    ----------
+    requires : list of str
+        Packages the program needs that functai cannot see from the code
+        (``["numpy>=2"]``), for ``functai.save``.
+
+    Returns
+    -------
+    FunctAIModule
+        Called like the original. The return annotation is the program's
+        output type.
+
+    See Also
+    --------
+    evaluate : measure the program on rows with known answers.
+    save : save it with everything it depends on.
+
+    Examples
+    --------
+    ```python
+    @ai
+    def draft(topic: str) -> str:
+        """A two-sentence paragraph about the topic."""
+
+    @ai
+    def shorten(text: str) -> str:
+        """The text in at most twelve words."""
+
+    @module
+    def blurb(topic: str) -> str:
+        return shorten(draft(topic))
+
+    blurb("why paired comparisons need fewer examples")
+    ```
+    '''
     if fn is None:
         return lambda real_fn: FunctAIModule(real_fn, requires=requires)
     return FunctAIModule(fn, requires=requires)

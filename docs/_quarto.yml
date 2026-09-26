@@ -1,0 +1,223 @@
+project:
+  type: website
+  output-dir: _site
+  pre-render: _prebuild.py
+  render:
+    - "*.qmd"
+    - "articles/*.qmd"
+    - "examples/*.qmd"
+    - "reference/*.qmd"
+
+# Every page's code runs once, against real models, and the outputs are
+# stored in _freeze/ (committed). A build without keys reuses them; a page
+# re-runs only when its source changes, or with `quarto render --cache-refresh`.
+execute:
+  freeze: auto
+  warning: false
+
+website:
+  title: "functai"
+  site-url: https://maximerivest.github.io/functai/
+  repo-url: https://github.com/maximerivest/functai
+  repo-actions: [edit, issue]
+  description: "Typed Python functions whose body is a language model call."
+  search:
+    location: navbar
+    type: overlay
+  page-navigation: true
+  navbar:
+    left:
+      - text: Get started
+        href: get-started.qmd
+      - text: Reference
+        href: reference/index.qmd
+      - text: Articles
+        menu:
+          - text: "**Writing AI functions**"
+          - href: articles/anatomy.qmd
+          - href: articles/types.qmd
+          - href: articles/outputs.qmd
+          - href: articles/tools.qmd
+          - href: articles/memory.qmd
+          - href: articles/modules.qmd
+          - text: "---"
+          - text: "**Models**"
+          - href: articles/models.qmd
+          - href: articles/logins.qmd
+          - href: articles/layouts.qmd
+          - text: "---"
+          - text: "**Measure and improve**"
+          - href: articles/evaluation.qmd
+          - href: articles/optimization.qmd
+          - href: articles/tables.qmd
+          - text: "---"
+          - text: "**Ship**"
+          - href: articles/saving.qmd
+          - href: articles/baking.qmd
+          - text: "---"
+          - text: "**When things go wrong**"
+          - href: articles/inspection.qmd
+          - href: articles/reliability.qmd
+          - href: articles/upgrading.qmd
+          - text: "---"
+          - text: "All articles…"
+            href: articles/index.qmd
+      - text: Examples
+        href: examples/index.qmd
+      - text: News
+        href: news.qmd
+    right:
+      - icon: github
+        href: https://github.com/maximerivest/functai
+        aria-label: functai on GitHub
+  sidebar:
+    - id: articles
+      title: Articles
+      style: floating
+      contents:
+        - articles/index.qmd
+        - section: Writing AI functions
+          contents:
+            - articles/anatomy.qmd
+            - articles/types.qmd
+            - articles/outputs.qmd
+            - articles/tools.qmd
+            - articles/memory.qmd
+            - articles/modules.qmd
+        - section: Models
+          contents:
+            - articles/models.qmd
+            - articles/logins.qmd
+            - articles/layouts.qmd
+        - section: Measure and improve
+          contents:
+            - articles/evaluation.qmd
+            - articles/optimization.qmd
+            - articles/tables.qmd
+        - section: Ship
+          contents:
+            - articles/saving.qmd
+            - articles/baking.qmd
+        - section: When things go wrong
+          contents:
+            - articles/inspection.qmd
+            - articles/reliability.qmd
+            - articles/upgrading.qmd
+  page-footer:
+    left: "functai · MIT license"
+    right: "Every output on this site came from running its code."
+
+format:
+  html:
+    theme:
+      light: [cosmo, styles.scss]
+      dark: [cosmo, styles-dark.scss]
+    toc: true
+    toc-title: On this page
+    code-copy: true
+    code-overflow: scroll
+    link-external-newwindow: false
+    df-print: default
+
+quartodoc:
+  package: functai
+  dir: reference
+  title: Reference
+  style: pkgdown
+  parser: numpy
+  render_interlinks: false
+  sections:
+    - title: Writing AI functions
+      desc: A typed function becomes a model call. The parts of the function are the parts of the prompt.
+      contents:
+        - ai
+        - name: _ai
+          dynamic: false
+        - module
+        - FunctAIFunc
+        - Prediction
+
+    - title: Models and settings
+      desc: Which model answers, how it is reached, and every other setting.
+      contents:
+        - configure
+        - login
+        - logins
+        - logout
+        - login_methods
+
+    - title: Prompt layouts
+      desc: How each value is written into the prompt and read back. The default needs nothing; these write the conversation yourself.
+      contents:
+        - package: lmcc.adapter
+          name: system
+        - package: lmcc.adapter
+          name: user
+        - package: lmcc.adapter
+          name: assistant
+        - package: lmcc.adapter
+          name: developer
+        - turns
+
+    - title: Evaluation
+      desc: Run a program on rows with known answers and score it, with an honest interval.
+      contents:
+        - evaluate
+        - Evaluation
+        - compare
+        - runs
+        - exact_match
+
+    - title: Optimizers
+      desc: Improve the instruction and the worked examples a function sends. Used through `fn.opt(...)`.
+      contents:
+        - LabeledFewShot
+        - BootstrapFewShot
+        - BootstrapFewShotWithRandomSearch
+        - InstructionSearch
+        - Optimizer
+
+    - title: Saving and shipping
+      desc: Find everything a program depends on, save it to a folder, prove it runs elsewhere, load it back.
+      contents:
+        - check
+        - Report
+        - Problem
+        - save
+        - verify
+        - Verification
+        - load
+        - file
+
+    - title: Baking into weights
+      desc: Train a small model that answers an AI function, then run the same function on it.
+      contents:
+        - bake.bake
+        - bake.Baked
+        - bake.BakeReport
+        - bake.load
+
+    - title: Inspection
+      desc: See exactly what was sent and what came back.
+      contents:
+        - phistory
+        - inspect_history
+        - signature_text
+        - clear_cache
+
+    - title: Errors
+      desc: What functai raises, and what each one tells you to do.
+      contents:
+        - LoginRequired
+        - StepLimit
+        - Refused
+        - LoadRefused
+
+    - title: Low-level helpers
+      desc: The pieces `@ai` uses to read a function. You rarely need them directly.
+      contents:
+        - flexiclass
+        - docments
+        - docstring
+        - parse_docstring
+        - compute_signature

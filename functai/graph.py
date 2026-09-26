@@ -1181,14 +1181,51 @@ def lock(requirements: Iterable[Requirement]) -> List[Requirement]:
 
 
 def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] = ()) -> Report:
-    """What ``program`` depends on, and what keeps it from being saved cleanly.
+    '''List everything a program depends on, and what would stop a clean save.
 
-    - ``include``: modules (or package prefixes) to save as code even though they
-      are installed, e.g. your own project installed in editable mode.
-    - ``requires``: requirements to add by hand (``"numpy>=2"``), for what the code
-      reaches in ways functai cannot see.
+    Follows every name the code reaches: AI functions and modules (also
+    through helper functions), their tools, your own functions and classes
+    (in files or notebook cells), the types in the signatures, constants,
+    and data files read through ``functai.file``. Reads code only: runs
+    nothing and calls no model.
 
-    Reads code; runs nothing and calls no model."""
+    Parameters
+    ----------
+    program : AI function, module, or function
+        The program's entry point.
+    include : list of str
+        Modules or package prefixes to save as code even though they are
+        installed (your own project, installed in editable mode).
+    requires : list of str
+        Requirements to add by hand (``"numpy>=2"``), for what the code
+        reaches in ways that reading it can't see.
+
+    Returns
+    -------
+    Report
+        Displays as a tree of dependencies, the requirements, and each
+        problem with its fix. ``report.ok`` is True when nothing stops a save.
+
+    See Also
+    --------
+    save : save the program, once ``check`` is clean.
+
+    Examples
+    --------
+    ```python
+    ORDERS = {"A-1042": "stuck at carrier"}
+
+    def lookup_order(order_id: str) -> str:
+        """The order's shipping status."""
+        return ORDERS.get(order_id, "no such order")
+
+    @ai(tools=[lookup_order])
+    def reply(message: str) -> str:
+        """A short reply to the customer. Check the order first."""
+
+    check(reply)
+    ```
+    '''
     a = Analysis(include)
     entry = a.program(program)
     a.finish()

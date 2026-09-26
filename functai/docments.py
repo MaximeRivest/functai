@@ -48,7 +48,9 @@ def _is_initvar(anno: Any) -> bool:
 
 
 def flexiclass(cls):
-    """
+    """Make a plain annotated class a dataclass, as ``@ai`` does for types.
+
+    
     Convert `cls` to a dataclass IN PLACE, giving UNSET defaults to
     any annotated field that doesn't already have a default.
 
@@ -230,7 +232,9 @@ _NUMPY_RET_RE = re.compile(r"^\s*([A-Za-z_][\w\.\[\], ]*|None)\s*$")
 
 
 def parse_docstring(sym: Any) -> Dict[str, str]:
-    """
+    """Split a numpy-style docstring into its parts.
+
+    
     Parse a subset of numpy-style docstrings:
       Parameters
       ----------
@@ -529,7 +533,9 @@ def docments(
     returns: bool = True,
     eval_str: bool = False,
 ) -> Dict[str, Any]:
-    """
+    """The documentation of a function's parameters and return, read from its comments.
+
+    
     Generate comment docs for functions or classes.
 
     For functions: returns {param_name: comment, 'return': comment?}

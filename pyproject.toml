@@ -40,7 +40,7 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/maximerivest/functai"
 "Bug Tracker" = "https://github.com/maximerivest/functai/issues"
-"Documentation" = "https://github.com/maximerivest/functai#readme"
+"Documentation" = "https://maximerivest.github.io/functai/"
 "Source" = "https://github.com/maximerivest/functai"
 
 [project.optional-dependencies]
@@ -85,4 +85,16 @@ dev = [
     "pytest>=7.0.0",
     "pydantic>=2",
     "dpyr>=1.10",
+]
+# the documentation website (docs/): Quarto runs every page's code on this
+# kernel, and quartodoc writes the reference pages from the docstrings
+docs = [
+    "ipykernel>=6",
+    "nbformat>=5",
+    "nbclient>=0.10",
+    "pyyaml>=6",
+    "pydantic>=2",
+    "dpyr>=1.10",
+    "quartodoc>=0.11",
+    "griffe>=1,<2",   # quartodoc 0.11 breaks on griffe 2
 ]

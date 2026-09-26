@@ -58,7 +58,9 @@ class BakeReport:
 
     @property
     def accuracy(self) -> float:
-        """Share of test rows with every output right."""
+        """What baking measured: accuracy with its interval, calibration, speed, and where to escalate.
+
+        Share of test rows with every output right."""
         return sum(self.correct) / len(self.correct) if self.correct else float("nan")
 
     def threshold(self, accuracy: float = 0.95, min_rows: int = 20) -> Optional[Dict[str, float]]:

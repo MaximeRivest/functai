@@ -1,8 +1,6 @@
 ---
-title: "FunctAI tutorial: from one function to a tested program"
-format: gfm
-output-file: tutorial.md
-jupyter: python3
+title: "Get started"
+subtitle: "From one function to a tested, shipped program"
 ---
 
 This tutorial builds a small support desk, one step at a time: read a
@@ -12,14 +10,6 @@ this page; the outputs are real model replies.
 
 You need `pip install "functai[data]"` and a key for a model provider
 (here `OPENAI_API_KEY`), or a subscription login: `functai.login("claude")`.
-
-```{python}
-#| include: false
-# render dataframes as text on this page (a notebook shows them as tables)
-get_ipython().display_formatter.formatters["text/html"].enabled = False
-import polars as pl
-pl.Config(tbl_cols=12, tbl_width_chars=110, fmt_str_lengths=40).__enter__()
-```
 
 ## 1. A first AI function
 
@@ -298,6 +288,16 @@ fresh environment, and `functai.load(...)` brings it back.
 
 ## Where next
 
-- The [README](../README.md) is the reference: every setting, layouts and
-  chat templates, logins, evaluation and optimization options.
-- The [examples](../examples/) go deeper on one topic each.
+You have now seen the whole life of a program. Each step has its own
+article, in the same order:
+
+- **Writing:** [how a function becomes a prompt](articles/anatomy.qmd),
+  [types](articles/types.qmd), [reasoning and several outputs](articles/outputs.qmd),
+  [tools](articles/tools.qmd), [memory](articles/memory.qmd),
+  [programs of several functions](articles/modules.qmd).
+- **Models:** [choosing a model and settings](articles/models.qmd),
+  [signing in](articles/logins.qmd), [prompt layouts](articles/layouts.qmd).
+- **Measuring and improving:** [evaluation](articles/evaluation.qmd),
+  [optimization](articles/optimization.qmd), [AI functions on tables](articles/tables.qmd).
+- **Shipping:** [saving and verifying](articles/saving.qmd),
+  [baking into small weights](articles/baking.qmd).

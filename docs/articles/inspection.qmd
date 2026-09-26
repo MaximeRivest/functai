@@ -1,0 +1,68 @@
+---
+title: "Inspecting calls"
+description: "See exactly what was sent, what came back, what it cost, and what would be sent, without sending it."
+---
+
+{{< include ../_setup.qmd >}}
+
+When an answer surprises you, look at the conversation before changing
+anything. Nearly every problem is visible there: an instruction that
+says something else than you meant, an input that arrived empty, a
+reply in the wrong form.
+
+```{python}
+@ai
+def summarize(text: str, focus: str = "key points") -> str:
+    """Summarize the text in one sentence, concentrating on the focus."""
+
+summarize("FunctAI lets developers write typed functions whose body is a model call, "
+          "so they can concentrate on logic instead of prompt strings.", focus="benefits")
+```
+
+## The last calls: `phistory`
+
+```{python}
+print(functai.phistory())
+```
+
+`phistory(3)` shows the last three calls. `functai.inspect_history(3)`
+returns them as objects (lm15's `Request` and `Response`), to inspect in
+code.
+
+## Before sending: `render`
+
+`fn.render(...)` builds the exact request the call would send, without
+sending it:
+
+```{python}
+request = summarize.render("Some text.")
+print(request.system)
+```
+
+## The layout: `explain` and `signature_text`
+
+```{python}
+functai.signature_text(summarize)
+```
+
+```{python}
+print(summarize.explain())
+```
+
+## What a call cost
+
+`all=True` returns the tokens, summed over every model call it made
+(tool loops included):
+
+```{python}
+p = summarize("Short text.", all=True)
+p.usage
+```
+
+For a whole run, `evaluate` and `fn.map` put the tokens and time of every
+row in their table; see [Evaluation](evaluation.qmd).
+
+## One line per call
+
+`functai.configure(debug=True)` prints a line for each call as it
+happens: which function, which model, how long, how many tokens.

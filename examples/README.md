@@ -3,7 +3,7 @@
 Each folder is one topic, written as a [Quarto](https://quarto.org)
 document (`main.qmd`) and rendered with real model replies into the
 folder's `README.md`. New to FunctAI? Start with the
-[tutorial](../docs/tutorial.md).
+[Get started](https://maximerivest.github.io/functai/get-started.html).
 
 | example | what it shows |
 |---|---|

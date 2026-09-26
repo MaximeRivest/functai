@@ -486,19 +486,66 @@ def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
 def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str] = (),
          requires: Iterable[str] = (), allow: Iterable[str] = (), examples: Iterable[Dict[str, Any]] = (),
          record: Iterable[Dict[str, Any]] = (), overwrite: bool = False, weights: str = "copy"):
-    """Save ``program`` (an @ai function, an @module, or a Python function that
-    calls them) with its code, data files and pinned requirements, to a folder.
+    '''Save a program to a folder, with everything it depends on.
 
-    Refuses (``functai.graph.Refused``, with the report) while ``check`` finds
-    errors; ``allow=["hidden-state", ...]`` records a deliberate exception.
-    ``include`` / ``requires``: as for ``check``. ``examples``: inputs of the
-    program (an AI function) to fingerprint, besides its demos.
+    The folder holds the code the program reaches, each AI function's
+    settings, instruction and demos, data files read with ``functai.file``,
+    and pinned requirements. It is written whole or not at all. Keys and
+    connections are never saved.
 
-    ``record``: inputs to run the program on now, for real (this calls the
-    model); every model reply is recorded, and ``verify`` replays the recordings
-    to check that the saved program, tools and helpers included, produces the
-    same results in a fresh environment, without calling a model. Writes a new folder whole or
-    not at all. Returns the report."""
+    Parameters
+    ----------
+    program : AI function, module, or function
+        The program's entry point.
+    path : str or path
+        The folder to write.
+    include, requires : list of str
+        As for ``check``.
+    allow : list of str
+        Problems to accept on purpose, like ``["hidden-state"]`` to save a
+        global's current value.
+    record : list of dict
+        Inputs to run the program on now, for real (this calls the model).
+        The replies are recorded, and ``verify`` replays them to prove the
+        saved program gives the same results, without calling a model.
+    examples : list of dict
+        Inputs to fingerprint the rendered requests of, besides the demos.
+    overwrite : bool
+        Replace an existing folder.
+    weights : str
+        Baked weights: ``"copy"`` them into the folder (default) or
+        ``"reference"`` them.
+
+    Returns
+    -------
+    Report
+        The ``check`` report of what was saved.
+
+    Raises
+    ------
+    Refused
+        While ``check`` finds errors, with the report.
+
+    See Also
+    --------
+    check : what would be saved.
+    verify : prove the folder runs in a fresh environment.
+    load : read it back.
+
+    Examples
+    --------
+    ```python
+    import tempfile, os
+
+    @ai
+    def capital(country: str) -> str:
+        """The country's capital city."""
+
+    folder = os.path.join(tempfile.mkdtemp(), "capital")
+    save(capital, folder, record=[{"country": "Kenya"}])
+    sorted(os.listdir(folder))
+    ```
+    '''
     from .graph import Refused, check, lock
     report = check(program, include=include, requires=requires)
     allow = set(allow)
@@ -744,13 +791,54 @@ def _verify_loaded(package: str, manifest: Dict[str, Any]) -> List[str]:
 
 
 def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str = "refuse"):
-    """The saved program at ``path``, ready to call.
+    '''Load a saved program, ready to call.
 
-    Checks first, runs nothing: the files' hashes, the requirements this
-    environment has, and (after loading) that every AI function renders the same
-    requests as when it was saved. ``trust=True`` is required because loading
-    runs the saved code. ``check_env="warn"`` loads despite version or request
-    differences, with warnings; missing packages always refuse."""
+    Checks before running anything: the files' hashes (catching accidental
+    edits) and the packages this environment has. After loading, checks that
+    every AI function renders the same requests as when it was saved.
+
+    Parameters
+    ----------
+    path : str or path
+        The saved folder.
+    trust : bool
+        Must be True: loading runs the saved code. The hashes catch
+        accidents, not someone who edits both the code and ``functai.json``.
+    check_env : str
+        ``"refuse"`` (default) refuses on version or request differences;
+        ``"warn"`` loads anyway, with warnings. Missing packages always
+        refuse.
+
+    Returns
+    -------
+    AI function or module
+        The program, as it was saved.
+
+    Raises
+    ------
+    LoadRefused
+        When a check fails, saying which and why.
+
+    See Also
+    --------
+    save : write the folder.
+    verify : prove it runs in a fresh environment.
+
+    Examples
+    --------
+    ```python
+    import tempfile, os
+
+    @ai
+    def capital(country: str) -> str:
+        """The country's capital city."""
+
+    folder = os.path.join(tempfile.mkdtemp(), "capital")
+    save(capital, folder)
+    loaded = load(folder, trust=True)
+    loaded("Peru")
+    ```
+    '''
     root = Path(path).expanduser().resolve()
     manifest = _read_manifest(root)
     problems = _check_hashes(root, manifest)
@@ -816,7 +904,9 @@ def _no_bytecode():
 
 @dataclasses.dataclass
 class Verification:
-    """What ``verify`` found. ``ok`` means: a fresh environment built from the
+    """What ``verify`` found.
+
+    What ``verify`` found. ``ok`` means: a fresh environment built from the
     saved requirements alone loaded the program, every AI function rendered
     exactly the requests it rendered when saved, and each recording
     (``save(record=...)``) produced the same result against its recorded replies."""
@@ -931,12 +1021,52 @@ def verify_here(path: "str | os.PathLike[str]") -> Verification:
 
 def verify(path: "str | os.PathLike[str]", *, trust: bool = False, fresh: bool = True,
            python: Optional[str] = None, timeout: float = 900) -> Verification:
-    """Prove the saved program is self-contained: build a new environment with
-    ``uv`` from ``requirements.lock`` alone, load the program there (in isolated
-    mode, from an empty directory, so nothing from your project leaks in), and
-    compare every AI function's rendered requests with the saved fingerprints.
-    No model is called. ``fresh=False`` checks in this environment instead
-    (weaker: packages installed here but not declared go unnoticed)."""
+    '''Prove a saved program runs somewhere else, without calling a model.
+
+    Builds a new environment with ``uv`` from the folder's lock file alone,
+    loads the program there from an empty directory (so nothing from your
+    project can leak in), then checks that every AI function renders
+    byte-identical requests, and that each recording (``save(record=...)``)
+    replays to the same result.
+
+    Parameters
+    ----------
+    path : str or path
+        The saved folder.
+    trust : bool
+        Must be True: verifying runs the saved code.
+    fresh : bool
+        Build a new environment (default). ``False`` checks in this one:
+        quicker, and blind to packages installed here but not declared.
+    python : str, optional
+        The Python version or interpreter for the new environment.
+    timeout : float
+        Seconds before giving up.
+
+    Returns
+    -------
+    Verification
+        Displays what was checked; ``.ok`` is True when everything matched.
+
+    See Also
+    --------
+    save : write the folder.
+    load : use it.
+
+    Examples
+    --------
+    ```python
+    import tempfile, os
+
+    @ai
+    def capital(country: str) -> str:
+        """The country's capital city."""
+
+    folder = os.path.join(tempfile.mkdtemp(), "capital")
+    save(capital, folder, record=[{"country": "Kenya"}])
+    verify(folder, trust=True, fresh=False)
+    ```
+    '''
     root = Path(path).expanduser().resolve()
     if not trust:
         raise PermissionError(f"verify loads {root}'s saved code; read it, then verify(..., trust=True)")

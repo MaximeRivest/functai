@@ -120,11 +120,54 @@ def effective(fn_settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
 
 
 class configure:
-    """``configure(lm="gpt-4.1-mini", temperature=0)`` sets process-wide defaults.
+    '''Set defaults for every AI function: the model, sampling, layout, and more.
 
-    ``with configure(temperature=0): ...`` changes them for the block only, and
-    only in the current context (threads started by functai inherit it; other
-    threads do not see it)."""
+    Called plainly, the settings apply to the whole program. Used in a
+    ``with`` block, they apply inside the block only, in this thread and in
+    the threads functai starts from it (``evaluate(num_threads=8)``).
+
+    Settings are looked up at every call, most specific first:
+    ``fn.using(...)``, then the function's own (``@ai(...)``), then a
+    ``with configure(...)`` block, then ``configure(...)``.
+
+    Parameters
+    ----------
+    **settings
+        Any setting ``@ai`` takes: ``lm``, ``temperature``, ``max_tokens``,
+        ``api_key``, ``base_url``, ``auth``, ``client``, ``adapter``,
+        ``module``, ``tools``, ``max_steps``, ``stateful``, ``retries``,
+        ``api_retries``, ``cache_replies``, ``teacher_lm``, ``debug``...
+        An unknown setting raises ``TypeError``.
+
+    Returns
+    -------
+    configure
+        Usable as a context manager, to undo the settings at the end of the
+        block.
+
+    See Also
+    --------
+    ai : settings for one function.
+    FunctAIFunc.using : a copy of one function with other settings.
+
+    Examples
+    --------
+    ```python
+    functai.configure(lm="gpt-4.1-mini", temperature=0)
+    functai.settings.lm
+    ```
+
+    For one block only:
+
+    ```python
+    @ai
+    def capital(country: str) -> str:
+        """The country's capital city."""
+
+    with functai.configure(lm="gpt-4.1-nano"):
+        print(capital("Canada"))
+    ```
+    '''
 
     def __init__(self, **overrides):
         self._overrides = check(overrides, "configure")

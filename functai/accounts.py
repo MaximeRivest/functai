@@ -187,7 +187,9 @@ def _expires(value: Optional[str]) -> Optional[str]:
 
 
 def logins(*, auth: Any = None) -> Logins:
-    """Everything functai can use right now: saved logins and keys, CLI logins
+    """Everything you can use right now: logins, saved keys, and keys in the environment.
+
+    Everything functai can use right now: saved logins and keys, CLI logins
     found on this machine, and API keys in the environment. Reads files and
     environment variables only; no network."""
     a = auth_for(True if auth is None else auth)
@@ -272,17 +274,52 @@ def _choose_method(a: Auth, provider: str, method: Optional[str]) -> Tuple[Optio
 
 def login(provider: Optional[str] = None, *, key: Optional[str] = None, method: Optional[str] = None,
           again: bool = False, open_browser: Optional[bool] = None, auth: Any = None) -> Login:
-    """Sign in to a provider once; functai (and lm15) use it from then on.
+    """Sign in to a provider once; every later session uses it.
 
-    - ``login("claude")``, ``login("chatgpt")``, ``login("copilot")``, ``login("grok")``,
-      ``login("kimi")``, ``login("openrouter")``: an account. For Claude and ChatGPT,
-      a Claude Code / Codex CLI already signed in on this machine is used as is.
-    - ``login("openai")`` asks for an API key; ``login("groq", key="gsk-...")`` saves one.
-    - ``login()`` asks which.
+    For subscriptions (Claude, ChatGPT, GitHub Copilot, xAI, Kimi) a browser
+    opens when this machine has a screen; over SSH a link or device code is
+    printed. A Claude Code or Codex CLI already signed in on this machine is
+    used as is. For API providers, the key is asked for, or given, and saved.
+    Already signed in: says so and does nothing.
 
-    Already signed in: says so and does nothing, unless ``again=True``.
-    ``method`` picks a specific lm15 login method (see ``functai.login_methods``).
-    ``open_browser``: default, when this machine has a display."""
+    Parameters
+    ----------
+    provider : str, optional
+        ``"claude"``, ``"chatgpt"``, ``"copilot"``, ``"grok"``, ``"kimi"``,
+        ``"openrouter"``, or an API provider (``"openai"``, ``"anthropic"``,
+        ``"groq"``...). None: asks which.
+    key : str, optional
+        An API key to save, instead of asking.
+    method : str, optional
+        One of lm15's sign-in methods for the provider (see
+        ``login_methods``).
+    again : bool
+        Sign in again even when already signed in.
+    open_browser : bool, optional
+        Default: when this machine has a display.
+    auth : str or path, optional
+        Another credentials file than lm15's.
+
+    Returns
+    -------
+    Login
+        What was saved, and a model to try with it.
+
+    See Also
+    --------
+    logins : everything usable right now.
+    logout : forget a saved login.
+
+    Examples
+    --------
+    ```python
+    # not run: opens a browser to sign in
+    functai.login("claude")
+    functai.configure(lm="claude:claude-sonnet-4-5")
+
+    functai.login("groq", key="gsk-...")
+    ```
+    """
     a = auth_for(True if auth is None else auth)
     if a is None:
         raise ValueError("login needs a credentials store; auth=False has none")
@@ -333,7 +370,9 @@ def _try_hint(provider: str) -> str:
 
 
 def logout(provider: str, *, auth: Any = None) -> None:
-    """Forget the saved login or key for a provider, on this machine (the account
+    """Forget a saved login or key, on this machine.
+
+    Forget the saved login or key for a provider, on this machine (the account
     itself is untouched). API keys in the environment still work afterwards, except
     where lm15 blocks them on purpose: a signed-out xAI subscription does not fall
     back to ``XAI_API_KEY``."""

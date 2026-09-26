@@ -60,7 +60,9 @@ def _mean_score(program: Any, rows: Sequence[Row], metric: Metric, num_threads: 
 
 
 class Optimizer:
-    """Base class. ``compile(program, trainset=..., valset=...)`` returns the new
+    """The base class of optimizers.
+
+    Base class. ``compile(program, trainset=..., valset=...)`` returns the new
     state of each AI function; it never changes the functions itself."""
 
     metric: Optional[Callable] = None
@@ -193,7 +195,9 @@ class BootstrapFewShot(Optimizer):
 
 
 class BootstrapFewShotWithRandomSearch(Optimizer):
-    """Several candidate demo sets (none, labeled only, bootstrapped, bootstrapped
+    """Try several sets of demos and keep the one that scores best on the validation rows.
+
+    Several candidate demo sets (none, labeled only, bootstrapped, bootstrapped
     from shuffled examples), each scored on ``valset`` (default: the trainset);
     the best one wins. ``candidates`` holds every candidate afterwards, as rows
     (``{"candidate", "demos", "score"}``; ``dpyr.read(opt.candidates)`` makes
@@ -272,7 +276,9 @@ _TIPS = [
 
 
 class InstructionSearch(Optimizer):
-    """Instruction candidates (the current one plus proposals written by
+    """Search instructions written by a model, with demo sets, and keep the best.
+
+    Instruction candidates (the current one plus proposals written by
     ``prompt_lm`` from the code, the signature and a few examples) × demo sets
     (bootstrapped, unless both demo limits are 0), searched over ``num_trials``
     minibatch evaluations; the top combinations are then scored on the whole

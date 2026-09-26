@@ -1,0 +1,69 @@
+---
+title: "Articles"
+toc: false
+---
+
+New to functai? Start with [Get started](../get-started.qmd), then read
+these as you need them. They follow the life of a program: write it,
+choose its model, measure and improve it, ship it.
+
+## Writing AI functions
+
+[Anatomy of an AI function](anatomy.qmd)
+: How each part of a Python function becomes part of the prompt. **Read this one first.**
+
+[Types are the contract](types.qmd)
+: Lists, records, enums, literals and pydantic models, as outputs and inputs.
+
+[Reasoning and several outputs](outputs.qmd)
+: Ask the model to think first, return several values, and get everything with `all=True`.
+
+[Tools](tools.qmd)
+: Let the model call your Python functions: lookups, searches, calculations.
+
+[Memory](memory.qmd)
+: Functions that remember the conversation.
+
+[Programs of several functions](modules.qmd)
+: `@module`: plain Python that calls AI functions, measured and saved as one program.
+
+## Models
+
+[Models and settings](models.qmd)
+: Any provider, and the cascade: whole program, block, function, copy.
+
+[Signing in](logins.qmd)
+: Subscriptions (Claude, ChatGPT, Copilot, xAI) and API keys.
+
+[Prompt layouts and chat templates](layouts.qmd)
+: How values are written into the prompt and read back; writing the conversation yourself.
+
+## Measure and improve
+
+[Evaluation](evaluation.qmd)
+: Scores with intervals, every answer as a table, paired comparisons.
+
+[Optimization](optimization.qmd)
+: Improve instructions and worked examples from your examples.
+
+[AI functions on tables](tables.qmd)
+: Call a function on a column, in `mutate()` and `filter()`.
+
+## Ship
+
+[Saving, verifying, loading](saving.qmd)
+: A program and everything it depends on, in a folder, proven to run elsewhere.
+
+[Baking into weights you own](baking.qmd)
+: Train a small model to answer a function; escalate the unsure cases.
+
+## When things go wrong
+
+[Inspecting calls](inspection.qmd)
+: See exactly what was sent and what came back.
+
+[When the model gets it wrong](reliability.qmd)
+: Repairs, retries, provider errors and the reply cache.
+
+[Upgrading from 0.x](upgrading.qmd)
+: What changed in 1.0.

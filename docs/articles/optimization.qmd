@@ -1,0 +1,121 @@
+---
+title: "Optimization"
+description: "Improve the instruction and worked examples a function sends, from your examples, without touching your code."
+---
+
+{{< include ../_setup.qmd >}}
+
+Some rules are easy to state: write them in the docstring. Others are
+easier to show than to say. An optimizer finds what to send the model,
+besides the inputs, so that it does better on your examples:
+
+- the **instruction**, and
+- the **demos**: worked examples shown before the question.
+
+It never edits your code, your types, or the layout. It works in place,
+and `undo_opt()` goes back.
+
+## Before and after
+
+A support desk with house rules the model can't guess: a broken item is
+a **shipping** claim (the carrier pays), and anything about money back is
+**billing**.
+
+```{python}
+from typing import Literal
+from dpyr import col
+
+@ai
+def category(message: str) -> Literal["shipping", "billing", "product", "account"]:
+    """The support category of the message."""
+
+dev = [
+    {"message": "The mug arrived in pieces.", "category": "shipping"},
+    {"message": "I want my money back for the toaster, it's useless.", "category": "billing"},
+    {"message": "The kettle's lid doesn't close properly.", "category": "product"},
+    {"message": "How do I change the email on my profile?", "category": "account"},
+    {"message": "Box was crushed and the lamp inside is cracked.", "category": "shipping"},
+    {"message": "Please refund the blender, it stopped working.", "category": "billing"},
+    {"message": "Toaster burns one side of the bread.", "category": "product"},
+    {"message": "Screen was shattered when I opened the package.", "category": "shipping"},
+    {"message": "Return the headphones and give me a refund please.", "category": "billing"},
+    {"message": "My coupon code didn't apply at checkout.", "category": "billing"},
+]
+train = [
+    {"message": "The vase came smashed.", "category": "shipping"},
+    {"message": "Frying pan arrived with a big dent.", "category": "shipping"},
+    {"message": "I'd like a refund for the kettle, the lid is loose.", "category": "billing"},
+    {"message": "Money back please, the chair wobbles.", "category": "billing"},
+    {"message": "The handle came off after two uses.", "category": "product"},
+    {"message": "I can't turn on two-factor authentication.", "category": "account"},
+]
+right = col.pred_result == col.category
+
+before = functai.evaluate(category, dev, {"right": right}, num_threads=8)
+category.opt(trainset=train, metric=right)
+after = functai.evaluate(category, dev, {"right": right}, num_threads=8)
+functai.compare(before, after)
+```
+
+The default optimizer, `BootstrapFewShot`, ran the function on the
+training rows and kept the runs the metric accepted as demos. What it
+chose:
+
+```{python}
+for demo in category.demos:
+    print(f"{demo.inputs['message']!r:58} → {demo.outputs['result']}")
+```
+
+`category.undo_opt()` reverts; `category.state()` shows the instruction
+and demos in use; `category.programs()` lists every version optimization
+produced.
+
+::: {.callout-tip}
+## Measure on rows you did not train on
+Optimize on `trainset`, judge on a separate `dev` set. A score measured on
+the training rows says how well the demos were memorized, not how well
+the function works.
+:::
+
+## The optimizers
+
+| optimizer | what it does | good for |
+|---|---|---|
+| `LabeledFewShot(k=16)` | your labeled rows become demos | a quick baseline |
+| `BootstrapFewShot(...)` (default) | runs the function on training rows; runs the metric accepts become demos, whole turns included (reasoning, tool calls) | most tasks |
+| `BootstrapFewShotWithRandomSearch(num_candidate_programs=8)` | many demo sets, keeps the best on `valset` | when you have a validation set |
+| `InstructionSearch(num_candidates=6, num_trials=12)` | a model proposes instructions; each is tried with demo sets on small batches; the best are scored on `valset` | rules that are hard to state |
+
+Pass one as `optimizer=`:
+
+```{python}
+#| eval: false
+from functai import InstructionSearch
+
+opt = InstructionSearch(num_candidates=3, num_trials=5, prompt_lm="gpt-4.1-mini")
+category.opt(trainset=train, valset=dev, metric=right, optimizer=opt)
+opt.trials        # every trial: which instruction, which demos, its score
+```
+
+The [translator example](../examples/optimizing_translator.qmd) runs
+`InstructionSearch` with an AI judge as the metric, before and after.
+
+## Options
+
+- **A stronger teacher.** `teacher_lm="gpt-4.1"` (or `teacher=` an AI
+  function) produces the demos, and the cheap model uses them.
+- **Too few examples?** With a teacher, `n_synth=20` writes training rows
+  first.
+- **Demos by hand.** `@ai(examples=[("I love it", "positive"), ...])`, as
+  pairs or as rows.
+- **Keep the result.** `fn.save("category.json")` writes the instruction
+  and demos; `fn.load("category.json")` reads them back. To save the
+  whole program, see [Saving](saving.qmd).
+
+## When optimizing is the wrong tool
+
+If you can say the rule in a sentence, say it in the docstring: it is
+free, readable and exact. Optimizers earn their keep when the rule is
+hard to put into words and you have examples of it. And if `compare`
+shows an interval that includes 0, the honest next step is more
+examples, not more optimizing.

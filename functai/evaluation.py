@@ -221,7 +221,9 @@ def _norm(v: Any) -> Any:
 
 
 def exact_match(row: Mapping[str, Any], pred: Mapping[str, Any]) -> float:
-    """1.0 when every output the data has a column for equals the prediction's
+    """The default metric: every expected output equals the prediction.
+
+    1.0 when every output the data has a column for equals the prediction's
     (strings compared ignoring case and repeated whitespace), else 0.0."""
     keys = [k for k in pred if k in row]
     if not keys:
@@ -451,14 +453,33 @@ def _fmt(x: Optional[float]) -> str:
 
 
 class Evaluation:
-    """What ``evaluate`` returns.
+    """The result of ``evaluate``: a score, its uncertainty, and every answer.
 
-    - ``score``: the first metric's mean, 0 to 1 (a failed row counts 0)
-    - ``summary``: one row per metric, with a 95% interval (a dpyr dataframe)
-    - ``table``: one row per example (a dpyr dataframe)
-    - ``predictions``: the Prediction of each row (None where it failed),
-      with its turns, tokens and repairs
-    - ``errors``: ``(example, message)`` for each row that failed
+    ``ev.scores(metric)`` gives each row's value for a metric (the first by
+    default); ``ev.write("run.parquet")`` saves the table.
+
+    Attributes
+    ----------
+    score : float
+        The first metric's mean, from 0 to 1. A failed row counts 0.
+    summary : dpyr dataframe
+        One row per metric: ``mean``, the 95% interval ``low`` to ``high``,
+        ``n``, and how many rows ``failed``.
+    table : dpyr dataframe
+        One row per example: the data, ``pred_<output>`` for each output,
+        each metric, ``error``, ``seconds``, ``input_tokens``,
+        ``output_tokens``, ``model`` and ``run``.
+    predictions : list
+        Each row's ``Prediction`` (None where it failed), with its turns,
+        tokens and repairs.
+    errors : list
+        ``(row number, message)`` for each row that failed.
+
+
+    See Also
+    --------
+    evaluate : what produces it.
+    compare : two of them, paired.
     """
 
     def __init__(self, *, target: _Target, rows: List[Dict[str, Any]], runs: List[RowRun],
@@ -561,20 +582,73 @@ def _check_names(target: _Target, rows: Sequence[Mapping[str, Any]], metrics: Se
 def evaluate(program: Any, data: Any, metric: Any = None, *, num_threads: int = 1,
              max_errors: Optional[int] = None, log: "str | os.PathLike | None" = None,
              call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None) -> Evaluation:
-    """Run ``program`` (an @ai function or a @module) on every row of ``data``
-    and score it.
+    '''Run a program on rows with known answers, and score it.
 
-    - ``data``: a list of dicts, or anything ``dpyr.read()`` takes
-    - ``metric``: ``metric(row, prediction) -> float | bool`` (it can be an
-      @ai judge), a dpyr expression over the run table
-      (``col.pred_result == col.result``), a list of these, or a dict
-      name → metric. Default: exact match when the data has a column for an
-      output
-    - ``max_errors``: raise when more rows than this fail
-    - ``log``: a folder; the run's table is written there as ``<run>.parquet``
-      (``functai.runs(folder)`` reads every run back as one table)
-    - ``call_defaults``: arguments for a @module that the rows lack
-    """
+    Every row runs (in parallel with ``num_threads``); a row that fails
+    keeps its error and counts 0. The score comes with a 95% interval, and
+    every answer is kept as a row of a table you can filter and group.
+
+    Parameters
+    ----------
+    program : AI function or module
+        What to evaluate.
+    data : list of dict, or a table
+        The rows: a list of dicts, or anything ``dpyr.read()`` takes (a
+        parquet or CSV path, a pandas or polars dataframe, a Hugging Face
+        dataset). Columns named like the parameters are the inputs; a column
+        named like an output (``result`` for the return value) is its
+        expected answer; other columns are kept.
+    metric : function, dpyr expression, AI function, list or dict
+        How to score a row: ``metric(row, prediction)`` returning a number or a bool, a
+        dpyr expression over the table (``col.pred_result == col.result``),
+        an AI function acting as a judge, or several of these in a list or a
+        dict ``{name: metric}``. Default: exact match on the outputs the data
+        has columns for (case and spacing ignored).
+    num_threads : int
+        How many rows run at once.
+    max_errors : int, optional
+        Stop and raise when more rows than this fail.
+    log : folder, optional
+        Write the run's table to ``<log>/<run>.parquet``; ``runs(log)`` reads
+        every logged run back.
+    call_defaults : dict, optional
+        Arguments the rows don't have, for every call (a module's options).
+
+    Returns
+    -------
+    Evaluation
+        ``.score`` (the first metric's mean), ``.summary`` (each metric with
+        its interval), ``.table`` (one row per example).
+
+    See Also
+    --------
+    compare : two evaluations of the same rows, paired.
+    Evaluation : what this returns.
+
+    Examples
+    --------
+    ```python
+    from typing import Literal
+    from dpyr import col
+
+    @ai
+    def category(message: str) -> Literal["shipping", "billing", "product"]:
+        """The support category of the message."""
+
+    rows = [
+        {"message": "The mug arrived in pieces.", "result": "shipping"},
+        {"message": "Refund the blender please, it stopped working.", "result": "billing"},
+        {"message": "Toaster burns one side of the bread.", "result": "product"},
+        {"message": "Tracking hasn't moved in a week.", "result": "shipping"},
+    ]
+    ev = evaluate(category, rows, num_threads=4)
+    ev
+    ```
+
+    ```python
+    ev.table.select(col.message, col.result, col.pred_result, col.exact_match)
+    ```
+    '''
     target = _Target(program, call_defaults=call_defaults)
     rows = rows_of(data)
     target.check(rows)
@@ -621,13 +695,55 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, num_threads: int = 
 
 
 def compare(before: Evaluation, after: Evaluation):
-    """Two evaluations of the same examples, compared example by example.
+    '''Compare two evaluations of the same rows, row by row.
 
-    One row per metric both have: the two means, ``diff`` (after − before)
-    with its 95% interval (paired t, so a real change shows up with far fewer
-    examples than two separate intervals would need), and how many examples
-    got ``better``, ``worse`` or stayed the ``same``. If the interval of
-    ``diff`` excludes 0, the change is unlikely to be luck."""
+    Pairing the rows detects a real change with far fewer examples than two
+    separate scores would: a row both versions got right says nothing, a row
+    only one got right says a lot.
+
+    Parameters
+    ----------
+    before, after : Evaluation
+        Two evaluations of the same rows (typically two versions of a
+        prompt, or two models).
+
+    Returns
+    -------
+    dpyr dataframe
+        One row per metric both have: ``before`` and ``after`` (the means),
+        ``diff`` with its 95% interval ``low`` to ``high`` (a paired t
+        interval), and how many rows got ``better``, ``worse`` or stayed the
+        ``same``. When the interval includes 0, the change could be luck.
+
+    See Also
+    --------
+    evaluate : produces the evaluations.
+
+    Examples
+    --------
+    ```python
+    from typing import Literal
+
+    rows = [
+        {"message": "The mug arrived in pieces.", "result": "shipping"},
+        {"message": "Box was crushed and the lamp inside is cracked.", "result": "shipping"},
+        {"message": "I want my money back for the toaster.", "result": "billing"},
+        {"message": "Please refund the blender, it stopped working.", "result": "billing"},
+        {"message": "Toaster burns one side of the bread.", "result": "product"},
+    ]
+
+    @ai
+    def category(message: str) -> Literal["shipping", "billing", "product"]:
+        """The support category of the message."""
+
+    @ai
+    def category_v2(message: str) -> Literal["shipping", "billing", "product"]:
+        """The support category of the message. An item that arrived broken is
+        shipping; any request for money back is billing."""
+
+    compare(evaluate(category, rows, num_threads=5), evaluate(category_v2, rows, num_threads=5))
+    ```
+    '''
     if len(before) != len(after):
         raise ValueError(f"compare needs the same examples: {len(before)} rows vs {len(after)}")
     for i, (a, b) in enumerate(zip(before._rows, after._rows)):
@@ -659,8 +775,23 @@ def _paired_t(d: Sequence[float]) -> Tuple[float, Optional[float], Optional[floa
 
 
 def runs(folder: "str | os.PathLike"):
-    """Every run logged with ``evaluate(..., log=folder)``, as one table.
-    Runs with different columns line up by name (missing values are null)."""
+    """Every evaluation logged in a folder, as one table.
+
+    Parameters
+    ----------
+    folder : str or path
+        The folder given to ``evaluate(..., log=folder)``.
+
+    Returns
+    -------
+    dpyr dataframe
+        The rows of every run, with a ``run`` column. Runs with different
+        columns line up by name; missing values are null.
+
+    See Also
+    --------
+    evaluate : ``log=`` writes the runs.
+    """
     dpyr = _dpyr()
     import duckdb
     pattern = os.path.join(os.fspath(folder), "*.parquet").replace("'", "''")

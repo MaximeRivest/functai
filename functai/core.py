@@ -256,6 +256,12 @@ def _derive_output_name(desc: str) -> str:
 
 
 _ai = _AISentinel()
+"""The model's answer, inside an AI function's body.
+
+``return _ai`` returns it. ``x: T = _ai["description"]`` declares an
+output named ``x`` (the last one declared is the answer, unless the body
+returns ``_ai``); name it to post-process it: ``score: float = _ai`` then
+``return min(score, 1.0)``."""
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -421,14 +427,36 @@ class FunctAIFunc:
     def debug(self, v: bool): self._set("debug", bool(v))
 
     def using(self, *, template: Any = _KEEP, **settings) -> "FunctAIFunc":
-        """A copy of this function with other settings or another layout:
-        ``f.using(lm="gpt-4.1")(x)``, ``f.using(adapter="chat")``,
-        ``f.using(template=[system(...), user(...)])``, ``f.using(client=...)``.
+        '''A copy of this function with other settings or another layout.
 
-        A setting given as None is no longer set by the copy: it comes from
-        ``configure`` or the defaults. An adapter replaces the template and a
-        template replaces the adapter, as on the function itself. The copy starts
-        with the same instruction and demos; the original is untouched."""
+        The copy starts with the same instruction and demos; the original is
+        untouched. A setting given as None is no longer set by the copy: it
+        comes from ``configure`` or the defaults. An adapter replaces the
+        template, and a template replaces the adapter.
+
+        Parameters
+        ----------
+        template : list, optional
+            A chat template for the copy.
+        **settings
+            Any setting ``@ai`` takes: ``lm``, ``temperature``, ``adapter``,
+            ``client``, ``tools``...
+
+        Returns
+        -------
+        FunctAIFunc
+            The copy.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def capital(country: str) -> str:
+            """The country's capital city."""
+
+        capital.using(lm="gpt-4.1-nano")("Chile")
+        ```
+        '''
         checked = check(settings, "using")
         if template is not _KEEP and checked.get("adapter") is not None and template is not None:
             raise TypeError("give adapter=... or template=[...], not both: a template is an adapter")
@@ -589,7 +617,34 @@ class FunctAIFunc:
         return past
 
     def render(self, *args, **kwargs):
-        """The exact lm15 request the first model call would send. No network."""
+        '''The exact request the next call would send, without sending it.
+
+        Parameters
+        ----------
+        *args, **kwargs
+            The call's inputs, as for calling the function.
+
+        Returns
+        -------
+        lm15.Request
+            ``.system``, ``.messages``, ``.tools``, ``.config``, ``.model``.
+
+        See Also
+        --------
+        phistory : what was actually sent.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def capital(country: str) -> str:
+            """The country's capital city."""
+
+        request = capital.render("Chile")
+        print(request.system)
+        print(request.messages[0].parts[0].text)
+        ```
+        '''
         inputs = self._bind_inputs(args, kwargs)
         spec, s = self._spec(), self._effective()
         plan, _router, model, route = self._plan_for(spec, s)
@@ -763,12 +818,42 @@ class FunctAIFunc:
     # ----- optimization -----
 
     def vectorize(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise"):
-        """This function as a dpyr row function, to call on columns:
-        ``df.mutate(topic=classify.vectorize(threads=16)(col.text))``.
-        (``classify(col.text)`` is the same with the defaults: 8 threads,
-        errors raised after every row ran.) The column type is the return
-        annotation (text when there is none); ``dtype`` overrides it. The
-        prompt in use now is the one the column is computed with."""
+        '''This function as a column expression, with options.
+
+        Calling an AI function on a dpyr column (``fn(col.text)``) is the same
+        with the defaults. Each distinct input is sent once; answers are
+        remembered for the session; the prompt in use now is the one the column
+        is computed with.
+
+        Parameters
+        ----------
+        dtype : optional
+            The column type. Default: the return annotation (text when there is
+            none).
+        threads : int, optional
+            How many rows run at once (default 8).
+        errors : str
+            ``"raise"`` (default): raise after every row ran; running again
+            retries only the failures. ``"null"``: a failed row is null.
+
+        Returns
+        -------
+        function
+            Call it on columns: ``fn.vectorize(threads=16)(col.text)``.
+
+        Examples
+        --------
+        ```python
+        from dpyr import read, col
+
+        @ai
+        def capital(country: str) -> str:
+            """The country's capital city."""
+
+        read([{"country": "Norway"}, {"country": "Ghana"}]).mutate(
+            capital=capital.vectorize(threads=2)(col.country))
+        ```
+        '''
         from .columns import vectorize_function
         return vectorize_function(self, dtype=dtype, threads=threads, errors=errors)
 
@@ -779,26 +864,97 @@ class FunctAIFunc:
                                   version=version)
 
     def map(self, data: Any, *, num_threads: int = 1):
-        """Run on every row of a table; returns the rows with the predictions
-        as a dpyr dataframe (``pred_<output>`` columns, plus ``error``,
-        ``seconds``, tokens, ``model``). ``data``: a list of dicts, or anything
-        ``dpyr.read()`` takes. Needs dpyr (``pip install "functai[data]"``)."""
+        '''Run on every row of a table, and return the run table.
+
+        ``evaluate`` without the scoring: the rows, the predictions
+        (``pred_<output>``), and each row's ``error``, ``seconds``, tokens and
+        ``model``. Needs ``pip install "functai[data]"``.
+
+        Parameters
+        ----------
+        data : list of dict, or a table
+            Anything ``dpyr.read()`` takes; columns named like the parameters
+            are the inputs.
+        num_threads : int
+            How many rows run at once.
+
+        Returns
+        -------
+        dpyr dataframe
+
+        See Also
+        --------
+        FunctAIFunc.vectorize : the function as a column expression.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def capital(country: str) -> str:
+            """The country's capital city."""
+
+        capital.map([{"country": "Norway"}, {"country": "Ghana"}], num_threads=2)
+        ```
+        '''
         from .evaluation import evaluate
         return evaluate(self, data, (), num_threads=num_threads).table
 
     def opt(self, *, trainset: Any = None, optimizer: Any = None,
             metric: Any = None, valset: Any = None, **opts) -> "FunctAIFunc":
-        """Optimize the instruction and/or demos on examples, in place (``undo_opt`` reverts).
+        '''Improve the instruction and worked examples from examples, in place.
 
-        - ``trainset``: rows, as a list of dicts or a table (anything ``dpyr.read()``
-          takes); columns named like the parameters are inputs, the others labels
-        - ``optimizer``: an optimizer class or instance (default ``BootstrapFewShot``)
-        - ``metric``: ``metric(row, prediction) -> float | bool``, or a dpyr
-          expression (default: exact match on the labeled outputs)
-        - ``teacher`` / ``teacher_lm``: a stronger model (or AI function) to learn from
-        - ``n_synth``: first synthesize this many examples with the teacher
-        - other keywords go to the optimizer class
-        """
+        Only what the function sends besides its inputs changes: the
+        instruction and the demos. Code, types and layout are never touched.
+        ``undo_opt()`` reverts.
+
+        Parameters
+        ----------
+        trainset : list of dict, or a table
+            Rows as for ``evaluate``: columns named like the parameters are the
+            inputs, the others the expected outputs.
+        optimizer : optimizer class or instance
+            Default ``BootstrapFewShot``. See the Optimizers section.
+        metric : function or dpyr expression
+            As for ``evaluate``. Default: exact match on the expected outputs.
+        valset : list of dict, or a table
+            Rows for optimizers that choose between candidates.
+        teacher_lm : str, optional
+            A stronger model that runs the examples; its good runs become demos.
+        teacher : AI function, optional
+            Or a teacher function.
+        n_synth : int, optional
+            With a teacher: first write this many training rows.
+        **opts
+            Passed to the optimizer.
+
+        Returns
+        -------
+        FunctAIFunc
+            The same function, optimized.
+
+        See Also
+        --------
+        evaluate : measure before and after.
+        FunctAIFunc.undo_opt : revert.
+
+        Examples
+        --------
+        ```python
+        from typing import Literal
+
+        @ai
+        def category(message: str) -> Literal["shipping", "billing", "product"]:
+            """The support category of the message."""
+
+        train = [
+            {"message": "The vase came smashed.", "result": "shipping"},
+            {"message": "Money back please, the chair wobbles.", "result": "billing"},
+            {"message": "The handle came off after two uses.", "result": "product"},
+        ]
+        category.opt(trainset=train)
+        [d.inputs["message"] for d in category.demos]
+        ```
+        '''
         from .optimizers import optimize
         optimize(self, trainset=trainset, optimizer=optimizer, metric=metric, valset=valset, **opts)
         return self
@@ -819,7 +975,13 @@ class FunctAIFunc:
         return bake(self, data, **options)
 
     def undo_opt(self, steps: int = 1) -> None:
-        """Revert the last ``steps`` optimizations."""
+        """Revert the last optimizations.
+
+        Parameters
+        ----------
+        steps : int
+            How many optimizations to revert.
+        """
         for _ in range(max(1, int(steps))):
             if not self._opt_stack:
                 break
@@ -903,23 +1065,97 @@ def _check_baked_signature(fn: "FunctAIFunc", spec: Spec, baked: Any) -> None:
 
 
 def ai(_fn=None, **cfg):
-    """Turn a typed Python function into an AI function.
+    '''Turn a typed Python function into an AI function.
 
-        @ai
-        def summarize(text: str) -> str:
-            \"\"\"Summarize the text in one sentence.\"\"\"
-            return _ai
+    The function's parts are the prompt: its name is the task, the docstring
+    the instruction, the parameters the inputs, the return type the output
+    (and the type the reply is read back into). Comments on parameters,
+    fields and the return line are guidance. A body that is only a
+    docstring, ``...`` or ``return _ai`` means "the model's answer is the
+    return value"; otherwise ``_ai`` stands for the model's answer inside
+    the body. Use it bare (``@ai``) or with settings (``@ai(lm=...)``).
 
-        @ai(lm="claude-haiku-4-5", temperature=0.2, tools=[search], module="cot",
-            template=[system("{instruction}"), turns(), user("{text}")])
-        def g(text: str) -> str: ...
+    Parameters
+    ----------
+    lm : str
+        The model: ``"gpt-4.1-mini"``, ``"claude-haiku-4-5"``,
+        ``"groq:openai/gpt-oss-120b"``, ``"claude:claude-sonnet-4-5"`` (a
+        subscription)... Default: the one set with ``configure``.
+    temperature, max_tokens, seed, top_p, stop : optional
+        Sampling settings; any lm15 ``Config`` field is accepted.
+    module : str
+        ``"predict"`` (default), ``"cot"`` (reasoning before the answer:
+        the model's thinking channel when it has one), or ``"react"``.
+    tools : list of functions
+        Typed Python functions the model may call. A call then runs the tool
+        loop: at most ``max_steps`` model calls (default 8).
+    stateful : bool
+        Remember the conversation between calls (the last ``state_window``
+        turns, default 5).
+    adapter : str or lmcc.Adapter
+        The prompt layout: ``"xml"`` (default), ``"chat"``, ``"json"``, or an
+        lmcc adapter.
+    template : list
+        A chat template, ``[system(...), turns(), user(...)]``: write the
+        conversation yourself. Replaces ``adapter``.
+    examples : list
+        Worked examples shown before the question: pairs
+        ``("input", "output")`` or rows ``{"text": ..., "result": ...}``.
+    retries : int
+        How many times an unreadable reply is asked again (default 1).
+    api_retries : int
+        How many times a provider error is re-sent (default 3).
+    **settings
+        Any other setting ``configure`` takes (``api_key``, ``client``,
+        ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An
+        unknown setting is an error.
 
-    Options: ``lm``, ``adapter`` ('xml', 'chat', 'json', an lmcc adapter), ``template``
-    (a chat template), ``module`` ('predict', 'cot', 'react'), ``tools``, ``stateful``,
-    ``examples``, ``retries``, ``max_steps``, ``capabilities``, ``cache``, any lm15
-    Config field (``temperature``, ``max_tokens``, ``seed``, ...), and the
-    optimization settings (``teacher``, ``optimizer``, ``autoinstruct``, ...).
-    """
+    Returns
+    -------
+    FunctAIFunc
+        The AI function. Call it like the original; ``all=True`` returns a
+        ``Prediction`` with every output and the tokens used.
+
+    See Also
+    --------
+    configure : settings for every function at once.
+    module : a Python function that calls several AI functions, as one program.
+
+    Examples
+    --------
+    ```python
+    @ai
+    def sentiment(text: str) -> str:
+        """Is the text 'positive', 'negative' or 'neutral'?"""
+
+    sentiment("The update broke my favourite feature.")
+    ```
+
+    ``_ai`` in the body: an extra output written before the answer, and
+    plain Python after it.
+
+    ```python
+    @ai
+    def solve(question: str) -> float:
+        """Solve the word problem."""
+        reasoning: str = _ai["Step by step, the calculation."]
+        answer: float = _ai
+        return round(answer, 2)
+
+    p = solve("3 pencils cost $1.20. How much do 10 cost?", all=True)
+    p.answer, p.reasoning
+    ```
+
+    Settings in the decorator:
+
+    ```python
+    @ai(lm="gpt-4.1-nano", temperature=0)
+    def headline(article: str) -> str:
+        """A headline of at most eight words."""
+
+    headline("The council voted to turn the old rail yard into a park with a pool.")
+    ```
+    '''
     def _decorate(fn):
         return FunctAIFunc(fn, **cfg)
     if _fn is not None and callable(_fn):

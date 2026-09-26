@@ -149,9 +149,35 @@ def _message_text(message: Any) -> str:
 
 
 def phistory(n: int = 1) -> _Text:
-    """The last ``n`` model calls as readable text: what was sent, what came back.
+    '''The last model calls, as readable text: what was sent, what came back.
 
-    ``print(phistory())``, or just ``phistory()`` at a notebook/REPL prompt."""
+    Parameters
+    ----------
+    n : int
+        How many calls, most recent last.
+
+    Returns
+    -------
+    text
+        Every message of each call, the reply, the finish reason and the
+        tokens. Displays as is at a notebook prompt; ``print`` it elsewhere.
+
+    See Also
+    --------
+    inspect_history : the same calls as lm15 request and response objects.
+    FunctAIFunc.render : the request a call would send, without sending it.
+
+    Examples
+    --------
+    ```python
+    @ai
+    def capital(country: str) -> str:
+        """The country's capital city."""
+
+    capital("Japan")
+    print(phistory())
+    ```
+    '''
     out: List[str] = []
     for rec in inspect_history(n):
         when = _dt.datetime.fromtimestamp(rec.timestamp).isoformat(timespec="seconds")

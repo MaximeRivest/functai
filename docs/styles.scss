@@ -1,0 +1,35 @@
+/*-- scss:defaults --*/
+$primary: #3b5bdb;
+$font-family-sans-serif: "Inter", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+$font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+$code-color: #3b5bdb;
+$navbar-bg: #ffffff;
+$navbar-fg: #343a40;
+$code-block-bg: #f6f8fa;
+
+/*-- scss:rules --*/
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&family=JetBrains+Mono:wght@400;600&display=swap");
+
+.navbar { border-bottom: 1px solid #e9ecef; }
+.navbar-brand .navbar-title { font-weight: 700; font-family: $font-family-monospace; }
+h1, h2, h3 { font-weight: 700; letter-spacing: -0.01em; }
+.cell-output pre, .cell-output-stdout pre { background: transparent; border-left: 3px solid #d0d7de; padding-left: .8em; }
+.cell-output-display { overflow-x: auto; }
+div.sourceCode { border: 1px solid #eaeef2; }
+
+/* home page: the vocabulary and the journey */
+.vocab dt { font-family: $font-family-monospace; color: $primary; margin-top: .6em; }
+.vocab dd { margin-left: 0; }
+.journey { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 1rem; margin: 1.2rem 0 2rem; }
+.journey a { text-decoration: none; color: inherit; }
+.journey .step { border: 1px solid #dee2e6; border-radius: 8px; padding: .9rem 1rem; height: 100%; transition: border-color .15s; }
+.journey .step:hover { border-color: $primary; }
+.journey .step .n { font-size: .8rem; color: $primary; font-weight: 700; text-transform: uppercase; letter-spacing: .05em; }
+.journey .step h4 { margin: .2rem 0 .4rem; font-size: 1.05rem; }
+.journey .step p { margin: 0; font-size: .92rem; color: #555; }
+
+/* the anatomy table */
+.anatomy td:first-child code { white-space: nowrap; }
+
+/* reference index (pkgdown style) */
+.doc-index table td:first-child { font-family: $font-family-monospace; white-space: nowrap; }
