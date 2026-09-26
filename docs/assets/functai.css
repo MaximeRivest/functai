@@ -1,0 +1,22 @@
+/* Outputs: under their cell, quieter than code (as on pkgdown sites). */
+.language-output, div.highlight:has(> pre > code.language-output) { background: transparent; }
+.md-typeset pre > code.language-output, .language-output pre, .language-output code {
+  background: transparent;
+  border-left: 3px solid var(--md-default-fg-color--lightest);
+  color: var(--md-default-fg-color--light);
+}
+.md-typeset .language-output { margin-top: -0.6em; }
+
+/* Code that is shown, not run. */
+.md-typeset .no-run pre { border-left: 3px dashed var(--md-default-fg-color--lightest); }
+
+/* The home page's ways in: cards. */
+.md-typeset .journey ul { list-style: none; margin: 1em 0 1.5em; padding: 0;
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .8rem; }
+.md-typeset .journey li { margin: 0; padding: .9rem 1rem; border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px; font-size: .92em; color: var(--md-default-fg-color--light); }
+.md-typeset .journey li:hover { border-color: var(--md-accent-fg-color); }
+.md-typeset .journey li strong { display: block; font-size: 1.1em; margin-bottom: .3em; }
+
+/* Reference: names in code font in the index tables. */
+.md-typeset .doc-index table td:first-child, .md-typeset table td:first-child a code { white-space: nowrap; }

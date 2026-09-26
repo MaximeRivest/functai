@@ -1,9 +1,8 @@
-# The documentation website: docs/ rendered with Quarto, published on GitHub Pages.
+# The documentation website: docs/*.md → site/ with Zensical, on GitHub Pages.
 #
-# No model is called here. Every page's outputs were produced by running it
-# (tests/docs_live.py --render, with keys) and are committed in docs/_freeze/;
-# this build reuses them. A page whose source changed without being rendered
-# again fails the build (it would need a key): render it locally and commit.
+# Nothing runs here and no model is called: the pages are notebooks whose
+# outputs are already in them (written by `python tools/docs.py run`, with
+# keys, on a developer's machine, or by pressing Run in Chattering).
 name: docs
 
 on:
@@ -26,18 +25,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v6
-      - run: uv sync --group docs
-      - uses: quarto-dev/quarto-actions/setup@v2
-        with:
-          version: 1.10.18
-      - name: Render
-        working-directory: docs
-        env:
-          QUARTO_PYTHON: ${{ github.workspace }}/.venv/bin/python
-        run: quarto render
+      - run: uvx zensical==0.0.65 build --clean
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: docs/_site
+          path: site
 
   deploy:
     needs: build

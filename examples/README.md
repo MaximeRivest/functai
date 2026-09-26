@@ -1,8 +1,8 @@
 # Examples
 
-Each folder is one topic, written as a [Quarto](https://quarto.org)
-document (`main.qmd`) and rendered with real model replies into the
-folder's `README.md`. New to FunctAI? Start with the
+Each folder is one topic. Its `README.md` is a notebook (Markdown with
+Python cells, each followed by its real output): read it here, or open it
+in Chattering and run it. New to FunctAI? Start with the
 [Get started](https://maximerivest.github.io/functai/get-started.html).
 
 | example | what it shows |
@@ -16,11 +16,9 @@ folder's `README.md`. New to FunctAI? Start with the
 | [optimizing_translator](optimizing_translator/) | an AI judge as the metric, `InstructionSearch`, and `compare` before/after |
 | [tracking_and_osb](tracking_and_osb/) | observability: `phistory`, `inspect_history`, token usage, logged evaluation runs, the reply cache |
 
-To run one yourself, open `main.qmd` in any notebook tool that reads
-Quarto, or copy its cells. To re-render all of them (and check that the
-README's code runs), with a model key in the environment:
+To run one yourself: open its `README.md` in Chattering and press Run
+all, or, with a model key in the environment:
 
 ```bash
-QUARTO_PYTHON=/path/to/python-with-functai[data]-and-ipykernel \
-    python tests/docs_live.py --render
+python tools/docs.py run examples/modules/README.md
 ```

@@ -1,0 +1,104 @@
+# The reference pages: quartodoc writes them from the docstrings (python tools/docs.py generate).
+quartodoc:
+  package: functai
+  dir: ../docs/reference
+  title: Reference
+  style: pkgdown
+  parser: numpy
+  sections:
+  - title: Writing AI functions
+    desc: A typed function becomes a model call. The parts of the function are the
+      parts of the prompt.
+    contents:
+    - ai
+    - name: _ai
+      dynamic: false
+    - module
+    - FunctAIFunc
+    - Prediction
+  - title: Models and settings
+    desc: Which model answers, how it is reached, and every other setting.
+    contents:
+    - configure
+    - login
+    - logins
+    - logout
+    - login_methods
+  - title: Prompt layouts
+    desc: How each value is written into the prompt and read back. The default needs
+      nothing; these write the conversation yourself.
+    contents:
+    - package: lmcc.adapter
+      name: system
+    - package: lmcc.adapter
+      name: user
+    - package: lmcc.adapter
+      name: assistant
+    - package: lmcc.adapter
+      name: developer
+    - turns
+  - title: Evaluation
+    desc: Run a program on rows with known answers and score it, with an honest interval.
+    contents:
+    - evaluate
+    - Evaluation
+    - compare
+    - runs
+    - exact_match
+  - title: Optimizers
+    desc: Improve the instruction and the worked examples a function sends. Used through
+      `fn.opt(...)`.
+    contents:
+    - LabeledFewShot
+    - BootstrapFewShot
+    - BootstrapFewShotWithRandomSearch
+    - InstructionSearch
+    - Optimizer
+  - title: Saving and shipping
+    desc: Find everything a program depends on, save it to a folder, prove it runs
+      elsewhere, load it back.
+    contents:
+    - check
+    - Report
+    - Problem
+    - save
+    - verify
+    - Verification
+    - load
+    - file
+  - title: Baking into weights
+    desc: Train a small model that answers an AI function, then run the same function
+      on it.
+    contents:
+    - bake.bake
+    - bake.Baked
+    - bake.BakeReport
+    - bake.load
+  - title: Datasets
+    desc: Small labelled tables to learn with. Every example on this site runs on
+      them.
+    contents:
+    - datasets.tickets
+    - datasets.field_notes
+  - title: Inspection
+    desc: See exactly what was sent and what came back.
+    contents:
+    - phistory
+    - inspect_history
+    - signature_text
+    - clear_cache
+  - title: Errors
+    desc: What functai raises, and what each one tells you to do.
+    contents:
+    - LoginRequired
+    - StepLimit
+    - Refused
+    - LoadRefused
+  - title: Low-level helpers
+    desc: The pieces `@ai` uses to read a function. You rarely need them directly.
+    contents:
+    - flexiclass
+    - docments
+    - docstring
+    - parse_docstring
+    - compute_signature

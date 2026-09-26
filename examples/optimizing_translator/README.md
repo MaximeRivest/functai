@@ -1,3 +1,9 @@
+---
+rat:
+  python:
+    dependencies: ["-e .[data]"]
+---
+
 # Optimizing a prompt: English to Québécois French
 
 
@@ -7,10 +13,10 @@ examples of it. An AI judge scores translations, and an optimizer
 searches for the instruction that raises the score. Every step is
 measured, with its uncertainty.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real
-reply.
+Every output below is a real reply. This page is a notebook: open it in
+Chattering and run it, or run it all with `python tools/docs.py run examples/optimizing_translator/README.md`.
 
-``` python
+```python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -26,7 +32,7 @@ def translator(english: str) -> str:
 One dict per row: `english` is the translator’s input, `result` the
 translation we want.
 
-``` python
+```python
 rows = [
     {"english": "I'm going to the convenience store.", "result": "Je m'en vais au dépanneur."},
     {"english": "It's really cold out today.", "result": "Il fait frette en maudit aujourd'hui."},
@@ -58,7 +64,7 @@ Exact match is too strict for translations, so the metric is an AI
 function too. It reads the row (with the expected `result`) and the
 prediction:
 
-``` python
+```python
 @ai
 def judge(row: dict, prediction: dict) -> float:
     """How well the prediction matches row['result']: the same meaning,
@@ -70,40 +76,44 @@ def judge(row: dict, prediction: dict) -> float:
 
 ## Before
 
-``` python
+```python
 before = functai.evaluate(translator, dev, judge, num_threads=5)
 before
 ```
 
-    Evaluation(translator, 10 examples: judge 0.30 [0.11, 0.60])
+```output
+Evaluation(translator, 10 examples: judge 0.30 [0.11, 0.60])
+```
 
-``` python
+```python
 from dpyr import col
 
 before.table.arrange(col.judge).select(col.english, col.result, col.pred_result, col.judge)
 ```
 
-    # dpyr dataframe · source: polars · showing 10 of 10 rows
-    shape: (10, 4)
-    ┌─────────────────────────────────┬─────────────────────────────────┬────────────────────────────────┬───────┐
-    │ english                         ┆ result                          ┆ pred_result                    ┆ judge │
-    │ ---                             ┆ ---                             ┆ ---                            ┆ ---   │
-    │ str                             ┆ str                             ┆ str                            ┆ f64   │
-    ╞═════════════════════════════════╪═════════════════════════════════╪════════════════════════════════╪═══════╡
-    │ I have an appointment at 3.     ┆ J'ai un rendez-vous à trois     ┆ J'ai un rendez-vous à 15       ┆ 0.0   │
-    │                                 ┆ heures.                         ┆ heures.                        ┆       │
-    │ I parked in the back.           ┆ J'ai stationné dans l'fond.     ┆ Je me suis garé à l'arrière.   ┆ 0.0   │
-    │ We watched a movie last night.  ┆ On a écouté un film hier soir.  ┆ Nous avons regardé un film     ┆ 0.0   │
-    │                                 ┆                                 ┆ hier soir.                     ┆       │
-    │ I need to do my groceries.      ┆ J'dois faire mon épicerie.      ┆ Je dois faire mes courses.     ┆ 0.0   │
-    │ Don't forget your boots.        ┆ Oublie pas tes bottes.          ┆ N'oublie pas tes bottes.       ┆ 0.0   │
-    │ I'll take the bus.              ┆ J'va prendre l'bus.             ┆ Je vais prendre le bus.        ┆ 0.0   │
-    │ We're out of milk.              ┆ On est à court de lait.         ┆ Nous n'avons plus de lait.     ┆ 0.0   │
-    │ They're celebrating their       ┆ Ils fêtent leur fête.           ┆ Ils fêtent leur anniversaire.  ┆ 1.0   │
-    │ birthday.                       ┆                                 ┆                                ┆       │
-    │ The metro is packed.            ┆ Le métro est plein à craquer.   ┆ Le métro est bondé.            ┆ 1.0   │
-    │ It's snowing again.             ┆ Il neige encore.                ┆ Il neige encore.               ┆ 1.0   │
-    └─────────────────────────────────┴─────────────────────────────────┴────────────────────────────────┴───────┘
+```output
+# dpyr dataframe · source: polars · showing 10 of 10 rows
+shape: (10, 4)
+┌─────────────────────────────────┬─────────────────────────────────┬────────────────────────────────┬───────┐
+│ english                         ┆ result                          ┆ pred_result                    ┆ judge │
+│ ---                             ┆ ---                             ┆ ---                            ┆ ---   │
+│ str                             ┆ str                             ┆ str                            ┆ f64   │
+╞═════════════════════════════════╪═════════════════════════════════╪════════════════════════════════╪═══════╡
+│ I have an appointment at 3.     ┆ J'ai un rendez-vous à trois     ┆ J'ai un rendez-vous à 15       ┆ 0.0   │
+│                                 ┆ heures.                         ┆ heures.                        ┆       │
+│ I parked in the back.           ┆ J'ai stationné dans l'fond.     ┆ Je me suis garé à l'arrière.   ┆ 0.0   │
+│ We watched a movie last night.  ┆ On a écouté un film hier soir.  ┆ Nous avons regardé un film     ┆ 0.0   │
+│                                 ┆                                 ┆ hier soir.                     ┆       │
+│ I need to do my groceries.      ┆ J'dois faire mon épicerie.      ┆ Je dois faire mes courses.     ┆ 0.0   │
+│ Don't forget your boots.        ┆ Oublie pas tes bottes.          ┆ N'oublie pas tes bottes.       ┆ 0.0   │
+│ I'll take the bus.              ┆ J'va prendre l'bus.             ┆ Je vais prendre le bus.        ┆ 0.0   │
+│ We're out of milk.              ┆ On est à court de lait.         ┆ Nous n'avons plus de lait.     ┆ 0.0   │
+│ They're celebrating their       ┆ Ils fêtent leur fête.           ┆ Ils fêtent leur anniversaire.  ┆ 1.0   │
+│ birthday.                       ┆                                 ┆                                ┆       │
+│ The metro is packed.            ┆ Le métro est plein à craquer.   ┆ Le métro est bondé.            ┆ 1.0   │
+│ It's snowing again.             ┆ Il neige encore.                ┆ Il neige encore.               ┆ 1.0   │
+└─────────────────────────────────┴─────────────────────────────────┴────────────────────────────────┴───────┘
+```
 
 ## Searching for a better instruction
 
@@ -112,7 +122,7 @@ from the function’s code and a few examples, then tries them on
 minibatches of the data and keeps the best. Setting both demo limits to
 0 means only the instruction changes.
 
-``` python
+```python
 from functai import InstructionSearch
 
 opt = InstructionSearch(num_candidates=4, num_trials=8, minibatch_size=5,
@@ -122,59 +132,67 @@ translator.opt(trainset=train, metric=judge, optimizer=opt)
 print(translator.instructions)
 ```
 
-    Translate the provided English sentence into informal, colloquial Quebec French, capturing natural speech patterns, idiomatic expressions, and local slang to produce an authentic, conversational translation.
+```output
+Translate the provided English sentence into informal, colloquial Quebec French, capturing natural speech patterns, idiomatic expressions, and local slang to produce an authentic, conversational translation.
+```
 
 Every trial is a row (`combo` says which instruction and which demo
 set):
 
-``` python
+```python
 from dpyr import read
 
 read(opt.trials)
 ```
 
-    # dpyr dataframe · source: polars · showing 8 of 8 rows
-    shape: (8, 4)
-    ┌───────┬───────────┬─────────────────┬────────────┐
-    │ trial ┆ combo     ┆ minibatch_score ┆ full_score │
-    │ ---   ┆ ---       ┆ ---             ┆ ---        │
-    │ i64   ┆ list[i64] ┆ f64             ┆ f64        │
-    ╞═══════╪═══════════╪═════════════════╪════════════╡
-    │ 0     ┆ [0, 0]    ┆ 0.2             ┆ null       │
-    │ 1     ┆ [1, 0]    ┆ 0.68            ┆ 0.86       │
-    │ 2     ┆ [0, 0]    ┆ 0.2             ┆ null       │
-    │ 3     ┆ [1, 0]    ┆ 0.88            ┆ 0.86       │
-    │ 4     ┆ [3, 0]    ┆ 0.76            ┆ 0.78       │
-    │ 5     ┆ [2, 0]    ┆ 0.76            ┆ 0.83       │
-    │ 6     ┆ [1, 0]    ┆ 0.96            ┆ 0.86       │
-    │ 7     ┆ [0, 0]    ┆ 0.0             ┆ null       │
-    └───────┴───────────┴─────────────────┴────────────┘
+```output
+# dpyr dataframe · source: polars · showing 8 of 8 rows
+shape: (8, 4)
+┌───────┬───────────┬─────────────────┬────────────┐
+│ trial ┆ combo     ┆ minibatch_score ┆ full_score │
+│ ---   ┆ ---       ┆ ---             ┆ ---        │
+│ i64   ┆ list[i64] ┆ f64             ┆ f64        │
+╞═══════╪═══════════╪═════════════════╪════════════╡
+│ 0     ┆ [0, 0]    ┆ 0.2             ┆ null       │
+│ 1     ┆ [1, 0]    ┆ 0.68            ┆ 0.86       │
+│ 2     ┆ [0, 0]    ┆ 0.2             ┆ null       │
+│ 3     ┆ [1, 0]    ┆ 0.88            ┆ 0.86       │
+│ 4     ┆ [3, 0]    ┆ 0.76            ┆ 0.78       │
+│ 5     ┆ [2, 0]    ┆ 0.76            ┆ 0.83       │
+│ 6     ┆ [1, 0]    ┆ 0.96            ┆ 0.86       │
+│ 7     ┆ [0, 0]    ┆ 0.0             ┆ null       │
+└───────┴───────────┴─────────────────┴────────────┘
+```
 
 ## After
 
-``` python
+```python
 after = functai.evaluate(translator, dev, judge, num_threads=5)
 functai.compare(before, after)
 ```
 
-    # dpyr dataframe · source: polars · showing 1 of 1 rows
-    shape: (1, 10)
-    ┌────────┬────────┬───────┬──────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
-    │ metric ┆ before ┆ after ┆ diff ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-    │ ---    ┆ ---    ┆ ---   ┆ ---  ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-    │ str    ┆ f64    ┆ f64   ┆ f64  ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-    ╞════════╪════════╪═══════╪══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
-    │ judge  ┆ 0.3    ┆ 0.88  ┆ 0.58 ┆ 0.189955 ┆ 0.970045 ┆ 6      ┆ 1     ┆ 3    ┆ 10  │
-    └────────┴────────┴───────┴──────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
+```output
+# dpyr dataframe · source: polars · showing 1 of 1 rows
+shape: (1, 10)
+┌────────┬────────┬───────┬──────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric ┆ before ┆ after ┆ diff ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---    ┆ ---    ┆ ---   ┆ ---  ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str    ┆ f64    ┆ f64   ┆ f64  ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞════════╪════════╪═══════╪══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ judge  ┆ 0.3    ┆ 0.88  ┆ 0.58 ┆ 0.189955 ┆ 0.970045 ┆ 6      ┆ 1     ┆ 3    ┆ 10  │
+└────────┴────────┴───────┴──────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
+```
 
 `diff` is the change in the judge’s mean over the same ten examples,
 with its 95% interval; `better`, `worse` and `same` count examples.
 
-``` python
+```python
 translator("Hi, what's the weather like? I'm going to the convenience store.")
 ```
 
-    "Salut, c'est quoi le temps qu'il fait? Je m'en vais à l'épicerie de coin."
+```output
+"Salut, c'est quoi le temps qu'il fait? Je m'en vais à l'épicerie de coin."
+```
 
 `translator.undo_opt()` brings the old instruction back;
 `translator.save("translator.json")` keeps the new one.

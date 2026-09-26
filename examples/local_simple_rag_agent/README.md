@@ -1,3 +1,9 @@
+---
+rat:
+  python:
+    dependencies: ["-e .[data]"]
+---
+
 # A research agent: tools that read the web, and a fact checker
 
 
@@ -5,10 +11,10 @@ An agent that answers a question by reading a web page, and a second AI
 function that checks the answer against its source. It runs on any
 model; at the end, the same agent on a local model.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real
-reply.
+Every output below is a real reply. This page is a notebook: open it in
+Chattering and run it, or run it all with `python tools/docs.py run examples/local_simple_rag_agent/README.md`.
 
-``` python
+```python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -20,7 +26,7 @@ from functai import ai, _ai
 Any typed Python function with a docstring is a tool. This one fetches a
 page and keeps its text:
 
-``` python
+```python
 import html.parser
 import urllib.request
 
@@ -50,7 +56,7 @@ def read_page(url: str) -> str:
 The agent reads pages with the tool, and returns its answer together
 with the sentence that supports it:
 
-``` python
+```python
 from dataclasses import dataclass
 
 @dataclass
@@ -69,14 +75,16 @@ found = research(
 found
 ```
 
-    Sourced(answer='David Gregory inherited Kinnairdy Castle.', quote='He inherited Kinnairdy Castle in 1664.')
+```output
+Sourced(answer='David Gregory inherited Kinnairdy Castle.', quote='He inherited Kinnairdy Castle in 1664.')
+```
 
 ## Checking the answer
 
 A second AI function checks the claim against the quote, reasoning
 first:
 
-``` python
+```python
 @ai
 def fact_check(claim: str, passage: str) -> bool:
     """Does the passage support the claim?"""
@@ -88,7 +96,7 @@ A step that must always happen belongs in code, not in a request to the
 model. A `@module` is plain Python that calls AI functions, and is
 evaluated, optimized and saved as one program:
 
-``` python
+```python
 from functai import module
 
 @module
@@ -102,7 +110,9 @@ checked_answer("When was the physician David Gregory born? "
                "See https://en.wikipedia.org/wiki/David_Gregory_(physician)")
 ```
 
-    'David Gregory (physician) was born on 20 December 1625.'
+```output
+'David Gregory (physician) was born on 20 December 1625.'
+```
 
 (When the model should decide whether to check, give the AI function as
 a tool instead: `@ai(tools=[read_page, fact_check])`.)
@@ -112,30 +122,32 @@ a tool instead: `@ai(tools=[read_page, fact_check])`.)
 `functai.inspect_history()` has every model call, whichever function
 made it:
 
-``` python
+```python
 for record in functai.inspect_history(3):
     parts = record.response.message.parts
     print(f"{record.function:<10} {record.model:<13}",
           ", ".join(f"calls {p.name}" if p.type == "tool_call" else "answers" for p in parts))
 ```
 
-    research   gpt-4.1-mini  calls read_page
-    research   gpt-4.1-mini  answers
-    fact_check gpt-4.1-mini  answers
+```output
+research   gpt-4.1-mini  calls read_page
+research   gpt-4.1-mini  answers
+fact_check gpt-4.1-mini  answers
+```
 
 ## On a local model
 
 Only the model name changes. With [Ollama](https://ollama.com) running
 and a model pulled (`ollama pull qwen3:8b`):
 
-``` python
+```python
 research.lm = "ollama:qwen3:8b"
 research("Which castle did the physician David Gregory inherit? ...")
 ```
 
 Or any OpenAI-compatible server (vLLM, llama.cpp, LM Studio):
 
-``` python
+```python
 functai.configure(lm="openai:Qwen/Qwen3-8B", base_url="http://localhost:8000/v1", api_key="none")
 ```
 

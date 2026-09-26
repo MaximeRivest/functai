@@ -46,14 +46,8 @@ mydb.sqlite
 prompt.md
 
 examples/custom_adapters/
-# quarto render artifacts (the tutorials render to .md)
-.quarto/
-*.quarto_ipynb
 
-# docs website (docs/): built site, quarto's cache, generated pages.
-# docs/_freeze/ is committed: it holds every page's real outputs.
-docs/_site/
-docs/reference/
-docs/examples/
-docs/news.qmd
-docs/objects.json
+# docs website: site/ is built from docs/ (python docs/build.py site)
+site/
+support_router/
+docs/support_router/

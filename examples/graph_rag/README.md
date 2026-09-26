@@ -1,3 +1,9 @@
+---
+rat:
+  python:
+    dependencies: ["-e .[data]", "pydantic"]
+---
+
 # Building a knowledge graph, one chunk at a time
 
 
@@ -6,10 +12,10 @@ An AI function reads a chunk together with the graph so far and returns
 only what is new; plain Python merges it in. Pydantic models are the
 contract on both sides.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real
-reply.
+Every output below is a real reply. This page is a notebook: open it in
+Chattering and run it, or run it all with `python tools/docs.py run examples/graph_rag/README.md`.
 
-``` python
+```python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -18,7 +24,7 @@ from functai import ai
 
 ## The graph
 
-``` python
+```python
 from pydantic import BaseModel
 
 class Node(BaseModel, frozen=True):
@@ -46,7 +52,7 @@ class KnowledgeGraph(BaseModel):
 The graph so far is an input like any other: it is shown to the model as
 JSON, and the reply is read back as a `KnowledgeGraph`.
 
-``` python
+```python
 @ai
 def new_facts(text: str, graph: KnowledgeGraph) -> KnowledgeGraph:
     """Extract the entities and relations in the text that are not in the
@@ -56,7 +62,7 @@ def new_facts(text: str, graph: KnowledgeGraph) -> KnowledgeGraph:
 
 ## Building it
 
-``` python
+```python
 chunks = [
     "Jason knows a lot about quantum mechanics. He is a physicist and a professor.",
     "Professors teach at universities.",
@@ -71,13 +77,15 @@ for chunk in chunks:
 len(graph.nodes), len(graph.edges)
 ```
 
-    (8, 8)
+```output
+(8, 8)
+```
 
 ## Looking at it
 
 A [Mermaid](https://mermaid.js.org) diagram renders directly on GitHub:
 
-``` python
+```python
 def mermaid(g: KnowledgeGraph) -> str:
     lines = ["graph LR"]
     lines += [f'  n{n.id}["{n.label}"]' for n in g.nodes]
@@ -85,11 +93,11 @@ def mermaid(g: KnowledgeGraph) -> str:
     return "\n".join(lines)
 ```
 
-``` python
+```python
 print("```mermaid\n" + mermaid(graph) + "\n```")
 ```
 
-``` mermaid
+```mermaid
 graph LR
   n1["Jason"]
   n2["quantum mechanics"]
@@ -114,7 +122,7 @@ graph LR
 The graph is data now. Another AI function can answer from it, with no
 access to the original text:
 
-``` python
+```python
 @ai
 def ask(graph: KnowledgeGraph, question: str) -> str:
     """Answer from the graph only. Say so when the graph doesn't tell."""
@@ -122,10 +130,14 @@ def ask(graph: KnowledgeGraph, question: str) -> str:
 ask(graph, "In which country does Jason's student study?")
 ```
 
-    "Jason's student, Sarah, studies at the University of Toronto, which is in Canada."
+```output
+"Jason's student, Sarah, studies at the University of Toronto, which is in Canada."
+```
 
-``` python
+```python
 ask(graph, "How old is Sarah?")
 ```
 
-    "The graph doesn't tell how old Sarah is."
+```output
+"The graph doesn't tell how old Sarah is."
+```

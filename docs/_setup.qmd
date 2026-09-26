@@ -1,8 +1,0 @@
-```{python}
-#| include: false
-import functai
-from functai import ai, _ai
-functai.configure(lm="gpt-4.1-mini", temperature=0)
-import polars as pl   # how tables print on this site: whole texts, all columns
-pl.Config.set_fmt_str_lengths(90); pl.Config.set_tbl_cols(12); pl.Config.set_tbl_hide_dataframe_shape(True)
-```

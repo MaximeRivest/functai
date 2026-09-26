@@ -1,3 +1,9 @@
+---
+rat:
+  python:
+    dependencies: ["-e .[data]"]
+---
+
 # A terminal assistant: tools and memory
 
 
@@ -5,10 +11,10 @@ A small assistant that can look around a project with a few shell
 commands, and remembers the conversation. Two settings do it:
 `tools=[...]` and `stateful=True`.
 
-Rendered from [`main.qmd`](main.qmd); every output below is a real
-reply.
+Every output below is a real reply. This page is a notebook: open it in
+Chattering and run it, or run it all with `python tools/docs.py run examples/claide_code/README.md`.
 
-``` python
+```python
 import functai
 functai.configure(lm="gpt-4.1-mini", temperature=0)
 
@@ -22,7 +28,7 @@ name, parameters and docstring. This one runs a command, but only from
 an allow-list of read-only commands: a model should never get a free
 shell.
 
-``` python
+```python
 import shlex
 import subprocess
 
@@ -40,6 +46,64 @@ def run(command: str) -> str:
 
 ## The assistant
 
+```python
+@ai(tools=[run], stateful=True)
+def assistant(message: str) -> str:
+    """You help a developer understand the project in the current folder.
+    Use the tool to look before you answer. Be brief."""
+
+print(assistant("Which project is this folder part of, and what changed in it recently?"))
+```
+
+```output
+This folder is part of a project that recently had a commit with the message "1.0.1: AI judges get plain data; column types resolve postponed annotations." The changes include fixing an AI metric parameter issue, improving type resolution for postponed annotations, running README code blocks against a real model, and significant deletions in documentation files along with some updates in tests and core code files. The commit was made by Maxime Rivest on Sat Sep 26 2026.
+```
+
+The model decided which commands to run. `functai.phistory()` shows the
+whole exchange, tool calls and results included (here, the last model
+call of the loop):
+
+```python
+print(functai.phistory())
+```
+
+````output
+[2026-09-26T13:13:38] assistant → gpt-4.1-mini
+
+System message:
+
+Function: assistant
+
+You help a developer understand the project in the current folder.
+    Use the tool to look before you answer. Be brief.
+
+Reply in exactly this form:
+<result>
+...
+</result>
+
+
+User message:
+
+<message>
+Which project is this folder part of, and what changed in it recently?
+</message>
+
+
+Assistant message:
+
+[tool call run({"command": "cat README.md"})]
+[tool call run({"command": "git log -1 --stat"})]
+
+Tool message:
+
+[tool result call_BRSOHD9FN05k23jV8sl1rTto]  return f"refused: {command!r} is not a read-only command"
+    done = subprocess.run(argv, capture_output=True, text=True, timeout=10)
+    return (done.stdout + done.stderr)[-4000:]
+```
+
+## The assistant
+
 ``` python
 @ai(tools=[run], stateful=True)
 def assistant(message: str) -> str:
@@ -49,7 +113,7 @@ def assistant(message: str) -> str:
 print(assistant("Which project is this folder part of, and what changed in it recently?"))
 ```
 
-    This folder is part of a project that recently had a commit with the message "1.0.1: AI judges get plain data; column types resolve postponed annotations." The changes include fixing an AI metric parameter issue, improving type resolution for postponed annotations, running README code blocks against a real model, and significant deletions in documentation files along with some updates in tests and core code files. The commit was made by Maxime Rivest on Sat Sep 26 2026.
+    This folder is part of a project that recently had a commit with the message "Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)." The changes include updates to GitHub workflows for publishing and releasing, modifications to the pyproject.toml file, and significant changes to the uv.lock file. The commit was made by Maxime Rivest on Sat Sep 26 2026.
 
 The model decided which commands to run. `functai.phistory()` shows the
 whole exchange, tool calls and results included (here, the last model
@@ -59,7 +123,7 @@ call of the loop):
 print(functai.phistory())
 ```
 
-    [2026-09-26T13:13:38] assistant → gpt-4.1-mini
+    [2026-09-26T12:57:27] assistant → gpt-4.1-mini
 
     System message:
 
@@ -83,155 +147,31 @@ print(functai.phistory())
 
     Assistant message:
 
-    [tool call run({"command": "cat README.md"})]
+    [tool call run({"command": "git remote -v"})]
     [tool call run({"command": "git log -1 --stat"})]
 
     Tool message:
 
-    [tool result call_BRSOHD9FN05k23jV8sl1rTto]  return f"refused: {command!r} is not a read-only command"
-        done = subprocess.run(argv, capture_output=True, text=True, timeout=10)
-        return (done.stdout + done.stderr)[-4000:]
-    ```
-
-    ## The assistant
-
-    ``` python
-    @ai(tools=[run], stateful=True)
-    def assistant(message: str) -> str:
-        """You help a developer understand the project in the current folder.
-        Use the tool to look before you answer. Be brief."""
-
-    print(assistant("Which project is this folder part of, and what changed in it recently?"))
-    ```
-
-        This folder is part of a project that recently had a commit with the message "Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)." The changes include updates to GitHub workflows for publishing and releasing, modifications to the pyproject.toml file, and significant changes to the uv.lock file. The commit was made by Maxime Rivest on Sat Sep 26 2026.
-
-    The model decided which commands to run. `functai.phistory()` shows the
-    whole exchange, tool calls and results included (here, the last model
-    call of the loop):
-
-    ``` python
-    print(functai.phistory())
-    ```
-
-        [2026-09-26T12:57:27] assistant → gpt-4.1-mini
-
-        System message:
-
-        Function: assistant
-
-        You help a developer understand the project in the current folder.
-            Use the tool to look before you answer. Be brief.
-
-        Reply in exactly this form:
-        <result>
-        ...
-        </result>
-
-
-        User message:
-
-        <message>
-        Which project is this folder part of, and what changed in it recently?
-        </message>
-
-
-        Assistant message:
-
-        [tool call run({"command": "git remote -v"})]
-        [tool call run({"command": "git log -1 --stat"})]
-
-        Tool message:
-
-        [tool result call_I70oSqheEK06YZpfNHFLshgn] refused: 'git remote -v' is not a read-only command
-
-        Tool message:
-
-        [tool result call_5SM1nJiV0Wk0vEi3RqvvEQwf] commit 2feffaf8589e5af0f589356c2a865d159db53d25
-        Author: Maxime Rivest <mrive052@gmail.com>
-        Date:   Sat Sep 26 12:23:50 2026 -0400
-
-            Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)
-            
-            lmcc 0.8.3, lm15 and dpyr 1.10 are on PyPI, so the sibling-checkout uv
-            sources go. The token-based publish workflow (which also fired on tag
-            pushes, uploading twice) becomes the tokenless release workflow the other
-            packages use.
-
-         .github/workflows/publish.yml |  35 -----
-         .github/workflows/release.yml |  58 +++++++++
-         pyproject.toml                |   6 -
-         uv.lock                       | 290 ++++++++++++++++++++++--------------------
-         4 files changed, 208 insertions(+), 181 deletions(-)
-
-
-        Tools: run
-
-        Response:
-
-        <result>
-        This folder is part of a project that recently had a commit with the message "Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)." The changes include updates to GitHub workflows for publishing and releasing, modifications to the pyproject.toml file, and significant changes to the uv.lock file. The commit was made by Maxime Rivest on Sat Sep 26 2026.
-        </result>
-
-        (finish: stop; tokens in 407, out 96)
-
-    ## Memory
-
-    With `stateful=True`, each call sees the previous turns (the last 5 by
-    default, `state_window=`):
-
-    ``` python
-    print(assistant("Without running anything: what was the most recent change about?"))
-    ```
-
-        The most recent change was about releasing version 1.0.0 of the project. It involved switching dependencies to be sourced from PyPI instead of sibling checkouts, updating the publishing workflow to use a tokenless release process triggered by GitHub Releases, and cleaning up related workflow files and lock files accordingly.
-
-    A refused command is just a tool result the model reads and works
-    around:
-
-    ``` python
-    print(assistant("Run `rm main.qmd` for me."))
-    ```
-
-        I cannot run commands that modify or delete files.
-
-    `assistant.history` holds the conversation; `assistant.reset()` forgets
-    it.
-
-    ``` python
-    len(assistant.history)
-    ```
-
-        3
-
+    [tool result call_I70oSqheEK06YZpfNHFLshgn] refused: 'git remote -v' is not a read-only command
 
     Tool message:
 
-    [tool result call_eYdB7XczClOysOWzj2VvxCaC] commit 530b1496a7bbcf5d7a20885ad92704d3b91bf0ff
+    [tool result call_5SM1nJiV0Wk0vEi3RqvvEQwf] commit 2feffaf8589e5af0f589356c2a865d159db53d25
     Author: Maxime Rivest <mrive052@gmail.com>
-    Date:   Sat Sep 26 13:09:05 2026 -0400
+    Date:   Sat Sep 26 12:23:50 2026 -0400
 
-        1.0.1: AI judges get plain data; column types resolve postponed annotations
+        Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)
         
-        - an @ai metric with typed parameters (row: dict, prediction: dict) failed
-          on every row: it was handed a Prediction object, which is not JSON data
-        - fn(col.x) read a 'from __future__ import annotations' return type as the
-          text 'str' and refused it; it is now resolved like the rest of functai
-        - tests/docs_live.py runs the README's code blocks against a real model and
-          re-renders the tutorials
+        lmcc 0.8.3, lm15 and dpyr 1.10 are on PyPI, so the sibling-checkout uv
+        sources go. The token-based publish workflow (which also fired on tag
+        pushes, uploading twice) becomes the tokenless release workflow the other
+        packages use.
 
-     CHANGELOG.md                             |  12 +
-     docs/01_specs.md                         | 949 -------------------------------
-     docs/01_specs.qmd                        | 598 -------------------
-     examples/local_simple_rag_agent/demo.qmd |  77 ---
-     functai/__init__.py                      |   2 +-
-     functai/columns.py                       |   7 +
-     functai/evaluation.py                    |   9 +
-     pyproject.toml                           |   2 +-
-     tests/docs_live.py                       |  82 +++
-     tests/test_evaluation.py                 |  34 ++
-     uv.lock                                  |   2 +-
-     11 files changed, 147 insertions(+), 1627 deletions(-)
+     .github/workflows/publish.yml |  35 -----
+     .github/workflows/release.yml |  58 +++++++++
+     pyproject.toml                |   6 -
+     uv.lock                       | 290 ++++++++++++++++++++++--------------------
+     4 files changed, 208 insertions(+), 181 deletions(-)
 
 
     Tools: run
@@ -239,10 +179,10 @@ print(functai.phistory())
     Response:
 
     <result>
-    This folder is part of a project that recently had a commit with the message "1.0.1: AI judges get plain data; column types resolve postponed annotations." The changes include fixing an AI metric parameter issue, improving type resolution for postponed annotations, running README code blocks against a real model, and significant deletions in documentation files along with some updates in tests and core code files. The commit was made by Maxime Rivest on Sat Sep 26 2026.
+    This folder is part of a project that recently had a commit with the message "Release 1.0.0: dependencies from PyPI; publish from a GitHub Release (Trusted Publishing)." The changes include updates to GitHub workflows for publishing and releasing, modifications to the pyproject.toml file, and significant changes to the uv.lock file. The commit was made by Maxime Rivest on Sat Sep 26 2026.
     </result>
 
-    (finish: stop; tokens in 1509, out 104)
+    (finish: stop; tokens in 407, out 96)
 
 ## Memory
 
@@ -253,11 +193,10 @@ default, `state_window=`):
 print(assistant("Without running anything: what was the most recent change about?"))
 ```
 
-    The most recent change addressed issues with AI judges by ensuring they receive plain data instead of complex objects, fixed type resolution for postponed annotations in function signatures, and improved testing by running README code blocks against a real model. It also involved a large cleanup of documentation files and some updates to tests and core project files.
+    The most recent change was about releasing version 1.0.0 of the project. It involved switching dependencies to be sourced from PyPI instead of sibling checkouts, updating the publishing workflow to use a tokenless release process triggered by GitHub Releases, and cleaning up related workflow files and lock files accordingly.
 
-A command outside the allow-list comes back as a tool result saying it
-was refused, which the model reads and works around. Asking for
-something destructive:
+A refused command is just a tool result the model reads and works
+around:
 
 ``` python
 print(assistant("Run `rm main.qmd` for me."))
@@ -273,3 +212,80 @@ len(assistant.history)
 ```
 
     3
+
+
+Tool message:
+
+[tool result call_eYdB7XczClOysOWzj2VvxCaC] commit 530b1496a7bbcf5d7a20885ad92704d3b91bf0ff
+Author: Maxime Rivest <mrive052@gmail.com>
+Date:   Sat Sep 26 13:09:05 2026 -0400
+
+    1.0.1: AI judges get plain data; column types resolve postponed annotations
+    
+    - an @ai metric with typed parameters (row: dict, prediction: dict) failed
+      on every row: it was handed a Prediction object, which is not JSON data
+    - fn(col.x) read a 'from __future__ import annotations' return type as the
+      text 'str' and refused it; it is now resolved like the rest of functai
+    - tests/docs_live.py runs the README's code blocks against a real model and
+      re-renders the tutorials
+
+ CHANGELOG.md                             |  12 +
+ docs/01_specs.md                         | 949 -------------------------------
+ docs/01_specs.qmd                        | 598 -------------------
+ examples/local_simple_rag_agent/demo.qmd |  77 ---
+ functai/__init__.py                      |   2 +-
+ functai/columns.py                       |   7 +
+ functai/evaluation.py                    |   9 +
+ pyproject.toml                           |   2 +-
+ tests/docs_live.py                       |  82 +++
+ tests/test_evaluation.py                 |  34 ++
+ uv.lock                                  |   2 +-
+ 11 files changed, 147 insertions(+), 1627 deletions(-)
+
+
+Tools: run
+
+Response:
+
+<result>
+This folder is part of a project that recently had a commit with the message "1.0.1: AI judges get plain data; column types resolve postponed annotations." The changes include fixing an AI metric parameter issue, improving type resolution for postponed annotations, running README code blocks against a real model, and significant deletions in documentation files along with some updates in tests and core code files. The commit was made by Maxime Rivest on Sat Sep 26 2026.
+</result>
+
+(finish: stop; tokens in 1509, out 104)
+````
+
+## Memory
+
+With `stateful=True`, each call sees the previous turns (the last 5 by
+default, `state_window=`):
+
+```python
+print(assistant("Without running anything: what was the most recent change about?"))
+```
+
+```output
+The most recent change addressed issues with AI judges by ensuring they receive plain data instead of complex objects, fixed type resolution for postponed annotations in function signatures, and improved testing by running README code blocks against a real model. It also involved a large cleanup of documentation files and some updates to tests and core project files.
+```
+
+A command outside the allow-list comes back as a tool result saying it
+was refused, which the model reads and works around. Asking for
+something destructive:
+
+```python
+print(assistant("Run `rm main.qmd` for me."))
+```
+
+```output
+I cannot run commands that modify or delete files.
+```
+
+`assistant.history` holds the conversation; `assistant.reset()` forgets
+it.
+
+```python
+len(assistant.history)
+```
+
+```output
+3
+```

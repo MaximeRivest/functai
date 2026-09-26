@@ -1,0 +1,86 @@
+# The documentation website: docs/*.md (MRMD notebooks, outputs already in
+# them) → site/, with Zensical (`python tools/docs.py site`). Nothing runs here.
+site_name: functai
+site_description: Write a Python function. A language model does the work. You measure how well.
+site_url: https://maximerivest.github.io/functai/
+repo_url: https://github.com/maximerivest/functai
+repo_name: maximerivest/functai
+edit_uri: edit/master/docs/
+docs_dir: docs
+site_dir: site
+use_directory_urls: false
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.footer
+    - search.suggest
+    - content.code.copy
+    - content.action.edit
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle: {icon: material/weather-night, name: Dark mode}
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle: {icon: material/weather-sunny, name: Light mode}
+  font:
+    text: Inter
+    code: JetBrains Mono
+
+extra_css:
+  - assets/functai.css
+
+markdown_extensions:
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.highlight
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+
+nav:
+  - Home: index.md
+  - Get started: get-started.md
+  - Learn:
+      - articles/index.md
+      - Start from what you have:
+          - A table of text: get-started.md
+          - articles/notes-to-data.md
+          - articles/from-a-prompt.md
+          - articles/coming-from.md
+      - Is it good?:
+          - articles/accuracy.md
+          - articles/improving.md
+          - articles/cheaper.md
+          - articles/tables.md
+      - Ship:
+          - articles/saving.md
+          - articles/baking.md
+      - Toolbox:
+          - articles/anatomy.md
+          - articles/types.md
+          - articles/outputs.md
+          - articles/tools.md
+          - articles/memory.md
+          - articles/modules.md
+          - articles/layouts.md
+          - articles/models.md
+          - articles/logins.md
+      - When things go wrong:
+          - articles/inspection.md
+          - articles/reliability.md
+          - articles/upgrading.md
+  - Reference: reference/index.md
+  - Examples: examples/index.md
+  - News: news.md
