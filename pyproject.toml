@@ -56,9 +56,10 @@ bake = [
     "peft>=0.13",
 ]
 # reinforcement learning and distillation on Prime Intellect (functai_verifiers,
-# functai_rows); tested with verifiers at commit 1863cfbd (its v1 API moves fast)
+# functai_rows): verifiers' v1 API, which changes between its dev releases, so
+# the exact tested one (0.3.2.dev136 = commit 1863cfbd)
 prime = [
-    "verifiers>=0.3.1",
+    "verifiers==0.3.2.dev136",
 ]
 dev = [
     "pytest>=7.0.0",
