@@ -25,7 +25,7 @@ An AI function is a Julia `Function`: call it, broadcast it, pass it to `ByRow`,
 - **Write** an AI function with [`@ai`](@ref), or as data with [`AIFunction`](@ref); see exactly what the model reads with [`FunctAI.prompt`](@ref).
 - **Run it on tables**: broadcasting, `map` and DataFrames' `ByRow` run the calls concurrently; `missing` in, `missing` out.
 - **Measure** with [`evaluate`](@ref): a score with a 95% interval, every row as a table; [`compare`](@ref) two versions row by row.
-- **Improve** with [`labeled_few_shot`](@ref), [`bootstrap_few_shot`](@ref), [`random_search`](@ref) and [`instruction_search`](@ref); each returns an improved copy.
+- **Improve** with [`labeled_few_shot`](@ref), [`bootstrap_few_shot`](@ref), [`random_search`](@ref), [`instruction_search`](@ref) and [`gepa`](@ref) (the instruction rewritten from the function's mistakes); each returns an improved copy.
 - **Model** with [`AIModel`](@ref): `fit`/`predict` with formulas, and an MLJ model.
 - **Watch** a call with [`stream`](@ref); give it **tools** (Julia functions); group calls into a [`@program`](@ref).
 - **Log** every call, [`rate`](@ref) them, and turn ratings into rows with known answers with [`rated`](@ref).

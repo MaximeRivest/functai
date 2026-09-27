@@ -61,6 +61,7 @@ include("program.jl")
 include("stream.jl")
 include("evaluate.jl")
 include("optimize.jl")
+include("gepa.jl")
 include("model.jl")
 include("saved.jl")
 include("api.jl")
@@ -72,7 +73,7 @@ export @ai, @program, AIFunction, AIProgram, OneOf, Prediction
 export predict, render, stream, eachevent, version, signature_id, instructions, demos, with_demos, with_instructions
 export configure, configure!, with_settings, settings, problems
 export evaluate, Evaluation, exact_match, score_interval, compare
-export labeled_few_shot, bootstrap_few_shot, random_search, instruction_search
+export labeled_few_shot, bootstrap_few_shot, random_search, instruction_search, gepa
 export AIModel, AIModelFit, fit
 export rate, calls, rated
 export tool, AITool, Event, AIStream, StepLimit, Cancelled, LoadRefused

@@ -92,6 +92,7 @@ labeled_few_shot
 bootstrap_few_shot
 random_search
 instruction_search
+gepa
 ```
 
 ## Models: fit, formulas, MLJ

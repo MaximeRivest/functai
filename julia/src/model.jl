@@ -11,7 +11,8 @@
 
 """
     AIModel(description = ""; examples = 16, seed = 0, name = "", levels = nothing,
-            lm = nothing, reasoning = false, settings = (;))
+            lm = nothing, reasoning = false, settings = (;), method = :labeled,
+            teacher = nothing, budget = 300)
 
 A model whose predictions a language model makes, for rows of a table.
 `fit(AIModel(…), X, y)` (or with a formula: `fit(AIModel(…), @formula(y ~ a + b), data)`)
@@ -27,6 +28,22 @@ answer, not a probability for each class.
 `name` is the function's name (the instruction starts "Function: <name>");
 empty, it is the outcome's column name. Other settings (`temperature`,
 `adapter`, `concurrency`, …) go in `settings`.
+
+**Fitting that learns.** `method` says what fitting does with the rows:
+
+- `:labeled` (the default): `examples` rows become worked examples; nothing
+  is called.
+- `:bootstrap`: the function (or a `teacher` model) runs on the rows, and up
+  to `examples` runs it got right become worked examples, reasoning included
+  ([`bootstrap_few_shot`](@ref)).
+- `:gepa`: a `teacher` model rewrites the instruction from the function's
+  mistakes on the rows, within `budget` calls ([`gepa`](@ref)); then
+  `examples` rows become worked examples (`examples = 0` for none).
+
+With `:bootstrap` and `:gepa`, fitting calls the model and costs money. Inside
+MLJ's `evaluate!`, each fold is fitted on its own rows, so cross-validation
+measures the whole procedure, search included, on rows it never saw: the
+honest number for a searched instruction.
 """
 mutable struct AIModel <: MMI.Deterministic
     description::String
@@ -37,11 +54,15 @@ mutable struct AIModel <: MMI.Deterministic
     lm::Union{Nothing,String}
     reasoning::Bool
     settings::NamedTuple
+    method::Symbol
+    teacher::Union{Nothing,String}
+    budget::Int
 end
 function AIModel(description::AbstractString=""; examples::Integer=16, seed::Integer=0, name::AbstractString="", levels=nothing,
-                 lm=nothing, reasoning::Bool=false, settings=(;))
+                 lm=nothing, reasoning::Bool=false, settings=(;), method::Symbol=:labeled, teacher=nothing, budget::Integer=300)
     m = AIModel(String(description), examples, seed, String(name), levels === nothing ? nothing : string.(collect(levels)),
-                lm === nothing ? nothing : String(lm), reasoning, (; pairs(settings)...))
+                lm === nothing ? nothing : String(lm), reasoning, (; pairs(settings)...), method,
+                teacher === nothing ? nothing : String(teacher), budget)
     msg = MMI.clean!(m)
     isempty(msg) || @warn msg
     m
@@ -54,6 +75,12 @@ function MMI.clean!(m::AIModel)
         m.examples = 0
     end
     settings_dict(m.settings)            # an unknown setting throws here, not at the first call
+    m.method in (:labeled, :bootstrap, :gepa) ||
+        throw(ArgumentError("method is :labeled, :bootstrap or :gepa, not $(repr(m.method))"))
+    if m.budget < 1
+        msg *= "budget must be at least 1; set to 300. "
+        m.budget = 300
+    end
     msg
 end
 
@@ -121,7 +148,14 @@ function StatsAPI.fit(m::AIModel, X, y::AbstractVector; name=nothing, formula=no
     fn = AIFunction(fname, m.description; inputs, outputs=[Symbol(outcome) => spec], settings...)
     rows = [merge(NamedTuple(r), NamedTuple{(Symbol(outcome),)}((v,))) for (r, v) in zip(Tables.rowtable(cols), y)]
     rows = [r for r in rows if r[Symbol(outcome)] !== missing]
-    fn = labeled_few_shot(fn, rows; k=m.examples, seed=m.seed)
+    fn = if m.method === :bootstrap
+        bootstrap_few_shot(fn, rows; teacher=m.teacher, max_bootstrapped=min(4, m.examples), max_labeled=m.examples, seed=m.seed)
+    elseif m.method === :gepa
+        searched, _ = gepa(fn, rows; teacher=m.teacher, budget=m.budget, seed=m.seed)
+        labeled_few_shot(searched, rows; k=m.examples, seed=m.seed)    # after gepa: its instruction, and examples
+    else
+        labeled_few_shot(fn, rows; k=m.examples, seed=m.seed)
+    end
     AIModelFit(m, fn, String(outcome), rebuild, formula)
 end
 
@@ -166,7 +200,8 @@ function MMI.fit(m::AIModel, verbosity::Int, X, y)
         end
     end
     fitted = AIModelFit(m, fitted.fn, fitted.outcome, rebuild, nothing)
-    verbosity > 0 && @info "AIModel: $(length(fitted.fn.demos)) worked examples; nothing was called"
+    verbosity > 0 && @info "AIModel: $(length(fitted.fn.demos)) worked examples" *
+                           (m.method === :labeled ? "; nothing was called" : ", after $(m.method)")
     (fitted, nothing, (examples=length(fitted.fn.demos), version=version(fitted.fn)))
 end
 MMI.predict(::AIModel, fitted::AIModelFit, Xnew) = StatsAPI.predict(fitted, Xnew)

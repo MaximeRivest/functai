@@ -1,6 +1,6 @@
 # 04. GEPA: instructions rewritten from mistakes
 
-Status: Python, R and TypeScript. No change to the contract: the result is a
+Status: Python, R, TypeScript and Julia. No change to the contract: the result is a
 function's `state.instructions`, which every language already saves,
 loads and versions.
 
@@ -76,8 +76,9 @@ The same loop (steps 1-5), with these changes:
    candidate, its parent, how it was made, its minibatch and selection
    scores, its length). The documentation says the selection score is
    optimistic, and the tutorial measures the result on rows the search
-   never saw. In tidymodels, running GEPA inside `fit()` makes
-   resampling measure the whole procedure, search included.
+   never saw. In tidymodels (R) and MLJ (Julia, `AIModel(method =
+   :gepa)`), running GEPA inside `fit()` makes resampling measure the
+   whole procedure, search included.
 
 Kept from GEPA: the budget counts calls of the function being improved
 (the reflection model's calls are counted apart, and logged); the

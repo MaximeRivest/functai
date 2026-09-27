@@ -73,7 +73,7 @@ by purpose:
 | 1 | Your first AI function | `@ai` with an `@enum`, `team.(df.message)`, `transform`, a Makie bar chart |
 | 2 | Answers you can compute with | Julia types as the answer's promise: `Int`, `Union{Int,Nothing}`, `@enum`, a struct, `Vector`; `missing` |
 | 3 | Is it right? | `evaluate` with intervals; baselines as plain Julia functions; a confusion table with `combine`/`unstack`; run-to-run variation |
-| 4 | Making it better without fooling yourself | three piles; rules, `labeled_few_shot`, a teacher; `compare`; `instruction_search` where R has GEPA |
+| 4 | Making it better without fooling yourself | three piles; rules, `labeled_few_shot`, a teacher; `compare`; `gepa`, the instruction rewritten from the mistakes |
 | 5 | Choosing a model | eight models (Jev among them) by accuracy, cost and speed; `compare` in pairs; a rule in code |
 | 6 | Decision models | the model reads, Julia decides (a plain function); expected cost from Jev's probabilities |
 | 7 | AI functions in MLJ and formulas | `machine(AIModel(…), X, y)`, `evaluate!` with cross-validation, `examples` tuned; an AI column inside a GLM formula |
@@ -81,8 +81,8 @@ by purpose:
 
 What differs from R, stated: no votes (`samples = k`) in Julia 0.1.0, so
 tutorial 6 takes Python's route (why a model's own confidence is not a
-probability, then Jev's measured ones); GEPA exists in Python, R and TypeScript, not yet in Julia,
-so tutorial 4 uses `instruction_search`; plots are Makie (CairoMakie), the
+probability, then Jev's measured ones); tutorial 7 cross-validates `AIModel(method = :gepa)` as R's
+tutorial 7 resamples its GEPA fit; plots are Makie (CairoMakie), the
 package the *Julia Data Science* book and Makie's docs teach.
 
 ## The site

@@ -27,6 +27,20 @@ by_word(req) = (t = req.messages[end].parts[1].text;
     @test_throws ArgumentError fit(AIModel(), @formula(team ~ log(message)), tickets)
 end
 
+@testset "method = :gepa: fitting rewrites the instruction; :bootstrap runs the rows" begin
+    r = FakeRouter(; responder=(req, i) -> occursin("You improve the instruction", something(req.system, "")) ?
+        xml(:result => "Money is billing; parcels are shipping; the rest is product.") :
+        occursin("Money is billing", something(req.system, "")) ? by_word(req) : xml(:team => "product"))
+    m = using_fake(() -> fit(AIModel("Which team?"; method=:gepa, teacher="gpt-6-sol", budget=40, examples=0),
+                             @formula(team ~ message), tickets), r)
+    @test FunctAI.instructions(m.fn) == "Money is billing; parcels are shipping; the rest is product."
+    @test any(q -> q.model == "gpt-6-sol", r.requests)
+    @test_throws ArgumentError AIModel(; method=:magic)
+    r = FakeRouter(; responder=(req, i) -> by_word(req))
+    m = using_fake(() -> fit(AIModel("Which team?"; method=:bootstrap, examples=2), @formula(team ~ message), tickets), r)
+    @test length(m.fn.demos) == 2 && count(d -> haskey(d, "steps"), m.fn.demos) == 2
+end
+
 @testset "a text outcome is text; Symbols are a choice; levels choose" begin
     df = DataFrame(q=["a", "b"], answer=["x", "y"])
     m = fit(AIModel(), @formula(answer ~ q), df)

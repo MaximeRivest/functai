@@ -26,6 +26,6 @@ Julia refuses to guess when two packages loaded with `using` export different fu
 ## Not in Julia yet
 
 - **Saving code of your own or tools** from Julia (a saved folder carries no Julia code yet).
-- **The reply cache, stateful memory, escalation** (`escalate_to`; a [`@program`](@ref) does it by hand), **votes** (R's `samples`), **GEPA** (in Python, R and TypeScript), and **baking** (training your own model).
+- **The reply cache, stateful memory, escalation** (`escalate_to`; a [`@program`](@ref) does it by hand), **votes** (R's `samples`), and **baking** (training your own model).
 - **Probabilities per class from `AIModel`**: predictions are deterministic. Calibrated probabilities come from a model that measures them (TypeSafe's Jev): `predict(f, x).probabilities`.
 - **A program's version** follows the AI functions and programs it names, not plain Julia functions it calls.

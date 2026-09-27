@@ -1,6 +1,7 @@
 using FunctAI
 using Test
 import LMCC, LM15
+using Random: Xoshiro, shuffle
 
 include("fake.jl")
 
@@ -12,6 +13,7 @@ delete!(ENV, "FUNCTAI_CALLER")
     include("contract.jl")
     include("functions.jl")
     include("calls.jl")
+    include("gepa.jl")
     include("models.jl")
 end
 

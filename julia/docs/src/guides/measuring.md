@@ -63,15 +63,16 @@ Each optimizer returns an improved **copy**; the function you pass is unchanged.
 | [`labeled_few_shot`](@ref) | `k` rows with known answers become worked examples | none |
 | [`bootstrap_few_shot`](@ref) | runs the function (or a `teacher` model) on rows; the runs the metric accepts become worked examples, reasoning and tool calls included | one per row tried |
 | [`random_search`](@ref) | several sets of examples, each scored on `valset`; the best wins | many |
+| [`gepa`](@ref) | a stronger model (`teacher`) reads the function's answers on a few rows, with feedback in words, and rewrites the instruction; candidates are kept in a Pareto pool scored on `selection`, combined, and the best (of equals, the shortest) wins | up to `budget` |
 | [`instruction_search`](@ref) | a stronger model (`prompt_lm`) proposes instructions; each is tried on minibatches of `valset`; the best wins | many |
 
 ```julia
 better = bootstrap_few_shot(refund, train; teacher = "gpt-6-sol", max_bootstrapped = 4)
-found, trials = instruction_search(refund, train; valset = dev, prompt_lm = "gpt-6-sol")
-DataFrame(trials)
+rewritten, trials = gepa(refund, train; selection = dev, teacher = "gpt-6-sol", budget = 300)
+DataFrame(trials)                                # every instruction tried, and why it was kept or dropped
 ```
 
-Keep three piles of rows: one to learn from, one to choose on, one to test **once**. Choosing the best of several versions on the same rows flatters the winner.
+Keep three piles of rows: one to learn from, one to choose on, one to test **once**. Choosing the best of several versions on the same rows flatters the winner, and a search is itself random: measure its result on rows it never saw. `AIModel(method = :gepa)` runs the search inside `fit!`, so MLJ's cross-validation measures the search itself.
 
 ## Datasets
 

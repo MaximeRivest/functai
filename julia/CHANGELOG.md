@@ -67,5 +67,12 @@ Anthropic and Gemini (`tools/live.jl`, 2026-09-27: 21 of 21).
   written; `functai.json` is indented, as Python and TypeScript write it;
   `instruction_search` shows the proposing model only the function's
   inputs and outputs, never a table's other columns.
+- `gepa(f, rows; selection, teacher, budget)`: the instruction rewritten from
+  the function's mistakes, as in Python, R and TypeScript (the same algorithm
+  and prompts, design/04-gepa.md); returns the copy and every instruction
+  tried. `AIModel(method = :gepa)` (and `:bootstrap`) learns while fitting,
+  so MLJ's cross-validation measures the search. Live on the tutorials'
+  jobs: refund decisions on gpt-5.4-nano, 64% to 95% and 67% to 79% on
+  unseen rows in two runs; tickets, 85% to 97.5% cross-validated.
 - A precompile workload: the first call of a session compiles in about 10
   seconds instead of about 60 (the rest is lm15's network code).

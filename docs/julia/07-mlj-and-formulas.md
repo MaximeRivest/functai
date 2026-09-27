@@ -1,6 +1,6 @@
 # 7. AI functions in MLJ and formulas
 
-*If you use MLJ, you already know how to use a language model: a model, a machine, `fit!`, `predict`, `evaluate!`. By the end you will have put one in a machine, cross-validated it, tuned how many worked examples it sees, compared it with a classical text classifier, trained that classifier on the language model's labels, and used an AI function as a feature inside a GLM formula.*
+*If you use MLJ, you already know how to use a language model: a model, a machine, `fit!`, `predict`, `evaluate!`. By the end you will have put one in a machine, cross-validated it, tuned how many worked examples it sees, cross-validated one that learns its own instruction from its mistakes, compared it with a classical text classifier, trained that classifier on the language model's labels, and used an AI function as a feature inside a GLM formula.*
 
 **Can you skip this one?** If you can answer these, jump to [tutorial 8](08-living-with-it.md). The answers are at the bottom.
 
@@ -8,11 +8,11 @@
 2. FunctAI and MLJ both export `predict` and `evaluate`. How do you use both packages in one session?
 3. How does an AI function become a column of a `GLM.lm` formula, and how many calls does that make?
 
-**You will:** use `AIModel` as an MLJ model (`machine`, `fit!`, `predict`, `evaluate!` with cross-validation, `TunedModel`), compare it with naive Bayes on word counts, label data with the language model to train a free classical model, and put an AI function inside `@formula`.
+**You will:** use `AIModel` as an MLJ model (`machine`, `fit!`, `predict`, `evaluate!` with cross-validation, `TunedModel`), cross-validate a fit that rewrites its instruction (`method = :gepa`), compare it with naive Bayes on word counts, label data with the language model to train a free classical model, and put an AI function inside `@formula`.
 
 ## What you need
 
-MLJ and a few model packages (`Pkg.add(["MLJ", "NaiveBayes", "MLJNaiveBayesInterface", "GLM", "StatsModels", "CategoricalArrays"])`), and MLJ's habits: this tutorial follows MLJ's own "Getting started", with a language model as the model. About five cents.
+MLJ and a few model packages (`Pkg.add(["MLJ", "NaiveBayes", "MLJNaiveBayesInterface", "GLM", "StatsModels", "CategoricalArrays"])`), and MLJ's habits: this tutorial follows MLJ's own "Getting started", with a language model as the model. About ten cents.
 
 MLJ and FunctAI both export a `predict` and an `evaluate`. In Julia, when two packages loaded with `using` export different functions under one name, using that name is an error: Julia refuses to guess. The usual answer is to bring in one package whole and the other by name. Here MLJ is the frame, so it comes in with `using`, and FunctAI with `import` (its functions as `FunctAI.evaluate`, …), plus the two names we use most:
 
@@ -67,7 +67,7 @@ accuracy(ŷ, y)                                                                 
 ```
 
 ```output
-0.95
+0.975
 ```
 
 The predictions are a `CategoricalVector` with the training levels (`levels(ŷ) == levels(y)`), like any MLJ classifier's. Predictions are *deterministic*: a language model gives an answer, not a probability for each class, and FunctAI never makes one up (tutorial 6 shows where real probabilities come from).
@@ -103,18 +103,18 @@ PerformanceEvaluation object with these fields:
   per_fold, per_observation,
   fitted_params_per_fold, report_per_fold,
   train_test_rows, resampling, repeats
-Tag: AIModel-920
+Tag: AIModel-901
 Extract:
 ┌────────────┬───────────┬─────────────┬─────────┐
 │ measure    │ operation │ measurement │ 1.96*SE │
 ├────────────┼───────────┼─────────────┼─────────┤
-│ Accuracy() │ predict   │ 0.988       │ 0.027   │
+│ Accuracy() │ predict   │ 0.975       │ 0.034   │
 └────────────┴───────────┴─────────────┴─────────┘
-┌─────────────────────────────┐
-│ per_fold                    │
-├─────────────────────────────┤
-│ [0.938, 1.0, 1.0, 1.0, 1.0] │
-└─────────────────────────────┘
+┌───────────────────────────────┐
+│ per_fold                      │
+├───────────────────────────────┤
+│ [0.938, 1.0, 1.0, 0.938, 1.0] │
+└───────────────────────────────┘
 Apply `describe` to this result for a named tuple summary.
 ```
 
@@ -158,8 +158,8 @@ DataFrame(model = ["naive Bayes on word counts", "AIModel (gpt-6-luna)"],
  Row │ model                       accuracy  per_fold
      │ String                      Float64   Array…
 ─────┼──────────────────────────────────────────────────────────────────────
-   1 │ naive Bayes on word counts    0.775   [0.88, 0.81, 0.75, 0.81, 0.62]
-   2 │ AIModel (gpt-6-luna)          0.9875  [0.94, 1.0, 1.0, 1.0, 1.0]
+   1 │ naive Bayes on word counts     0.775  [0.88, 0.81, 0.75, 0.81, 0.62]
+   2 │ AIModel (gpt-6-luna)           0.975  [0.94, 1.0, 1.0, 0.94, 1.0]
 ```
 
 Sixty-four messages per fold is very little to learn language from: most words in a new message never appeared in training. The language model starts from knowing the words already.
@@ -184,9 +184,9 @@ DataFrame(examples = [h.model.examples for h in report(tuned_mach).history],
  Row │ examples  accuracy
      │ Int64     Float64
 ─────┼────────────────────
-   1 │        0    0.9625
-   2 │        2    0.975
-   3 │        8    0.975
+   1 │        0    0.95
+   2 │        8    0.9875
+   3 │        2    0.9875
 ```
 
 Each value was scored on eighty predictions, so the differences are a message or two: read them with tutorial 3's intervals in mind. What tuning chose:
@@ -196,8 +196,56 @@ fitted_params(tuned_mach).best_model.examples
 ```
 
 ```output
-2
+8
 ```
+
+## A fit that learns
+
+So far `fit!` learned nothing from the training answers but worked examples. With `method = :gepa`, it does: a stronger model (the `teacher`) reads the function's mistakes on the training rows and rewrites its instruction ([tutorial 4](04-making-it-better.md) shows how). The instruction is then what was fitted, as coefficients are for a regression.
+
+That makes fitting cost calls. And it makes cross-validation mean what it means for any model that learns: each fold runs the whole search on its own training rows and is scored on rows the search never saw, so the resampled accuracy measures the *procedure*, search included, not one lucky instruction. Here it is on `gpt-5.4-nano`, the small model of six months ago, next to the same model fitted plainly, on the same five folds:
+
+```julia
+nano = AIModel("Which team should answer this customer message?"; name = "team", lm = "gpt-5.4-nano", examples = 0)
+nano_gepa = AIModel("Which team should answer this customer message?"; name = "team", lm = "gpt-5.4-nano", examples = 0,
+                    method = :gepa, teacher = "gpt-6-sol", budget = 150)
+
+plain_cv = evaluate!(machine(nano, X, y); resampling = cv, measure = accuracy, verbosity = 0)
+gepa_cv = evaluate!(machine(nano_gepa, X, y); resampling = cv, measure = accuracy, verbosity = 0)
+
+DataFrame(fit = ["plain", "gepa"], accuracy = [plain_cv.measurement[1], gepa_cv.measurement[1]],
+          per_fold = [round.(plain_cv.per_fold[1]; digits = 2), round.(gepa_cv.per_fold[1]; digits = 2)])
+```
+
+```output
+2×3 DataFrame
+ Row │ fit     accuracy  per_fold
+     │ String  Float64   Array…
+─────┼──────────────────────────────────────────────────
+   1 │ plain      0.85   [0.88, 0.69, 0.94, 0.88, 0.88]
+   2 │ gepa       0.975  [1.0, 0.88, 1.0, 1.0, 1.0]
+```
+
+Fitting that learns is right about twelve points more often, on messages no fold's search saw. Compare them fold by fold, since the same rows were scored in each: it won all five. (Another run of this page gave seven points, three folds won and two tied: each search is its own draw, which is exactly why cross-validation, not one search, is the number to trust.) What did a fold learn? Each fold's fitted parameters hold its function:
+
+```julia
+println(FunctAI.instructions(gepa_cv.fitted_params_per_fold[1].fn))
+```
+
+```output
+Function: team
+
+Choose the team that should answer the customer’s main question. Output exactly one value: account, billing, product, or shipping.
+
+- account: sign-in, profile access, account security, or unauthorized activity linked to a compromised account.
+- billing: prices, payments, charges, invoices, refunds, or price adjustments.
+- product: product features, compatibility, use, quality, or defects.
+- shipping: delivery, tracking, shipping costs, or missing or delayed packages.
+
+If a message mentions more than one topic, choose the team responsible for the action the customer is asking for. For example, a request to receive a price difference belongs to billing, even if it refers to a purchase.
+```
+
+Put it next to the house rules in `?FunctAI.tickets`. From nothing but "wrong: the right answer is billing", the teacher found the rule that trips up everyone who hasn't read them, *every request for money back is billing*, written here as refunds and price adjustments being billing, and *choose the team for the action the customer asks for, not the reason they give*. It didn't write the damage-on-arrival rule: this fold's training rows showed it no such mistake to learn from. `[fp.fn for fp in gepa_cv.fitted_params_per_fold]` holds what the other folds wrote; a fold whose rows hold no mistake at all keeps the written instruction. Its cost, about eight hundred calls of the small model and a dozen of the large one, is in the bill below.
 
 ## The other way round: a classical model that learns from the language model
 
@@ -287,13 +335,23 @@ An AI model reads its inputs as they are, together. What a formula means only to
 ## What it cost
 
 ```julia
-bill = dropmissing(DataFrame(FunctAI.calls(folder = log_folder)), :model)
-(calls = nrow(bill),
- dollars = sum(bill.input_tokens .* 0.10 .+ (bill.total_tokens .- bill.input_tokens) .* 0.50) / 1e6)   # gpt-6-luna, 2026-09-27
+prices = DataFrame(model  = ["gpt-6-luna", "gpt-5.4-nano", "gpt-6-sol"],   # dollars per million tokens, 2026-09-27
+                   input  = [0.10, 0.20, 2.00],
+                   output = [0.50, 1.25, 10.00])
+
+bill = innerjoin(dropmissing(DataFrame(FunctAI.calls(folder = log_folder)), :model), prices, on = :model)
+bill.dollars = (bill.input_tokens .* bill.input .+ (bill.total_tokens .- bill.input_tokens) .* bill.output) ./ 1e6
+combine(groupby(bill, :model), nrow => :calls, :dollars => sum => :dollars)
 ```
 
 ```output
-(calls = 600, dollars = 0.0242948)
+3×3 DataFrame
+ Row │ model         calls  dollars
+     │ String        Int64  Float64
+─────┼────────────────────────────────
+   1 │ gpt-6-luna      600  0.02375
+   2 │ gpt-5.4-nano    804  0.0337107
+   3 │ gpt-6-sol        13  0.03778
 ```
 
 ## Your turn
@@ -305,6 +363,7 @@ bill = dropmissing(DataFrame(FunctAI.calls(folder = log_folder)), :model)
 ## What you learned
 
 - `AIModel` is an MLJ model: `machine`, `fit!` (free: no call), `predict` (the calls), `evaluate!` with any resampling, `TunedModel` over `examples`.
+- `method = :gepa` makes fitting learn the instruction from the training rows' mistakes; cross-validation then measures the search itself, on rows it never saw.
 - With two packages that export the same name, bring one in with `using` and the other with `import`, and qualify.
 - A classical text model needs far more rows than a language model; the language model can label rows for it.
 - In a `@formula`, an AI function is a feature: StatsModels broadcasts it, so its calls are concurrent.

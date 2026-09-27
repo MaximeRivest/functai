@@ -9,10 +9,10 @@ Each tutorial starts from a question about real data, shows where it is going, b
 | 1 | [Your first AI function](01-first-function.md) | sort 80 customer messages into teams with `@ai` and a dot, check them, improve them | under 1¢ |
 | 2 | [Answers you can compute with](02-types.md) | turn bird-survey notes into typed columns: `@enum`s, `Union{Int,Missing}`, structs, vectors | about 1¢ |
 | 3 | [Is it right?](03-is-it-right.md) | measure with intervals, baselines as plain Julia functions, a confusion table, run-to-run variation | under 1¢ |
-| 4 | [Making it better without fooling yourself](04-making-it-better.md) | improve a refund decision with rules, examples and a teacher, on three piles of rows; let a stronger model write a small model's instruction | about 6¢ |
+| 4 | [Making it better without fooling yourself](04-making-it-better.md) | improve a refund decision with rules, examples and a teacher, on three piles of rows; and when nobody wrote the rules, let a stronger model write them from the mistakes (GEPA) | about 9¢ |
 | 5 | [Choosing a model](05-choosing-a-model.md) | compare eight models (TypeSafe's Jev among them) on accuracy, cost and speed, with paired tests and a rule | about 30¢ |
 | 6 | [Decision models](06-decisions.md) | approve, deny or ask a person: costs of mistakes, rules as a tested Julia function, probabilities from Jev, a second opinion as a `@program`, a decision tree | about 3¢ |
-| 7 | [AI functions in MLJ and formulas](07-mlj-and-formulas.md) | fit, cross-validate and tune a language model as an MLJ model; an AI function as a feature in a GLM formula | about 3¢ |
+| 7 | [AI functions in MLJ and formulas](07-mlj-and-formulas.md) | fit, cross-validate and tune a language model as an MLJ model; a fit that learns its instruction from its mistakes; an AI function as a feature in a GLM formula | about 10¢ |
 | 8 | [Living with it](08-living-with-it.md) | tools, streaming, the call log, people's corrections, versions, saving | under 1¢ |
 
 The same series exists [for Python](../tutorials/index.md) and [for R](../r/index.md), on the same datasets. A function's version, its call log and its saved folder are the same in all of them: ratings made in R pool with calls made in Julia, and a function saved in Python loads here.

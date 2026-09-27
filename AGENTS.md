@@ -46,7 +46,7 @@ cd ts && npm install && npm test                # TypeScript (needs ../lmcc chec
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
 r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
 julia/check                                     # Julia (needs ../lmcc and ../lm15-dev checked out; Julia from nixpkgs if not on PATH)
-julia/tutorials [docs/julia/0N-*.md ...]        # run the Julia tutorials in fresh sessions, write their outputs (real models; about 50 cents for all eight)
+julia/tutorials [docs/julia/0N-*.md ...]        # run the Julia tutorials in fresh sessions, write their outputs (real models; about 60 cents for all eight)
 julia --project=julia/docs julia/docs/make.jl   # the Julia manual (Documenter) into julia/docs/build; runs no model
 r/tutorials [docs/r/0N-*.md ...]                # run the R tutorials in fresh sessions, write their outputs (real models; about 40 cents for all eight)
 python/.venv/bin/python contract/cases/make.py  # after changing a rule: rewrite the cases

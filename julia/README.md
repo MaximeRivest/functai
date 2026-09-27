@@ -167,11 +167,11 @@ rate(p; answer = mixed, note = "broken item, good help")   # a correction
 
 rows = rated(mood)                          # rows with known answers, from people's ratings
 better = bootstrap_few_shot(mood, rows)     # an improved copy; mood is unchanged
-better, trials = instruction_search(mood, rows)
+better, trials = gepa(mood, rows; teacher = "gpt-6-sol")   # the instruction rewritten from its mistakes
 ```
 
-`labeled_few_shot`, `bootstrap_few_shot`, `random_search` and
-`instruction_search` each return an improved copy: only the instruction and
+`labeled_few_shot`, `bootstrap_few_shot`, `random_search`,
+`instruction_search` and `gepa` each return an improved copy: only the instruction and
 the worked examples change, and so does the version. `with_demos` and
 `with_instructions` do it by hand. The log folder is shared with Python,
 TypeScript and R: calls and ratings made in any of them pool here.
@@ -244,7 +244,7 @@ its own; what it cannot run is refused with a reason (`LoadRefused`).
 
 ```bash
 julia/check                                     # the contract's data, then Pkg.test() (every contract case, the doctests)
-julia/tutorials [docs/julia/0N-*.md ...]        # run the tutorials on real models, write their outputs (about 50 cents)
+julia/tutorials [docs/julia/0N-*.md ...]        # run the tutorials on real models, write their outputs (about 60 cents)
 julia --project=julia/docs julia/docs/make.jl   # the manual (Documenter), into julia/docs/build
 set -a; source ~/Projects/lm15-dev/.env; set +a
 julia --project=julia julia/tools/live.jl       # against real models (costs cents)
