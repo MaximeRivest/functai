@@ -138,11 +138,11 @@
      "fingerprints": {
       "signature": "sha256:17e5b2b78ad053f88c562378b21a73d67ac3be003c2e107abf156ffd819521ac",
       "requests": [
-       "sha256:a4b6e2ff28f887b11c9f29d98c9792578d7871476c17c410928a0abb4aeef171"
+       "sha256:299c08e6c03d9bd30c8eafd8a4fbd3b7f2c39c784f451968db8f8d331d081201"
       ]
      },
      "body": null,
-     "version": "sha256:b03eb2e4babc361ce5605ac8d04670f5fc5854b9b558a5992b566133be28b088"
+     "version": "sha256:6053dc979f569ab8f5e48d4e55ec334915b20d88a61291d11491fd12d9e8e7d9"
     }
    }
   },
@@ -160,10 +160,10 @@
   "loads": {
    "name": "person",
    "module": "shop",
-   "version": "sha256:b03eb2e4babc361ce5605ac8d04670f5fc5854b9b558a5992b566133be28b088",
+   "version": "sha256:6053dc979f569ab8f5e48d4e55ec334915b20d88a61291d11491fd12d9e8e7d9",
    "signature_id": "sha256:17e5b2b78ad053f88c562378b21a73d67ac3be003c2e107abf156ffd819521ac",
    "requests": [
-    "sha256:a4b6e2ff28f887b11c9f29d98c9792578d7871476c17c410928a0abb4aeef171"
+    "sha256:299c08e6c03d9bd30c8eafd8a4fbd3b7f2c39c784f451968db8f8d331d081201"
    ]
   }
  }

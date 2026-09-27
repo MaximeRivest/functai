@@ -298,9 +298,11 @@ runnable in every language.
 
 ## Found on the way
 
-- **The `json` layout with a record answer fails at OpenAI and
-  Anthropic**, in Python and TypeScript alike (their strict schema mode
-  wants `additionalProperties: false` on every object; lmcc's
-  `json_object` reader closes only the outer one). Gemini accepts it. The
-  fix belongs in lmcc's reader or lm15's provider mapping, not here;
-  found live on 2026-09-27.
+- **The `json` layout with a record answer failed at OpenAI and
+  Anthropic** (their strict schema mode wants `additionalProperties:
+  false` on every object; lmcc's `json_object` reader closed only the
+  outer one). Found live on 2026-09-27, **fixed the same day in lmcc**
+  (`reader/json_object` 0.2.1, lmcc D-57: every record in the requested
+  schema is closed), in all four lmcc kernels. Both FunctAI languages run
+  on lmcc's checkout until lmcc 0.8.4 is released; Python's dependency is
+  `lmcc>=0.8.4`, so releasing FunctAI for Python waits for that release.

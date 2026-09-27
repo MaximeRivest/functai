@@ -978,7 +978,7 @@ docs = [
 requires-dist = [
     { name = "dpyr", marker = "extra == 'data'", specifier = ">=1.10" },
     { name = "lm15", specifier = ">=1.0.1,<2" },
-    { name = "lmcc", specifier = ">=0.8.3,<0.9" },
+    { name = "lmcc", editable = "../../lmcc/python" },
     { name = "peft", marker = "extra == 'bake'", specifier = ">=0.13" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
@@ -1410,12 +1410,16 @@ wheels = [
 
 [[package]]
 name = "lmcc"
-version = "0.8.3"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/f9/ff/50736cc6d91933275897868950f592d368194580d5c6cedd8eacd6e8867a/lmcc-0.8.3.tar.gz", hash = "sha256:921c61dd1d53ba938ed038fa65b03370590b1c19470913c06ca43185cf8ea4a2", size = 141664, upload-time = "2026-09-26T13:32:31.106Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/47/85/228afe9c2b97406bcb98fa9c8d5f4013a038aece680639439f8920689bce/lmcc-0.8.3-py3-none-any.whl", hash = "sha256:c55c01ce1872eacd29bd27835c74d05d2fe00ae5c33ba9b2729b56be946958e5", size = 109364, upload-time = "2026-09-26T13:32:29.588Z" },
+version = "0.8.4"
+source = { editable = "../../lmcc/python" }
+
+[package.metadata]
+requires-dist = [
+    { name = "dspy", marker = "extra == 'dspy'", specifier = ">=3.0" },
+    { name = "lm15", marker = "extra == 'lm15'", specifier = "==1.0.1" },
+    { name = "pydantic", marker = "extra == 'dspy'", specifier = ">=2" },
 ]
+provides-extras = ["dspy", "lm15"]
 
 [[package]]
 name = "loguru"

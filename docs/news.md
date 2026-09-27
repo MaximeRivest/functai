@@ -69,6 +69,10 @@ Changed:
 
 Fixed:
 
+- **`adapter="json"` with a record answer** (a dataclass, a pydantic
+  model) was refused by OpenAI and Anthropic, whose strict schema mode
+  wants every nested object closed. lmcc 0.8.4 closes them; functai now
+  requires it.
 - **A bare `_ai` is always the answer.** After a named output
   (`reasoning: str = _ai["..."]`), `return round(_ai, 2)`, `return
   _ai.upper()` and `return critique, _ai` used the named output instead of

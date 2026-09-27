@@ -33,7 +33,7 @@ classifiers = [
 # lmcc lays out each call and reads each reply; lm15 talks to the providers.
 # lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
-    "lmcc>=0.8.3,<0.9",
+    "lmcc>=0.8.4,<0.9",
     "lm15>=1.0.1,<2",
 ]
 
@@ -69,6 +69,12 @@ dev = [
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+# Until lmcc 0.8.4 is on PyPI, development runs on lmcc's checkout beside this
+# repository (../../lmcc, as ts/ does). A built wheel ignores this table: it
+# requires lmcc>=0.8.4 from PyPI, so releasing functai waits for lmcc.
+[tool.uv.sources]
+lmcc = { path = "../../lmcc/python", editable = true }
 
 [tool.hatch.build]
 packages = ["functai", "functai_verifiers", "functai_rows"]

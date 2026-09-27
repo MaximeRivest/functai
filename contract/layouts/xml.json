@@ -1,7 +1,7 @@
 {
  "name": "functai_xml",
  "versions": {
-  "kernel": "0.8.3",
+  "kernel": "0.8.4",
   "vocab": {
    "format/json": "0.1.0",
    "format/function_tool": "0.1.0",

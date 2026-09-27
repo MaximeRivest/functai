@@ -1,12 +1,12 @@
 {
  "name": "functai_json",
  "versions": {
-  "kernel": "0.8.3",
+  "kernel": "0.8.4",
   "vocab": {
    "format/json": "0.1.0",
    "format/function_tool": "0.1.0",
    "format/tool_calls": "0.1.0",
-   "reader/json_object": "0.2.0"
+   "reader/json_object": "0.2.1"
   }
  },
  "template": [
