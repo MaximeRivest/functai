@@ -37,6 +37,7 @@ structured. All of them also work as **inputs**.
 @ai
 def word_count_guess(text: str) -> int:
     """Roughly how many words the text has."""
+    ...
 
 word_count_guess("The quick brown fox jumps over the lazy dog.")
 ```
@@ -72,6 +73,7 @@ class Priority(Enum):
 @ai
 def priority(issue: str) -> Priority:
     """How urgently the issue must be fixed."""
+    ...
 
 priority("The main database is unresponsive and every customer sees an error.")
 ```
@@ -84,6 +86,7 @@ priority("The main database is unresponsive and every customer sees an error.")
 @ai
 def topic(headline: str) -> Literal["sport", "politics", "science", "other"]:
     """The headline's topic."""
+    ...
 
 topic("Rover finds traces of ancient riverbed on Mars")
 ```
@@ -98,6 +101,7 @@ topic("Rover finds traces of ancient riverbed on Mars")
 @ai
 def keywords(article: str) -> list[str]:
     """Five key terms from the article, lowercase."""
+    ...
 
 keywords("Python type hints serve as the contract between your code and a "
          "language model: the model is shown a schema, and replies are parsed back.")
@@ -113,6 +117,7 @@ A dictionary, or a tuple for several values in one answer:
 @ai
 def ingredient_counts(recipe: str) -> dict[str, int]:
     """How many of each countable ingredient the recipe uses."""
+    ...
 
 ingredient_counts("Beat 3 eggs with 2 bananas, add 1 cup of flour and 2 cups of milk.")
 ```
@@ -139,6 +144,7 @@ class Product:
 @ai
 def extract_product(description: str) -> Product:
     """Extract the product's details from its description."""
+    ...
 
 extract_product("iPhone 15 Pro - $999, 5G, titanium design, available now")
 ```
@@ -159,6 +165,7 @@ class Person:
 @ai
 def person(text: str) -> Person:
     """The person the text is about."""
+    ...
 
 person("Marie Curie, 66, spent her last years in Passy.")
 ```
@@ -179,6 +186,7 @@ class Review(BaseModel):
 @ai
 def read_review(text: str) -> Review:
     """The review's rating and a one-sentence summary."""
+    ...
 
 read_review("Great tacos, loud music, slow service. I'll be back though.")
 ```
@@ -199,6 +207,7 @@ values are written as JSON.
 @ai
 def pitch(product: Product) -> str:
     """A one-sentence sales pitch for the product."""
+    ...
 
 pitch(Product(name="Trail kettle", price=39.0, features=["titanium", "folding handle"], in_stock=True))
 ```

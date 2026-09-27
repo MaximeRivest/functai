@@ -102,7 +102,7 @@ def run(model: str) -> list:
                                          "and reads the reply back into typed values."))
     check("invoice", lambda: extract_invoice(DOC))
     check("enum", lambda: priority("The main database is down for every customer."))
-    check("cot", lambda: (solve("Ana buys 7 pens at 3 each and pays with 50. How much change?", all=True).result))
+    check("cot", lambda: (solve.predict("Ana buys 7 pens at 3 each and pays with 50. How much change?").result))
     check("tools", lambda: weather("What's the weather in Montreal?"))
     check("pirate template", lambda: pirate("Foundation models are now mature enough for real-world use."))
     chat.reset()
@@ -124,7 +124,7 @@ def optimize(model: str) -> None:
         ("I need to reserve a room.", "booking"), ("How do I get there?", "information"),
         ("I want to cancel my reservation.", "cancelation"), ("Is breakfast included?", "information")]]
     before = functai.evaluate(classify_intent, train, num_threads=4)
-    classify_intent.opt(trainset=train)
+    classify_intent.opt(train)
     after = functai.evaluate(classify_intent, train, num_threads=4)
     print(f"  opt  bootstrap: {before!r} → {after!r}; demos={len(classify_intent.demos)}")
 

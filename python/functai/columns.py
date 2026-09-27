@@ -74,7 +74,7 @@ def _pinned(fn: Any) -> Any:
 
     def run(*args: Any, **kwargs: Any) -> Any:
         with with_states({pinned: state}):
-            return pinned(*args, **kwargs)
+            return pinned._invoke(args, kwargs)
 
     run.__name__ = fn.__name__
     return key, run

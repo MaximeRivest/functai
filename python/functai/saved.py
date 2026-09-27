@@ -566,6 +566,7 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
     @ai
     def capital(country: str) -> str:
         """The country's capital city."""
+        ...
 
     folder = os.path.join(tempfile.mkdtemp(), "capital")
     save(capital, folder, record=[{"country": "Kenya"}])
@@ -873,6 +874,7 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
     @ai
     def capital(country: str) -> str:
         """The country's capital city."""
+        ...
 
     folder = os.path.join(tempfile.mkdtemp(), "capital")
     save(capital, folder)
@@ -1103,6 +1105,7 @@ def verify(path: "str | os.PathLike[str]", *, trust: bool = False, fresh: bool =
     @ai
     def capital(country: str) -> str:
         """The country's capital city."""
+        ...
 
     folder = os.path.join(tempfile.mkdtemp(), "capital")
     save(capital, folder, record=[{"country": "Kenya"}])

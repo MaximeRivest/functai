@@ -2,6 +2,25 @@
 
 ## 0.1.0 (unreleased)
 
+- The API follows TypeScript: `ai("mood", { description, input, output })`
+  (the name first; `input`, as for `tool`); a call takes its inputs by
+  name, typed, or a one-input function its value alone, and nothing else,
+  so a missing, misspelled or mistyped input is a compile error.
+  `tool("name", { description, input }, run)` types `run`'s input.
+- A call's options: `fn(input, { signal, lm, temperature, ... })`, an
+  `AbortSignal` that cancels it and settings for that call only.
+- `fn.map(inputs, { concurrency })`: every answer, in order.
+- Rows are typed in `evaluate`, `labeledFewShot`, `bootstrapFewShot` and
+  `gepa`: a row missing an input, or an `expected` column the rows lack,
+  is a compile error. The few-shot optimizers take `expected` too.
+- `gepa` returns `{ fn, trials, calls, reflections }` (`trials(fn)` is gone).
+- `calls()` gives typed `LoggedCall`s (camelCase; `record` is the line
+  as written); `rated().leftOut` is camelCase.
+- Any Standard Schema with JSON Schema (zod 4, valibot, arktype, ...) is
+  a field, typed by its output type.
+- `tests/types.ts` pins the types (`tsc` checks it; each
+  `@ts-expect-error` must stay an error).
+
 - `gepa(fn, rows, { teacher })`: the instruction rewritten from the
   function's mistakes, as Python's `GEPA` and R's `gepa()` do
   (`design/04-gepa.md`); `trials(fn)` gives the search.

@@ -23,35 +23,58 @@ FunctAIFunc(
 
 A typed Python function whose body is a model call. Build with ``@ai``.
 
+Calling it runs the model and gives the answer, typed as the function's
+return type; ``predict`` gives every output; ``acall`` and ``apredict`` are
+the same in async code (an ``async def`` AI function is awaited directly).
+
 ## Attributes
 
 | Name | Description |
 | --- | --- |
 | `instructions` | The instruction the model gets: an optimized one, or the one written from the code. |
 | `signature` | The lmcc signature: inputs, outputs, instruction. |
+| `trials` | What the search that made this copy tried (``GEPA``'s candidates, |
 | `version` | The function's version: a fingerprint of what it sends besides its inputs. |
 
 ## Methods
 
 | Name | Description |
 | --- | --- |
+| [acall](#functai.FunctAIFunc.acall) | ``await fn.acall(...)``: the answer, in async code. The call runs in a |
+| [apredict](#functai.FunctAIFunc.apredict) | ``await fn.apredict(...)``: ``predict`` in async code. |
 | [bake](#functai.FunctAIFunc.bake) | Train weights that answer this function; returns the baked model. |
 | [explain](#functai.FunctAIFunc.explain) | How calls are laid out for the current model: adapter, reader, transports, formats. |
 | [freeze](#functai.FunctAIFunc.freeze) | Stop further automatic instruction refinement. |
-| [latest_program](#functai.FunctAIFunc.latest_program) | The state in use (``fresh=True``: the unoptimized one). |
 | [map](#functai.FunctAIFunc.map) | Run on every row of a table, and return the run table. |
-| [opt](#functai.FunctAIFunc.opt) | Improve the instruction and worked examples from examples, in place. |
+| [opt](#functai.FunctAIFunc.opt) | An improved copy: its instruction and worked examples chosen from rows |
+| [optimization_runs](#functai.FunctAIFunc.optimization_runs) | How this function was improved, oldest first: the optimizer, the |
 | [plan](#functai.FunctAIFunc.plan) | The lmcc plan for the current model: ``.explain()``, ``.describe()``, ``.render(...)``. |
-| [programs](#functai.FunctAIFunc.programs) | Every state optimization produced for this function, oldest first. |
+| [predict](#functai.FunctAIFunc.predict) | The call, with everything it produced: every output (``p.result``, |
 | [render](#functai.FunctAIFunc.render) | The exact request the next call would send, without sending it. |
 | [reset](#functai.FunctAIFunc.reset) | Forget the conversation (stateful functions). |
 | [save](#functai.FunctAIFunc.save) | Write the instruction and demos to a JSON file (``load`` reads it back). |
 | [state](#functai.FunctAIFunc.state) | The instruction and demos in use. |
 | [stream](#functai.FunctAIFunc.stream) | Call the function and watch the answer being written. |
-| [undo_opt](#functai.FunctAIFunc.undo_opt) | Revert the last optimizations. |
 | [unpack](#functai.FunctAIFunc.unpack) | One column per field of the answer, to spread into a table. |
 | [using](#functai.FunctAIFunc.using) | A copy of this function with other settings or another layout. |
 | [vectorize](#functai.FunctAIFunc.vectorize) | This function as a column expression, with options. |
+
+### acall { #functai.FunctAIFunc.acall }
+
+```{.python .no-run}
+FunctAIFunc.acall(*args, **kwargs)
+```
+
+``await fn.acall(...)``: the answer, in async code. The call runs in a
+worker thread, so the event loop is free while the model answers.
+
+### apredict { #functai.FunctAIFunc.apredict }
+
+```{.python .no-run}
+FunctAIFunc.apredict(*args, **kwargs)
+```
+
+``await fn.apredict(...)``: ``predict`` in async code.
 
 ### bake { #functai.FunctAIFunc.bake }
 
@@ -78,14 +101,6 @@ FunctAIFunc.freeze()
 ```
 
 Stop further automatic instruction refinement.
-
-### latest_program { #functai.FunctAIFunc.latest_program }
-
-```{.python .no-run}
-FunctAIFunc.latest_program(fresh=False)
-```
-
-The state in use (``fresh=True``: the unoptimized one).
 
 ### map { #functai.FunctAIFunc.map }
 
@@ -127,40 +142,30 @@ from functai import *
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 capital.map([{"country": "Norway"}, {"country": "Ghana"}], num_threads=2)
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-# dpyr dataframe · source: polars · showing 2 of 2 rows
-┌─────────┬─────────┬─────────────┬───────┬──────────┬──────────────┬───────────────┬─────────────────────────┬──────────────────────────────┐
-│ example ┆ country ┆ pred_result ┆ error ┆ seconds  ┆ input_tokens ┆ output_tokens ┆ model                   ┆ run                          │
-│ ---     ┆ ---     ┆ ---         ┆ ---   ┆ ---      ┆ ---          ┆ ---           ┆ ---                     ┆ ---                          │
-│ i64     ┆ str     ┆ str         ┆ null  ┆ f64      ┆ i64          ┆ i64           ┆ str                     ┆ str                          │
-╞═════════╪═════════╪═════════════╪═══════╪══════════╪══════════════╪═══════════════╪═════════════════════════╪══════════════════════════════╡
-│ 0       ┆ Norway  ┆ Oslo        ┆ null  ┆ 0.860826 ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-232006-1857 │
-│ 1       ┆ Ghana   ┆ Accra       ┆ null  ┆ 0.700394 ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-232006-1857 │
-└─────────┴─────────┴─────────────┴───────┴──────────┴──────────────┴───────────────┴─────────────────────────┴──────────────────────────────┘
 ```
 
 ### opt { #functai.FunctAIFunc.opt }
 
 ```{.python .no-run}
-FunctAIFunc.opt(trainset=None, optimizer=None, metric=None, valset=None, **opts)
+FunctAIFunc.opt(data=None, *, optimizer=None, metric=None, valset=None, **opts)
 ```
 
-Improve the instruction and worked examples from examples, in place.
+An improved copy: its instruction and worked examples chosen from rows
+with known answers. This function is unchanged.
 
 Only what the function sends besides its inputs changes: the
 instruction and the demos. Code, types and layout are never touched.
-``undo_opt()`` reverts.
+``functai.labeled_few_shot``, ``functai.bootstrap_few_shot`` and
+``functai.gepa`` are the common cases, by name.
 
 #### Parameters {.doc-section .doc-section-parameters}
 
 | Name       | Type                        | Description                                                                                                  | Default    |
 |------------|-----------------------------|--------------------------------------------------------------------------------------------------------------|------------|
-| trainset   | list of dict, or a table    | Rows as for ``evaluate``: columns named like the parameters are the inputs, the others the expected outputs. | `None`     |
+| data       | list of dict, or a table    | Rows as for ``evaluate``: columns named like the parameters are the inputs, the others the expected outputs. | `None`     |
 | expected   | str or dict                 | The column holding the right answers, as for ``evaluate``: ``expected="category"``.                          | _required_ |
 | optimizer  | optimizer class or instance | Default ``BootstrapFewShot``. See the Optimizers section.                                                    | `None`     |
 | metric     | function or dpyr expression | As for ``evaluate``. Default: exact match on the expected outputs.                                           | `None`     |
@@ -172,14 +177,13 @@ instruction and the demos. Code, types and layout are never touched.
 
 #### Returns {.doc-section .doc-section-returns}
 
-| Name   | Type        | Description                   |
-|--------|-------------|-------------------------------|
-|        | FunctAIFunc | The same function, optimized. |
+| Name   | Type        | Description                              |
+|--------|-------------|------------------------------------------|
+|        | FunctAIFunc | The improved copy, with its own version. |
 
 #### See Also {.doc-section .doc-section-see-also}
 
 - [`evaluate`](evaluate.md): measure before and after.
-- `FunctAIFunc.undo_opt`: revert.
 
 #### Examples {.doc-section .doc-section-examples}
 
@@ -189,15 +193,25 @@ from typing import Literal
 @ai
 def category(message: str) -> Literal["shipping", "billing", "product"]:
     """The support category of the message."""
+    ...
 
 train = [
     {"message": "The vase came smashed.", "result": "shipping"},
     {"message": "Money back please, the chair wobbles.", "result": "billing"},
     {"message": "The handle came off after two uses.", "result": "product"},
 ]
-category.opt(trainset=train)
-[d.inputs["message"] for d in category.demos]
+taught = category.opt(train)
+[d.inputs["message"] for d in taught.demos]
 ```
+
+### optimization_runs { #functai.FunctAIFunc.optimization_runs }
+
+```{.python .no-run}
+FunctAIFunc.optimization_runs()
+```
+
+How this function was improved, oldest first: the optimizer, the
+examples, what changed (and, for a search, its ``trials``).
 
 ### plan { #functai.FunctAIFunc.plan }
 
@@ -207,13 +221,27 @@ FunctAIFunc.plan()
 
 The lmcc plan for the current model: ``.explain()``, ``.describe()``, ``.render(...)``.
 
-### programs { #functai.FunctAIFunc.programs }
+### predict { #functai.FunctAIFunc.predict }
 
 ```{.python .no-run}
-FunctAIFunc.programs()
+FunctAIFunc.predict(*args, **kwargs)
 ```
 
-Every state optimization produced for this function, oldest first.
+The call, with everything it produced: every output (``p.result``,
+``p.reasoning``...), the tokens, the model's replies, the call's id.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```{.python .no-run}
+@ai
+def solve(question: str) -> float:
+    """Solve the word problem."""
+    reasoning: str = _ai     # step by step
+    return _ai
+
+p = solve.predict("3 pencils cost $1.20. How much do 10 cost?")
+p.result, p.reasoning
+```
 
 ### render { #functai.FunctAIFunc.render }
 
@@ -246,6 +274,7 @@ The exact request the next call would send, without sending it.
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 request = capital.render("Chile")
 print(request.system)
@@ -311,6 +340,7 @@ in the end. Iterate the stream for the answer's text as it arrives.
 @ai
 def haiku(topic: str) -> str:
     """A haiku about the topic."""
+    ...
 
 for piece in haiku.stream("the first snow"):
     print(piece, end="", flush=True)
@@ -331,20 +361,6 @@ for event in s.events():
         print(event.text, end="", flush=True)
 s.result
 ```
-
-### undo_opt { #functai.FunctAIFunc.undo_opt }
-
-```{.python .no-run}
-FunctAIFunc.undo_opt(steps=1)
-```
-
-Revert the last optimizations.
-
-#### Parameters {.doc-section .doc-section-parameters}
-
-| Name   | Type   | Description                       | Default   |
-|--------|--------|-----------------------------------|-----------|
-| steps  | int    | How many optimizations to revert. | `1`       |
 
 ### unpack { #functai.FunctAIFunc.unpack }
 
@@ -392,6 +408,7 @@ class Contact:
 @ai
 def contact(text: str) -> Contact:
     """The person the text is about."""
+    ...
 
 people = read([{"text": "Ada Lovelace wrote to us from London."},
                {"text": "Grace Hopper called."}])
@@ -430,6 +447,7 @@ template, and a template replaces the adapter.
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 capital.using(lm="gpt-4.1-nano")("Chile")
 ```
@@ -469,6 +487,7 @@ from dpyr import read, col
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 read([{"country": "Norway"}, {"country": "Ghana"}]).mutate(
     capital=capital.vectorize(threads=2)(col.country))

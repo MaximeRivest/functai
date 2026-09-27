@@ -1,0 +1,7 @@
+{
+  "typeCheckingMode": "standard",
+  "reportUnnecessaryTypeIgnoreComment": "error",
+  "reportUnusedExpression": "none",
+  "venvPath": "../..",
+  "venv": ".venv"
+}

@@ -24,6 +24,7 @@ reply in the wrong form.
 @ai
 def summarize(text: str, focus: str = "key points") -> str:
     """Summarize the text in one sentence, concentrating on the focus."""
+    ...
 
 summarize("FunctAI lets developers write typed functions whose body is a model call, "
           "so they can concentrate on logic instead of prompt strings.", focus="benefits")
@@ -122,11 +123,11 @@ output result               kernel-scalar (kernel)
 
 ## What a call cost
 
-`all=True` returns the tokens, summed over every model call it made
+`fn.predict(...)` returns the tokens, summed over every model call it made
 (tool loops included):
 
 ```python
-p = summarize("Short text.", all=True)
+p = summarize.predict("Short text.")
 p.usage
 ```
 

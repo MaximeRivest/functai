@@ -33,6 +33,7 @@ from functai import ai, _ai
 @ai
 def fruits(text: str) -> list[str]:
     """The fruits mentioned, in order."""
+    ...
 
 fruits("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 ```
@@ -45,6 +46,7 @@ fruits("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 @ai
 def quantities(text: str) -> dict[str, int]:
     """How many of each fruit, by fruit name."""
+    ...
 
 quantities("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 ```
@@ -72,11 +74,11 @@ total_items("I'll go shopping for 2 apples, one orange and a dozen bananas.")
 15
 ```
 
-The model returned `counts`; your code computed the total. `all=True`
+The model returned `counts`; your code computed the total. `predict`
 returns what the model produced instead of the function’s return value:
 
 ```python
-total_items("2 apples, one orange and a dozen bananas", all=True)
+total_items.predict("2 apples, one orange and a dozen bananas")
 ```
 
 ```output
@@ -119,10 +121,12 @@ class Priority(Enum):
 @ai
 def priority(issue: str) -> Priority:
     """How urgent the issue is."""
+    ...
 
 @ai
 def sentiment(review: str) -> Literal["positive", "negative", "mixed"]:
     """The review's overall sentiment."""
+    ...
 
 priority("The production database is down."), sentiment("Great food, rude waiter.")
 ```
@@ -151,6 +155,7 @@ class Patient:
 @ai
 def extract_patient(clinical_note: str) -> Patient:
     """Extract the patient's details from the clinical note."""
+    ...
 
 extract_patient("John Doe, 45, lives at 123 Main St, Anytown. US resident.")
 ```
@@ -186,6 +191,7 @@ class Invoice(BaseModel):
 @ai
 def extract_invoice(document: str) -> Invoice:
     """Extract the invoice."""
+    ...
 
 invoice = extract_invoice("""
     INVOICE INV-2025-101 from TechCorp Inc.
@@ -206,6 +212,7 @@ An input can be a model too; it is shown to the model as JSON:
 @ai
 def invoice_total(invoice: Invoice) -> float:
     """The invoice's total amount."""
+    ...
 
 invoice_total(invoice)
 ```
@@ -225,7 +232,7 @@ with what was wrong (`retries=1` by default). Small misspellings of the
 layout are forgiven and recorded:
 
 ```python
-p = extract_patient("Jane Roe, 30, 5 Queen St, Toronto, Canada.", all=True)
+p = extract_patient.predict("Jane Roe, 30, 5 Queen St, Toronto, Canada.")
 p.result, p.repairs, p.attempts
 ```
 

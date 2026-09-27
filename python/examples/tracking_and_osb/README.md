@@ -29,13 +29,13 @@ def headline(article: str) -> str:
 
 ## One call
 
-`all=True` returns everything the call produced: each output, the tokens
+`headline.predict(...)` returns everything the call produced: each output, the tokens
 used across all model calls, and anything the reader had to forgive in
 the reply.
 
 ```python
-p = headline("The city council voted 7-2 on Tuesday to turn the old rail yard "
-             "into a 12-hectare park, with construction starting next spring.", all=True)
+p = headline.predict("The city council voted 7-2 on Tuesday to turn the old rail yard "
+                     "into a 12-hectare park, with construction starting next spring.")
 p.result, p.angle
 ```
 

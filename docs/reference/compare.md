@@ -55,23 +55,13 @@ rows = [
 @ai
 def category(message: str) -> Literal["shipping", "billing", "product"]:
     """The support category of the message."""
+    ...
 
 @ai
 def category_v2(message: str) -> Literal["shipping", "billing", "product"]:
     """The support category of the message. An item that arrived broken is
     shipping; any request for money back is billing."""
+    ...
 
 compare(evaluate(category, rows, num_threads=5), evaluate(category_v2, rows, num_threads=5))
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-# dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬─────────┬────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low     ┆ high   ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---     ┆ ---    ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64     ┆ f64    ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═════════╪════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.6    ┆ 0.8   ┆ 0.2  ┆ -0.3552 ┆ 0.7552 ┆ 1      ┆ 0     ┆ 4    ┆ 5   │
-└─────────────┴────────┴───────┴──────┴─────────┴────────┴────────┴───────┴──────┴─────┘
 ```

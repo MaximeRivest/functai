@@ -74,7 +74,7 @@ def test_expected_in_opt_gives_labeled_demos(fake):
     fake(responder=answer)
     fn = make_classifier()
     rows = [{"user_query": r["user_query"], "intent": r["result"]} for r in ROWS]
-    fn.opt(trainset=rows, expected="intent", optimizer=functai.LabeledFewShot(k=2))
+    fn = functai.labeled_few_shot(fn, rows, k=2, expected="intent")
     assert len(fn.demos) == 2
     assert all(d["outputs"]["result"] in {"booking", "information", "cancelation"} for d in fn.demos)
     assert "examples: 2" in repr(fn.state()) and "→  result=" in repr(fn.state())
@@ -322,8 +322,7 @@ def test_without_dpyr_the_score_works_and_tables_say_what_to_install(fake, monke
         ev.table
     with pytest.raises(ImportError, match=r"functai\[data\]"):
         evaluate(f, "dev.parquet")
-    f.opt(trainset=ROWS)                                     # optimizing needs no tables
-    assert f.demos
+    assert f.opt(ROWS).demos                        # optimizing needs no tables
 
 
 # ------------------------------------------------------------------ AI functions on columns

@@ -93,6 +93,7 @@ Start with the count. The obvious function asks for an integer:
 @ai
 def how_many(note: str) -> int:
     """How many birds does the note report?"""
+    ...
 
 how_many("About 40 Canada geese flying over in a V, heading north.")
 ```
@@ -146,6 +147,7 @@ model as words about the answer: here, the protocol's counting rule.
 @ai
 def how_many(note: str) -> int | None:  # every bird seen or heard, young included; one bird named on its own ('a blue jay') is 1; 'a pair' is 2; an approximate number ('about 40', 'maybe 6') is that number; no number in the note ('a few', 'several', 'a flock') means no count: never guess
     """How many birds does the note report?"""
+    ...
 
 counted = counted.mutate(count=how_many(col.note))
 counted.filter(col.true_count.is_na()).select(col.note, col.true_count, col.count)
@@ -260,6 +262,7 @@ Behaviour = Literal["feeding", "nesting", "flying", "resting", "calling"]
 @ai
 def doing(note: str) -> Behaviour:
     """What is the bird doing, by the survey's protocol?"""
+    ...
 
 [doing("Robin singing at dawn from the roof antenna."),
  doing("Canada goose sitting on eggs on the island, mate standing guard.")]
@@ -291,6 +294,7 @@ class Sighting:
 @ai(adapter="json")
 def survey(note: str) -> Sighting:
     """Record the note as the bird survey's protocol says."""
+    ...
 
 survey("Pair of downies (male + female) excavating a hole in the old pear tree.")
 ```
@@ -432,6 +436,7 @@ class Ages:
 @ai(adapter="json")
 def ages(note: str) -> Ages:
     """How many adult and how many young birds the note reports."""
+    ...
 
 (notes.filter(col.id.is_in([25, 42, 55, 57]))
       .mutate(**ages.unpack(col.note))
@@ -460,6 +465,7 @@ answer:
 @ai
 def evidence(note: str) -> list[str]:
     """Quote the words in the note that show what the bird is doing."""
+    ...
 
 evidence("Robin carrying mud and grass into the hedge. Nest in progress!")
 ```

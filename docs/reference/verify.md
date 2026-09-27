@@ -53,14 +53,9 @@ import tempfile, os
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 folder = os.path.join(tempfile.mkdtemp(), "capital")
 save(capital, folder, record=[{"country": "Kenya"}])
 verify(folder, trust=True, fresh=False)
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-NOT verified in this environment
-  - recording 0: the program raised RuntimeError: no model configured: call functai.configure(lm='gpt-4.1-mini') or pass lm=... to @ai (functai.logins() shows what you can use)
 ```

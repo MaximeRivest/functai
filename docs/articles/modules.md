@@ -28,10 +28,12 @@ Two AI functions and an ordinary search function:
 @ai
 def next_query(claim: str, notes: list[str]) -> str:
     """A search query that would help check the claim, given the notes so far."""
+    ...
 
 @ai
 def take_notes(claim: str, notes: list[str], documents: list[str]) -> list[str]:
     """The notes, extended with what the documents say about the claim."""
+    ...
 
 LIBRARY = {
     "eiffel": "The Eiffel Tower is a wrought-iron tower in Paris, completed in 1889.",
@@ -54,6 +56,7 @@ from functai import module
 @ai
 def verdict(claim: str, notes: list[str]) -> Literal["true", "false", "unknown"]:
     """Is the claim true, according to the notes?"""
+    ...
 
 @module
 def fact_check(claim: str, hops: int = 2) -> Literal["true", "false", "unknown"]:
@@ -202,7 +205,7 @@ Optimizing a module improves each AI function inside it: every run the
 metric accepts gives a worked example to each function it went through.
 
 ```{.python .no-run}
-fact_check.opt(trainset=claims, call_defaults=dict(hops=1))
+better = fact_check.opt(claims, call_defaults=dict(hops=1))   # an improved copy
 ```
 
 ## Why a module and not a plain function?
@@ -210,7 +213,7 @@ fact_check.opt(trainset=claims, call_defaults=dict(hops=1))
 A plain Python function that calls AI functions works; you just can't
 treat it as one thing. `@module` adds:
 
-- `evaluate(program, data)` and `program.opt(...)` for the whole program;
+- `evaluate(program, data)` and `program.opt(rows)` (an improved copy) for the whole program;
 - a typed signature (`claim: str → Literal[...]`), so it can be saved,
   run on a table, and checked;
 - `functai.check(program)` follows every function, tool and constant it

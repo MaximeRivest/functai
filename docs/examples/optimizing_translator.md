@@ -30,6 +30,7 @@ from functai import ai, _ai
 @ai(lm="gpt-4.1-nano")
 def translator(english: str) -> str:
     """Translate to French."""
+    ...
 ```
 
 ## The examples
@@ -87,7 +88,7 @@ before
 ```
 
 ```output
-Evaluation(translator, 10 examples: judge 0.30 [0.11, 0.60])
+Evaluation(translator, 10 examples: judge 0.38 [0.03, 0.73])
 ```
 
 ```python
@@ -98,26 +99,22 @@ before.table.arrange(col.judge).select(col.english, col.result, col.pred_result,
 
 ```output
 # dpyr dataframe · source: polars · showing 10 of 10 rows
-shape: (10, 4)
-┌─────────────────────────────────┬─────────────────────────────────┬────────────────────────────────┬───────┐
-│ english                         ┆ result                          ┆ pred_result                    ┆ judge │
-│ ---                             ┆ ---                             ┆ ---                            ┆ ---   │
-│ str                             ┆ str                             ┆ str                            ┆ f64   │
-╞═════════════════════════════════╪═════════════════════════════════╪════════════════════════════════╪═══════╡
-│ I have an appointment at 3.     ┆ J'ai un rendez-vous à trois     ┆ J'ai un rendez-vous à 15       ┆ 0.0   │
-│                                 ┆ heures.                         ┆ heures.                        ┆       │
-│ I parked in the back.           ┆ J'ai stationné dans l'fond.     ┆ Je me suis garé à l'arrière.   ┆ 0.0   │
-│ We watched a movie last night.  ┆ On a écouté un film hier soir.  ┆ Nous avons regardé un film     ┆ 0.0   │
-│                                 ┆                                 ┆ hier soir.                     ┆       │
-│ I need to do my groceries.      ┆ J'dois faire mon épicerie.      ┆ Je dois faire mes courses.     ┆ 0.0   │
-│ Don't forget your boots.        ┆ Oublie pas tes bottes.          ┆ N'oublie pas tes bottes.       ┆ 0.0   │
-│ I'll take the bus.              ┆ J'va prendre l'bus.             ┆ Je vais prendre le bus.        ┆ 0.0   │
-│ We're out of milk.              ┆ On est à court de lait.         ┆ Nous n'avons plus de lait.     ┆ 0.0   │
-│ They're celebrating their       ┆ Ils fêtent leur fête.           ┆ Ils fêtent leur anniversaire.  ┆ 1.0   │
-│ birthday.                       ┆                                 ┆                                ┆       │
-│ The metro is packed.            ┆ Le métro est plein à craquer.   ┆ Le métro est bondé.            ┆ 1.0   │
-│ It's snowing again.             ┆ Il neige encore.                ┆ Il neige encore.               ┆ 1.0   │
-└─────────────────────────────────┴─────────────────────────────────┴────────────────────────────────┴───────┘
+┌─────────────────────────────────────┬─────────────────────────────────────┬───────────────────────────────────────┬───────┐
+│ english                             ┆ result                              ┆ pred_result                           ┆ judge │
+│ ---                                 ┆ ---                                 ┆ ---                                   ┆ ---   │
+│ str                                 ┆ str                                 ┆ str                                   ┆ f64   │
+╞═════════════════════════════════════╪═════════════════════════════════════╪═══════════════════════════════════════╪═══════╡
+│ I have an appointment at 3.         ┆ J'ai un rendez-vous à trois heures. ┆ J'ai un rendez-vous à 15 heures.      ┆ 0.0   │
+│ I parked in the back.               ┆ J'ai stationné dans l'fond.         ┆ Je me suis garé à l'arrière.          ┆ 0.0   │
+│ We watched a movie last night.      ┆ On a écouté un film hier soir.      ┆ Nous avons regardé un film hier soir. ┆ 0.0   │
+│ I need to do my groceries.          ┆ J'dois faire mon épicerie.          ┆ Je dois faire mes courses.            ┆ 0.0   │
+│ Don't forget your boots.            ┆ Oublie pas tes bottes.              ┆ N'oublie pas tes bottes.              ┆ 0.0   │
+│ I'll take the bus.                  ┆ J'va prendre l'bus.                 ┆ Je vais prendre le bus.               ┆ 0.0   │
+│ We're out of milk.                  ┆ On est à court de lait.             ┆ Nous n'avons plus de lait.            ┆ 0.8   │
+│ They're celebrating their birthday. ┆ Ils fêtent leur fête.               ┆ Ils fêtent leur anniversaire.         ┆ 1.0   │
+│ The metro is packed.                ┆ Le métro est plein à craquer.       ┆ Le métro est bondé.                   ┆ 1.0   │
+│ It's snowing again.                 ┆ Il neige encore.                    ┆ Il neige encore.                      ┆ 1.0   │
+└─────────────────────────────────────┴─────────────────────────────────────┴───────────────────────────────────────┴───────┘
 ```
 
 ## Searching for a better instruction
@@ -133,12 +130,14 @@ from functai import InstructionSearch
 opt = InstructionSearch(num_candidates=4, num_trials=8, minibatch_size=5,
                         max_bootstrapped_demos=0, max_labeled_demos=0,
                         prompt_lm="gpt-4.1-mini")
-translator.opt(trainset=train, metric=judge, optimizer=opt)
-print(translator.instructions)
+better = translator.opt(train, metric=judge, optimizer=opt)
+print(better.instructions)
 ```
 
 ```output
-Translate the provided English sentence into informal, colloquial Quebec French, capturing natural speech patterns, idiomatic expressions, and local slang to produce an authentic, conversational translation.
+Function: translator
+
+Translate the given English sentence into informal Quebec French (joual), capturing local slang, expressions, and conversational style for a natural, idiomatic translation.
 ```
 
 Every trial is a row (`combo` says which instruction and which demo
@@ -147,24 +146,23 @@ set):
 ```python
 from dpyr import read
 
-read(opt.trials)
+read(better.trials)
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 8 of 8 rows
-shape: (8, 4)
 ┌───────┬───────────┬─────────────────┬────────────┐
 │ trial ┆ combo     ┆ minibatch_score ┆ full_score │
 │ ---   ┆ ---       ┆ ---             ┆ ---        │
 │ i64   ┆ list[i64] ┆ f64             ┆ f64        │
 ╞═══════╪═══════════╪═════════════════╪════════════╡
 │ 0     ┆ [0, 0]    ┆ 0.2             ┆ null       │
-│ 1     ┆ [1, 0]    ┆ 0.68            ┆ 0.86       │
+│ 1     ┆ [1, 0]    ┆ 1.0             ┆ 0.96       │
 │ 2     ┆ [0, 0]    ┆ 0.2             ┆ null       │
-│ 3     ┆ [1, 0]    ┆ 0.88            ┆ 0.86       │
-│ 4     ┆ [3, 0]    ┆ 0.76            ┆ 0.78       │
-│ 5     ┆ [2, 0]    ┆ 0.76            ┆ 0.83       │
-│ 6     ┆ [1, 0]    ┆ 0.96            ┆ 0.86       │
+│ 3     ┆ [1, 0]    ┆ 0.96            ┆ 0.96       │
+│ 4     ┆ [3, 0]    ┆ 0.96            ┆ 0.86       │
+│ 5     ┆ [2, 0]    ┆ 0.92            ┆ 0.94       │
+│ 6     ┆ [1, 0]    ┆ 0.92            ┆ 0.96       │
 │ 7     ┆ [0, 0]    ┆ 0.0             ┆ null       │
 └───────┴───────────┴─────────────────┴────────────┘
 ```
@@ -172,19 +170,18 @@ shape: (8, 4)
 ## After
 
 ```python
-after = functai.evaluate(translator, dev, judge, num_threads=5)
+after = functai.evaluate(better, dev, judge, num_threads=5)
 functai.compare(before, after)
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-shape: (1, 10)
 ┌────────┬────────┬───────┬──────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
 │ metric ┆ before ┆ after ┆ diff ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
 │ ---    ┆ ---    ┆ ---   ┆ ---  ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
 │ str    ┆ f64    ┆ f64   ┆ f64  ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
 ╞════════╪════════╪═══════╪══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ judge  ┆ 0.3    ┆ 0.88  ┆ 0.58 ┆ 0.189955 ┆ 0.970045 ┆ 6      ┆ 1     ┆ 3    ┆ 10  │
+│ judge  ┆ 0.38   ┆ 0.86  ┆ 0.48 ┆ 0.109388 ┆ 0.850612 ┆ 6      ┆ 1     ┆ 3    ┆ 10  │
 └────────┴────────┴───────┴──────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
@@ -192,12 +189,12 @@ shape: (1, 10)
 with its 95% interval; `better`, `worse` and `same` count examples.
 
 ```python
-translator("Hi, what's the weather like? I'm going to the convenience store.")
+better("Hi, what's the weather like? I'm going to the convenience store.")
 ```
 
 ```output
-"Salut, c'est quoi le temps qu'il fait? Je m'en vais à l'épicerie de coin."
+"Salut, c'est quoi le temps qu'il fait? Je m'en vais au dépanneur."
 ```
 
-`translator.undo_opt()` brings the old instruction back;
-`translator.save("translator.json")` keeps the new one.
+`translator` still has the old instruction;
+`better.save("translator.json")` keeps the new one.

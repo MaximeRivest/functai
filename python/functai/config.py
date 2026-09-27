@@ -175,6 +175,7 @@ class configure:
     @ai
     def capital(country: str) -> str:
         """The country's capital city."""
+        ...
 
     with functai.configure(lm="gpt-4.1-nano"):
         print(capital("Canada"))

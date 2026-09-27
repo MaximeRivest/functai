@@ -107,6 +107,8 @@ export interface Job {
   readonly call: Call;
   readonly watch: Watch | null;
   readonly answer: string;
+  /** Cancels the call: a stream's, the caller's, or both. */
+  readonly signal?: AbortSignal;
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -122,6 +124,7 @@ async function send(job: Job, request: Request): Promise<Response> {
   const retries = Math.max(0, job.settings.apiRetries);
   for (let attempt = 0; ; attempt++) {
     watch?.check();
+    if (job.signal?.aborted) throw new Cancelled();
     const started = Date.now();
     const t0 = performance.now();
     try {
@@ -138,8 +141,8 @@ async function send(job: Job, request: Request): Promise<Response> {
         const show = (batch: readonly { kind: string; field?: string; text?: string }[]) => {
           for (const ev of batch) if (ev.kind === "field_delta" && ev.field !== "calls") watch.onText(call, ev.field!, ev.text!);
         };
-        for await (const e of job.router.stream(request, { signal: watch.signal })) {
-          if (watch.signal.aborted) throw new Cancelled();
+        for await (const e of job.router.stream(request, { signal: job.signal ?? watch.signal })) {
+          if (job.signal?.aborted || watch.signal.aborted) throw new Cancelled();
           events.push(e);
           if (e.type !== "delta") continue;
           first ??= (performance.now() - t0) / 1000;
@@ -163,7 +166,7 @@ async function send(job: Job, request: Request): Promise<Response> {
         }
         response = materializeResponse(events, request);
       } else {
-        response = await job.router.complete(request, watch ? { signal: watch.signal } : undefined);
+        response = await job.router.complete(request, job.signal ? { signal: job.signal } : undefined);
         if (watch) replay(job, response);
       }
       call.exchange(job.model, request, response, started, (performance.now() - t0) / 1000,
@@ -171,12 +174,12 @@ async function send(job: Job, request: Request): Promise<Response> {
       return response;
     } catch (err) {
       call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000, { error: err, streamed: watch !== null });
-      if (watch?.signal.aborted) throw new Cancelled();
+      if (job.signal?.aborted || watch?.signal.aborted) throw new Cancelled();
       if (!retryable(err) || attempt >= retries) throw err;
       const after = (err as { retryAfter?: number }).retryAfter;
       const wait = typeof after === "number" && after > 0 ? after : Math.min(30, 2 ** attempt) * (0.5 + Math.random());
       watch?.onRetry(call, `the provider failed (${(err as Error).name}); sending again in ${wait.toFixed(1)} s`, wait);
-      await sleep(wait * 1000, watch?.signal);
+      await sleep(wait * 1000, job.signal);
     }
   }
 }

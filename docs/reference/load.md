@@ -55,14 +55,10 @@ import tempfile, os
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 folder = os.path.join(tempfile.mkdtemp(), "capital")
 save(capital, folder)
 loaded = load(folder, trust=True)
 loaded("Peru")
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-'Lima'
 ```

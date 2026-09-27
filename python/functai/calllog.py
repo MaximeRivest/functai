@@ -1,7 +1,7 @@
 """The call log: every call of an AI function or module, one line of JSON in a folder.
 
     functai.configure(log_calls=True)                # ~/.local/share/functai/calls
-    p = team("I was charged twice", all=True)
+    p = team.predict("I was charged twice")
     functai.rate(p, "wrong", answer="billing")       # a correction is a row of data
     functai.calls(team)                              # what happened, as a table
     functai.rated(team)                              # rows with known answers: evaluate, .opt
@@ -1065,6 +1065,7 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
     @ai
     def team(message: str) -> Literal["shipping", "billing", "product"]:
         """Which team should answer this customer message?"""
+        ...
 
     with functai.configure(log_calls=tempfile.mkdtemp()):
         team("My parcel never came.")
@@ -1173,10 +1174,11 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
     @ai
     def team(message: str) -> Literal["shipping", "billing", "product"]:
         """Which team should answer this customer message?"""
+        ...
 
     with functai.configure(log_calls=tempfile.mkdtemp()):
-        a = team("My parcel never came.", all=True)
-        b = team("The chair arrived with a snapped leg.", all=True)
+        a = team.predict("My parcel never came.")
+        b = team.predict("The chair arrived with a snapped leg.")
         functai.rate(a, "right")
         functai.rate(b, "wrong", answer="shipping")    # broken on the way: the carrier's fault
         rows = functai.rated(team)
@@ -1218,7 +1220,7 @@ def _call_id(call: Any) -> str:
         call = call["call"]
     if isinstance(call, str) and _UUID.match(call):
         return call
-    raise TypeError("rate what? a prediction (fn(..., all=True)), a call id, or a row of calls()/rated() "
+    raise TypeError("rate what? a prediction (fn.predict(...)), a call id, or a row of calls()/rated() "
                     f"with a 'call' column; not {call!r}")
 
 
@@ -1234,7 +1236,7 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     Parameters
     ----------
     call : Prediction, call id, or row
-        The call: what ``fn(..., all=True)`` returned, its ``call_id``, or a
+        The call: what ``fn.predict(...)`` returned, its ``call_id``, or a
         row of ``calls()`` or ``rated()``.
     verdict : "right", "wrong", True, False or None
         Is the answer right? None withdraws your earlier rating. May be
@@ -1279,9 +1281,10 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     @ai
     def team(message: str) -> Literal["shipping", "billing", "product"]:
         """Which team should answer this customer message?"""
+        ...
 
     with functai.configure(log_calls=tempfile.mkdtemp()):
-        p = team("I was charged twice for one order.", all=True)
+        p = team.predict("I was charged twice for one order.")
         rating = functai.rate(p, "right")
     rating["verdict"]
     ```

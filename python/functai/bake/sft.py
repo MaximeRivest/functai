@@ -174,7 +174,7 @@ def bake(fn, data: Any, *, student: str, teacher: Any = None, labels: str = "aut
 
         def one(i: int) -> Optional[Dict[str, Any]]:
             try:
-                pred = tfn(**row_inputs(fn, rows[i]), all=True)
+                pred = tfn._invoke((), row_inputs(fn, rows[i]), full=True)
             except Exception:  # noqa: BLE001 — a failed row is dropped and counted
                 return None
             return {k: pred[k] for k in outputs if k in pred}
@@ -535,7 +535,7 @@ def _report(fn, baked, test_rows, outputs, *, teacher, labeling, rows, result, d
 
     def answer(f, row):
         try:
-            return f(**row_inputs(fn, row), all=True)
+            return f._invoke((), row_inputs(fn, row), full=True)
         except Exception as exc:  # noqa: BLE001 — an unreadable answer is a wrong one, counted
             return exc
 

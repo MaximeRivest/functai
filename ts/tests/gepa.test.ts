@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { Request } from "@lm15/lm15";
-import { ai, calls, configure, gepa, t, trials } from "../src/index.ts";
+import { ai, calls, configure, gepa, t } from "../src/index.ts";
 import { bestPair, fieldsText, frontier } from "../src/gepa.ts";
 import { random } from "../src/optimize.ts";
 import { FakeRouter } from "./fake.ts";
@@ -25,8 +25,8 @@ const lastText = (req: Request) => (req.messages[req.messages.length - 1]!.parts
 const queryOf = (req: Request) => /<query>\n([\s\S]*?)\n<\/query>/.exec(lastText(req))?.[1] ?? "";
 const reflecting = (req: Request) => String(req.system ?? "").includes("You improve the instruction");
 const labelOf = (q: string) => (/reserve|book/i.test(q) ? "booking" : /cancel/i.test(q) ? "cancelation" : "information");
-const classifier = (router: FakeRouter, more: Record<string, unknown> = {}) => ai({
-  name: "intent", description: "Classify the user's intent.", inputs: { query: t.string() },
+const classifier = (router: FakeRouter, more: Record<string, unknown> = {}) => ai("intent", {
+  description: "Classify the user's intent.", input: { query: t.string() },
   output: t.enum("booking", "cancelation", "information"), router, ...more,
 });
 
@@ -38,7 +38,7 @@ test("gepa rewrites the instruction from its mistakes, never showing the choosin
   });
   const folder = mkdtempSync(join(tmpdir(), "gepa-"));
   const f = classifier(router, { logCalls: folder });
-  const better = await gepa(f, rows, { expected: "intent", budget: 60, seed: 1 });
+  const { fn: better, ...search } = await gepa(f, rows, { expected: "intent", budget: 60, seed: 1 });
   assert.equal(better.instructions, GOOD);
   assert.notEqual(better.version, f.version);
   const shown = router.requests.filter(reflecting).map(lastText).join("\n");
@@ -49,15 +49,14 @@ test("gepa rewrites the instruction from its mistakes, never showing the choosin
   const order = [...rows];
   for (let i = order.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [order[i], order[j]] = [order[j]!, order[i]!]; }
   for (const r of order.slice(0, 4)) assert.ok(!shown.includes(r.query), `${r.query} was shown`);
-  const search = trials(better)!;
   const chosen = search.trials.filter((x) => x.chosen);
   assert.equal(chosen.length, 1);
   assert.equal(chosen[0]!.kind, "reflect");
   assert.equal(chosen[0]!.score, 1);
   assert.ok(search.calls <= 60);
   const log = calls(undefined, { folder });
-  assert.ok(log.every((c) => (c["caller"] as Record<string, unknown>)?.["optimization"]), "every call is marked as part of the optimization");
-  assert.ok(log.some((c) => (c["program"] as Record<string, unknown>)?.["name"] === "_reflect"));
+  assert.ok(log.every((c) => c.caller["optimization"]), "every call is marked as part of the optimization");
+  assert.ok(log.some((c) => c.program.name === "_reflect"));
 });
 
 test("gepa runs a row once per instruction, and keeps the written one when nothing beats it", async () => {
@@ -70,8 +69,8 @@ test("gepa runs a row once per instruction, and keeps the written one when nothi
   const f = classifier(router);
   const kept = await gepa(f, rows, { expected: "intent", budget: 40 });
   assert.equal(new Set(seen).size, seen.length);
-  assert.equal(seen.length, trials(kept)!.calls);
-  assert.equal(kept.version, f.version);
+  assert.equal(seen.length, kept.calls);
+  assert.equal(kept.fn.version, f.version);
 });
 
 test("a proposal that copies an input is dropped, and the next reflection is told", async () => {
@@ -90,9 +89,9 @@ test("a proposal that copies an input is dropped, and the next reflection is tol
   });
   const f = classifier(router);
   const kept = await gepa(f, long, { expected: "intent", budget: 40 });
-  assert.ok(trials(kept)!.trials.some((x) => x.note === "copied an input: dropped"));
+  assert.ok(kept.trials.some((x) => x.note === "copied an input: dropped"));
   assert.ok(said.slice(1).some((s) => s.includes("dropped: it copied an input")));
-  assert.equal(kept.instructions, f.instructions);
+  assert.equal(kept.fn.instructions, f.instructions);
 });
 
 test("the frontier keeps candidates best somewhere and drops the dominated; pairs win different rows", () => {
@@ -103,9 +102,9 @@ test("the frontier keeps candidates best somewhere and drops the dominated; pair
 });
 
 test("fields are described for the teacher in words, with their types (the same words as Python and R)", () => {
-  const f = ai({
-    name: "team", description: "Which team?",
-    inputs: { message: { shape: t.string(), desc: "the customer's words" }, n: t.optional(t.integer()), tags: t.list(t.string()) },
+  const f = ai("team", {
+    description: "Which team?",
+    input: { message: { shape: t.string(), desc: "the customer's words" }, n: t.optional(t.integer()), tags: t.list(t.string()) },
     output: t.enum("a", "b"),
   });
   assert.equal(fieldsText(f),

@@ -39,6 +39,7 @@ def lookup_order(order_id: str) -> dict:
 @ai(tools=[lookup_order])
 def answer(question: str) -> str:
     """Answer the customer's question. Look the order up first."""
+    ...
 
 answer("Where is my order A-1042?")
 ```
@@ -108,6 +109,7 @@ def today() -> str:
 @ai(tools=[lookup_order, calculate, today])
 def assistant(question: str) -> str:
     """Answer the question, using the tools for facts and arithmetic."""
+    ...
 
 assistant("How many days ago was order A-1042 shipped?")
 ```
@@ -126,11 +128,11 @@ assistant("How many days ago was order A-1042 shipped?")
   more.
 - **A tool that raises** is reported to the model, which can try again
   differently. `@ai(tool_errors="raise")` stops the call instead.
-- **All of it is recorded**: `all=True` gives the whole exchange in
+- **All of it is recorded**: `fn.predict(...)` gives the whole exchange in
   `p.turn`, and the tokens of every step are added up in `p.usage`.
 
 ```python
-p = answer("Has my toaster, order B-2210, been delivered?", all=True)
+p = answer.predict("Has my toaster, order B-2210, been delivered?")
 p.result, p.usage["input_tokens"]
 ```
 

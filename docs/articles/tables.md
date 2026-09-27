@@ -67,10 +67,12 @@ from typing import Literal
 @ai
 def sentiment(review: str) -> Literal["positive", "neutral", "negative"]:
     """The customer's overall feeling about the product."""
+    ...
 
 @ai
 def about_delivery(review: str) -> bool:
     """Is the review about the delivery rather than the product?"""
+    ...
 
 reviews.mutate(sentiment=sentiment(col.review), delivery=about_delivery(col.review))
 ```
@@ -107,6 +109,7 @@ class Review:
 @ai
 def read_review(review: str) -> Review:
     """What this product review says."""
+    ...
 
 reviews.mutate(**read_review.unpack(col.review))
 ```

@@ -162,6 +162,7 @@ and the answers in the type. Then functai writes the messages:
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Route customer messages for a homeware shop to the team that answers them."""
+    ...
 
 team("The mug arrived in pieces.")
 ```
@@ -235,7 +236,7 @@ easier to change, to optimize, and to extend with more outputs.
 |---|---|
 | `model="gpt-4.1-mini"` | `@ai(lm="gpt-4.1-mini")`, or `functai.configure(lm=...)` for all |
 | `messages=[...]` with f-strings | `template=[...]` with `{name}` holes, or the docstring |
-| few-shot user/assistant pairs | `@ai(examples=[...])`, or `fn.opt(...)` to pick them from data |
+| few-shot user/assistant pairs | `@ai(examples=[...])`, or `functai.bootstrap_few_shot(fn, rows)` to pick them from data |
 | `response_format` / JSON schema | the return type: a `Literal`, a dataclass, a pydantic model |
 | parsing and retrying bad JSON | done for you; `retries=` |
 | `tools=[{json schema}]` and the call loop | `tools=[a_python_function]`; the loop is run for you |

@@ -19,7 +19,7 @@ rat:
             facts = append_notes(claim, facts, search(query))
         return facts
 
-    research.opt(trainset=..., metric=...)     # tunes generate_query and append_notes together
+    better = research.opt(rows, metric=...)   # a copy with generate_query and append_notes tuned together
 
 The metric sees ``Prediction(result=<what the module returned>)``.
 
@@ -47,12 +47,22 @@ Callable wrapper for an orchestrator function that calls @ai functions.
 
 | Name | Description |
 | --- | --- |
+| [load](#functai.module.FunctAIModule.load) | A copy running with the states a ``save`` wrote. |
 | [map](#functai.module.FunctAIModule.map) | Run on every row of a table; returns the rows with ``pred_result`` |
 | [named_ai_functions](#functai.module.FunctAIModule.named_ai_functions) | Every @ai function this module reaches: called by name, under another |
-| [opt](#functai.module.FunctAIModule.opt) | Tune every @ai function this module calls, against one metric on the |
+| [opt](#functai.module.FunctAIModule.opt) | An improved copy: every @ai function this module calls tuned against |
 | [save](#functai.module.FunctAIModule.save) | Every AI function's instruction and demos, in one JSON file. |
+| [state](#functai.module.FunctAIModule.state) | The instruction and demos each AI function runs with in this module, by name. |
 | [stream](#functai.module.FunctAIModule.stream) | Call the module and watch every AI function it calls, as it works. |
 | [vectorize](#functai.module.FunctAIModule.vectorize) | This module as a dpyr row function (see ``FunctAIFunc.vectorize``); |
+
+##### load { #functai.module.FunctAIModule.load }
+
+```{.python .no-run}
+module.FunctAIModule.load(path)
+```
+
+A copy running with the states a ``save`` wrote.
 
 ##### map { #functai.module.FunctAIModule.map }
 
@@ -78,7 +88,8 @@ module when two share a name.
 
 ```{.python .no-run}
 module.FunctAIModule.opt(
-    trainset,
+    data,
+    *,
     metric=None,
     optimizer=None,
     call_defaults=None,
@@ -88,8 +99,9 @@ module.FunctAIModule.opt(
 )
 ```
 
-Tune every @ai function this module calls, against one metric on the
-module's output. ``call_defaults`` fill module arguments the examples lack.
+An improved copy: every @ai function this module calls tuned against
+one metric on the module's output. This module and its functions are
+unchanged. ``call_defaults`` fill module arguments the rows lack.
 
 ##### save { #functai.module.FunctAIModule.save }
 
@@ -98,6 +110,14 @@ module.FunctAIModule.save(path)
 ```
 
 Every AI function's instruction and demos, in one JSON file.
+
+##### state { #functai.module.FunctAIModule.state }
+
+```{.python .no-run}
+module.FunctAIModule.state()
+```
+
+The instruction and demos each AI function runs with in this module, by name.
 
 ##### stream { #functai.module.FunctAIModule.stream }
 
@@ -169,19 +189,16 @@ from functai import *
 @ai
 def draft(topic: str) -> str:
     """A two-sentence paragraph about the topic."""
+    ...
 
 @ai
 def shorten(text: str) -> str:
     """The text in at most twelve words."""
+    ...
 
 @module
 def blurb(topic: str) -> str:
     return shorten(draft(topic))
 
 blurb("why paired comparisons need fewer examples")
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-'Paired comparisons simplify decisions, needing fewer examples by focusing on two items.'
 ```

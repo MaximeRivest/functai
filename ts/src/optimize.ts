@@ -10,7 +10,7 @@
  */
 
 import { exactMatch, type Metric } from "./evaluate.ts";
-import type { AnyAIFunction as AIFunction, Demo } from "./fn.ts";
+import type { AnyAIFunction as AIFunction, Demo, Expected, Row } from "./fn.ts";
 import { withSettings } from "./settings.ts";
 import { newId } from "./calllog.ts";
 
@@ -37,24 +37,44 @@ function sample<T>(items: readonly T[], k: number, seed: number): T[] {
   return pool.slice(0, Math.min(k, pool.length));
 }
 
-function labeled(fn: AIFunction, row: Rec): Demo | null {
+/** Where each output's right answer is in a row: `expected`, or the columns named like the outputs. */
+export function answerColumns(fn: AIFunction, expected: unknown): Record<string, string> {
+  if (typeof expected === "string") return { [fn.answerName]: expected };
+  if (expected && typeof expected === "object") return { ...(expected as Record<string, string>) };
+  return Object.fromEntries(fn.definition.outputs.map((f) => [f.name, f.name]));
+}
+
+function labeled(fn: AIFunction, row: Rec, columns: Record<string, string>): Demo | null {
   const inputs = Object.fromEntries(fn.definition.inputs.filter((f) => f.name in row).map((f) => [f.name, row[f.name]]));
-  const outputs = Object.fromEntries(fn.definition.outputs.filter((f) => f.name in row).map((f) => [f.name, row[f.name]]));
+  const outputs = Object.fromEntries(Object.entries(columns).filter(([, col]) => col in row).map(([out, col]) => [out, row[col]]));
   return Object.keys(outputs).length ? { inputs, outputs } : null;
 }
 
-/** Up to `k` rows with known answers become worked examples (a seeded random sample, or the first `k`). */
-export function labeledFewShot<F extends AIFunction>(fn: F, rows: readonly Rec[], opts: { k?: number; sample?: boolean; seed?: number } = {}): F {
+export interface LabeledOptions<F = AIFunction, R = Rec> {
+  /** How many rows at most (default 16). */
+  k?: number;
+  /** A seeded random sample (default), or the first `k`. */
+  sample?: boolean;
+  seed?: number;
+  /** Where the right answers are: a column for the answer, or `{output: column}`. Default: columns named like the outputs. */
+  expected?: Expected<F, R>;
+}
+
+/** An improved copy: up to `k` rows with known answers become worked examples. The function is unchanged. */
+export function labeledFewShot<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: LabeledOptions<F, R> = {}): F {
   const k = opts.k ?? 16;
+  const columns = answerColumns(fn, opts.expected);
   const chosen = opts.sample === false ? rows.slice(0, k) : sample(rows, k, opts.seed ?? 0);
   const copy = fn.using({}) as F;
-  copy.demos = chosen.map((r) => labeled(fn, r)).filter((d): d is Demo => d !== null);
+  copy.demos = chosen.map((r) => labeled(fn, r, columns)).filter((d): d is Demo => d !== null);
   return copy;
 }
 
-export interface BootstrapOptions {
+export interface BootstrapOptions<F = AIFunction, R = Rec> {
+  /** Where the right answers are, as in `evaluate`. */
+  expected?: Expected<F, R>;
   /** Which runs are good: `(row, outputs) => score`; default exact_match against the row's answers. */
-  metric?: Metric;
+  metric?: Metric<R>;
   /** A run counts when its score is at least this (default: any score above 0). */
   threshold?: number;
   maxBootstrapped?: number;
@@ -67,17 +87,18 @@ export interface BootstrapOptions {
 }
 
 /**
- * Run the function (or a teacher model) on rows with known answers; the runs
- * the metric accepts become worked examples, whole turns included (reasoning,
- * tool calls). Labeled rows fill the rest, up to `maxLabeled`.
+ * An improved copy: the function (or a teacher model) runs on rows with known
+ * answers, and the runs the metric accepts become worked examples, whole turns
+ * included (reasoning, tool calls). Labeled rows fill the rest, up to
+ * `maxLabeled`. The function is unchanged.
  */
-export async function bootstrapFewShot<F extends AIFunction>(fn: F, rows: readonly Rec[], opts: BootstrapOptions = {}): Promise<F> {
+export async function bootstrapFewShot<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: BootstrapOptions<F, R> = {}): Promise<F> {
   const maxBoot = opts.maxBootstrapped ?? 4;
   const maxLabeled = opts.maxLabeled ?? 16;
   const runner = opts.teacher ? fn.using({ lm: opts.teacher }) : fn;
-  const outputs = fn.definition.outputs.map((f) => f.name);
-  const metric: Metric = opts.metric ?? ((row, pred) => {
-    const answers = Object.fromEntries(outputs.filter((o) => o in row).map((o) => [o, row[o]]));
+  const columns = answerColumns(fn, opts.expected);
+  const metric: Metric<R> = opts.metric ?? ((row, pred) => {
+    const answers = Object.fromEntries(Object.entries(columns).filter(([, col]) => col in row).map(([out, col]) => [out, row[col]]));
     return exactMatch(answers, Object.fromEntries(Object.keys(answers).map((k) => [k, pred[k]])))["exact_match"]!;
   });
   const passes = (score: number) => (opts.threshold !== undefined ? score >= opts.threshold : score > 0);
@@ -105,7 +126,7 @@ export async function bootstrapFewShot<F extends AIFunction>(fn: F, rows: readon
   if (maxBoot > 0) await Promise.all(Array.from({ length: Math.max(1, opts.concurrency ?? 4) }, worker));
   const room = maxLabeled - boot.length;
   const rest = rows.filter((_, i) => !used.has(i));
-  const fill = room > 0 ? sample(rest, room, opts.seed ?? 0).map((r) => labeled(fn, r)).filter((d): d is Demo => d !== null) : [];
+  const fill = room > 0 ? sample(rest, room, opts.seed ?? 0).map((r) => labeled(fn, r, columns)).filter((d): d is Demo => d !== null) : [];
   const copy = fn.using({}) as F;
   copy.demos = [...boot, ...fill] as never;
   return copy;

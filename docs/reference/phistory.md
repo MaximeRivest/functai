@@ -41,39 +41,8 @@ from functai import *
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 capital("Japan")
 print(phistory())
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-[2026-09-26T18:52:06] capital → gpt-4.1-mini
-
-System message:
-
-Function: capital
-
-The country's capital city.
-
-Reply in exactly this form:
-<result>
-...
-</result>
-
-
-User message:
-
-<country>
-Japan
-</country>
-
-
-Response:
-
-<result>
-Tokyo
-</result>
-
-(finish: stop; tokens in 41, out 9)
 ```

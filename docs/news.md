@@ -1,6 +1,63 @@
 # News
 
-## Unreleased (1.1.0)
+## Unreleased
+
+Breaking (see *Upgrading* in the documentation): the API says what it
+does, and a type checker follows it.
+
+- `@ai` is typed: an AI function keeps its parameters and return type
+  for Pyright, mypy and editors, and its methods (`predict`, `using`,
+  `opt`, `stream`...) are known. Wrong arguments are errors before any
+  call; on a table's columns (`team(col.message)`) it is a column.
+  `_ai` is typed as the value it stands for, so `return _ai` type-checks
+  everywhere; the documentation writes `...` after the docstring, which
+  Pyright (and so VS Code) accepts and mypy does not (`empty-body`): with
+  mypy, write `return _ai`. `tests/typing/api.py` pins all of it
+  (checked with basedpyright).
+- `fn.predict(...)` replaces `fn(..., all=True)`; an input may be called `all`.
+- Async: `await fn.acall(...)`, `await fn.apredict(...)`, and `@ai async
+  def` for a function whose body is the model call. Calls run in a worker
+  thread (the engine itself is synchronous), with the caller's settings.
+- Improving returns a copy: `better = fn.opt(rows, ...)` (the data is the
+  first argument; `trainset=` is gone), and the function is unchanged;
+  `undo_opt`, `programs` and `latest_program` are gone. A `@module`'s
+  `opt` returns a copy running with the improved states; the AI functions
+  it calls are unchanged (`better.state()`, `save`, and `load`, which
+  returns a copy). `fn.trials`: a search's candidates.
+- By name, as in R and TypeScript: `functai.labeled_few_shot(fn, rows,
+  k=)`, `functai.bootstrap_few_shot(fn, rows, teacher=)`,
+  `functai.gepa(fn, rows, teacher=, selection=)`.
+- `from functai import *` brings the API only; helpers (`flexiclass`,
+  `docments`, `sig2str`, ...) are `functai.<name>`.
+- `GEPA`: the instruction rewritten from the function's mistakes, read by
+  a `teacher` model with feedback in words, over a Pareto pool of
+  candidates (Agrawal et al., 2025), written in functai, with changes for
+  one function: the teacher sees what it tried that failed, a proposal
+  that copies an input is dropped, two candidates right on different rows
+  are combined, ties go to the shorter instruction, and no row runs twice
+  for one instruction (`design/04-gepa.md`). `f.opt(trainset=...,
+  optimizer=GEPA(budget=300, teacher="gpt-6-sol"))`; `.trials` holds the
+  search. Live, it took `gpt-5.4-nano` from 72% to 88% on refund
+  decisions it never saw. One AI function at a time (a `@module` is
+  refused).
+- `evaluate()`'s table and `calls()` have `reasoning_tokens` and
+  `total_tokens`: Gemini's `output_tokens` leave its hidden reasoning out,
+  so a cost is `total_tokens - input_tokens` at the output price.
+- `bake(..., log=False)` is silent (it raised).
+- Eight tutorials (`docs/tutorials/`), from a first function to decision
+  models with Jev, choosing a model by cost, and baking a model you own.
+
+- `functai.datasets.refunds()`: 120 refund requests to the shop of
+  `tickets`, with the facts its order system knows and the decision its
+  refund rules give (the same table as R's `refunds`).
+
+- Models that run only at temperature 1 (GPT-6, and Claude Opus, Sonnet,
+  Fable and Mythos 5) no longer fail when a session sets `temperature=0`:
+  the setting is left out of their requests, with one warning (the new
+  `fixed_sampling` table in `contract/models.json`). A temperature of 1 is
+  sent as is. GPT-6 models are declared reasoning models.
+
+## 1.1.0 (2026-09-27)
 
 New:
 

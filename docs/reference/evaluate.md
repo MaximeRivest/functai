@@ -66,15 +66,11 @@ from dpyr import col
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 tickets = functai.datasets.tickets().slice_head(n=20)
 ev = evaluate(team, tickets, expected="category", num_threads=8)
 ev
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-Evaluation(team, 20 examples: exact_match 0.90 [0.70, 0.97])
 ```
 
 ```python

@@ -20,8 +20,8 @@ only once.*
    best on your test rows. Why is its score too optimistic?
 2. Two versions are right on 36 and 38 of the same 40 rows. What should
    you count to know if the difference is real?
-3. What does `LabeledFewShot` change in a function, and what does it
-   leave alone?
+3. What does `functai.labeled_few_shot` change in a function, and what
+   does it leave alone?
 
 ## The refund desk
 
@@ -39,7 +39,7 @@ from typing import Literal
 from dpyr import col, n, read
 
 import functai
-from functai import BootstrapFewShot, LabeledFewShot, ai
+from functai import ai
 
 log_folder = tempfile.mkdtemp()
 functai.configure(lm="gpt-6-luna", log_calls=log_folder)
@@ -85,6 +85,7 @@ Decision = Literal["approve", "deny"]
 @ai
 def refund(message: str, price: float, days_since_delivery: int, final_sale: bool) -> Decision:
     """Should the shop refund this request?"""
+    ...
 ```
 
 ## Three piles of rows, used for three different things
@@ -131,7 +132,7 @@ ev_plain
 ```
 
 ```output
-Evaluation(refund, 40 examples: exact_match 0.95 [0.83, 0.99])
+Evaluation(refund, 40 examples: exact_match 0.93 [0.80, 0.97])
 ```
 
 The model has never seen the shop's rules, yet it's right most of the
@@ -144,7 +145,7 @@ wrong? Look at the dev rows (never the test rows):
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 2 of 2 rows
+# dpyr dataframe · source: polars · showing 3 of 3 rows
 ┌──────────┬─────────────┬─────────────────────┬────────────┬────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
 │ decision ┆ pred_result ┆ days_since_delivery ┆ final_sale ┆ state  ┆ message                                                                                 │
 │ ---      ┆ ---         ┆ ---                 ┆ ---        ┆ ---    ┆ ---                                                                                     │
@@ -154,17 +155,20 @@ wrong? Look at the dev rows (never the test rows):
 │          ┆             ┆                     ┆            ┆        ┆ doesnt …                                                                                │
 │ approve  ┆ deny        ┆ 71                  ┆ false      ┆ faulty ┆ Since about ten weeks in, it's been pooling water underneath after each morning's use,  │
 │          ┆             ┆                     ┆            ┆        ┆ so …                                                                                    │
+│ deny     ┆ approve     ┆ 20                  ┆ false      ┆ used   ┆ I got this about three weeks ago and I've been cooking with it since, but honestly it's │
+│          ┆             ┆                     ┆            ┆        ┆ ju…                                                                                     │
 └──────────┴─────────────┴─────────────────────┴────────────┴────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 (`state` is the item's true condition, which the shop's staff recorded.
 The function doesn't see it; we do, to understand the mistakes.)
 
-Look at the kind of mistake. A typical one denies a refund the shop
-would give, a fault or damage reported after a month or two: the model
-assumed the most common policy, a 30-day window for everything, while
-this shop is more generous with damage and faults. Nothing told the
-model so.
+Look at the kind of mistake. Two approve a used item the customer
+simply no longer wants, as if any return within a few weeks were fine;
+one denies a fault reported after ten weeks, as if a 30-day window
+applied to everything. The model assumed the most common policy, and
+this shop's differs both ways: nothing for a used item, and far more
+generous with damage and faults. Nothing told the model so.
 
 ## 1. Write the rules down
 
@@ -185,6 +189,7 @@ def refund_rules(message: str, price: float, days_since_delivery: int, final_sal
       final-sale item.
     - Used and no longer wanted: no refund.
     """
+    ...
 
 ev_rules = functai.evaluate(refund_rules, dev, expected="decision", num_threads=8)
 ev_rules
@@ -197,13 +202,12 @@ Evaluation(refund_rules, 40 examples: exact_match 0.97 [0.87, 1.00])
 ## 2. Show it worked examples
 
 A new colleague learns from rules, and also from seeing past cases.
-`LabeledFewShot` picks rows with known answers and puts them in front of
-every question as solved examples. `opt()` improves a function in place,
-so we improve a copy (`using()` with no settings is a copy):
+`functai.labeled_few_shot` picks rows with known answers and puts them in
+front of every question as solved examples. It returns an improved copy;
+`refund_rules` stays as it was:
 
 ```python
-refund_shown = refund_rules.using().opt(trainset=examples, expected="decision",
-                                        optimizer=LabeledFewShot(k=8))
+refund_shown = functai.labeled_few_shot(refund_rules, examples, k=8, expected="decision")
 
 ev_shown = functai.evaluate(refund_shown, dev, expected="decision", num_threads=8)
 ev_shown
@@ -228,23 +232,22 @@ which answer:
 
 ## 3. Let a stronger model teach
 
-Labelled rows show the answer, not the thinking. `BootstrapFewShot` runs
+Labelled rows show the answer, not the thinking. `functai.bootstrap_few_shot` runs
 a **teacher** on the example rows, keeps the runs whose answer was right,
 and uses those as the worked examples. Here the teacher is `gpt-6-sol`,
 OpenAI's larger current model: twenty times the price per token of
 `gpt-6-luna`, but it only answers a handful of rows, once.
 
 ```python
-refund_taught = refund_rules.using().opt(
-    trainset=examples, expected="decision",
-    optimizer=BootstrapFewShot(teacher="gpt-6-sol", max_bootstrapped_demos=4, max_labeled_demos=4))
+refund_taught = functai.bootstrap_few_shot(refund_rules, examples, expected="decision",
+                                           teacher="gpt-6-sol", max_bootstrapped=4, max_labeled=4)
 
 ev_taught = functai.evaluate(refund_taught, dev, expected="decision", num_threads=8)
 ev_taught
 ```
 
 ```output
-Evaluation(refund_rules, 40 examples: exact_match 0.97 [0.87, 1.00])
+Evaluation(refund_rules, 40 examples: exact_match 1.00 [0.91, 1.00])
 ```
 
 (A fourth lever, `@ai(module="cot")`, asks the model to reason before
@@ -270,10 +273,10 @@ read([{"version": name, **ev.summary.collect().to_dicts()[0]} for name, ev in [
 │ ---                            ┆ ---   ┆ ---      ┆ ---      │
 │ str                            ┆ f64   ┆ f64      ┆ f64      │
 ╞════════════════════════════════╪═══════╪══════════╪══════════╡
-│ 1. no rules                    ┆ 0.95  ┆ 0.834961 ┆ 0.986179 │
+│ 1. no rules                    ┆ 0.925 ┆ 0.801358 ┆ 0.974164 │
 │ 2. the rules                   ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
 │ 3. rules + 8 examples          ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
-│ 4. rules + taught by gpt-6-sol ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
+│ 4. rules + taught by gpt-6-sol ┆ 1.0   ┆ 0.912378 ┆ 1.0      │
 └────────────────────────────────┴───────┴──────────┴──────────┘
 ```
 
@@ -289,13 +292,13 @@ functai.compare(ev_plain, ev_rules)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬───────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff  ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪═══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.95   ┆ 0.975 ┆ 0.025 ┆ -0.025566 ┆ 0.075566 ┆ 1      ┆ 0     ┆ 39   ┆ 40  │
-└─────────────┴────────┴───────┴───────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.925  ┆ 0.975 ┆ 0.05 ┆ -0.020589 ┆ 0.120589 ┆ 2      ┆ 0     ┆ 38   ┆ 40  │
+└─────────────┴────────┴───────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 `better` is how many rows the rules got right that the plain version got
@@ -313,13 +316,13 @@ functai.compare(ev_rules, ev_taught)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬─────┬──────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low ┆ high ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ --- ┆ ---  ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64 ┆ f64  ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═════╪══════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.975  ┆ 0.975 ┆ 0.0  ┆ 0.0 ┆ 0.0  ┆ 0      ┆ 0     ┆ 40   ┆ 40  │
-└─────────────┴────────┴───────┴──────┴─────┴──────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬───────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff  ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪═══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.975  ┆ 1.0   ┆ 0.025 ┆ -0.025566 ┆ 0.075566 ┆ 1      ┆ 0     ┆ 39   ┆ 40  │
+└─────────────┴────────┴───────┴───────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 Once the rules are in, examples and a teacher have little left to fix on
@@ -349,8 +352,9 @@ rows, the bigger the flattery. That's why the test rows exist.
 ## Once, at the end
 
 Choose on dev. When versions tie, choose the **simplest**: here, the
-rules alone. Worked examples make every call longer and so dearer, and
-they bought nothing we can measure. Now, once, the test rows:
+rules alone. The teacher's version was right on one more row, which
+forty rows can't tell from luck, and worked examples make every call
+longer and so dearer, forever. Now, once, the test rows:
 
 ```python
 ev_final = functai.evaluate(refund_rules, test, expected="decision", num_threads=8)
@@ -358,7 +362,7 @@ ev_final
 ```
 
 ```output
-Evaluation(refund_rules, 39 examples: exact_match 0.97 [0.87, 1.00])
+Evaluation(refund_rules, 39 examples: exact_match 1.00 [0.91, 1.00])
 ```
 
 That is the number to report. When it's lower than on dev, as it often
@@ -383,8 +387,8 @@ functai.calls(folder=log_folder).left_join(prices, on=col.model).group_by(col.mo
 │ ---        ┆ ---   ┆ ---       │
 │ str        ┆ i64   ┆ f64       │
 ╞════════════╪═══════╪═══════════╡
-│ gpt-6-luna ┆ 199   ┆ 0.0141671 │
-│ gpt-6-sol  ┆ 4     ┆ 0.003114  │
+│ gpt-6-luna ┆ 199   ┆ 0.0141256 │
+│ gpt-6-sol  ┆ 8     ┆ 0.006338  │
 └────────────┴───────┴───────────┘
 ```
 
@@ -394,7 +398,7 @@ that's still cents. Weigh it anyway: it's paid on every call, forever.
 
 ## Your turn
 
-1. Try `LabeledFewShot(k=16)`. Measure it on dev and `compare()` it with
+1. Try `functai.labeled_few_shot(..., k=16)`. Measure it on dev and `compare()` it with
    the rules-only version.
 2. Add one sentence to the rules that you think would fix a dev mistake.
    Is it policy, or is it fitted to that row? How could you tell?
@@ -409,9 +413,9 @@ that's still cents. Weigh it anyway: it's paid on every call, forever.
   rows to test once.
 - Writing the rules down is the most direct improvement, when the rules
   are yours to write.
-- `LabeledFewShot` adds solved examples; `BootstrapFewShot(teacher=...)`
-  adds a teacher's runs that were right. `fn.using().opt(...)` improves a
-  copy, with a new `version`.
+- `functai.labeled_few_shot` adds solved examples;
+  `functai.bootstrap_few_shot(teacher=...)` adds a teacher's runs that
+  were right. Each returns an improved copy, with a new `version`.
 - On the same rows, compare versions by their disagreements
   (`functai.compare()`), not by eyeballing two intervals.
 - When versions tie, keep the simplest and cheapest.
@@ -422,8 +426,9 @@ that's still cents. Weigh it anyway: it's paid on every call, forever.
 luckiest on those rows, so part of its score is luck that won't come
 back: the winner's curse. (2) The rows where they disagree: how many one
 got right and the other wrong, each way (`functai.compare()`). (3) It
-adds worked examples to the request; the instruction, inputs, outputs
-and model stay as they were.
+returns a copy whose requests carry worked examples; the instruction,
+inputs, outputs and model stay as they were, and the function you passed
+in is unchanged.
 
 **Next:** [5. Choosing a model](05-choosing-a-model.md) puts eight
 current models through the same test and weighs accuracy against cost

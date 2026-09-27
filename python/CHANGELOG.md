@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+Breaking (see *Upgrading* in the documentation): the API says what it
+does, and a type checker follows it.
+
+- `@ai` is typed: an AI function keeps its parameters and return type
+  for Pyright, mypy and editors, and its methods (`predict`, `using`,
+  `opt`, `stream`...) are known. Wrong arguments are errors before any
+  call; on a table's columns (`team(col.message)`) it is a column.
+  `_ai` is typed as the value it stands for, so `return _ai` type-checks
+  everywhere; the documentation writes `...` after the docstring, which
+  Pyright (and so VS Code) accepts and mypy does not (`empty-body`): with
+  mypy, write `return _ai`. `tests/typing/api.py` pins all of it
+  (checked with basedpyright).
+- `fn.predict(...)` replaces `fn(..., all=True)`; an input may be called `all`.
+- Async: `await fn.acall(...)`, `await fn.apredict(...)`, and `@ai async
+  def` for a function whose body is the model call. Calls run in a worker
+  thread (the engine itself is synchronous), with the caller's settings.
+- Improving returns a copy: `better = fn.opt(rows, ...)` (the data is the
+  first argument; `trainset=` is gone), and the function is unchanged;
+  `undo_opt`, `programs` and `latest_program` are gone. A `@module`'s
+  `opt` returns a copy running with the improved states; the AI functions
+  it calls are unchanged (`better.state()`, `save`, and `load`, which
+  returns a copy). `fn.trials`: a search's candidates.
+- By name, as in R and TypeScript: `functai.labeled_few_shot(fn, rows,
+  k=)`, `functai.bootstrap_few_shot(fn, rows, teacher=)`,
+  `functai.gepa(fn, rows, teacher=, selection=)`.
+- `from functai import *` brings the API only; helpers (`flexiclass`,
+  `docments`, `sig2str`, ...) are `functai.<name>`.
 - `GEPA`: the instruction rewritten from the function's mistakes, read by
   a `teacher` model with feedback in words, over a Pareto pool of
   candidates (Agrawal et al., 2025), written in functai, with changes for

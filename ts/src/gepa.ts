@@ -6,7 +6,7 @@
  */
 
 import { evaluate, exactMatch, type Metric } from "./evaluate.ts";
-import { ai, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { ai, type AnyAIFunction as AIFunction, type Expected, type Row } from "./fn.ts";
 import { random } from "./optimize.ts";
 import { newId } from "./calllog.ts";
 import { withSettings, type Settings } from "./settings.ts";
@@ -30,15 +30,15 @@ everything the model is told besides the inputs: keep the task, and say what eac
 Reply with the new instruction only.`;
 
 /** Words about one answer: `(row, prediction, error) => text`; `prediction` is null when the call failed. */
-export type Feedback = (row: Rec, prediction: Rec | null, error: string | null) => string;
+export type Feedback<R = Rec> = (row: R, prediction: Rec | null, error: string | null) => string;
 
-export interface GepaOptions {
+export interface GepaOptions<F = AIFunction, R = Rec> {
   /** Where the right answers are, as in `evaluate`: a column for the answer, or `{output: column}`. */
-  expected?: string | Record<string, string>;
+  expected?: Expected<F, R>;
   /** A score per row, 1 meaning right (default: exact_match against the right answers). */
-  metric?: Metric;
+  metric?: Metric<R>;
   /** Words per row (default: "right", "wrong: the right answer is …", or the call's error). */
-  feedback?: Feedback;
+  feedback?: Feedback<R>;
   /** Calls of the function at most (default 300). */
   budget?: number;
   /** Feedback rows per new instruction (default 4). */
@@ -46,7 +46,7 @@ export interface GepaOptions {
   /** The model that writes instructions (`"gpt-6-sol"`); default the function's own. */
   teacher?: string;
   /** Rows to choose with, instead of half of the rows. */
-  selection?: readonly Rec[];
+  selection?: readonly R[];
   seed?: number;
   /** Calls in flight at once (default 8). */
   concurrency?: number;
@@ -71,8 +71,11 @@ export interface Trial {
   chosen: boolean;
 }
 
-/** The search behind a function `gepa` returned: every instruction tried, and what it cost. */
-export interface Search {
+/** What `gepa` returns: the improved copy, and the search that made it. */
+export interface GepaResult<F> {
+  /** A copy with the best instruction (the function's own when nothing beat it). */
+  fn: F;
+  /** Every instruction tried. */
   trials: Trial[];
   /** Calls of the function. */
   calls: number;
@@ -80,11 +83,10 @@ export interface Search {
   reflections: number;
 }
 
-const searches = new WeakMap<object, Search>();
-
-/** The search that made this function, or undefined for a function no search made. */
-export function trials(fn: AIFunction): Search | undefined {
-  return searches.get(fn);
+interface Search {
+  trials: Trial[];
+  calls: number;
+  reflections: number;
 }
 
 interface Candidate {
@@ -114,11 +116,11 @@ const mean = (xs: readonly number[]) => (xs.length ? xs.reduce((a, b) => a + b, 
  * tried that failed; a proposal that copies an input is dropped; ties go to
  * the shorter instruction; no row runs twice for one instruction.
  *
- * Returns an improved copy (the function itself when nothing beat the written
- * instruction); `trials(copy)` gives the search. Its score on the choosing rows
- * flatters: measure it with `evaluate` on rows it never saw.
+ * Returns `{ fn, trials }`: an improved copy (with the written instruction
+ * when nothing beat it) and the search. Scores on the choosing rows flatter the
+ * one chosen: measure it with `evaluate` on rows it never saw.
  */
-export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], opts: GepaOptions = {}): Promise<F> {
+export async function gepa<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: GepaOptions<F, R> = {}): Promise<GepaResult<F>> {
   const budget = opts.budget ?? 300;
   const minibatch = Math.max(1, opts.minibatch ?? 4);
   const seed = opts.seed ?? 0;
@@ -126,12 +128,12 @@ export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], op
   const outputs = fn.definition.outputs.map((f) => f.name);
   const inputs = fn.definition.inputs.map((f) => f.name);
   const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
-    : opts.expected ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
+    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
   if (!opts.metric && !Object.keys(mapping).length) {
     throw new Error(`gepa needs the right answers: a column named like an output (${outputs.join(", ")}), or expected`);
   }
-  let selectRows: readonly Rec[];
-  let feedRows: readonly Rec[];
+  let selectRows: readonly R[];
+  let feedRows: readonly R[];
   if (opts.selection) {
     selectRows = opts.selection;
     feedRows = rows;
@@ -142,7 +144,7 @@ export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], op
     selectRows = shuffled.slice(0, half);
     feedRows = shuffled.slice(half);
   }
-  const feedback = opts.feedback ?? defaultFeedback(mapping, outputs.length === 1);
+  const feedback = (opts.feedback ?? defaultFeedback(mapping, outputs.length === 1)) as Feedback;
   const run = newId();
   const written = fn.instructions;
   const fields = fieldsText(fn);
@@ -155,8 +157,8 @@ export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], op
   };
   const meta = { definedIn: "functai.meta", includeFnName: false, adapter: "xml", module: "predict" as const, temperature: 1, ...metaSettings };
   const tagged = <R>(f: () => R): R => withSettings({ caller: { optimization: run } }, f);
-  const reflect = ai({ name: "_reflect", description: REFLECT_TEXT, inputs: { fields: t.string(), instruction: t.string(), cases: t.string(), tried: t.string() }, output: t.string(), ...meta });
-  const combine = ai({ name: "_combine", description: COMBINE_TEXT, inputs: { fields: t.string(), first: t.string(), second: t.string() }, output: t.string(), ...meta });
+  const reflect = ai("_reflect", { description: REFLECT_TEXT, input: { fields: t.string(), instruction: t.string(), cases: t.string(), tried: t.string() }, output: t.string(), ...meta });
+  const combine = ai("_combine", { description: COMBINE_TEXT, input: { fields: t.string(), first: t.string(), second: t.string() }, output: t.string(), ...meta });
 
   const search: Search = { trials: [], calls: 0, reflections: 0 };
   const memo = new Map<string, Result>();
@@ -168,7 +170,7 @@ export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], op
     const todo = idx.filter((i) => !memo.has(key(set, i, text)));
     if (todo.length) {
       const candidate = text === written ? fn : withInstruction(fn, text);
-      const ev = await tagged(() => evaluate(candidate, todo.map((i) => source[i]!), {
+      const ev = await tagged(() => evaluate(candidate, todo.map((i) => source[i]!) as Row<F>[], {
         expected: opts.expected, metric: opts.metric, concurrency: opts.concurrency,
       }));
       search.calls += todo.length;
@@ -274,8 +276,7 @@ export async function gepa<F extends AIFunction>(fn: F, rows: readonly Rec[], op
   });
   for (const tr of search.trials) tr.chosen = tr.candidate === best;
   const out = (best === 0 ? fn.using({}) : withInstruction(fn, pool[best]!.instruction)) as F;
-  searches.set(out, search);
-  return out;
+  return { fn: out, ...search };
 }
 
 function withInstruction<F extends AIFunction>(fn: F, text: string): F {

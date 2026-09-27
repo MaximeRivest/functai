@@ -8,7 +8,7 @@ rat:
 # ai { #functai.ai }
 
 ```{.python .no-run}
-ai(_fn=None, **cfg)
+ai(_fn=None, /, **cfg)
 ```
 
 Turn a typed Python function into an AI function.
@@ -45,9 +45,9 @@ the body. Use it bare (``@ai``) or with settings (``@ai(lm=...)``).
 
 ## Returns {.doc-section .doc-section-returns}
 
-| Name   | Type        | Description                                                                                                              |
-|--------|-------------|--------------------------------------------------------------------------------------------------------------------------|
-|        | FunctAIFunc | The AI function. Call it like the original; ``all=True`` returns a ``Prediction`` with every output and the tokens used. |
+| Name   | Type        | Description                                                                                                                                                                                                               |
+|--------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | FunctAIFunc | The AI function. Call it like the original; ``fn.predict(...)`` returns a ``Prediction`` with every output and the tokens used; ``await fn.acall(...)`` in async code (an ``async def`` AI function is awaited directly). |
 
 ## See Also {.doc-section .doc-section-see-also}
 
@@ -65,13 +65,9 @@ from functai import *
 @ai
 def sentiment(text: str) -> str:
     """Is the text 'positive', 'negative' or 'neutral'?"""
+    ...
 
 sentiment("The update broke my favourite feature.")
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-'negative'
 ```
 
 ``_ai`` in the body: ``reasoning: str = _ai`` is one more output, written
@@ -85,12 +81,8 @@ def solve(question: str) -> float:
     reasoning: str = _ai     # step by step, the calculation
     return round(_ai, 2)
 
-p = solve("3 pencils cost $1.20. How much do 10 cost?", all=True)
+p = solve.predict("3 pencils cost $1.20. How much do 10 cost?")
 p.result, p.reasoning
-```
-
-```output
-(4.0, 'First, find the cost of one pencil by dividing the total cost by the number of pencils:\n$1.20 ÷ 3 = $0.40 per pencil.\n\nNext, find the cost of 10 pencils by multiplying the cost per pencil by 10:\n$0.40 × 10 = $4.00.')
 ```
 
 Settings in the decorator:
@@ -99,10 +91,7 @@ Settings in the decorator:
 @ai(lm="gpt-4.1-nano", temperature=0)
 def headline(article: str) -> str:
     """A headline of at most eight words."""
+    ...
 
 headline("The council voted to turn the old rail yard into a park with a pool.")
-```
-
-```output
-'Council Approves Rail Yard Turned Park with Pool'
 ```

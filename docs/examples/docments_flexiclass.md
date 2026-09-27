@@ -119,6 +119,7 @@ class Account:
 @ai
 def extract_account(text: str) -> Account:
     """Extract the account details."""
+    ...
 
 extract_account("ID: 123, email: alice@example.com")
 ```
@@ -138,6 +139,7 @@ class Movie:
 @ai
 def extract_movie(description: str) -> Movie:
     """Extract the movie's details."""
+    ...
 
 extract_movie("Inception, the 2010 sci-fi heist film starring Leonardo DiCaprio.")
 ```
@@ -158,7 +160,7 @@ def is_question(text: str) -> bool:  # True if it asks something
     clues: str = _ai  # the words or symbols that mark a question
     return _ai
 
-is_question("Who are you?", all=True)
+is_question.predict("Who are you?")
 ```
 
 ```output

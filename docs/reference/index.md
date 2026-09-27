@@ -50,15 +50,17 @@ Run a program on rows with known answers and score it, with an honest interval.
 
 ## Optimizers
 
-Improve the instruction and the worked examples a function sends. Used through `fn.opt(...)`.
+Improve the instruction and the worked examples a function sends. Each returns an improved copy; the function is unchanged. The classes are for `fn.opt(rows, optimizer=...)`.
 
 | | |
 | --- | --- |
+| [labeled_few_shot](labeled_few_shot.md#functai.labeled_few_shot) | An improved copy: up to ``k`` rows with known answers become worked examples. |
+| [bootstrap_few_shot](bootstrap_few_shot.md#functai.bootstrap_few_shot) | An improved copy: the function (or a stronger ``teacher`` model) runs on |
+| [gepa](gepa.md#functai.gepa) | An improved copy whose instruction a ``teacher`` model rewrote from the |
 | [LabeledFewShot](LabeledFewShot.md#functai.LabeledFewShot) | Up to ``k`` labeled examples become demos (a random sample, or the first ``k``). |
 | [BootstrapFewShot](BootstrapFewShot.md#functai.BootstrapFewShot) | Run the program (or a ``teacher``: a stronger model name, or an AI function) |
 | [BootstrapFewShotWithRandomSearch](BootstrapFewShotWithRandomSearch.md#functai.BootstrapFewShotWithRandomSearch) | Try several sets of demos and keep the one that scores best on the validation rows. |
 | [InstructionSearch](InstructionSearch.md#functai.InstructionSearch) | Search instructions written by a model, with demo sets, and keep the best. |
-| [GEPA](GEPA.md#functai.GEPA) | Rewrite the instruction from the function's mistakes: GEPA (Agrawal et |
 | [Optimizer](Optimizer.md#functai.Optimizer) | The base class of optimizers. |
 
 ## Saving and shipping

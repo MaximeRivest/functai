@@ -162,7 +162,7 @@ def synthesize(fn, n: int, *, lm: Any = None, labeler: Any = None) -> List[Dict[
             continue
         inputs = {k: item[k] for k in ins}
         try:
-            pred = labeler(**inputs, all=True)
+            pred = labeler.predict(**inputs)
         except Exception:  # noqa: BLE001 — a failed label drops the example
             continue
         out.append({"inputs": inputs, "outputs": {k: pred.get(k) for k in spec.outputs if k in pred}})

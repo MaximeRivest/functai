@@ -5,7 +5,7 @@
 
 import * as lmcc from "lmcc";
 import { newId } from "./calllog.ts";
-import type { AnyAIFunction as AIFunction } from "./fn.ts";
+import type { AnyAIFunction as AIFunction, Expected, Row } from "./fn.ts";
 import { withSettings } from "./settings.ts";
 import { normalize } from "./text.ts";
 
@@ -69,8 +69,8 @@ export function exactMatch(answers: Rec, prediction: Rec): Record<string, number
   return out;
 }
 
-/** A metric: `(row, prediction) => number` (0 to 1, or any score), or a record of such. */
-export type Metric = (row: Rec, prediction: Rec) => number | Promise<number>;
+/** A metric: `(row, prediction) => number` (0 to 1, or any score). */
+export type Metric<R = Rec> = (row: R, prediction: Rec) => number | Promise<number>;
 
 export interface RowResult {
   readonly row: Rec;
@@ -131,11 +131,11 @@ export class Evaluation {
   }
 }
 
-export interface EvaluateOptions {
-  /** Where the right answers are: a column name for the answer, or `{output: column}`. Default: columns named like the outputs. */
-  expected?: string | Record<string, string>;
+export interface EvaluateOptions<F = AIFunction, R = Rec> {
+  /** Where the right answers are: a column of the rows for the answer, or `{output: column}`. Default: columns named like the outputs. */
+  expected?: Expected<F, R>;
   /** A metric, or several by name. Default: exact_match. */
-  metric?: Metric | Record<string, Metric>;
+  metric?: Metric<R> | Record<string, Metric<R>>;
   /** Calls in flight at once (default 8). */
   concurrency?: number;
 }
@@ -145,12 +145,12 @@ export interface EvaluateOptions {
  * like the function's inputs; the right answers are the columns named like
  * its outputs (or `expected`). Calls are logged with `caller.evaluation`.
  */
-export async function evaluate(fn: AIFunction, rows: readonly Rec[], opts: EvaluateOptions = {}): Promise<Evaluation> {
+export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: EvaluateOptions<F, R> = {}): Promise<Evaluation> {
   const run = newId();
   const inputNames = fn.definition.inputs.map((f) => f.name);
   const outputNames = fn.definition.outputs.map((f) => f.name);
   const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
-    : opts.expected ?? Object.fromEntries(outputNames.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
+    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputNames.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
   const custom = typeof opts.metric === "function" ? { [opts.metric.name || "metric"]: opts.metric } : opts.metric;
   if (!custom && !Object.keys(mapping).length) {
     throw new Error(`evaluate: the rows have no column for any output (${outputNames.join(", ")}); pass expected or a metric`);

@@ -24,8 +24,8 @@ async function loggedProgram(fn: AnyAIFunction): Promise<Record<string, any>> {
 }
 
 test("a program is placed at the line that called ai()", async () => {
-  const fn = ai({ name: "placed", inputs: { text: t.string() } });
-  const line = readFileSync(here, "utf8").split("\n").findIndex((l) => l.includes(`name: "placed"`)) + 1;
+  const fn = ai("placed", { input: { text: t.string() } });
+  const line = readFileSync(here, "utf8").split("\n").findIndex((l) => l.includes(`ai("placed"`)) + 1;
   const program = await loggedProgram(fn);
   assert.equal(program.file, here);
   assert.equal(program.line, line);
@@ -40,7 +40,7 @@ test("a program written in a folder that looks like this package's own is still 
   writeFileSync(app, [
     `import { ai, t } from ${JSON.stringify(pathToFileURL(join(here, "..", "..", "src", "index.ts")).href)};`,
     "",
-    `export const echo = ai({ name: "echo", inputs: { text: t.string() } });`,
+    `export const echo = ai("echo", { input: { text: t.string() } });`,
     "",
   ].join("\n"));
   const { echo } = await import(pathToFileURL(app).href);

@@ -84,6 +84,7 @@ class Sighting:
 @ai
 def sighting(note: str) -> Sighting:
     """The bird observation in this survey note."""
+    ...
 ```
 
 ```python
@@ -292,6 +293,7 @@ def sighting(note: str) -> Sighting:
     on a nest, or bringing food to young is nesting. Perched, swimming,
     roosting or standing still is resting.
     """
+    ...
 
 after = functai.evaluate(sighting, notes, num_threads=8)
 functai.compare(before, after)
@@ -382,4 +384,4 @@ sum, where a guess would quietly change it.
   yours). That small table is what tells you whether to trust the other
   thousand.
 - **Hard cases**: when you can show the rule but not say it, give
-  examples: `sighting.opt(trainset=labelled_notes)`. See [Make it better](improving.md).
+  examples: `functai.bootstrap_few_shot(sighting, labelled_notes)`. See [Make it better](improving.md).

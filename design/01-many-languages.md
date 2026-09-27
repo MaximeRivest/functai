@@ -117,8 +117,9 @@ def mood(review: str) -> Literal["happy", "unhappy", "mixed"]:
 
 ```ts
 // TypeScript: types vanish when the code runs, so the shape is a value
-const mood = ai("How does the customer feel about what they bought?", {
-  inputs: { review: z.string() },
+const mood = ai("mood", {
+  description: "How does the customer feel about what they bought?",
+  input: { review: z.string() },
   output: z.enum(["happy", "unhappy", "mixed"]),
 });
 ```

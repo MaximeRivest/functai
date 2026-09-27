@@ -56,6 +56,7 @@ def run(command: str) -> str:
 def assistant(message: str) -> str:
     """You help a developer understand the project in the current folder.
     Use the tool to look before you answer. Be brief."""
+    ...
 
 print(assistant("Which project is this folder part of, and what changed in it recently?"))
 ```
@@ -114,6 +115,7 @@ Tool message:
 def assistant(message: str) -> str:
     """You help a developer understand the project in the current folder.
     Use the tool to look before you answer. Be brief."""
+    ...
 
 print(assistant("Which project is this folder part of, and what changed in it recently?"))
 ```

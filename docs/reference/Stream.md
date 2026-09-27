@@ -55,16 +55,10 @@ from functai import *
 @ai
 def haiku(topic: str) -> str:
     """A haiku about the topic."""
+    ...
 
 for piece in haiku.stream("autumn rain"):
     print(piece, end="", flush=True)
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-Soft autumn rain falls,  
-Whispering through amber leaves,  
-Nature’s gentle breath.
 ```
 
 ## Methods

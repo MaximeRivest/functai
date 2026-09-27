@@ -7,7 +7,7 @@ rat:
 
 # Reasoning and several answers
 
-*Ask the model to think first, return several values, and get everything a call produced with all=True.*
+*Ask the model to think first, return several values, and get everything a call produced with predict.*
 
 ```python
 import functai
@@ -44,14 +44,14 @@ solve("A train travels 120 miles in 2 hours, then 90 miles in 1.5 hours. "
 The call returned only the answer. The reasoning was written, and used by
 the model, but not returned.
 
-## Everything: `all=True`
+## Everything: `predict`
 
-Pass `all=True` to any call to get a `Prediction` with every output by
-name, plus what the call cost:
+`fn.predict(...)` makes the same call and gives a `Prediction` with every
+output by name, plus what the call cost:
 
 ```python
-p = solve("A train travels 120 miles in 2 hours, then 90 miles in 1.5 hours. "
-          "What is its average speed in miles per hour?", all=True)
+p = solve.predict("A train travels 120 miles in 2 hours, then 90 miles in 1.5 hours. "
+                  "What is its average speed in miles per hour?")
 p.reasoning
 ```
 
@@ -81,6 +81,7 @@ o-series and GPT-5, Claude 4, Gemini 2.5) use it; the others write a
 @ai(module="cot")
 def solve_cot(question: str) -> float:
     """Solve the word problem."""
+    ...
 
 solve_cot("If 3 pencils cost $1.20, how much do 10 pencils cost?")
 ```

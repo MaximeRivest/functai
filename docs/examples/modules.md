@@ -57,14 +57,17 @@ Verdict = Literal["supported", "refuted", "not enough info"]
 @ai
 def next_query(claim: str, notes: list[str]) -> str:
     """A short search query for the fact still missing to check the claim."""
+    ...
 
 @ai
 def take_notes(claim: str, notes: list[str], passages: list[str]) -> list[str]:
     """The notes, plus what the passages say that bears on the claim."""
+    ...
 
 @ai
 def decide(claim: str, notes: list[str]) -> Verdict:
     """Is the claim supported or refuted by the notes?"""
+    ...
 
 @module
 def check_claim(claim: str, hops: int = 2) -> Verdict:
@@ -112,19 +115,18 @@ ev.table.select(col.claim, col.result, col.pred_result, col.input_tokens, col.se
 
 ```output
 # dpyr dataframe · source: polars · showing 6 of 6 rows
-shape: (6, 5)
-┌────────────────────────────────────────────────┬───────────┬─────────────────┬──────────────┬──────────┐
-│ claim                                          ┆ result    ┆ pred_result     ┆ input_tokens ┆ seconds  │
-│ ---                                            ┆ ---       ┆ ---             ┆ ---          ┆ ---      │
-│ str                                            ┆ str       ┆ str             ┆ i64          ┆ f64      │
-╞════════════════════════════════════════════════╪═══════════╪═════════════════╪══════════════╪══════════╡
-│ The Eiffel Tower was finished before the Stat… ┆ refuted   ┆ refuted         ┆ 660          ┆ 4.083946 │
-│ K2 is taller than Mount Everest.               ┆ refuted   ┆ not enough info ┆ 461          ┆ 3.939941 │
-│ Marie Curie won two Nobel Prizes in different… ┆ supported ┆ supported       ┆ 624          ┆ 3.643245 │
-│ The Great Wall of China can be seen from orbi… ┆ refuted   ┆ refuted         ┆ 583          ┆ 3.918292 │
-│ Gustave Eiffel's company built a tower comple… ┆ supported ┆ supported       ┆ 590          ┆ 3.78339  │
-│ The Eiffel Tower was built for a World's Fair… ┆ supported ┆ supported       ┆ 594          ┆ 3.712875 │
-└────────────────────────────────────────────────┴───────────┴─────────────────┴──────────────┴──────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┬───────────┬─────────────────┬──────────────┬──────────┐
+│ claim                                                                           ┆ result    ┆ pred_result     ┆ input_tokens ┆ seconds  │
+│ ---                                                                             ┆ ---       ┆ ---             ┆ ---          ┆ ---      │
+│ str                                                                             ┆ str       ┆ str             ┆ i64          ┆ f64      │
+╞═════════════════════════════════════════════════════════════════════════════════╪═══════════╪═════════════════╪══════════════╪══════════╡
+│ The Eiffel Tower was finished before the Statue of Liberty was given to the US. ┆ refuted   ┆ refuted         ┆ 660          ┆ 4.32156  │
+│ K2 is taller than Mount Everest.                                                ┆ refuted   ┆ not enough info ┆ 461          ┆ 4.081073 │
+│ Marie Curie won two Nobel Prizes in different sciences.                         ┆ supported ┆ supported       ┆ 624          ┆ 4.408497 │
+│ The Great Wall of China can be seen from orbit with the naked eye.              ┆ refuted   ┆ refuted         ┆ 595          ┆ 4.334084 │
+│ Gustave Eiffel's company built a tower completed in 1889.                       ┆ supported ┆ supported       ┆ 590          ┆ 4.308764 │
+│ The Eiffel Tower was built for a World's Fair.                                  ┆ supported ┆ supported       ┆ 586          ┆ 4.459435 │
+└─────────────────────────────────────────────────────────────────────────────────┴───────────┴─────────────────┴──────────────┴──────────┘
 ```
 
 ## Optimizing it
@@ -141,22 +143,21 @@ train = [
     {"claim": "Eiffel's company also designed part of the Statue of Liberty.", "result": "supported"},
 ]
 
-check_claim.opt(trainset=train)
-{fn.__name__: len(fn.demos) for fn in check_claim.ai_functions()}
+taught = check_claim.opt(train)                   # an improved copy
+{name: len(state.demos) for name, state in taught.state().items()}
 ```
 
 ```output
-{'take_notes': 4, 'next_query': 4, 'decide': 3}
+{'take_notes': 4, 'next_query': 4, 'decide': 2}
 ```
 
 ```python
-after = functai.evaluate(check_claim, dev, num_threads=6)
+after = functai.evaluate(taught, dev, num_threads=6)
 functai.compare(ev, after)
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-shape: (1, 10)
 ┌─────────────┬──────────┬──────────┬──────┬─────┬──────┬────────┬───────┬──────┬─────┐
 │ metric      ┆ before   ┆ after    ┆ diff ┆ low ┆ high ┆ better ┆ worse ┆ same ┆ n   │
 │ ---         ┆ ---      ┆ ---      ┆ ---  ┆ --- ┆ ---  ┆ ---    ┆ ---   ┆ ---  ┆ --- │
@@ -166,9 +167,9 @@ shape: (1, 10)
 └─────────────┴──────────┴──────────┴──────┴─────┴──────┴────────┴───────┴──────┴─────┘
 ```
 
-`check_claim.undo_opt()` reverts every function it tuned;
-`check_claim.save("check_claim.json")` keeps their instructions and
-demos.
+`check_claim` itself, and the AI functions it calls, are unchanged;
+`taught.save("check_claim.json")` keeps the copy's instructions and
+demos (`check_claim.load(...)` is a copy running with them).
 
 ## On a table
 
@@ -182,17 +183,16 @@ read(dev).mutate(verdict=check_claim(col.claim)).select(col.claim, col.verdict)
 
 ```output
 # dpyr dataframe · source: polars · showing 6 of 6 rows
-shape: (6, 2)
-┌────────────────────────────────────────────────┬─────────────────┐
-│ claim                                          ┆ verdict         │
-│ ---                                            ┆ ---             │
-│ str                                            ┆ str             │
-╞════════════════════════════════════════════════╪═════════════════╡
-│ The Eiffel Tower was finished before the Stat… ┆ refuted         │
-│ K2 is taller than Mount Everest.               ┆ not enough info │
-│ Marie Curie won two Nobel Prizes in different… ┆ supported       │
-│ The Great Wall of China can be seen from orbi… ┆ refuted         │
-│ Gustave Eiffel's company built a tower comple… ┆ supported       │
-│ The Eiffel Tower was built for a World's Fair… ┆ supported       │
-└────────────────────────────────────────────────┴─────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┬─────────────────┐
+│ claim                                                                           ┆ verdict         │
+│ ---                                                                             ┆ ---             │
+│ str                                                                             ┆ str             │
+╞═════════════════════════════════════════════════════════════════════════════════╪═════════════════╡
+│ The Eiffel Tower was finished before the Statue of Liberty was given to the US. ┆ refuted         │
+│ K2 is taller than Mount Everest.                                                ┆ not enough info │
+│ Marie Curie won two Nobel Prizes in different sciences.                         ┆ supported       │
+│ The Great Wall of China can be seen from orbit with the naked eye.              ┆ refuted         │
+│ Gustave Eiffel's company built a tower completed in 1889.                       ┆ supported       │
+│ The Eiffel Tower was built for a World's Fair.                                  ┆ supported       │
+└─────────────────────────────────────────────────────────────────────────────────┴─────────────────┘
 ```

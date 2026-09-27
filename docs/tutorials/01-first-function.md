@@ -130,6 +130,7 @@ Here is the function:
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 ```
 
 Read it like any function definition:
@@ -310,6 +311,7 @@ def team_rules(message: str) -> Literal["shipping", "billing", "product", "accou
     - Problems that appear while using a product, and questions about products, are product.
     - Signing in, passwords, profile details, personal data and emails from the shop are account.
     """
+    ...
 
 answered = answered.mutate(guess_rules=team_rules(col.message))
 answered.summarize(without_rules=(col.guess == col.category).mean(),

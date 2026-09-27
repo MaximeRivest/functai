@@ -44,6 +44,7 @@ tickets = functai.datasets.tickets()
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 ```
 
 This is tutorial 1's `team`, without the house rules, so it has something

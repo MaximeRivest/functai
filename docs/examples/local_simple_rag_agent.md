@@ -72,6 +72,7 @@ class Sourced:
 @ai(tools=[read_page])
 def research(question: str) -> Sourced:
     """Answer the question from the pages you read."""
+    ...
 
 found = research(
     "Which castle did the physician David Gregory inherit? "

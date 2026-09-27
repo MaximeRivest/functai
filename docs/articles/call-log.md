@@ -41,6 +41,7 @@ from typing import Literal
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product"]:
     """Which team should answer this customer message?"""
+    ...
 
 messages = [
     "I was charged twice for one order.",
@@ -66,10 +67,10 @@ functai.calls(team).select("message", "pred_result", "seconds", "input_tokens")
 │ ---                                            ┆ ---         ┆ ---      ┆ ---          │
 │ str                                            ┆ str         ┆ f64      ┆ i64          │
 ╞════════════════════════════════════════════════╪═════════════╪══════════╪══════════════╡
-│ I was charged twice for one order.             ┆ billing     ┆ 0.736129 ┆ 58           │
-│ The chair arrived with a snapped leg.          ┆ product     ┆ 1.107748 ┆ 58           │
-│ The kettle's handle came off on the first day. ┆ product     ┆ 0.868884 ┆ 61           │
-│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.832596 ┆ 61           │
+│ I was charged twice for one order.             ┆ billing     ┆ 0.839297 ┆ 58           │
+│ The chair arrived with a snapped leg.          ┆ product     ┆ 0.738893 ┆ 58           │
+│ The kettle's handle came off on the first day. ┆ product     ┆ 0.833738 ┆ 61           │
+│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.806049 ┆ 61           │
 └────────────────────────────────────────────────┴─────────────┴──────────┴──────────────┘
 ```
 
@@ -79,10 +80,10 @@ tokens, model, version and who called.
 
 ## Right or wrong
 
-Get the call with `all=True`, then say whether its answer is right:
+Get the call with `predict`, then say whether its answer is right:
 
 ```python
-p = team("The chair arrived with a snapped leg.", all=True)
+p = team.predict("The chair arrived with a snapped leg.")
 p.result
 ```
 
@@ -98,7 +99,7 @@ functai.rate(p, "wrong", answer="shipping", note="Broken on the way is shipping:
 ```
 
 ```output
-{'functai_rating': 1, 'id': '01a0e0e0-0b7f-7000-a907-6621257eb01f', 'call': '01a0e0e0-07e1-742d-bc55-ced7b16964d2', 'at': '2026-09-27T03:19:34.527118Z', 'by': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
+{'functai_rating': 1, 'id': '01a0e50d-3ecf-74ff-8257-8dde7cf3e08c', 'call': '01a0e50d-3518-71d0-82cf-a15369a31a26', 'at': '2026-09-27T22:47:25.647250Z', 'by': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
 ```
 
 **Right means correct for this input, not "nice".** A wrong answer can
@@ -108,7 +109,7 @@ what it should be.
 
 ```python
 for message in ["The kettle's handle came off on the first day.", "I was charged twice for one order."]:
-    functai.rate(team(message, all=True), "right")
+    functai.rate(team.predict(message), "right")
 ```
 
 A later rating by the same person replaces the earlier one, and
@@ -152,9 +153,8 @@ It gets the chair wrong, as we said. Teach it with the corrections, and
 try it on a message it has not seen, before and after:
 
 ```python
-before = team("My order came but the screen is cracked.")
-team.opt(trainset=rows)
-before, team("My order came but the screen is cracked.")
+taught = team.opt(rows)                          # an improved copy
+team("My order came but the screen is cracked."), taught("My order came but the screen is cracked.")
 ```
 
 ```output
@@ -182,9 +182,9 @@ draw.select("message", "pred_result", "call")
 │ ---                                      ┆ ---         ┆ ---                                  │
 │ str                                      ┆ str         ┆ str                                  │
 ╞══════════════════════════════════════════╪═════════════╪══════════════════════════════════════╡
-│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0e0e0-2c75-7718-b9f8-22292b202805 │
-│ I was charged twice for one order.       ┆ billing     ┆ 01a0e0df-f7e8-769f-8f4d-ae065255d1b3 │
-│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0e0df-fac9-7697-9ccd-622a9c33d902 │
+│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0e50d-5bfa-71cb-b553-ff2466b5cec9 │
+│ I was charged twice for one order.       ┆ billing     ┆ 01a0e50d-26db-75f9-9e59-cd40df9887bd │
+│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0e50d-2a22-742b-9359-43b2cb7605fb │
 └──────────────────────────────────────────┴─────────────┴──────────────────────────────────────┘
 ```
 
@@ -210,7 +210,7 @@ team.version
 ```
 
 ```output
-'sha256:24a0418930b1a78d4a32cbc53eecb700d2d8f1126d205bd774fb37e56d8cffed'
+'sha256:c73c5af7368ddd503405fb6b3fb07e725250305109d91ea347d469256fb14586'
 ```
 
 A version names everything the function sends besides its inputs: the
@@ -256,13 +256,13 @@ functai.calls(team).select("message", "caller").slice_tail(n=1)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌────────────────────┬───────────────────────────────────┐
-│ message            ┆ caller                            │
-│ ---                ┆ ---                               │
-│ str                ┆ str                               │
-╞════════════════════╪═══════════════════════════════════╡
-│ Where is my order? ┆ {"kind":"script","user":"maxime"} │
-└────────────────────┴───────────────────────────────────┘
+┌────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
+│ message            ┆ caller                                                                                      │
+│ ---                ┆ ---                                                                                         │
+│ str                ┆ str                                                                                         │
+╞════════════════════╪═════════════════════════════════════════════════════════════════════════════════════════════╡
+│ Where is my order? ┆ {"conversation":"pi:--home-maxime-Projects-functai--/2026-09-27T17-03-03-706Z_01a0e3d1-f81… │
+└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 Programs that may see secrets (a clipboard helper sees passwords) keep
@@ -272,6 +272,7 @@ only sizes, times and tokens:
 @ai(log_content=False)
 def fix_grammar(text: str) -> str:
     """The text with its grammar and spelling fixed; nothing else changed."""
+    ...
 
 fix_grammar("their going too the store")
 functai.calls(fix_grammar).select("seconds", "input_tokens", "output_tokens", "model")
@@ -279,13 +280,13 @@ functai.calls(fix_grammar).select("seconds", "input_tokens", "output_tokens", "m
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌──────────┬──────────────┬───────────────┬──────────────┐
-│ seconds  ┆ input_tokens ┆ output_tokens ┆ model        │
-│ ---      ┆ ---          ┆ ---           ┆ ---          │
-│ f64      ┆ i64          ┆ i64           ┆ str          │
-╞══════════╪══════════════╪═══════════════╪══════════════╡
-│ 0.652497 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
-└──────────┴──────────────┴───────────────┴──────────────┘
+┌─────────┬──────────────┬───────────────┬──────────────┐
+│ seconds ┆ input_tokens ┆ output_tokens ┆ model        │
+│ ---     ┆ ---          ┆ ---           ┆ ---          │
+│ f64     ┆ i64          ┆ i64           ┆ str          │
+╞═════════╪══════════════╪═══════════════╪══════════════╡
+│ 0.83077 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
+└─────────┴──────────────┴───────────────┴──────────────┘
 ```
 
 `log_calls=False` on a function keeps it out of the log altogether.

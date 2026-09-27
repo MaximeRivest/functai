@@ -33,7 +33,7 @@ and ``.opt``. The rating is written to the call log, next to the call.
 
 | Name    | Type                                        | Description                                                                                                                                   | Default    |
 |---------|---------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| call    | Prediction, call id, or row                 | The call: what ``fn(..., all=True)`` returned, its ``call_id``, or a row of ``calls()`` or ``rated()``.                                       | _required_ |
+| call    | Prediction, call id, or row                 | The call: what ``fn.predict(...)`` returned, its ``call_id``, or a row of ``calls()`` or ``rated()``.                                         | _required_ |
 | verdict | (\'right\', \'wrong\', True, False or None) | Is the answer right? None withdraws your earlier rating. May be left out when ``answer`` is given (then it is ``"wrong"``).                   | `_NOTHING` |
 | answer  | optional                                    | The right answer, in the answer's type (a label, a number, a dataclass...).                                                                   | `_NOTHING` |
 | outputs | dict                                        | Right values for other named outputs: ``{"priority": 2}``.                                                                                    | `None`     |
@@ -69,14 +69,10 @@ from typing import Literal
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product"]:
     """Which team should answer this customer message?"""
+    ...
 
 with functai.configure(log_calls=tempfile.mkdtemp()):
-    p = team("I was charged twice for one order.", all=True)
+    p = team.predict("I was charged twice for one order.")
     rating = functai.rate(p, "right")
 rating["verdict"]
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-'right'
 ```

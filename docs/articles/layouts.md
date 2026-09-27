@@ -31,6 +31,7 @@ memory) go as messages in between.
 @ai
 def summarize(text: str) -> str:
     """Summarize the text in one sentence."""
+    ...
 
 summarize("Foundation models are now mature enough to be used in real applications, "
           "provided they are measured like any other component.")
@@ -156,7 +157,7 @@ def rate(review: str) -> int:
     verdict: str = _ai["One short sentence."]
     return _ai
 
-dict(rate("Great tacos, loud music. I'll be back.", all=True))
+dict(rate.predict("Great tacos, loud music. I'll be back."))
 ```
 
 ```output

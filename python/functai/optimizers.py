@@ -4,7 +4,8 @@ An optimizer tunes what an AI function sends besides the inputs: its
 instruction and its demos (worked examples, as lmcc turns). It never edits
 code, types or the layout. It works on one AI function or on a ``@module``
 (a Python function that calls several), and returns the new state of each
-AI function; ``fn.opt(...)`` applies it in place and ``fn.undo_opt()`` reverts.
+AI function; ``fn.opt(...)`` returns a copy with it, and the function itself is
+unchanged.
 
 - ``LabeledFewShot``: labeled examples as demos
 - ``BootstrapFewShot``: run the program on examples, keep the runs the metric
@@ -26,7 +27,7 @@ from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 from . import calllog
 from .config import forced
-from .core import FunctAIFunc, ProgramState
+from .core import P, R, FunctAIFunc, ProgramState
 from .evaluation import (Metric, _Target, evaluate, expected_columns, expected_metrics, parallel,
                          resolve_metrics, rows_of, run_row, with_expected)
 
@@ -725,10 +726,12 @@ def _instantiate(opt: Any, metric: Optional[Callable], opts: Dict[str, Any]) -> 
 @calllog.tagged("optimization")                # logged calls say they were part of an optimization
 def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimizer: Any = None,
              metric: Optional[Callable] = None, valset: Optional[Sequence[Any]] = None,
-             call_defaults: Optional[Dict[str, Any]] = None, expected: Any = None, **opts) -> States:
+             call_defaults: Optional[Dict[str, Any]] = None, expected: Any = None,
+             **opts) -> Tuple[States, Dict[FunctAIFunc, Dict[str, Any]]]:
     """What ``fn.opt(...)`` and ``module.opt(...)`` do: build the trainset (and
-    synthesize examples with a teacher when ``n_synth`` > 0), run the optimizer,
-    apply the new states (each function keeps the old one for ``undo_opt``)."""
+    synthesize examples with a teacher when ``n_synth`` > 0), run the optimizer.
+    Returns the new state of each AI function and a record of the run, per
+    function; nothing is changed (the callers make improved copies)."""
     from . import meta
     from .module import FunctAIModule
     teacher = opts.pop("teacher", None)
@@ -771,16 +774,75 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
             opt.metric = expected_metrics(mapping, target)[0].fn
     states = opt.compile(program, trainset=examples, valset=val)
     import time
-    for fn, state in states.items():
-        fn._apply_state(state, log={
-            "ts": time.time(), "optimizer": type(opt).__name__,
-            "metric": getattr(getattr(opt, "metric", None), "__name__", None),
-            "n_examples": len(examples), "synthesized": n_synth > 0,
-            "examples": list(examples), "n_demos": len(state.demos),
-            "instructions_changed": state.instructions != (fn._opt_stack[-1].instructions if fn._opt_stack else None),
-        })
-    return states
+    logs = {fn: {
+        "ts": time.time(), "optimizer": type(opt).__name__,
+        "metric": getattr(getattr(opt, "metric", None), "__name__", None),
+        "n_examples": len(examples), "synthesized": n_synth > 0,
+        "examples": list(examples), "n_demos": len(state.demos),
+        "instructions_changed": state.instructions != fn.state().instructions,
+        "trials": list(getattr(opt, "trials", None) or []),
+    } for fn, state in states.items()}
+    return states, logs
+
+
+# ------------------------------------------------------------------ by name
+
+
+def labeled_few_shot(fn: "FunctAIFunc[P, R]", data: Any, *, k: int = 16, expected: Any = None,
+                     sample: bool = True, seed: int = 0) -> "FunctAIFunc[P, R]":
+    """An improved copy: up to ``k`` rows with known answers become worked examples.
+
+    Examples
+    --------
+    ```{.python .no-run}
+    taught = functai.labeled_few_shot(team, train, k=8, expected="category")
+    ```
+    """
+    return fn.opt(data, optimizer=LabeledFewShot(k, sample=sample, seed=seed), expected=expected)
+
+
+def bootstrap_few_shot(fn: "FunctAIFunc[P, R]", data: Any, *, teacher: Any = None, expected: Any = None,
+                       metric: Optional[Callable] = None, max_bootstrapped: int = 4, max_labeled: int = 16,
+                       num_threads: int = 8, seed: int = 0) -> "FunctAIFunc[P, R]":
+    """An improved copy: the function (or a stronger ``teacher`` model) runs on
+    rows with known answers, and the runs that were right become worked
+    examples, whole (reasoning and tool calls included); labeled rows fill the rest.
+
+    Examples
+    --------
+    ```{.python .no-run}
+    taught = functai.bootstrap_few_shot(team, train, teacher="gpt-6-sol", expected="category")
+    ```
+    """
+    opt = BootstrapFewShot(metric, max_bootstrapped_demos=max_bootstrapped, max_labeled_demos=max_labeled,
+                           teacher=teacher, num_threads=num_threads, seed=seed)
+    return fn.opt(data, optimizer=opt, expected=expected)
+
+
+def gepa(fn: "FunctAIFunc[P, R]", data: Any, *, teacher: Any = None, expected: Any = None,
+         selection: Any = None, budget: int = 300, minibatch: int = 4, metric: Optional[Callable] = None,
+         feedback: Optional[Callable] = None, num_threads: int = 8, seed: int = 0) -> "FunctAIFunc[P, R]":
+    """An improved copy whose instruction a ``teacher`` model rewrote from the
+    function's mistakes (``GEPA``; design/04-gepa.md).
+
+    Half the rows (or ``selection``) choose and are never shown to the teacher;
+    the other half give feedback. ``better.trials`` is the search. Its scores on
+    the choosing rows flatter the one chosen: measure it on rows it never saw.
+    The optimizer class ``GEPA`` takes the same options, for
+    ``fn.opt(rows, optimizer=GEPA(...))`` and for ``@module``s' AI functions one at a time.
+
+    Examples
+    --------
+    ```{.python .no-run}
+    better = functai.gepa(team.using(lm="gpt-5.4-nano"), train, teacher="gpt-6-sol", expected="category")
+    better.instructions
+    functai.evaluate(better, test, expected="category")
+    ```
+    """
+    opt = GEPA(metric, budget=budget, minibatch=minibatch, teacher=teacher, feedback=feedback,
+               num_threads=num_threads, seed=seed)
+    return fn.opt(data, optimizer=opt, expected=expected, valset=selection)
 
 
 __all__ = ["Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch",
-           "InstructionSearch", "GEPA", "optimize"]
+           "InstructionSearch", "GEPA", "optimize", "labeled_few_shot", "bootstrap_few_shot", "gepa"]

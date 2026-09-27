@@ -24,7 +24,7 @@ each step on rows the function didn't learn from.
 | 1. say the rule in the docstring | nothing | you can put the rule into words |
 | 2. a tighter type | nothing | answers drift out of the allowed set, or have the wrong shape |
 | 3. examples, by hand | a few tokens per call | the rule is easier to show than to say |
-| 4. `fn.opt(...)`: examples chosen from your data | one run over the data | you have labelled rows |
+| 4. examples chosen from your data (`functai.bootstrap_few_shot`) | one run over the data | you have labelled rows |
 | 5. an optimizer that also rewrites the instruction | many runs | steps 1 to 4 plateau |
 | 6. a bigger model | every call | nothing else moved it |
 
@@ -44,13 +44,14 @@ judge_on = tickets.filter(col.id > 40)
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 start = functai.evaluate(team, judge_on, expected="category", num_threads=8)
 start
 ```
 
 ```output
-Evaluation(team, 40 examples: exact_match 0.90 [0.77, 0.96])
+Evaluation(team, 40 examples: exact_match 0.93 [0.80, 0.97])
 ```
 
 ## 1. Say the rule
@@ -77,33 +78,36 @@ A few worked examples, shown before every question:
 ])
 def team_ex(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 functai.compare(start, functai.evaluate(team_ex, judge_on, expected="category", num_threads=8))
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.9    ┆ 0.9   ┆ 0.0  ┆ -0.102421 ┆ 0.102421 ┆ 2      ┆ 2     ┆ 36   ┆ 40  │
-└─────────────┴────────┴───────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬───────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff  ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪═══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.925  ┆ 0.875 ┆ -0.05 ┆ -0.120589 ┆ 0.020589 ┆ 0      ┆ 2     ┆ 38   ┆ 40  │
+└─────────────┴────────┴───────┴───────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 Pairs of `(input, answer)`, or rows like `{"message": ..., "result": ...}`.
 
 ## 4. Examples chosen from your data
 
-`opt` runs the function on your labelled rows and keeps up to 4 runs that
-got the right answer as worked examples (with their reasoning and tool
-calls, if any), then adds labelled rows up to 16 examples. Your code,
-types and prompt format are never touched.
+`functai.bootstrap_few_shot` runs the function on your labelled rows and
+keeps up to 4 runs that got the right answer as worked examples (with
+their reasoning and tool calls, if any), then adds labelled rows up to 16
+examples. It returns an improved copy: `team` itself is unchanged, so you
+can measure the two side by side. Your code, types and prompt format are
+never touched.
 
 ```python
-team.opt(trainset=learn, expected="category")
-team.state()
+taught = functai.bootstrap_few_shot(team, learn, expected="category")
+taught.state()
 ```
 
 ```output
@@ -113,45 +117,45 @@ examples: 16
   2. message='The mug arrived in pieces.'  →  result='shipping'
   3. message='I was charged twice for order B-2210, please fix this.'  →  result='billing'
   4. message='How do I change the email on my account?'  →  result='account'
-  5. message='The frying pan arrived with a big dent in it.'  →  result='shipping'
-  6. message="What's the warranty on the espresso machine?"  →  result='product'
-  7. message="Tracking for C-3319 hasn't moved since Monday."  →  result='shipping'
-  8. message="Order c3319 was delivered to my neighbour's address instead of mine."  →  result='shipping'
-  9. message="Someone else's name shows up on my account page."  →  result='account'
+  5. message="When will order B-2417 ship? It says 'processing' for a week."  →  result='shipping'
+  6. message='Can you merge my two accounts? I signed up twice by mistake.'  →  result='account'
+  7. message='Two of the six plates were broken on arrival, order D-4120.'  →  result='shipping'
+  8. message='I want a refund for the chair, it wobbles no matter what I do.'  →  result='billing'
+  9. message="My coupon code SPRING10 didn't apply at checkout."  →  result='billing'
   10. message='The glass carafe was shattered when I opened the package.'  →  result='shipping'
-  11. message="I returned the lamp two weeks ago and still haven't got my refund."  →  result='billing'
-  12. message='Money back please, the knife set is not as sharp as advertised.'  →  result='billing'
-  13. message='Is the cutting board safe to use for raw meat?'  →  result='product'
-  14. message='Refund the blender please, it stopped working after two days.'  →  result='billing'
-  15. message='Does the stand mixer come with a dough hook?'  →  result='product'
-  16. message='Where can I download the invoice for order B-2350? I need it for m...  →  result='billing'
+  11. message='The non-stick coating is peeling off my frying pan.'  →  result='product'
+  12. message='The vase arrived with a big crack down the side.'  →  result='shipping'
+  13. message="Order c3319 was delivered to my neighbour's address instead of mine."  →  result='shipping'
+  14. message='i cant log in it says my account is locked??'  →  result='account'
+  15. message='Is the cutting board safe to use for raw meat?'  →  result='product'
+  16. message='Does the stand mixer come with a dough hook?'  →  result='product'
 ```
 
 ```python
-optimized = functai.compare(start, functai.evaluate(team, judge_on, expected="category", num_threads=8))
+optimized = functai.compare(start, functai.evaluate(taught, judge_on, expected="category", num_threads=8))
 optimized
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬──────────┬─────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low      ┆ high    ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---      ┆ ---     ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64      ┆ f64     ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪══════════╪═════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.9    ┆ 0.95  ┆ 0.05 ┆ -0.07439 ┆ 0.17439 ┆ 4      ┆ 2     ┆ 34   ┆ 40  │
-└─────────────┴────────┴───────┴──────┴──────────┴─────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.925  ┆ 0.975 ┆ 0.05 ┆ -0.051132 ┆ 0.151132 ┆ 3      ┆ 1     ┆ 36   ┆ 40  │
+└─────────────┴────────┴───────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 
-On these 40 judging rows: +5 points (4 rows better, 2 worse), somewhere
-between −7 and +17. That range includes 0, so with 40 rows this can't be
+On these 40 judging rows: +5 points (3 rows better, 1 worse), somewhere
+between −5 and +15. That range includes 0, so with 40 rows this can't be
 told apart from luck; more judging rows would settle it. Measuring is
 what keeps you from shipping a change that only looked better.
 
-`team.undo_opt()` goes back; `team.programs()` lists every version
-optimization produced. To keep the result, [save the function](saving.md)
-(or just its examples: `team.save("team.json")`).
+`team` is still the function you started with; `taught.optimization_runs()`
+says how the copy was made. To keep the result, [save the
+function](saving.md) (or just its examples: `taught.save("team.json")`).
 
 ## 5. Instructions, rewritten and tried
 
@@ -164,8 +168,8 @@ use it when steps 1 to 4 have stopped helping.
 from functai import InstructionSearch
 
 search = InstructionSearch(num_candidates=6, num_trials=12)
-team.opt(trainset=learn, valset=judge_on, expected="category", optimizer=search)
-search.trials        # every try: which instruction, which examples, its score
+searched = team.opt(learn, valset=judge_on, expected="category", optimizer=search)
+searched.trials      # every try: which instruction, which examples, its score
 ```
 
 The [translator example](../examples/optimizing_translator.md) runs it
@@ -179,12 +183,11 @@ It is at its best when a small, cheap model runs the function and a large
 one writes its instruction once:
 
 ```{.python .no-run}
-from functai import GEPA
-
-small = team.using(lm="gpt-5.4-nano")          # the model that will run it
-gepa = GEPA(budget=300, teacher="gpt-6-sol")     # the model that writes its instruction
-small.opt(trainset=learn, expected="category", optimizer=gepa)
-gepa.trials          # every instruction tried: its parent, how it was made, its score, its length
+small = team.using(lm="gpt-5.4-nano")                  # the model that will run it
+better = functai.gepa(small, learn, expected="category",
+                      teacher="gpt-6-sol", budget=300)  # the model that writes its instruction
+better.instructions
+better.trials        # every instruction tried: its parent, how it was made, its score, its length
 ```
 
 Its score on the rows it chose with flatters (it is the best of many
@@ -195,8 +198,8 @@ GEPA, and why, is in `design/04-gepa.md`.
 
 ```{.python .no-run}
 team.using(lm="gpt-4.1")                            # a bigger model for every call
-team.opt(trainset=learn, expected="category",
-         teacher_lm="gpt-4.1")                      # or: a big model writes the examples once,
+functai.bootstrap_few_shot(team, learn, expected="category",
+                           teacher="gpt-4.1")       # or: a big model writes the examples once,
                                                     # and the small one uses them from then on
 ```
 
@@ -206,7 +209,11 @@ shows how to check.
 
 ## The optimizers
 
-`opt` uses `BootstrapFewShot` unless told otherwise:
+By name, the common cases: `functai.labeled_few_shot(fn, rows, k=8)`,
+`functai.bootstrap_few_shot(fn, rows, teacher=...)`, `functai.gepa(fn,
+rows, teacher=...)`. Each returns an improved copy. For the others, or
+their every option, `fn.opt(rows, optimizer=...)` (it uses
+`BootstrapFewShot` unless told otherwise) also returns a copy:
 
 | `optimizer=` | what it does |
 |---|---|

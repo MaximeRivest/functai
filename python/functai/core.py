@@ -15,6 +15,7 @@ call and reads the reply; lm15 talks to the provider (see ``engine``).
 
 from __future__ import annotations
 
+import asyncio
 import dataclasses
 import functools
 import inspect
@@ -23,7 +24,8 @@ import threading
 import warnings
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import (Any, Callable, Dict, Generic, List, Optional, ParamSpec, Protocol, Tuple, TypeVar, overload,
+                    runtime_checkable)
 
 import lmcc
 
@@ -36,6 +38,7 @@ from .docments import (UNSET, docments, docstring, extract_docstrings, flexiclas
 from .bake.baked import is_baked
 from .engine import inspect_history, phistory  # noqa: F401 — re-exported
 from .signature import (MAIN_OUTPUT_DEFAULT_NAME, Spec, _collect_ast_outputs, _return_slots, bind_named_outputs,
+                        model_writes_body,
                         build_spec, describe_signature)
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -276,7 +279,8 @@ def _derive_output_name(desc: str) -> str:
     return s.split()[0]
 
 
-_ai = _AISentinel()
+# Typed as Any so that `return _ai` and `x: T = _ai` type-check as the value they stand for.
+_ai: Any = _AISentinel()
 """The model's answer, inside an AI function's body.
 
 A bare ``_ai`` is always the answer, and behaves like the value it stands
@@ -325,8 +329,27 @@ def _module_name(module: Any) -> str:
                     f"line, tools run in the tool loop.)")
 
 
-class FunctAIFunc:
-    """A typed Python function whose body is a model call. Build with ``@ai``."""
+P = ParamSpec("P")
+R = TypeVar("R", covariant=True)
+
+
+@runtime_checkable
+class ColumnExpr(Protocol):
+    """A table column expression (dpyr's ``col.message``): an AI function called
+    on one gives a column, one model call per row."""
+
+    def is_na(self) -> Any: ...
+
+    def str_to_lower(self) -> Any: ...
+
+
+class FunctAIFunc(Generic[P, R]):
+    """A typed Python function whose body is a model call. Build with ``@ai``.
+
+    Calling it runs the model and gives the answer, typed as the function's
+    return type; ``predict`` gives every output; ``acall`` and ``apredict`` are
+    the same in async code (an ``async def`` AI function is awaited directly).
+    """
 
     def __init__(self, fn, *, tools: Optional[List[Any]] = None, template: Any = None, messages: Any = None,
                  module_kwargs: Optional[Dict[str, Any]] = None, examples: Any = None,
@@ -334,6 +357,11 @@ class FunctAIFunc:
         functools.update_wrapper(self, fn)
         # requirements the code reaches in ways functai.check cannot see ("numpy>=2")
         self._requires: Tuple[str, ...] = tuple(requires or ())
+        self._async = inspect.iscoroutinefunction(fn)
+        if self._async and not model_writes_body(fn):
+            raise TypeError(f"@ai on async def {fn.__name__}: an async AI function's body is the model call only "
+                            f"(a docstring, `...` or `return _ai`, and output declarations). For code around the "
+                            f"model, write it with `def` and await `{fn.__name__}.acall(...)`.")
         self._fn = bind_named_outputs(fn)     # `label = _ai` is the output `label`
         self._sig = inspect.signature(fn)
         for old, new in _SETTING_ALIASES.items():
@@ -364,10 +392,8 @@ class FunctAIFunc:
         self._lock = threading.RLock()
         self._spec_cache: Dict[Tuple, Spec] = {}
         self._plan_cache: Dict[Tuple, lmcc.Plan] = {}
-        self._opt_stack: List[ProgramState] = []
-        self._opt_runs: List[Dict[str, Any]] = []
+        self._opt_runs: List[Dict[str, Any]] = []             # how this function was improved, oldest first
         self._vectorized: Dict[Any, Any] = {}                 # dpyr row functions, by prompt version
-        self._states_history: List[ProgramState] = []
         self._instr_observed: List[Dict[str, Any]] = []
         self._instr_refined = 0
         self._instr_frozen = False
@@ -447,7 +473,7 @@ class FunctAIFunc:
     @debug.setter
     def debug(self, v: bool): self._set("debug", bool(v))
 
-    def using(self, *, template: Any = _KEEP, **settings) -> "FunctAIFunc":
+    def using(self, *, template: Any = _KEEP, **settings) -> "FunctAIFunc[P, R]":
         '''A copy of this function with other settings or another layout.
 
         The copy starts with the same instruction and demos; the original is
@@ -474,6 +500,7 @@ class FunctAIFunc:
         @ai
         def capital(country: str) -> str:
             """The country's capital city."""
+            ...
 
         capital.using(lm="gpt-4.1-nano")("Chile")
         ```
@@ -499,7 +526,7 @@ class FunctAIFunc:
         clone.history = []
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
-        clone._opt_stack, clone._opt_runs, clone._states_history = [], [], []
+        clone._opt_runs = list(self._opt_runs)
         clone._vectorized = {}
         return clone
 
@@ -673,6 +700,7 @@ class FunctAIFunc:
         @ai
         def capital(country: str) -> str:
             """The country's capital city."""
+            ...
 
         request = capital.render("Chile")
         print(request.system)
@@ -768,7 +796,7 @@ class FunctAIFunc:
             # the target follows its own escalate_to (a longer chain), never a global one
             from .config import scoped
             with scoped(escalate_to=None):
-                second = escalate_to(**inputs, all=True)
+                second = escalate_to._invoke((), inputs, full=True)
             model, plan = escalate_to.__name__, first[1]
         else:
             # This call only: the escalation model, and no second escalation from it.
@@ -793,33 +821,73 @@ class FunctAIFunc:
                           tool_specs=self._tool_specs)
         return pred, model, plan
 
-    def __call__(self, *args, all: bool = False, **kwargs):
-        from .columns import has_column
-        if has_column(args, kwargs):                  # a column expression is not a call
-            return self._call(*args, all=all, **kwargs)
-        return calllog.run(self, self._effective(),
-                           lambda: self._bind_inputs(args, {k: v for k, v in kwargs.items() if k != "_prediction"}),
-                           lambda: self._call(*args, all=all, **kwargs))
+    @overload
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R: ...
 
-    def _call(self, *args, all: bool = False, **kwargs):
+    @overload
+    def __call__(self, column: ColumnExpr, /, *args: Any, **kwargs: Any) -> Any: ...
+
+    @overload
+    def __call__(self, **columns: ColumnExpr) -> Any: ...
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """The answer. On a table's columns (``fn(col.message)``), a column."""
         from .columns import has_column
         if has_column(args, kwargs):                  # classify(col.text): a column, for dpyr
-            if all:
-                raise TypeError("all=True gives one call's full prediction; on columns, use fn.map(table)")
             return self.vectorize()(*args, **kwargs)
-        # Back-compat: map deprecated _prediction to all
-        if "_prediction" in kwargs:
-            if kwargs.pop("_prediction"):
-                all = True
-        clean_kwargs = {k: v for k, v in kwargs.items() if k not in {"_prediction", "all"}}
-        inputs = self._bind_inputs(args, clean_kwargs)
+        if self._async:
+            return self._in_thread(args, kwargs, full=False)
+        return self._invoke(args, kwargs)
+
+    def predict(self, *args: P.args, **kwargs: P.kwargs) -> Prediction:
+        '''The call, with everything it produced: every output (``p.result``,
+        ``p.reasoning``...), the tokens, the model's replies, the call's id.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def solve(question: str) -> float:
+            """Solve the word problem."""
+            reasoning: str = _ai     # step by step
+            return _ai
+
+        p = solve.predict("3 pencils cost $1.20. How much do 10 cost?")
+        p.result, p.reasoning
+        ```
+        '''
+        return self._invoke(args, kwargs, full=True)
+
+    async def acall(self, *args: P.args, **kwargs: P.kwargs) -> R:
+        """``await fn.acall(...)``: the answer, in async code. The call runs in a
+        worker thread, so the event loop is free while the model answers."""
+        return await self._in_thread(args, kwargs, full=False)
+
+    async def apredict(self, *args: P.args, **kwargs: P.kwargs) -> Prediction:
+        """``await fn.apredict(...)``: ``predict`` in async code."""
+        return await self._in_thread(args, kwargs, full=True)
+
+    async def _in_thread(self, args: tuple, kwargs: Dict[str, Any], full: bool) -> Any:
+        self._bind_inputs(args, kwargs)               # wrong arguments fail here, in the caller
+        return await asyncio.to_thread(self._invoke, args, kwargs, full)   # settings and states go along
+
+    def _invoke(self, args: tuple, kwargs: Dict[str, Any], full: bool = False) -> Any:
+        """One call, made here and now, followed in the call log."""
+        return calllog.run(self, self._effective(), lambda: self._bind_inputs(args, kwargs),
+                           lambda: self._call(args, kwargs, full))
+
+    def _call(self, args: tuple, kwargs: Dict[str, Any], full: bool = False) -> Any:
+        inputs = self._bind_inputs(args, kwargs)
         spec = self._spec()
         ctx = _CallContext(program=self, spec=spec, inputs=inputs)
         token = _ACTIVE_CALL.set(ctx)
         try:
-            result = self._fn(*args, **clean_kwargs)
+            if self._async:                           # the body is the model call: nothing of its own to run
+                result = _ai
+            else:
+                result = self._fn(*args, **kwargs)
 
-            if all:
+            if full:
                 _ = ctx.request_ai().value
                 return ctx._pred
 
@@ -898,6 +966,7 @@ class FunctAIFunc:
         @ai
         def haiku(topic: str) -> str:
             """A haiku about the topic."""
+            ...
 
         for piece in haiku.stream("the first snow"):
             print(piece, end="", flush=True)
@@ -922,8 +991,6 @@ class FunctAIFunc:
         from .columns import has_column
         if has_column(args, kwargs):
             raise TypeError(f"{self.__name__}.stream watches one call; on columns, use {self.__name__}(col.x)")
-        if "all" in kwargs:
-            raise TypeError("a stream has everything: s.prediction is what all=True returns")
         self._bind_inputs(args, kwargs)               # wrong arguments fail here, not in the background
         return streaming.Stream(self, args, kwargs)
 
@@ -961,6 +1028,7 @@ class FunctAIFunc:
         @ai
         def capital(country: str) -> str:
             """The country's capital city."""
+            ...
 
         read([{"country": "Norway"}, {"country": "Ghana"}]).mutate(
             capital=capital.vectorize(threads=2)(col.country))
@@ -1011,6 +1079,7 @@ class FunctAIFunc:
         @ai
         def contact(text: str) -> Contact:
             """The person the text is about."""
+            ...
 
         people = read([{"text": "Ada Lovelace wrote to us from London."},
                        {"text": "Grace Hopper called."}])
@@ -1055,6 +1124,7 @@ class FunctAIFunc:
         @ai
         def capital(country: str) -> str:
             """The country's capital city."""
+            ...
 
         capital.map([{"country": "Norway"}, {"country": "Ghana"}], num_threads=2)
         ```
@@ -1062,17 +1132,19 @@ class FunctAIFunc:
         from .evaluation import evaluate
         return evaluate(self, data, (), num_threads=num_threads).table
 
-    def opt(self, *, trainset: Any = None, optimizer: Any = None,
-            metric: Any = None, valset: Any = None, **opts) -> "FunctAIFunc":
-        '''Improve the instruction and worked examples from examples, in place.
+    def opt(self, data: Any = None, *, optimizer: Any = None, metric: Any = None, valset: Any = None,
+            **opts) -> "FunctAIFunc[P, R]":
+        '''An improved copy: its instruction and worked examples chosen from rows
+        with known answers. This function is unchanged.
 
         Only what the function sends besides its inputs changes: the
         instruction and the demos. Code, types and layout are never touched.
-        ``undo_opt()`` reverts.
+        ``functai.labeled_few_shot``, ``functai.bootstrap_few_shot`` and
+        ``functai.gepa`` are the common cases, by name.
 
         Parameters
         ----------
-        trainset : list of dict, or a table
+        data : list of dict, or a table
             Rows as for ``evaluate``: columns named like the parameters are the
             inputs, the others the expected outputs.
         expected : str or dict, optional
@@ -1096,12 +1168,11 @@ class FunctAIFunc:
         Returns
         -------
         FunctAIFunc
-            The same function, optimized.
+            The improved copy, with its own version.
 
         See Also
         --------
         evaluate : measure before and after.
-        FunctAIFunc.undo_opt : revert.
 
         Examples
         --------
@@ -1111,27 +1182,35 @@ class FunctAIFunc:
         @ai
         def category(message: str) -> Literal["shipping", "billing", "product"]:
             """The support category of the message."""
+            ...
 
         train = [
             {"message": "The vase came smashed.", "result": "shipping"},
             {"message": "Money back please, the chair wobbles.", "result": "billing"},
             {"message": "The handle came off after two uses.", "result": "product"},
         ]
-        category.opt(trainset=train)
-        [d.inputs["message"] for d in category.demos]
+        taught = category.opt(train)
+        [d.inputs["message"] for d in taught.demos]
         ```
         '''
         from .optimizers import optimize
-        optimize(self, trainset=trainset, optimizer=optimizer, metric=metric, valset=valset, **opts)
-        return self
+        states, logs = optimize(self, trainset=data, optimizer=optimizer, metric=metric, valset=valset, **opts)
+        return self._improved(states[self], logs[self])
 
-    def _apply_state(self, state: ProgramState, *, log: Optional[Dict[str, Any]] = None) -> None:
-        with self._lock:
-            self._opt_stack.append(self._state)
-            self._state = state
-            self._states_history.append(state)
-            if log is not None:
-                self._opt_runs.append(log)
+    def _improved(self, state: ProgramState, log: Optional[Dict[str, Any]] = None) -> "FunctAIFunc[P, R]":
+        """A copy with this state, and the improvement on its record."""
+        copy = self.using()
+        copy._state = state
+        if log is not None:
+            copy._opt_runs = [*self._opt_runs, log]
+        return copy
+
+    @property
+    def trials(self) -> List[Dict[str, Any]]:
+        """What the search that made this copy tried (``GEPA``'s candidates,
+        ``InstructionSearch``'s trials), as rows; empty for a function no search made.
+        Scores measured on the rows it chose with flatter the one it chose."""
+        return list(self._opt_runs[-1].get("trials") or []) if self._opt_runs else []
 
     def bake(self, data: Any, **options):
         """Train weights that answer this function; returns the baked model.
@@ -1140,28 +1219,9 @@ class FunctAIFunc:
         from .bake import bake
         return bake(self, data, **options)
 
-    def undo_opt(self, steps: int = 1) -> None:
-        """Revert the last optimizations.
-
-        Parameters
-        ----------
-        steps : int
-            How many optimizations to revert.
-        """
-        for _ in range(max(1, int(steps))):
-            if not self._opt_stack:
-                break
-            self._state = self._opt_stack.pop()
-
-    def programs(self) -> List[ProgramState]:
-        """Every state optimization produced for this function, oldest first."""
-        return list(self._states_history)
-
-    def latest_program(self, fresh: bool = False) -> ProgramState:
-        """The state in use (``fresh=True``: the unoptimized one)."""
-        return ProgramState() if fresh else self._current_state()
-
     def optimization_runs(self) -> List[Dict[str, Any]]:
+        """How this function was improved, oldest first: the optimizer, the
+        examples, what changed (and, for a search, its ``trials``)."""
         return list(self._opt_runs)
 
     def to_dspy(self, deepcopy: bool = False):
@@ -1230,7 +1290,15 @@ def _check_baked_signature(fn: "FunctAIFunc", spec: Spec, baked: Any) -> None:
 # ──────────────────────────────────────────────────────────────────────────────
 
 
-def ai(_fn=None, **cfg):
+@overload
+def ai(_fn: Callable[P, R], /) -> FunctAIFunc[P, R]: ...
+
+
+@overload
+def ai(_fn: None = None, /, **cfg: Any) -> Callable[[Callable[P, R]], FunctAIFunc[P, R]]: ...
+
+
+def ai(_fn: Any = None, /, **cfg: Any) -> Any:
     '''Turn a typed Python function into an AI function.
 
     The function's parts are the prompt: its name is the task, the docstring
@@ -1285,8 +1353,10 @@ def ai(_fn=None, **cfg):
     Returns
     -------
     FunctAIFunc
-        The AI function. Call it like the original; ``all=True`` returns a
-        ``Prediction`` with every output and the tokens used.
+        The AI function. Call it like the original; ``fn.predict(...)`` returns
+        a ``Prediction`` with every output and the tokens used; ``await
+        fn.acall(...)`` in async code (an ``async def`` AI function is awaited
+        directly).
 
     See Also
     --------
@@ -1299,6 +1369,7 @@ def ai(_fn=None, **cfg):
     @ai
     def sentiment(text: str) -> str:
         """Is the text 'positive', 'negative' or 'neutral'?"""
+        ...
 
     sentiment("The update broke my favourite feature.")
     ```
@@ -1314,7 +1385,7 @@ def ai(_fn=None, **cfg):
         reasoning: str = _ai     # step by step, the calculation
         return round(_ai, 2)
 
-    p = solve("3 pencils cost $1.20. How much do 10 cost?", all=True)
+    p = solve.predict("3 pencils cost $1.20. How much do 10 cost?")
     p.result, p.reasoning
     ```
 
@@ -1324,6 +1395,7 @@ def ai(_fn=None, **cfg):
     @ai(lm="gpt-4.1-nano", temperature=0)
     def headline(article: str) -> str:
         """A headline of at most eight words."""
+        ...
 
     headline("The council voted to turn the old rail yard into a park with a pool.")
     ```

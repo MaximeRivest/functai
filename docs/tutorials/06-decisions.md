@@ -153,6 +153,7 @@ def refund_rules(message: str, price: float, days_since_delivery: int, final_sal
       final-sale item.
     - Used and no longer wanted: no refund.
     """
+    ...
 
 direct = refunds.mutate(action=refund_rules(col.message, col.price, col.days_since_delivery, col.final_sale))
 outcome(direct, "the model decides")
@@ -227,6 +228,7 @@ State = Literal["unopened", "opened_unused", "used", "damaged", "wrong_item", "f
 @ai
 def item_state(message: str) -> State:  # unopened: still sealed, never opened; opened_unused: unpacked and looked at, never used; used: used for a while, works fine, no longer wanted; damaged: broken or damaged when it arrived; wrong_item: not what was ordered, or part of the order missing; faulty: worked at first, then failed in normal use
     """What state is the item in, from the customer's message?"""
+    ...
 
 read_luna = refunds.mutate(state_read=item_state(col.message))
 two_step = read_luna.mutate(action=policy(col.state_read, col.days_since_delivery, col.final_sale))
@@ -291,6 +293,7 @@ class Reading:
 @ai(adapter="json")
 def read_and_rate(message: str) -> Reading:
     """What state is the item in, from the customer's message, and how sure are you?"""
+    ...
 
 rated_reads = refunds.mutate(**read_and_rate.unpack(col.message, prefix="read_"))
 rated_reads.select(col.item, col.state, col.read_state, col.read_confidence).slice_head(n=6)
@@ -356,13 +359,13 @@ right. It costs almost nothing ($0.042 per million tokens read, and
 nothing for its answers) and answers in a fraction of a second.
 
 In functai it's just another model, because `item_state` is already a
-typed question with a set of answers. With `all=True`, a call returns
+typed question with a set of answers. With `predict`, a call returns
 everything it produced, the probabilities included:
 
 ```python
 jev_state = item_state.using(lm="jev-latest")
 
-p = jev_state("Opened the box and the lid was cracked right across.", all=True)
+p = jev_state.predict("Opened the box and the lid was cracked right across.")
 p.result, p.probabilities, p.confidence
 ```
 
@@ -722,7 +725,7 @@ be written, write them.
   check it against labelled rows before you trust it.
 - A model built for decisions, like TypeSafe's Jev (`lm="jev-latest"`),
   answers a typed question with a calibrated probability for every
-  answer (`all=True` gives `.probabilities`). Push them through the
+  answer (`predict` gives `.probabilities`). Push them through the
   policy, then choose the action with the lowest expected cost.
 - The same doubt means "approve" for a mug and "ask a person" for an
   espresso machine.

@@ -103,6 +103,7 @@ Intent = Literal[tuple(intents)]
 @ai
 def intent(text: str) -> Intent:
     """What the bank's customer wants."""
+    ...
 ```
 
 We'll measure everything on the same 300 test questions (with the
@@ -193,7 +194,7 @@ baked model like any model name:
 ```python
 fast = intent.using(lm=people)
 
-p = fast("my card still hasn't arrived after two weeks", all=True)
+p = fast.predict("my card still hasn't arrived after two weeks")
 p.result, round(p.confidence, 3)
 ```
 

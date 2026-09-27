@@ -8,7 +8,7 @@
             facts = append_notes(claim, facts, search(query))
         return facts
 
-    research.opt(trainset=..., metric=...)     # tunes generate_query and append_notes together
+    better = research.opt(rows, metric=...)   # a copy with generate_query and append_notes tuned together
 
 The metric sees ``Prediction(result=<what the module returned>)``.
 """
@@ -49,6 +49,23 @@ class FunctAIModule:
         self.history: List[Any] = []
         self._opt_call_defaults: Dict[str, Any] = {}
         self._vectorized: Dict[Any, Any] = {}
+        # the improved states of the AI functions it calls, for an improved copy
+        # (applied while it runs; a candidate state being tried still wins)
+        self._states: Dict[FunctAIFunc, Any] = {}
+
+    def _own_states(self):
+        """Run with this copy's states, under any states already set (an optimizer's candidates)."""
+        from .core import _STATE_OVERRIDE
+        from .evaluation import with_states
+        taken = _STATE_OVERRIDE.get()
+        return with_states({fn: st for fn, st in self._states.items() if id(fn) not in taken})
+
+    def _with_states(self, states: Dict[FunctAIFunc, Any]) -> "FunctAIModule":
+        copy = object.__new__(FunctAIModule)
+        copy.__dict__.update(self.__dict__)
+        copy._states = {**self._states, **states}
+        copy.history, copy._vectorized = [], {}
+        return copy
 
     def __call__(self, *args, **kwargs):
         from .columns import has_column
@@ -61,7 +78,8 @@ class FunctAIModule:
             bound.apply_defaults()
             return dict(bound.arguments)
 
-        return calllog.run(self, effective(), inputs, lambda: self._invoke_original(*args, **kwargs))
+        with self._own_states():
+            return calllog.run(self, effective(), inputs, lambda: self._invoke_original(*args, **kwargs))
 
     def stream(self, *args, **kwargs):
         """Call the module and watch every AI function it calls, as it works.
@@ -83,7 +101,8 @@ class FunctAIModule:
         functions it calls, so optimizing one of them is a new version of the
         module."""
         from . import calllog
-        return calllog.module_version(self)
+        with self._own_states():
+            return calllog.module_version(self)
 
     def vectorize(self, *, dtype: Any = None, threads: Optional[int] = None, errors: str = "raise"):
         """This module as a dpyr row function (see ``FunctAIFunc.vectorize``);
@@ -125,37 +144,40 @@ class FunctAIModule:
         from .evaluation import evaluate
         return evaluate(self, data, (), num_threads=num_threads, call_defaults=call_defaults).table
 
-    def opt(self, *, trainset: Any, metric: Any = None, optimizer: Any = None,
+    def opt(self, data: Any, *, metric: Any = None, optimizer: Any = None,
             call_defaults: Optional[Dict[str, Any]] = None, valset: Any = None,
             expected: Any = None, **optimizer_kwargs) -> "FunctAIModule":
-        """Tune every @ai function this module calls, against one metric on the
-        module's output. ``call_defaults`` fill module arguments the examples lack."""
+        """An improved copy: every @ai function this module calls tuned against
+        one metric on the module's output. This module and its functions are
+        unchanged. ``call_defaults`` fill module arguments the rows lack."""
         from .optimizers import optimize
-        optimize(self, trainset=trainset, optimizer=optimizer, metric=metric, valset=valset,
-                 call_defaults=call_defaults, expected=expected, **optimizer_kwargs)
-        return self
+        with self._own_states():
+            states, _logs = optimize(self, trainset=data, optimizer=optimizer, metric=metric, valset=valset,
+                                     call_defaults=call_defaults, expected=expected, **optimizer_kwargs)
+        return self._with_states(states)
 
-    def undo_opt(self, steps: int = 1) -> None:
-        for fn in self.ai_functions():
-            fn.undo_opt(steps)
+    def state(self) -> Dict[str, Any]:
+        """The instruction and demos each AI function runs with in this module, by name."""
+        with self._own_states():
+            return {name: fn.state() for name, fn in self.named_ai_functions().items()}
 
     def save(self, path) -> None:
         """Every AI function's instruction and demos, in one JSON file."""
         import json
         from pathlib import Path
         data = {"functai": 1, "module": self.__name__,
-                "functions": {name: fn.state().to_dict() for name, fn in self.named_ai_functions().items()}}
+                "functions": {name: st.to_dict() for name, st in self.state().items()}}
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str))
 
     def load(self, path) -> "FunctAIModule":
+        """A copy running with the states a ``save`` wrote."""
         import json
         from pathlib import Path
+        from .core import ProgramState
         data = json.loads(Path(path).read_text())
         fns = self.named_ai_functions()
-        for name, state in (data.get("functions") or {}).items():
-            if name in fns:
-                fns[name].load_state(state)
-        return self
+        return self._with_states({fns[name]: ProgramState.from_dict(state)
+                                  for name, state in (data.get("functions") or {}).items() if name in fns})
 
     def _invoke_original(self, *args, **kwargs):
         out = self._fn(*args, **kwargs)
@@ -195,10 +217,12 @@ def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
     @ai
     def draft(topic: str) -> str:
         """A two-sentence paragraph about the topic."""
+        ...
 
     @ai
     def shorten(text: str) -> str:
         """The text in at most twelve words."""
+        ...
 
     @module
     def blurb(topic: str) -> str:

@@ -4,13 +4,13 @@
  * ```ts
  * import { ai, t } from "functai";
  *
- * const mood = ai({
- *   name: "mood",
+ * const mood = ai("mood", {
  *   description: "How does the customer feel about what they bought?",
- *   inputs: { review: t.string() },
+ *   input: { review: t.string() },
  *   output: t.enum("happy", "unhappy", "mixed"),
  * });
- * await mood("Broke after a day.");            // "unhappy"
+ * await mood({ review: "Broke after a day." });   // "unhappy"
+ * await mood("Broke after a day.");               // one input: its value alone
  * ```
  */
 
@@ -18,7 +18,7 @@ import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
 import type { Request } from "@lm15/lm15";
 import * as calllog from "./calllog.ts";
-import { run as runEngine, Prediction, watching, type Router, type Tool, type Watch } from "./engine.ts";
+import { Cancelled, run as runEngine, Prediction, watching, type Router, type Tool, type Watch } from "./engine.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
@@ -43,12 +43,12 @@ export interface State {
 
 type Fields = Record<string, FieldSpec>;
 
+/** What `ai(name, options)` takes: the description, the fields, and settings. */
 export interface Definition<I extends Fields, O extends Fields | undefined, A extends FieldSpec | undefined> extends Settings {
-  /** The function's name: in the instruction (unless `includeFnName: false`) and in the call log. */
-  name: string;
-  /** What it does, in words. */
+  /** What it does, in words: the model's instruction. */
   description?: string;
-  inputs: I;
+  /** The inputs, by name: `{ message: t.string() }`, zod, or any Standard Schema. */
+  input: I;
   /** The answer, named `result`. */
   output?: A;
   /** Several outputs, in order; the last is the answer. */
@@ -70,14 +70,42 @@ type Last<T> = T extends Fields ? T[keyof T] : never;
 type Answer<O extends Fields | undefined, A extends FieldSpec | undefined> =
   O extends Fields ? ValueOf<Last<O>> : A extends FieldSpec ? ValueOf<A> : string;
 
+/** The inputs of an AI function, by name. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type InputOf<F> = F extends AIFunction<infer I, any, any> ? I : never;
+/** The outputs of an AI function, by name. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type OutputOf<F> = F extends AIFunction<any, infer O, any> ? O : never;
+/** A row an AI function can run on: its inputs, typed, and any other columns (the right answers, ids, …). */
+export type Row<F> = InputOf<F> & Record<string, unknown>;
+/** A column of a row type. */
+export type Column<R> = Extract<keyof R, string>;
+/** Where the right answers are: a column for the answer, or a column per output. */
+export type Expected<F, R> = Column<R> | { [K in keyof OutputOf<F>]?: Column<R> };
+
 /** Any AI function, whatever its types. */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyAIFunction = AIFunction<any, any, any>;
 
+/** The one key of a record with exactly one key (never otherwise). */
+type OnlyKey<T> = { [K in keyof T]: [Exclude<keyof T, K>] extends [never] ? K : never }[keyof T];
+
+/** What a call takes: the inputs by name, or, for a function with one input, its value alone. */
+export type Input<I> = I | ([OnlyKey<I>] extends [never] ? never : I[OnlyKey<I>]);
+
+/** One call's options: settings for this call only (they beat the function's own), and a signal to cancel it. */
+export interface CallOptions extends Settings {
+  signal?: AbortSignal;
+}
+
+/** Options of `fn.map`: calls in flight at once (default 8), and the call options. */
+export interface MapOptions extends CallOptions {
+  concurrency?: number;
+}
+
 /** An AI function: call it with its inputs, get the answer. */
 export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknown> {
-  (inputs: I): Promise<A>;
-  (...positional: unknown[]): Promise<A>;
+  (input: Input<I>, options?: CallOptions): Promise<A>;
   readonly name: string;
   readonly module: string;
   /** The answer's output name (the last output). */
@@ -94,11 +122,13 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   /** The call log's `program.signature`: the fields' names and shapes. */
   readonly signatureId: string;
   /** The call, with every output, the turn and the replies. */
-  predict(...args: unknown[]): Promise<Prediction<O, A>>;
+  predict(input: Input<I>, options?: CallOptions): Promise<Prediction<O, A>>;
   /** Call it and watch the answer being written. */
-  stream(...args: unknown[]): Stream<A>;
-  /** The exact request the next call would send, without sending it. */
-  render(...args: unknown[]): Request;
+  stream(input: Input<I>, options?: CallOptions): Stream<A>;
+  /** Each item's answer, in order, `concurrency` calls at once. Rejects with the first failure, and stops starting new calls. */
+  map(inputs: Iterable<Input<I>>, options?: MapOptions): Promise<A[]>;
+  /** The exact request a call would send, without sending it. */
+  render(input: Input<I>, options?: Settings): Request;
   /** A copy with other settings (the model, the temperature, …). */
   using(settings: Settings): AIFunction<I, O, A>;
   state(): State;
@@ -222,24 +252,29 @@ interface Core {
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller"]);
 
-/** Turn a definition into an AI function. */
+/**
+ * An AI function: its name, what it does, its input and output fields; a
+ * language model writes the body. `ai("mood", { description, input: { review:
+ * t.string() }, output: t.enum("happy", "unhappy") })`.
+ */
 export function ai<I extends Fields, O extends Fields | undefined = undefined, A extends FieldSpec | undefined = undefined>(
-  def: Definition<I, O, A>,
+  name: string, def: Definition<I, O, A>,
 ): AIFunction<Inputs<I>, Outputs<O, A>, Answer<O, A>> {
-  if (!def || typeof def.name !== "string" || !def.name) throw new TypeError("ai({ name, inputs, output }): a name is required");
-  if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${def.name}: give output (one answer) or outputs (several), not both`);
-  const inputs = Object.entries(def.inputs ?? {}).map(([name, spec]) => ({ name, ...readField(spec, `${def.name}.inputs.${name}`) }));
+  if (typeof name !== "string" || !name) throw new TypeError('ai(name, { input, output }): the name comes first: ai("mood", { ... })');
+  if (!def || typeof def !== "object" || !def.input || typeof def.input !== "object") throw new TypeError(`ai("${name}", { input: { ... } }): the inputs are required`);
+  if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${name}: give output (one answer) or outputs (several), not both`);
+  const inputs = Object.entries(def.input).map(([field, spec]) => ({ name: field, ...readField(spec, `${name}.input.${field}`) }));
   const outputSpecs: [string, FieldSpec][] = def.outputs
     ? Object.entries(def.outputs)
     : [["result", (def.output ?? { type: "string" }) as FieldSpec]];
-  if (!outputSpecs.length) throw new TypeError(`${def.name}: outputs is empty`);
-  const outputs = outputSpecs.map(([name, spec]) => ({ name, ...readField(spec, `${def.name}.outputs.${name}`) }));
+  if (!outputSpecs.length) throw new TypeError(`${name}: outputs is empty`);
+  const outputs = outputSpecs.map(([field, spec]) => ({ name: field, ...readField(spec, `${name}.outputs.${field}`) }));
   const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
   const moduleName = def.definedIn ?? where.module ?? "main";
   const definition: sig.Definition = {
-    name: def.name, description: def.description ?? "", inputs, outputs,
+    name, description: def.description ?? "", inputs, outputs,
     cot: false, tools: Boolean(def.tools?.length), includeName: true,
   };
   const core: Core = {
@@ -268,7 +303,7 @@ export function make(core: Core): AIFunction {
   const answer = core.definition.outputs[core.definition.outputs.length - 1]!.name;
   const cache = new Map<string, unknown>();
 
-  const settingsNow = () => effective(core.own);
+  const settingsNow = (call: Settings = {}) => effective({ ...core.own, ...call });
   const definitionNow = (s: Settings): sig.Definition => ({
     ...core.definition, cot: s.module === "cot", includeName: s.includeFnName !== false,
   });
@@ -290,16 +325,20 @@ export function make(core: Core): AIFunction {
     return JSON.stringify([adapter, s.template ?? null]);
   };
 
-  const bindInputs = (args: unknown[]): Rec => {
-    if (args.length === 1 && typeof args[0] === "object" && args[0] !== null && !Array.isArray(args[0])
-      && Object.getPrototypeOf(args[0]) === Object.prototype) {
-      const keys = Object.keys(args[0] as Rec);
-      if (keys.length && keys.every((k) => names.includes(k))) return { ...(args[0] as Rec) };
+  const plainObject = (x: unknown): x is Rec => typeof x === "object" && x !== null && !Array.isArray(x)
+    && Object.getPrototypeOf(x) === Object.prototype;
+  /** A call's argument as inputs by name: the record, or (one input) the value alone. */
+  const bindInputs = (arg: unknown): Rec => {
+    const keyed = plainObject(arg) && (names.length !== 1 || (Object.keys(arg).length === 1 && names[0]! in arg));
+    if (!keyed) {
+      if (names.length === 1) return { [names[0]!]: arg };
+      throw new TypeError(`${core.definition.name} takes its inputs by name: ${core.definition.name}({ ${names.join(", ")} })`);
     }
-    if (args.length > names.length) throw new TypeError(`${core.definition.name} takes ${names.length} input(s) (${names.join(", ")}), not ${args.length}`);
-    const out: Rec = {};
-    args.forEach((a, i) => { out[names[i]!] = a; });
-    return out;
+    const unknown = Object.keys(arg).filter((k) => !names.includes(k));
+    if (unknown.length) throw new TypeError(`${core.definition.name} has no input ${unknown.join(", ")} (its inputs: ${names.join(", ")})`);
+    const missing = names.filter((k) => !(k in arg));
+    if (missing.length) throw new TypeError(`${core.definition.name} needs ${missing.join(", ")}`);
+    return { ...arg };
   };
 
   /** Worked examples as example turns for this plan (contract/functions.md, "Worked examples"). */
@@ -389,11 +428,20 @@ export function make(core: Core): AIFunction {
     ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
   });
 
-  const predict = async (args: unknown[], given: Watch | null = null, inputs?: Rec): Promise<Prediction> => {
+  /** Split call options into this call's settings and its signal. */
+  const callOptions = (options: CallOptions = {}) => {
+    const { signal, ...settings } = options;
+    return { signal, settings: settings as Settings };
+  };
+
+  const predict = async (arg: unknown, options: CallOptions = {}, given: Watch | null = null): Promise<Prediction> => {
     const watch = given ?? watching.get() ?? null;       // a stream watches the calls made inside its call too
     watch?.check();
-    const bound = inputs ?? bindInputs(args);
-    const s = settingsNow();
+    const { signal: own, settings: extra } = callOptions(options);
+    const signal = own && watch ? AbortSignal.any([own, watch.signal]) : own ?? watch?.signal;
+    if (signal?.aborted) throw new Cancelled();
+    const bound = bindInputs(arg);
+    const s = settingsNow(extra);
     const call = calllog.start(program, s, bound);
     const inside = <R>(f: () => R): R => (watch ? watching.run(watch, f) : f());
     return calllog.current.run(call, () => inside(async () => {
@@ -403,7 +451,7 @@ export function make(core: Core): AIFunction {
         call.provider = provider;
         const pred = await runEngine({
           function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings, router, model,
-          tools: core.tools, call, watch, answer,
+          tools: core.tools, call, watch, answer, signal,
         });
         call.outputs = pred.outputs as Rec;
         calllog.finish(call, { returned: pred.answer, hasReturned: true });
@@ -417,7 +465,30 @@ export function make(core: Core): AIFunction {
     }));
   };
 
-  const fn = (async (...args: unknown[]) => (await predict(args)).answer) as unknown as AIFunction;
+  const map = async (items: Iterable<unknown>, options: MapOptions = {}): Promise<unknown[]> => {
+    const { concurrency = 8, ...call } = options;
+    const list = [...items];
+    const out: unknown[] = new Array(list.length);
+    const stop = new AbortController();
+    const signal = call.signal ? AbortSignal.any([call.signal, stop.signal]) : stop.signal;
+    let next = 0;
+    const worker = async () => {
+      while (next < list.length && !signal.aborted) {
+        const i = next++;
+        out[i] = (await predict(list[i], { ...call, signal })).answer;
+      }
+    };
+    try {
+      await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, worker));
+    } catch (err) {
+      stop.abort();                                  // the first failure: start no more
+      throw err;
+    }
+    if (call.signal?.aborted) throw new Cancelled();
+    return out;
+  };
+
+  const fn = (async (input: unknown, options?: CallOptions) => (await predict(input, options)).answer) as unknown as AIFunction;
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },
     module: { get: () => core.module },
@@ -440,12 +511,16 @@ export function make(core: Core): AIFunction {
   };
   Object.defineProperties(fn, props);
   Object.assign(fn, {
-    predict: (...args: unknown[]) => predict(args),
-    stream: (...args: unknown[]) => new Stream((watch) => predict(args, watch)),
-    render: (...args: unknown[]): Request => {
-      const s = settingsNow();
+    predict: (input: unknown, options?: CallOptions) => predict(input, options),
+    stream: (input: unknown, options: CallOptions = {}) => {
+      bindInputs(input);                                 // wrong arguments fail here, not in the stream
+      return new Stream((watch) => predict(input, options, watch), options.signal);
+    },
+    map,
+    render: (input: unknown, options: Settings = {}): Request => {
+      const s = settingsNow(options);
       const { plan, model, settings } = planFor(s);
-      const values = sig.prepareInputs(plan.signature, bindInputs(args));
+      const values = sig.prepareInputs(plan.signature, bindInputs(input));
       if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
       return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
     },
@@ -460,7 +535,7 @@ export function make(core: Core): AIFunction {
     },
     probeRequest,
     _core: core,
-    _predictWith: (inputs: Rec, watch: Watch | null) => predict([], watch, inputs),
+    _predictWith: (inputs: Rec, watch: Watch | null) => predict(inputs, {}, watch),
   });
   return fn;
 }

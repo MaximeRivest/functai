@@ -82,7 +82,7 @@ def team(message: str) -> Literal["shipping", "billing", "product"]:
 
 def test_nothing_is_logged_unless_asked_but_every_call_has_an_id(fake, tmp_path):
     fake(responder=team_reply)
-    p = team("My parcel never came.", all=True)
+    p = team.predict("My parcel never came.")
     assert calllog._UUID.match(p.call_id) and p.call_id[14] == "7"          # a UUIDv7
     assert not (tmp_path / "xdg").exists()
 
@@ -123,7 +123,7 @@ def test_log_settings_are_checked_when_given():
 
 def test_a_call_record_holds_the_typed_call_and_its_exchange(fake, log, schemas):
     fake(responder=team_reply)
-    p = team("I was charged twice for one order.", all=True)
+    p = team.predict("I was charged twice for one order.")
     [rec] = valid(schemas, logged(log))
     assert rec["id"] == p.call_id == rec["root"] and rec["parent"] is None
     assert rec["program"]["name"] == "team" and rec["program"]["kind"] == "ai"
@@ -219,7 +219,7 @@ def test_a_body_that_changes_the_answer_keeps_what_it_returned(fake, log, schema
 def test_an_unreadable_reply_kept_as_a_turn_is_a_failure_with_empty_outputs(fake, log, schemas):
     fake("no tags at all")
     keep = team.using(on_unreadable="record", retries=0)
-    p = keep("Where is it?", all=True)
+    p = keep.predict("Where is it?")
     [rec] = valid(schemas, logged(log))
     assert p.refusal is not None and rec["outputs"] == {} and rec["error"]["type"] == "Refusal"
 
@@ -365,8 +365,7 @@ def test_evaluation_and_optimization_calls_say_so(fake, log):
     ev = functai.evaluate(team, rows, num_threads=4)
     recs = logged(log)
     assert len(recs) == 4 and {r["caller"]["evaluation"] for r in recs} == {ev.run}
-    copy = team.using()
-    copy.opt(trainset=rows)
+    team.opt(rows)
     opt = [r for r in logged(log)[4:]]
     assert opt and all("optimization" in r["caller"] for r in opt)
     assert len({r["caller"]["optimization"] for r in opt}) == 1
@@ -501,7 +500,7 @@ def test_a_saved_and_loaded_program_keeps_its_version_and_says_where_it_came_fro
 
 def test_rate_writes_a_rating_next_to_the_call(fake, log, schemas):
     fake(responder=team_reply)
-    p = team("My parcel never came, refund me.", all=True)
+    p = team.predict("My parcel never came, refund me.")
     r = functai.rate(p, "wrong", answer="shipping", note="A lost parcel is shipping.", reasons=["wrong team"])
     assert r["verdict"] == "wrong" and r["answer"] == "shipping" and r["call"] == p.call_id
     assert r["by"] == calllog._process_info()["user"]
@@ -521,16 +520,16 @@ def test_rate_writes_a_rating_next_to_the_call(fake, log, schemas):
 
 def test_rate_needs_a_log(fake):
     fake(responder=team_reply)
-    p = team("x", all=True)
+    p = team.predict("x")
     with pytest.raises(ValueError, match="written to the call log"):
         functai.rate(p, "right")
 
 
 def test_rated_calls_are_rows_evaluate_and_opt_take(fake, log):
     fake(responder=team_reply)
-    a = team("My parcel never came, refund me.", all=True)        # says billing
-    b = team("The kettle broke on day one.", all=True)            # says product
-    c = team("Where is my order?", all=True)                      # says shipping
+    a = team.predict("My parcel never came, refund me.")        # says billing
+    b = team.predict("The kettle broke on day one.")            # says product
+    c = team.predict("Where is my order?")                      # says shipping
     team("Unrated message")
     functai.rate(a, "wrong", answer="shipping")
     functai.rate(b, "right")
@@ -543,14 +542,12 @@ def test_rated_calls_are_rows_evaluate_and_opt_take(fake, log):
     assert rows.columns[-7:] == ["rating", "rated_by", "origin", "disputed", "sample", "version", "call"]
     ev = functai.evaluate(team, rows)
     assert ev.score == 0.5                                         # the correction is what it gets wrong
-    copy = team.using()
-    copy.opt(trainset=rows)
-    assert copy.demos
+    assert team.opt(rows).demos
 
 
 def test_rated_uses_the_current_signature_and_each_persons_latest(fake, log):
     fake(responder=team_reply)
-    p = team("charged twice", all=True)
+    p = team.predict("charged twice")
 
     @ai
     def team_v2(message: str, urgent: bool) -> Literal["shipping", "billing", "product"]:   # another signature
@@ -577,7 +574,7 @@ def test_rated_uses_the_current_signature_and_each_persons_latest(fake, log):
 
 def test_calls_is_the_log_as_a_table(fake, log):
     fake(responder=team_reply)
-    p = team("charged twice", all=True)
+    p = team.predict("charged twice")
     team("parcel late")
     functai.rate(p, "right")
     t = functai.calls(team)
@@ -632,7 +629,7 @@ def test_columns_about_a_call_never_hide_its_data(fake, log):
         """One sentence about this product model and version."""
 
     fake("<result>\nA kettle.\n</result>")
-    p = describe("K-100", "2", all=True)
+    p = describe.predict("K-100", "2")
     functai.rate(p, "right")
     got = functai.calls(describe).collect().to_dicts()[0]
     assert (got["model"], got["version"]) == ("K-100", "2")

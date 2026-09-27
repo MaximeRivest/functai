@@ -114,8 +114,8 @@ def main() -> int:
     # 3a. Python logs two calls of mood and rates one
     router = FakeRouter(responder=lambda req: "<result>\nunhappy\n</result>")
     with functai.configure(lm="gpt-4.1-mini", client=router, log_calls=str(log)):
-        p1 = shop.mood("I was charged twice.", all=True)
-        shop.mood("Late, but fine.", all=True)
+        p1 = shop.mood.predict("I was charged twice.")
+        shop.mood.predict("Late, but fine.")
         functai.rate(p1, "right", by="ana")
 
     # 2, 1 and 3b in TypeScript

@@ -28,6 +28,7 @@ from dpyr import col, n
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 tickets = functai.datasets.tickets()
 ev = functai.evaluate(team, tickets, expected="category", num_threads=8)
@@ -169,10 +170,12 @@ Several at once, as a dict; the first one is `ev.score`:
 @ai
 def reply(message: str) -> str:
     """A short, friendly reply to the customer, saying what happens next."""
+    ...
 
 @ai
 def judge(row: dict, prediction: dict) -> bool:
     """Does the reply address the customer's actual problem, politely, without promising a refund?"""
+    ...
 
 replies = functai.evaluate(reply, tickets.slice_head(n=12), {
     "judge": judge,
@@ -208,6 +211,7 @@ separate scores would.
 def team_v2(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message? An item that arrived
     broken is shipping; any request for money back is billing."""
+    ...
 
 change = functai.compare(ev, functai.evaluate(team_v2, tickets, expected="category", num_threads=8))
 change

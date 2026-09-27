@@ -212,7 +212,7 @@ class _Watch:
             return
         pred = call.pred
         from .data import Prediction
-        if isinstance(value, Prediction):              # all=True: the answer is in it
+        if isinstance(value, Prediction):              # a full prediction: the answer is in it
             pred, value = value, value.get(state.answer) if state and state.answer else value
         self.stream._emit(Done(call.id, name, value, pred))
 
@@ -601,6 +601,7 @@ class Stream:
     @ai
     def haiku(topic: str) -> str:
         """A haiku about the topic."""
+        ...
 
     for piece in haiku.stream("autumn rain"):
         print(piece, end="", flush=True)
@@ -637,7 +638,7 @@ class Stream:
 
     def _work(self, args: tuple, kwargs: Dict[str, Any]) -> None:
         try:
-            value = self.program(*args, **kwargs)
+            value = self.program._invoke(args, kwargs) if self._is_ai else self.program(*args, **kwargs)
         except BaseException as exc:  # noqa: BLE001 — the consumer gets it from .result and iteration
             self._finish(error=exc)
         else:
@@ -744,7 +745,7 @@ class Stream:
 
     @property
     def prediction(self) -> Any:
-        """Everything the call produced, as ``fn(..., all=True)`` returns it
+        """Everything the call produced, as ``fn.predict(...)`` returns it
         (AI functions): waits for it."""
         if not self._is_ai:
             raise TypeError(f"{self.function} is a module: its value is s.result; the predictions of the AI "

@@ -54,10 +54,12 @@ def lookup_order(order_id: str) -> str:
 @ai
 def priority(message: str) -> Priority:
     """How urgently the message needs an answer."""
+    ...
 
 @ai(tools=[lookup_order])
 def draft_reply(message: str) -> str:
     """A short, friendly reply. Check the order first when one is mentioned."""
+    ...
 
 @module
 def handle(message: str) -> Handled:

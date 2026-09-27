@@ -54,7 +54,7 @@ rat:
 : Lists, records, choices, maybe-missing values; as answers and as inputs.
 
 [Reasoning and several answers](outputs.md)
-: Think first, return several values, get everything with `all=True`.
+: Think first, return several values, get everything with `predict`.
 
 [Watch it being written](streaming.md)
 : The answer as the model writes it, in a notebook, a script or a web app.

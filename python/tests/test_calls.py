@@ -62,7 +62,7 @@ def test_declared_outputs_come_first_and_all_returns_everything(fake):
         return _ai
 
     r = fake("<reasoning>\n120/2\n</reasoning>\n<result>\n60\n</result>")
-    pred = solve("speed?", all=True)
+    pred = solve.predict("speed?")
     assert pred.reasoning == "120/2" and pred.result == 60.0 and isinstance(pred.result, float)
     assert dict(pred) == {"reasoning": "120/2", "result": 60.0}
     assert r.system().index("<reasoning>") < r.system().index("<result>")
@@ -403,7 +403,7 @@ def test_an_unreadable_reply_is_asked_again_once(fake):
         """A number."""
 
     r = fake("I think it is 3", "<result>\n3\n</result>")
-    pred = f("x", all=True)
+    pred = f.predict("x")
     assert pred.result == 3 and pred.attempts == 2
     assert "could not be read" in r.user(1)
 
@@ -421,7 +421,7 @@ def test_misspelled_tags_are_repaired_and_reported(fake):
     @ai
     def f(x: str) -> str: ...
     fake("**<Result>**\nok\n</RESULT>")
-    pred = f("x", all=True)
+    pred = f.predict("x")
     assert pred.result == "ok" and [r["saw"] for r in pred.repairs] == ["**<Result>**", "</RESULT>"]
 
 

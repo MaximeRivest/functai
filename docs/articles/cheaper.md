@@ -34,6 +34,7 @@ def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
 
     House rules: anything wrong with the delivery itself, including an item
     that arrived broken, is shipping. Any request for money back is billing."""
+    ...
 
 tickets = functai.datasets.tickets()
 results = []

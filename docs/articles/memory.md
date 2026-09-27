@@ -23,6 +23,7 @@ evaluate. For a conversation, ask it to remember with `stateful=True`.
 @ai(stateful=True)
 def chat(message: str) -> str:
     """A friendly assistant. Keep answers short."""
+    ...
 
 chat("Hello, my name is Alex and I live in Montréal.")
 ```

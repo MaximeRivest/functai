@@ -63,6 +63,7 @@ def new_facts(text: str, graph: KnowledgeGraph) -> KnowledgeGraph:
     """Extract the entities and relations in the text that are not in the
     graph yet. Reuse the ids of nodes the graph already has; give new nodes
     ids that are not taken."""
+    ...
 ```
 
 ## Building it
@@ -131,6 +132,7 @@ access to the original text:
 @ai
 def ask(graph: KnowledgeGraph, question: str) -> str:
     """Answer from the graph only. Say so when the graph doesn't tell."""
+    ...
 
 ask(graph, "In which country does Jason's student study?")
 ```

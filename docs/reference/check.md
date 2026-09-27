@@ -54,17 +54,7 @@ def lookup_order(order_id: str) -> str:
 @ai(tools=[lookup_order])
 def reply(message: str) -> str:
     """A short reply to the customer. Check the order first."""
+    ...
 
 check(reply)
-```
-
-```output
-reply  AI function (message: str → str)  [__main__]
-└── tool lookup_order  function  [__main__]
-    └── ORDERS = {'A-1042': 'stuck at carrier'}
-
-requirements: functai @ file:///home/maxime/Projects/functai/python
-
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python)
-    fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```

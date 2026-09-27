@@ -16,6 +16,7 @@ from functai import ai
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 team("I was charged twice for order B-2210, please fix this.")    # 'billing'
 

@@ -28,6 +28,7 @@ from functai import ai
 @ai
 def intent(text: str) -> Literal["card_arrival", "card_delivery_estimate", ...]:   # 77 intents
     """The customer's intent."""
+    ...
 
 baked = intent.bake(rows, student="jhu-clsp/ettin-encoder-17m")   # rows have a "result" label
 print(baked.report)
@@ -58,7 +59,7 @@ Then run the same function on the baked weights:
 ```{.python .no-run}
 fast = intent.using(lm=baked)
 fast("my card still hasn't arrived")          # 'card_arrival'
-fast("...", all=True).probabilities           # {'result': {'card_arrival': 0.93, ...}}
+fast.predict("...").probabilities           # {'result': {'card_arrival': 0.93, ...}}
 ```
 
 ## Two kinds of student
@@ -101,7 +102,7 @@ model:
 ```{.python .no-run}
 cut = baked.report.threshold(0.95)["threshold"]
 safe = intent.using(lm=baked, escalate_to="claude-opus-5.5", escalate_below=cut)
-p = safe("...", all=True)
+p = safe.predict("...")
 p.escalated, p.first.confidence          # True, 0.41 when Opus answered
 ```
 

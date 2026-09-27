@@ -99,7 +99,7 @@ def test_bake_trains_tests_and_reports(baked):
 def test_the_function_runs_on_the_weights(baked):
     fast = sentiment.using(lm=baked)
     assert fast("The pizza was amazing.") == "positive"
-    pred = fast("The hotel was horrible.", all=True)
+    pred = fast.predict("The hotel was horrible.")
     assert pred.result == "negative" and pred.measured_by == {"result": "provider_classification"}
     assert set(pred.probabilities["result"]) == {"positive", "negative", "neutral"}
     assert pred.confidence == pred.probabilities["result"]["negative"] > 0.5
@@ -109,7 +109,7 @@ def test_the_function_runs_on_the_weights(baked):
 
 def test_a_baked_model_reads_its_own_layout_whatever_the_function_says(baked):
     templated = sentiment.using(template=[functai.system("Be brief. {instruction}"), functai.user("Review: {text}")])
-    pred = templated.using(lm=baked)("The book was great.", all=True)
+    pred = templated.using(lm=baked).predict("The book was great.")
     assert pred.result == "positive"
     assert functai.inspect_history(1)[0].request.messages[-1].parts[0].text == "The book was great."
 
@@ -164,7 +164,7 @@ def test_unsure_answers_go_to_a_bigger_model(baked):
     r = FakeRouter(responder=lambda req: "<result>\nneutral\n</result>")
     functai.configure(lm="gpt-4.1-mini", client=r)
     safe = sentiment.using(lm=baked, escalate_to="gpt-4.1", escalate_below=1.0)
-    pred = safe("Something happened.", all=True)
+    pred = safe.predict("Something happened.")
     assert pred.escalated and pred.first.escalated is False and pred.first.confidence < 1.0
     assert r.requests[-1].model == "gpt-4.1" and pred.result == "neutral"
     sure = sentiment.using(lm=baked, escalate_to="gpt-4.1", escalate_below=0.01)
@@ -178,7 +178,7 @@ def test_escalating_to_an_ai_function_and_no_escalation_loop(baked):
         """Judge carefully."""
     r = FakeRouter(responder=lambda req: "<result>\npositive\n</result>")
     functai.configure(lm="gpt-4.1-mini", client=r, escalate_to="gpt-4.1", escalate_below=1.0)   # global, too
-    pred = sentiment.using(lm=baked, escalate_to=judge)("Something happened.", all=True)
+    pred = sentiment.using(lm=baked, escalate_to=judge).predict("Something happened.")
     assert pred.escalated and pred.result == "positive"
     assert "Judge carefully." in r.requests[-1].system
 
@@ -252,7 +252,7 @@ def test_a_record_of_finite_answers_gets_one_answer_layer_each(tmp_path):
     assert [f.name for f in b.fields] == ["result.sentiment", "result.spam"] and b.meta["architecture"] == "multi-head"
     got = review.using(lm=b)("The hotel was awful. BUY NOW at cheap-deals!")
     assert got == Review("negative", True)
-    pred = review.using(lm=b)("The book was great.", all=True)
+    pred = review.using(lm=b).predict("The book was great.")
     assert set(pred.probabilities) == {"result.sentiment", "result.spam"} and pred.confidence > 0.5
     assert load(b.path).predict([{"text": "The book was great."}])[0]["result.spam"] is False
 
@@ -340,7 +340,7 @@ def test_a_program_on_baked_weights_saves_loads_and_verifies(baked, tmp_path, mo
     loaded = functai.load(target, trust=True)
     assert loaded("The pizza was amazing.") == "positive" and not r.requests       # the weights answered
     assert loaded._settings["lm"].path == (target / "models" / "sentiment").resolve()
-    assert loaded.using(escalate_below=1.0)("Something happened.", all=True).escalated   # unsure: careful answers
+    assert loaded.using(escalate_below=1.0).predict("Something happened.").escalated   # unsure: careful answers
     assert "Judge the sentiment carefully." in r.requests[-1].system
     assert functai.verify(target, trust=True, fresh=False).ok
 

@@ -46,7 +46,11 @@ export class Stream<A = unknown> implements Watch, AsyncIterable<string> {
   /** The whole prediction, when it ends. */
   readonly prediction: Promise<Prediction>;
 
-  constructor(start: (watch: Watch) => Promise<Prediction>) {
+  constructor(start: (watch: Watch) => Promise<Prediction>, signal?: AbortSignal) {
+    if (signal) {                                  // the caller's signal closes the stream too
+      if (signal.aborted) this.controller.abort();
+      else signal.addEventListener("abort", () => this.controller.abort(), { once: true });
+    }
     this.prediction = start(this).finally(() => {
       this.finished = true;
       this.wake();

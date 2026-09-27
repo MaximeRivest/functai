@@ -4,7 +4,7 @@ it like any provider:
 
     fast = classify.using(lm=baked)
     fast("my card never arrived")               # the Literal answer
-    fast("...", all=True).probabilities         # {"result": {"card_arrival": 0.93, ...}}
+    fast.predict("...").probabilities         # {"result": {"card_arrival": 0.93, ...}}
 
 On disk it is a folder:
 

@@ -227,7 +227,7 @@ class FunctaiSession(HarnessSession):
             text = _text_of(users[-1]) if users else ""
         inputs = decode_inputs(self.fn, text)
         context = contextvars.copy_context()
-        pred = await asyncio.to_thread(context.run, lambda: self.fn(**inputs, all=True))
+        pred = await asyncio.to_thread(context.run, lambda: self.fn.predict(**inputs))
         _record(self.trace, pred)
         return ProgramResult(exit_code=0, stdout="", stderr="")
 

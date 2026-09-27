@@ -89,6 +89,7 @@ something up and *what* to ask for.
 def where_is(message: str) -> str:
     """Tell the customer where their order is, in one or two friendly sentences. Use only what the
     order system says; never guess a date. If the message has no order number, ask for it."""
+    ...
 
 asked = tickets.filter(col.order_id.is_in(list(ORDERS))).pull(col.message) + [
     "Where is my order Z-9999?", "Hi, where's my parcel? It's been ages."]
@@ -203,6 +204,7 @@ happen to have:
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 sample = tickets.slice_sample(n=30, seed=8)
 sample.mutate(guess=team(col.message)).count(col.guess)       # 30 real calls, logged as use
@@ -223,7 +225,7 @@ sample.mutate(guess=team(col.message)).count(col.guess)       # 30 real calls, l
 ```
 
 Each logged call can be rated by passing its row (or its id, or what
-`fn(..., all=True)` returned) to `functai.rate()`. A wrong one carries
+`fn.predict(...)` returned) to `functai.rate()`. A wrong one carries
 the right answer:
 
 ```python
@@ -275,6 +277,7 @@ def team_rules(message: str) -> Literal["shipping", "billing", "product", "accou
     itself (late, lost, wrong item, missing, broken on arrival) is shipping; anything about money,
     including every request for money back, is billing; problems in use and product questions are
     product; sign-in, passwords, profile and personal data are account."""
+    ...
 
 functai.compare(functai.evaluate(team, reviewed, num_threads=8),
                 functai.evaluate(team_rules, reviewed, num_threads=8))
@@ -291,8 +294,8 @@ functai.compare(functai.evaluate(team, reviewed, num_threads=8),
 └─────────────┴──────────┴───────┴──────────┴───────────┴────────┴────────┴───────┴──────┴─────┘
 ```
 
-They can also teach it: `team.opt(trainset=reviewed)` turns the
-corrections into worked examples (tutorial 4). The ratings live in the
+They can also teach it: `team.opt(reviewed)` gives a copy whose worked
+examples are the corrections (tutorial 4). The ratings live in the
 same folder as the calls, in the same format across languages: a
 correction made from R or TypeScript shows up in Python's `rated()`, and
 the other way round.
@@ -423,7 +426,7 @@ functai.calls(folder=log_folder).summarize(
 2. Rate five of `where_is`'s replies (`functai.calls(where_is)` gives
    their rows). Which would you mark wrong, and why? What would you add
    to its docstring?
-3. Run `team.opt(trainset=reviewed)` and evaluate it on `reviewed`
+3. Run `taught = team.opt(reviewed)` and evaluate it on `reviewed`
    again. Why is that evaluation too kind, and what would you evaluate
    it on instead?
 
@@ -445,7 +448,7 @@ functai.calls(folder=log_folder).summarize(
 **Answers to the check at the top.** (1) Your program does: the model
 asks, functai runs the Python function and sends the result back. (2) In
 the log folder, next to the calls; `functai.rated(fn)` gives them back
-as rows with the right answers, ready for `evaluate()` and `.opt()`.
+as rows with the right answers, ready for `evaluate()` and `.opt()` (or `functai.gepa`).
 (3) Everything the function sends besides its inputs (instruction,
 layout, worked examples). The model, and the language it was written
 in, don't change it.

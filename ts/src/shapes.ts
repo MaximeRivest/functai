@@ -18,11 +18,26 @@ export interface ZodLike<T = unknown> {
   toJSONSchema(params?: { io?: "input" | "output" }): JsonObject;
 }
 
-/** What a field is written as: a shape, a zod schema, or `{ shape, desc }`. */
-export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | { readonly shape: Shape<T> | ZodLike<T>; readonly desc?: string };
+/**
+ * A schema of any library that implements Standard JSON Schema
+ * (standardschema.dev): zod 4.2+, valibot, arktype, ... Its output type is the
+ * field's type; its JSON Schema, the field's shape.
+ */
+export interface StandardSchemaLike<T = unknown> {
+  readonly "~standard": {
+    readonly vendor: string;
+    readonly types?: { readonly output: T };
+    readonly jsonSchema?: { input(options: { target: string }): JsonObject };
+  };
+}
+
+/** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc }`. */
+export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T>
+  | { readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>; readonly desc?: string };
 
 /** The value type of a field spec. */
 export type ValueOf<S> =
+  S extends { readonly "~standard": { readonly types?: { readonly output: infer T } } } ? T :
   S extends ZodLike<infer T> ? T :
   S extends { readonly shape: infer X } ? ValueOf<X> :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? unknown : T) : unknown;
@@ -38,7 +53,7 @@ export const t = {
 };
 
 /** A field with words about it: `describe(t.string(), "the customer's own words")`. */
-export function describe<T>(shape: Shape<T> | ZodLike<T>, desc: string): { shape: Shape<T> | ZodLike<T>; desc: string } {
+export function describe<S extends Shape | ZodLike | StandardSchemaLike>(shape: S, desc: string): { shape: S; desc: string } {
   return { shape, desc };
 }
 
@@ -46,9 +61,14 @@ function isZod(x: unknown): x is ZodLike {
   return typeof x === "object" && x !== null && "_zod" in x && typeof (x as ZodLike).toJSONSchema === "function";
 }
 
+function isStandard(x: unknown): x is StandardSchemaLike {
+  return (typeof x === "object" || typeof x === "function") && x !== null && "~standard" in x
+    && typeof (x as StandardSchemaLike)["~standard"]?.jsonSchema?.input === "function";
+}
+
 const SAFE = Number.MAX_SAFE_INTEGER;
 
-/** zod's JSON Schema as Python writes the same type: no `$schema`, no safe-integer bounds, nullable as `anyOf`. */
+/** A schema library's JSON Schema as Python writes the same type: no `$schema`, no safe-integer bounds, nullable as `anyOf`. */
 function fromZod(schema: JsonObject): JsonObject {
   const walk = (s: unknown): unknown => {
     if (Array.isArray(s)) return s.map(walk);
@@ -87,14 +107,15 @@ function fromZod(schema: JsonObject): JsonObject {
 export function readField(spec: FieldSpec, where: string): { shape: JsonObject; desc: string | null } {
   let desc: string | null = null;
   let raw: unknown = spec;
-  if (typeof spec === "object" && spec !== null && "shape" in spec && !("type" in spec) && !isZod(spec)) {
+  if (typeof spec === "object" && spec !== null && "shape" in spec && !("type" in spec) && !isZod(spec) && !isStandard(spec)) {
     desc = (spec as { desc?: string }).desc ?? null;
     raw = (spec as { shape: unknown }).shape;
   }
   let shape: JsonObject;
-  if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
+  if (isStandard(raw)) shape = fromZod(raw["~standard"].jsonSchema!.input({ target: "draft-2020-12" }));
+  else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
   else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) shape = structuredClone(raw) as JsonObject;
-  else throw new TypeError(`${where}: expected a shape (t.string(), a zod schema or JSON Schema), not ${JSON.stringify(raw)}`);
+  else throw new TypeError(`${where}: expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${JSON.stringify(raw)}`);
   if (typeof shape["description"] === "string") {
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];

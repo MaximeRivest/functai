@@ -46,14 +46,16 @@ quartodoc:
     - runs
     - exact_match
   - title: Optimizers
-    desc: Improve the instruction and the worked examples a function sends. Used through
-      `fn.opt(...)`.
+    desc: Improve the instruction and the worked examples a function sends. Each returns an
+      improved copy; the function is unchanged. The classes are for `fn.opt(rows, optimizer=...)`.
     contents:
+    - labeled_few_shot
+    - bootstrap_few_shot
+    - gepa
     - LabeledFewShot
     - BootstrapFewShot
     - BootstrapFewShotWithRandomSearch
     - InstructionSearch
-    - GEPA
     - Optimizer
   - title: Saving and shipping
     desc: Find everything a program depends on, save it to a folder, prove it runs

@@ -37,7 +37,8 @@ signature.
 | `dspy.Example(...).with_inputs(...)` | a row: a dict, or a table (`expected=` names the answer column) |
 | `metric(example, pred, trace=None)` | `metric(row, prediction)`, a dpyr expression, or an AI judge |
 | `dspy.Evaluate(...)` | `functai.evaluate(...)`: a score with its range, and a table |
-| `BootstrapFewShot`, `BootstrapFewShotWithRandomSearch` | the same names, used through `fn.opt(...)` |
+| `BootstrapFewShot`, `BootstrapFewShotWithRandomSearch` | the same names, used through `fn.opt(rows, optimizer=...)`, which returns an improved copy; or `functai.bootstrap_few_shot(fn, rows)` |
+| `GEPA` | `functai.gepa(fn, rows, teacher=...)`: written in functai, with changes (`design/04-gepa.md`) |
 | `MIPROv2` | `InstructionSearch` |
 | `dspy.configure(lm=dspy.LM("openai/gpt-4o"))` | `functai.configure(lm="openai/gpt-4o")` (the same spelling works) |
 | `dspy.inspect_history()` | `functai.phistory()` |
@@ -56,6 +57,7 @@ from typing import Literal
 @ai
 def language(text: str) -> Literal["English", "French", "Spanish", "other"]:
     """The language the text is written in."""
+    ...
 
 df = pd.DataFrame({"text": ["Merci beaucoup !", "Thanks a lot!", "¡Muchas gracias!"]})
 read(df).mutate(language=language(col.text)).to_pandas()

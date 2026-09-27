@@ -59,9 +59,9 @@ function tsFunction(d: Rec) {
   if (d.settings.adapter) settings.adapter = d.settings.adapter;
   if (d.settings.module) settings.module = d.settings.module;
   if (d.settings.include_fn_name_in_instructions === false) settings.includeFnName = false;
-  const fn = ai({
-    name: d.name, description: d.description,
-    inputs: Object.fromEntries(d.inputs.map((f: Rec) => [f.name, field(f)])),
+  const fn = ai(d.name, {
+    description: d.description,
+    input: Object.fromEntries(d.inputs.map((f: Rec) => [f.name, field(f)])),
     outputs: Object.fromEntries(d.outputs.map((f: Rec) => [f.name, field(f)])),
     ...(tools.length ? { tools } : {}), ...settings,
   } as never);

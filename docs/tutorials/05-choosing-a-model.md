@@ -52,6 +52,7 @@ State = Literal["unopened", "opened_unused", "used", "damaged", "wrong_item", "f
 @ai
 def item_state(message: str) -> State:  # unopened: still sealed, never opened; opened_unused: unpacked and looked at, never used; used: used for a while, works fine, no longer wanted; damaged: broken or damaged when it arrived; wrong_item: not what was ordered, or part of the order missing; faulty: worked at first, then failed in normal use
     """What state is the item in, from the customer's message?"""
+    ...
 
 refunds.count(col.state)
 ```

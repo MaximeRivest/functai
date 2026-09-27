@@ -49,7 +49,7 @@ def test_a_template_with_a_pattern_reads_several_outputs(fake):
         return _ai
 
     r = fake("## thinking\nupbeat\n## result\npositive\n")
-    pred = analyze("This is amazing!", all=True)
+    pred = analyze.predict("This is amazing!")
     assert (pred.thinking, pred.result) == ("upbeat", "positive")
     assert r.user() == "text: This is amazing!\n"
 
@@ -162,7 +162,7 @@ def test_cot_writes_a_reasoning_section_on_models_without_thinking(fake):
         """Solve it."""
 
     r = fake("<reasoning>\n3*7=21, 50-21=29\n</reasoning>\n<result>\n29\n</result>", provider="groq", lm="groq:x")
-    pred = solve("change from 50 after 7 pens at 3?", all=True)
+    pred = solve.predict("change from 50 after 7 pens at 3?")
     assert pred.result == 29 and pred.reasoning.startswith("3*7")
     assert "Reason step by step" in r.system()
 
@@ -174,7 +174,7 @@ def test_cot_uses_the_native_channel_where_the_model_thinks(fake):
 
     r = fake([lm15.ThinkingPart("7*3=21"), lm15.TextPart("<result>\n29\n</result>")], provider="anthropic",
              lm="claude-sonnet-4-5")
-    pred = solve("x", all=True)
+    pred = solve.predict("x")
     assert (pred.result, pred.reasoning) == (29, "7*3=21")
     assert r.requests[0].config.reasoning is not None
     assert "<reasoning>" not in r.system()
@@ -195,7 +195,7 @@ def test_the_tool_loop_with_native_calls(fake):
 
     call = lm15.ToolCallPart(id="c1", name="get_weather", input={"city": "Montreal"})
     r = fake([call], "<result>\nSunny, 22C.\n</result>")
-    pred = assistant_("Weather in Montreal?", all=True)
+    pred = assistant_.predict("Weather in Montreal?")
     assert pred.result == "Sunny, 22C."
     assert [t.name for t in r.requests[0].tools] == ["get_weather"]
     kinds = [type(p).__name__ for m in r.requests[1].messages for p in m.parts]

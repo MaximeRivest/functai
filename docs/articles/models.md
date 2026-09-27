@@ -68,6 +68,7 @@ the most general. The first place that sets a value wins:
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
+    ...
 
 capital("Australia")                       # from configure(): gpt-4.1-mini
 ```

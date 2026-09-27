@@ -25,6 +25,7 @@ written.
 @ai
 def story(topic: str) -> str:
     """A four-sentence story about the topic."""
+    ...
 
 story.stream("a lighthouse keeper's cat").show()
 ```
@@ -64,7 +65,7 @@ s.result
 ```
 
 `s.result` waits for the end and gives what `story(...)` returns (or
-raises what it raises). `s.prediction` is what `all=True` returns, with
+raises what it raises). `s.prediction` is what `predict` returns, with
 the tokens and every message. With the [call log](call-log.md) on, the
 call gets the same line, which also records how long the first word
 took.
@@ -135,6 +136,7 @@ def get_weather(city: str) -> str:
 @ai(tools=[get_weather])
 def assistant(question: str) -> str:
     """Answer; use a tool when you need facts."""
+    ...
 
 assistant.stream("Should I pack a coat for Oslo or for Lima?").show()
 ```
@@ -165,6 +167,7 @@ class Person:
 @ai
 def people(text: str) -> list[Person]:
     """Everyone the text mentions."""
+    ...
 
 s = people.stream("Ada wrote from London to Grace in Arlington; Alan answered from Manchester, and Kurt said nothing.")
 seen = []
@@ -210,10 +213,12 @@ from functai import module
 @ai
 def draft(topic: str) -> str:
     """A paragraph about the topic."""
+    ...
 
 @ai
 def shorten(text: str) -> str:
     """The text in at most twelve words."""
+    ...
 
 @module
 def blurb(topic: str) -> str:

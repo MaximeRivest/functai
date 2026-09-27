@@ -25,6 +25,7 @@ from typing import Literal
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
+    ...
 
 team("I was charged twice for order B-2210, please fix this.")
 ```
@@ -206,6 +207,7 @@ def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
       arrived broken, is shipping: the carrier pays.
     - Any request for money back is billing, whatever it is about.
     """
+    ...
 
 after = functai.evaluate(team, tickets, expected="category", num_threads=8)
 functai.compare(before, after)
@@ -228,7 +230,7 @@ Here: 6 messages better, 1 worse, 6 points up, and the range just touches 0 (fro
 
 > **When the rule is hard to put into words** Sometimes you can show the rule but not say it. Then give functai
 > examples and let it pick the most useful ones (and try better
-> instructions): `team.opt(trainset=labelled_rows, expected="category")`.
+> instructions): `functai.bootstrap_few_shot(team, labelled_rows, expected="category")`, which returns an improved copy.
 > See [Make it better](articles/improving.md).
 
 ## Several answers at once
@@ -252,6 +254,7 @@ def triage(message: str) -> Ticket:
       arrived broken, is shipping: the carrier pays.
     - Any request for money back is billing, whatever it is about.
     """
+    ...
 
 tickets.mutate(**triage.unpack(col.message)).select(col.message, col.team, col.order_id)
 ```

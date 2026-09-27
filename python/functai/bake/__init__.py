@@ -94,7 +94,7 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
 
     def one(row: Dict[str, Any]) -> Optional[List[List[float]]]:
         try:
-            pred = tfn(**row_inputs(fn, row), all=True)
+            pred = tfn._invoke((), row_inputs(fn, row), full=True)
         except Exception as exc:  # noqa: BLE001 — a failed row is dropped and counted
             failures.append(f"{type(exc).__name__}: {exc}")
             return None

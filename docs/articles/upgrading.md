@@ -4,7 +4,28 @@ rat:
     dependencies: ["-e .[data]", "pandas"]
 ---
 
-# Upgrading from 0.x
+# Upgrading
+
+## From 1.1
+
+Four changes, each so that the API says what it does and a type checker
+can follow it:
+
+| 1.1 | now |
+|---|---|
+| `fn(x, all=True)` | `fn.predict(x)` (an input may now be called `all`) |
+| `fn.opt(trainset=rows)` changes `fn`; `fn.undo_opt()` reverts | `better = fn.opt(rows)` is an improved copy; `fn` is unchanged, so `evaluate(fn, ...)` and `evaluate(better, ...)` compare side by side |
+| `fn.opt(trainset=rows, optimizer=LabeledFewShot(k=8))` | also by name: `functai.labeled_few_shot(fn, rows, k=8)`, `functai.bootstrap_few_shot(fn, rows, teacher=...)`, `functai.gepa(fn, rows, teacher=...)` |
+| `module.opt(...)` changes the AI functions it calls | an improved copy of the module; the AI functions themselves are unchanged (`better.state()` shows what the copy runs with) |
+| a body that is only a docstring | still works; write `...` after the docstring so Pyright (VS Code) accepts the function, or `return _ai`, which mypy accepts too |
+| sync calls only | `await fn.acall(x)`, `await fn.apredict(x)`, and `@ai async def` for a function whose body is the model call |
+
+`fn.programs()` and `fn.latest_program()` are gone (`fn.optimization_runs()`
+says how a copy was made; `fn.trials` is a search's candidates), and
+`from functai import *` no longer brings helpers such as `flexiclass` or
+`sig2str` (they are `functai.flexiclass`, ...).
+
+## From 0.x
 
 *What changed in 1.0, and how to move code over.*
 

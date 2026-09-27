@@ -1222,6 +1222,7 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
     @ai(tools=[lookup_order])
     def reply(message: str) -> str:
         """A short reply to the customer. Check the order first."""
+        ...
 
     check(reply)
     ```

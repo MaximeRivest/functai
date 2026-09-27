@@ -17,16 +17,15 @@ for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) 
 configure({ lm: "gpt-4.1-mini", logCalls: false });
 
 const moodDef = {
-  name: "mood",
   description: "How does the customer feel about what they bought?",
-  inputs: { review: t.string() },
+  input: { review: t.string() },
   output: t.enum("happy", "unhappy", "mixed"),
 };
 const text = (m: { parts: readonly unknown[] }) => (m.parts as { text?: string }[]).map((p) => p.text ?? "").join("");
 
 test("a call sends the layout and returns the typed answer", async () => {
   const router = new FakeRouter(["<result>\nunhappy\n</result>"]);
-  const mood = ai({ ...moodDef, router });
+  const mood = ai("mood", { ...moodDef, router });
   const answer: "happy" | "unhappy" | "mixed" = await mood("Broke after a day.");
   assert.equal(answer, "unhappy");
   const [req] = router.requests;
@@ -35,23 +34,27 @@ test("a call sends the layout and returns the typed answer", async () => {
   assert.equal(req!.config?.stop, undefined);                    // OpenAI's Responses API takes no stop sequences
   assert.equal(req!.model, "gpt-4.1-mini");
   const claude = new FakeRouter(["<result>\nunhappy\n</result>"]);
-  await ai({ ...moodDef, router: claude, lm: "anthropic:claude-3-5-haiku" })("Broke.");
+  await ai("mood", { ...moodDef, router: claude, lm: "anthropic:claude-3-5-haiku" })("Broke.");
   assert.deepEqual(claude.requests[0]!.config?.stop, ["</result>"]);
 });
 
-test("inputs by name or by position; render shows the request without sending it", async () => {
-  const router = new FakeRouter(["<result>\nParis\n</result>"]);
-  const capital = ai({ name: "capital", description: "The capital city.", inputs: { country: t.string(), year: t.integer() }, router });
-  const request = capital.render("France", 1900);
+test("inputs by name (one input: its value alone); render shows the request without sending it", async () => {
+  const router = new FakeRouter(["<result>\nParis\n</result>", "<result>\nhappy\n</result>"]);
+  const capital = ai("capital", { description: "The capital city.", input: { country: t.string(), year: t.integer() }, router });
+  const request = capital.render({ country: "France", year: 1900 });
   assert.equal(text(request.messages[0]!), "<country>\nFrance\n</country>\n<year>\n1900\n</year>\n");
   assert.equal(router.requests.length, 0);
   assert.equal(await capital({ country: "France", year: 1900 }), "Paris");
-  await assert.rejects(capital("a", 1, 2), /takes 2 input/);
+  await assert.rejects(capital("France" as never), /takes its inputs by name/);
+  await assert.rejects(capital({ country: "France" } as never), /needs year/);
+  await assert.rejects(capital({ country: "France", year: 1, month: 2 } as never), /has no input month/);
+  const mood = ai("mood", { ...moodDef, router });
+  assert.equal(await mood({ review: "Great." }), "happy");      // one input: by name, or its value alone
 });
 
 test("an unreadable reply is asked again once, with lmcc's hint", async () => {
   const router = new FakeRouter(["I think they are sad.", "<result>\nunhappy\n</result>"]);
-  const mood = ai({ ...moodDef, router });
+  const mood = ai("mood", { ...moodDef, router });
   const p = await mood.predict("Broke.");
   assert.equal(p.answer, "unhappy");
   assert.equal(p.attempts, 2);
@@ -62,15 +65,15 @@ test("an unreadable reply is asked again once, with lmcc's hint", async () => {
 
 test("a value outside its type is unreadable too; with retries: 0 the refusal is the error", async () => {
   const router = new FakeRouter(["<result>\nfurious\n</result>", "<result>\nunhappy\n</result>"]);
-  assert.equal(await ai({ ...moodDef, router })("x"), "unhappy");
-  const strict = ai({ ...moodDef, router: new FakeRouter(["<result>\nfurious\n</result>"]), retries: 0 });
+  assert.equal(await ai("mood", { ...moodDef, router })("x"), "unhappy");
+  const strict = ai("mood", { ...moodDef, router: new FakeRouter(["<result>\nfurious\n</result>"]), retries: 0 });
   await assert.rejects(strict("x"), (err: { code?: string }) => err.code === "parse-value" || err.code === "parse-choice");
 });
 
 test("records: several outputs, the last is the answer", async () => {
   const router = new FakeRouter(["<summary>\nCharged twice\n</summary>\n<result>\n30\n</result>"]);
-  const triage = ai({
-    name: "triage", description: "Read the ticket.", inputs: { ticket: t.string() },
+  const triage = ai("triage", {
+    description: "Read the ticket.", input: { ticket: t.string() },
     outputs: { summary: t.string(), result: t.integer({ description: "minutes to fix" }) }, router,
   });
   const p = await triage.predict("I was charged twice");
@@ -80,26 +83,26 @@ test("records: several outputs, the last is the answer", async () => {
 });
 
 test("tools run until the model answers; StepLimit after maxSteps", async () => {
-  const lookup = tool({ name: "lookup_order", description: "Look up an order.", input: { order: t.string() } },
+  const lookup = tool("lookup_order", { description: "Look up an order.", input: { order: t.string() } },
     ({ order }) => (order === "A-1" ? "stuck at the carrier" : "unknown"));
   const router = new FakeRouter([
     { calls: [{ id: "c1", name: "lookup_order", input: { order: "A-1" } }] },
     "<result>\nIt is stuck at the carrier.\n</result>",
   ]);
-  const helper = ai({ name: "helper", description: "Help.", inputs: { question: t.string() }, tools: [lookup], router });
+  const helper = ai("helper", { description: "Help.", input: { question: t.string() }, tools: [lookup], router });
   assert.equal(await helper("Where is A-1?"), "It is stuck at the carrier.");
   assert.equal(router.requests[0]!.tools?.[0]?.name, "lookup_order");
   const result = router.requests[1]!.messages.at(-1)!;
   assert.match(JSON.stringify(result), /stuck at the carrier/);
-  const loop = ai({ name: "helper", description: "Help.", inputs: { question: t.string() }, tools: [lookup], maxSteps: 2,
+  const loop = ai("helper", { description: "Help.", input: { question: t.string() }, tools: [lookup], maxSteps: 2,
     router: new FakeRouter([], () => ({ calls: [{ id: "c", name: "lookup_order", input: { order: "B" } }] })) });
   await assert.rejects(loop("?"), StepLimit);
 });
 
 test("zod schemas are read as the shapes Python writes", () => {
   const P = z.object({ name: z.string(), age: z.number().int() });
-  const withZod = ai({ name: "person", description: "Who?", inputs: { text: z.string().describe("a sentence") }, output: P });
-  const withT = ai({ name: "person", description: "Who?", inputs: { text: t.string({ description: "a sentence" }) },
+  const withZod = ai("person", { description: "Who?", input: { text: z.string().describe("a sentence") }, output: P });
+  const withT = ai("person", { description: "Who?", input: { text: t.string({ description: "a sentence" }) },
     output: t.object({ name: t.string(), age: t.integer() }) });
   assert.deepEqual(withZod.signature.fields, withT.signature.fields);
   assert.equal(withZod.version, withT.version);
@@ -107,7 +110,7 @@ test("zod schemas are read as the shapes Python writes", () => {
 });
 
 test("the version follows what is sent, not where it runs", () => {
-  const a = ai({ ...moodDef });
+  const a = ai("mood", { ...moodDef });
   assert.match(a.version, /^sha256:[0-9a-f]{64}$/);
   assert.equal(a.using({ lm: "claude-haiku-4-5", temperature: 0.3 }).version, a.version);
   assert.notEqual(a.using({ adapter: "json" }).version, a.version);
@@ -136,7 +139,7 @@ function logged(folder: string): Record<string, any>[] {
 test("every call is a line in the log; ratings make rows with known answers", async () => {
   const folder = mkdtempSync(join(tmpdir(), "functai-log-"));
   const router = new FakeRouter([], (req) => (text(req.messages[0]!).includes("charged") ? "<result>\nunhappy\n</result>" : "<result>\nhappy\n</result>"));
-  const mood = ai({ ...moodDef, router, logCalls: folder, definedIn: "shop" });
+  const mood = ai("mood", { ...moodDef, router, logCalls: folder, definedIn: "shop" });
   const p1 = await mood.predict("I was charged twice");
   const p2 = await withSettings({ caller: { kind: "test", user: "ana" } }, () => mood.predict("Lovely"));
   const [c1, c2] = logged(folder);
@@ -161,13 +164,13 @@ test("every call is a line in the log; ratings make rows with known answers", as
   rate(p2.callId, "right", { by: "ben", folder });
   const { rows, leftOut } = rated(mood, { folder });
   assert.deepEqual(rows.map((r) => [r["review"], r["result"], r["rating"]]), [["I was charged twice", "mixed", "wrong"], ["Lovely", "happy", "right"]]);
-  assert.deepEqual(leftOut, { other_signature: 0, no_content: 0, no_answer: 0 });
+  assert.deepEqual(leftOut, { otherSignature: 0, noContent: 0, noAnswer: 0 });
   assert.equal(calls(mood, { folder }).length, 2);
 });
 
 test("logContent: false keeps sizes and tokens, never values; a failed call records its error", async () => {
   const folder = mkdtempSync(join(tmpdir(), "functai-log-"));
-  const mood = ai({ ...moodDef, router: new FakeRouter(["nope", "still nope"]), logCalls: folder, logContent: false });
+  const mood = ai("mood", { ...moodDef, router: new FakeRouter(["nope", "still nope"]), logCalls: folder, logContent: false });
   await assert.rejects(mood("secret"));
   const [c] = logged(folder);
   assert.equal(c!.content, false);
@@ -181,7 +184,7 @@ test("logContent: false keeps sizes and tokens, never values; a failed call reco
 
 test("a module's calls are its children", async () => {
   const folder = mkdtempSync(join(tmpdir(), "functai-log-"));
-  const mood = ai({ ...moodDef, router: new FakeRouter([], () => "<result>\nhappy\n</result>"), logCalls: folder });
+  const mood = ai("mood", { ...moodDef, router: new FakeRouter([], () => "<result>\nhappy\n</result>"), logCalls: folder });
   const both = module("both", async (a: string, b: string) => [await mood(a), await mood(b)], { uses: [mood], settings: { logCalls: folder } });
   assert.deepEqual(await both("x", "y"), ["happy", "happy"]);
   const recs = logged(folder);
@@ -197,7 +200,7 @@ test("a module's calls are its children", async () => {
 
 test("a stream shows the answer as it is written, and ends with the same value", async () => {
   const reply = "<result>\nIt is stuck at the carrier.\n</result>";
-  const f = ai({ name: "where", description: "Where is it?", inputs: { order: t.string() }, router: new FakeRouter([reply]) });
+  const f = ai("where", { description: "Where is it?", input: { order: t.string() }, router: new FakeRouter([reply]) });
   const s = f.stream("A-1");
   const pieces: string[] = [];
   for await (const piece of s) pieces.push(piece);
@@ -213,7 +216,7 @@ test("a stream shows the answer as it is written, and ends with the same value",
 
 test("a reply that arrives whole is one text piece per field", async () => {
   const router = whole(new FakeRouter(["<summary>\nshort\n</summary>\n<result>\nlong answer\n</result>"]));
-  const f = ai({ name: "two", description: "Two.", inputs: { x: t.string() }, outputs: { summary: t.string(), result: t.string() }, router: router as never });
+  const f = ai("two", { description: "Two.", input: { x: t.string() }, outputs: { summary: t.string(), result: t.string() }, router: router as never });
   const s = f.stream("x");
   const events: StreamEvent[] = [];
   for await (const e of s.events()) events.push(e);
@@ -222,12 +225,12 @@ test("a reply that arrives whole is one text piece per field", async () => {
 });
 
 test("a retry voids the text before it; closing a stream cancels the call", async () => {
-  const s = ai({ ...moodDef, router: new FakeRouter(["not tags", "<result>\nhappy\n</result>"]) }).stream("x");
+  const s = ai("mood", { ...moodDef, router: new FakeRouter(["not tags", "<result>\nhappy\n</result>"]) }).stream("x");
   const kinds: string[] = [];
   for await (const e of s.events()) kinds.push(e.kind);
   assert.ok(kinds.includes("retry"));
   assert.equal(s.text, "happy");
-  const slow = ai({ ...moodDef, router: new FakeRouter(["<result>\nhappy\n</result>"], null, "openai", 1) });
+  const slow = ai("mood", { ...moodDef, router: new FakeRouter(["<result>\nhappy\n</result>"], null, "openai", 1) });
   const c = slow.stream("x");
   c.close();
   await assert.rejects(c.result, Cancelled);
@@ -247,13 +250,13 @@ const guess = (req: { messages: readonly { parts: readonly unknown[] }[] }) => {
 };
 
 test("evaluate: the score, its range, and every answer", async () => {
-  const mood = ai({ ...moodDef, router: new FakeRouter([], guess) });
+  const mood = ai("mood", { ...moodDef, router: new FakeRouter([], guess) });
   const ev = await evaluate(mood, rows);
   assert.equal(ev.score, 0.75);
   assert.ok(ev.low! < 0.75 && ev.high! > 0.75);
   assert.deepEqual(ev.scores(), [1, 1, 0, 1]);
   assert.match(String(ev), /^exact_match: 0\.75 \(95% range/);
-  const failing = ai({ ...moodDef, router: new FakeRouter([], () => "?"), retries: 0 });
+  const failing = ai("mood", { ...moodDef, router: new FakeRouter([], () => "?"), retries: 0 });
   const bad = await evaluate(failing, rows.slice(0, 2));
   assert.equal(bad.score, 0);
   assert.ok(bad.rows.every((r) => r.error));
@@ -261,7 +264,7 @@ test("evaluate: the score, its range, and every answer", async () => {
 
 test("improving adds worked examples: a new version, the demos in the request", async () => {
   const router = new FakeRouter([], guess);
-  const mood = ai({ ...moodDef, router });
+  const mood = ai("mood", { ...moodDef, router });
   const labeled = labeledFewShot(mood, rows, { k: 2, seed: 1 });
   assert.equal(labeled.demos.length, 2);
   assert.notEqual(labeled.version, mood.version);
@@ -278,7 +281,7 @@ test("improving adds worked examples: a new version, the demos in the request", 
 // ------------------------------------------------------------------ saved
 
 test("a function saved here loads back with the same version and requests", () => {
-  const mood = ai({ ...moodDef, definedIn: "shop", temperature: 0 });
+  const mood = ai("mood", { ...moodDef, definedIn: "shop", temperature: 0 });
   mood.demos = [{ review: "Broke", result: "unhappy" }];
   const manifest = JSON.parse(JSON.stringify(toManifest(mood)));
   assert.equal(manifest.language, "typescript");
@@ -294,8 +297,8 @@ test("a function saved here loads back with the same version and requests", () =
 
 test("a template without an output pattern: the whole reply is the answer", async () => {
   const router = new FakeRouter(["  A short summary.  "]);
-  const summarize = ai({
-    name: "summarize", description: "Summarize.", inputs: { text: t.string() }, router,
+  const summarize = ai("summarize", {
+    description: "Summarize.", input: { text: t.string() }, router,
     template: [{ role: "system", text: "You are terse. {instruction}" }, { role: "user", text: "Text: {text}" }],
   });
   assert.equal(await summarize("a long text"), "A short summary.");
@@ -305,12 +308,12 @@ test("a template without an output pattern: the whole reply is the answer", asyn
 
 test("the json layout asks for one object and reads it; cot adds reasoning first", async () => {
   const router = new FakeRouter(['{"result": {"name": "Ana", "age": 31}}']);
-  const person = ai({ name: "person", description: "Who?", inputs: { text: t.string() },
+  const person = ai("person", { description: "Who?", input: { text: t.string() },
     output: t.object({ name: t.string(), age: t.integer() }), adapter: "json", router });
   assert.deepEqual(await person("Ana, 31."), { name: "Ana", age: 31 });
   assert.equal((router.requests[0]!.config?.responseFormat as { type?: string } | undefined)?.type, "json_schema");
   const r2 = new FakeRouter(["<reasoning>\n3 pens at 7 each\n</reasoning>\n<result>\n21\n</result>"]);
-  const solve = ai({ name: "solve", description: "Solve it.", inputs: { problem: t.string() }, output: t.number(), module: "cot", router: r2 });
+  const solve = ai("solve", { description: "Solve it.", input: { problem: t.string() }, output: t.number(), module: "cot", router: r2 });
   const p = await solve.predict("7 pens at 3 dollars?");
   assert.equal(p.answer, 21);
   assert.equal(p.outputs["reasoning" as never], "3 pens at 7 each");

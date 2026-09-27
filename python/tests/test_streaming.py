@@ -119,8 +119,8 @@ def test_wrong_arguments_fail_at_once_not_in_the_background(streaming):
         haiku.stream()
     with pytest.raises(TypeError):
         haiku.stream("a", "b")
-    with pytest.raises(TypeError, match="s.prediction"):
-        haiku.stream("a", all=True)
+    with pytest.raises(TypeError):
+        haiku.stream("a", all=True)                 # no such input
 
 
 def test_a_failed_call_raises_at_the_end_of_iteration_and_from_result(streaming):

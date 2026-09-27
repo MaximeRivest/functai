@@ -27,7 +27,7 @@ from .docments import (_class_field_docments, _harvest_ai_output_inline_comments
                        _harvest_inline_param_and_return_comments, flexiclass)
 
 MAIN_OUTPUT_DEFAULT_NAME = "result"
-RESERVED_PARAMS = frozenset({"_prediction", "all"})
+RESERVED_PARAMS: frozenset = frozenset()
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Type-hint helpers

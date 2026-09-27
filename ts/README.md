@@ -5,19 +5,20 @@
 ```ts
 import { ai, t } from "functai";
 
-const mood = ai({
-  name: "mood",
+const mood = ai("mood", {
   description: "How does the customer feel about what they bought?",
-  inputs: { review: t.string() },
+  input: { review: t.string() },
   output: t.enum("happy", "unhappy", "mixed"),
 });
 
-await mood("It broke after one day and support never answered.");   // "unhappy"
+await mood({ review: "It broke after one day and support never answered." });   // "unhappy"
+await mood("It broke after one day.");               // one input: its value alone
 ```
 
 The answer comes back as the type you asked for (here `"happy" | "unhappy"
 | "mixed"`), checked against it: a reply that does not fit is asked again
-once, then refused. The same function written in Python has the same
+once, then refused. The inputs are typed too: a missing, misspelled or
+mistyped input is a compile error, not a paid call. The same function written in Python has the same
 version, logs the same records and saves to the same folder: this package
 follows the [FunctAI contract](../contract/), like the
 [Python package](../python/).
@@ -43,10 +44,9 @@ import { ai, t, describe, configure } from "functai";
 
 configure({ lm: "gpt-4.1-mini", temperature: 0 });
 
-const triage = ai({
-  name: "triage",
+const triage = ai("triage", {
   description: "Read the support ticket.",
-  inputs: { ticket: describe(t.string(), "the customer's own words") },
+  input: { ticket: describe(t.string(), "the customer's own words") },
   outputs: {                                   // several outputs: the last is the answer
     summary: t.string({ description: "one sentence, no names" }),
     minutes: t.integer(),
@@ -60,15 +60,22 @@ p.answer;       // 15
 
 - **Shapes** are JSON Schema: `t.string()`, `t.integer()`, `t.number()`,
   `t.boolean()`, `t.enum(...)`, `t.list(...)`, `t.object({...})`,
-  `t.record(...)`, `t.optional(...)`, or **zod 4** schemas
-  (`z.object({ name: z.string() })`), read as the JSON Schema Python writes
-  for the same type. A `description` on a field (or `describe(shape,
-  text)`, or zod's `.describe`) is guidance the model reads.
+  `t.record(...)`, `t.optional(...)`; or a schema from any library that
+  implements [Standard Schema](https://standardschema.dev) with JSON
+  Schema (zod 4, valibot, arktype, ...), read as the JSON Schema Python
+  writes for the same type. A `description` on a field (or
+  `describe(shape, text)`, or zod's `.describe`) is guidance the model reads.
+- **A call** takes its options second: `await mood(input, { lm:
+  "gpt-6-luna", signal })`: settings for that call only, and an
+  `AbortSignal` that cancels it (`Cancelled`).
+- **Many inputs**: `await mood.map(reviews, { concurrency: 8 })` gives
+  every answer, in order, 8 calls at a time; it rejects with the first
+  failure and starts no more. (`evaluate` keeps going and scores a failure 0.)
 - **Settings**: `lm`, `temperature`, `maxTokens`, `adapter` (`"xml"`, the
   default; `"chat"`; `"json"`), `module: "cot"` (reasoning first),
-  `tools`, `retries`, … on the function, in `configure(...)`, or in
-  `withSettings({...}, () => ...)` for a block of code. `fn.using({...})`
-  is a copy with other settings.
+  `tools`, `retries`, … on the function, in `configure(...)`, in
+  `withSettings({...}, () => ...)` for a block of code, or on one call.
+  `fn.using({...})` is a copy with other settings.
 - `fn.render(...)` is the exact request, without sending it.
   `fn.version` names what the function sends besides its inputs.
 
@@ -77,11 +84,9 @@ p.answer;       // 15
 ```ts
 import { tool } from "functai";
 
-const lookup = tool(
-  { name: "lookup_order", description: "Look up where an order is.", input: { order: t.string() } },
-  ({ order }) => orders[order] ?? "unknown order",
-);
-const support = ai({ name: "support", description: "Answer the customer.", inputs: { message: t.string() }, tools: [lookup] });
+const lookup = tool("lookup_order", { description: "Look up where an order is.", input: { order: t.string() } },
+  ({ order }) => orders[order] ?? "unknown order");      // `order` is a string, from its shape
+const support = ai("support", { description: "Answer the customer.", input: { message: t.string() }, tools: [lookup] });
 await support("Where is my order A-1042?");
 ```
 
@@ -113,21 +118,22 @@ String(ev);            // "exact_match: 1.00 (95% range 0.34 to 1.00), n=2"
 ```
 
 Columns named like the inputs are the inputs; columns named like the
-outputs are the right answers (or `expected: "category"`). The range is a
+outputs are the right answers (or `expected: "category"`). Rows are typed:
+a row missing an input, or an `expected` column the rows lack, is a
+compile error. The range is a
 95% interval (Wilson's for right-or-wrong).
 
 ## Making it better
 
 ```ts
-import { labeledFewShot, bootstrapFewShot, gepa, trials } from "functai";
+import { labeledFewShot, bootstrapFewShot, gepa } from "functai";
 
 const taught = labeledFewShot(mood, rows, { k: 8 });            // rows become worked examples
 const better = await bootstrapFewShot(mood, rows, { teacher: "gpt-4.1" });   // runs that were right become examples
-const learned = await gepa(mood, rows, { teacher: "gpt-6-sol" });            // the instruction, rewritten from mistakes
-trials(learned);                                                // the search: every instruction tried
+const { fn: learned, trials } = await gepa(mood, rows, { teacher: "gpt-6-sol" });   // the instruction, rewritten from mistakes
 ```
 
-Each returns an improved copy with a new version.
+Each returns an improved copy with a new version; `mood` is unchanged.
 
 `gepa` shows a stronger model the function's answers with feedback in
 words ("wrong: the right answer is billing") and keeps the best
@@ -146,6 +152,7 @@ configure({ logCalls: true });                  // or FUNCTAI_LOG_CALLS=1
 const p = await mood.predict("Arrived late.");
 rate(p, "wrong", { answer: "mixed" });         // a person's correction
 rated(mood).rows;                              // rows with known answers, for evaluate and the optimizers
+calls(mood);                                   // every call, typed: started, seconds, usage.inputTokens, caller, ...
 ```
 
 Every call is one line of JSON in `~/.local/share/functai/calls` (the

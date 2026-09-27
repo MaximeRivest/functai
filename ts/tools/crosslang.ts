@@ -30,9 +30,9 @@ for (const [name, want] of Object.entries(python)) {
 }
 
 // 2. the same function, written here
-const mood = ai({
-  name: "mood", description: "How does the customer feel about what they bought?", definedIn: "shop",
-  inputs: { review: t.string() }, output: t.enum("happy", "unhappy", "mixed"), temperature: 0, lm: "gpt-4.1-mini",
+const mood = ai("mood", {
+  description: "How does the customer feel about what they bought?", definedIn: "shop",
+  input: { review: t.string() }, output: t.enum("happy", "unhappy", "mixed"), temperature: 0, lm: "gpt-4.1-mini",
   router: new FakeRouter([], () => "<result>\nmixed\n</result>"), logCalls: join(work, "log"),
 });
 assert.equal(mood.version, python["mood"]!.version);

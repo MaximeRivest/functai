@@ -174,6 +174,7 @@ def phistory(n: int = 1) -> _Text:
     @ai
     def capital(country: str) -> str:
         """The country's capital city."""
+        ...
 
     capital("Japan")
     print(phistory())

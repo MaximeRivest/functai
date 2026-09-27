@@ -155,7 +155,7 @@ class _Target:
     def run(self, row: Mapping[str, Any]) -> Prediction:
         inputs = self.inputs_of(row)
         if self.single:
-            return self.program(**inputs, all=True)
+            return self.program._invoke((), inputs, full=True)
         return Prediction({"result": self.program(**{**self.call_defaults, **inputs})})
 
 
@@ -778,6 +778,7 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
     @ai
     def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
         """Which team should answer this customer message?"""
+        ...
 
     tickets = functai.datasets.tickets().slice_head(n=20)
     ev = evaluate(team, tickets, expected="category", num_threads=8)
@@ -876,11 +877,13 @@ def compare(before: Evaluation, after: Evaluation):
     @ai
     def category(message: str) -> Literal["shipping", "billing", "product"]:
         """The support category of the message."""
+        ...
 
     @ai
     def category_v2(message: str) -> Literal["shipping", "billing", "product"]:
         """The support category of the message. An item that arrived broken is
         shipping; any request for money back is billing."""
+        ...
 
     compare(evaluate(category, rows, num_threads=5), evaluate(category_v2, rows, num_threads=5))
     ```

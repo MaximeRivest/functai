@@ -41,6 +41,7 @@ body can be empty: a docstring alone, `...`, or `return _ai` all mean
 @ai
 def sentiment(text: str) -> str:
     """Is the text 'positive', 'negative' or 'neutral'?"""
+    ...
 
 sentiment("The update broke my favourite feature.")
 ```
@@ -99,6 +100,7 @@ colleague. Compare the function above with this one:
 @ai
 def f(x: str) -> str:
     """Classify."""
+    ...
 
 f("The update broke my favourite feature.")
 ```
@@ -122,6 +124,7 @@ from typing import Literal
 @ai
 def sentiment(text: str) -> Literal["positive", "negative", "neutral"]:
     """The sentiment of the text."""
+    ...
 
 sentiment("The update broke my favourite feature.")
 ```
@@ -188,7 +191,7 @@ def is_urgent(message: str) -> bool:
     reasoning: str = _ai     # which words or facts show how urgent it is
     return _ai
 
-p = is_urgent("Our whole team is locked out and we have a demo in 30 minutes.", all=True)
+p = is_urgent.predict("Our whole team is locked out and we have a demo in 30 minutes.")
 p.reasoning, p.result
 ```
 
@@ -242,7 +245,7 @@ true
 (finish: stop; tokens in 88, out 57)
 ```
 
-`all=True` returns every output, not just the return value. The rule is
+`fn.predict(...)` returns every output, not just the return value. The rule is
 simple: **a bare `_ai` is always the answer; `name = _ai` is another
 output.** (The description can also go in brackets,
 `_ai["which words show urgency"]`, where a comment won't fit.) More in
@@ -258,6 +261,7 @@ the conversation.
 @ai(lm="gpt-4.1-nano", temperature=0)
 def headline(article: str) -> str:
     """A headline of at most eight words."""
+    ...
 
 headline("The city council voted on Tuesday to turn the old rail yard into a park with a public pool.")
 ```

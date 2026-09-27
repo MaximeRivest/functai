@@ -63,25 +63,13 @@ from typing import Literal
 @ai
 def team(message: str) -> Literal["shipping", "billing", "product"]:
     """Which team should answer this customer message?"""
+    ...
 
 with functai.configure(log_calls=tempfile.mkdtemp()):
-    a = team("My parcel never came.", all=True)
-    b = team("The chair arrived with a snapped leg.", all=True)
+    a = team.predict("My parcel never came.")
+    b = team.predict("The chair arrived with a snapped leg.")
     functai.rate(a, "right")
     functai.rate(b, "wrong", answer="shipping")    # broken on the way: the carrier's fault
     rows = functai.rated(team)
 rows.select("message", "result", "rating")
-```
-
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-# dpyr dataframe · source: polars · showing 2 of 2 rows
-┌───────────────────────────────────────┬──────────┬────────┐
-│ message                               ┆ result   ┆ rating │
-│ ---                                   ┆ ---      ┆ ---    │
-│ str                                   ┆ str      ┆ str    │
-╞═══════════════════════════════════════╪══════════╪════════╡
-│ My parcel never came.                 ┆ shipping ┆ right  │
-│ The chair arrived with a snapped leg. ┆ shipping ┆ wrong  │
-└───────────────────────────────────────┴──────────┴────────┘
 ```

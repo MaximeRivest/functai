@@ -43,7 +43,8 @@ def test_bootstrap_keeps_the_runs_the_metric_accepts(fake):
     # the model gets "How do I get there?" wrong; the others right
     r = fake(responder=lambda req: "<result>\n" + ("booking" if "get there" in query_of(req)
                                                    else _label(query_of(req))) + "\n</result>")
-    f.opt(trainset=TRAIN)
+    original = f
+    f = f.opt(TRAIN)
     demos = f.demos
     boot = [d for d in demos if not isinstance(d, dict)]
     labeled = [d for d in demos if isinstance(d, dict)]
@@ -53,15 +54,16 @@ def test_bootstrap_keeps_the_runs_the_metric_accepts(fake):
     f("Can I book for Tuesday?")
     req = r.requests[n]
     assert [m.role for m in req.messages] == ["user", "assistant"] * 4 + ["user"]
-    f.undo_opt()
-    assert f.demos == []
-    assert len(f.programs()) == 1 and f.optimization_runs()[0]["optimizer"] == "BootstrapFewShot"
+    assert original.demos == []                          # an improved copy; the function given is unchanged
+    assert original.version != f.version
+    assert [r["optimizer"] for r in f.optimization_runs()] == ["BootstrapFewShot"]
+    assert original.optimization_runs() == []
 
 
 def test_labeled_few_shot(fake):
     f = make_classifier()
     fake()
-    f.opt(trainset=TRAIN, optimizer=LabeledFewShot, k=2)
+    f = f.opt(TRAIN, optimizer=LabeledFewShot, k=2)
     assert len(f.demos) == 2 and all(isinstance(d, dict) for d in f.demos)
 
 
@@ -70,7 +72,7 @@ def test_training_data_can_be_a_table(fake, tmp_path):
     f = make_classifier()
     fake()
     dpyr.read(TRAIN).write(str(tmp_path / "train.parquet"))
-    f.opt(trainset=str(tmp_path / "train.parquet"), optimizer=LabeledFewShot(k=5))
+    f = f.opt(str(tmp_path / "train.parquet"), optimizer=LabeledFewShot(k=5))
     assert {d["inputs"]["user_query"] for d in f.demos} == {r["user_query"] for r in TRAIN}
 
 
@@ -78,7 +80,7 @@ def test_training_data_must_have_the_inputs(fake):
     f = make_classifier()
     fake()
     with pytest.raises(ValueError, match="is 'user_querry' a typo"):
-        f.opt(trainset=[{"user_querry": "a", "result": "booking"}])
+        f.opt([{"user_querry": "a", "result": "booking"}])
 
 
 def test_random_search_picks_the_best_candidate(fake):
@@ -91,7 +93,7 @@ def test_random_search_picks_the_best_candidate(fake):
 
     fake(responder=responder)
     opt = BootstrapFewShotWithRandomSearch(num_candidate_programs=2, max_labeled_demos=2)
-    f.opt(trainset=TRAIN, optimizer=opt)
+    f = f.opt(TRAIN, optimizer=opt)
     best = max(opt.candidates, key=lambda c: c["score"])
     assert f.demos and best["candidate"] != "zero-shot"
     assert evaluate(f, TRAIN, functai.exact_match).score == 1.0
@@ -109,11 +111,11 @@ def test_instruction_search_finds_the_instruction_that_works(fake):
 
     fake(responder=responder)
     opt = InstructionSearch(num_candidates=4, num_trials=10, max_bootstrapped_demos=0, max_labeled_demos=0)
-    f.opt(trainset=TRAIN, optimizer=opt)
-    assert "Use the labels exactly" in f.instructions
-    assert f.demos == []
-    f.undo_opt()
+    better = f.opt(TRAIN, optimizer=opt)
+    assert "Use the labels exactly" in better.instructions
+    assert better.demos == []
     assert "Use the labels exactly" not in f.instructions
+    assert better.trials and better.trials == opt.trials
 
 
 def test_a_teacher_model_bootstraps_the_demos(fake):
@@ -124,7 +126,7 @@ def test_a_teacher_model_bootstraps_the_demos(fake):
         return "<result>\n" + (_label(query_of(req)) if smart else "information") + "\n</result>"
 
     r = fake(responder=responder)
-    f.opt(trainset=TRAIN, teacher_lm="gpt-4.1", max_labeled_demos=4)
+    f = f.opt(TRAIN, teacher_lm="gpt-4.1", max_labeled_demos=4)
     assert len([d for d in f.demos if not isinstance(d, dict)]) == 4
     assert {req.model for req in r.requests} == {"gpt-4.1"}
     f("book it")
@@ -141,7 +143,7 @@ def test_synthesized_examples_from_a_teacher(fake):
         return "<result>\n" + _label(query_of(req)) + "\n</result>"
 
     fake(responder=responder)
-    f.opt(n_synth=2, teacher_lm="gpt-4.1", optimizer=LabeledFewShot)
+    f = f.opt(n_synth=2, teacher_lm="gpt-4.1", optimizer=LabeledFewShot)
     assert sorted(d["inputs"]["user_query"] for d in f.demos) == ["reserve a table", "where is it"]
 
 
@@ -152,13 +154,13 @@ def test_dspy_optimizers_are_refused_with_a_way_forward(fake):
     f = make_classifier()
     fake()
     with pytest.raises(TypeError, match="InstructionSearch"):
-        f.opt(trainset=TRAIN, optimizer=MIPROv2)
+        f.opt(TRAIN, optimizer=MIPROv2)
 
 
 def test_save_and_load(fake, tmp_path):
     f = make_classifier()
     fake(responder=lambda req: "<result>\n" + _label(query_of(req)) + "\n</result>")
-    f.opt(trainset=TRAIN, max_bootstrapped_demos=2, max_labeled_demos=3)
+    f = f.opt(TRAIN, max_bootstrapped_demos=2, max_labeled_demos=3)
     f.instructions = "Classify carefully."
     path = tmp_path / "classify.json"
     f.save(path)
@@ -204,13 +206,16 @@ def test_a_module_is_optimized_as_one_program(fake):
     def metric(row, prediction):
         return 1.0 if prediction.result else 0.0
 
-    research_hop.opt(trainset=trainset, metric=metric, call_defaults=dict(hops=1))
-    assert len(generate_query.demos) == 1 and len(append_notes.demos) == 1
+    better = research_hop.opt(trainset, metric=metric, call_defaults=dict(hops=1))
+    assert generate_query.demos == [] and append_notes.demos == []     # the functions themselves are unchanged
+    assert {k: len(st.demos) for k, st in better.state().items()} == {"generate_query": 1, "append_notes": 1}
+    assert better.version != research_hop.version
     n = len(r.requests)
-    research_hop("Big Ben is in London.", 1)
+    better("Big Ben is in London.", 1)
     assert [m.role for m in r.requests[n].messages] == ["user", "assistant", "user"]
-    research_hop.undo_opt()
-    assert generate_query.demos == [] and append_notes.demos == []
+    n = len(r.requests)
+    research_hop("Big Ben is in London.", 1)                          # the original runs as it was
+    assert [m.role for m in r.requests[n].messages] == ["user"]
 
 
 def test_autoinstruct_is_opt_in_and_runs_at_the_first_call(fake):
@@ -270,7 +275,7 @@ def test_gepa_rewrites_the_instruction_from_its_mistakes(fake):
 
     r = fake(responder=responder)
     opt = GEPA(budget=60, seed=1)
-    f.opt(trainset=MORE, optimizer=opt)
+    f = f.opt(MORE, optimizer=opt)
     assert f.instructions == GOOD
     reflections = [q for q in r.requests if _reflecting(q)]
     shown = "".join(_last_user(q) for q in reflections)
@@ -300,7 +305,7 @@ def test_gepa_runs_a_row_once_per_instruction(fake):
 
     fake(responder=responder)
     opt = GEPA(budget=40)
-    f.opt(trainset=MORE, optimizer=opt)
+    f = f.opt(MORE, optimizer=opt)
     assert len(seen) == len(set(seen)) == opt.calls
     assert f.instructions == make_classifier().instructions            # nothing beat the written one: kept
 
@@ -322,7 +327,7 @@ def test_gepa_drops_a_proposal_that_copies_an_input_and_says_so(fake):
 
     fake(responder=responder)
     opt = GEPA(budget=40)
-    f.opt(trainset=long_rows, optimizer=opt)
+    f = f.opt(long_rows, optimizer=opt)
     assert any(t["note"] == "copied an input: dropped" for t in opt.trials)
     assert any("dropped: it copied an input" in text for text in reflections[1:])   # the next reflection is told
     assert f.instructions == make_classifier().instructions
@@ -347,4 +352,4 @@ def test_gepa_refuses_a_module(fake):
 
     fake("<result>\ninformation\n</result>")
     with pytest.raises(TypeError, match="one AI function"):
-        route.opt(trainset=MORE, optimizer=GEPA)
+        route.opt(MORE, optimizer=GEPA)
