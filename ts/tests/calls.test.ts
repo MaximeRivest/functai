@@ -287,3 +287,30 @@ test("a function saved here loads back with the same version and requests", () =
   assert.equal(again.module, "shop");
   assert.deepEqual(again.render("x"), mood.render("x"));
 });
+
+// ------------------------------------------------------------------ layouts
+
+test("a template without an output pattern: the whole reply is the answer", async () => {
+  const router = new FakeRouter(["  A short summary.  "]);
+  const summarize = ai({
+    name: "summarize", description: "Summarize.", inputs: { text: t.string() }, router,
+    template: [{ role: "system", text: "You are terse. {instruction}" }, { role: "user", text: "Text: {text}" }],
+  });
+  assert.equal(await summarize("a long text"), "A short summary.");
+  assert.equal(router.requests[0]!.system, "You are terse. Function: summarize\n\nSummarize.");
+  assert.equal(text(router.requests[0]!.messages[0]!), "Text: a long text");
+});
+
+test("the json layout asks for one object and reads it; cot adds reasoning first", async () => {
+  const router = new FakeRouter(['{"result": {"name": "Ana", "age": 31}}']);
+  const person = ai({ name: "person", description: "Who?", inputs: { text: t.string() },
+    output: t.object({ name: t.string(), age: t.integer() }), adapter: "json", router });
+  assert.deepEqual(await person("Ana, 31."), { name: "Ana", age: 31 });
+  assert.equal((router.requests[0]!.config?.responseFormat as { type?: string } | undefined)?.type, "json_schema");
+  const r2 = new FakeRouter(["<reasoning>\n3 pens at 7 each\n</reasoning>\n<result>\n21\n</result>"]);
+  const solve = ai({ name: "solve", description: "Solve it.", inputs: { problem: t.string() }, output: t.number(), module: "cot", router: r2 });
+  const p = await solve.predict("7 pens at 3 dollars?");
+  assert.equal(p.answer, 21);
+  assert.equal(p.outputs["reasoning" as never], "3 pens at 7 each");
+  assert.match(r2.requests[0]!.system as string, /Reason step by step in the 'reasoning' section/);
+});

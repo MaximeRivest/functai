@@ -73,21 +73,18 @@ functai.check(handle)
 ```output
 handle  @module  [__main__]
 ├── Handled  class  [__main__]
+│   ├── Priority  class  [__main__]
+│   │   └── Enum  (stdlib)
+│   └── dataclass  (stdlib)
 ├── priority  AI function (message: str → Priority)  [__main__]
-│   └── Priority  class  [__main__]
+│   └── Priority  (see above)
 └── draft_reply  AI function (message: str → str)  [__main__]
     └── tool lookup_order  function  [__main__]
         └── ORDERS = {'A-1042': 'stuck at carrier', 'B-221...
 
-requirements: functai @ file:///home/maxime/Projects/functai
+requirements: functai @ file:///home/maxime/Projects/functai/python
 
-✗ unresolved-name  __main__:Handled: 'Priority' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-✗ unresolved-name  __main__:Handled: 'dataclass' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-✗ unresolved-name  __main__:Priority: 'Enum' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
 
@@ -134,20 +131,11 @@ for root, dirs, files in sorted(os.walk(folder)):
 ```
 
 ```output
-Traceback (most recent call last):
-  File "<rat-cell-4>", line 4, in <module>
-    functai.save(handle, folder, record=[{"message": "Where is order A-1042?"}])
-    ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/saved.py", line 554, in save
-    raise Refused(report)
-functai.graph.Refused: the program cannot be saved cleanly:
-✗ unresolved-name  __main__:Handled: 'Priority' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-✗ unresolved-name  __main__:Handled: 'dataclass' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-✗ unresolved-name  __main__:Priority: 'Enum' is not defined where the function is (a name from the enclosing function?)
-    fix: make it a module-level name, or a literal
-(save(..., allow=[code, ...]) records a deliberate exception)
+functai.json
+recordings.json
+requirements.lock
+requirements.txt
+code/main.py
 ```
 
 The folder is plain files, readable and diffable:
@@ -176,6 +164,10 @@ result. No model is called.
 functai.verify(folder, trust=True, fresh=False)
 ```
 
+```output
+verified in this environment
+```
+
 (`fresh=False` checks in the current environment, which is quicker and
 weaker; the default builds the fresh one, about a second once uv's cache
 is warm.)
@@ -185,6 +177,10 @@ is warm.)
 ```python
 loaded = functai.load(folder, trust=True)
 loaded("My toaster order B-2210 never arrived??")
+```
+
+```output
+Handled(priority=<Priority.URGENT: 'urgent'>, reply='Your toaster order B-2210 has been delivered. Please check if it might have been received by someone else at your address or left in a safe place. Let me know if you need any further assistance!')
 ```
 
 `load` checks before it runs anything: file hashes (catching accidental

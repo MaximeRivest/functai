@@ -188,6 +188,17 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   return fn;
 }
 
+const ids = new WeakMap<object, number>();
+let lastId = 0;
+function objectId(o: object): number {
+  let id = ids.get(o);
+  if (id === undefined) {
+    id = ++lastId;
+    ids.set(o, id);
+  }
+  return id;
+}
+
 /** An AI function over a core (ai(), using(), a saved folder). */
 export function make(core: Core): AIFunction {
   const names = core.definition.inputs.map((f) => f.name);
@@ -209,6 +220,12 @@ export function make(core: Core): AIFunction {
     return got;
   };
   const layout = (s: Settings) => ({ adapter: s.adapter, template: s.template ?? null });
+  /** A cache key for the layout: a named one by name, an adapter object by identity. */
+  const layoutKey = (s: Settings): string => {
+    const a = s.adapter;
+    const adapter = a === undefined || a === null || typeof a === "string" ? (a ?? null) : `object:${objectId(a as object)}`;
+    return JSON.stringify([adapter, s.template ?? null]);
+  };
 
   const bindInputs = (args: unknown[]): Rec => {
     if (args.length === 1 && typeof args[0] === "object" && args[0] !== null && !Array.isArray(args[0])
@@ -263,7 +280,7 @@ export function make(core: Core): AIFunction {
 
   const version = (): string => {
     const s = settingsNow();
-    const key = JSON.stringify(["version", s.adapter ?? null, s.template ?? null, s.module ?? null, s.includeFnName ?? null, core.state]);
+    const key = JSON.stringify(["version", layoutKey(s), s.module ?? null, s.includeFnName ?? null, core.state]);
     let v = cache.get(key) as string | undefined;
     if (!v) {
       let r: string;
@@ -291,7 +308,7 @@ export function make(core: Core): AIFunction {
   const planFor = (s: Settings) => {
     const r = route(s);
     const caps = callCapabilities(r.provider, r.wire, { temperature: s.temperature, capabilities: s.capabilities });
-    const key = JSON.stringify(["plan", layout(s), caps, r.provider, s.module ?? null, s.includeFnName ?? null, core.state.instructions]);
+    const key = JSON.stringify(["plan", layoutKey(s), caps, r.provider, s.module ?? null, s.includeFnName ?? null, core.state.instructions]);
     let plan = cache.get(key) as lmcc.Plan | undefined;
     if (!plan) {
       plan = bind(layout(s), signatureNow(s), caps, r.provider);
