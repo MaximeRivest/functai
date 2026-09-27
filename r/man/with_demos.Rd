@@ -15,8 +15,8 @@ ai_demos(fn)
 \arguments{
 \item{fn}{An AI function.}
 
-\item{demos}{A data frame whose columns are named like the inputs and
-outputs, or a list of \code{list(inputs = ..., outputs = ...)}.}
+\item{demos}{A data frame whose columns are named like the formula's
+inputs and outputs, or a list of \code{list(inputs = ..., outputs = ...)}.}
 
 \item{instructions}{The instruction the model gets instead of the one
 written from the name and description (\code{NULL}: the written one).}

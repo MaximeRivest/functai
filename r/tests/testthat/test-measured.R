@@ -15,8 +15,8 @@ jev_router <- function(dist = c(billing = 0.7, shipping = 0.2, product = 0.1, ac
   list(resolve = function(model) list(provider = "typesafe", model = model), complete = complete, env = env)
 }
 
-team_fn <- function(router) ai("team", "Which team should answer this message?", message = character(),
-  .returns = factor(levels = c("shipping", "billing", "product", "account")), .lm = "jev-latest", .router = router)
+team_fn <- function(router) ai(team ~ message, "Which team should answer this message?",
+  team = choice("shipping", "billing", "product", "account"), .lm = "jev-latest", .router = router)
 
 test_that("a model that measures its probabilities gives them with one call a row", {
   r <- jev_router()

@@ -7,7 +7,7 @@
 described(x, desc)
 }
 \arguments{
-\item{x}{A prototype (\code{character()}, \code{factor(levels = ...)}, ...).}
+\item{x}{A type (\code{integer()}, \code{\link[=choice]{choice()}}, ...).}
 
 \item{desc}{What the field means.}
 }
@@ -16,7 +16,9 @@ A field.
 }
 \description{
 Words about an input or an output, which the model reads as guidance.
+In \code{\link[=ai]{ai()}}, a sentence alone describes a text field (or a field whose
+type comes from \code{.data}); \code{described()} gives words to any other type.
 }
 \examples{
-described(character(), "the customer's own words")
+described(integer(), "whole days since the parcel arrived")
 }

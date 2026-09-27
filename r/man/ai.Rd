@@ -5,11 +5,11 @@
 \title{Write a function a language model does the work of}
 \usage{
 ai(
-  .name,
+  .formula,
   .description = "",
   ...,
-  .returns = character(),
-  .outputs = NULL,
+  .data = NULL,
+  .name = NULL,
   .tools = NULL,
   .demos = NULL,
   .instructions = NULL,
@@ -17,19 +17,21 @@ ai(
 )
 }
 \arguments{
-\item{.name}{The function's name. The model reads it (\code{"Function: mood"}),
-and the call log files calls under it.}
+\item{.formula}{\code{outputs ~ inputs}, as names joined by \code{+}.}
 
-\item{.description}{What it does, in a sentence or a paragraph.}
+\item{.description}{What the function does, in a sentence or a
+paragraph: the model's instructions.}
 
-\item{...}{Inputs, as \code{name = prototype}; and settings, as dotted names
+\item{...}{The fields, as above; and settings, as dotted names
 (\code{.lm = "claude-haiku-4-5"}, \code{.temperature = 0}, \code{.adapter = "json"},
 \code{.module = "cot"}, ...: see \code{\link[=ai_config]{ai_config()}}).}
 
-\item{.returns}{The answer's type (default \code{character()}), named \code{result}.}
+\item{.data}{A data frame whose columns give the fields their types (a
+factor becomes a choice of its levels). Only its column types are read,
+never its rows.}
 
-\item{.outputs}{Several outputs instead: a named list of prototypes. The
-last is the answer. The function then returns a tibble, one column each.}
+\item{.name}{The function's name. The model reads it (\code{"Function: team"}), and the call log files calls under it. Default: the output's
+name, when there is one.}
 
 \item{.tools}{Functions the model may call, from \code{\link[=ai_tool]{ai_tool()}}.}
 
@@ -44,25 +46,46 @@ last is the answer. The function then returns a tibble, one column each.}
 An AI function (class \code{functai_fn}).
 }
 \description{
-Name the function, say in a sentence what it does, give its inputs and
-the type of its answer. The result is an ordinary, vectorised R function:
-call it on one value or on whole columns inside \code{\link[dplyr:mutate]{dplyr::mutate()}}. Each
-row is one model call; up to \code{concurrency} (default 8) run at once.
+Write it the way you write a model: a formula says what comes out and
+what goes in (\code{team ~ message}), a sentence says what the function does,
+and a model writes the body. The result is an ordinary, vectorised R
+function, \code{team(message)}: call it on one value or on whole columns
+inside \code{\link[dplyr:mutate]{dplyr::mutate()}}. Each row is one model call; up to \code{concurrency}
+(default 8) run at once.
 }
 \details{
-Types are prototypes, the way vctrs writes them: \code{character()},
-\code{integer()}, \code{double()}, \code{logical()}, \code{factor(levels = c(...))} (one of
-those levels), a zero-row \code{\link[tibble:tibble]{tibble::tibble()}} (a record of its columns),
-\code{\link[vctrs:list_of]{vctrs::list_of()}} (a list), \code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}. \code{\link[=described]{described()}}
-adds words about a field.
+\strong{The formula.} Outputs on the left, inputs on the right, each a name,
+joined by \code{+}: \code{team ~ message}, \code{summary + urgent ~ message}, \code{decision ~ message + price + final_sale}. With \code{.data}, \code{.} on the right is every
+other column, as in \code{\link[stats:lm]{stats::lm()}}. One output: the function returns a
+vector and is named after it (\code{team}). Several: it returns a tibble, one
+column each, which \code{\link[dplyr:mutate]{dplyr::mutate()}} splices in; name it with \code{.name}.
+
+\strong{The fields} (\code{...}, named like the formula's), are a codebook:
+\itemize{
+\item nothing: text, or the type of the column of the same name in \code{.data};
+\item a sentence: the same, with words the model reads about the field
+(\code{message = "the customer's own words"});
+\item a type: \code{\link[=choice]{choice()}} (one of a set of answers), \code{integer()}, \code{double()},
+\code{logical()}, \code{character()}, \code{\link[=record]{record()}}, \code{\link[vctrs:list_of]{vctrs::list_of()}},
+\code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}; \code{\link[=described]{described()}} adds words to a type.
+}
 }
 \examples{
-mood <- ai("mood", "How does the customer feel about what they bought?",
-  review = character(),
-  .returns = factor(levels = c("happy", "unhappy", "mixed")))
+mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
+  mood = choice("happy", "unhappy", "mixed"))
 mood
+
+triage <- ai(summary + urgent ~ message, "Read the support ticket.",
+  message = "the customer's own words",
+  summary = "one sentence, no names",
+  urgent = logical(),
+  .name = "triage")
+
+# types from a table's columns: `decision` is a factor, `price` a number
+refund <- ai(decision ~ message + price + final_sale, "Should the shop refund this request?",
+  .data = refunds)
 \dontrun{
 mood("It broke after one day.")
-tickets |> dplyr::mutate(mood = mood(message))
+tickets |> dplyr::mutate(triage(message))
 }
 }

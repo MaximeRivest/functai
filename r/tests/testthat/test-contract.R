@@ -49,7 +49,11 @@ r_function <- function(d) {
   if (!is.null(d$settings$module)) settings$.module <- d$settings$module
   if (isFALSE(d$settings$include_fn_name_in_instructions)) settings$.include_fn_name <- FALSE
   tools <- lapply(d$tools, function(t) structure(list(name = t$name, description = t$description, parameters = t$parameters, fn = function(...) ""), class = "functai_tool"))
-  fn <- do.call(ai, c(list(.name = d$name, .description = d$description), inputs, list(.outputs = outputs, .tools = tools), settings))
+  single <- identical(names(outputs), "result")
+  lhs <- if (single) d$name else names(outputs)
+  if (single) names(outputs) <- d$name
+  formula <- stats::reformulate(names(inputs), response = str2lang(paste(lhs, collapse = " + ")))
+  fn <- do.call(ai, c(list(formula, d$description), inputs, outputs, list(.name = d$name, .tools = tools), settings))
   if (!is.null(d$state$instructions)) fn <- with_instructions(fn, d$state$instructions)
   if (length(d$state$demos)) fn <- with_demos(fn, d$state$demos)
   fn

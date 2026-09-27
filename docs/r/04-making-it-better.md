@@ -48,16 +48,15 @@ refunds$message[5]
 [1] "I'm sorry to even ask this after so long, it's been about a year since these arrived, I've been using them regularly, but the colour just never really settled in with the rest of my bathroom and I keep reaching for a different set instead, so I was hoping a refund might still be possible?\n\nPriya"
 ```
 
-A function that decides takes the message *and* the facts. Every input is a named argument with its type:
+A function that decides takes the message *and* the facts. Write it the way you'd write a model of the decision, with the table the columns come from:
 
 ```r
-refund <- ai("refund", "Should the shop refund this request?",
-  message = character(),
-  price = double(),
-  days_since_delivery = integer(),
-  final_sale = logical(),
-  .returns = factor(levels = c("approve", "deny")))
+refund <- ai(decision ~ message + price + days_since_delivery + final_sale,
+  "Should the shop refund this request?",
+  .data = refunds, .name = "refund")
 ```
+
+`.data = refunds` works as it does in `lm()`: each field takes the type of its column, so `price` is a number, `days_since_delivery` a whole number, `final_sale` yes or no, and `decision`, a factor, is a choice between `approve` and `deny`. Only the column types are read; no row is sent anywhere. `.name` calls the function `refund` (it would otherwise be named after its output, `decision`).
 
 ## Three piles of rows, used for three different things
 
@@ -88,7 +87,7 @@ examples      dev     test
 ## Where we start
 
 ```r
-ev_plain <- evaluate(refund, dev, expected = decision)
+ev_plain <- evaluate(refund, dev)
 ev_plain
 ```
 
@@ -96,6 +95,8 @@ ev_plain
 <evaluation of refund> 40 rows
   exact_match: 0.93  (95% interval 0.80 to 0.97)
 ```
+
+The formula said the answer is `decision`, so `evaluate()` compares with the `decision` column. (When the right answers are in a column of another name, say so: `expected = category`.)
 
 The model has never seen the shop's rules, yet it's right most of the time: it knows what refund policies usually say. What's it getting wrong? Look at the dev rows (never the test rows):
 
@@ -123,7 +124,7 @@ Most of the misses deny a refund the shop would give: damage reported after seve
 The rules are in `?refunds`. They're the shop's policy, not something we invented by staring at the mistakes, which matters: rules written to fix particular dev rows would be fitted to those rows.
 
 ```r
-refund_rules <- ai("refund",
+refund_rules <- ai(decision ~ message + price + days_since_delivery + final_sale,
   "Should the shop refund this request? Follow the refund rules exactly:
   - Damaged on arrival, or the wrong item (or part of the order missing): refund within 60 days
     of delivery, final sale or not.
@@ -131,10 +132,9 @@ refund_rules <- ai("refund",
   - Unopened, or opened but not used, and no longer wanted: refund within 30 days, never for a
     final-sale item.
   - Used and no longer wanted: no refund.",
-  message = character(), price = double(), days_since_delivery = integer(), final_sale = logical(),
-  .returns = factor(levels = c("approve", "deny")))
+  .data = refunds, .name = "refund")
 
-ev_rules <- evaluate(refund_rules, dev, expected = decision)
+ev_rules <- evaluate(refund_rules, dev)
 ev_rules
 ```
 
@@ -145,14 +145,12 @@ ev_rules
 
 ## 2. Show it worked examples
 
-A new colleague learns from rules, and also from seeing past cases. `labeled_few_shot()` picks rows with known answers and puts them in front of every question as solved examples. It needs the answer in a column named like the function's output, which for a single answer is `result`:
+A new colleague learns from rules, and also from seeing past cases. `labeled_few_shot()` picks rows with known answers and puts them in front of every question as solved examples. It takes each example's answer from the column the formula names, `decision`:
 
 ```r
-shown <- examples |> mutate(result = decision)
+refund_shown <- refund_rules |> labeled_few_shot(examples, k = 8)
 
-refund_shown <- refund_rules |> labeled_few_shot(shown, k = 8)
-
-ev_shown <- evaluate(refund_shown, dev, expected = decision)
+ev_shown <- evaluate(refund_shown, dev)
 ev_shown
 ```
 
@@ -182,9 +180,9 @@ Labelled rows show the answer, not the thinking. `bootstrap_few_shot()` runs a *
 
 ```r
 refund_taught <- refund_rules |>
-  bootstrap_few_shot(shown, teacher = "gpt-6-sol", max_bootstrapped = 4, max_labeled = 4)
+  bootstrap_few_shot(examples, teacher = "gpt-6-sol", max_bootstrapped = 4, max_labeled = 4)
 
-ev_taught <- evaluate(refund_taught, dev, expected = decision)
+ev_taught <- evaluate(refund_taught, dev)
 ev_taught
 ```
 
@@ -274,7 +272,7 @@ Every version is 90%, yet the winner scores about 95% on average, just by being 
 Choose on dev. Three versions tie at the top, so choose the **simplest**: the rules alone. Worked examples make every call longer and so dearer, and they bought nothing we can measure. When results tie, the cheaper, simpler thing wins. Now, once, the test rows:
 
 ```r
-ev_final <- evaluate(refund_rules, test, expected = decision)
+ev_final <- evaluate(refund_rules, test)
 ev_final
 ```
 

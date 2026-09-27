@@ -138,11 +138,11 @@ system.time(ai_fit <- fit(ai_spec, category ~ message, data = train))
 ai_fit
 #> parsnip model object
 #> 
-#> <ai function> category(message) -> result: factor [account, billing, product, shipping]
-#>   Function: category
-#>   
+#> <ai function> category ~ message
 #>   Which team should answer this customer message?
-#> model: gpt-4.1-mini
+#>   message   text
+#>   category  one of account, billing, product, shipping
+#>   model: gpt-4.1-mini
 ```
 
 That took no time because nothing was called. Fitting read the formula (the
@@ -221,18 +221,20 @@ Under the parsnip wrapper, the fitted engine is an ordinary R function:
 ``` r
 team <- extract_fit_engine(ai_fit)
 team
-#> <ai function> category(message) -> result: factor [account, billing, product, shipping]
-#>   Function: category
-#>   
+#> <ai function> category ~ message
 #>   Which team should answer this customer message?
-#> model: gpt-4.1-mini
+#>   message   text
+#>   category  one of account, billing, product, shipping
+#>   model: gpt-4.1-mini
 team("My card was charged twice for order B-2210.")
 #> [1] billing
 #> Levels: account billing product shipping
 ```
 
-It is vectorised, so it also works outside tidymodels, as a column in any
-dplyr verb:
+It is the function `ai(category ~ message, "Which team should answer this
+customer message?", .data = train)` writes: the formula you give `fit()`
+is the one you give `ai()`. It is vectorised, so it also works outside
+tidymodels, as a column in any dplyr verb:
 
 
 ``` r

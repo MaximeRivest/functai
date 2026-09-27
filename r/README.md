@@ -1,7 +1,8 @@
 # functai for R
 
-**Write a function's inputs, the type of its answer and a sentence saying
-what it does. A language model writes the body. You measure how well.**
+**Write it like a model formula: what comes out, `~`, what goes in, and a
+sentence saying what it does. A language model writes the body. You
+measure how well.**
 
 ```r
 library(functai)
@@ -9,9 +10,8 @@ library(dplyr)
 
 ai_config(lm = "gpt-4.1-mini", temperature = 0)
 
-team <- ai("team", "Which team should answer this customer message?",
-  message = character(),
-  .returns = factor(levels = c("shipping", "billing", "product", "account")))
+team <- ai(team ~ message, "Which team should answer this customer message?",
+  team = choice("shipping", "billing", "product", "account"))
 
 team("I was charged twice for order B-2210.")
 #> [1] billing
@@ -27,10 +27,11 @@ tickets |> mutate(team = team(message)) |> count(team)
 #> 4 account     18
 ```
 
-An AI function is an ordinary vectorised R function, so it is a column in
-any dplyr verb. The answer comes back as the type you declared (here a
-factor with your levels), checked against it: a reply that does not fit is
-asked again once, then refused. Each row is one model call, and up to 8 run
+`team ~ message` reads as it does in `lm()`: *team, from the message*.
+The result is an ordinary vectorised R function, `team(message)`, so it is
+a column in any dplyr verb. The answer comes back as the type you declared
+(here a factor with your levels), checked against it: a reply that does not
+fit is asked again once, then refused. Each row is one model call, and up to 8 run
 at once (`concurrency`): the 80 tickets above took 9 seconds with
 `gpt-4.1-mini`.
 
@@ -66,46 +67,71 @@ example. Any model [lm15](https://lm15.dev) reaches works: `"claude-haiku-4-5"`,
 `"gemini:gemini-2.5-flash"`, `"groq:openai/gpt-oss-120b"`, a local
 `"ollama:qwen3.5:0.8b"`.
 
-## Types
+## Writing one
 
-Inputs and answers are prototypes, the way vctrs writes types:
-
-| you write | the model gives | you get |
-|---|---|---|
-| `character()` | text | a character vector |
-| `integer()`, `double()`, `logical()` | a number, yes or no | that vector |
-| `factor(levels = c("a", "b"))` | one of the levels | a factor with those levels |
-| `record(name = character(), age = integer())`, or a zero-row `tibble()` | a record | a tibble column |
-| `vctrs::list_of(.ptype = character())` | a list | a `list_of` column |
-| `optional(x)` | `x`, or nothing | `NA` where there is nothing |
-| `described(x, "...")` | | words the model reads about the field |
-
-Several outputs splice in as columns; a record comes back as one tibble
-column, which `tidyr::unpack()` spreads:
+The formula names the outputs on the left and the inputs on the right,
+joined by `+`. Then each field is a line of a codebook: **a sentence
+describes it, a type types it**, and a field you leave out is text.
 
 ```r
-triage <- ai("triage", "Read the support ticket.",
-  message = described(character(), "the customer's own words"),
-  .outputs = list(
-    summary = described(character(), "one sentence, no names"),
-    urgent  = logical()))
+triage <- ai(summary + urgent ~ message, "Read the support ticket.",
+  message = "the customer's own words",
+  summary = "one sentence, no names",
+  urgent  = logical(),
+  .name = "triage")
 
 tickets |> mutate(triage(message)) |> select(id, summary, urgent)
 #>      id summary                                                      urgent
 #>   <int> <chr>                                                        <lgl>
 #> 1     1 Customer's order A-1042 has not arrived after three weeks.   TRUE
 #> ...
-
-order_ref <- ai("order_ref", "The order the customer is talking about.",
-  message = character(),
-  .returns = record(order = optional(character()), days_waiting = optional(integer())))
-
-tickets |> mutate(ref = order_ref(message)) |> tidyr::unpack(ref) |> select(id, order, days_waiting)
-#>      id order  days_waiting
-#> 1     1 A-1042           21
-#> 2     2 <NA>             NA
-#> 3     3 B-2210           NA
 ```
+
+One output names the function after itself (`team`); several come back as
+tibble columns that `mutate()` splices in, and the function needs a
+`.name`.
+
+**Types from a table**, as `lm(y ~ x, data = ...)` reads them: with
+`.data`, each field has its column's type (a factor is a choice of its
+levels, a number a number, a logical yes or no), and `decision ~ .` means
+every other column. Only the column types are read, never the rows.
+
+```r
+refund <- ai(decision ~ message + price + days_since_delivery + final_sale,
+  "Should the shop refund this request?",
+  .data = refunds,
+  price = "in dollars")
+```
+
+| you write | the model gives | you get |
+|---|---|---|
+| nothing, or a sentence | text | a character vector |
+| `integer()`, `double()`, `logical()` | a number, yes or no | that vector |
+| `choice("a", "b")` | one of them | a factor with those levels |
+| `record(name = "...", age = integer())` | a record | a tibble column |
+| `vctrs::list_of(.ptype = character())` | a list | a `list_of` column |
+| `optional(x)` | `x`, or nothing | `NA` where there is nothing |
+| `described(x, "...")` | | a type with words the model reads |
+
+A choice can say what each answer means, and the model reads it:
+
+```r
+item_state <- ai(state ~ message, "What state is the item in?",
+  state = choice(
+    unopened = "still sealed, never opened",
+    used     = "used for a while, works fine, no longer wanted",
+    damaged  = "broken or damaged when it arrived",
+    faulty   = "worked at first, then failed in normal use"))
+```
+
+Printing a function shows it as you wrote it: the formula, the sentence,
+and each field with its type and words.
+
+The formula means what it means for any model (*this column, from those*),
+so the same formula fits a logistic regression, `ai()`, or `ai_model()` in
+tidymodels. What only a regression has, interactions (`a * b`),
+transformed columns (`log(x)`) and intercepts, `ai()` refuses and says why:
+a language model reads all its inputs together, as they are.
 
 A row with a missing input is `NA` without a call. When some calls fail
 (after the re-asks and the provider retries), their rows are `NA` and one
@@ -125,6 +151,8 @@ glance(ev)    # the first metric, in one row
 augment(ev)   # every row: the data, .pred_class, .call, .error and the score
 ```
 
+With no `expected`, the right answers are the column named like the
+formula's output (`evaluate(refund, refunds)` scores against `decision`).
 The interval is Wilson's for right-or-wrong scores (Student's t for others),
 computed exactly as Python and TypeScript compute it. `metric =
 function(row, prediction) ...` scores with your own rule.
@@ -175,12 +203,13 @@ pass is unchanged. `with_demos()`, `with_instructions()` set them by hand;
 ## Tools
 
 ```r
-lookup <- ai_tool(function(order) orders[[order]], "lookup_order",
-  "Look up where an order is.", order = character())
+lookup_order <- function(order) orders[[order]]
 
-support <- ai("support", "Answer the customer, looking up their order.",
-  message = character(), .tools = list(lookup))
+support <- ai(reply ~ message, "Answer the customer, looking up their order.",
+  .tools = list(ai_tool(lookup_order, "Look up where an order is.", order = "like A-1042")))
 ```
+
+A tool's inputs are the function's arguments, and its name the function's.
 
 ## The call log and ratings
 

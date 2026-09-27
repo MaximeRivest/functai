@@ -74,8 +74,8 @@ exact_match <- function(answers, prediction) {
 #' @param data A data frame: the model's inputs, and the right answers.
 #' @param expected Where the right answers are: a column (bare or quoted) for
 #'   the answer, or a named character vector `c(output = "column")`. Default:
-#'   the columns named like the outputs (an AI function) or the outcome the
-#'   model was fitted on (a parsnip fit or a workflow).
+#'   the columns named like the formula's outputs (an AI function) or the
+#'   outcome the model was fitted on (a parsnip fit or a workflow).
 #' @param metric A function `(row, prediction)` returning a score (both are
 #'   named lists), or a named list of such functions. Default: [exact_match()].
 #' @param ... Settings for an AI function's calls (`lm = ...`), or arguments
@@ -91,21 +91,23 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
   run <- new_id()
   if (inherits(fn, "functai_fn")) {
     core <- core_of(fn)
-    outs <- names(core$definition$outputs)
-    mapping <- if (is.null(expected_v)) { m <- intersect(outs, names(data)); stats::setNames(m, m) }
-      else if (is.null(names(expected_v))) stats::setNames(expected_v, answer_name(core)) else expected_v
+    outs <- columns_of(core)                                       # named like the formula
+    mapping <- if (is.null(expected_v)) { m <- unname(outs[outs %in% names(data)]); stats::setNames(m, m) }
+      else if (is.null(names(expected_v))) stats::setNames(expected_v, outs[[length(outs)]]) else expected_v
+    unknown <- setdiff(names(mapping), outs)
+    if (length(unknown)) cli::cli_abort("{.fn {core$definition$name}} has no output {.field {unknown}} (its outputs: {.field {unname(outs)}})")
     label <- core$definition$name
     settings <- set_all(list(caller = list(evaluation = run)), list(...))
     p <- do.call(predict.functai_fn, c(list(fn, data), settings))
-    cols <- if (core$single) stats::setNames(pred_names(core)("result"), outs) else stats::setNames(paste0(".pred_", outs), outs)
+    cols <- if (core$single) stats::setNames(pred_names(core)("result"), outs) else stats::setNames(paste0(".pred_", names(outs)), outs)
   } else {
     outcome <- expected_v %||% model_outcome(fn)
     if (is.null(outcome)) cli::cli_abort("which column holds the right answers? pass {.arg expected}")
     p <- tibble::as_tibble(stats::predict(fn, data, ...))
     col <- intersect(c(".pred_class", ".pred"), names(p))
     if (!length(col)) cli::cli_abort("{.fn predict} on {.cls {class(fn)[[1L]]}} gave no {.field .pred_class} or {.field .pred} column")
-    mapping <- stats::setNames(unname(outcome[[1L]]), "result")
-    cols <- c(result = col[[1L]])
+    mapping <- stats::setNames(unname(outcome[[1L]]), unname(outcome[[1L]]))
+    cols <- stats::setNames(col[[1L]], unname(outcome[[1L]]))
     label <- if (inherits(fn, "model_fit")) class(fn$spec)[[1L]]
       else if (inherits(fn, "workflow") && requireNamespace("workflows", quietly = TRUE)) paste0("workflow (", class(workflows::extract_spec_parsnip(fn))[[1L]], ")")
       else class(fn)[[1L]]

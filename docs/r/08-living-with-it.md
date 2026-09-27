@@ -45,21 +45,25 @@ orders <- tribble(
 )
 ```
 
-A **tool** is an R function the model may ask for. `ai_tool()` wraps it
-with a name, a sentence and its inputs' types, exactly like `ai()`:
+A **tool** is an R function the model may ask for. Write the function as
+usual; `ai_tool()` adds a sentence saying what it does, and words about
+its arguments, the way `ai()` does for fields. The tool's name, and its
+inputs, are the function's:
 
 ```r
 looked_up <- character()
 
-lookup_order <- ai_tool(function(order) {
+lookup_order <- function(order) {
   looked_up <<- c(looked_up, order)                  # so we can see what the model asked for
   row <- filter(orders, order == toupper(!!order))
   if (nrow(row) == 0) return("there is no order with that number")
   paste0(row$status, ": ", row$note)
-}, "lookup_order", "Look up an order's delivery status by its number.",
-  order = described(character(), "a letter, a dash and four digits, like A-1042"))
+}
 
-lookup_order
+order_tool <- ai_tool(lookup_order, "Look up an order's delivery status by its number.",
+  order = "a letter, a dash and four digits, like A-1042")
+
+order_tool
 ```
 
 ```output
@@ -74,11 +78,10 @@ or asks for another lookup. The model's skill is knowing *when* to look
 something up and *what* to ask for.
 
 ```r
-where_is <- ai("where_is",
+where_is <- ai(where_is ~ message,
   "Tell the customer where their order is, in one or two friendly sentences. Use only what the
   order system says; never guess a date. If the message has no order number, ask for it.",
-  message = character(),
-  .tools = list(lookup_order))
+  .tools = list(order_tool))
 
 asked <- tickets |>
   filter(order_id %in% orders$order) |>
@@ -95,19 +98,19 @@ Hi, my order A-1042 still hasn't arrived and it's been three weeks.
   -> Your order is in transit and has been held at the Montreal depot since September 8. I’m sorry it hasn’t arrived yet.
 
 Tracking for C-3319 hasn't moved since Monday.
-  -> Your order was delivered and left with a neighbour at 14 Elm Street on September 20.
+  -> Your order was delivered on September 20 and left with a neighbour at 14 Elm Street.
 
 Order c3319 was delivered to my neighbour's address instead of mine.
-  -> Could you share your order number in the format of a letter, a dash, and four digits (for example, A-1042)?
+  -> I’m sorry about that. Could you please confirm your order number in the format of a letter, a dash, and four digits (for example, A-1042)?
 
 My parcel says delivered but it's not here. Order A-1299.
-  -> The courier’s photo shows your parcel at the side door. It was marked delivered on September 22.
+  -> Your order is marked as delivered. The courier’s photo shows it at the side door, September 22.
 
 When will order B-2417 ship? It says 'processing' for a week.
-  -> Your order is processing while it waits for stock and is scheduled to ship October 2.
+  -> Your order B-2417 is processing while it waits for stock and is set to ship October 2.
 
 Order #A-1350 is two weeks late. Any news?
-  -> Your order is in transit and delayed by the carrier. The current estimated delivery date is September 30.
+  -> Your order is in transit and delayed by the carrier. The current estimate is September 30.
 
 Can I change the delivery address for order C-3480? It hasn't shipped yet.
   -> Your order hasn’t shipped yet, so the delivery address can still be changed.
@@ -118,7 +121,7 @@ Where is my order Z-9999?
 Hi, where's my parcel? It's been ages.
   -> I’m sorry it’s taking so long. Could you share your order number so I can check where your parcel is?
 
-[1] "B-2417" "A-1042" "C-3480" "Z-9999" "A-1299" "A-1350" "C-3319"
+[1] "A-1042" "C-3319" "B-2417" "Z-9999" "A-1299" "A-1350" "C-3480"
 ```
 
 Read the replies against `orders`, and `looked_up` against the messages.
@@ -158,15 +161,15 @@ calls(where_is, folder = log_folder) |>
 # A tibble: 9 × 5
   started             seconds input_tokens total_tokens error
   <dttm>                <dbl>        <dbl>        <dbl> <chr>
-1 2026-09-27 14:39:12    2.63          344          402 <NA> 
-2 2026-09-27 14:39:12    3.41          336          409 <NA> 
-3 2026-09-27 14:39:12    2.70          148          287 <NA> 
-4 2026-09-27 14:39:13    2.83          345          397 <NA> 
-5 2026-09-27 14:39:13    2.80          344          424 <NA> 
-6 2026-09-27 14:39:13    3.30          339          418 <NA> 
-7 2026-09-27 14:39:13    3.54          347          421 <NA> 
-8 2026-09-27 14:39:13    2.85          323          407 <NA> 
-9 2026-09-27 14:39:15    1.39          144          195 <NA> 
+1 2026-09-27 17:44:49    2.77          344          402 <NA> 
+2 2026-09-27 17:44:49    3.03          336          425 <NA> 
+3 2026-09-27 17:44:49    2.22          148          272 <NA> 
+4 2026-09-27 17:44:49    2.90          345          398 <NA> 
+5 2026-09-27 17:44:49    3.43          344          453 <NA> 
+6 2026-09-27 17:44:49    3.18          339          430 <NA> 
+7 2026-09-27 17:44:49    2.91          347          415 <NA> 
+8 2026-09-27 17:44:49    3.14          323          406 <NA> 
+9 2026-09-27 17:44:51    1.52          144          198 <NA> 
 ```
 
 Each call knows its function's name, its **version**, the model, the
@@ -182,9 +185,8 @@ the wrong ones. Let's play the reviewer, using the right answers we
 happen to have:
 
 ```r
-team <- ai("team", "Which team should answer this customer message?",
-  message = character(),
-  .returns = factor(levels = c("shipping", "billing", "product", "account")))
+team <- ai(team ~ message, "Which team should answer this customer message?",
+  team = choice("shipping", "billing", "product", "account"))
 
 set.seed(8)
 sample_rows <- tickets |> slice_sample(n = 30)
@@ -197,12 +199,12 @@ answered |> select(category, .pred_class, .call) |> head()
 # A tibble: 6 × 3
   category .pred_class .call                               
   <chr>    <fct>       <chr>                               
-1 account  account     01a0e34e-578c-77b8-9f4c-cb62a331a0ed
-2 product  product     01a0e34e-578f-7f79-b355-b09ab2acd409
-3 account  account     01a0e34e-5791-78c6-b462-3abb6908892d
-4 billing  billing     01a0e34e-5794-77a7-a657-a1b433bbbeac
-5 shipping shipping    01a0e34e-5796-7642-a137-749e26c68bc7
-6 billing  billing     01a0e34e-5799-7118-a71c-61e0897b197d
+1 account  account     01a0e3f8-4506-7368-99e4-797faf0aeb09
+2 product  product     01a0e3f8-4508-7b15-862c-b138db0dae3e
+3 account  account     01a0e3f8-450b-7824-a3ea-4238d5f6dbd5
+4 billing  product     01a0e3f8-450e-79d0-8b18-956170a9d076
+5 shipping shipping    01a0e3f8-4511-7081-9f68-154eb8bc01f0
+6 billing  billing     01a0e3f8-4514-720c-9fe2-7877d20abcfe
 ```
 
 `rate()` records a verdict on a call, by its id. A wrong one carries the
@@ -217,27 +219,28 @@ rate(wrong$.call, "wrong", answer = wrong$category)
 ```
 
 `rated()` turns the reviews back into rows with known answers, typed
-like the function's inputs and output:
+like the function's inputs and output, and named like its formula
+(`team ~ message`):
 
 ```r
 reviewed <- rated(team)
-reviewed |> select(message, result, rating)
+reviewed |> select(message, team, rating)
 ```
 
 ```output
 # A tibble: 30 × 3
-   message                                                         result rating
-   <chr>                                                           <fct>  <chr> 
- 1 Can I change the password without the old one?                  accou… right 
- 2 The rice cooker's inner pot has a scratch after the first use.  produ… right 
- 3 Please delete my account and all my data.                       accou… right 
- 4 The duvet shrank in the wash, I'd like my money back.           billi… right 
- 5 Hi, my order A-1042 still hasn't arrived and it's been three w… shipp… right 
- 6 Refund please: the towels are much thinner than in the photos.  billi… right 
- 7 I was charged twice for order B-2210, please fix this.          billi… right 
- 8 I'd like my money back for the toaster, it burns everything.    billi… right 
- 9 Please send the password reset to my new address, not the old … accou… right 
-10 I get 'invalid token' every time I try to sign in.              accou… right 
+   message                                                          team  rating
+   <chr>                                                            <fct> <chr> 
+ 1 Can I change the password without the old one?                   acco… right 
+ 2 The rice cooker's inner pot has a scratch after the first use.   prod… right 
+ 3 Please delete my account and all my data.                        acco… right 
+ 4 The duvet shrank in the wash, I'd like my money back.            bill… wrong 
+ 5 Hi, my order A-1042 still hasn't arrived and it's been three we… ship… right 
+ 6 Refund please: the towels are much thinner than in the photos.   bill… right 
+ 7 I was charged twice for order B-2210, please fix this.           bill… right 
+ 8 I'd like my money back for the toaster, it burns everything.     bill… right 
+ 9 Please send the password reset to my new address, not the old o… acco… right 
+10 I get 'invalid token' every time I try to sign in.               acco… right 
 # ℹ 20 more rows
 ```
 
@@ -245,13 +248,12 @@ Those rows are an evaluation set that grows by itself as people review.
 Any new version of the function is measured on it:
 
 ```r
-team_rules <- ai("team",
+team_rules <- ai(team ~ message,
   "Which team should answer this customer message? House rules: anything wrong with the delivery
   itself (late, lost, wrong item, missing, broken on arrival) is shipping; anything about money,
   including every request for money back, is billing; problems in use and product questions are
   product; sign-in, passwords, profile and personal data are account.",
-  message = character(),
-  .returns = factor(levels = c("shipping", "billing", "product", "account")))
+  team = choice("shipping", "billing", "product", "account"))
 
 bind_rows(
   tidy(evaluate(team, reviewed)) |> mutate(version = "as shipped"),
@@ -264,7 +266,7 @@ bind_rows(
   version              estimate conf.low conf.high     n
   <chr>                   <dbl>    <dbl>     <dbl> <int>
 1 as shipped              0.967    0.833     0.994    30
-2 with the house rules    1        0.886     1        30
+2 with the house rules    0.967    0.833     0.994    30
 ```
 
 The ratings live in the same folder as the calls, in the same format
@@ -317,7 +319,7 @@ readLines(file.path(dir, "functai.json"), n = 12)
  [2] "  \"functai_saved\": 1,"                      
  [3] "  \"language\": \"r\","                       
  [4] "  \"entry\": \"__main__:team\","              
- [5] "  \"created\": \"2026-09-27T14:39:36+00:00\","
+ [5] "  \"created\": \"2026-09-27T17:45:11+00:00\","
  [6] "  \"functai\": \"0.1.0\","                    
  [7] "  \"nodes\": {"                               
  [8] "    \"__main__:team\": {"                     
@@ -361,7 +363,7 @@ calls(folder = log_folder) |>
 # A tibble: 1 × 2
   calls dollars
   <int>   <dbl>
-1   100 0.00322
+1   100 0.00311
 ```
 
 ## Your turn

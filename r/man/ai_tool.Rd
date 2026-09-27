@@ -4,26 +4,29 @@
 \alias{ai_tool}
 \title{A tool the model may call}
 \usage{
-ai_tool(.fn, .name, .description = "", ...)
+ai_tool(.fn, .description = "", ..., .name = NULL)
 }
 \arguments{
-\item{.fn}{The function. It is called with the inputs by name.}
+\item{.fn}{The function. It is called with its arguments by name.}
 
-\item{.name}{The tool's name, as the model sees it.}
+\item{.description}{What it does, for the model.}
 
-\item{.description}{What it does.}
+\item{...}{Its arguments' types, as in \code{\link[=ai]{ai()}}: nothing (text), a sentence
+(text, described) or a type.}
 
-\item{...}{Its inputs, as \code{name = prototype} (see \code{\link[=ai]{ai()}}).}
+\item{.name}{The tool's name, as the model sees it. Default: the name
+\code{.fn} is given by (\code{ai_tool(lookup_order, ...)} is \code{lookup_order}).}
 }
 \value{
 A tool, for \code{ai(..., .tools = list(...))}.
 }
 \description{
 An R function the model can ask for while it answers: FunctAI runs it and
-sends the result back, until the model gives its answer.
+sends the result back, until the model gives its answer. The tool's
+inputs are the function's arguments; its name is the function's.
 }
 \examples{
 orders <- c("A-1042" = "stuck at the carrier since Monday")
-lookup <- ai_tool(function(order) orders[[order]] \%||\% "unknown order",
-  "lookup_order", "Look up where an order is.", order = character())
+lookup_order <- function(order) if (order \%in\% names(orders)) orders[[order]] else "unknown order"
+ai_tool(lookup_order, "Look up where an order is.", order = "a letter, a dash and four digits")
 }

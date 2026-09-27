@@ -127,7 +127,7 @@ the cost of its mistakes*.
 Tutorial 4's function, with the rules in its description:
 
 ```r
-refund_rules <- ai("refund",
+refund_rules <- ai(decision ~ message + price + days_since_delivery + final_sale,
   "Should the shop refund this request? Follow the refund rules exactly:
   - Damaged on arrival, or the wrong item (or part of the order missing): refund within 60 days
     of delivery, final sale or not.
@@ -135,8 +135,7 @@ refund_rules <- ai("refund",
   - Unopened, or opened but not used, and no longer wanted: refund within 30 days, never for a
     final-sale item.
   - Used and no longer wanted: no refund.",
-  message = character(), price = double(), days_since_delivery = integer(), final_sale = logical(),
-  .returns = factor(levels = c("approve", "deny")))
+  .data = refunds, .name = "refund")
 
 direct <- with(refunds, refund_rules(message, price, days_since_delivery, final_sale))
 outcome(direct, "the model decides")
@@ -146,7 +145,7 @@ outcome(direct, "the model decides")
 # A tibble: 1 × 5
   strategy          reviews wrong_approvals wrong_denials dollars
   <chr>               <int>           <int>         <int>   <dbl>
-1 the model decides       0               1             1    53.3
+1 the model decides       0               1             0    13.3
 ```
 
 Compare that with the person reading everything. And ask the question a
@@ -193,12 +192,15 @@ majority; the share of votes for each state is a probability you can
 use:
 
 ```r
-item_state <- ai("item_state", "What state is the item in, from the customer's message?",
-  message = character(),
-  .returns = described(factor(levels = levels(refunds$state)),
-    "unopened: still sealed, never opened; opened_unused: unpacked and looked at, never used;
-     used: used for a while, works fine, no longer wanted; damaged: broken or damaged when it arrived;
-     wrong_item: not what was ordered, or part of the order missing; faulty: worked at first, then failed in normal use"))
+item_state <- ai(state ~ message, "What state is the item in, from the customer's message?",
+  state = choice(
+    unopened      = "still sealed, never opened",
+    opened_unused = "unpacked and looked at, never used",
+    used          = "used for a while, works fine, no longer wanted",
+    damaged       = "broken or damaged when it arrived",
+    wrong_item    = "not what was ordered, or part of the order missing",
+    faulty        = "worked at first, then failed in normal use"),
+  .name = "item_state")
 
 votes <- augment(item_state, refunds, samples = 5)
 votes |> select(state, .pred_class, .pred_unopened:.pred_faulty)
@@ -467,7 +469,7 @@ tibble(model = c("gpt-6-luna, 5 votes", "jev-latest, 1 call"),
   model               state_read_right
   <chr>                          <dbl>
 1 gpt-6-luna, 5 votes            0.983
-2 jev-latest, 1 call             0.992
+2 jev-latest, 1 call             0.983
 ```
 
 The real test is the calibration check that votes failed: group the
@@ -486,10 +488,10 @@ read_jev |>
 # A tibble: 4 × 3
   said        answers right
   <fct>         <int> <dbl>
-1 [0,0.8]           6 1    
+1 [0,0.8]           6 0.833
 2 (0.8,0.95]        8 0.875
-3 (0.95,0.99]      23 1    
-4 (0.99,1]         83 1    
+3 (0.95,0.99]      24 1    
+4 (0.99,1]         82 1    
 ```
 
 The answers it was very sure of were right, and its mistakes, if any,
@@ -516,8 +518,8 @@ read_jev |> filter(action == "review") |> select(item, price, p, state, .pred_cl
 # A tibble: 3 × 5
   item            price     p state      .pred_class
   <chr>           <dbl> <dbl> <fct>      <fct>      
-1 wool throw       13.3  0.21 used       used       
-2 coffee grinder  251.   0.11 used       used       
+1 wool throw       13.3  0.23 used       used       
+2 coffee grinder  251.   0.17 used       used       
 3 ceramic planter 190.   0.9  wrong_item wrong_item 
 ```
 
@@ -566,12 +568,12 @@ bind_rows(
 # A tibble: 1 × 1
   state_read_right
              <dbl>
-1            0.875
+1            0.917
 # A tibble: 2 × 5
   strategy                    reviews wrong_approvals wrong_denials dollars
   <chr>                         <int>           <int>         <int>   <dbl>
-1 trust nano's majority             0               0             1      40
-2 expected cost, gpt-5.4-nano       1               0             1      44
+1 trust nano's majority             0               0             0       0
+2 expected cost, gpt-5.4-nano       3               0             0      12
 ```
 
 A worse reader made far fewer wrong *decisions* than wrong *readings*.
@@ -601,10 +603,10 @@ all_strategies |> arrange(dollars)
   strategy                         reviews wrong_approvals wrong_denials dollars
   <chr>                              <int>           <int>         <int>   <dbl>
 1 expected cost, jev-latest              3               0             0    12  
-2 the model reads, R decides             0               1             0    13.3
-3 expected cost, gpt-6-luna              0               1             0    13.3
-4 expected cost, gpt-5.4-nano            1               0             1    44  
-5 the model decides                      0               1             1    53.3
+2 expected cost, gpt-5.4-nano            3               0             0    12  
+3 the model decides                      0               1             0    13.3
+4 the model reads, R decides             0               1             0    13.3
+5 expected cost, gpt-6-luna              0               1             0    13.3
 6 expected cost, capped, gpt-6-lu…      15               1             0    73.3
 7 a person reads everything            120               0             0   480  
 8 deny everything                        0               0            62  2480  
@@ -632,9 +634,9 @@ calls(folder = log_folder) |>
 # A tibble: 3 × 3
   model        calls dollars
   <chr>        <int>   <dbl>
-1 gpt-5.4-nano   600 0.0335 
-2 gpt-6-luna     720 0.0307 
-3 jev-latest     120 0.00239
+1 gpt-5.4-nano   600 0.0333 
+2 gpt-6-luna     720 0.0299 
+3 jev-latest     120 0.00238
 ```
 
 ## If nobody wrote the rules down
@@ -724,9 +726,9 @@ be written, write them.
    cost of about $0.001, and send to a person only when the two readers
    disagree. How much does it save over reviewing every unsure request?
 3. Ask Jev atomic yes/no questions instead of one choice: a function
-   with `.outputs = list(opened = described(logical(), "Has the customer
-   opened the package?"), used = ..., broken_on_arrival = ...)`, one
-   question each. Write the policy on those answers. Is it as accurate?
+   with `opened + used + broken_on_arrival ~ message`, each
+   `described(logical(), "Has the customer opened the package?")` and so on,
+   one question each. Write the policy on those answers. Is it as accurate?
    Is it easier to explain?
 4. Fit the tree on all 120 rows. Does it find the final-sale rule? Why
    is that rule hard to learn from this data? (`count(refunds, final_sale,

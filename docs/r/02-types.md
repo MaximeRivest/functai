@@ -58,9 +58,8 @@ notes <- field_notes |> select(id, site, date, note)
 Start with the count. The obvious function asks for an integer:
 
 ```r
-how_many <- ai("how_many", "How many birds does the note report?",
-  note = character(),
-  .returns = integer())
+how_many <- ai(how_many ~ note, "How many birds does the note report?",
+  how_many = integer())
 
 how_many("About 40 Canada geese flying over in a V, heading north.")
 ```
@@ -103,9 +102,8 @@ count_rule <- "every bird seen or heard, young included; one bird named on its o
   'a pair' is 2; an approximate number ('about 40', 'maybe 6') is that number;
   no number in the note ('a few', 'several', 'a flock') means no count: never guess"
 
-how_many <- ai("how_many", "How many birds does the note report?",
-  note = character(),
-  .returns = optional(described(integer(), count_rule)))
+how_many <- ai(how_many ~ note, "How many birds does the note report?",
+  how_many = optional(described(integer(), count_rule)))
 
 counted <- counted |> mutate(count = how_many(note))
 
@@ -190,12 +188,11 @@ counted |>
 
 ## A choice
 
-Behaviour is one of five words, so it's a factor, like `team` in tutorial 1:
+Behaviour is one of five words, so it's a `choice()`, like `team` in tutorial 1, and it comes back as a factor:
 
 ```r
-doing <- ai("doing", "What is the bird doing, by the survey's protocol?",
-  note = character(),
-  .returns = factor(levels = c("feeding", "nesting", "flying", "resting", "calling")))
+doing <- ai(doing ~ note, "What is the bird doing, by the survey's protocol?",
+  doing = choice("feeding", "nesting", "flying", "resting", "calling"))
 
 doing(c("Robin singing at dawn from the roof antenna.",
         "Canada goose sitting on eggs on the island, mate standing guard."))
@@ -210,23 +207,21 @@ Notice the factor's levels are yours, in your order, even when the model only us
 
 ## Three answers from one call
 
-You could write one function per column and call the model three times per note. It's cheaper to ask once, for all three. `.outputs` takes a named list of types, one per answer:
+You could write one function per column and call the model three times per note. It's cheaper to ask once, for all three. Put all three on the left of the formula, joined by `+`, as you would in a model with several outcomes, and give each its type:
 
 ```r
 species_list <- c("American robin", "black-capped chickadee", "blue jay", "northern cardinal",
                   "mallard", "Canada goose", "great blue heron", "red-tailed hawk",
                   "downy woodpecker", "song sparrow", "American crow", "barn swallow", "other")
 
-survey <- ai("survey", "Record the note as the bird survey's protocol says.",
-  note = character(),
-  .outputs = list(
-    species = described(factor(levels = species_list),
-      "the checklist name; nicknames count; a bird not on the checklist is 'other'"),
-    count = optional(described(integer(), count_rule)),
-    behaviour = described(factor(levels = c("feeding", "nesting", "flying", "resting", "calling")),
-      "singing, calling and drumming are calling; building, sitting on a nest or feeding young are nesting;
-       perched, swimming, roosting or standing still are resting")),
-  .adapter = "json")
+survey <- ai(species + count + behaviour ~ note, "Record the note as the bird survey's protocol says.",
+  species = described(choice(species_list),
+    "the checklist name; nicknames count; a bird not on the checklist is 'other'"),
+  count = optional(described(integer(), count_rule)),
+  behaviour = described(choice("feeding", "nesting", "flying", "resting", "calling"),
+    "singing, calling and drumming are calling; building, sitting on a nest or feeding young are nesting;
+       perched, swimming, roosting or standing still are resting"),
+  .name = "survey", .adapter = "json")
 
 survey("Pair of downies (male + female) excavating a hole in the old pear tree.")
 ```
@@ -238,7 +233,7 @@ survey("Pair of downies (male + female) excavating a hole in the old pear tree."
 1 downy woodpecker     2 nesting  
 ```
 
-With several outputs, the function returns a tibble, one column per answer. Inside `mutate()`, an unnamed tibble is spliced in as columns:
+A function with several outputs isn't named after one of them, so `.name` names it. It returns a tibble, one column per answer. Inside `mutate()`, an unnamed tibble is spliced in as columns:
 
 ```r
 recorded <- notes |>
@@ -337,9 +332,8 @@ Two more types cover most of what you'll need.
 A **record** is a small group of named fields that belong together. `record()` declares one, and the answer comes back as a one-row-per-call tibble column (a zero-row `tibble()` works as the type too):
 
 ```r
-young <- ai("young", "Does the note report young birds, and how many of each age?",
-  note = character(),
-  .returns = record(adults = optional(integer()), young = optional(integer())))
+young <- ai(young ~ note, "Does the note report young birds, and how many of each age?",
+  young = record(adults = optional(integer()), young = optional(integer())))
 
 ages <- notes |>
   filter(id %in% c(25, 42, 55, 57)) |>
@@ -361,9 +355,8 @@ ages |> tidyr::unpack(ages) |> select(note, adults, young)
 A **list** is any number of values. `vctrs::list_of()` declares one. Here, the words in the note that justify the behaviour, which is a handy way to audit an answer:
 
 ```r
-evidence <- ai("evidence", "Quote the words in the note that show what the bird is doing.",
-  note = character(),
-  .returns = vctrs::list_of(.ptype = character()))
+evidence <- ai(evidence ~ note, "Quote the words in the note that show what the bird is doing.",
+  evidence = vctrs::list_of(.ptype = character()))
 
 evidence("Robin carrying mud and grass into the hedge. Nest in progress!")
 ```
@@ -447,13 +440,13 @@ calls(folder = log_folder) |>
 
 ## What you learned
 
-- The type you give is a promise the answer keeps: `integer()`, `double()`, `logical()`, `character()`, a `factor()` of your levels.
+- The type you give is a promise the answer keeps: `integer()`, `double()`, `logical()`, text (the default), a `choice()` of your answers (a factor).
 - A type that must have an answer makes the model invent one. `optional()` lets it say "not in the note", as `NA`; the `json` layout (`.adapter = "json"`) makes sure the model knows it may.
 - `described()` adds words about a field. That's where rules about the field belong.
-- `.outputs = list(...)` asks several things in one call; the answers come back as columns.
+- `a + b + c ~ x` asks several things in one call, with `.name` naming the function; the answers come back as columns.
 - `record()` is a group of fields (a tibble column; `tidyr::unpack()` spreads it), `vctrs::list_of()` any number of values.
 - A missing input costs nothing and gives `NA`. A failed call gives `NA`, one warning, and a row in `ai_problems()`.
 
-**Answers to the check at the top.** (1) `NA`: the protocol says never guess; `optional(integer())` lets the model leave it empty, and `.adapter = "json"` sends that type to the model as a schema it must follow. (2) `.outputs = list(a = ..., b = ..., c = ...)`, then `mutate(fn(x))` splices the three columns in. (3) It becomes `NA`, with one warning for all the failed rows; `ai_problems()` lists them with their errors.
+**Answers to the check at the top.** (1) `NA`: the protocol says never guess; `optional(integer())` lets the model leave it empty, and `.adapter = "json"` sends that type to the model as a schema it must follow. (2) Put all three on the left of the formula, `a + b + c ~ note`, name the function with `.name`, then `mutate(fn(x))` splices the three columns in. (3) It becomes `NA`, with one warning for all the failed rows; `ai_problems()` lists them with their errors.
 
 **Next:** [3. Is it right?](03-is-it-right.md) turns "it looks good" into a number, an interval and a fair comparison.

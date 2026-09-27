@@ -56,7 +56,7 @@ test_that("probabilities come from repeated answers, asked for; without samples 
   expect_true(all(is.na(unlist(none))))                         # through parsnip: NA, never a made-up number
   plain <- parsnip::extract_fit_engine(parsnip::fit(spec_of(keyword_router()), category ~ message, data = data))
   expect_error(predict(plain, data[1, ], type = "prob"), "samples")   # asked directly: refused
-  mood <- ai("mood", "Mood?", review = character(), .returns = factor(levels = c("happy", "unhappy")),
+  mood <- ai(mood ~ review, "Mood?", mood = choice("happy", "unhappy"),
              .lm = "gpt-4.1-mini", .log_calls = FALSE, .router = fake_router(responder = function(req, i) "<result>\nhappy\n</result>"))
   expect_identical(names(augment(mood, tibble::tibble(review = "x"), samples = 2L)),
                    c("review", ".pred_class", ".pred_happy", ".pred_unhappy", ".call", ".error"))

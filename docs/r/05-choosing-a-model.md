@@ -31,12 +31,15 @@ library(ggplot2)
 log_folder <- tempfile("functai-calls-")
 ai_config(log_calls = log_folder)
 
-item_state <- ai("item_state", "What state is the item in, from the customer's message?",
-  message = character(),
-  .returns = described(factor(levels = levels(refunds$state)),
-    "unopened: still sealed, never opened; opened_unused: unpacked and looked at, never used;
-     used: used for a while, works fine, no longer wanted; damaged: broken or damaged when it arrived;
-     wrong_item: not what was ordered, or part of the order missing; faulty: worked at first, then failed in normal use"))
+item_state <- ai(state ~ message, "What state is the item in, from the customer's message?",
+  state = choice(
+    unopened      = "still sealed, never opened",
+    opened_unused = "unpacked and looked at, never used",
+    used          = "used for a while, works fine, no longer wanted",
+    damaged       = "broken or damaged when it arrived",
+    wrong_item    = "not what was ordered, or part of the order missing",
+    faulty        = "worked at first, then failed in normal use"),
+  .name = "item_state")
 
 count(refunds, state)
 ```
@@ -52,6 +55,11 @@ count(refunds, state)
 5 wrong_item       14
 6 faulty           34
 ```
+
+Each answer in the `choice()` is named with what it means, and the model
+reads those words: a choice is only as clear as its answers. The formula
+says the answer is `state`, so `evaluate()` will compare with the `state`
+column, which holds the right answers.
 
 ## The candidates
 
@@ -98,7 +106,7 @@ swaps the model and nothing else, so each model reads exactly the same
 request:
 
 ```r
-evaluations <- lapply(candidates$model, function(m) evaluate(update(item_state, lm = m), refunds, expected = state))
+evaluations <- lapply(candidates$model, function(m) evaluate(update(item_state, lm = m), refunds))
 names(evaluations) <- candidates$model
 
 accuracy <- bind_rows(lapply(evaluations, tidy), .id = "model")
@@ -111,11 +119,11 @@ accuracy |> select(model, estimate, conf.low, conf.high, failed)
   <chr>                           <dbl>    <dbl>     <dbl>  <int>
 1 gpt-6-luna                      0.983    0.941     0.995      0
 2 gpt-6-sol                       0.983    0.941     0.995      0
-3 gpt-5.4-nano                    0.875    0.804     0.923      0
+3 gpt-5.4-nano                    0.883    0.814     0.929      0
 4 claude-haiku-4-5                0.95     0.895     0.977      0
-5 claude-sonnet-5                 0.958    0.906     0.982      0
+5 claude-sonnet-5                 0.975    0.929     0.991      0
 6 gemini:gemini-3.8-flash         0.983    0.941     0.995      0
-7 gemini:gemini-3.1-flash-lite    0.983    0.941     0.995      0
+7 gemini:gemini-3.1-flash-lite    0.975    0.929     0.991      0
 8 jev-latest                      0.983    0.941     0.995      0
 ```
 
@@ -143,14 +151,14 @@ compare |>
 # A tibble: 8 × 5
   model                        accuracy per_1000 seconds output_tokens
   <chr>                           <dbl>    <dbl>   <dbl>         <dbl>
-1 gpt-6-luna                      0.983   0.0419   1.05          39.6 
-2 gpt-6-sol                       0.983   0.597    1.03          19.8 
-3 gemini:gemini-3.8-flash         0.983   0.691    1.20         142.  
-4 gemini:gemini-3.1-flash-lite    0.983   0.063    0.527          6.91
-5 jev-latest                      0.983   0.0199   0.175         67.2 
-6 claude-sonnet-5                 0.958   0.741    1.22          16.9 
-7 claude-haiku-4-5                0.95    0.270    0.512          9.92
-8 gpt-5.4-nano                    0.875   0.0559   0.690         12.8 
+1 gpt-6-luna                      0.983   0.0436   1.15          41.9 
+2 gpt-6-sol                       0.983   0.609    1.12          21.4 
+3 gemini:gemini-3.8-flash         0.983   0.688    1.18         142.  
+4 jev-latest                      0.983   0.0198   0.177         67.2 
+5 claude-sonnet-5                 0.975   0.706    1.24          14.3 
+6 gemini:gemini-3.1-flash-lite    0.975   0.0620   0.618          6.92
+7 claude-haiku-4-5                0.95    0.266    0.510          9.93
+8 gpt-5.4-nano                    0.883   0.0555   0.818         12.8 
 ```
 
 `per_1000` is dollars per thousand messages, `seconds` the median time
@@ -208,11 +216,11 @@ bind_rows(lapply(setdiff(compare$model, best), function(m) paired(best, m)))
   a          b                            a_only b_only p_value
   <chr>      <chr>                         <int>  <int>   <dbl>
 1 gpt-6-luna gpt-6-sol                         0      0 1      
-2 gpt-6-luna gpt-5.4-nano                     14      1 0.00195
+2 gpt-6-luna gpt-5.4-nano                     12      0 0.00150
 3 gpt-6-luna claude-haiku-4-5                  4      0 0.134  
-4 gpt-6-luna claude-sonnet-5                   3      0 0.248  
+4 gpt-6-luna claude-sonnet-5                   1      0 1      
 5 gpt-6-luna gemini:gemini-3.8-flash           0      0 1      
-6 gpt-6-luna gemini:gemini-3.1-flash-lite      1      1 1      
+6 gpt-6-luna gemini:gemini-3.1-flash-lite      1      0 1      
 7 gpt-6-luna jev-latest                        1      1 1      
 ```
 
@@ -246,12 +254,12 @@ compare |>
 # A tibble: 6 × 4
   model                        accuracy per_1000 seconds
   <chr>                           <dbl>    <dbl>   <dbl>
-1 jev-latest                      0.983   0.0199   0.175
-2 gpt-6-luna                      0.983   0.0419   1.05 
-3 gemini:gemini-3.1-flash-lite    0.983   0.063    0.527
-4 gpt-6-sol                       0.983   0.597    1.03 
-5 gemini:gemini-3.8-flash         0.983   0.691    1.20 
-6 claude-sonnet-5                 0.958   0.741    1.22 
+1 jev-latest                      0.983   0.0198   0.177
+2 gpt-6-luna                      0.983   0.0436   1.15 
+3 gemini:gemini-3.1-flash-lite    0.975   0.0620   0.618
+4 gpt-6-sol                       0.983   0.609    1.12 
+5 gemini:gemini-3.8-flash         0.983   0.688    1.18 
+6 claude-sonnet-5                 0.975   0.706    1.24 
 ```
 
 The first row is the choice. The trade-off it absorbs is stated in the
@@ -269,13 +277,13 @@ through to the provider with `config`:
 
 ```r
 luna_off <- update(item_state, lm = "gpt-6-luna", config = list(reasoning = lm15::reasoning("off")))
-ev_off <- evaluate(luna_off, refunds, expected = state)
+ev_off <- evaluate(luna_off, refunds)
 ev_off
 ```
 
 ```output
 <evaluation of item_state> 120 rows
-  exact_match: 0.99  (95% interval 0.95 to 1.00)
+  exact_match: 0.98  (95% interval 0.94 to 1.00)
 ```
 
 Every call an evaluation makes is logged with the evaluation's id (in
@@ -299,12 +307,12 @@ table(medium = right("gpt-6-luna"),
 # A tibble: 2 × 4
   effort calls seconds output_tokens
   <chr>  <int>   <dbl>         <dbl>
-1 medium   120   1.05           39.6
-2 off      120   0.943          14.1
+1 medium   120   1.15           41.8
+2 off      120   0.874          14.0
        off
 medium  wrong right
   wrong     1     1
-  right     0   118
+  right     1   117
 ```
 
 Switched off, it writes about a third as many tokens and is as accurate
@@ -327,14 +335,14 @@ calls(folder = log_folder) |>
 # A tibble: 8 × 3
   model                        calls dollars
   <chr>                        <int>   <dbl>
-1 claude-sonnet-5                120 0.0889 
-2 gemini:gemini-3.8-flash        120 0.0829 
-3 gpt-6-sol                      120 0.0716 
-4 claude-haiku-4-5               120 0.0324 
-5 gpt-6-luna                     240 0.00881
-6 gemini:gemini-3.1-flash-lite   120 0.00756
-7 gpt-5.4-nano                   120 0.00671
-8 jev-latest                     120 0.00239
+1 claude-sonnet-5                120 0.0848 
+2 gemini:gemini-3.8-flash        120 0.0826 
+3 gpt-6-sol                      120 0.0731 
+4 claude-haiku-4-5               120 0.0319 
+5 gpt-6-luna                     240 0.00898
+6 gemini:gemini-3.1-flash-lite   120 0.00744
+7 gpt-5.4-nano                   120 0.00666
+8 jev-latest                     120 0.00238
 ```
 
 ```r
@@ -347,7 +355,7 @@ calls(folder = log_folder) |>
 # A tibble: 1 × 2
   calls dollars
   <int>   <dbl>
-1  1080   0.301
+1  1080   0.298
 ```
 
 ## Your turn

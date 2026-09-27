@@ -8,11 +8,23 @@ themselves (`../tools/crosslang.py`).
 * A temperature or top_p a model does not take (GPT-6, the o-series and
   GPT-5, Claude 5) is left out of its requests with one warning, instead of
   failing every row (`contract/models.json`, `fixed_sampling`).
-* `ai()`: a vectorised function whose body a model writes. Types are
-  prototypes (`character()`, `factor(levels = ...)`, `record()`, a zero-row
-  tibble, `vctrs::list_of()`, `optional()`, `described()`); answers come
-  back as those types, several outputs as tibble columns that `mutate()`
-  splices in.
+* `ai()`: a vectorised function whose body a model writes, written like a
+  model formula: `ai(team ~ message, "Which team should answer?", team =
+  choice("shipping", "billing"))`. Each field is a line of a codebook: a
+  sentence describes it, a type types it (`integer()`, `choice()`,
+  `record()`, `vctrs::list_of()`, `optional()`, `described()`), and one left
+  out is text. `.data` gives the fields their columns' types, as `lm()`
+  reads them, and `~ .` is every other column. Interactions, transformed
+  columns and intercepts are refused, with the reason. Answers come back as
+  their types, several outputs as tibble columns that `mutate()` splices in.
+* `choice()`: one of a set of answers, a factor; `choice(approve = "the
+  rules allow it", ...)` tells the model what each answer means.
+* The column named in the formula is where `evaluate()`, the worked
+  examples and `rated()` read and write the answer. In the definition a
+  single output is still `result`, so the same function has the same
+  version in every language.
+* `ai_tool(lookup_order, "...")`: a tool's inputs are its function's
+  arguments, its name the function's.
 * Rows run at once over curl (`concurrency`, default 8). A row with a
   missing input is `NA` without a call; failed rows are `NA` with one
   warning, listed by `ai_problems()`.

@@ -166,8 +166,10 @@ team
 team("My card was charged twice for order B-2210.")
 ```
 
-It is vectorised, so it also works outside tidymodels, as a column in any
-dplyr verb:
+It is the function `ai(category ~ message, "Which team should answer this
+customer message?", .data = train)` writes: the formula you give `fit()`
+is the one you give `ai()`. It is vectorised, so it also works outside
+tidymodels, as a column in any dplyr verb:
 
 ```{r engine-mutate}
 test |>

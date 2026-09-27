@@ -7,16 +7,16 @@
 record(...)
 }
 \arguments{
-\item{...}{Fields, as \code{name = prototype}.}
+\item{...}{Fields, as \code{name = type}.}
 }
 \value{
 A field.
 }
 \description{
-Like a zero-row \code{\link[tibble:tibble]{tibble::tibble()}} used as a type, but its fields may be
-\code{\link[=described]{described()}} or \code{\link[=optional]{optional()}}. Records come back as tibble columns
+Several named fields that belong together, each a type or a sentence
+(text, described), as in \code{\link[=ai]{ai()}}. Records come back as tibble columns
 (\code{tidyr::unpack()} spreads them).
 }
 \examples{
-record(order_id = optional(character()), days_waiting = described(integer(), "whole days"))
+record(order_id = optional("a letter, a dash and four digits"), days_waiting = described(integer(), "whole days"))
 }

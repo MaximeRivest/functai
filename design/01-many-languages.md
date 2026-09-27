@@ -124,10 +124,10 @@ const mood = ai("How does the customer feel about what they bought?", {
 ```
 
 ```r
-# R: no type annotations; the signature is written out, and an AI
-# function takes whole columns, so it works inside dplyr::mutate()
-mood <- ai("How does the customer feel about what they bought?",
-           review = character(), .returns = c("happy", "unhappy", "mixed"))
+# R: a model formula, what comes out ~ what goes in; an AI function
+# takes whole columns, so it works inside dplyr::mutate()
+mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
+           mood = choice("happy", "unhappy", "mixed"))
 reviews |> mutate(mood = mood(review))
 ```
 
@@ -305,9 +305,11 @@ API:
   per row, up to `concurrency` (8) in flight over curl: lm15 for R
   exposes its request builder and response reader, and the rows'
   requests share one curl pool. 80 rows took 9 s live.
-- **Types are vctrs prototypes**: `character()`, `factor(levels = ...)`
-  (a choice), `record()` or a zero-row tibble (a record), `list_of()`,
-  `optional()`, `described()`. Answers come back as those types; several
+- **A function is written as a model formula** (`team ~ message`), its
+  fields as a codebook: a sentence describes a field, a type types it
+  (`integer()`, `choice()`, `record()`, `list_of()`, `optional()`,
+  `described()`), and `.data` gives fields their columns' types, as
+  `lm()` reads them. See `03-r-formula.md`. Answers come back as those types; several
   outputs, and records, are tibble columns (`mutate(triage(x))` splices
   them in; `tidyr::unpack()` spreads a record).
 - **`NA` in, `NA` out, without a call; failures are `NA` and one

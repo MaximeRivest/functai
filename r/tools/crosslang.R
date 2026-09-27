@@ -29,8 +29,8 @@ for (name in names(python)) {
 router <- list(resolve = function(model) list(provider = "openai", model = model),
                complete = function(request) lm15::response(request$model, lm15::message_assistant("<result>\nhappy\n</result>"), "stop",
                                                             usage = lm15::usage(input_tokens = 10L, output_tokens = 5L, total_tokens = 15L)))
-mood <- ai("mood", "How does the customer feel about what they bought?", review = character(),
-           .returns = factor(levels = c("happy", "unhappy", "mixed")), .defined_in = "shop", .temperature = 0,
+mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
+           mood = choice("happy", "unhappy", "mixed"), .defined_in = "shop", .temperature = 0,
            .lm = "gpt-4.1-mini", .router = router, .log_calls = file.path(work, "log"))
 stopifnot_eq(ai_version(mood), python$mood$version, "version")
 stopifnot_eq(ai_signature_id(mood), python$mood$signature, "signature")

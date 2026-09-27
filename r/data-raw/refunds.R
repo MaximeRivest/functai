@@ -59,17 +59,17 @@ sign <- ifelse(stats::runif(n) < 0.5, sample(names_, n, replace = TRUE), "no sig
 subtle <- ifelse(stats::runif(n) < 0.3, "indirect: the state is clear only from details (what they did with it, what they noticed and when), never stated outright",
                  "plain: say what happened in their own words")
 
-writer <- ai("refund_request",
+writer <- ai(refund_request ~ item + state + weeks_since_delivery + tone + length + signature + telling,
   "Write the message a real customer of a small online homeware shop sends to ask for their money back.
 Follow the tone, length, signature and way of telling given. Make the item's state clear to a careful reader
 without naming it as a category. Avoid stock phrases (no 'let me know what you need from me', 'happy to send it back',
 'nothing wrong with it at all'). Do not mention the shop's rules, the price, or a sale unless natural;
 never contradict the facts given. Write only the message.",
-  item = character(), state = described(character(), "what happened to the item: the customer's situation"),
+  state = "what happened to the item: the customer's situation",
   weeks_since_delivery = described(double(), "roughly how long ago it arrived, if they mention it at all"),
-  tone = character(), length = character(), signature = described(character(), "a first name, or no signature"),
-  telling = described(character(), "how directly they say what happened"),
-  .returns = character(), .lm = "claude-sonnet-5", .concurrency = 8)
+  signature = "a first name, or no signature",
+  telling = "how directly they say what happened",
+  .lm = "claude-sonnet-5", .concurrency = 8)
 
 message <- writer(item, unname(about[state]), round(days / 7, 1), tone, length, sign, subtle)
 stopifnot(!anyNA(message))

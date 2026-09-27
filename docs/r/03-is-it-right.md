@@ -21,9 +21,8 @@ ai_config(lm = "gpt-6-luna", log_calls = log_folder)
 team_levels <- c("shipping", "billing", "product", "account")
 tickets <- tickets |> mutate(category = factor(category, levels = team_levels))
 
-team <- ai("team", "Which team should answer this customer message?",
-  message = character(),
-  .returns = factor(levels = team_levels))
+team <- ai(team ~ message, "Which team should answer this customer message?",
+  team = choice(team_levels))
 ```
 
 This is tutorial 1's `team`, without the house rules, so it has something left to get wrong. We made `category` a factor with the same levels, so the right answers and the function's answers are the same kind of thing.
@@ -42,7 +41,7 @@ ev
   exact_match: 0.99  (95% interval 0.93 to 1.00)
 ```
 
-`expected = category` says which column holds the right answers. The first number is the share it got right. The two after it are a **95% interval**: if you drew many more messages like these, the function's true accuracy would very likely lie between them. Read the interval before the score. It's the honest summary of what eighty rows can tell you.
+`expected = category` says which column holds the right answers. (Without it, `evaluate()` looks for a column named like the formula's output, `team`; the answer key here is called `category`.) The first number is the share it got right. The two after it are a **95% interval**: if you drew many more messages like these, the function's true accuracy would very likely lie between them. Read the interval before the score. It's the honest summary of what eighty rows can tell you.
 
 There's nothing mysterious about it. Being right or wrong is a yes/no outcome, so the score is a proportion, and this is the interval R's `prop.test()` gives (Wilson's, without continuity correction):
 

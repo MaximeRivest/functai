@@ -95,18 +95,19 @@ function that does it:
 
 
 ``` r
-team <- ai("team", "Which team should answer this customer message?",
-  message = character(),
-  .returns = factor(levels = c("shipping", "billing", "product", "account")))
+team <- ai(team ~ message, "Which team should answer this customer message?",
+  team = choice("shipping", "billing", "product", "account"))
 ```
 
-Read it like a function definition:
+Read it like a model formula:
 
-- `"team"` is its name;
+- `team ~ message` is *team, from the message*, as `lm(weight ~ height)`
+  is weight from height. The function is named after what it gives,
+  `team`, and takes one input, `message`, which is text;
 - the sentence says what it does, as you would tell a new colleague;
-- `message = character()` says it takes one input, some text;
-- `.returns` says what comes back: a factor with exactly these four levels.
-  The model is only allowed to answer one of them.
+- `team = choice(...)` says what comes back: one of these four teams, as
+  a factor with these levels. The model is only allowed to answer one of
+  them.
 
 There is no body. The language model *is* the body. Try it:
 

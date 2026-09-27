@@ -91,6 +91,7 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   state <- d$state %||% list()
   core <- list(definition = list(name = n$name, description = "", inputs = inputs, outputs = outputs, written = sig$instructions),
                own = own, tools = list(), single = length(outputs) == 1L && identical(names(outputs), "result"),
+               columns = if (identical(names(outputs), "result")) c(result = n$name) else stats::setNames(names(outputs), names(outputs)),
                module = n$module, state = list(instructions = state$instructions, demos = list()), saved = saved)
   core$state$demos <- as_demos(core, state$demos)
   probes <- d$probes %||% list()

@@ -101,15 +101,6 @@ worked_examples <- function(range = c(0L, 16L), trans = NULL) {
 
 # ---------------------------------------------------------------- fit
 
-# Prototype for a column of training data.
-prototype_of <- function(x) {
-  if (is.factor(x)) return(factor(levels = levels(x)))
-  if (is.integer(x)) return(integer())
-  if (is.double(x) && !inherits(x, c("Date", "POSIXt"))) return(double())
-  if (is.logical(x)) return(logical())
-  character()
-}
-
 #' Fit an AI model (parsnip's fit function for the "functai" engine)
 #'
 #' Called by [parsnip::fit()]; use that. Returns an AI function (see [ai()]):
@@ -132,20 +123,15 @@ ai_model_fit <- function(formula, data, description = NULL, examples = 0L, name 
   predictors <- attr(tt, "term.labels")
   bad <- setdiff(predictors, names(data))
   if (length(outcome) != 1L || length(bad)) cli::cli_abort("an AI model's formula names columns: {.code outcome ~ text + other}, not {.code {bad}}")
-  y <- data[[outcome]]
-  keep <- !is.na(y)
-  data <- data[keep, , drop = FALSE]
-  y <- y[keep]
+  data <- data[!is.na(data[[outcome]]), c(predictors, outcome), drop = FALSE]
   hidden <- startsWith(outcome, "..")               # workflows name the outcome ..y
-  fname <- name %||% if (hidden) "ai_model" else outcome
-  inputs <- lapply(data[predictors], prototype_of)
-  returns <- if (is.factor(y)) factor(levels = levels(y)) else if (is.numeric(y)) double() else character()
   settings <- list(...)
   if (length(settings)) names(settings) <- paste0(".", names(settings))
   if (hidden && is.null(name)) settings$.include_fn_name <- FALSE
-  fn <- do.call(ai, c(list(.name = fname, .description = description), inputs, list(.returns = returns), settings))
-  train <- data[predictors]
-  train$result <- y
+  # the same function ai() writes from this formula, its types read from the data
+  fn <- do.call(ai, c(list(stats::reformulate(predictors, response = outcome), description, .data = data,
+                           .name = name %||% if (hidden) "ai_model" else outcome), settings))
+  train <- data
   examples <- as.integer(examples %||% 0L)
   if (examples > 0L) {
     fn <- switch(method,

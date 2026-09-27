@@ -123,12 +123,20 @@ team
 ```
 
 ```output
-<ai function> category(message) -> result: factor [account, billing, product, shipping]
-  Function: category
-  
+<ai function> category ~ message
   Which team should answer this customer message?
-model: gpt-6-luna
+  message   text
+  category  one of account, billing, product, shipping
+  model: gpt-6-luna
 ```
+
+It is the function `ai(category ~ message, "Which team should answer this
+customer message?", .data = train)` writes: the formula you give `fit()`
+is the one you give `ai()`, read the same way (*category, from the
+message*), with the types of `train`'s columns. What a formula means only
+to a regression, an interaction (`a * b`) or a transformed column
+(`log(x)`), an AI function refuses, and says why: it reads all its inputs
+together, as they are.
 
 `evaluate()` scores any model the same way, so the two compare on equal
 terms, with intervals:

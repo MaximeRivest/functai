@@ -27,7 +27,7 @@ test_that("a column's calls are in flight together, and each answer goes to its 
 
   router <- lm15::new_router(api_keys = list(openai = "sk-test"), base_urls = list(openai = sprintf("http://127.0.0.1:%d/v1", port)))
   log <- withr::local_tempdir()
-  echo <- ai("echo", "Say which row this is.", text = character(), .lm = "gpt-4.1-mini", .router = router, .log_calls = log, .concurrency = 8L)
+  echo <- ai(echo ~ text, "Say which row this is.", .lm = "gpt-4.1-mini", .router = router, .log_calls = log, .concurrency = 8L)
   started <- Sys.time()
   out <- echo(sprintf("row %d", 1:8))
   took <- as.numeric(Sys.time() - started, units = "secs")

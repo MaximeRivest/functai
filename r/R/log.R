@@ -114,5 +114,6 @@ rated <- function(fn, by = NULL, folder = NULL, since = NULL) {
       else if (k == "disputed") vapply(values, isTRUE, NA)
       else vapply(values, function(v) if (is.null(v)) NA_character_ else as.character(v), "")
   }
+  if (core$single && "result" %in% names(cols)) names(cols)[names(cols) == "result"] <- columns_of(core)[["result"]]
   structure(tibble::new_tibble(cols, nrow = length(rows)), left_out = out$left_out)
 }

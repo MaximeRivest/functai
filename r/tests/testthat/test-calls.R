@@ -4,8 +4,8 @@ mood_of <- function(router, ...) {
   settings <- list(.lm = "gpt-4.1-mini", .router = router, .log_calls = FALSE)
   more <- list(...)
   settings[names(more)] <- more
-  do.call(ai, c(list("mood", "How does the customer feel about what they bought?",
-    review = character(), .returns = factor(levels = c("happy", "unhappy", "mixed"))), settings))
+  do.call(ai, c(list(mood ~ review, "How does the customer feel about what they bought?",
+    mood = choice("happy", "unhappy", "mixed")), settings))
 }
 
 guess <- function(request, i) {
@@ -44,8 +44,8 @@ test_that("they are columns in dplyr: mutate, and several outputs splice in as c
   expect_identical(as.character(got$mood), c("happy", "unhappy", "mixed"))
   expect_s3_class(got$mood, "factor")
 
-  triage <- ai("triage", "Read the ticket.", ticket = character(),
-    .outputs = list(summary = character(), minutes = described(integer(), "minutes to fix")),
+  triage <- ai(summary + minutes ~ ticket, "Read the ticket.", minutes = described(integer(), "minutes to fix"),
+    .name = "triage",
     .lm = "gpt-4.1-mini", .log_calls = FALSE,
     .router = fake_router(responder = function(req, i) "<summary>\nCharged twice\n</summary>\n<minutes>\n30\n</minutes>"))
   spliced <- dplyr::mutate(tibble::tibble(ticket = c("a", "b")), triage(ticket))
@@ -55,15 +55,15 @@ test_that("they are columns in dplyr: mutate, and several outputs splice in as c
 })
 
 test_that("records come back as tibble columns; lists as list_of", {
-  person <- ai("person", "Who is described?", text = character(),
-    .returns = tibble::tibble(name = character(), age = integer()), .adapter = "json",
+  person <- ai(person ~ text, "Who is described?",
+    person = tibble::tibble(name = character(), age = integer()), .adapter = "json",
     .lm = "gpt-4.1-mini", .log_calls = FALSE,
     .router = fake_router(responder = function(req, i) if (i == 1L) '{"result": {"name": "Ana", "age": 31}}' else '{"result": {"name": "Bo", "age": 50}}'))
   got <- person(c("Ana, 31.", "Bo, 50."))
   expect_s3_class(got, "tbl_df")
   expect_identical(got$name, c("Ana", "Bo"))
   expect_identical(got$age, c(31L, 50L))
-  tags <- ai("tags", "Tags.", text = character(), .returns = vctrs::list_of(.ptype = character()),
+  tags <- ai(tags ~ text, "Tags.", tags = vctrs::list_of(.ptype = character()),
     .lm = "gpt-4.1-mini", .log_calls = FALSE, .router = fake_router(list('<result>\n["a", "b"]\n</result>')))
   out <- tags("x")
   expect_s3_class(out, "vctrs_list_of")
@@ -90,10 +90,12 @@ test_that("a value outside its type is unreadable too; one failing row is an err
 
 test_that("tools run until the model answers", {
   orders <- c("A-1" = "stuck at the carrier")
-  lookup <- ai_tool(function(order) orders[[order]], "lookup_order", "Look up an order.", order = character())
+  lookup_order <- function(order) orders[[order]]
+  lookup <- ai_tool(lookup_order, "Look up an order.")
+  expect_identical(lookup$name, "lookup_order")
   r <- fake_router(list(list(calls = list(list(id = "c1", name = "lookup_order", input = list(order = "A-1")))),
                         "<result>\nIt is stuck at the carrier.\n</result>"))
-  helper <- ai("helper", "Help.", question = character(), .tools = list(lookup), .lm = "gpt-4.1-mini", .router = r, .log_calls = FALSE)
+  helper <- ai(helper ~ question, "Help.", .tools = list(lookup), .lm = "gpt-4.1-mini", .router = r, .log_calls = FALSE)
   expect_identical(helper("Where is A-1?"), "It is stuck at the carrier.")
   second <- lmcc::lm15_plain(lm15::as_dict(r$env$requests[[2L]]))
   expect_match(lmcc::json_text(second$messages), "stuck at the carrier")
@@ -107,7 +109,7 @@ test_that("the version follows what is sent, not where it runs", {
   expect_identical(ai_version(update(mood, lm = "claude-haiku-4-5", temperature = 0.3)), v)
   expect_false(identical(ai_version(update(mood, adapter = "json")), v))
   expect_false(identical(ai_version(update(mood, module = "cot")), v))
-  taught <- with_demos(mood, tibble::tibble(review = "Great", result = "happy"))
+  taught <- with_demos(mood, tibble::tibble(review = "Great", mood = "happy"))
   expect_false(identical(ai_version(taught), v))
   expect_identical(ai_version(with_demos(taught, NULL)), v)
   expect_false(identical(ai_version(with_instructions(mood, "Say how they feel.")), v))
@@ -116,7 +118,7 @@ test_that("the version follows what is sent, not where it runs", {
 # ---------------------------------------------------------------- predict, augment, evaluate
 
 reviews <- tibble::tibble(review = c("Broke in a day", "Love it", "Good but late", "Terrible"),
-                          result = c("unhappy", "happy", "mixed", "unhappy"))
+                          mood = c("unhappy", "happy", "mixed", "unhappy"))
 
 test_that("predict and augment: tidymodels' columns, with call ids", {
   mood <- mood_of(fake_router(responder = guess))
@@ -124,8 +126,8 @@ test_that("predict and augment: tidymodels' columns, with call ids", {
   expect_identical(names(p), c(".pred_class", ".call", ".error"))     # a choice is a class, as in tidymodels
   expect_identical(as.character(p$.pred_class), c("unhappy", "happy", "mixed", "unhappy"))
   a <- augment(mood, reviews)
-  expect_identical(names(a), c("review", "result", ".pred_class", ".call", ".error"))
-  n <- ai("n", "Count.", text = character(), .returns = integer(), .lm = "gpt-4.1-mini", .log_calls = FALSE,
+  expect_identical(names(a), c("review", "mood", ".pred_class", ".call", ".error"))
+  n <- ai(n ~ text, "Count.", n = integer(), .lm = "gpt-4.1-mini", .log_calls = FALSE,
           .router = fake_router(list("<result>\n3\n</result>")))
   expect_identical(names(predict(n, tibble::tibble(text = "x"))), c(".pred", ".call", ".error"))
   expect_error(predict(mood, tibble::tibble(x = 1)), "no column for input")
@@ -141,7 +143,7 @@ test_that("evaluate: the score, its range, broom's tidy, glance and augment", {
   expect_identical(nrow(glance(ev)), 1L)
   expect_identical(augment(ev)$exact_match, c(1, 1, 0, 1))
   expect_output(print(ev), "exact_match: 0.75")
-  truth <- dplyr::rename(reviews, feeling = result)
+  truth <- dplyr::rename(reviews, feeling = mood)
   expect_identical(evaluate(mood, truth, expected = feeling)$score, 0.75)
   failing <- mood_of(fake_router(responder = function(req, i) "?"), .retries = 0L)
   bad <- suppressWarnings(evaluate(failing, reviews[1:2, ]))
@@ -182,8 +184,8 @@ test_that("every call is a line in the log; ratings make rows with known answers
   rate(p$.call, c("right", "wrong"), answer = list(NULL, "mixed"), by = "ben", folder = folder)
   rows <- rated(mood, folder = folder)
   expect_identical(nrow(rows), 2L)
-  expect_s3_class(rows$result, "factor")
-  expect_setequal(as.character(rows$result), c("unhappy", "mixed"))
+  expect_s3_class(rows$mood, "factor")                        # the answer's column is the formula's name
+  expect_setequal(as.character(rows$mood), c("unhappy", "mixed"))
   expect_identical(attr(rows, "left_out"), list(other_signature = 0L, no_content = 0L, no_answer = 0L))
 })
 
@@ -204,7 +206,7 @@ test_that("log_content = FALSE keeps sizes and tokens, never values; a failed ca
 
 test_that("a function written here loads back with the same version and requests", {
   dir <- withr::local_tempdir()
-  mood <- with_demos(mood_of(NULL, .temperature = 0, .defined_in = "shop"), tibble::tibble(review = "Broke", result = "unhappy"))
+  mood <- with_demos(mood_of(NULL, .temperature = 0, .defined_in = "shop"), tibble::tibble(review = "Broke", mood = "unhappy"))
   write_ai(mood, dir)
   m <- read_json_file(file.path(dir, "functai.json"))
   expect_identical(m$language, "r")
@@ -217,8 +219,8 @@ test_that("a function written here loads back with the same version and requests
 })
 
 test_that("record() takes described and optional fields; a null comes back NA", {
-  ref <- ai("order_ref", "The order.", message = character(),
-    .returns = record(order = optional(character()), days = described(integer(), "whole days")),
+  ref <- ai(order_ref ~ message, "The order.",
+    order_ref = record(order = optional(character()), days = described(integer(), "whole days")),
     .lm = "gpt-4.1-mini", .log_calls = FALSE,
     .router = fake_router(list("<result>\n{\"order\": null, \"days\": 3}\n</result>")))
   expect_match(ai_instructions(ref), "Function: order_ref")

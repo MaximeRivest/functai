@@ -2,20 +2,21 @@
 % Please edit documentation in R/shapes.R
 \name{as_field}
 \alias{as_field}
-\title{Turn a prototype into a field}
+\title{Turn a type into a field}
 \usage{
 as_field(x)
 }
 \arguments{
-\item{x}{A prototype or a field.}
+\item{x}{A type, a sentence, or a field.}
 }
 \value{
 A field.
 }
 \description{
-\code{character()} is text, \code{integer()} a whole number, \code{double()} a number,
-\code{logical()} yes or no, \code{factor(levels = c(...))} one of those levels, a
-zero-row data frame or tibble a record of its columns (or \code{\link[=record]{record()}}), and
-\code{vctrs::list_of(.ptype = x)} a list of \code{x}.
+A sentence is text, described by it; \code{character()} is text, \code{integer()}
+a whole number, \code{double()} a number, \code{logical()} yes or no, \code{\link[=choice]{choice()}} or
+\code{factor(levels = c(...))} one of a set of answers, \code{\link[=record]{record()}} or a
+zero-row tibble a record of its columns, and \code{vctrs::list_of(.ptype = x)}
+a list of \code{x}.
 }
 \keyword{internal}

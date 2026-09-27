@@ -19,10 +19,11 @@ instructions_of <- function(d, include_name, improved = NULL) {
   if (nzchar(desc)) head <- c(head, desc)
   top <- trim_white(paste(head, collapse = "\n\n"))
   lines <- character(0)
-  described <- Filter(function(f) !is.null(f$desc), d$inputs)
-  if (length(described)) lines <- c(lines, "Parameter guidance:", vapply(names(described), function(n) sprintf("- %s: %s", n, described[[n]]$desc), ""), "")
-  described <- Filter(function(f) !is.null(f$desc), d$outputs)
-  if (length(described)) lines <- c(lines, "Output guidance:", vapply(names(described), function(n) sprintf("- %s: %s", n, described[[n]]$desc), ""), "")
+  guide <- function(fields, title) {
+    words <- Filter(Negate(is.null), lapply(fields, field_desc))
+    if (length(words)) c(title, vapply(names(words), function(n) sprintf("- %s: %s", n, words[[n]]), ""), "")
+  }
+  lines <- c(guide(d$inputs, "Parameter guidance:"), guide(d$outputs, "Output guidance:"))
   guidance <- trim_white(paste(lines, collapse = "\n"))
   if (!nzchar(guidance)) return(top)
   paste0(top, if (nzchar(top)) "\n\n", guidance)
@@ -32,7 +33,7 @@ fields_of <- function(d, cot, tools) {
   out <- list()
   for (n in names(d$inputs)) {
     f <- list(name = n, direction = "input", shape = d$inputs[[n]]$shape, purpose = "plain")
-    if (!is.null(d$inputs[[n]]$desc)) f$desc <- d$inputs[[n]]$desc
+    if (!is.null(field_desc(d$inputs[[n]]))) f$desc <- field_desc(d$inputs[[n]])
     out[[length(out) + 1L]] <- f
   }
   if (tools) out[[length(out) + 1L]] <- list(name = "tools", direction = "input", shape = TOOL_LIST, purpose = "tools", type = "list[Tool]")

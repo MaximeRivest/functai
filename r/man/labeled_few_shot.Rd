@@ -21,7 +21,7 @@ bootstrap_few_shot(
 \arguments{
 \item{fn}{An AI function.}
 
-\item{data}{A data frame with input and output columns.}
+\item{data}{A data frame with the formula's input and output columns.}
 
 \item{k, max_labeled}{How many labeled rows at most.}
 

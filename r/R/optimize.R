@@ -10,7 +10,7 @@
 #' runs that were right, whole (reasoning and tool calls included), then fills
 #' up with labeled rows.
 #' @param fn An AI function.
-#' @param data A data frame with input and output columns.
+#' @param data A data frame with the formula's input and output columns.
 #' @param k,max_labeled How many labeled rows at most.
 #' @param sample Pick rows at random (`seed`) rather than the first ones.
 #' @param seed The random seed for picking rows.
@@ -31,8 +31,8 @@ labeled_few_shot <- function(fn, data, k = 16L, sample = TRUE, seed = 0L) {
 }
 
 keep_labeled <- function(fn, rows) {
-  outs <- names(core_of(fn)$definition$outputs)
-  if (!length(intersect(outs, names(rows)))) cli::cli_abort("the rows have no column for any output ({.field {outs}})")
+  cols <- columns_of(core_of(fn))
+  if (!any(cols %in% names(rows))) cli::cli_abort("the rows have no column for any output ({.field {unname(cols)}})")
   rows
 }
 
@@ -42,11 +42,12 @@ bootstrap_few_shot <- function(fn, data, max_bootstrapped = 4L, max_labeled = 16
                                threshold = NULL, seed = 0L) {
   core <- core_of(fn)
   outs <- names(core$definition$outputs)
+  cols <- unname(columns_of(core))
   runner <- if (is.null(teacher)) fn else stats::update(fn, lm = teacher)
   passes <- function(s) if (is.null(threshold)) s > 0 else s >= threshold
   score <- function(row, pred) {
     if (!is.null(metric)) return(as.numeric(metric(row, pred)))
-    exact_match(row[intersect(outs, names(row))], pred[intersect(outs, names(row))])[["exact_match"]]
+    exact_match(row[intersect(cols, names(row))], pred[intersect(cols, names(row))])[["exact_match"]]
   }
   boot <- list(); used <- integer(0)
   step <- max(1L, as.integer(effective(core$own)$concurrency))
@@ -59,8 +60,8 @@ bootstrap_few_shot <- function(fn, data, max_bootstrapped = 4L, max_labeled = 16
     for (j in seq_along(idx)) {
       if (length(boot) >= max_bootstrapped || !is.na(p$.error[[j]])) next
       row <- lapply(as.list(data[idx[[j]], , drop = FALSE]), element, i = 1L)
-      pred <- if (core$single) stats::setNames(list(element(p[[pred_names(core)("result")]], j)), outs) else
-        stats::setNames(lapply(paste0(".pred_", outs), function(k) element(p[[k]], j)), outs)
+      pred <- if (core$single) stats::setNames(list(element(p[[pred_names(core)("result")]], j)), cols) else
+        stats::setNames(lapply(paste0(".pred_", outs), function(k) element(p[[k]], j)), cols)
       if (passes(score(row, pred))) { boot[[length(boot) + 1L]] <- lmcc::turn_to_list(turns[[j]]); used <- c(used, idx[[j]]) }
     }
   }

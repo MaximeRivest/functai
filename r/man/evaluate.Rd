@@ -13,8 +13,8 @@ evaluate(fn, data, expected = NULL, metric = NULL, ...)
 
 \item{expected}{Where the right answers are: a column (bare or quoted) for
 the answer, or a named character vector \code{c(output = "column")}. Default:
-the columns named like the outputs (an AI function) or the outcome the
-model was fitted on (a parsnip fit or a workflow).}
+the columns named like the formula's outputs (an AI function) or the
+outcome the model was fitted on (a parsnip fit or a workflow).}
 
 \item{metric}{A function \verb{(row, prediction)} returning a score (both are
 named lists), or a named list of such functions. Default: \code{\link[=exact_match]{exact_match()}}.}

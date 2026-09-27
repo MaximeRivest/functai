@@ -1,29 +1,97 @@
-# Shapes: what each input and output is. You write R prototypes, the way
-# vctrs does (character(), integer(), a factor with its levels, a zero-row
-# tibble for a record, list_of() for a list); functai writes the JSON Schema
+# Shapes: what each input and output is. You write a sentence (text, with
+# words about it), a type the way vctrs does (character(), integer(), a
+# zero-row tibble for a record, list_of() for a list), or choice(); a column
+# of `.data` gives its own. functai writes the JSON Schema
 # every language agrees on (contract/functions.md, "A definition") and
 # builds answers back into those types.
+
+#' One of a set of answers
+#'
+#' The model may only answer one of these; the answer comes back as a
+#' factor with them as its levels, in this order. Name a level to say what
+#' it means: the model reads it.
+#' @param ... The answers: strings, character vectors, or a factor (its
+#'   levels). Named, `level = "what it means"`.
+#' @return A field.
+#' @examples
+#' choice("shipping", "billing", "product", "account")
+#' choice(levels(refunds$state))
+#' choice(
+#'   approve = "the rules allow a refund",
+#'   deny    = "they do not",
+#'   review  = "a person should decide")
+#' @export
+choice <- function(...) {
+  parts <- rlang::list2(...)
+  outer <- names(parts) %||% rep("", length(parts))
+  levels <- character(0); meanings <- character(0)
+  for (i in seq_along(parts)) {
+    v <- parts[[i]]
+    if (is.factor(v)) v <- levels(v)
+    if (!is.character(v) || anyNA(v)) cli::cli_abort("{.fn choice}'s answers are strings, not {.cls {class(v)}}")
+    if (nzchar(outer[[i]])) {
+      if (length(v) != 1L) cli::cli_abort("{.code {outer[[i]]} = } says what the answer {.val {outer[[i]]}} means, in one string")
+      levels <- c(levels, outer[[i]]); meanings <- c(meanings, stats::setNames(v, outer[[i]]))
+    } else if (!is.null(names(v)) && all(nzchar(names(v)))) {
+      levels <- c(levels, names(v)); meanings <- c(meanings, v)
+    } else levels <- c(levels, unname(v))
+  }
+  if (!length(levels)) cli::cli_abort("{.fn choice} needs its answers: {.code choice(\"yes\", \"no\")}")
+  if (anyDuplicated(levels)) cli::cli_abort("{.fn choice} has {.val {levels[duplicated(levels)]}} twice")
+  f <- new_field(list(enum = as.list(levels), type = "string"), "enum", levels = levels)
+  if (length(meanings)) f$meanings <- vapply(meanings, trim_white, "")
+  f
+}
 
 #' Describe a field
 #'
 #' Words about an input or an output, which the model reads as guidance.
-#' @param x A prototype (`character()`, `factor(levels = ...)`, ...).
+#' In [ai()], a sentence alone describes a text field (or a field whose
+#' type comes from `.data`); `described()` gives words to any other type.
+#' @param x A type (`integer()`, [choice()], ...).
 #' @param desc What the field means.
 #' @return A field.
 #' @examples
-#' described(character(), "the customer's own words")
+#' described(integer(), "whole days since the parcel arrived")
 #' @export
 described <- function(x, desc) {
   f <- as_field(x)
-  f$desc <- desc
+  if (!rlang::is_string(desc)) cli::cli_abort("{.arg desc} is one string")
+  f$desc <- trim_white(desc)
   f
+}
+
+# The words the model reads about a field: yours, then what each answer of a
+# choice means.
+field_desc <- function(f) {
+  m <- if (length(f$meanings)) paste(sprintf("%s: %s", names(f$meanings), f$meanings), collapse = "; ")
+  if (is.null(f$desc)) m else if (is.null(m)) f$desc else paste0(sub("[.;:,]$", "", f$desc), ". ", m)
+}
+
+# A field's JSON Schema, with its words as the description.
+described_shape <- function(f) {
+  d <- field_desc(f)
+  if (is.null(d)) f$shape else c(f$shape, list(description = d))
+}
+
+# The type of a column, as a prototype: a factor is a choice of its levels,
+# dates and anything else are text.
+prototype_of <- function(x) {
+  if (is.factor(x)) return(factor(levels = levels(x)))
+  if (is.integer(x)) return(integer())
+  if (is.double(x) && !inherits(x, c("Date", "POSIXt", "difftime"))) return(double())
+  if (is.logical(x)) return(logical())
+  character()
 }
 
 #' An input or output that may be missing
 #'
 #' The model may answer `null` for it; it comes back as `NA`.
-#' @param x A prototype.
+#' @param x A type, or a sentence (text, described by it).
 #' @return A field.
+#' @examples
+#' optional(integer())
+#' optional("the order number, when the message gives one")
 #' @export
 optional <- function(x) {
   f <- as_field(x)
@@ -34,19 +102,18 @@ optional <- function(x) {
 
 #' A record: several named fields
 #'
-#' Like a zero-row [tibble::tibble()] used as a type, but its fields may be
-#' [described()] or [optional()]. Records come back as tibble columns
+#' Several named fields that belong together, each a type or a sentence
+#' (text, described), as in [ai()]. Records come back as tibble columns
 #' (`tidyr::unpack()` spreads them).
-#' @param ... Fields, as `name = prototype`.
+#' @param ... Fields, as `name = type`.
 #' @return A field.
 #' @examples
-#' record(order_id = optional(character()), days_waiting = described(integer(), "whole days"))
+#' record(order_id = optional("a letter, a dash and four digits"), days_waiting = described(integer(), "whole days"))
 #' @export
 record <- function(...) {
   fields <- lapply(list(...), as_field)
   if (!length(fields) || is.null(names(fields)) || any(!nzchar(names(fields)))) cli::cli_abort("a record's fields are named: {.code record(name = character())}")
-  props <- lapply(fields, function(f) if (is.null(f$desc)) f$shape else c(f$shape, list(description = f$desc)))
-  new_field(list(type = "object", properties = props, required = as.list(names(fields))), "record", fields = fields)
+  new_field(list(type = "object", properties = lapply(fields, described_shape), required = as.list(names(fields))), "record", fields = fields)
 }
 
 #' A field written as JSON Schema
@@ -65,27 +132,33 @@ json_shape <- function(schema) {
 
 new_field <- function(shape, kind, desc = NULL, levels = NULL, fields = NULL, item = NULL, nullable = FALSE) {
   structure(list(shape = shape, kind = kind, desc = desc, levels = levels, fields = fields, item = item,
-                 nullable = nullable), class = "functai_field")
+                 nullable = nullable, meanings = NULL), class = "functai_field")
 }
 
 #' @export
 print.functai_field <- function(x, ...) {
-  cat("<functai field> ", lmcc::json_text(x$shape), if (!is.null(x$desc)) paste0("  # ", x$desc), "\n", sep = "")
+  cat("<functai field> ", type_label(x), if (!is.null(field_desc(x))) paste0("  # ", field_desc(x)), "\n", sep = "")
   invisible(x)
 }
 
-#' Turn a prototype into a field
+#' Turn a type into a field
 #'
-#' `character()` is text, `integer()` a whole number, `double()` a number,
-#' `logical()` yes or no, `factor(levels = c(...))` one of those levels, a
-#' zero-row data frame or tibble a record of its columns (or [record()]), and
-#' `vctrs::list_of(.ptype = x)` a list of `x`.
-#' @param x A prototype or a field.
+#' A sentence is text, described by it; `character()` is text, `integer()`
+#' a whole number, `double()` a number, `logical()` yes or no, [choice()] or
+#' `factor(levels = c(...))` one of a set of answers, [record()] or a
+#' zero-row tibble a record of its columns, and `vctrs::list_of(.ptype = x)`
+#' a list of `x`.
+#' @param x A type, a sentence, or a field.
 #' @return A field.
 #' @keywords internal
 #' @export
 as_field <- function(x) {
   if (inherits(x, "functai_field")) return(x)
+  if (is.character(x) && length(x)) {
+    if (length(x) == 1L && !is.na(x)) return(described(character(), x))
+    cli::cli_abort(c("a field is a type or one sentence about it, not {length(x)} strings",
+      i = "one of several answers is a choice: {.code choice({paste(encodeString(utils::head(x, 2L), quote = '\"'), collapse = ', ')}, ...)}"))
+  }
   if (is.factor(x)) {
     lv <- levels(x)
     if (!length(lv)) cli::cli_abort("a factor prototype needs its levels: {.code factor(levels = c(\"a\", \"b\"))}")
@@ -98,16 +171,15 @@ as_field <- function(x) {
   if (is.data.frame(x)) {
     fields <- lapply(x, as_field)
     if (!length(fields)) cli::cli_abort("a record prototype needs columns: {.code tibble::tibble(name = character())}")
-    props <- lapply(fields, function(f) if (is.null(f$desc)) f$shape else c(f$shape, list(description = f$desc)))
-    return(new_field(list(type = "object", properties = props, required = as.list(names(fields))), "record",
-                     fields = fields))
+    return(new_field(list(type = "object", properties = lapply(fields, described_shape), required = as.list(names(fields))),
+                     "record", fields = fields))
   }
   if (is.character(x)) return(new_field(list(type = "string"), "string"))
   if (is.integer(x)) return(new_field(list(type = "integer"), "integer"))
   if (is.double(x)) return(new_field(list(type = "number"), "number"))
   if (is.logical(x)) return(new_field(list(type = "boolean"), "boolean"))
   cli::cli_abort(c("cannot use {.cls {class(x)}} as a type",
-    i = "use character(), integer(), double(), logical(), factor(levels = ...), a zero-row tibble, vctrs::list_of(), or json_shape()"))
+    i = "use a sentence (text), character(), integer(), double(), logical(), choice(...), record(...), vctrs::list_of(), or json_shape()"))
 }
 
 # ---------------------------------------------------------------- R values -> JSON

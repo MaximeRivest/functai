@@ -7,11 +7,15 @@
 optional(x)
 }
 \arguments{
-\item{x}{A prototype.}
+\item{x}{A type, or a sentence (text, described by it).}
 }
 \value{
 A field.
 }
 \description{
 The model may answer \code{null} for it; it comes back as \code{NA}.
+}
+\examples{
+optional(integer())
+optional("the order number, when the message gives one")
 }
