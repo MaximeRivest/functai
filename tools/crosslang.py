@@ -1,19 +1,21 @@
-"""Python and TypeScript against each other, offline (a fake model in each).
+"""Python, TypeScript and R against each other, offline (a fake model in each).
 
     python/.venv/bin/python tools/crosslang.py
 
 The contract's cases check each language alone. This checks the promises
 between them, on real output of both:
 
-1. Functions Python saves load in TypeScript: the same version, and the
-   same request, byte for byte, for the same input. One with code of its
-   own is refused.
-2. The same function written natively in TypeScript has Python's version
-   and signature.
-3. One call log, two writers: Python and TypeScript log calls of the same
-   function and rate them into one folder. Every record passes the
-   contract's schemas, and both languages' `rated` give the same rows,
-   including each other's calls and ratings.
+1. Functions Python saves load in TypeScript and in R: the same version,
+   and the same request, byte for byte, for the same input. One with code
+   of its own is refused.
+2. The same function written natively in TypeScript and in R has Python's
+   version and signature.
+3. One call log, three writers: each language logs calls of the same
+   function and rates one into one folder. Every record passes the
+   contract's schemas, and every language's `rated` gives the same rows,
+   including the others' calls and ratings.
+
+R runs with `r/.lib` (r/check installs it) and Rscript on PATH.
 
 `../check` runs it.
 """
@@ -123,11 +125,19 @@ def main() -> int:
         print(node.stderr, file=sys.stderr)
         return 1
 
-    # 3c. every record passes the schemas; Python's rated sees TypeScript's calls and ratings
+    # 1, 2 and 3b in R
+    r = subprocess.run(["Rscript", "r/tools/crosslang.R", str(work)], cwd=ROOT, capture_output=True, text=True,
+                       env={**os.environ, "R_LIBS": str(ROOT / "r" / ".lib")})
+    print(r.stdout, end="")
+    if r.returncode != 0:
+        print(r.stderr, file=sys.stderr)
+        return 1
+
+    # 3c. every record passes the schemas; Python's rated sees TypeScript's and R's calls and ratings
     s = schemas()
     calls_, ratings = calllog.read(log)
     languages = {c["process"]["language"] for c in calls_}
-    assert languages == {"python", "typescript"}, languages
+    assert languages == {"python", "typescript", "r"}, languages
     for c in calls_:
         s["call"].validate(c)
     for r in ratings:
@@ -137,11 +147,13 @@ def main() -> int:
     with functai.configure(log_calls=str(log)):
         assert len(functai.rated(shop.mood).collect().to_dicts()) == len(rows)
     ts_rows = json.loads((work / "typescript-rated.json").read_text())
-    assert len(rows) == 2, rows                                   # one rated here, one rated there
-    assert {r["rated_by"] for r in rows} == {"ana", "ben"}
-    assert rows == ts_rows, (rows, ts_rows)
-    print(f"  ok    one log, two languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
-          f"Python's and TypeScript's rated give the same {len(rows)} rows")
+    r_rows = json.loads((work / "r-rated.json").read_text())
+    assert len(rows) == 3, rows                                   # one rated in each language
+    assert {r["rated_by"] for r in rows} == {"ana", "ben", "cleo"}
+    assert rows == r_rows, (rows, r_rows)
+    assert rows[:2] == ts_rows, (rows, ts_rows)                   # TypeScript read the log before R wrote to it
+    print(f"  ok    one log, three languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
+          f"Python's, TypeScript's and R's rated give the same rows")
     return 0
 
 

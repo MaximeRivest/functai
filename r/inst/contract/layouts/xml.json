@@ -1,0 +1,136 @@
+{
+ "name": "functai_xml",
+ "versions": {
+  "kernel": "0.8.4",
+  "vocab": {
+   "format/json": "0.1.0",
+   "format/function_tool": "0.1.0",
+   "format/tool_calls": "0.1.0"
+  }
+ },
+ "template": [
+  {
+   "role": "system",
+   "text": "{instruction}\n\nReply in exactly this form:\n{% for f in outputs %}<{f.name}>\n{f.value}\n</{f.name}>\n{% endfor %}"
+  },
+  {
+   "directive": "turns"
+  },
+  {
+   "role": "user",
+   "text": "{% for f in inputs %}<{f.name}>\n{f.value}\n</{f.name}>\n{% endfor %}"
+  }
+ ],
+ "reader": {
+  "kind": "derived"
+ },
+ "transports": {
+  "reasoning": {
+   "choose": [
+    {
+     "when": {
+      "capability": "native_reasoning"
+     },
+     "use": {
+      "requires": [
+       "native_reasoning"
+      ],
+      "in_template": false,
+      "request_settings": {
+       "config": {
+        "reasoning": {
+         "effort": "medium"
+        }
+       }
+      },
+      "find": [
+       {
+        "from": "part:thinking",
+        "to": "@purpose"
+       }
+      ]
+     }
+    },
+    {
+     "else": {
+      "requires": [
+       "instruct"
+      ],
+      "tell": {
+       "system": "Reason step by step in the '{field}' section before writing any other section."
+      }
+     }
+    }
+   ]
+  },
+  "tools": {
+   "choose": [
+    {
+     "when": {
+      "capability": "native_function_calling"
+     },
+     "use": {
+      "requires": [
+       "native_function_calling"
+      ],
+      "in_template": false,
+      "put": {
+       "@purpose": "request.tools"
+      },
+      "find": [
+       {
+        "from": "part:tool_call",
+        "to": "@purpose.calls",
+        "complete_reply": true
+       }
+      ]
+     }
+    },
+    {
+     "else": {
+      "requires": [
+       "instruct"
+      ],
+      "in_template": false,
+      "tell": {
+       "system": "You may call a tool by replying with exactly one fenced block:\n```tool\n{\"name\": \"<tool>\", \"input\": {...}}\n```\nand nothing else; you will be given the result and asked again."
+      },
+      "put": {
+       "@purpose": "message:system"
+      },
+      "written_as": {
+       "@purpose": "tool_catalog"
+      },
+      "find": [
+       {
+        "from": "text",
+        "between": [
+         "```tool\n",
+         "\n```"
+        ],
+        "to": "@purpose.calls",
+        "remove": true,
+        "complete_reply": true
+       }
+      ],
+      "spelling": {
+       "call": "```tool\n{\"name\": \"{name}\", \"input\": {input}}\n```",
+       "result": "Result of {name} ({id}):\n{output}"
+      }
+     }
+    }
+   ]
+  }
+ },
+ "formats": {
+  "*": {
+   "use": "json"
+  },
+  "list[Tool]": {
+   "use": "function_tool"
+  },
+  "list[ToolCall]": {
+   "use": "tool_calls"
+  }
+ }
+}

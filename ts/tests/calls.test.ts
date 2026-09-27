@@ -12,6 +12,8 @@ import {
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
 
+// the tests read no settings from the environment they run in (an agent's caller, a log folder)
+for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
 configure({ lm: "gpt-4.1-mini", logCalls: false });
 
 const moodDef = {

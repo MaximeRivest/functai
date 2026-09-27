@@ -1,0 +1,26 @@
+#!/usr/bin/env bash
+# FunctAI for R: install lmcc and lm15 for R from their checkouts (neither is
+# on CRAN), copy the contract's data into inst/contract, install the package,
+# and run its tests (every case of ../contract among them). R and the
+# packages come from PATH when there, else from nixpkgs (tools/env.nix).
+set -euo pipefail
+cd "$(dirname "$0")"
+if command -v Rscript >/dev/null 2>&1 && Rscript -e 'for (p in c("vctrs","rlang","tibble","dplyr","testthat","curl","openssl")) library(p, character.only = TRUE)' >/dev/null 2>&1; then
+  RUN=""
+else
+  RUN="nix shell --impure -f $PWD/tools/env.nix -c"
+fi
+LMCC=${LMCC_R:-../../lmcc/r}
+LM15=${LM15_R:-../../lm15-dev/lm15-r}
+for dir in "$LMCC" "$LM15"; do
+  [ -f "$dir/DESCRIPTION" ] || { echo "r/ needs $dir (lmcc and lm15 for R are not on CRAN yet)" >&2; exit 1; }
+done
+mkdir -p .lib
+cp ../contract/layouts/*.json inst/contract/layouts/
+cp ../contract/models.json inst/contract/
+cp ../contract/unicode/casefold.json inst/contract/unicode/
+for pkg in "$LMCC" "$LM15" .; do
+  $RUN R CMD INSTALL --no-test-load --library=.lib "$pkg" >/tmp/functai-r-install.log 2>&1 \
+    || { tail -30 /tmp/functai-r-install.log; echo "installing $pkg failed" >&2; exit 1; }
+done
+( cd tests && NOT_CRAN=true R_LIBS=../.lib $RUN Rscript -e 'library(testthat); library(functai); r <- as.data.frame(test_dir("testthat", reporter = "summary", stop_on_failure = FALSE, package = "functai", load_package = "installed")); cat(sprintf("R: %d expectations, %d failed, %d errors, %d skipped\n", sum(r$nb), sum(r$failed), sum(r$error), sum(r$skipped))); quit(status = if (sum(r$failed) + sum(r$error)) 1 else 0)' )

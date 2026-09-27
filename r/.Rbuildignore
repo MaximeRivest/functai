@@ -1,0 +1,6 @@
+^\.lib$
+^check$
+^tools$
+^data-raw$
+^README\.Rmd$
+^.*\.Rproj$

@@ -1,0 +1,3 @@
+.lib/
+*.Rcheck/
+functai_*.tar.gz

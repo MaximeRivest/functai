@@ -2,9 +2,9 @@
 
 *Status, 2026-09-27: agreed and under way. The repository is laid out
 for it; the contract covers functions, scores, the call log and saved
-functions; TypeScript 0.1.0 passes all of it and is checked against
-Python itself. Neither lmcc's nor FunctAI's TypeScript package is on npm
-yet. Julia and R wait for lmcc in their language.*
+functions; TypeScript 0.1.0 and R 0.1.0 pass all of it and are checked
+against Python itself. None of the new packages is published yet. Julia
+is next: lmcc for Julia exists.*
 
 ## What we want
 
@@ -38,8 +38,8 @@ implementations that are checked against it.
 |---|---|---|---|
 | Python | reference | reference | 1.0.1 released, 1.1.0 not yet |
 | TypeScript | passes the full contract | passes the same cases as Python, byte for byte (not on npm yet) | **0.1.0, in `ts/`** |
-| Julia | at parity with the others since 2026-09-26 | **started** (`lmcc/julia`, uncommitted, 2026-09-27) | after lmcc |
-| R | pinned to the same contract commit (its README says it passes); not yet in lm15's parity table | **does not exist** | after lmcc |
+| Julia | at parity with the others since 2026-09-26 | passes the corpus (lmcc D-56) | **next** |
+| R | passes the full contract; reading keys from the environment fixed 2026-09-27 | passes the corpus (lmcc D-56) | **0.1.0, in `r/`** |
 
 **TypeScript can start now.** Julia and R need lmcc in their language
 first. That is the real prerequisite, and it should be built in the lmcc
@@ -267,8 +267,9 @@ runnable in every language.
    `InstructionSearch`, stateful memory, escalation, the reply cache,
    baking. **To publish it**, lmcc's TypeScript kernel goes to npm first
    (and lmcc 0.8.4 to PyPI, so both languages run the same kernel).
-3. **lmcc for Julia** (in lmcc), then **FunctAI.jl**.
-4. **lmcc for R** (in lmcc), then **the R package**.
+3. **lmcc for Julia** (done, lmcc D-56), then **FunctAI.jl**.
+4. **lmcc for R** (done, lmcc D-56), then **the R package**: 0.1.0 on
+   2026-09-27, below.
 5. **Baking**, per language, each behind the gate above.
 
 ## Decisions still open
@@ -289,12 +290,46 @@ runnable in every language.
    generator that every language implements.
    - *Recommendation:* start with meaning. Move to exact choices only
      if users compare improvement runs across languages.
-4. **The R face.** Named arguments (sketched above) or R's formula
-   style (`ai(mood ~ review, …)`)? To be decided with R users, when the
-   R package starts.
+4. ~~The R face.~~ **Decided 2026-09-27**, see *R and the tidyverse*.
 5. **Integrations tied to one ecosystem**, such as Prime Intellect's
    verifiers in `functai_verifiers` and `functai_rows`, stay in their
    language. They are not part of the contract.
+
+## R and the tidyverse (0.1.0, 2026-09-27)
+
+The R package pairs with the tidyverse rather than wrapping the Python
+API:
+
+- **An AI function is a vectorised R function** whose arguments are its
+  inputs (`mood(review)`), so it is a column in any dplyr verb. One call
+  per row, up to `concurrency` (8) in flight over curl: lm15 for R
+  exposes its request builder and response reader, and the rows'
+  requests share one curl pool. 80 rows took 9 s live.
+- **Types are vctrs prototypes**: `character()`, `factor(levels = ...)`
+  (a choice), `record()` or a zero-row tibble (a record), `list_of()`,
+  `optional()`, `described()`. Answers come back as those types; several
+  outputs, and records, are tibble columns (`mutate(triage(x))` splices
+  them in; `tidyr::unpack()` spreads a record).
+- **`NA` in, `NA` out, without a call; failures are `NA` and one
+  warning** (`ai_problems()`), as readr reports parsing problems. A
+  single failing call is an error.
+- **Evaluation speaks broom** (`tidy()`, `glance()`, `augment()`, columns
+  `estimate`, `conf.low`, `conf.high`), and predictions speak tidymodels
+  (`predict()`/`augment()` with `.pred`).
+- **Immutable functions**: improving returns a copy (`fn |>
+  labeled_few_shot(train)`), as do `with_demos()`, `with_instructions()`
+  and `update()`. Settings follow withr (`with_ai_config()`,
+  `local_ai_config()`).
+- Names avoid masking: `described()` (testthat has `describe`),
+  `model_capabilities()` (base has `capabilities`), `read_ai()`/`write_ai()`
+  (base has `load`/`save`).
+
+Stated trade-offs: the call log's default folder is the contract's
+(`~/.local/share/functai/calls`), not `tools::R_user_dir()`, so that every
+language shares it; it is written only when asked, which is what CRAN's
+policy requires. Program names default to the module `"__main__"`, as a
+Python notebook's, so ratings pool with Python's. Streaming and modules
+are not in 0.1.0.
 
 ## Found on the way
 
@@ -306,3 +341,10 @@ runnable in every language.
   schema is closed), in all four lmcc kernels. Both FunctAI languages run
   on lmcc's checkout until lmcc 0.8.4 is released; Python's dependency is
   `lmcc>=0.8.4`, so releasing FunctAI for Python waits for that release.
+
+- **lm15 for R could not read API keys from the environment** (the
+  `Sys.getenv()` value kept its `Dlist` class, and the key check refused
+  it): fixed in lm15-r on 2026-09-27, with a regression test.
+- **Python cannot load an AI function saved from TypeScript or R**: its
+  `load` runs saved Python code. A data-only loader, like the other two
+  languages have, is the missing piece for "improve in R, run in Python".

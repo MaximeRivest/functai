@@ -13,8 +13,9 @@ before adding a language or changing the contract.
 | `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG | `contract/` |
 | `ts/` | the TypeScript package (`functai` on npm, not published yet): src, tests, tools, README, CHANGELOG. `src/generated/contract.ts` is the contract's data, written by `node tools/generate.ts` | `contract/` |
 | `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project | the code they show |
+| `r/` | the R package (`functai`, not on CRAN): R, tests, data, README, NEWS. `inst/contract/` is the contract's data, copied by `r/check`; `tools/env.nix` is its R on NixOS | `contract/` |
 | `tools/docs.py` | generates reference/example/news pages, runs notebooks on rat, builds the site | |
-| `tools/crosslang.py` | Python and TypeScript against each other: saved in one, loaded in the other; one call log | `contract/` |
+| `tools/crosslang.py` | Python, TypeScript and R against each other: saved in Python, loaded in the others; one call log | `contract/` |
 | `design/` | numbered design notes | |
 | `check` | the one command: the contract, then every implementation | |
 
@@ -42,12 +43,13 @@ python/.venv/bin/python tools/docs.py run [PAGE ...]   # run notebooks (needs mo
 python/.venv/bin/python tools/docs.py site      # build the website into site/
 cd ts && npm install && npm test                # TypeScript (needs ../lmcc checked out: lmcc is not on npm yet)
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
+r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
 python/.venv/bin/python contract/cases/make.py  # after changing a rule: rewrite the cases
 ```
 
 Live runs (real models, costs cents): `cd python && .venv/bin/python
 tests/live.py`; `cd ts && node --conditions=functai-source
---conditions=lmcc-source tools/live.ts`.
+--conditions=lmcc-source tools/live.ts`; `R_LIBS=r/.lib Rscript r/tools/live.R`.
 
 Model keys for live runs: `set -a; source ~/Projects/lm15-dev/.env; set +a`
 (never commit it).

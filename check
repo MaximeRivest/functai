@@ -5,8 +5,10 @@
 #   2) Python: the offline tests (a fake provider; the contract's cases and
 #      schemas are read from ../contract)
 #   3) TypeScript: types, then the offline tests (the same contract cases)
-#   4) Python and TypeScript against each other: saved in one, loaded in the
-#      other; one call log written and read by both (tools/crosslang.py)
+#   4) R: the offline tests (the same contract cases), r/check
+#   5) the languages against each other: saved in Python, loaded in
+#      TypeScript and R; one call log written and read by all three
+#      (tools/crosslang.py)
 # Each new language adds its step here: its own tests, then the contract's
 # cases through it, then the cross-language check.
 set -euo pipefail
@@ -20,7 +22,7 @@ if [ ! -x "$PY" ]; then
   (cd python && uv sync --frozen --all-extras --all-groups)
 fi
 
-step "1/4 the contract"
+step "1/5 the contract"
 "$PY" - <<'EOF'
 import glob, json, jsonschema
 for path in sorted(glob.glob("contract/schema/*.json")):
@@ -37,10 +39,10 @@ if [ "$before" != "$after" ]; then
 fi
 echo "cases match make.py"
 
-step "2/4 python"
+step "2/5 python"
 (cd python && HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" .venv/bin/python -m pytest -q -p no:cacheprovider)
 
-step "3/4 typescript"
+step "3/5 typescript"
 if [ ! -d ts/node_modules ]; then
   # lmcc's TypeScript kernel is not on npm yet: ts/package.json links ../../lmcc/ts
   if [ ! -f ../lmcc/ts/package.json ]; then
@@ -51,7 +53,14 @@ if [ ! -d ts/node_modules ]; then
 fi
 (cd ts && npx tsc --noEmit && npm test --silent 2>&1 | grep -E '^ℹ (tests|pass|fail)|^✖' ; exit "${PIPESTATUS[0]}")
 
-step "4/4 python x typescript"
-"$PY" tools/crosslang.py
+step "4/5 r"
+r/check 2>&1 | grep -v "Nix search path" | grep -E '^R: |Failure|Error' ; [ "${PIPESTATUS[0]}" -eq 0 ]
+
+step "5/5 python x typescript x r"
+if command -v Rscript >/dev/null 2>&1; then
+  "$PY" tools/crosslang.py
+else
+  nix shell --impure -f "$PWD/r/tools/env.nix" -c "$PY" tools/crosslang.py 2>&1 | grep -v "Nix search path"; [ "${PIPESTATUS[0]}" -eq 0 ]
+fi
 
 printf '\nall green\n'

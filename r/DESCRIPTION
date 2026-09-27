@@ -1,0 +1,25 @@
+Package: functai
+Title: Functions Whose Body a Language Model Writes, for the Tidyverse
+Version: 0.1.0
+Authors@R: person("Maxime", "Rivest", email = "maxime.rivest@gmail.com", role = c("aut", "cre", "cph"))
+Description: Write a function's inputs, its answer's type and a sentence
+    saying what it does; a language model writes the body. The functions
+    are vectorised, so they work as columns in 'dplyr' verbs; the answer
+    comes back as the type you declared (a factor, a number, a tibble of
+    fields). Measure how often a function is right with a confidence
+    interval ('broom'-style tidy(), glance() and augment()), log every call,
+    rate calls, improve functions with worked examples, and run functions
+    saved in 'Python' or 'TypeScript'. Implements the same contract as the
+    'Python' and 'TypeScript' packages.
+License: MIT + file LICENSE
+URL: https://github.com/MaximeRivest/functai, https://maximerivest.github.io/functai/
+BugReports: https://github.com/MaximeRivest/functai/issues
+Encoding: UTF-8
+Depends: R (>= 4.1.0)
+Imports: cli, curl, generics, lm15 (>= 1.0.0), lmcc (>= 0.8.4), openssl,
+    rlang (>= 1.1.0), stats, tibble, utils, vctrs (>= 0.6.0), withr
+Suggests: dplyr, httpuv, testthat (>= 3.0.0), tidyr
+Config/testthat/edition: 3
+LazyData: true
+Roxygen: list(markdown = TRUE)
+Config/roxygen2/version: 8.0.0
