@@ -2,9 +2,9 @@
 
 *Status, 2026-09-27: agreed and under way. The repository is laid out
 for it; the contract covers functions, scores, the call log and saved
-functions; TypeScript 0.1.0 and R 0.1.0 pass all of it and are checked
-against Python itself. None of the new packages is published yet. Julia
-is next: lmcc for Julia exists.*
+functions; TypeScript 0.1.0, R 0.1.0 and Julia 0.1.0 pass all of it and
+are checked against Python itself. None of the new packages is published
+yet.*
 
 ## What we want
 
@@ -38,7 +38,7 @@ implementations that are checked against it.
 |---|---|---|---|
 | Python | reference | reference | 1.0.1 released, 1.1.0 not yet |
 | TypeScript | passes the full contract | passes the same cases as Python, byte for byte (not on npm yet) | **0.1.0, in `ts/`** |
-| Julia | at parity with the others since 2026-09-26 | passes the corpus (lmcc D-56) | **next** |
+| Julia | at parity with the others since 2026-09-26 | passes the corpus (lmcc D-56) | **0.1.0, in `julia/`** |
 | R | passes the full contract; reading keys from the environment fixed 2026-09-27 | passes the corpus (lmcc D-56) | **0.1.0, in `r/`** |
 
 **TypeScript can start now.** Julia and R need lmcc in their language
@@ -193,7 +193,7 @@ tools/        builds the website
 python/       the Python package: pyproject, uv.lock, .venv, tests, examples,
               README (PyPI's page), CHANGELOG, LICENSE
 ts/           the TypeScript package (src, tests, tools)
-r/  julia/    later
+r/  julia/    the R and Julia packages
 check         one command: every language against the contract
 AGENTS.md     the map, for people and agents working here
 ```
@@ -267,7 +267,8 @@ runnable in every language.
    `InstructionSearch`, stateful memory, escalation, the reply cache,
    baking. **To publish it**, lmcc's TypeScript kernel goes to npm first
    (and lmcc 0.8.4 to PyPI, so both languages run the same kernel).
-3. **lmcc for Julia** (done, lmcc D-56), then **FunctAI.jl**.
+3. **lmcc for Julia** (done, lmcc D-56), then **FunctAI.jl**: 0.1.0 on
+   2026-09-27, below.
 4. **lmcc for R** (done, lmcc D-56), then **the R package**: 0.1.0 on
    2026-09-27, below.
 5. **Baking**, per language, each behind the gate above.
@@ -342,6 +343,44 @@ policy requires. Program names default to the module `"__main__"`, as a
 Python notebook's, so ratings pool with Python's. Streaming and modules
 are not in 0.1.0.
 
+## Julia and its ecosystem (0.1.0, 2026-09-27)
+
+Julia's sketch above held: a macro and real types. What was decided on the way:
+
+- **`@ai function mood(review::String)::Mood … end`**: the body is the
+  description (a docstring's `# Arguments` list describes the inputs, as
+  Julia documents functions), then `name::T = ai"words"` outputs, then code
+  of your own. Types are Julia's (`@enum`, `OneOf(:a, :b)`, structs,
+  `NamedTuple`s), written as the JSON Schema Python writes for the same
+  type, so `mood` has Python's version (checked by `tools/crosslang.py`).
+  Several outputs return all of them as a `NamedTuple` (Python returns the
+  last); the call log still names the last as the answer.
+- **One way over a column, many front doors.** DataFrames' `ByRow`,
+  DataFramesMeta, Tidier and StatsModels' function terms all come down to
+  broadcasting or `map`, so an AI function specializes those two (8 calls in
+  flight, in order) and every table tool is concurrent without code for it.
+  A failed row is `missing` with one warning, as R's `NA` is.
+- **A model, three faces**: `AIModel` is `fit`/`predict` (StatsAPI), a
+  formula (`fit(AIModel("…"), @formula(team ~ message), data)`, a
+  StatsModels extension) and an MLJ model (`machine(AIModel("…"), X, y)`).
+  Fitting calls nothing. Predictions are deterministic: no provider but
+  TypeSafe measures class probabilities (lm15 MAP-14).
+- **Settings** follow Julia: `configure!` (it mutates), `with_settings`
+  over ScopedValues (it reaches the tasks a block starts), `configure(f; …)`
+  a copy. `reasoning = true` replaces `module = "cot"`: `module` is a
+  keyword Julia cannot parse as a name.
+- **Code of its own is versioned by its parsed form** (layout and comments
+  are not code), so it never shares a version with another language's code;
+  a function the model writes whole has every language's version.
+
+Stated trade-offs: MLJModelInterface is a dependency (MLJ's rule for
+packages that define models; it is small), StatsModels and
+CategoricalArrays are extensions. A program's version follows the AI
+functions and programs it names, not plain Julia functions it calls.
+Saving code of its own or tools from Julia is refused (a folder carries no
+Julia code yet). Not in 0.1.0: the reply cache, stateful memory,
+escalation, baking, and Julia pages on the website.
+
 ## Found on the way
 
 - **The `json` layout with a record answer failed at OpenAI and
@@ -356,6 +395,10 @@ are not in 0.1.0.
 - **lm15 for R could not read API keys from the environment** (the
   `Sys.getenv()` value kept its `Dlist` class, and the key check refused
   it): fixed in lm15-r on 2026-09-27, with a regression test.
-- **Python cannot load an AI function saved from TypeScript or R**: its
+- **The first call of a Julia session compiled for about a minute.** A
+  precompile workload in FunctAI.jl brought it to about ten seconds; the
+  rest is lm15's HTTP and TLS code, which only a workload in lm15 (against
+  a local server) can compile ahead.
+- **Python cannot load an AI function saved from TypeScript, R or Julia**: its
   `load` runs saved Python code. A data-only loader, like the other two
   languages have, is the missing piece for "improve in R, run in Python".

@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# FunctAI for Julia: copy the contract's data into data/contract, then run
+# the package's tests (every case of ../contract among them) against lmcc
+# and lm15 for Julia from their checkouts (neither is registered yet;
+# Project.toml's [sources] names them). Julia comes from PATH, else from
+# nixpkgs (julia-bin).
+set -euo pipefail
+cd "$(dirname "$0")"
+if command -v julia >/dev/null 2>&1; then JULIA=(julia); else JULIA=(nix shell nixpkgs#julia-bin -c julia); fi
+for dir in ../../lmcc/julia ../../lm15-dev/lm15-jl; do
+  [ -f "$dir/Project.toml" ] || { echo "julia/ needs $dir (lmcc and lm15 for Julia are not registered yet)" >&2; exit 1; }
+done
+mkdir -p data/contract/layouts data/contract/unicode
+cp ../contract/layouts/*.json data/contract/layouts/
+cp ../contract/models.json data/contract/
+cp ../contract/unicode/casefold.json data/contract/unicode/
+"${JULIA[@]}" --project=. -e 'using Pkg; Pkg.instantiate(; io=devnull); Pkg.test()' >/tmp/functai-julia-test.log 2>&1 \
+  || { grep -v "^\s*@ \|^ *\[[0-9]" /tmp/functai-julia-test.log | tail -60; echo "julia tests failed" >&2; exit 1; }
+grep -A1 "^Test Summary" /tmp/functai-julia-test.log | grep -E "^FunctAI" | sed 's/^/julia: /'

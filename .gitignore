@@ -55,3 +55,6 @@ docs/support_router/
 # TypeScript
 ts/node_modules/
 ts/dist/
+
+# Julia: a package commits no Manifest (julia/check resolves one)
+julia/Manifest.toml

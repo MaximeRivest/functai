@@ -6,8 +6,9 @@
 #      schemas are read from ../contract)
 #   3) TypeScript: types, then the offline tests (the same contract cases)
 #   4) R: the offline tests (the same contract cases), r/check
-#   5) the languages against each other: saved in Python, loaded in
-#      TypeScript and R; one call log written and read by all three
+#   5) Julia: the offline tests (the same contract cases), julia/check
+#   6) the languages against each other: saved in Python, loaded in
+#      TypeScript, R and Julia; one call log written and read by all four
 #      (tools/crosslang.py)
 # Each new language adds its step here: its own tests, then the contract's
 # cases through it, then the cross-language check.
@@ -22,7 +23,7 @@ if [ ! -x "$PY" ]; then
   (cd python && uv sync --frozen --all-extras --all-groups)
 fi
 
-step "1/5 the contract"
+step "1/6 the contract"
 "$PY" - <<'EOF'
 import glob, json, jsonschema
 for path in sorted(glob.glob("contract/schema/*.json")):
@@ -39,10 +40,10 @@ if [ "$before" != "$after" ]; then
 fi
 echo "cases match make.py"
 
-step "2/5 python"
+step "2/6 python"
 (cd python && HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" .venv/bin/python -m pytest -q -p no:cacheprovider)
 
-step "3/5 typescript"
+step "3/6 typescript"
 if [ ! -d ts/node_modules ]; then
   # lmcc's TypeScript kernel is not on npm yet: ts/package.json links ../../lmcc/ts
   if [ ! -f ../lmcc/ts/package.json ]; then
@@ -53,10 +54,13 @@ if [ ! -d ts/node_modules ]; then
 fi
 (cd ts && npx tsc --noEmit && npm test --silent 2>&1 | grep -E '^ℹ (tests|pass|fail)|^✖' ; exit "${PIPESTATUS[0]}")
 
-step "4/5 r"
+step "4/6 r"
 r/check 2>&1 | grep -v "Nix search path" | grep -E '^R: |Failure|Error' ; [ "${PIPESTATUS[0]}" -eq 0 ]
 
-step "5/5 python x typescript x r"
+step "5/6 julia"
+julia/check
+
+step "6/6 python x typescript x r x julia"
 if command -v Rscript >/dev/null 2>&1; then
   "$PY" tools/crosslang.py
 else

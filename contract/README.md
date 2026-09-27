@@ -1,7 +1,7 @@
 # The FunctAI contract
 
 What every FunctAI implementation (Python in `../python`, TypeScript in
-`../ts`; R and Julia next, see `../design/01-many-languages.md`) must
+`../ts`, R in `../r`, Julia in `../julia`; see `../design/01-many-languages.md`) must
 agree on, so that one implementation's output is another's input: the
 same function sends the same bytes, has the same version, logs the same
 records, gets the same score, and loads from the same saved folder in

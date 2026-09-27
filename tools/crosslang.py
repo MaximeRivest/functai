@@ -1,21 +1,22 @@
-"""Python, TypeScript and R against each other, offline (a fake model in each).
+"""Python, TypeScript, R and Julia against each other, offline (a fake model in each).
 
     python/.venv/bin/python tools/crosslang.py
 
 The contract's cases check each language alone. This checks the promises
 between them, on real output of both:
 
-1. Functions Python saves load in TypeScript and in R: the same version,
-   and the same request, byte for byte, for the same input. One with code
-   of its own is refused.
-2. The same function written natively in TypeScript and in R has Python's
-   version and signature.
-3. One call log, three writers: each language logs calls of the same
+1. Functions Python saves load in TypeScript, R and Julia: the same
+   version, and the same request, byte for byte, for the same input. One
+   with code of its own is refused.
+2. The same function written natively in TypeScript, R and Julia has
+   Python's version and signature.
+3. One call log, four writers: each language logs calls of the same
    function and rates one into one folder. Every record passes the
    contract's schemas, and every language's `rated` gives the same rows,
    including the others' calls and ratings.
 
-R runs with `r/.lib` (r/check installs it) and Rscript on PATH.
+R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
+julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
 
 `../check` runs it.
 """
@@ -24,6 +25,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -133,27 +135,39 @@ def main() -> int:
         print(r.stderr, file=sys.stderr)
         return 1
 
-    # 3c. every record passes the schemas; Python's rated sees TypeScript's and R's calls and ratings
+    # 1, 2 and 3b in Julia
+    julia = ["julia"] if shutil.which("julia") else ["nix", "shell", "nixpkgs#julia-bin", "-c", "julia"]
+    jl = subprocess.run([*julia, "--project=julia", "julia/tools/crosslang.jl", str(work)], cwd=ROOT,
+                        capture_output=True, text=True)
+    print(jl.stdout, end="")
+    if jl.returncode != 0:
+        print(jl.stderr, file=sys.stderr)
+        return 1
+
+    # 3c. every record passes the schemas; Python's rated sees the other languages' calls and ratings
     s = schemas()
     calls_, ratings = calllog.read(log)
     languages = {c["process"]["language"] for c in calls_}
-    assert languages == {"python", "typescript", "r"}, languages
+    assert languages == {"python", "typescript", "r", "julia"}, languages
     for c in calls_:
         s["call"].validate(c)
     for r in ratings:
         s["rating"].validate(r)
+    s["saved"].validate(json.loads((work / "julia-saved" / "mood" / "functai.json").read_text()))
     rows, _left = calllog.rated_rows(calls_, ratings, name="mood", module="shop",
                                      signature=calllog.signature_id(shop.mood.signature))
     with functai.configure(log_calls=str(log)):
         assert len(functai.rated(shop.mood).collect().to_dicts()) == len(rows)
     ts_rows = json.loads((work / "typescript-rated.json").read_text())
     r_rows = json.loads((work / "r-rated.json").read_text())
-    assert len(rows) == 3, rows                                   # one rated in each language
-    assert {r["rated_by"] for r in rows} == {"ana", "ben", "cleo"}
-    assert rows == r_rows, (rows, r_rows)
-    assert rows[:2] == ts_rows, (rows, ts_rows)                   # TypeScript read the log before R wrote to it
-    print(f"  ok    one log, three languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
-          f"Python's, TypeScript's and R's rated give the same rows")
+    julia_rows = json.loads((work / "julia-rated.json").read_text())
+    assert len(rows) == 4, rows                                   # one rated in each language
+    assert {r["rated_by"] for r in rows} == {"ana", "ben", "cleo", "dana"}
+    assert rows == julia_rows, (rows, julia_rows)
+    assert rows[:3] == r_rows, (rows, r_rows)                     # R read the log before Julia wrote to it
+    assert rows[:2] == ts_rows, (rows, ts_rows)                   # TypeScript read it before R did
+    print(f"  ok    one log, four languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
+          f"Python's, TypeScript's, R's and Julia's rated give the same rows")
     return 0
 
 
