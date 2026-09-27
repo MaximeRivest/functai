@@ -1,6 +1,6 @@
 # 4. Making it better without fooling yourself
 
-*A refund desk, a function that decides, and three ways to improve it: write the rules down, show it examples, let a stronger model teach it. By the end you will know which helped, by how much, and how sure you can be, because you will have kept one set of rows aside and looked at it only once.*
+*A refund desk, a function that decides, and three ways to improve it: write the rules down, show it examples, let a stronger model teach it; and a fourth for when nobody wrote the rules down: let a stronger model write them from the mistakes. By the end you will know which helped, by how much, and how sure you can be, because you will have kept one set of rows aside for the honest number.*
 
 **Can you skip this one?** If you can answer these, jump to [tutorial 5](05-choosing-a-model.md). The answers are at the bottom.
 
@@ -93,7 +93,7 @@ ev_plain
 
 ```output
 <evaluation of refund> 40 rows
-  exact_match: 0.93  (95% interval 0.80 to 0.97)
+  exact_match: 0.88  (95% interval 0.74 to 0.95)
 ```
 
 The formula said the answer is `decision`, so `evaluate()` compares with the `decision` column. (When the right answers are in a column of another name, say so: `expected = category`.)
@@ -107,17 +107,19 @@ augment(ev_plain) |>
 ```
 
 ```output
-# A tibble: 3 × 6
+# A tibble: 5 × 6
   decision .pred_class days_since_delivery final_sale state   message           
   <fct>    <fct>                     <int> <lgl>      <fct>   <chr>             
 1 approve  deny                         53 FALSE      damaged "I am writing to …
-2 approve  deny                         64 FALSE      faulty  "I bought this ov…
-3 deny     approve                      11 FALSE      used    "I got this about…
+2 approve  deny                         27 TRUE       faulty  "Hello, I hope yo…
+3 approve  deny                         34 FALSE      faulty  "The drawer runne…
+4 approve  deny                         64 FALSE      faulty  "I bought this ov…
+5 deny     approve                      11 FALSE      used    "I got this about…
 ```
 
 (`state` is the item's true condition, which the shop's staff recorded. The function doesn't see it; we do, to understand the mistakes.)
 
-Most of the misses deny a refund the shop would give: damage reported after seven or eight weeks, a fault after a month or two. The model assumed the most common policy, a 30-day window for everything. This shop is more generous with damage and faults, and nothing told the model so.
+Most of the misses deny a refund the shop would give: damage reported after seven or eight weeks, a fault after a month or two, a fault on a final-sale item. The model assumed the most common policy, a 30-day window for everything, and final sale meaning final. This shop is more generous with damage and faults, and nothing told the model so.
 
 ## 1. Write the rules down
 
@@ -211,7 +213,7 @@ dev_scores |> select(version, estimate, conf.low, conf.high)
 # A tibble: 4 × 4
   version                        estimate conf.low conf.high
   <chr>                             <dbl>    <dbl>     <dbl>
-1 1. no rules                       0.925    0.801     0.974
+1 1. no rules                       0.875    0.739     0.945
 2 2. the rules                      1        0.912     1    
 3 3. rules + 8 examples             1        0.912     1    
 4 4. rules + taught by gpt-6-sol    1        0.912     1    
@@ -229,8 +231,8 @@ pairs
 ```output
         rules
 no_rules wrong right
-   wrong     0     3
-   right     0    37
+   wrong     0     5
+   right     0    35
 ```
 
 The diagonal (both right, both wrong) says nothing about which is better. The two off-diagonal cells are the evidence: rows the plain version got wrong and the rules got right, and the other way round. If the rules made no difference, each disagreement would be a coin flip; McNemar's test asks how surprising the split is:
@@ -244,7 +246,7 @@ mcnemar.test(pairs)
 	McNemar's Chi-squared test with continuity correction
 
 data:  pairs
-McNemar's chi-squared = 1.3333, df = 1, p-value = 0.2482
+McNemar's chi-squared = 3.2, df = 1, p-value = 0.07364
 ```
 
 Read the p-value with the counts in mind. Every disagreement went the rules' way, but there are only a handful of them, and the test says so: a split that lopsided, on so few rows, could still be luck. The honest summary is "the rules fixed every mistake we saw; on forty rows that's suggestive, not proof". More dev rows would settle it. So does knowing *why* it helped, which we do: the rules are the shop's policy.
@@ -283,13 +285,99 @@ ev_final
 
 That is the number to report. When it's lower than on dev, as it often is, that's the flattery leaving, not a failure.
 
+## When nobody wrote the rules down
+
+We could write the rules because the shop had them. Often nobody has: there are only past decisions, and a model that gets some of them wrong. And the model you can afford to run on every request may be a small one. Here is `refund` on `gpt-5.4-nano`, the small model of six months ago, without the rules:
+
+```r
+refund_nano <- update(refund, lm = "gpt-5.4-nano")
+```
+
+`gepa()` improves the instruction by reading the mistakes. It runs the function on a few example rows, shows a stronger model (the **teacher**) the answers with a word of feedback on each ("wrong: the right answer is approve"), and asks it for a better instruction. Each new instruction is tried on the same few rows; one that does better is scored on the rows you choose with, and joins a pool of candidates. The teacher then works on the candidates that are best on at least one row, so ideas that fix *different* mistakes both survive, and every few steps it combines two of them. It stops at a budget of calls, and keeps the best on the choosing rows; of equally good ones, the shorter.
+
+The three piles fit it exactly: it learns from `examples`, chooses on `dev`, and never sees `test`:
+
+```r
+refund_gepa <- gepa(refund_nano, examples, selection = dev, teacher = "gpt-6-sol", budget = 300)
+
+ai_trials(refund_gepa) |>
+  select(candidate, kind, minibatch_parent, minibatch, score, length, note)
+```
+
+```output
+# A tibble: 10 × 7
+   candidate kind    minibatch_parent minibatch  score length note              
+       <int> <chr>              <dbl>     <dbl>  <dbl>  <int> <chr>             
+ 1         1 written               NA        NA  0.8       54 the written instr…
+ 2        NA reflect                3         3 NA        706 not better on the…
+ 3         2 reflect                3         4  0.8      513 joined the pool   
+ 4         3 reflect                3         4  0.875   1006 joined the pool   
+ 5         4 combine                3         3  0.775    413 joined the pool   
+ 6         5 reflect                3         4  0.875   1174 joined the pool   
+ 7        NA reflect                2         4 NA       1116 better on the min…
+ 8        NA combine                4         4 NA        762 better on the min…
+ 9        NA reflect                2         4 NA        779 better on the min…
+10        NA reflect                3         4 NA       1165 better on the min…
+```
+
+Each row is an instruction the teacher wrote. `minibatch_parent` and `minibatch` are how many of the same four example rows its parent and it got right. Those that did better joined the pool and were scored on dev (`score`); the last few did better too, but the budget ran out before they could be scored, and one did no better, so it was dropped. Two tie at the top, 0.875 on dev; the shorter one (`length`, in characters) is kept, because every call pays for its length:
+
+```r
+cat(ai_instructions(refund_gepa))
+```
+
+```output
+Function: refund
+
+Decide whether the request merits a refund using the message, days_since_delivery, and final_sale. Return `result` as exactly `approve` or `deny`.
+
+First identify the reason for the request. Approve a credible report that the item arrived damaged or developed a defect during ordinary use soon after delivery. A defect discovered after use still counts; do not apply the change-of-mind return window to it or treat a claim as invalid merely because the customer did not notice the problem immediately. Final-sale status does not override a genuine defect.
+
+For a preference-based request, such as disliking the colour or no longer wanting the item, approve only if it is not final sale, is requested within 30 days of delivery, and the message indicates the item remains unused and in its original condition. Otherwise deny. Deny requests based only on ordinary wear, misuse, or an unsupported desire to return an item long after delivery. Do not use price as a reason to approve or deny.
+```
+
+Read it as you'd read a fitted model's coefficients: it is what the search learned from the mistakes, and you can check it against `?refunds`. It found most of the policy from nothing but "the right answer is approve": a fault or damage is refunded even after the usual window and even on final sale, and a change of mind only within 30 days, unused, and never on final sale. It missed the exact limits: damage is refunded within 60 days and a fault within a year, where it says only "soon after delivery". The examples did hold four late claims, all denied, but a search learns only from mistakes, and a model that already denies a late claim makes none there; most likely those rows never taught it anything. A search can only learn what its rows show it getting wrong.
+
+Its dev score was the best of many on dev, so it may flatter (the trap simulated above, and this time the search did the trying). The test rows give the honest number, once, for this question:
+
+```r
+ev_nano <- evaluate(refund_nano, test)
+ev_nano_gepa <- evaluate(refund_gepa, test)
+bind_rows(
+  tidy(ev_nano)      |> mutate(version = "gpt-5.4-nano, as written"),
+  tidy(ev_nano_gepa) |> mutate(version = "gpt-5.4-nano, instruction by gepa()")
+) |> select(version, estimate, conf.low, conf.high)
+
+nano_pairs <- table(written = right_or_wrong(ev_nano), gepa = right_or_wrong(ev_nano_gepa))
+nano_pairs
+mcnemar.test(nano_pairs)$p.value
+```
+
+```output
+# A tibble: 2 × 4
+  version                             estimate conf.low conf.high
+  <chr>                                  <dbl>    <dbl>     <dbl>
+1 gpt-5.4-nano, as written               0.683    0.530     0.804
+2 gpt-5.4-nano, instruction by gepa()    0.927    0.806     0.975
+       gepa
+written wrong right
+  wrong     1    12
+  right     2    26
+[1] 0.01615693
+```
+
+On rows it never saw, the small model went from about two in three right to more than nine in ten. The disagreements say it's real: twelve rows fixed, two broken, and a split that lopsided on fourteen disagreements is unlikely to be luck (p ≈ 0.02). Here the test rows were even kinder than dev; on another draw they may not be, which is why they're kept apart.
+
+A small model with an instruction written by a large one, once, from its own mistakes. The large model's price is paid for about ten calls; the small model's for every request, forever. It still makes mistakes the written rules don't (`refund_rules` made one on these rows), because it learned part of the policy, not all of it. When the rules are yours to write, write them: they are exact, and you know why they work. When they aren't, this is how to find a good share of them, and measure what you found.
+
 ## What it cost
 
 ```r
 prices <- tribble(
-  ~model,       ~input, ~output,   # dollars per million tokens, 2026-09-27
-  "gpt-6-luna",   0.10,    0.50,
-  "gpt-6-sol",    2.00,   10.00
+  ~model,         ~input, ~output,   # dollars per million tokens, 2026-09-27
+  "gpt-6-luna",     0.10,    0.50,
+  "gpt-5.4-nano",   0.20,    1.25,
+  "gpt-6-sol",      2.00,   10.00
 )
 
 calls(folder = log_folder) |>
@@ -300,26 +388,31 @@ calls(folder = log_folder) |>
 ```
 
 ```output
-# A tibble: 2 × 3
-  model      calls dollars
-  <chr>      <int>   <dbl>
-1 gpt-6-luna   201 0.0147 
-2 gpt-6-sol      8 0.00629
+# A tibble: 3 × 3
+  model        calls dollars
+  <chr>        <int>   <dbl>
+1 gpt-5.4-nano   377  0.0245
+2 gpt-6-luna     201  0.0147
+3 gpt-6-sol       17  0.0582
 ```
 
 Worked examples make every question longer (each call now carries four to eight solved cases), so they cost more per call. On a small model that's still cents. Weigh it anyway: it's paid on every call, forever.
+
+`gepa()` was most of this bill: the nano calls and most of the teacher's, about eight cents, paid once. Its instruction is also longer than the one-line original, so every call after it costs a little more; that is the trade it made for accuracy, and why ties go to the shorter instruction.
 
 ## Your turn
 
 1. Try `k = 16` instead of 8 in `labeled_few_shot()`. Measure it on dev, and compare it with the rules-only version using the disagreement table and `mcnemar.test()`.
 2. Add one sentence to the rules that you think would fix a dev mistake. Is it policy, or is it fitted to that row? How could you tell?
-3. `ai_render(refund_taught, message = "x", price = 1, days_since_delivery = 1L, final_sale = FALSE)` shows the whole request. Find the taught examples in it, and count how much longer it is than `refund_rules`'s.
+3. Give `gepa()` a `feedback` function that says *why* a decision was wrong, using the `state` column (`feedback = function(row, prediction, error) ...`: the item's state and the days since delivery, for example). Does the teacher find more of the rules? Is that fair, when `state` is something a person had to read?
+4. `ai_render(refund_taught, message = "x", price = 1, days_since_delivery = 1L, final_sale = FALSE)` shows the whole request. Find the taught examples in it, and count how much longer it is than `refund_rules`'s.
 
 ## What you learned
 
 - Split once, before you start: rows to learn from, rows to choose on, rows to test once.
 - Writing the rules down is the most direct improvement, when the rules are yours to write.
 - `labeled_few_shot()` adds solved examples; `bootstrap_few_shot()` adds a teacher's runs that were right. Both return a new function with a new `ai_version()`.
+- `gepa()` has a stronger model rewrite the instruction from the mistakes: learn on one pile, choose on another, measure on a third. `ai_trials()` shows the search. A small model with a large model's instruction can be most of the way to written rules, at the small model's price.
 - On the same rows, compare versions by their disagreements (`mcnemar.test()`), not by eyeballing two intervals.
 - When versions tie, keep the simplest and cheapest.
 - Picking the best of several on the same rows flatters the winner. The test rows, used once, give the honest number.

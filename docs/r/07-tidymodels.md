@@ -2,9 +2,10 @@
 
 *If you use tidymodels, you already know how to use a language model:
 specify, fit, predict, score. By the end you will have put one in a
-workflow, resampled it, tuned how many worked examples it sees, turned
-its votes into probabilities for `roc_auc()`, and trained a free
-classical model on its answers.*
+workflow, resampled it, tuned how many worked examples it sees, fitted
+one that learns its own instruction from its mistakes, turned its votes
+into probabilities for `roc_auc()`, and trained a free classical model
+on its answers.*
 
 **Can you skip this one?** If you can answer these, jump to
 [tutorial 8](08-living-with-it.md). The answers are at the bottom.
@@ -19,7 +20,7 @@ classical model on its answers.*
 tidymodels and textrecipes (`install.packages(c("tidymodels",
 "textrecipes", "glmnet"))`), and some tidymodels habits: this tutorial
 follows [tidymodels.org/start](https://www.tidymodels.org/start/), with
-a language model as the model. About two cents.
+a language model as the model. About five cents.
 
 ```r
 library(functai)
@@ -98,8 +99,8 @@ Main Arguments:
 Computational engine: functai 
 
 Warning: probabilities are NA: one answer per row measures no probability
-ℹ for them, answer each row several times: `set_engine("functai", samples = 5)`
-  (costs 5 calls a row)
+ℹ for them, answer each row several times (`set_engine("functai", samples =
+  5)`, 5 calls a row), or use a model that measures them (`lm = "jev-latest"`)
 # A tibble: 1 × 3
   .metric  .estimator .estimate
   <chr>    <chr>          <dbl>
@@ -182,8 +183,8 @@ collect_metrics(tuned) |> select(examples, mean, std_err)
 # A tibble: 3 × 3
   examples  mean std_err
      <dbl> <dbl>   <dbl>
-1        0 0.95   0.0306
-2        4 0.955  0.0278
+1        0 0.975  0.025 
+2        4 0.91   0.0392
 3        8 1      0     
 ```
 
@@ -222,6 +223,99 @@ collect_metrics(final)
 1 accuracy multiclass     0.975 pre0_mod0_post0
 ```
 
+## A fit that learns
+
+So far `fit()` learned nothing from the training answers, unless you
+asked for worked examples. With `method = "gepa"`, it does: a stronger
+model (the `teacher`) reads the function's mistakes on the training rows
+and rewrites its instruction ([tutorial 4](04-making-it-better.md) shows
+how). The instruction is then what was fitted, as coefficients are for a
+regression.
+
+That makes fitting cost calls. And it makes resampling mean what it
+means for any model that learns: each fold runs the whole search on its
+own training rows and is scored on rows the search never saw, so the
+resampled accuracy measures the *procedure*, search included, not one
+lucky instruction. Here it is on `gpt-5.4-nano`, the small model of six
+months ago, next to the same model fitted plainly:
+
+```r
+nano <- ai_model("classification", "Which team should answer this customer message?")
+
+wf_plain <- workflow() |>
+  add_formula(category ~ message) |>
+  add_model(nano |> set_engine("functai", lm = "gpt-5.4-nano"))
+wf_gepa <- wf_plain |>
+  update_model(nano |> set_engine("functai", lm = "gpt-5.4-nano",
+                                  method = "gepa", teacher = "gpt-6-sol", budget = 150))
+
+learned <- control_resamples(extract = function(fit) ai_instructions(extract_fit_engine(fit)))
+res_plain <- fit_resamples(wf_plain, folds, metrics = metric_set(accuracy))
+res_gepa  <- fit_resamples(wf_gepa, folds, metrics = metric_set(accuracy), control = learned)
+
+bind_rows(collect_metrics(res_plain) |> mutate(fit = "plain"),
+          collect_metrics(res_gepa)  |> mutate(fit = "gepa")) |>
+  select(fit, mean, std_err)
+```
+
+```output
+# A tibble: 2 × 3
+  fit    mean std_err
+  <chr> <dbl>   <dbl>
+1 plain 0.897  0.0280
+2 gepa  0.967  0.0333
+```
+
+Fitting that learns is right about seven points more often, on messages
+no fold's search saw. The same five folds as above, so the two compare
+fold by fold:
+
+```r
+tibble(fold = collect_metrics(res_plain, summarize = FALSE)$id,
+       plain = collect_metrics(res_plain, summarize = FALSE)$.estimate,
+       gepa  = collect_metrics(res_gepa,  summarize = FALSE)$.estimate)
+```
+
+```output
+# A tibble: 5 × 3
+  fold  plain  gepa
+  <chr> <dbl> <dbl>
+1 Fold1 0.9   1    
+2 Fold2 0.875 1    
+3 Fold3 0.875 1    
+4 Fold4 1     1    
+5 Fold5 0.833 0.833
+```
+
+It won three folds and tied the other two; it lost none. What did each
+fold learn? One of them:
+
+```r
+instructions <- collect_extracts(res_gepa)
+cat(instructions$.extracts[[1]])
+```
+
+```output
+Choose the team that should resolve the customer’s main request. Return exactly one label: account, billing, product, or shipping.
+
+- account: login, profile, credentials, or account settings.
+- billing: charges, invoices, payments, discounts, refunds, or returns requesting a refund.
+- product: product features, use, compatibility, or problems with how a product works.
+- shipping: delivery, tracking, missing packages, or items that arrived damaged.
+
+When a message mentions multiple topics, prioritize the action requested. In particular, route a request for a refund to billing, even if it also mentions returning a product.
+```
+
+Put it next to the house rules in `?tickets`. From nothing but "wrong:
+the right answer is billing", the teacher found the rule that trips up
+everyone who hasn't read them, *every request for money back is billing*,
+and the one about damage on arrival, and wrote them down for the small
+model. Print `instructions$.extracts` for what the other folds wrote; a
+fold whose training rows hold no such mistake has nothing to learn from,
+and keeps the written instruction. Its cost, a few hundred calls of the small
+model and eight of the large one, is in the bill below: about four
+cents.
+
 ## Probabilities, from votes
 
 `roc_auc()`, calibration and thresholds need a probability per class.
@@ -244,21 +338,21 @@ votes |> roc_auc(category, .pred_account:.pred_shipping)
 # A tibble: 40 × 6
    category .pred_class .pred_account .pred_billing .pred_product .pred_shipping
    <fct>    <fct>               <dbl>         <dbl>         <dbl>          <dbl>
- 1 shipping shipping                0             0             0              1
- 2 billing  billing                 0             1             0              0
- 3 product  product                 0             0             1              0
- 4 shipping shipping                0             0             0              1
- 5 account  account                 1             0             0              0
- 6 shipping shipping                0             0             0              1
- 7 billing  billing                 0             1             0              0
- 8 product  product                 0             0             1              0
- 9 account  account                 1             0             0              0
-10 billing  billing                 0             1             0              0
+ 1 shipping shipping                0           0             0                1
+ 2 billing  billing                 0           1             0                0
+ 3 product  product                 0           0             1                0
+ 4 shipping shipping                0           0             0                1
+ 5 account  account                 1           0             0                0
+ 6 shipping shipping                0           0             0                1
+ 7 billing  billing                 0           1             0                0
+ 8 product  product                 0           0             1                0
+ 9 account  account                 1           0             0                0
+10 billing  billing                 0           0.8           0.2              0
 # ℹ 30 more rows
 # A tibble: 1 × 3
   .metric .estimator .estimate
   <chr>   <chr>          <dbl>
-1 roc_auc hand_till      0.985
+1 roc_auc hand_till          1
 ```
 
 Where did the votes split?
@@ -270,12 +364,14 @@ votes |>
 ```
 
 ```output
-# A tibble: 3 × 7
+# A tibble: 5 × 7
   category .pred_class .pred_account .pred_billing .pred_product .pred_shipping
   <fct>    <fct>               <dbl>         <dbl>         <dbl>          <dbl>
-1 billing  billing               0             0.6           0.4              0
-2 billing  product               0             0.4           0.6              0
-3 account  product               0.4           0             0.6              0
+1 billing  billing               0             0.8           0.2            0  
+2 billing  billing               0             0.6           0.4            0  
+3 billing  shipping              0             0.4           0              0.6
+4 billing  billing               0             0.8           0.2            0  
+5 account  account               0.6           0             0.4            0  
 # ℹ 1 more variable: message <chr>
 ```
 
@@ -326,16 +422,26 @@ trust it, measure it against a few hundred rows a person labelled.
 ## What it cost
 
 ```r
+prices <- tribble(
+  ~model,         ~input, ~output,   # dollars per million tokens, 2026-09-27
+  "gpt-6-luna",     0.10,    0.50,
+  "gpt-5.4-nano",   0.20,    1.25,
+  "gpt-6-sol",      2.00,   10.00
+)
+
 calls(folder = log_folder) |>
-  mutate(dollars = (input_tokens * 0.10 + (total_tokens - input_tokens) * 0.50) / 1e6) |>   # gpt-6-luna's prices
-  summarise(calls = n(), dollars = sum(dollars, na.rm = TRUE))
+  left_join(prices, by = "model") |>
+  group_by(model) |>
+  summarise(calls = n(), dollars = sum(input_tokens * input + (total_tokens - input_tokens) * output, na.rm = TRUE) / 1e6)
 ```
 
 ```output
-# A tibble: 1 × 2
-  calls dollars
-  <int>   <dbl>
-1   480  0.0148
+# A tibble: 3 × 3
+  model        calls dollars
+  <chr>        <int>   <dbl>
+1 gpt-5.4-nano   428  0.0173
+2 gpt-6-luna     480  0.0148
+3 gpt-6-sol        8  0.0214
 ```
 
 ## Your turn
@@ -344,7 +450,11 @@ calls(folder = log_folder) |>
    it only make every call longer?
 2. Put `set_engine("functai", lm = "gemini:gemini-3.1-flash-lite")` in the
    workflow and compare its resampled accuracy with `gpt-6-luna`'s.
-3. With the voter's probabilities, draw a gain curve
+3. Fit `wf_gepa` on all of `train` and score it once on `test`. Is the
+   resampled accuracy a fair forecast of it? Print the fitted function
+   (`extract_fit_engine()`): which of the house rules in `?tickets` did
+   it find?
+4. With the voter's probabilities, draw a gain curve
    (`gain_curve(votes, category, .pred_account:.pred_shipping) |> autoplot()`).
    What would a model with no idea look like?
 
@@ -357,6 +467,10 @@ calls(folder = log_folder) |>
 - Use `add_formula()`: the model reads the text itself.
 - `examples` tunes with `tune()`; every resampled prediction is a paid
   call, so price the grid first.
+- `set_engine("functai", method = "gepa", teacher = ...)` makes `fit()`
+  learn: a stronger model rewrites the instruction from the mistakes.
+  Resampling then measures the whole search, fold by fold, and
+  `control_resamples(extract = ...)` shows what each fold learned.
 - `samples = 5` gives probabilities from votes, for `roc_auc()` and
   friends. Without it they are `NA`, never invented.
 - A language model can label data for a classical model that then runs
@@ -364,7 +478,8 @@ calls(folder = log_folder) |>
 
 **Answers to the check at the top.** (1) It reads the formula and the
 outcome's levels, and picks `examples` worked examples from the training
-rows. It calls nothing, so it costs nothing. (2) The model reads the raw
+rows. It calls nothing, so it costs nothing; unless you ask it to learn
+(`method = "gepa"`), and then it pays for the search. (2) The model reads the raw
 text; a recipe would replace the words with numbers. (3) From votes:
 `set_engine("functai", samples = 5)` asks each question five times and
 reports each class's share.

@@ -9,6 +9,8 @@ SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "see
               "log_calls", "log_content", "caller", "concurrency", "on_error")
 
 check_settings <- function(s) {
+  twice <- unique(names(s)[duplicated(names(s))])
+  if (length(twice)) cli::cli_abort("setting{?s} {.val {twice}} given twice")
   bad <- setdiff(names(s), SETTINGS)
   if (length(bad)) cli::cli_abort(c("unknown setting{?s}: {.val {bad}}", i = "settings are {.val {SETTINGS}}"))
   s

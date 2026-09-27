@@ -59,6 +59,7 @@ from .optimizers import (
     BootstrapFewShot,
     BootstrapFewShotWithRandomSearch,
     InstructionSearch,
+    GEPA,
     LabeledFewShot,
     Optimizer,
 )
@@ -113,6 +114,7 @@ __all__ = [
     "BootstrapFewShot",
     "BootstrapFewShotWithRandomSearch",
     "InstructionSearch",
+    "GEPA",
     "flexiclass",
     "UNSET",
     "docstring",

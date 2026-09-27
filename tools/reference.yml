@@ -53,6 +53,7 @@ quartodoc:
     - BootstrapFewShot
     - BootstrapFewShotWithRandomSearch
     - InstructionSearch
+    - GEPA
     - Optimizer
   - title: Saving and shipping
     desc: Find everything a program depends on, save it to a folder, prove it runs

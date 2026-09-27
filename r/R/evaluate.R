@@ -97,7 +97,8 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
     unknown <- setdiff(names(mapping), outs)
     if (length(unknown)) cli::cli_abort("{.fn {core$definition$name}} has no output {.field {unknown}} (its outputs: {.field {unname(outs)}})")
     label <- core$definition$name
-    settings <- set_all(list(caller = list(evaluation = run)), list(...))
+    more <- list(...)
+    settings <- set_all(more, list(caller = c(list(evaluation = run), more$caller)))    # an optimizer's caller too
     p <- do.call(predict.functai_fn, c(list(fn, data), settings))
     cols <- if (core$single) stats::setNames(pred_names(core)("result"), outs) else stats::setNames(paste0(".pred_", names(outs)), outs)
   } else {

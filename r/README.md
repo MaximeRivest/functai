@@ -193,8 +193,18 @@ you rate) and `.error`.
 ```r
 taught <- team |> labeled_few_shot(train, k = 8)                  # rows become worked examples
 better <- team |> bootstrap_few_shot(train, teacher = "gpt-4.1")  # runs that were right become examples
-evaluate(better, test, expected = category)
+learned <- team |> gepa(train, teacher = "gpt-6-sol")             # the instruction, rewritten from mistakes
+evaluate(learned, test, expected = category)
 ```
+
+`gepa()` shows a stronger model the function's answers with feedback in
+words ("wrong: the right answer is billing") and keeps the best
+instruction it writes, chosen on rows it never shows the teacher
+(`ai_trials()` is the search; `design/04-gepa.md` says how it differs from
+the paper's GEPA). On refund decisions it took `gpt-5.4-nano` from 68% to
+93% right on rows it never saw (tutorial 4). In tidymodels,
+`set_engine("functai", method = "gepa")` makes `fit()` learn it, and
+resampling measure it.
 
 Each returns an improved copy with a new `ai_version()`; the function you
 pass is unchanged. `with_demos()`, `with_instructions()` set them by hand;

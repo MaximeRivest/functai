@@ -17,11 +17,20 @@
 #' worked examples the model sees with every question. So fitting is free,
 #' and a fit with `examples = 0` has used no answer from the training data.
 #'
+#' **Fitting that learns the instruction.** With `method = "gepa"`, fitting
+#' runs [gepa()] on the training rows: a model reads the function's mistakes
+#' and rewrites its instruction, within `budget` calls. Fitting then costs
+#' calls, and resampling repeats it on every fold, so the resampled score
+#' measures the whole procedure, the search included. The fitted function's
+#' instruction is what it learned: `extract_fit_engine(fit)` prints it.
+#'
 #' **Engine arguments** (`set_engine("functai", ...)`): `lm` (the model,
 #' `"gpt-4.1-mini"` by default from [ai_config()]), `temperature`, any
 #' other setting of [ai_config()]; `method` (`"labeled"`: training rows as
 #' they are, the default; `"bootstrap"`: rows the model got right, whole,
-#' reasoning included); `samples` (answers per row: with `samples = 5`,
+#' reasoning included; `"gepa"`: the instruction rewritten from mistakes,
+#' see below); `budget` (calls `"gepa"` may make, default 300); `teacher` (the
+#' model that writes instructions or examples); `samples` (answers per row: with `samples = 5`,
 #' `predict(type = "prob")` gives each level's share of the answers and the
 #' class is the majority; costs 5 calls a row); `seed`.
 #'
@@ -107,7 +116,9 @@ worked_examples <- function(range = c(0L, 16L), trans = NULL) {
 #' `parsnip::extract_fit_engine()` gives it back, callable on columns.
 #' @param formula,data The outcome and predictors, and the training data.
 #' @param description,examples,name See [ai_model()].
-#' @param method `"labeled"` or `"bootstrap"`.
+#' @param method `"labeled"`, `"bootstrap"` or `"gepa"`.
+#' @param budget Calls `"gepa"` may make.
+#' @param teacher The model that writes instructions (`"gepa"`) or examples (`"bootstrap"`).
 #' @param samples Answers per row at prediction time.
 #' @param seed The random seed for choosing examples.
 #' @param ... Settings, as in [ai_config()] (`lm`, `temperature`, ...).
@@ -115,7 +126,7 @@ worked_examples <- function(range = c(0L, 16L), trans = NULL) {
 #' @keywords internal
 #' @export
 ai_model_fit <- function(formula, data, description = NULL, examples = 0L, name = NULL, method = "labeled",
-                         samples = 1L, seed = 0L, ...) {
+                         samples = 1L, seed = 0L, budget = 300L, teacher = NULL, ...) {
   if (is.null(description) || !nzchar(description))
     cli::cli_abort(c("an AI model needs a description of its task", i = "{.code ai_model(description = \"Which team should answer this message?\")}"))
   tt <- stats::terms(formula, data = data)
@@ -133,11 +144,13 @@ ai_model_fit <- function(formula, data, description = NULL, examples = 0L, name 
                            .name = name %||% if (hidden) "ai_model" else outcome), settings))
   train <- data
   examples <- as.integer(examples %||% 0L)
+  if (!method %in% c("labeled", "bootstrap", "gepa"))
+    cli::cli_abort("{.arg method} is \"labeled\", \"bootstrap\" or \"gepa\", not {.val {method}}")
+  if (method == "gepa") fn <- gepa(fn, train, budget = budget, teacher = teacher, seed = seed)
   if (examples > 0L) {
-    fn <- switch(method,
-      labeled = labeled_few_shot(fn, train, k = examples, seed = seed),
-      bootstrap = bootstrap_few_shot(fn, train, max_bootstrapped = examples, max_labeled = examples, seed = seed),
-      cli::cli_abort("{.arg method} is \"labeled\" or \"bootstrap\", not {.val {method}}"))
+    fn <- if (method == "bootstrap")
+      bootstrap_few_shot(fn, train, max_bootstrapped = examples, max_labeled = examples, teacher = teacher, seed = seed)
+    else labeled_few_shot(fn, train, k = examples, seed = seed)            # after gepa: its instruction, and examples
   }
   core <- core_of(fn)
   core$samples <- as.integer(samples)

@@ -12,12 +12,15 @@ AI function; ``fn.opt(...)`` applies it in place and ``fn.undo_opt()`` reverts.
 - ``BootstrapFewShotWithRandomSearch``: many bootstrapped demo sets, keep the best
 - ``InstructionSearch``: proposed instructions × demo sets, searched on minibatches
   (MIPRO-style, with random/greedy search instead of a Bayesian optimizer)
+- ``GEPA``: the instruction rewritten from the function's mistakes, read with
+  feedback in words, over a Pareto pool (design/04-gepa.md)
 """
 
 from __future__ import annotations
 
 import dataclasses
 import inspect
+import json
 import random
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
@@ -388,6 +391,308 @@ class InstructionSearch(Optimizer):
         return states_of(best_combo)
 
 
+# ------------------------------------------------------------------ GEPA
+
+
+def _answer_text(v: Any) -> str:
+    if isinstance(v, str):
+        return v
+    try:
+        return json.dumps(v, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        return str(v)
+
+
+def default_feedback(outputs: Sequence[str]) -> Callable[[Row, Any, Optional[str]], str]:
+    """Words for one row: "right", "wrong: the right answer is ...", or the call's error."""
+    from .evaluation import _norm
+
+    def feedback(row: Row, pred: Any, error: Optional[str]) -> str:
+        if pred is None:
+            return f"the call failed: {error}"
+        wrong = [k for k in outputs if k in row and _norm(row[k]) != _norm(pred.get(k))]
+        if not wrong:
+            return "right"
+        return "wrong: " + "; ".join(f"the right {'answer' if k == 'result' else k} is {_answer_text(row[k])}"
+                                     for k in wrong)
+    return feedback
+
+
+def shape_words(shape: Mapping[str, Any]) -> str:
+    """A JSON Schema shape in words, for the reflection model (the same words in every language)."""
+    options = shape.get("anyOf") or shape.get("oneOf")
+    if options:
+        kept = [o for o in options if o.get("type") != "null"]
+        words = " or ".join(shape_words(o) for o in kept) or "nothing"
+        return words + (", or nothing" if len(kept) < len(options) else "")
+    if "enum" in shape:
+        return "one of " + ", ".join(_answer_text(v) for v in shape["enum"])
+    kind = shape.get("type")
+    if kind == "array":
+        return "a list of " + shape_words(shape.get("items") or {})
+    if kind == "object":
+        props = shape.get("properties") or {}
+        return "a record of " + ", ".join(f"{k} ({shape_words(v)})" for k, v in props.items()) if props else "an object"
+    return {"string": "text", "integer": "a whole number", "number": "a number", "boolean": "true or false"}.get(kind, "a value")
+
+
+def fields_text(signature: Any) -> str:
+    """What a function takes and returns, one field a line, with its type and words."""
+    def line(f: Any) -> str:
+        desc = getattr(f, "desc", None)
+        return f"- {f.name}: {shape_words(f.shape)}" + (f". {desc}" if desc else "")
+    ins = [line(f) for f in signature.inputs if f.purpose == "plain"]
+    outs = [line(f) for f in signature.outputs if f.purpose == "plain"]
+    return "\n".join(["Inputs:", *ins, "Outputs:", *outs])
+
+
+def copies_an_input(instruction: str, rows: Sequence[Row], input_names: Sequence[str], at_least: int = 30) -> bool:
+    """Does the instruction quote an input of ``at_least`` characters, verbatim
+    (case and spacing ignored)? Such a proposal memorises cases (design/04-gepa.md)."""
+    text = " ".join(instruction.split()).casefold()
+    for row in rows:
+        for k in input_names:
+            v = row.get(k)
+            if isinstance(v, str):
+                v = " ".join(v.split()).casefold()
+                if len(v) >= at_least and v in text:
+                    return True
+    return False
+
+
+@dataclasses.dataclass
+class _Candidate:
+    instruction: str
+    parents: Tuple[int, ...]
+    kind: str                                   # "written", "reflect", "combine"
+    scores: List[float] = dataclasses.field(default_factory=list)      # on the selection rows
+    tried: List[str] = dataclasses.field(default_factory=list)         # children that did not beat it
+
+    @property
+    def mean(self) -> float:
+        return sum(self.scores) / len(self.scores) if self.scores else 0.0
+
+
+class GEPA(Optimizer):
+    """Rewrite the instruction from the function's mistakes: GEPA (Agrawal et
+    al., 2025), with functai's changes (design/04-gepa.md).
+
+    Half the rows (or ``valset``) select, and are never shown; the other half
+    give feedback. A pool of instructions is scored row by row on the selection
+    rows; a parent is picked from its Pareto frontier, run on ``minibatch``
+    feedback rows, and a ``teacher`` model reads its answers with feedback in
+    words and writes a new instruction. A child that does better on the
+    minibatch is scored on the selection rows and joins the pool. Every fourth
+    step, two frontier candidates that win different rows are combined. The
+    reflection sees what was tried and failed; a proposal that copies an input
+    is dropped; ties go to the shorter instruction; a row is run once per
+    instruction.
+
+    ``budget`` counts calls of the function; ``trials`` holds every candidate
+    afterwards (its selection score is optimistic: it was chosen on those rows).
+    ``feedback(row, prediction, error) -> str`` gives the words (default: right,
+    or the right answer, or the error)."""
+
+    def __init__(self, metric: Optional[Callable] = None, *, budget: int = 300, minibatch: int = 4,
+                 teacher: Any = None, feedback: Optional[Callable] = None, num_threads: int = 8, seed: int = 0):
+        self.metric = metric
+        self.budget = int(budget)
+        self.minibatch = max(1, int(minibatch))
+        self.teacher = teacher
+        self.feedback = feedback
+        self.num_threads = num_threads
+        self.seed = seed
+        self.trials: List[Dict[str, Any]] = []
+        self.calls = 0
+        self.reflections = 0
+
+    # -- running
+
+    def _scores(self, fn: FunctAIFunc, metric: Metric, rows: Sequence[Row], cand: _Candidate,
+                memo: Dict[Tuple[str, int], Tuple[float, Any, Optional[str]]], keys: Sequence[int],
+                feedback: Callable) -> List[Tuple[float, Any, Optional[str]]]:
+        """Score, prediction and error of each row for this instruction; each (instruction, row) runs once."""
+        todo = [i for i in keys if (cand.instruction, i) not in memo]
+        if todo:
+            state = ProgramState(instructions=cand.instruction, demos=fn.state().demos)
+            ev = evaluate(fn, [rows[i] for i in todo], {metric.name: metric.expr if metric.expr is not None else metric.fn},
+                          num_threads=self.num_threads, states={fn: state})
+            self.calls += len(todo)
+            scores, errors = ev.scores(), dict(ev.errors)
+            for j, i in enumerate(todo):
+                memo[(cand.instruction, i)] = (float(scores[j]), ev.predictions[j], errors.get(j))
+        return [memo[(cand.instruction, i)] for i in keys]
+
+    @staticmethod
+    def _frontier(pool: List[_Candidate]) -> Dict[int, int]:
+        """Candidates on the Pareto frontier, with how many selection rows each is best on."""
+        n = len(pool[0].scores)
+        wins: Dict[int, int] = {}
+        for r in range(n):
+            best = max(c.scores[r] for c in pool)
+            for k, c in enumerate(pool):
+                if c.scores[r] == best:
+                    wins[k] = wins.get(k, 0) + 1
+
+        def dominated(a: int) -> bool:
+            return any(b != a and all(pool[b].scores[r] >= pool[a].scores[r] for r in range(n))
+                       and any(pool[b].scores[r] > pool[a].scores[r] for r in range(n)) for b in wins)
+        return {k: w for k, w in wins.items() if not dominated(k)}
+
+    def _cases(self, rows: Sequence[Row], keys: Sequence[int], results, input_names: Sequence[str],
+               outputs: Sequence[str], feedback: Callable) -> str:
+        lines: List[str] = []
+        for n, (i, (score, pred, error)) in enumerate(zip(keys, results), 1):
+            lines.append(f"Case {n}")
+            lines += [f"  {k}: {_answer_text(rows[i][k])}" for k in input_names if k in rows[i]]
+            if pred is None:
+                lines.append("  answer given: (none)")
+            else:
+                lines += [f"  answer given{'' if k == 'result' else ' ' + k}: {_answer_text(pred.get(k))}" for k in outputs]
+            lines.append(f"  score: {score:g}")
+            lines.append(f"  feedback: {feedback(rows[i], pred, error)}")
+        return "\n".join(lines)
+
+    def compile(self, program, *, trainset, valset=None) -> States:
+        from . import meta
+        target = _Target(program)
+        if not target.single:
+            raise TypeError("GEPA improves one AI function's instruction; a @module's feedback is about its "
+                            "answer, and which function to blame is not decided yet. Optimize its AI functions one "
+                            "by one, or use BootstrapFewShot for the module.")
+        fn = target.predictors[0]
+        rng = random.Random(self.seed)
+        examples = rows_of(trainset)
+        metric = _metric(self.metric, target, examples, required=True)
+        if valset is not None:
+            feed_rows, select_rows = examples, rows_of(valset)
+        else:
+            if len(examples) < 2:
+                raise ValueError("GEPA needs at least 2 rows: some to learn from, some to choose with")
+            shuffled = list(examples)
+            rng.shuffle(shuffled)
+            half = len(shuffled) // 2
+            select_rows, feed_rows = shuffled[:half], shuffled[half:]
+        outputs = target.output_names
+        feedback = self.feedback or default_feedback(outputs)
+        fields = fields_text(fn._spec(instructions=None).signature)
+        teacher = self.teacher if self.teacher is not None else fn._effective().get("lm")
+        self.calls, self.reflections, self.trials = 0, 0, []
+        memo_feed: Dict[Tuple[str, int], Any] = {}
+        memo_select: Dict[Tuple[str, int], Any] = {}
+        all_select = list(range(len(select_rows)))
+
+        def score_select(c: _Candidate) -> None:
+            c.scores = [s for s, _p, _e in self._scores(fn, metric, select_rows, c, memo_select, all_select, feedback)]
+
+        def record(c: _Candidate, k: Optional[int], before: Optional[float], after: Optional[float], note: str) -> None:
+            self.trials.append({"candidate": k, "kind": c.kind, "parents": list(c.parents), "minibatch_parent": before,
+                                "minibatch": after, "score": c.mean if k is not None else None,
+                                "length": len(c.instruction), "note": note, "calls": self.calls,
+                                "instruction": c.instruction})
+
+        pool = [_Candidate(fn.instructions, (), "written")]
+        score_select(pool[0])
+        record(pool[0], 0, None, None, "the written instruction")
+        order: List[int] = []
+
+        def next_batch() -> List[int]:
+            nonlocal order
+            batch: List[int] = []
+            while len(batch) < min(self.minibatch, len(feed_rows)):
+                if not order:
+                    order = list(range(len(feed_rows)))
+                    rng.shuffle(order)
+                i = order.pop()
+                if i not in batch:
+                    batch.append(i)
+            return batch
+
+        def mean_on(c: _Candidate, batch: List[int]) -> float:
+            res = self._scores(fn, metric, feed_rows, c, memo_feed, batch, feedback)
+            return sum(s for s, _p, _e in res)
+
+        def admit(child: _Candidate, before: float, after: float) -> None:
+            if self.calls + len(select_rows) > self.budget:
+                record(child, None, before, after, "better on the minibatch; no budget left to score it")
+                return
+            score_select(child)
+            pool.append(child)
+            record(child, len(pool) - 1, before, after, "joined the pool")
+
+        step = 0
+        while self.calls + 2 * self.minibatch <= self.budget and step < self.budget:   # steps: a bound when rows are cached
+            step += 1
+            front = self._frontier(pool)
+            if all(all((pool[k].instruction, i) in memo_feed and memo_feed[(pool[k].instruction, i)][0] >= 1
+                       for i in range(len(feed_rows))) for k in front):
+                record(pool[0], None, None, None, "right on every feedback row: no mistake left to learn from")
+                break
+            pair = self._pair(pool, front) if step % 4 == 0 else None
+            if pair is not None:
+                a, b = pair
+                text = meta.combine(fields=fields, first=pool[a].instruction, second=pool[b].instruction, lm=teacher)
+                self.reflections += 1
+                child = _Candidate(text, (a, b), "combine")
+                if not text or any(text == c.instruction for c in pool):
+                    record(child, None, None, None, "no new instruction")
+                    continue
+                batch = next_batch()
+                before = max(mean_on(pool[a], batch), mean_on(pool[b], batch))
+                after = mean_on(child, batch)
+                if after >= before:
+                    admit(child, before, after)
+                else:
+                    record(child, None, before, after, "worse on the minibatch than its better parent")
+                continue
+            ks, ws = zip(*sorted(front.items()))
+            k = rng.choices(ks, weights=ws)[0]
+            parent = pool[k]
+            batch = next_batch()
+            results = self._scores(fn, metric, feed_rows, parent, memo_feed, batch, feedback)
+            before = sum(s for s, _p, _e in results)
+            if all(s >= 1 for s, _p, _e in results):
+                continue                                   # nothing to learn from these rows
+            text = meta.reflect(fields=fields, instruction=parent.instruction,
+                                cases=self._cases(feed_rows, batch, results, target.input_names, outputs, feedback),
+                                tried=parent.tried[-3:], lm=teacher)
+            self.reflections += 1
+            child = _Candidate(text, (k,), "reflect")
+            if not text or any(text == c.instruction for c in pool):
+                record(child, None, before, None, "no new instruction")
+                continue
+            if copies_an_input(text, feed_rows, target.input_names):
+                parent.tried.append(text + "\n(dropped: it copied an input instead of stating a rule)")
+                record(child, None, before, None, "copied an input: dropped")
+                continue
+            after = mean_on(child, batch)
+            if after > before:
+                admit(child, before, after)
+            else:
+                parent.tried.append(text)
+                record(child, None, before, after, "not better on the minibatch")
+        best = max(range(len(pool)), key=lambda i: (pool[i].mean, -len(pool[i].instruction), -i))
+        for t in self.trials:
+            t["chosen"] = t["candidate"] == best
+        if best == 0:
+            return {fn: fn.state()}
+        return {fn: dataclasses.replace(fn.state(), instructions=pool[best].instruction)}
+
+    @staticmethod
+    def _pair(pool: List[_Candidate], front: Dict[int, int]) -> Optional[Tuple[int, int]]:
+        """Two frontier candidates that each win rows the other loses, the most such rows."""
+        best, pair = 0, None
+        ks = sorted(front)
+        for x in range(len(ks)):
+            for y in range(x + 1, len(ks)):
+                a, b = pool[ks[x]], pool[ks[y]]
+                a_wins = sum(sa > sb for sa, sb in zip(a.scores, b.scores))
+                b_wins = sum(sb > sa for sa, sb in zip(a.scores, b.scores))
+                if a_wins and b_wins and min(a_wins, b_wins) > best:
+                    best, pair = min(a_wins, b_wins), (ks[x], ks[y])
+        return pair
+
+
 # ------------------------------------------------------------------ .opt()
 
 
@@ -478,4 +783,4 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
 
 
 __all__ = ["Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch",
-           "InstructionSearch", "optimize"]
+           "InstructionSearch", "GEPA", "optimize"]

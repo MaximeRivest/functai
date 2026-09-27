@@ -22,6 +22,7 @@ test_that("the formula is checked, with the fix in the message", {
   expect_error(ai(team ~ message, "Which team?", mesage = "typo"), "not in the formula")
   expect_error(ai(team ~ message, "Which team?", team = c("billing", "shipping")), "choice\\(")
   expect_error(ai(team ~ message, "Which team?", .lmm = "x"), "unknown setting")
+  expect_error(ai(team ~ message, "Which team?", .lm = "a", .lm = "b"), "given twice")
 })
 
 test_that("a sentence describes a text field; a type types it", {

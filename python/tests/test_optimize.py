@@ -241,3 +241,110 @@ def test_global_autorefine_does_not_recurse_into_functais_own_helpers(fake):
     f("book it")
     assert len(r.requests) == 2                     # the call, then one refinement
     assert f.instructions == "booking"
+
+
+# ------------------------------------------------------------------ GEPA
+
+GOOD = "Use the labels exactly: booking, cancelation, information."
+MORE = TRAIN + [
+    {"user_query": "Please book a table for two.", "result": "booking"},
+    {"user_query": "What time is breakfast?", "result": "information"},
+    {"user_query": "I want to cancel tonight.", "result": "cancelation"},
+    {"user_query": "Is there parking?", "result": "information"},
+]
+
+
+def _reflecting(req):
+    return "You improve the instruction" in (req.system or "")
+
+
+def test_gepa_rewrites_the_instruction_from_its_mistakes(fake):
+    from functai import GEPA
+    f = make_classifier()
+
+    def responder(req):
+        if _reflecting(req):
+            return f"<result>\n{GOOD}\n</result>"
+        good = "Use the labels exactly" in (req.system or "")
+        return "<result>\n" + (_label(query_of(req)) if good else "information") + "\n</result>"
+
+    r = fake(responder=responder)
+    opt = GEPA(budget=60, seed=1)
+    f.opt(trainset=MORE, optimizer=opt)
+    assert f.instructions == GOOD
+    reflections = [q for q in r.requests if _reflecting(q)]
+    shown = "".join(_last_user(q) for q in reflections)
+    assert "wrong: the right answer is" in shown                       # feedback in words
+    chosen = [t for t in opt.trials if t["chosen"]]
+    assert len(chosen) == 1 and chosen[0]["kind"] == "reflect" and chosen[0]["score"] == 1.0
+    assert opt.calls <= 60
+    # the selection rows (half, drawn with the seed) are never shown to the reflection model
+    import random
+    rows = list(MORE)
+    random.Random(1).shuffle(rows)
+    selection = {q["user_query"] for q in rows[: len(rows) // 2]}
+    shown_queries = {line.split(": ", 1)[1] for line in shown.splitlines() if line.strip().startswith("user_query:")}
+    assert shown_queries and not (shown_queries & selection)
+
+
+def test_gepa_runs_a_row_once_per_instruction(fake):
+    from functai import GEPA
+    f = make_classifier()
+    seen = []
+
+    def responder(req):
+        if _reflecting(req):
+            return "<result>\nStill vague.\n</result>"
+        seen.append(((req.system or ""), query_of(req)))
+        return "<result>\ninformation\n</result>"
+
+    fake(responder=responder)
+    opt = GEPA(budget=40)
+    f.opt(trainset=MORE, optimizer=opt)
+    assert len(seen) == len(set(seen)) == opt.calls
+    assert f.instructions == make_classifier().instructions            # nothing beat the written one: kept
+
+
+def test_gepa_drops_a_proposal_that_copies_an_input_and_says_so(fake):
+    from functai import GEPA
+    long_rows = [{"user_query": f"Hello there, I would like to know about option number {i} please.", "result": "information"}
+                 for i in range(6)] + [{"user_query": f"Please book the room number {i} for the whole of next week.",
+                                        "result": "booking"} for i in range(6)]
+    f = make_classifier()
+    reflections = []
+
+    def responder(req):
+        if _reflecting(req):
+            reflections.append(_last_user(req))
+            m = re.search(r"\n  user_query: (.*)", _last_user(req))
+            return f"<result>\nIf the message says '{m.group(1)}', answer booking.\n</result>"
+        return "<result>\ninformation\n</result>"
+
+    fake(responder=responder)
+    opt = GEPA(budget=40)
+    f.opt(trainset=long_rows, optimizer=opt)
+    assert any(t["note"] == "copied an input: dropped" for t in opt.trials)
+    assert any("dropped: it copied an input" in text for text in reflections[1:])   # the next reflection is told
+    assert f.instructions == make_classifier().instructions
+
+
+def test_gepa_prefers_the_shorter_of_equal_instructions():
+    from functai.optimizers import GEPA, _Candidate
+    pool = [_Candidate("a long written instruction", (), "written", [1, 0]),
+            _Candidate("short", (0,), "reflect", [0, 1]),
+            _Candidate("both, and wordy about it", (0, 1), "combine", [1, 1])]
+    assert GEPA._frontier(pool) == {2: 2}                              # dominated candidates leave the frontier
+    assert GEPA._pair(pool[:2], GEPA._frontier(pool[:2])) == (0, 1)
+
+
+def test_gepa_refuses_a_module(fake):
+    from functai import GEPA
+    f = make_classifier()
+
+    @module
+    def route(user_query: str) -> str:
+        return f(user_query)
+
+    fake("<result>\ninformation\n</result>")
+    with pytest.raises(TypeError, match="one AI function"):
+        route.opt(trainset=MORE, optimizer=GEPA)

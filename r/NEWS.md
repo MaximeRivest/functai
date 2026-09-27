@@ -25,6 +25,13 @@ themselves (`../tools/crosslang.py`).
   version in every language.
 * `ai_tool(lookup_order, "...")`: a tool's inputs are its function's
   arguments, its name the function's.
+* `gepa()`: the instruction rewritten from the function's mistakes, as
+  Python's `GEPA` does (`design/04-gepa.md`); `ai_trials()` gives the
+  search. `set_engine("functai", method = "gepa", teacher = ...)` makes a
+  tidymodels `fit()` learn its instruction, so resampling measures the
+  search. Tutorials 4 and 7 use it on `gpt-5.4-nano`.
+* A setting given twice (`.lm = "a", .lm = "b"`) is an error; the first
+  used to win silently.
 * Rows run at once over curl (`concurrency`, default 8). A row with a
   missing input is `NA` without a call; failed rows are `NA` with one
   warning, listed by `ai_problems()`.

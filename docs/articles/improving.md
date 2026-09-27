@@ -171,6 +171,26 @@ search.trials        # every try: which instruction, which examples, its score
 The [translator example](../examples/optimizing_translator.md) runs it
 end to end, with a model as the judge.
 
+`GEPA` rewrites the instruction from the function's own mistakes instead:
+a `teacher` model reads its answers on a few rows with feedback in words
+("wrong: the right answer is billing"), writes a better instruction, and
+the best of what it writes is kept, chosen on rows it is never shown.
+It is at its best when a small, cheap model runs the function and a large
+one writes its instruction once:
+
+```{.python .no-run}
+from functai import GEPA
+
+small = team.using(lm="gpt-5.4-nano")          # the model that will run it
+gepa = GEPA(budget=300, teacher="gpt-6-sol")     # the model that writes its instruction
+small.opt(trainset=learn, expected="category", optimizer=gepa)
+gepa.trials          # every instruction tried: its parent, how it was made, its score, its length
+```
+
+Its score on the rows it chose with flatters (it is the best of many
+there): measure it on rows it never saw. How it differs from the paper's
+GEPA, and why, is in `design/04-gepa.md`.
+
 ## 6. A bigger model, or a teacher
 
 ```{.python .no-run}
@@ -194,5 +214,6 @@ shows how to check.
 | `BootstrapFewShot(...)` (default) | runs the function; runs that were right become examples, reasoning and tool calls included |
 | `BootstrapFewShotWithRandomSearch(num_candidate_programs=8)` | several sets of examples, keeps the best on `valset` |
 | `InstructionSearch(num_candidates=6, num_trials=12)` | proposed instructions × sets of examples, keeps the best on `valset` |
+| `GEPA(budget=300, teacher=...)` | a teacher rewrites the instruction from the mistakes, with feedback in words; keeps the best on rows it never shows |
 
 Every option is in the [reference](../reference/index.md#optimizers).

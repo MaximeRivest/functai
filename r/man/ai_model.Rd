@@ -64,11 +64,20 @@ function's inputs), and picks \code{examples} rows of the training data as
 worked examples the model sees with every question. So fitting is free,
 and a fit with \code{examples = 0} has used no answer from the training data.
 
+\strong{Fitting that learns the instruction.} With \code{method = "gepa"}, fitting
+runs \code{\link[=gepa]{gepa()}} on the training rows: a model reads the function's mistakes
+and rewrites its instruction, within \code{budget} calls. Fitting then costs
+calls, and resampling repeats it on every fold, so the resampled score
+measures the whole procedure, the search included. The fitted function's
+instruction is what it learned: \code{extract_fit_engine(fit)} prints it.
+
 \strong{Engine arguments} (\code{set_engine("functai", ...)}): \code{lm} (the model,
 \code{"gpt-4.1-mini"} by default from \code{\link[=ai_config]{ai_config()}}), \code{temperature}, any
 other setting of \code{\link[=ai_config]{ai_config()}}; \code{method} (\code{"labeled"}: training rows as
 they are, the default; \code{"bootstrap"}: rows the model got right, whole,
-reasoning included); \code{samples} (answers per row: with \code{samples = 5},
+reasoning included; \code{"gepa"}: the instruction rewritten from mistakes,
+see below); \code{budget} (calls \code{"gepa"} may make, default 300); \code{teacher} (the
+model that writes instructions or examples); \code{samples} (answers per row: with \code{samples = 5},
 \code{predict(type = "prob")} gives each level's share of the answers and the
 class is the majority; costs 5 calls a row); \code{seed}.
 

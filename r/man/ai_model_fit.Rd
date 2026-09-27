@@ -14,6 +14,8 @@ ai_model_fit(
   method = "labeled",
   samples = 1L,
   seed = 0L,
+  budget = 300L,
+  teacher = NULL,
   ...
 )
 
@@ -24,11 +26,15 @@ ai_model_predict(object, new_data, type)
 
 \item{description, examples, name}{See \code{\link[=ai_model]{ai_model()}}.}
 
-\item{method}{\code{"labeled"} or \code{"bootstrap"}.}
+\item{method}{\code{"labeled"}, \code{"bootstrap"} or \code{"gepa"}.}
 
 \item{samples}{Answers per row at prediction time.}
 
 \item{seed}{The random seed for choosing examples.}
+
+\item{budget}{Calls \code{"gepa"} may make.}
+
+\item{teacher}{The model that writes instructions (\code{"gepa"}) or examples (\code{"bootstrap"}).}
 
 \item{...}{Settings, as in \code{\link[=ai_config]{ai_config()}} (\code{lm}, \code{temperature}, ...).}
 

@@ -61,7 +61,8 @@ step "5/6 julia"
 julia/check
 
 step "6/6 python x typescript x r x julia"
-if command -v Rscript >/dev/null 2>&1; then
+# an R on PATH is used only when it can load functai (r/.lib) and what it imports
+if command -v Rscript >/dev/null 2>&1 && R_LIBS="$PWD/r/.lib" Rscript -e 'library(functai)' >/dev/null 2>&1; then
   "$PY" tools/crosslang.py
 else
   nix shell --impure -f "$PWD/r/tools/env.nix" -c "$PY" tools/crosslang.py 2>&1 | grep -v "Nix search path"; [ "${PIPESTATUS[0]}" -eq 0 ]

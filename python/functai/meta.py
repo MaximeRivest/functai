@@ -60,6 +60,41 @@ def _synthesize_inputs(task: str, input_names: List[str], n: int) -> List[Dict[s
     return _ai
 
 
+@ai(**_FIXED)
+def _reflect(fields: str, instruction: str, cases: str, tried: str) -> str:
+    """You improve the instruction of a function that a language model runs. You are given what the
+    function takes and returns, its current instruction, and cases it was run on: each with its inputs,
+    the answer it gave, its score and feedback. Find what the instruction is missing, or gets wrong, that
+    explains the mistakes, and write an improved instruction. Write general rules a careful person could
+    follow on new cases; never copy an input or describe these particular cases. Keep what already works.
+    The instruction is everything the model is told besides the inputs: keep the task, and say what each
+    output must be. Instructions listed as tried did not do better: try something different. Reply with
+    the new instruction only."""
+    return _ai
+
+
+@ai(**_FIXED)
+def _combine(fields: str, first: str, second: str) -> str:
+    """Two instructions for the same function each get right some cases the other gets wrong. Write one
+    instruction that keeps what makes each of them right, without repeating itself. The instruction is
+    everything the model is told besides the inputs: keep the task, and say what each output must be.
+    Reply with the new instruction only."""
+    return _ai
+
+
+def reflect(*, fields: str, instruction: str, cases: str, tried: List[str], lm: Any = None) -> str:
+    """GEPA's reflection (design/04-gepa.md): a new instruction from cases with feedback."""
+    listed = "\n\n".join(f"Tried {i}:\n{t}" for i, t in enumerate(tried, 1)) or "(none)"
+    text = _reflect.using(lm=lm, temperature=1.0)(fields=fields, instruction=instruction, cases=cases, tried=listed)
+    return (text or "").strip()
+
+
+def combine(*, fields: str, first: str, second: str, lm: Any = None) -> str:
+    """GEPA's combine step for one function: one instruction from two that win different cases."""
+    text = _combine.using(lm=lm, temperature=1.0)(fields=fields, first=first, second=second)
+    return (text or "").strip()
+
+
 def _io(fn) -> tuple:
     spec = fn._spec(instructions=None)
     ins = [f.name for f in spec.signature.inputs if f.purpose == "plain"]

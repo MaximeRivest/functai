@@ -10,10 +10,10 @@ Each tutorial starts from a question about real data, builds the answer one smal
 | 1 | [Your first AI function](01-first-function.md) | sort 80 customer messages into teams, check them, improve them | under 1¢ |
 | 2 | [Answers you can compute with](02-types.md) | turn bird-survey notes into typed columns: factors, counts that may be missing, records, lists | about 1¢ |
 | 3 | [Is it right?](03-is-it-right.md) | measure with intervals, baselines, a confusion matrix, and run-to-run variation | under 1¢ |
-| 4 | [Making it better without fooling yourself](04-making-it-better.md) | improve a refund decision with rules, examples and a teacher, on three piles of rows | about 2¢ |
+| 4 | [Making it better without fooling yourself](04-making-it-better.md) | improve a refund decision with rules, examples and a teacher, on three piles of rows; and when nobody wrote the rules, let a stronger model write them from the mistakes (GEPA) | about 10¢ |
 | 5 | [Choosing a model](05-choosing-a-model.md) | compare eight models (TypeSafe's Jev among them) on accuracy, cost and speed, with paired tests and a rule | about 30¢ |
 | 6 | [Decision models](06-decisions.md) | approve, deny or ask a person: costs of mistakes, rules in R, probabilities from votes and from Jev, a decision tree | about 7¢ |
-| 7 | [AI functions in tidymodels](07-tidymodels.md) | fit, resample, tune and score a language model like any parsnip model | about 2¢ |
+| 7 | [AI functions in tidymodels](07-tidymodels.md) | fit, resample, tune and score a language model like any parsnip model; a fit that learns its instruction from its mistakes | about 5¢ |
 | 8 | [Living with it](08-living-with-it.md) | tools, the call log, people's corrections, versions, saving | under 1¢ |
 
 The same series exists [for Python](../tutorials/index.md), on the same

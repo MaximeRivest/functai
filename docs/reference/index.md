@@ -58,6 +58,7 @@ Improve the instruction and the worked examples a function sends. Used through `
 | [BootstrapFewShot](BootstrapFewShot.md#functai.BootstrapFewShot) | Run the program (or a ``teacher``: a stronger model name, or an AI function) |
 | [BootstrapFewShotWithRandomSearch](BootstrapFewShotWithRandomSearch.md#functai.BootstrapFewShotWithRandomSearch) | Try several sets of demos and keep the one that scores best on the validation rows. |
 | [InstructionSearch](InstructionSearch.md#functai.InstructionSearch) | Search instructions written by a model, with demo sets, and keep the best. |
+| [GEPA](GEPA.md#functai.GEPA) | Rewrite the instruction from the function's mistakes: GEPA (Agrawal et |
 | [Optimizer](Optimizer.md#functai.Optimizer) | The base class of optimizers. |
 
 ## Saving and shipping

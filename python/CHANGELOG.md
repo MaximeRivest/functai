@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- `GEPA`: the instruction rewritten from the function's mistakes, read by
+  a `teacher` model with feedback in words, over a Pareto pool of
+  candidates (Agrawal et al., 2025), written in functai, with changes for
+  one function: the teacher sees what it tried that failed, a proposal
+  that copies an input is dropped, two candidates right on different rows
+  are combined, ties go to the shorter instruction, and no row runs twice
+  for one instruction (`design/04-gepa.md`). `f.opt(trainset=...,
+  optimizer=GEPA(budget=300, teacher="gpt-6-sol"))`; `.trials` holds the
+  search. Live, it took `gpt-5.4-nano` from 72% to 88% on refund
+  decisions it never saw. One AI function at a time (a `@module` is
+  refused).
 - `evaluate()`'s table and `calls()` have `reasoning_tokens` and
   `total_tokens`: Gemini's `output_tokens` leave its hidden reasoning out,
   so a cost is `total_tokens - input_tokens` at the output price.
