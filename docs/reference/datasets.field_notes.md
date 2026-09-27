@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # datasets.field_notes { #functai.datasets.field_notes }
 
 ```{.python .no-run}

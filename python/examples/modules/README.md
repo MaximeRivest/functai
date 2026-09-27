@@ -13,7 +13,7 @@ and saved as one program. This one checks a claim by searching a small
 library in hops, taking notes, then deciding.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/modules/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/modules/README.md`.
 
 ```python
 import functai

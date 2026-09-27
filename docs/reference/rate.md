@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # rate { #functai.rate }
 
 ```{.python .no-run}

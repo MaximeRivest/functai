@@ -13,7 +13,7 @@ only what is new; plain Python merges it in. Pydantic models are the
 contract on both sides.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/graph_rag/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/graph_rag/README.md`.
 
 ```python
 import functai

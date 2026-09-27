@@ -37,15 +37,15 @@ Thumbs.db
 # secrets
 .env
 .pypirc
-examples/modules/wiki.abstracts.2017.jsonl
-examples/modules/._wiki.abstracts.2017.jsonl
+python/examples/modules/wiki.abstracts.2017.jsonl
+python/examples/modules/._wiki.abstracts.2017.jsonl
 
 mlartifacts/
 mydb.sqlite
 
 prompt.md
 
-examples/custom_adapters/
+python/examples/custom_adapters/
 
 # docs website: site/ is built from docs/ (python docs/build.py site)
 site/

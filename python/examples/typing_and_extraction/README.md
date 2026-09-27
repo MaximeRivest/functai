@@ -13,7 +13,7 @@ model is asked again). This page walks through the types you can use,
 from a list of strings to nested pydantic models.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/typing_and_extraction/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/typing_and_extraction/README.md`.
 
 ```python
 import functai

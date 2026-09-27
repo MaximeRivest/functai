@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # compare { #functai.compare }
 
 ```{.python .no-run}

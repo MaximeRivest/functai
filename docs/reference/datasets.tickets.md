@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # datasets.tickets { #functai.datasets.tickets }
 
 ```{.python .no-run}

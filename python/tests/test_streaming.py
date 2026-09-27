@@ -17,7 +17,7 @@ from conftest import FakeRouter
 from functai import _ai, ai, calllog, module
 from functai.streaming import Cancelled, Done, Failed, Retry, Started, Text, Thinking, partial_json
 
-CONTRACT = Path(__file__).resolve().parent.parent / "contract"
+CONTRACT = Path(__file__).resolve().parents[2] / "contract"      # the repository's, shared by every language
 XML = "<result>\n{}\n</result>"
 
 

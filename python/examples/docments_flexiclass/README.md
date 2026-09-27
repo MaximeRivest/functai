@@ -13,7 +13,7 @@ a class, and on each `_ai` output. This page shows each kind, with the
 prompt it produces.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/docments_flexiclass/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/docments_flexiclass/README.md`.
 
 ```python
 import functai

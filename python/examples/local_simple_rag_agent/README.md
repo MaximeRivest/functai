@@ -12,7 +12,7 @@ function that checks the answer against its source. It runs on any
 model; at the end, the same agent on a local model.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/local_simple_rag_agent/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/local_simple_rag_agent/README.md`.
 
 ```python
 import functai

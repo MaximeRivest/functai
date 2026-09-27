@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # load { #functai.load }
 
 ```{.python .no-run}

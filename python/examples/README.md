@@ -20,5 +20,5 @@ To run one yourself: open its `README.md` in Chattering and press Run
 all, or, with a model key in the environment:
 
 ```bash
-python tools/docs.py run examples/modules/README.md
+python/.venv/bin/python tools/docs.py run python/examples/modules/README.md   # from the repository
 ```

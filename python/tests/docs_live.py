@@ -1,6 +1,7 @@
 """The documentation runs, against real models (costs cents). Not run by pytest.
 
     set -a; source ~/Projects/lm15-dev/.env; set +a
+    cd python
     .venv/bin/python tests/docs_live.py            # the README's code blocks, in order
     .venv/bin/python tests/docs_live.py --render   # and every docs page, run again on rat
 
@@ -8,10 +9,11 @@ README: every ```python block runs, top to bottom, in one namespace, in a
 scratch folder, except those right after a `<!-- skip: reason -->` line.
 
 The docs are Markdown notebooks (MRMD, the format Chattering writes):
-`--render` runs each page of docs/ on a fresh rat kernel and writes the
-new outputs into it (tools/docs.py run), so a failing cell fails it. The
-examples (examples/*/README.md) are notebooks too, run one at a time on
-purpose: `python tools/docs.py run examples/modules/README.md`.
+`--render` runs each page of the repository's docs/ on a fresh rat kernel
+and writes the new outputs into it (tools/docs.py run), so a failing cell
+fails it. The examples (python/examples/*/README.md) are notebooks too, run
+one at a time on purpose, from the repository:
+`python/.venv/bin/python tools/docs.py run python/examples/modules/README.md`.
 """
 
 from __future__ import annotations
@@ -25,7 +27,8 @@ import tempfile
 import traceback
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
+ROOT = Path(__file__).resolve().parent.parent          # the Python package (python/)
+REPO = ROOT.parent                                      # docs/ and tools/ are the repository's
 
 
 def readme_blocks(path: Path) -> list[tuple[int, str, str | None]]:
@@ -61,7 +64,7 @@ def run_readme() -> int:
 
 
 def render_all() -> int:
-    done = subprocess.run([sys.executable, str(ROOT / "tools" / "docs.py"), "run"], cwd=ROOT, check=False)
+    done = subprocess.run([sys.executable, str(REPO / "tools" / "docs.py"), "run"], cwd=REPO, check=False)
     return done.returncode
 
 

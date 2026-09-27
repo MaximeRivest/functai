@@ -12,7 +12,7 @@ commands, and remembers the conversation. Two settings do it:
 `tools=[...]` and `stateful=True`.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/claide_code/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/claide_code/README.md`.
 
 ```python
 import functai

@@ -1,8 +1,11 @@
 # The FunctAI contract
 
-What every FunctAI implementation (Python here, TypeScript next) must
-agree on, so that one implementation's output is another's input and a
-dashboard can read both.
+What every FunctAI implementation (Python in `../python`; TypeScript,
+R and Julia next, see `../design/01-many-languages.md`) must agree on, so
+that one implementation's output is another's input and a dashboard can
+read both. This folder is the authority: when an implementation and the
+contract disagree, the implementation is wrong. No language's folder is
+imported by another; they meet only here.
 
 - [`calls.md`](calls.md): the call log. Every call of an AI function or
   module as one line of JSON in a folder; people's ratings of those calls;
@@ -19,8 +22,9 @@ dashboard can read both.
   implementation passes a case when its `rated` gives exactly the
   expected rows and left-out counts.
 
-The Python implementation checks both in `tests/test_call_log.py`
-(`uv run pytest tests/test_call_log.py`).
+The Python implementation checks both in `python/tests/test_call_log.py`
+(`cd python && uv run pytest tests/test_call_log.py`); `../check` runs
+every implementation against the contract.
 
 A change to the format is a new format number (`functai_call: 2`), never
 an edit of format 1: logs outlive the code that wrote them. The one
@@ -31,7 +35,7 @@ reader stays valid. Changing what a field means, or requiring a new one,
 is a new format.
 
 The streaming contract has a schema but no cases yet: its laws are
-checked by the Python tests (`tests/test_streaming.py`) with a fake
+checked by the Python tests (`python/tests/test_streaming.py`) with a fake
 model. Shared cases need a fake model both languages can run (a script
 of replies and how they are cut into pieces), which is the next thing to
 write when the TypeScript implementation starts streaming.

@@ -55,6 +55,15 @@ New:
 - The documentation website, with three ways in (a table of text, notes
   and documents, a prompt you already have).
 
+Changed:
+
+- **The repository holds every language.** The Python package moved into
+  `python/`; the contract, the documentation and the design notes stay at
+  the top, shared by the TypeScript, R and Julia implementations to come.
+  Nothing changes for `pip install functai`. Installing from git names the
+  folder: `pip install "functai @ git+https://github.com/MaximeRivest/functai#subdirectory=python"`.
+  Python releases are tagged `python-v<version>` (e.g. `python-v1.1.0`).
+
 Fixed:
 
 - **A bare `_ai` is always the answer.** After a named output

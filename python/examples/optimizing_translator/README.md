@@ -14,7 +14,7 @@ searches for the instruction that raises the score. Every step is
 measured, with its uncertainty.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/optimizing_translator/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/optimizing_translator/README.md`.
 
 ```python
 import functai

@@ -1,7 +1,7 @@
 """functai against real models (costs cents). Not run by pytest.
 
     set -a; source ~/Projects/lm15-dev/.env; set +a
-    .venv/bin/python tests/live.py [model ...]
+    cd python && .venv/bin/python tests/live.py [model ...]
 """
 
 import dataclasses

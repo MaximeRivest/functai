@@ -87,7 +87,7 @@ dev = [
     "dpyr>=1.10",
     "jsonschema>=4.18",     # the call log's records against contract/schema
 ]
-# the documentation (docs/): Markdown notebooks run on rat (python tools/docs.py run),
+# the documentation (../docs/): Markdown notebooks run on rat (../tools/docs.py run),
 # the reference written from the docstrings by quartodoc, the site built by Zensical
 docs = [
     "pydantic>=2",

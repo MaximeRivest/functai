@@ -1,5 +1,6 @@
 ---
 rat:
+  project: ../../python
   python:
     dependencies: ["-e .[data]", "pandas"]
 ---

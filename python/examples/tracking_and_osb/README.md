@@ -12,7 +12,7 @@ logged as a table. No server to run: the records are Python objects and
 parquet files.
 
 Every output below is a real reply. This page is a notebook: open it in
-Chattering and run it, or run it all with `python tools/docs.py run examples/tracking_and_osb/README.md`.
+Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/tracking_and_osb/README.md`.
 
 ```python
 import functai
