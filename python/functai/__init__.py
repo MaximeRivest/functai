@@ -63,7 +63,7 @@ from .optimizers import (
     Optimizer,
 )
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 
 # `from functai import *` brings the decorator, the sentinel and the program
 # vocabulary. The template helpers (system, user, ...) are generic names, so
