@@ -245,6 +245,44 @@ def _is_ai(node: Optional[ast.AST]) -> bool:
     return isinstance(node, ast.Name) and node.id == "_ai"
 
 
+def _declares_output(stmt: ast.AST) -> bool:
+    """``x = _ai``, ``x: T = _ai`` or ``x: T = _ai["..."]``: an output declaration."""
+    value = getattr(stmt, "value", None)
+    if isinstance(value, ast.Subscript):
+        value = value.value
+    if isinstance(stmt, ast.AnnAssign):
+        return isinstance(stmt.target, ast.Name) and _is_ai(value)
+    return (isinstance(stmt, ast.Assign) and len(stmt.targets) == 1 and isinstance(stmt.targets[0], ast.Name)
+            and _is_ai(value))
+
+
+def model_writes_body(fn: Any) -> bool:
+    """Is the model's answer the whole body? True when, after the docstring,
+    the body holds only output declarations (``x = _ai``, ``x: T = _ai``,
+    ``x: T = _ai["..."]``), ``...``, ``pass``, and at the end a ``return``,
+    ``return _ai`` or ``return ...``. Such a function runs no code of its own
+    beside the model, so its version is its request alone (contract/calls.md,
+    *Versions*). False when the source cannot be read."""
+    node = _fn_node(fn)
+    if node is None:
+        return False
+    body = list(node.body)
+    if body and isinstance(body[0], ast.Expr) and isinstance(body[0].value, ast.Constant) \
+            and isinstance(body[0].value.value, str):
+        body = body[1:]
+    for i, stmt in enumerate(body):
+        if isinstance(stmt, ast.Pass) or _declares_output(stmt):
+            continue
+        if isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Constant) and stmt.value.value is Ellipsis:
+            continue
+        if isinstance(stmt, ast.Return) and i == len(body) - 1 and (
+                stmt.value is None or _is_ai(stmt.value)
+                or (isinstance(stmt.value, ast.Constant) and stmt.value.value is Ellipsis)):
+            continue
+        return False
+    return True
+
+
 def _uses_bare_ai(fn: Any) -> bool:
     """Does the body use ``_ai`` itself as a value (``round(_ai, 2)``,
     ``_ai.upper()``, ``return critique, _ai``, ``return _ai``)? A bare ``_ai``

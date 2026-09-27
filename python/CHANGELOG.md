@@ -28,8 +28,11 @@ New:
   `functai.rated(fn)` turns ratings into rows with known answers, ready for
   `evaluate` and `.opt`; `functai.calls(fn)` is the whole log as a table.
 - **`fn.version`**: a fingerprint of everything a function sends besides
-  its inputs (instruction, worked examples, layout, tools, code), the same
-  for a program and its saved-and-loaded copy; modules have one too.
+  its inputs (instruction, worked examples, layout, tools), and of its code
+  when code of its own runs beside the model; the same for a program and
+  its saved-and-loaded copy, and for the same function written in another
+  language. Modules have one too. A call's `signature` leaves out how a
+  language spells types, so ratings pool across languages.
   `prediction.call_id` names the call that produced a prediction.
 - **The contract** (`contract/`): the log's format, JSON Schemas and test
   cases, so FunctAI in other languages and other tools (Chattering) read

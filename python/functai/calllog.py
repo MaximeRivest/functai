@@ -431,15 +431,52 @@ def ai_facts(fn: Any) -> Tuple[str, str, str]:
         request = saved.request_fingerprint(saved.probe_request(fn, spec, plan, past, saved._sample_inputs(spec)))
     except lmcc.Refusal as exc:
         request = f"refused:{exc.code}"
-    version = _sha(canonical({"code": code_hash(fn.__wrapped__), "request": request}))
-    facts = (version, lmcc.signature_fingerprint(spec.signature), spec.main)
+    version = _sha(canonical(version_document(fn, request)))
+    facts = (version, signature_id(spec.signature), spec.main)
     _ai_facts[fn] = (refs, facts)
     return facts
 
 
+def version_document(fn: Any, request: str) -> Dict[str, str]:
+    """What an AI function's version hashes: ``{"request": R}`` when the model
+    writes the whole body, ``{"code": C, "request": R}`` when code of its own
+    runs beside the model (contract/calls.md, *Versions*). So the same AI
+    function written in two languages has one version."""
+    body = fn.__wrapped__
+    return {"request": request} if _model_body(body) else {"code": code_hash(body), "request": request}
+
+
+_model_bodies: "weakref.WeakKeyDictionary[Any, bool]" = weakref.WeakKeyDictionary()
+
+
+def _model_body(fn: Any) -> bool:
+    """``signature.model_writes_body``, read once per function object (like its code hash)."""
+    try:
+        return _model_bodies[fn]
+    except (KeyError, TypeError):
+        pass
+    from .signature import model_writes_body
+    answer = model_writes_body(fn)
+    try:
+        _model_bodies[fn] = answer
+    except TypeError:
+        pass
+    return answer
+
+
+def signature_id(signature: Any) -> str:
+    """A call's ``program.signature``: lmcc's signature fingerprint with every
+    field's host type name left out (``"type": ""``), so the fields' names,
+    directions, purposes and JSON shapes decide it, not how one language
+    spells a type (``str``, ``string``, ``character``) (contract/calls.md)."""
+    return lmcc.signature_fingerprint(lmcc.SignatureCore(
+        signature.instructions, [dataclasses.replace(f, type=None) for f in signature.fields]))
+
+
 def ai_version(fn: Any) -> str:
-    """An AI function's version: ``sha256:`` of ``{"code", "request"}``, where
-    ``request`` is what it sends for a sample input (contract/calls.md)."""
+    """An AI function's version: ``sha256:`` of ``{"request"}`` or ``{"code",
+    "request"}``, where ``request`` is what it sends for a sample input
+    (contract/calls.md)."""
     return ai_facts(fn)[0]
 
 
@@ -891,7 +928,7 @@ def _program_key(program: Any) -> Tuple[str, Optional[str], Optional[str]]:
     if isinstance(program, FunctAIFunc):
         from .saved import origin
         return (program.__name__, origin(getattr(program.__wrapped__, "__module__", None))[0],
-                lmcc.signature_fingerprint(program._spec().signature))
+                signature_id(program._spec().signature))
     if isinstance(program, FunctAIModule):
         return program.__name__, _original(getattr(program._fn, "__module__", None)), None
     raise TypeError(f"expected an AI function, a module, or a program's name, not {type(program).__name__}")

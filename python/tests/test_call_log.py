@@ -129,7 +129,7 @@ def test_a_call_record_holds_the_typed_call_and_its_exchange(fake, log, schemas)
     assert rec["program"]["name"] == "team" and rec["program"]["kind"] == "ai"
     assert rec["program"]["module"] == __name__ and rec["program"]["answer"] == "result"
     assert rec["program"]["version"] == team.version
-    assert rec["program"]["signature"] == lmcc.signature_fingerprint(team.signature)
+    assert rec["program"]["signature"] == calllog.signature_id(team.signature) != lmcc.signature_fingerprint(team.signature)
     assert rec["program"]["file"] == __file__
     assert rec["inputs"] == {"message": "I was charged twice for one order."}
     assert rec["outputs"] == {"result": "billing"} and "returned" not in rec
@@ -398,6 +398,59 @@ def test_a_version_names_what_is_sent_besides_the_inputs():
     assert c.version != v                                                     # the worked examples
     c.demos = []
     assert c.version == v
+
+
+def test_a_function_the_model_writes_whole_is_versioned_by_its_request_alone():
+    """No code beside the model: the version is sha256 of {"request": R}, so the
+    same function written in another language has the same version."""
+    from functai.saved import probe_plan, probe_request, request_fingerprint, _sample_inputs
+
+    def request_of(fn):
+        spec, settings = fn._spec(), fn._effective()
+        plan, past = probe_plan(fn, spec, settings)
+        return request_fingerprint(probe_request(fn, spec, plan, past, _sample_inputs(spec)))
+
+    @ai
+    def a(message: str) -> str:
+        """Summarize."""
+
+    def another_body():
+        @ai
+        def a(message: str) -> str:
+            """Summarize."""
+            ...
+        return a
+
+    @ai
+    def with_reasoning(message: str) -> str:
+        """Summarize."""
+        reasoning: str = _ai["How you got there"]
+        return _ai
+
+    def two_places():
+        @ai
+        def rounded(x: float) -> float:
+            """Double it."""
+            return round(_ai, 2)
+        return rounded
+
+    def three_places():
+        @ai
+        def rounded(x: float) -> float:
+            """Double it."""
+            return round(_ai, 3)
+        return rounded
+
+    rounded, rounded_differently = two_places(), three_places()
+
+    r = request_of(a)
+    assert a.version == calllog._sha(calllog.canonical({"request": r}))
+    assert another_body().version == a.version                                      # `...` or nothing: the same program
+    assert calllog.version_document(with_reasoning, request_of(with_reasoning)) == \
+        {"request": request_of(with_reasoning)}                             # declared outputs are in the request
+    assert set(calllog.version_document(rounded, request_of(rounded))) == {"code", "request"}
+    assert request_of(rounded) == request_of(rounded_differently)          # the same request...
+    assert rounded.version != rounded_differently.version                  # ...but code of its own runs
 
 
 def test_a_module_version_follows_its_code_and_its_functions():

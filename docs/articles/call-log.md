@@ -214,7 +214,10 @@ team.version
 ```
 
 A version names everything the function sends besides its inputs: the
-instruction, the worked examples, the layout, the tools, and its code.
+instruction, the worked examples, the layout, the tools, and its code when
+it has code of its own (`return round(_ai, 2)`). A function whose body the
+model writes whole has no code in its version, so the same function written
+in another language has the same version.
 Optimizing it, as we just did, made a new one; choosing another model
 does not (the model is recorded next to it). So the log can compare
 versions answer by answer:

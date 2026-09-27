@@ -598,8 +598,10 @@ class FunctAIFunc:
     def version(self) -> str:
         """The function's version: a fingerprint of what it sends besides its inputs.
 
-        ``sha256:`` of its code and of the request it renders for a sample
-        input (instruction, worked examples, layout, tools). Optimizing it,
+        ``sha256:`` of the request it renders for a sample input
+        (instruction, worked examples, layout, tools), and of its code when
+        code of its own runs beside the model (``return round(_ai, 2)``);
+        so the same function in another language has the same version. Optimizing it,
         editing its docstring or changing its layout makes a new version;
         choosing another model does not. Logged calls carry it, and a saved
         folder names the version it holds."""

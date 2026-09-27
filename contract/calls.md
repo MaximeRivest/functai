@@ -110,7 +110,7 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `program.name`, `.module` | what was called: the function's name and the code module it was defined in (`__main__` for a notebook or script; for a program loaded from a saved folder, the module it was saved from). |
 | `program.kind` | `"ai"` or `"module"`. |
 | `program.version` | see *Versions*. |
-| `program.signature` | AI functions: lmcc's signature fingerprint (inputs and outputs, their names, types and shapes; not the prose). Calls with the same signature can share data even when the instruction changed. |
+| `program.signature` | AI functions: lmcc's signature fingerprint (kernel §3a: its fields' directions, names, purposes, shapes and type names, in order; not the prose) computed with every type name empty (`"type": ""`). The JSON shapes decide, not how one language spells a type (`str`, `string`, `character`), so the same function in two languages has one signature. Calls with the same signature can share data even when the instruction changed. |
 | `program.answer` | the name of the output that is the answer (`result` unless the function names it; `result` for a module). A rating of right or wrong is about this output. |
 | `program.saved` | present when the program was loaded from a saved folder: `sha256:` of that folder's `functai.json`. |
 | `program.file`, `.line` | where the code is, when known. |
@@ -230,7 +230,11 @@ A version is `"sha256:"` and the hex SHA-256 of the canonical JSON of a
 small document. It needs no model and no network: a program knows its
 version before its first call (Python: `fn.version`).
 
-**An AI function:** `{"code": C, "request": R}`.
+**An AI function:** `{"request": R}` when the model writes the whole
+body, `{"code": C, "request": R}` when code of the function's own runs
+beside the model. The same AI function written in two languages (the same
+instruction, fields, layout, worked examples and tools) therefore has one
+version, and its ratings pool.
 
 - `R` is what the function sends for a fixed sample input: the request
   it renders (instruction, layout, worked examples, tools; no conversation
@@ -247,7 +251,15 @@ version before its first call (Python: `fn.version`).
   A function on a baked model renders with the layout and facts the
   model was trained with. When the sample cannot be rendered, `R` is
   `"refused:<lmcc refusal code>"`.
-- `C` is `"sha256:"` + SHA-256 of the function's source text (UTF-8),
+- The model writes the whole body when the body holds nothing but a
+  description, output declarations and "the answer is the value". Python:
+  after the docstring, only `x = _ai`, `x: T = _ai`, `x: T = _ai["…"]`,
+  `...`, `pass`, and a last `return`, `return _ai` or `return ...`. A
+  language whose AI functions have no body (a TypeScript `ai(...)` given
+  no function) always has `{"request": R}`. Default values of inputs are
+  not code: the values a call used are its logged inputs.
+- `C` is present only when the function runs code of its own, such as
+  `return round(_ai, 2)`. It is `"sha256:"` + SHA-256 of the function's source text (UTF-8),
   dedented, without its decorators (the text `functai.save` writes, so a
   loaded program has the version of the one that was saved), read once
   per function. A change in the code around the prompt
