@@ -83,6 +83,16 @@ nav:
           - articles/inspection.md
           - articles/reliability.md
           - articles/upgrading.md
+  - Tutorials:
+      - tutorials/index.md
+      - tutorials/01-first-function.md
+      - tutorials/02-types.md
+      - tutorials/03-is-it-right.md
+      - tutorials/04-making-it-better.md
+      - tutorials/05-choosing-a-model.md
+      - tutorials/06-decisions.md
+      - tutorials/07-a-model-you-own.md
+      - tutorials/08-living-with-it.md
   - R:
       - r/index.md
       - r/01-first-function.md

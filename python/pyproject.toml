@@ -105,4 +105,6 @@ docs = [
     "zensical==0.0.65",
     "ipython>=8",     # rat notebooks: the kernel and its completion (rat ensure adds them too)
     "jedi>=0.19",
+    "matplotlib>=3.9",   # the tutorials' plots
+    "scikit-learn>=1.5", # the tutorials' decision tree and classical baselines
 ]

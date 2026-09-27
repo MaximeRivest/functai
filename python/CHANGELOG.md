@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- `evaluate()`'s table and `calls()` have `reasoning_tokens` and
+  `total_tokens`: Gemini's `output_tokens` leave its hidden reasoning out,
+  so a cost is `total_tokens - input_tokens` at the output price.
+- `bake(..., log=False)` is silent (it raised).
+- Eight tutorials (`docs/tutorials/`), from a first function to decision
+  models with Jev, choosing a model by cost, and baking a model you own.
+
 - `functai.datasets.refunds()`: 120 refund requests to the shop of
   `tickets`, with the facts its order system knows and the decision its
   refund rules give (the same table as R's `refunds`).

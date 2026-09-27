@@ -49,6 +49,13 @@ KERNEL_ENV = {"POLARS_FMT_STR_LEN": "90", "POLARS_FMT_MAX_COLS": "12", "POLARS_T
 FENCE = re.compile(r"^(\s{0,3})(`{3,}|~{3,})(.*)$")
 RUNNABLE = re.compile(r"^(python|py|python3)\s*$")          # MRMD: a bare language word
 OWNED_IMAGE = re.compile(r"^!\[plot(?:-\d+)?\]\(([^)\s]*_assets/[^)\s]*)\)\s*$")
+# a plot the kernel saved (rat prints the marker when plt.show() runs), and
+# where the pages keep them: MRMD's `_assets/generated/`, named by content,
+# here under docs/ so the website carries them
+PLOT_LINE = re.compile(r"^__RAT_PLOT__:(.+?)\s*$")
+ASSETS = DOCS / "_assets" / "generated"
+# lines the kernel prints that are not the program's output
+NOISE = re.compile(r"^(Fallback to a different backend\s*|Writing model shards: .*)$")
 
 
 def blocks(lines: list[str]) -> list[tuple[int, int, str]]:
@@ -76,12 +83,35 @@ def fence_for(text: str) -> str:
     return "`" * max(3, longest + 1)
 
 
-def format_result(text: str) -> list[str]:
+def format_result(text: str, images: list[str] = ()) -> list[str]:
     body = text.rstrip()
-    if not body:
-        return []
-    ticks = fence_for(body)
-    return [ticks + "output", *body.split("\n"), ticks]
+    out = []
+    if body:
+        ticks = fence_for(body)
+        out = [ticks + "output", *body.split("\n"), ticks]
+    for image in images:
+        out += ["", f"![plot]({image})"]
+    return out[1:] if out and not out[0] else out
+
+
+def split_plots(page: Path, text: str) -> tuple[str, list[str]]:
+    """The output without plot markers and kernel noise, and each plot copied
+    into docs/_assets/generated/ (named by content), as paths from the page."""
+    import hashlib
+    import shutil
+    kept, images = [], []
+    for line in text.split("\n"):
+        m = PLOT_LINE.match(line)
+        if m and Path(m.group(1)).exists():
+            data = Path(m.group(1)).read_bytes()
+            ASSETS.mkdir(parents=True, exist_ok=True)
+            target = ASSETS / f"{hashlib.sha256(data).hexdigest()[:16]}.png"
+            if not target.exists():
+                shutil.copyfile(m.group(1), target)
+            images.append(os.path.relpath(target, page.parent).replace(os.sep, "/"))
+        elif not NOISE.match(line):
+            kept.append(line)
+    return "\n".join(kept), images
 
 
 def cells(text: str) -> list[tuple[int, int, str]]:
@@ -90,7 +120,7 @@ def cells(text: str) -> list[tuple[int, int, str]]:
     return [(a, b, "\n".join(lines[a + 1:b])) for a, b, info in blocks(lines) if RUNNABLE.match(info)]
 
 
-def write_results(text: str, results: list[str | None]) -> str:
+def write_results(text: str, results: list) -> str:
     """The notebook with each cell's result under it (replacing an older one).
     ``results[i]`` None leaves cell i as it is (it did not run)."""
     lines = text.split("\n")
@@ -108,15 +138,15 @@ def write_results(text: str, results: list[str | None]) -> str:
         end = b + 1
         if k in outputs:
             end = outputs[k][1] + 1
-            while True:                           # and the plots a run left after it
-                n = end
-                while n < len(lines) and not lines[n].strip():
-                    n += 1
-                if n < len(lines) and OWNED_IMAGE.match(lines[n]):
-                    end = n + 1
-                else:
-                    break
-        new = format_result(result)
+        while True:                               # and the plots a run left after it
+            m = end
+            while m < len(lines) and not lines[m].strip():
+                m += 1
+            if m < len(lines) and OWNED_IMAGE.match(lines[m]):
+                end = m + 1
+            else:
+                break
+        new = format_result(*result) if isinstance(result, tuple) else format_result(result)
         lines[b + 1:end] = ([""] + new) if new else []
     return "\n".join(lines)
 
@@ -186,13 +216,25 @@ def run_page(page: Path) -> bool:
             results.append(None)
             continue
         status, out = run_cell(code)
-        results.append(None if status == "rat" else out)
+        results.append(None if status == "rat" else split_plots(page, out))
         if status != "ok":
             print(f"  FAIL  {page.relative_to(ROOT)}: {'rat: ' if status == 'rat' else ''}{out[-1500:]}")
     page.write_text(write_results(text, results))
     if status == "ok":
         print(f"  ok    {page.relative_to(ROOT)} ({len(todo)} cells)")
     return status == "ok"
+
+
+def prune_assets() -> None:
+    """Generated plots no page shows any more."""
+    if not ASSETS.exists():
+        return
+    shown = set()
+    for page in DOCS.rglob("*.md"):
+        shown.update(Path(m).name for m in re.findall(r"_assets/generated/([^)\s]+)", page.read_text()))
+    for image in ASSETS.iterdir():
+        if image.name not in shown:
+            image.unlink()
 
 
 def pages(args: list[str]) -> list[Path]:
@@ -335,6 +377,7 @@ def main(argv: list[str]) -> int:
     if what == "run":
         ensure_kernel()
         failures = sum(not run_page(p) for p in pages(rest))
+        prune_assets()
         print(f"\n{failures} page(s) failed")
         return 1 if failures else 0
     if what == "site":

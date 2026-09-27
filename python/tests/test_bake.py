@@ -410,3 +410,10 @@ def test_a_generative_student_learns_the_layouts_reply_and_keeps_its_layout(tmp_
     assert functai.inspect_history(1)[0].model == "baked:capital"
     reloaded = load(b.path)
     assert reloaded.kind == "generative" and reloaded.meta["max_new_tokens"] >= 16
+
+
+def test_log_false_is_silent(capsys):
+    from functai.bake import _say
+    _say(False)("nothing")
+    _say(None)("nothing")
+    assert capsys.readouterr().err == ""

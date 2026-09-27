@@ -1044,7 +1044,9 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
         (for one program; else ``program``, ``inputs`` and ``outputs``),
         ``rating`` (the latest judgement: ``right``, ``wrong``, or null),
         ``error``, ``started``, ``seconds``, ``input_tokens``,
-        ``output_tokens``, ``model``, ``version``, ``purpose`` (``use``, or
+        ``output_tokens``, ``reasoning_tokens``, ``total_tokens`` (Gemini's
+        ``output_tokens`` leave its hidden reasoning out; a cost is
+        ``total_tokens - input_tokens`` at the output price), ``model``, ``version``, ``purpose`` (``use``, or
         ``evaluation`` and ``optimization`` for calls that answered known
         questions), ``caller`` (who called, as JSON), ``call`` (its id)
         and ``parent`` (the call it ran in).
@@ -1108,6 +1110,7 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
         _add_meta(rec, dict(rating=latest.get(c.get("id")), error=_error_text(c.get("error")),
                             started=_parse_time(c.get("started")), seconds=c.get("seconds"),
                             input_tokens=usage.get("input_tokens"), output_tokens=usage.get("output_tokens"),
+                            reasoning_tokens=usage.get("reasoning_tokens"), total_tokens=usage.get("total_tokens"),
                             model=c.get("model"), version=p.get("version"), purpose=purpose(c),
                             caller=canonical(c.get("caller") or {}), call=c.get("id"), parent=c.get("parent")))
         records.append(rec)

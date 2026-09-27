@@ -16,6 +16,9 @@ Each tutorial starts from a question about real data, builds the answer one smal
 | 7 | [AI functions in tidymodels](07-tidymodels.md) | fit, resample, tune and score a language model like any parsnip model | about 2¢ |
 | 8 | [Living with it](08-living-with-it.md) | tools, the call log, people's corrections, versions, saving | under 1¢ |
 
+The same series exists [for Python](../tutorials/index.md), on the same
+datasets, where baking a model you own takes tutorial 7's place.
+
 ## Before you start
 
 You need R 4.1 or later, and a key for at least one model provider (OpenAI's, for most of the series) in your `~/.Renviron`:

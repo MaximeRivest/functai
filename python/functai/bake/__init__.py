@@ -33,7 +33,7 @@ __all__ = ["bake", "Baked", "load", "BakeError", "BakeReport", "is_baked"]
 
 
 def _say(log: Optional[Callable[[str], None]]) -> Callable[[str], None]:
-    if log is None:
+    if log is None or log is False:
         return lambda s: None
     if log is True:
         return lambda s: print(f"[bake] {s}", file=sys.stderr, flush=True)

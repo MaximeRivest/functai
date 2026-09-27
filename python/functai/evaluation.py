@@ -9,7 +9,7 @@ other columns are the expected outputs and anything else you want to keep.
 Results come out as one row per example (``Evaluation.table``, a dpyr
 dataframe): the data, the predictions (``pred_<output>``), one column per
 metric, and ``error``, ``seconds``, ``input_tokens``, ``output_tokens``,
-``model``, ``run``. Tables need dpyr (``pip install "functai[data]"``); the
+``reasoning_tokens``, ``total_tokens``, ``model``, ``run``. Tables need dpyr (``pip install "functai[data]"``); the
 score and its interval do not.
 """
 
@@ -42,7 +42,9 @@ States = Dict[FunctAIFunc, ProgramState]
 
 _DPYR_HINT = 'tables need dpyr: pip install "functai[data]"'
 # columns every run table has besides the data, the predictions and the metrics
-_RUN_COLUMNS = ("error", "seconds", "input_tokens", "output_tokens", "model", "run")
+# (Gemini's output_tokens leave its hidden reasoning out; every provider bills
+# total_tokens - input_tokens as output)
+_RUN_COLUMNS = ("error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run")
 
 
 def _dpyr():
@@ -515,7 +517,8 @@ def _records(target: _Target, rows: Sequence[Mapping[str, Any]], runs: Sequence[
                 rec[f"pred_{k}"] = _cell(run.pred.get(k)) if run.pred is not None else None
         rec.update({m.name: values[m.name][i] for m in metrics})
         rec.update(error=run.error, seconds=run.seconds, input_tokens=usage.get("input_tokens"),
-                   output_tokens=usage.get("output_tokens"), model=run.model, run=run_id)
+                   output_tokens=usage.get("output_tokens"), reasoning_tokens=usage.get("reasoning_tokens"),
+                   total_tokens=usage.get("total_tokens"), model=run.model, run=run_id)
         records.append(rec)
     return names, records
 
@@ -603,7 +606,7 @@ class Evaluation:
     table : dpyr dataframe
         One row per example: the data, ``pred_<output>`` for each output,
         each metric, ``error``, ``seconds``, ``input_tokens``,
-        ``output_tokens``, ``model`` and ``run``.
+        ``output_tokens``, ``reasoning_tokens``, ``total_tokens``, ``model`` and ``run``.
     predictions : list
         Each row's ``Prediction`` (None where it failed), with its turns,
         tokens and repairs.
@@ -673,7 +676,7 @@ class Evaluation:
         """One row per example: ``example`` (the row's position in the data),
         the data's columns, ``pred_<output>`` for each output, one column per
         metric (null where the row failed), then ``error``, ``seconds``,
-        ``input_tokens``, ``output_tokens``, ``model`` and ``run``."""
+        ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``, ``model`` and ``run``."""
         if self._table is None:
             names, records = _records(self._target, self._rows, self._runs, self._metrics, self._values,
                                       self.run)

@@ -110,7 +110,7 @@ def test_the_table_has_the_data_the_predictions_the_metrics_and_the_costs(fake):
     ev = evaluate(make_classifier(), ROWS)
     t = ev.table
     assert t.columns == ["example", "user_query", "result", "lang", "pred_result", "exact_match",
-                         "error", "seconds", "input_tokens", "output_tokens", "model", "run"]
+                         "error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run"]
     rows = t.collect().to_dicts()
     assert rows[0]["pred_result"] == "booking" and rows[0]["input_tokens"] == 3
     assert rows[0]["model"] == "gpt-4.1-mini" and rows[0]["run"] == ev.run

@@ -99,6 +99,27 @@ measures them in one call.
 | 7 | AI functions in tidymodels | Does the language model fit the tools I know? | Specify, fit, predict, score, for any model |
 | 8 | Living with it | Tools, the log, corrections, saving | A function's life after the notebook |
 
+## The Python series
+
+`docs/tutorials/` is the same series in Python (run by `tools/docs.py
+run`, plots as MRMD's `_assets/generated/`), translated by purpose rather
+than line by line, where the languages differ:
+
+- dpyr tables and `dpyr.vectorize` stand in for dplyr; matplotlib for
+  ggplot2 (plotnine's `show()` bypasses the notebook kernel's plot
+  capture).
+- Several answers are a dataclass spread with `unpack()`; field and
+  return comments stand in for `described()`.
+- `functai.compare()` (a paired interval with better/worse counts)
+  stands in for McNemar's test.
+- Python has no votes (`samples=`), so tutorial 6 shows instead why a
+  language model's self-rated confidence is not a probability, then
+  Jev's calibrated ones, and adds escalation (`escalate_to=`), which R
+  lacks.
+- Tutorial 7 is baking (a 17M-parameter student on banking77, teacher
+  labels, escalation) where R has tidymodels: each language's way of
+  fitting a language model into the modelling it already does.
+
 Datasets: `tickets` and `field_notes` (as in Python), and `refunds`,
 written for tutorial 6: 120 refund requests whose right decision follows
 from written rules and facts, so a decision model can be scored exactly.
