@@ -2,7 +2,8 @@
 
 *Functions whose body is a language model, used like any other R function: in `mutate()`, measured with intervals, chosen by cost, trusted with decisions, fitted in tidymodels, and kept honest in use.*
 
-Each tutorial starts from a question about real data, builds the answer one small step at a time, and ends with what it cost. Each runs top to bottom in a fresh R session, on models current in September 2026 (`gpt-6-luna` for everyday work; `gpt-6-sol`, `claude-sonnet-5`, `claude-haiku-4-5`, `gemini-3.8-flash`, `gemini-3.1-flash-lite` and `gpt-5.4-nano` where a comparison needs them). Every output on these pages is from a real run.
+Each tutorial starts from a question about real data, builds the answer one small step at a time, and ends with what it cost. Each runs top to bottom in a fresh R session, on models current in September 2026 (`gpt-6-luna` for everyday work; `gpt-6-sol`, `claude-sonnet-5`, `claude-haiku-4-5`, `gemini-3.8-flash`, `gemini-3.1-flash-lite` and `gpt-5.4-nano` where a comparison needs them; and TypeSafe's
+`jev-latest`, a model built for decisions, in tutorials 5 and 6). Every output on these pages is from a real run.
 
 | | Tutorial | You will | Cost of a run |
 |---|---|---|---|
@@ -10,8 +11,8 @@ Each tutorial starts from a question about real data, builds the answer one smal
 | 2 | [Answers you can compute with](02-types.md) | turn bird-survey notes into typed columns: factors, counts that may be missing, records, lists | about 1¢ |
 | 3 | [Is it right?](03-is-it-right.md) | measure with intervals, baselines, a confusion matrix, and run-to-run variation | under 1¢ |
 | 4 | [Making it better without fooling yourself](04-making-it-better.md) | improve a refund decision with rules, examples and a teacher, on three piles of rows | about 2¢ |
-| 5 | [Choosing a model](05-choosing-a-model.md) | compare seven models on accuracy, cost and speed, with paired tests and a rule | about 30¢ |
-| 6 | [Decision models](06-decisions.md) | approve, deny or ask a person: costs of mistakes, rules in R, votes as probabilities, a decision tree | about 7¢ |
+| 5 | [Choosing a model](05-choosing-a-model.md) | compare eight models (TypeSafe's Jev among them) on accuracy, cost and speed, with paired tests and a rule | about 30¢ |
+| 6 | [Decision models](06-decisions.md) | approve, deny or ask a person: costs of mistakes, rules in R, probabilities from votes and from Jev, a decision tree | about 7¢ |
 | 7 | [AI functions in tidymodels](07-tidymodels.md) | fit, resample, tune and score a language model like any parsnip model | about 2¢ |
 | 8 | [Living with it](08-living-with-it.md) | tools, the call log, people's corrections, versions, saving | under 1¢ |
 

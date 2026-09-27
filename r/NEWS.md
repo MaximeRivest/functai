@@ -43,6 +43,12 @@ themselves (`../tools/crosslang.py`).
 * `read_ai()` runs AI functions saved in Python or TypeScript; `write_ai()`.
 * The `tickets`, `field_notes` and `refunds` datasets (`refunds`: 120 refund
   requests with the decision the shop's rules give, for decision models).
+* Models that measure their own probabilities (TypeSafe's Jev,
+  `lm = "jev-latest"`): `predict(type = "prob")` and `augment()` give the
+  measured `.pred_<level>` columns from one call a row, no votes needed;
+  a fitted `ai_model()` shares those calls between its class and
+  probability predictions; the call log's `confidence` is the probability
+  the model gave its answer. Jev's calls run in parallel like any other.
 * `calls()` has `reasoning_tokens` and `total_tokens`: Gemini's
   `output_tokens` leave its hidden reasoning out, so a cost is
   `total_tokens - input_tokens` at the output price.

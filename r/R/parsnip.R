@@ -168,12 +168,16 @@ ai_model_fit <- function(formula, data, description = NULL, examples = 0L, name 
 ai_model_predict <- function(object, new_data, type) {
   core <- core_of(object)
   samples <- core$samples %||% 1L
+  if (type == "prob" && samples < 2L && measures_probabilities(core)) {
+    # the model measures its probabilities (TypeSafe's Jev): the class prediction's calls gave them
+    return(predict.functai_fn(object, new_data, type = "prob"))
+  }
   if (type == "prob" && samples < 2L) {
     # parsnip's augment() asks every classification model for probabilities;
     # one answer a row measures none, so they are NA (never a made-up number)
     the$warned[["prob-without-samples"]] <- NULL                  # every time: a silent NA would mislead
     warn_once("prob-without-samples", c("probabilities are NA: one answer per row measures no probability",
-      i = "for them, answer each row several times: {.code set_engine(\"functai\", samples = 5)} (costs 5 calls a row)"))
+      i = "for them, answer each row several times ({.code set_engine(\"functai\", samples = 5)}, 5 calls a row), or use a model that measures them ({.code lm = \"jev-latest\"})"))
     lv <- single_field(core)$levels
     out <- tibble::as_tibble(stats::setNames(rep(list(rep(NA_real_, nrow(new_data))), length(lv)), lv))
     return(out)

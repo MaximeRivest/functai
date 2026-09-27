@@ -16,12 +16,16 @@ expected cost, all measured in dollars.*
    you approve? For a $12 mug?
 3. What do you gain by letting the model read the facts and R apply the
    rules, instead of letting the model decide?
+4. Five votes all agree. Why isn't that the same as a probability of 1,
+   and what kind of model gives you a real one?
 
 ## What you need
 
 This tutorial uses `rpart` (it comes with R) and `rpart.plot`, `parsnip`
 and `rsample` (`install.packages(c("rpart.plot", "parsnip", "rsample"))`).
-It costs about seven cents.
+One section uses TypeSafe's Jev, which needs a `TYPESAFE_API_KEY` from
+[console.typesafe.ai](https://console.typesafe.ai/keys) in your
+`~/.Renviron`. It costs about seven cents.
 
 ```r
 library(functai)
@@ -142,7 +146,7 @@ outcome(direct, "the model decides")
 # A tibble: 1 × 5
   strategy          reviews wrong_approvals wrong_denials dollars
   <chr>               <int>           <int>         <int>   <dbl>
-1 the model decides       0               1             0    13.3
+1 the model decides       0               1             1    53.3
 ```
 
 Compare that with the person reading everything. And ask the question a
@@ -229,7 +233,7 @@ outcome(two_step, "the model reads, R decides")
 # A tibble: 1 × 5
   strategy                   reviews wrong_approvals wrong_denials dollars
   <chr>                        <int>           <int>         <int>   <dbl>
-1 the model reads, R decides       0               0             0       0
+1 the model reads, R decides       0               1             0    13.3
 ```
 
 And every decision comes with its reason, in words a manager can check:
@@ -279,12 +283,11 @@ count(votes, p)
 ```
 
 ```output
-# A tibble: 3 × 2
+# A tibble: 2 × 2
       p     n
   <dbl> <int>
-1   0      57
-2   0.2     1
-3   1      62
+1     0    57
+2     1    63
 ```
 
 Most requests are unanimous, one way or the other. Any that aren't are
@@ -316,11 +319,10 @@ votes |> filter(action == "review") |> select(item, price, p, state, .pred_class
 # A tibble: 1 × 5
   strategy                  reviews wrong_approvals wrong_denials dollars
   <chr>                       <int>           <int>         <int>   <dbl>
-1 expected cost, gpt-6-luna       1               0             0       4
-# A tibble: 1 × 5
-  item       price     p state .pred_class
-  <chr>      <dbl> <dbl> <fct> <fct>      
-1 wool throw  13.3   0.2 used  used       
+1 expected cost, gpt-6-luna       0               1             0    13.3
+# A tibble: 0 × 5
+# ℹ 5 variables: item <chr>, price <dbl>, p <dbl>, state <fct>,
+#   .pred_class <fct>
 ```
 
 The rule depends on the price, which is the point. A 90% sure "approve"
@@ -360,9 +362,10 @@ votes |>
 ```
 
 ```output
-# A tibble: 0 × 6
-# ℹ 6 variables: item <chr>, price <dbl>, p <dbl>, state <fct>,
-#   .pred_class <fct>, decision <fct>
+# A tibble: 1 × 6
+  item       price     p state .pred_class   decision
+  <chr>      <dbl> <dbl> <fct> <fct>         <fct>   
+1 wool throw  13.3     1 used  opened_unused deny    
 ```
 
 Look at `p` for any row there. If it's in between, the rule saw the
@@ -382,12 +385,11 @@ votes |>
 ```
 
 ```output
-# A tibble: 3 × 3
+# A tibble: 2 × 3
       p requests rules_said_approve
   <dbl>    <int>              <dbl>
-1   0         57                  0
-2   0.2        1                  0
-3   1         62                  1
+1     0       57              0    
+2     1       63              0.984
 ```
 
 If "unanimous approve" is right only 98% of the time, you can tell the
@@ -402,7 +404,7 @@ outcome(choose(pmin(pmax(votes$p, 0.02), 0.98), votes$price), "expected cost, vo
 # A tibble: 1 × 5
   strategy                         reviews wrong_approvals wrong_denials dollars
   <chr>                              <int>           <int>         <int>   <dbl>
-1 expected cost, votes capped at …      16               0             0      64
+1 expected cost, votes capped at …      15               1             0    73.3
 ```
 
 Is that worth it? The table says. Capping buys insurance against a
@@ -410,6 +412,138 @@ confident mistake on an expensive item, and pays for it in reviews of
 expensive items the model got right. Whether it pays off depends on how
 often the confident mistakes happen and how dear they are, which is
 exactly what your costs and your labelled rows are for.
+
+## A model built for decisions: Jev
+
+Everything so far used language models, which are built to write text,
+and squeezed a probability out of them by asking five times. TypeSafe's
+**Jev** is built the other way round. It writes no text at all. It
+answers typed questions (pick one of these options, yes or no, a score
+on a scale) with a probability for every possible answer, and it is
+trained so those probabilities are **calibrated**: of all the answers it
+gives at 80%, about 80% should be right. That is exactly what `choose()`
+needs.
+
+It also costs almost nothing ($0.042 per million tokens read, and
+nothing for its answers) and answers in a fraction of a second. In
+functai it's just another model, because `item_state` is already a typed
+question with a set of answers:
+
+```r
+jev_state <- update(item_state, lm = "jev-latest")
+
+read_jev <- augment(jev_state, refunds)
+read_jev |> select(state, .pred_class, .pred_unopened:.pred_faulty)
+```
+
+```output
+# A tibble: 120 × 8
+   state .pred_class .pred_unopened .pred_opened_unused .pred_used .pred_damaged
+   <fct> <fct>                <dbl>               <dbl>      <dbl>         <dbl>
+ 1 wron… wrong_item            0                   0             0             0
+ 2 wron… wrong_item            0                   0             0             0
+ 3 faul… faulty                0                   0             0             0
+ 4 faul… faulty                0                   0             0             0
+ 5 used  used                  0                   0             1             0
+ 6 faul… faulty                0                   0             0             0
+ 7 open… opened_unu…           0.02                0.98          0             0
+ 8 wron… wrong_item            0                   0             0             0
+ 9 faul… faulty                0                   0             0             0
+10 unop… unopened              0.99                0.01          0             0
+# ℹ 110 more rows
+# ℹ 2 more variables: .pred_wrong_item <dbl>, .pred_faulty <dbl>
+```
+
+One call a row, and the probabilities come with the answer: no votes.
+How often is its reading right, next to `gpt-6-luna`'s majority of five?
+
+```r
+tibble(model = c("gpt-6-luna, 5 votes", "jev-latest, 1 call"),
+       state_read_right = c(mean(votes$.pred_class == refunds$state), mean(read_jev$.pred_class == refunds$state)))
+```
+
+```output
+# A tibble: 2 × 2
+  model               state_read_right
+  <chr>                          <dbl>
+1 gpt-6-luna, 5 votes            0.983
+2 jev-latest, 1 call             0.992
+```
+
+The real test is the calibration check that votes failed: group the
+answers by how sure Jev said it was, and see how often each group was
+right.
+
+```r
+read_jev |>
+  mutate(sure = pmax(.pred_unopened, .pred_opened_unused, .pred_used, .pred_damaged, .pred_wrong_item, .pred_faulty),
+         said = cut(sure, c(0, 0.8, 0.95, 0.99, 1), include.lowest = TRUE)) |>
+  group_by(said) |>
+  summarise(answers = n(), right = mean(.pred_class == state))
+```
+
+```output
+# A tibble: 4 × 3
+  said        answers right
+  <fct>         <int> <dbl>
+1 [0,0.8]           6 1    
+2 (0.8,0.95]        8 0.875
+3 (0.95,0.99]      23 1    
+4 (0.99,1]         83 1    
+```
+
+The answers it was very sure of were right, and its mistakes, if any,
+sit among the answers it was less sure of: its doubt is where the
+errors are, which is what votes could not promise. With 120 rows the
+lower groups hold a handful of answers each, so read this as a sanity
+check, not a measurement; checking calibration properly takes a few
+hundred labelled rows. And its probabilities spread over the whole
+range, instead of piling up at 0 and 1. The same
+functions from above turn them into decisions, because the columns have
+the same names:
+
+```r
+read_jev <- read_jev |> mutate(p = p_approve(read_jev), action = choose(p, price))
+outcome(read_jev$action, "expected cost, jev-latest")
+read_jev |> filter(action == "review") |> select(item, price, p, state, .pred_class)
+```
+
+```output
+# A tibble: 1 × 5
+  strategy                  reviews wrong_approvals wrong_denials dollars
+  <chr>                       <int>           <int>         <int>   <dbl>
+1 expected cost, jev-latest       3               0             0      12
+# A tibble: 3 × 5
+  item            price     p state      .pred_class
+  <chr>           <dbl> <dbl> <fct>      <fct>      
+1 wool throw       13.3  0.21 used       used       
+2 coffee grinder  251.   0.11 used       used       
+3 ceramic planter 190.   0.9  wrong_item wrong_item 
+```
+
+On the map, most of Jev's requests still sit at the edges: it was sure,
+and right. But a few now sit in between, the ones it was honestly unsure
+about, and there the map can act, sending the dear ones to a person:
+
+```r
+#| fig-height: 3.6
+ggplot(map, aes(price, p)) +
+  geom_raster(aes(fill = action), alpha = 0.35) +
+  geom_point(data = read_jev, aes(price, p), size = 1) +
+  scale_fill_manual(values = c(approve = "#1b9e77", deny = "#d95f02", review = "#7570b3")) +
+  scale_x_log10(labels = scales::label_dollar(accuracy = 1)) +
+  labs(x = "price of the item (log scale)", y = "probability the rules say approve (Jev)", fill = NULL)
+```
+
+![](figures/06-decisions-02.png)
+
+TypeSafe's advice for Jev is the design of this whole tutorial: ask it
+narrow questions a knowledgeable person could answer in a few seconds
+(what state is this item in?), and combine the answers with logic in
+your code (`policy()`, `choose()`). Jev can't write a reply to the
+customer or explain itself in prose; for that you'd still call a language
+model. For the decision itself, a model that measures its doubt is the
+right tool.
 
 ## When the reader is weaker
 
@@ -437,7 +571,7 @@ bind_rows(
   strategy                    reviews wrong_approvals wrong_denials dollars
   <chr>                         <int>           <int>         <int>   <dbl>
 1 trust nano's majority             0               0             1      40
-2 expected cost, gpt-5.4-nano       0               0             1      40
+2 expected cost, gpt-5.4-nano       1               0             1      44
 ```
 
 A worse reader made far fewer wrong *decisions* than wrong *readings*.
@@ -456,23 +590,25 @@ all_strategies <- bind_rows(
   outcome(two_step, "the model reads, R decides"),
   outcome(votes$action, "expected cost, gpt-6-luna"),
   outcome(choose(pmin(pmax(votes$p, 0.02), 0.98), votes$price), "expected cost, capped, gpt-6-luna"),
+  outcome(read_jev$action, "expected cost, jev-latest"),
   outcome(votes_nano$action, "expected cost, gpt-5.4-nano")
 )
 all_strategies |> arrange(dollars)
 ```
 
 ```output
-# A tibble: 8 × 5
+# A tibble: 9 × 5
   strategy                         reviews wrong_approvals wrong_denials dollars
   <chr>                              <int>           <int>         <int>   <dbl>
-1 the model reads, R decides             0               0             0     0  
-2 expected cost, gpt-6-luna              1               0             0     4  
-3 the model decides                      0               1             0    13.3
-4 expected cost, gpt-5.4-nano            0               0             1    40  
-5 expected cost, capped, gpt-6-lu…      16               0             0    64  
-6 a person reads everything            120               0             0   480  
-7 deny everything                        0               0            62  2480  
-8 approve everything                     0              58             0  7114. 
+1 expected cost, jev-latest              3               0             0    12  
+2 the model reads, R decides             0               1             0    13.3
+3 expected cost, gpt-6-luna              0               1             0    13.3
+4 expected cost, gpt-5.4-nano            1               0             1    44  
+5 the model decides                      0               1             1    53.3
+6 expected cost, capped, gpt-6-lu…      15               1             0    73.3
+7 a person reads everything            120               0             0   480  
+8 deny everything                        0               0            62  2480  
+9 approve everything                     0              58             0  7114. 
 ```
 
 Remember what isn't in those dollars: the model calls themselves. They
@@ -482,7 +618,8 @@ are in the log, and they are small:
 prices <- tribble(
   ~model,         ~input, ~output,   # dollars per million tokens, 2026-09-27
   "gpt-6-luna",     0.10,    0.50,
-  "gpt-5.4-nano",   0.20,    1.25
+  "gpt-5.4-nano",   0.20,    1.25,
+  "jev-latest",    0.042,    0       # Jev charges only for what it reads
 )
 
 calls(folder = log_folder) |>
@@ -492,11 +629,12 @@ calls(folder = log_folder) |>
 ```
 
 ```output
-# A tibble: 2 × 3
+# A tibble: 3 × 3
   model        calls dollars
   <chr>        <int>   <dbl>
-1 gpt-5.4-nano   600  0.0335
-2 gpt-6-luna     720  0.0309
+1 gpt-5.4-nano   600 0.0335 
+2 gpt-6-luna     720 0.0307 
+3 jev-latest     120 0.00239
 ```
 
 ## If nobody wrote the rules down
@@ -532,7 +670,7 @@ rpart.plot::rpart.plot(extract_fit_engine(tree), roundint = FALSE, type = 4, ext
                        fallen.leaves = TRUE, box.palette = "GnRd", split.fun = wrap)
 ```
 
-![](figures/06-decisions-02.png)
+![](figures/06-decisions-03.png)
 
 Read the picture from the top: each branch is labelled with the answer
 that leads down it; each box shows the decision there, and how many of
@@ -548,8 +686,8 @@ rpart.plot::rpart.rules(extract_fit_engine(tree), roundint = FALSE)
 
 ```output
  decision                                                                                                
-     0.00 when days_since_delivery <  60 & state_read is opened_unused or damaged or wrong_item or faulty
-     0.75 when days_since_delivery <  60 & state_read is                                 unopened or used
+     0.03 when days_since_delivery <  60 & state_read is opened_unused or damaged or wrong_item or faulty
+     0.71 when days_since_delivery <  60 & state_read is                                 unopened or used
      1.00 when days_since_delivery >= 60                                                                 
 ```
 
@@ -585,7 +723,12 @@ be written, write them.
 2. Add a fourth action: ask `gpt-6-sol` to read the state again, at a
    cost of about $0.001, and send to a person only when the two readers
    disagree. How much does it save over reviewing every unsure request?
-3. Fit the tree on all 120 rows. Does it find the final-sale rule? Why
+3. Ask Jev atomic yes/no questions instead of one choice: a function
+   with `.outputs = list(opened = described(logical(), "Has the customer
+   opened the package?"), used = ..., broken_on_arrival = ...)`, one
+   question each. Write the policy on those answers. Is it as accurate?
+   Is it easier to explain?
+4. Fit the tree on all 120 rows. Does it find the final-sale rule? Why
    is that rule hard to learn from this data? (`count(refunds, final_sale,
    decision)` is a hint.)
 
@@ -602,6 +745,10 @@ be written, write them.
 - Votes are rough probabilities, and a consistently wrong model looks
   certain: check on labelled rows how often "unanimous" is right, and
   cap the probabilities accordingly.
+- A model built for decisions, like TypeSafe's Jev
+  (`lm = "jev-latest"`), answers a typed question with a calibrated
+  probability for every answer, in one call; `augment()` gives them as
+  `.pred_` columns, ready for the expected-cost rule.
 - Measure decisions, not readings: many misreadings don't change the
   decision.
 - A decision tree learns rules from past decisions; it needs far more
@@ -614,7 +761,10 @@ the $400 machine, approving risks 0.2 × $400 = $80, more than a $4
 review, so a person looks; for the $12 mug, approving risks $2.40, less
 than a review, so approve. (3) Exact arithmetic on the facts, a reason
 for every decision, a policy you can test and change without the model,
-and a probability you can reason with.
+and a probability you can reason with. (4) Five identical answers only
+say the model is consistent; it can be consistently wrong. A model
+trained to be calibrated, like Jev, gives a probability per answer that
+you can check against labelled rows, and use.
 
 **Next:** [7. AI functions in tidymodels](07-tidymodels.md) puts a
 language model in the same workflows, resampling and tuning as any other

@@ -81,7 +81,12 @@ Eight tutorials, each runnable top to bottom in a fresh R session
 calls (each prints its own bill), all on models current in September 2026:
 `gpt-6-luna` as the everyday model, `gpt-6-sol`, `claude-sonnet-5`,
 `claude-haiku-4-5`, `gemini-3.8-flash` and `gemini-3.1-flash-lite` where a
-comparison or a teacher needs them.
+comparison or a teacher needs them, and TypeSafe's `jev-latest`, a model
+built for decisions (typed questions in, a calibrated probability per
+answer out, no text), in tutorials 5 and 6. Jev is what the decision
+tutorial needs most: the expected-cost rule wants probabilities, votes
+from a language model are coarse and can be unanimously wrong, and Jev
+measures them in one call.
 
 | # | Tutorial | The question | The mental model |
 |---|---|---|---|

@@ -176,13 +176,30 @@ run_rows <- function(core, rows, extra = list()) {
     if (is.null(job)) return(list(skipped = TRUE))
     if (identical(job$state, "done")) {
       job$call$outputs <- job$outputs
+      job$call$confidence <- confidence_of(job$outputs, job$probabilities)
       finish_call(job$call)
-      list(outputs = job$outputs, call = job$call$id, model = r$model, turn = job$turn)
+      list(outputs = job$outputs, call = job$call$id, model = r$model, turn = job$turn, probabilities = job$probabilities)
     } else {
       finish_call(job$call, job$error)
       list(error = job$error, call = job$call$id, model = r$model)
     }
   })
+}
+
+# How sure the model was (contract/calls.md, `confidence`): the probability it
+# gave its own answer, the lowest over the outputs it measured; NULL when it
+# measured none.
+answer_key <- function(v) if (is.logical(v) && length(v) == 1L) (if (isTRUE(v)) "true" else "false") else if (is.character(v) && length(v) == 1L) v else lmcc::canonical_json(v)
+
+confidence_of <- function(outputs, probabilities) {
+  ps <- numeric(0)
+  for (k in names(probabilities)) {
+    dist <- probabilities[[k]]
+    if (!length(dist)) next
+    p <- dist[[answer_key(outputs[[k]])]] %||% max(unlist(dist))
+    ps <- c(ps, as.numeric(p))
+  }
+  if (length(ps)) min(ps) else NULL
 }
 
 # The inputs, recycled, as one JSON list per row (NULL for a row with a missing input).
@@ -450,8 +467,17 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
   samples <- as.integer(samples)
   if (type == "prob" || samples > 1L) {
     if (!is_choice(core)) cli::cli_abort(c("probabilities and votes need an answer that is a choice: {.code .returns = factor(levels = ...)}"))
-    if (samples < 2L) cli::cli_abort(c("OpenAI, Anthropic and Gemini do not measure how likely each answer is, and FunctAI does not make that number up",
-      i = "ask for {.code samples = 5} (or more): each row is answered that many times and the probability is each answer's share (costs 5 calls a row)"))
+  }
+  if (type == "prob" && samples < 2L) {
+    if (!measures_probabilities(core, settings))
+      cli::cli_abort(c("this model gave no probabilities: OpenAI, Anthropic and Gemini do not measure how likely each answer is, and FunctAI does not make that number up",
+        i = "use a model that measures them ({.code lm = \"jev-latest\"}, TypeSafe's Jev), or ask for {.code samples = 5}: each row is answered that many times and the probability is each answer's share (costs 5 calls a row)"))
+    probs <- measured_rows(core, rows, settings)
+    out <- tibble::as_tibble(as.data.frame(probs, check.names = FALSE))
+    names(out) <- paste0(".pred_", names(out))
+    return(out)
+  }
+  if (samples > 1L) {
     votes <- sampled(core, rows, samples, temperature, core$memo, settings)
     probs <- vote_table(core, votes)
     if (type == "prob") {
@@ -465,13 +491,61 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
                           .call = vapply(votes, function(v) paste(stats::na.omit(v$calls), collapse = " "), ""),
                           .error = vapply(votes, function(v) v$error, "")))
   }
-  results <- if (length(rows)) run_rows(core, rows, settings) else list()
+  results <- memo_rows(core, rows, settings)
   out <- answers(core, results, pred_names(core))
   if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
   out$.error <- vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), "")
   attr(out, "turns") <- lapply(results, function(r) r$turn)
+  if (is_choice(core)) attr(out, "probabilities") <- measured_table(core, results)
   out
+}
+
+# Probabilities a provider measured itself (TypeSafe's Jev answers a choice
+# with a distribution over its levels): one row per result, a column per
+# level, NA where a row's answer came without one. Never made up.
+measured_table <- function(core, results) {
+  lv <- single_field(core)$levels
+  field <- answer_name(core)
+  probs <- matrix(NA_real_, nrow = length(results), ncol = length(lv), dimnames = list(NULL, lv))
+  for (i in seq_along(results)) {
+    dist <- results[[i]]$probabilities[[field]]
+    if (!length(dist)) next
+    probs[i, ] <- vapply(lv, function(l) as.numeric(dist[[l]] %||% 0), 0)
+  }
+  probs
+}
+
+# Does the model this function calls measure its own probabilities? The
+# judgment-only providers of the contract's table do (TypeSafe's Jev).
+measures_probabilities <- function(core, settings = list()) {
+  r <- tryCatch(route(effective(set_all(core$own, settings))), error = function(e) NULL)
+  !is.null(r) && r$provider %in% provider_sets()$judgment
+}
+
+# A model that measures its probabilities gives them with its answer, so a
+# class prediction and a probability prediction of the same rows (parsnip's
+# augment() asks for both, in either order) share one call a row: a fitted
+# model keeps each row's result in `core$memo`, as it keeps votes. Only a
+# fitted model has a memo, and only a measuring model uses it this way.
+memo_rows <- function(core, rows, settings) {
+  if (is.null(core$memo) || !measures_probabilities(core, settings)) return(if (length(rows)) run_rows(core, rows, settings) else list())
+  s <- effective(set_all(core$own, settings))
+  prefix <- paste("measured", version_of(core), s$lm %||% "", sep = "|")
+  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(r)), "")
+  todo <- which(!is.na(keys) & !vapply(keys, function(k) !is.na(k) && !is.null(core$memo[[k]]), NA))
+  todo <- todo[!duplicated(keys[todo])]
+  if (length(todo)) {
+    results <- run_rows(core, rows[todo], settings)
+    for (j in seq_along(todo)) core$memo[[keys[[todo[[j]]]]]] <- results[[j]]
+  }
+  lapply(keys, function(k) if (is.na(k)) list(skipped = TRUE) else core$memo[[k]])
+}
+
+measured_rows <- function(core, rows, settings) {
+  results <- memo_rows(core, rows, settings)
+  report_errors(core, results, "warn")
+  measured_table(core, results)
 }
 
 #' @importFrom generics augment
@@ -491,7 +565,14 @@ augment.functai_fn <- function(x, new_data, ...) {
     p <- vctrs::vec_cbind(p[".pred_class"], probs, p[c(".call", ".error")])
   } else {
     p <- predict.functai_fn(x, new_data, ...)
+    probs <- attr(p, "probabilities")
+    if (!is.null(probs) && any(stats::complete.cases(probs))) {       # the model measured them: they come with the answers
+      probs <- tibble::as_tibble(as.data.frame(probs, check.names = FALSE))
+      names(probs) <- paste0(".pred_", names(probs))
+      p <- vctrs::vec_cbind(p[".pred_class"], probs, p[c(".call", ".error")])
+    }
   }
   attr(p, "turns") <- NULL
+  attr(p, "probabilities") <- NULL
   tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(new_data), p))
 }

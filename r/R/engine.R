@@ -65,6 +65,7 @@ on_response <- function(job, response, started, seconds) {
     job$turn <- lmcc::finish_turn(job$turn)
     outputs <- lmcc::turn_to_list(job$turn)$outputs
     job$outputs <- outputs[names(outputs) != "calls"]
+    job$probabilities <- reading$probabilities %||% list()      # what the provider measured (TypeSafe's Jev), by output
     job$state <- "done"
     ended(job)
     return(invisible())
@@ -120,7 +121,7 @@ wire_for <- function(router, request) {
   if (!is.null(d$config$probabilities)) return(NULL)
   res <- lm15::resolve(router, d$model)
   lm <- lm15::router_lm(router, d$model)
-  if (!identical(lm$definition$access$backend %||% "api", "api") || identical(lm$definition$dialect, "typesafe")) return(NULL)
+  if (!identical(lm$definition$access$backend %||% "api", "api")) return(NULL)
   d$model <- res$model
   routed <- lm15::from_dict(d, "request")
   wire <- lm15::build_request(lm, routed)

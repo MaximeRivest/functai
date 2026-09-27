@@ -1,6 +1,6 @@
 # 5. Choosing a model
 
-*Seven current models, one job, 120 rows each. By the end you will have
+*Eight current models, one job, 120 rows each. By the end you will have
 a chart of accuracy against cost with honest intervals, a paired test
 between the front-runners, and a rule for picking the cheapest model
 that is good enough.*
@@ -55,7 +55,7 @@ count(refunds, state)
 
 ## The candidates
 
-Seven models from four families, as of September 2026, with their list
+Eight models from five families, as of September 2026, with their list
 prices (dollars per million tokens, input and output; output includes the
 model's hidden reasoning):
 
@@ -68,7 +68,8 @@ candidates <- tribble(
   "claude-haiku-4-5",              "ANTHROPIC_API_KEY",  1.00,    5.00,
   "claude-sonnet-5",               "ANTHROPIC_API_KEY",  2.00,   10.00,
   "gemini:gemini-3.8-flash",       "GEMINI_API_KEY",     0.75,    3.75,
-  "gemini:gemini-3.1-flash-lite",  "GEMINI_API_KEY",     0.25,    1.50
+  "gemini:gemini-3.1-flash-lite",  "GEMINI_API_KEY",     0.25,    1.50,
+  "jev-latest",                    "TYPESAFE_API_KEY",  0.042,   0
 )
 
 candidates <- candidates |> filter(nzchar(Sys.getenv(key)))   # only the providers you have a key for
@@ -79,11 +80,16 @@ candidates$model
 [1] "gpt-6-luna"                   "gpt-6-sol"                   
 [3] "gpt-5.4-nano"                 "claude-haiku-4-5"            
 [5] "claude-sonnet-5"              "gemini:gemini-3.8-flash"     
-[7] "gemini:gemini-3.1-flash-lite"
+[7] "gemini:gemini-3.1-flash-lite" "jev-latest"                  
 ```
 
 Note what `gpt-5.4-nano` is: the small model of six months ago. It's here
-to show how fast this moves.
+to show how fast this moves. And `jev-latest` is a different kind of
+model: TypeSafe's Jev writes no text, it only answers typed questions
+(one of these options, yes or no, a score), with a probability for each
+answer, and charges only for what it reads. Reading an item's state is
+exactly such a question, so it's in the race; tutorial 6 shows what its
+probabilities are for.
 
 ## Running them all
 
@@ -100,19 +106,20 @@ accuracy |> select(model, estimate, conf.low, conf.high, failed)
 ```
 
 ```output
-# A tibble: 7 × 5
+# A tibble: 8 × 5
   model                        estimate conf.low conf.high failed
   <chr>                           <dbl>    <dbl>     <dbl>  <int>
 1 gpt-6-luna                      0.983    0.941     0.995      0
-2 gpt-6-sol                       0.992    0.954     0.999      0
-3 gpt-5.4-nano                    0.867    0.794     0.916      0
+2 gpt-6-sol                       0.983    0.941     0.995      0
+3 gpt-5.4-nano                    0.875    0.804     0.923      0
 4 claude-haiku-4-5                0.95     0.895     0.977      0
-5 claude-sonnet-5                 0.967    0.917     0.987      0
+5 claude-sonnet-5                 0.958    0.906     0.982      0
 6 gemini:gemini-3.8-flash         0.983    0.941     0.995      0
-7 gemini:gemini-3.1-flash-lite    0.975    0.929     0.991      0
+7 gemini:gemini-3.1-flash-lite    0.983    0.941     0.995      0
+8 jev-latest                      0.983    0.941     0.995      0
 ```
 
-That was up to 840 calls. Now the other two things you care about, from
+That was up to 960 calls. Now the other two things you care about, from
 the call log: what each model cost, and how long a single answer took.
 
 ```r
@@ -133,16 +140,17 @@ compare |>
 ```
 
 ```output
-# A tibble: 7 × 5
+# A tibble: 8 × 5
   model                        accuracy per_1000 seconds output_tokens
   <chr>                           <dbl>    <dbl>   <dbl>         <dbl>
-1 gpt-6-sol                       0.992   0.605    1.05          20.6 
-2 gpt-6-luna                      0.983   0.0453   1.07          43.2 
-3 gemini:gemini-3.8-flash         0.983   0.656    1.17         133.  
-4 gemini:gemini-3.1-flash-lite    0.975   0.0630   0.548          6.92
-5 claude-sonnet-5                 0.967   0.710    1.19          13.8 
-6 claude-haiku-4-5                0.95    0.270    0.504          9.92
-7 gpt-5.4-nano                    0.867   0.0559   0.699         12.8 
+1 gpt-6-luna                      0.983   0.0419   1.05          39.6 
+2 gpt-6-sol                       0.983   0.597    1.03          19.8 
+3 gemini:gemini-3.8-flash         0.983   0.691    1.20         142.  
+4 gemini:gemini-3.1-flash-lite    0.983   0.063    0.527          6.91
+5 jev-latest                      0.983   0.0199   0.175         67.2 
+6 claude-sonnet-5                 0.958   0.741    1.22          16.9 
+7 claude-haiku-4-5                0.95    0.270    0.512          9.92
+8 gpt-5.4-nano                    0.875   0.0559   0.690         12.8 
 ```
 
 `per_1000` is dollars per thousand messages, `seconds` the median time
@@ -165,9 +173,12 @@ ggplot(compare, aes(per_1000, estimate)) +
 ![](figures/05-choosing-a-model-01.png)
 
 The best models are up and to the left: more accurate for less. The
-expensive models buy almost nothing here. `gpt-6-sol` is right on one or
-two more messages than the cheapest current models, at more than ten
-times the price; Claude Sonnet 5 costs more and gets more wrong. Reading
+expensive models buy almost nothing here. `gpt-6-sol` is at best a
+message or two ahead of the cheapest current models, at more than ten
+times the price; Claude Sonnet 5 costs more and gets more wrong. And the
+cheapest of all is the one that isn't a language model: Jev charges only
+for what it reads (its answers are free), and answers in a fraction of
+the time. Reading
 the state of an item from a short message is a narrow job, and a recent
 small model does it about as well as anything. Big models earn their
 price on long, hard problems; for a column of short texts, measure
@@ -193,15 +204,16 @@ bind_rows(lapply(setdiff(compare$model, best), function(m) paired(best, m)))
 ```
 
 ```output
-# A tibble: 6 × 5
-  a         b                            a_only b_only  p_value
-  <chr>     <chr>                         <int>  <int>    <dbl>
-1 gpt-6-sol gpt-6-luna                        1      0 1       
-2 gpt-6-sol gpt-5.4-nano                     16      1 0.000685
-3 gpt-6-sol claude-haiku-4-5                  5      0 0.0736  
-4 gpt-6-sol claude-sonnet-5                   3      0 0.248   
-5 gpt-6-sol gemini:gemini-3.8-flash           1      0 1       
-6 gpt-6-sol gemini:gemini-3.1-flash-lite      2      0 0.480   
+# A tibble: 7 × 5
+  a          b                            a_only b_only p_value
+  <chr>      <chr>                         <int>  <int>   <dbl>
+1 gpt-6-luna gpt-6-sol                         0      0 1      
+2 gpt-6-luna gpt-5.4-nano                     14      1 0.00195
+3 gpt-6-luna claude-haiku-4-5                  4      0 0.134  
+4 gpt-6-luna claude-sonnet-5                   3      0 0.248  
+5 gpt-6-luna gemini:gemini-3.8-flash           0      0 1      
+6 gpt-6-luna gemini:gemini-3.1-flash-lite      1      1 1      
+7 gpt-6-luna jev-latest                        1      1 1      
 ```
 
 `a_only` is how many messages the best model got right and the other
@@ -231,14 +243,15 @@ compare |>
 ```
 
 ```output
-# A tibble: 5 × 4
+# A tibble: 6 × 4
   model                        accuracy per_1000 seconds
   <chr>                           <dbl>    <dbl>   <dbl>
-1 gpt-6-luna                      0.983   0.0453   1.07 
-2 gemini:gemini-3.1-flash-lite    0.975   0.0630   0.548
-3 gpt-6-sol                       0.992   0.605    1.05 
-4 gemini:gemini-3.8-flash         0.983   0.656    1.17 
-5 claude-sonnet-5                 0.967   0.710    1.19 
+1 jev-latest                      0.983   0.0199   0.175
+2 gpt-6-luna                      0.983   0.0419   1.05 
+3 gemini:gemini-3.1-flash-lite    0.983   0.063    0.527
+4 gpt-6-sol                       0.983   0.597    1.03 
+5 gemini:gemini-3.8-flash         0.983   0.691    1.20 
+6 claude-sonnet-5                 0.958   0.741    1.22 
 ```
 
 The first row is the choice. The trade-off it absorbs is stated in the
@@ -262,7 +275,7 @@ ev_off
 
 ```output
 <evaluation of item_state> 120 rows
-  exact_match: 0.98  (95% interval 0.94 to 1.00)
+  exact_match: 0.99  (95% interval 0.95 to 1.00)
 ```
 
 Every call an evaluation makes is logged with the evaluation's id (in
@@ -286,12 +299,12 @@ table(medium = right("gpt-6-luna"),
 # A tibble: 2 × 4
   effort calls seconds output_tokens
   <chr>  <int>   <dbl>         <dbl>
-1 medium   120   1.07           43.2
-2 off      120   0.977          14.0
+1 medium   120   1.05           39.6
+2 off      120   0.943          14.1
        off
 medium  wrong right
   wrong     1     1
-  right     1   117
+  right     0   118
 ```
 
 Switched off, it writes about a third as many tokens and is as accurate
@@ -311,16 +324,17 @@ calls(folder = log_folder) |>
 ```
 
 ```output
-# A tibble: 7 × 3
+# A tibble: 8 × 3
   model                        calls dollars
   <chr>                        <int>   <dbl>
-1 claude-sonnet-5                120 0.0852 
-2 gemini:gemini-3.8-flash        120 0.0787 
-3 gpt-6-sol                      120 0.0727 
+1 claude-sonnet-5                120 0.0889 
+2 gemini:gemini-3.8-flash        120 0.0829 
+3 gpt-6-sol                      120 0.0716 
 4 claude-haiku-4-5               120 0.0324 
-5 gpt-6-luna                     240 0.00918
+5 gpt-6-luna                     240 0.00881
 6 gemini:gemini-3.1-flash-lite   120 0.00756
 7 gpt-5.4-nano                   120 0.00671
+8 jev-latest                     120 0.00239
 ```
 
 ```r
@@ -333,7 +347,7 @@ calls(folder = log_folder) |>
 # A tibble: 1 × 2
   calls dollars
   <int>   <dbl>
-1   960   0.292
+1  1080   0.301
 ```
 
 ## Your turn

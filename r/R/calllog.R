@@ -166,7 +166,7 @@ call_record <- function(call, error = NULL) {
   rec["error"] <- list(if (is.null(error)) NULL else error_json(error, call$content))
   rec["model"] <- list(if (length(answered)) answered[[length(answered)]]$model else NULL)
   rec$usage <- if (length(usage)) usage else lmcc::jobj()
-  rec["confidence"] <- list(NULL)
+  rec["confidence"] <- list(call$confidence)
   rec$exchanges <- lapply(call$exchanges, exchange_json, content = call$content)
   rec$caller <- call$caller
   rec$process <- process_json()
