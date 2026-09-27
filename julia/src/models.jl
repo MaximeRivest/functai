@@ -14,14 +14,27 @@ const SPEAKS_AS = Dict{String,String}(k => v for (k, v) in MODELS["speaks_as"] i
 const FIXED_SAMPLING = Dict{String,Vector{String}}(k => String.(v) for (k, v) in MODELS["fixed_sampling"] if k != "about")
 
 """
-    model_capabilities(provider, model)
+    model_capabilities(provider, model) -> NamedTuple
 
-What FunctAI declares `model` served by `provider` can do (the contract's
-table): `model_capabilities("anthropic", "claude-haiku-4-5")`.
+What FunctAI declares `model` served by `provider` can do, from the
+contract's table (never guessed): native tool calls, reasoning, stop
+sequences, enforced JSON, a prefilled reply. These facts decide how a
+function's layout is written for the model; a function's `capabilities`
+setting replaces any of them.
+
+# Examples
+```jldoctest
+julia> model_capabilities("anthropic", "claude-haiku-4-5")
+(assistant_prefill = false, instruct = true, native_function_calling = true, native_reasoning = true, native_structured_output = true, stop_sequences = true)
+```
 """
-function model_capabilities(provider::AbstractString, model::AbstractString)
+model_capabilities(provider::AbstractString, model::AbstractString) =
+    (; (Symbol(k) => v for (k, v) in sort!(collect(capabilities_of(provider, model)); by=first))...)
+
+"The facts as a `Dict` (what binding a layout reads)."
+function capabilities_of(provider::AbstractString, model::AbstractString)
     provider in JUDGMENT_ONLY && return Dict{String,Bool}("native_structured_output" => true)
-    haskey(SPEAKS_AS, provider) && return model_capabilities(SPEAKS_AS[provider], model)
+    haskey(SPEAKS_AS, provider) && return capabilities_of(SPEAKS_AS[provider], model)
     caps = Dict{String,Bool}("instruct" => true)
     if provider in NATIVE
         caps["native_function_calling"] = true
@@ -41,7 +54,7 @@ end
 
 "The facts for a call: the table, Anthropic's temperature rule, then the function's own `capabilities`."
 function call_capabilities(provider, model, s::AbstractDict{Symbol})
-    caps = model_capabilities(provider, model)
+    caps = capabilities_of(provider, model)
     anthropic = provider == "anthropic" || get(SPEAKS_AS, provider, "") == "anthropic"
     t = setting(s, :temperature)
     if anthropic && get(caps, "native_reasoning", false) && t !== nothing && t != 1
@@ -74,7 +87,7 @@ function adjust_settings(s::AbstractDict{Symbol}, provider, model)
     first_time = lock(WARN_LOCK) do
         key in REFUSED_WARNED ? false : (push!(REFUSED_WARNED, key); true)
     end
-    first_time && @warn "functai: $provider:$model does not take $(join(drop, ", ")); left out of its requests"
+    first_time && @warn "$provider:$model does not take $(join(drop, ", ")); left out of its requests"
     out = copy(s)
     for k in drop
         out[k] = nothing

@@ -379,7 +379,8 @@ CategoricalArrays are extensions. A program's version follows the AI
 functions and programs it names, not plain Julia functions it calls.
 Saving code of its own or tools from Julia is refused (a folder carries no
 Julia code yet). Not in 0.1.0: the reply cache, stateful memory,
-escalation, baking, and Julia pages on the website.
+escalation, and baking. Teaching it: eight tutorials in `docs/julia/` and a
+Documenter manual in `julia/docs/`, designed in `05-julia-tutorials.md`.
 
 ## Found on the way
 

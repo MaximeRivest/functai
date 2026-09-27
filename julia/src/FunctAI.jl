@@ -36,7 +36,7 @@ using Random: Xoshiro, shuffle, shuffle!
 using ScopedValues: ScopedValue, with
 import LMCC
 import LM15
-import LM15: stream, text, configure, events
+import LM15: stream, text, configure
 import LMCC: render, tool
 import MLJModelInterface as MMI
 import StatsAPI
@@ -65,10 +65,11 @@ include("model.jl")
 include("saved.jl")
 include("api.jl")
 include("accounts.jl")
+include("datasets.jl")
 include("precompile.jl")
 
-export @ai, @ai_str, @program, AIFunction, AIProgram, OneOf, Prediction
-export predict, render, stream, events, version, signature_id, instructions, demos, with_demos, with_instructions
+export @ai, @program, AIFunction, AIProgram, OneOf, Prediction
+export predict, render, stream, eachevent, version, signature_id, instructions, demos, with_demos, with_instructions
 export configure, configure!, with_settings, settings, problems
 export evaluate, Evaluation, exact_match, score_interval, compare
 export labeled_few_shot, bootstrap_few_shot, random_search, instruction_search

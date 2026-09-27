@@ -156,7 +156,14 @@ function MMI.fit(m::AIModel, verbosity::Int, X, y)
     if m.levels === nothing && is_categorical(y)
         classes = MMI.classes(first(skipmissing(y)))       # the training pool: predictions compare with its values
         byname = Dict(string(c) => c for c in classes)
-        rebuild = v -> [x === missing ? missing : byname[string(x)] for x in v]
+        rebuild = function (v)            # a CategoricalVector with the training pool, as MLJ classifiers return
+            any(ismissing, v) && return [x === missing ? missing : byname[string(x)] for x in v]
+            out = similar(y, length(v))
+            for (i, x) in enumerate(v)
+                out[i] = byname[string(x)]
+            end
+            out
+        end
     end
     fitted = AIModelFit(m, fitted.fn, fitted.outcome, rebuild, nothing)
     verbosity > 0 && @info "AIModel: $(length(fitted.fn.demos)) worked examples; nothing was called"
@@ -175,3 +182,11 @@ MMI.metadata_model(AIModel;
     target_scitype=AbstractVector,
     load_path="FunctAI.AIModel",
     human_name="AI function model")
+
+# MLJ's `predict` (MLJModelInterface's) is another function than StatsAPI's,
+# which FunctAI exports: with `using MLJ`, `predict(f, x)` on an AI function
+# must still work, so it has the same methods.
+MMI.predict(f::AIFunction, args...; kw...) = StatsAPI.predict(f, args...; kw...)
+function Base.Broadcast.broadcasted(::typeof(MMI.predict), f::AIFunction, args...)
+    Base.Broadcast.broadcasted(StatsAPI.predict, f, args...)
+end

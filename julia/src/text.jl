@@ -20,8 +20,15 @@ trim_white(text::AbstractString) = String(strip(iswhite, text))
     casefold(text)
 
 Unicode full case folding, code point by code point (`CaseFolding.txt`,
-statuses C and F; Python's `str.casefold`), from the contract's table:
-`casefold("Straße") == "strasse"`.
+statuses C and F; Python's `str.casefold`), from the contract's table.
+
+# Examples
+```jldoctest
+julia> casefold("Straße")
+"strasse"
+```
+
+See also [`normalize_text`](@ref).
 """
 function casefold(text::AbstractString)
     io = IOBuffer()
@@ -36,6 +43,12 @@ end
     normalize_text(text)
 
 Text as `exact_match` compares it: white space collapsed to one space and
-trimmed, then case folded. `normalize_text("  New   York ") == "new york"`.
+trimmed, then case folded: what [`exact_match`](@ref) compares.
+
+# Examples
+```jldoctest
+julia> normalize_text("  New\u00a0  York ")
+"new york"
+```
 """
 normalize_text(text::AbstractString) = casefold(join(split_white(text), ' '))

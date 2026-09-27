@@ -14,3 +14,8 @@ delete!(ENV, "FUNCTAI_CALLER")
     include("calls.jl")
     include("models.jl")
 end
+
+# the examples in the docstrings (jldoctest), as the manual shows them
+using Documenter
+DocMeta.setdocmeta!(FunctAI, :DocTestSetup, :(using FunctAI); recursive=true)
+doctest(FunctAI; manual=false)

@@ -53,6 +53,7 @@ end
     end
     @test occursin("Parameter guidance:\n- ticket: the customer's own words, as they wrote them", FunctAI.instructions(triage))
     @test occursin("Output guidance:\n- summary: one sentence, no names\n- minutes: minutes to fix", FunctAI.instructions(triage))
+    @test FunctAI.input_names(triage) == ["ticket", "team"]          # as written: positional, then keywords
     r = fake(xml(:summary => "Charged twice.", :minutes => "15"))
     (; summary, minutes) = using_fake(() -> triage("I was charged twice"), r)
     @test summary == "Charged twice." && minutes === 15
@@ -110,12 +111,41 @@ end
         "A number, if there is one."
     end
     @test using_fake(() -> maybe("x"), fake(xml(:result => "null"))) === nothing
+    @ai function maybe2(text::String)::Union{Int,Missing}
+        "A number, if there is one."
+    end
+    @test FunctAI.shape_of(Union{Int,Missing}) == FunctAI.shape_of(Union{Int,Nothing})
+    @test using_fake(() -> maybe2("x"), fake(xml(:result => "null"))) === missing
+    r = FakeRouter(; responder=(req, i) -> xml(:result => occursin("<text>\nx", req.messages[end].parts[1].text) ? "null" : "4"))
+    got = using_fake(() -> maybe2.(["x", "y"]), r)
+    @test isequal(got, [missing, 4]) && eltype(got) == Union{Missing,Int}
     @ai function pair(text::String)::@NamedTuple{a::Int, b::String}
         "Two things."
     end
     @test using_fake(() -> pair("x"), fake(xml(:result => "{\"a\": 1, \"b\": \"z\"}"))) == (a=1, b="z")
     @test FunctAI.shape_of(Dict{String,Int}) == Dict("type" => "object", "additionalProperties" => Dict("type" => "integer"))
     @test_throws ArgumentError FunctAI.shape_of(Tuple{Int,String})
+end
+
+@testset "predict. over a column; typed probabilities" begin
+    r = FakeRouter(; responder=(req, i) -> (sleep(0.01); xml(:result => "happy")))
+    ps = using_fake(() -> predict.(mood, ["a", "b", missing]), r)
+    @test ps[1] isa Prediction && ps[1].value === happy && ps[3] === missing
+    @test isempty(ps[1].probabilities)
+    p = Prediction(happy, (result=happy,), "result", "id", nothing, Any[], Any[],
+                   FunctAI.JObj("result" => FunctAI.JObj("happy" => 0.9, "unhappy" => 0.1, "mixed" => 0.0)))
+    @test p.probabilities.result[happy] == 0.9 && keytype(p.probabilities.result) == Mood
+end
+
+@testset "the datasets" begin
+    t = FunctAI.tickets()
+    @test length(t.id) == 80 && eltype(t.id) == Int && count(ismissing, t.order_id) > 0
+    @test startswith(t.message[1], "Hi, my order A-1042")
+    r = FunctAI.refunds()
+    @test length(r.id) == 120 && eltype(r.final_sale) == Bool && eltype(r.price) == Float64
+    @test Set(r.decision) == Set(["approve", "deny"])
+    n = FunctAI.field_notes()
+    @test length(n.id) == 60 && eltype(n.count) == Union{Missing,Int}
 end
 
 @testset "missing in, missing out, without a call" begin
@@ -211,9 +241,9 @@ end
     @test join(pieces) == "unhappy"
     @test length(pieces) > 1
     @test fetch(s) === unhappy
-    kinds = [e.kind for e in events(s)]
+    kinds = [e.kind for e in eachevent(s)]
     @test first(kinds) === :started && last(kinds) === :done
-    @test all(e -> FunctAI.event_json(e) isa AbstractDict, events(s))
+    @test all(e -> FunctAI.event_json(e) isa AbstractDict, eachevent(s))
     # a router with no stream: one piece per field (nothing invented)
     s = using_fake(() -> stream(mood, "Broke."), Whole(fake(xml(:result => "mixed"))))
     @test collect(s) == ["mixed"] && fetch(s) === mixed
@@ -223,7 +253,7 @@ end
     @test join(seen) == "happy"
     # a retry shows as an event
     s = using_fake(() -> stream(mood, "x"), fake("??", xml(:result => "happy")))
-    @test fetch(s) === happy && any(e -> e.kind === :retry, events(s))
+    @test fetch(s) === happy && any(e -> e.kind === :retry, eachevent(s))
     # closing cancels
     slow = FakeRouter(; responder=(req, i) -> (sleep(0.3); xml(:result => "happy")))
     s = using_fake(() -> stream(mood, "x"), slow)
@@ -254,6 +284,8 @@ end
         FunctAI.configure!(lm=nothing, router=nothing, temperature=nothing)
     end
     @test_throws ArgumentError FunctAI.configure!(modle="x")
+    @test occursin("did you mean lm", try FunctAI.configure!(lmm="x") catch e sprint(showerror, e) end)
+    @test occursin("did you mean temperature", try FunctAI.configure!(temprature=0) catch e sprint(showerror, e) end)
     @test_throws ArgumentError with_settings(() -> nothing; (Symbol("module") => :cot,)...)
     @test settings(configure(mood; temperature=0)) == (temperature=0,)
 end
@@ -335,6 +367,9 @@ end
     best, trials = using_fake(() -> instruction_search(mood, rows; candidates=3, trials=4, max_bootstrapped=1, max_labeled=1), r)
     @test length(trials) == 4 && best isa AIFunction
     @test any(t -> t.instruction_text !== nothing && startswith(t.instruction_text, "Say the mood"), trials)
+    # the proposer sees the function's inputs and outputs, never other columns
+    text = FunctAI.examples_text(mood, [FunctAI.row_dict((review="r", result="happy", secret="the state"))])
+    @test occursin("happy", text) && !occursin("the state", text)
 end
 
 @testset "prompt: the request as a conversation" begin
@@ -380,7 +415,7 @@ end
     # a stream of a program shows its children
     s = using_fake(() -> stream(support, "Broke."), fake(xml(:result => "unhappy")))
     @test fetch(s) == "sorry"
-    @test count(e -> e.kind === :started, events(s)) == 2
+    @test count(e -> e.kind === :started, eachevent(s)) == 2
 end
 
 end

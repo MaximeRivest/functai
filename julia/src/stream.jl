@@ -5,7 +5,7 @@
 #     for piece in stream(haiku, "the first snow")
 #         print(piece)
 #     end
-#     s = stream(solve, "10 pencils?"); foreach(println, events(s)); fetch(s)
+#     s = stream(solve, "10 pencils?"); foreach(println, eachevent(s)); fetch(s)
 
 """
     Event
@@ -52,7 +52,7 @@ end
     AIStream
 
 A call being made and watched: iterate it for the answer's text as it is
-written; [`events`](@ref) for everything (the calls inside it, reasoning,
+written; [`eachevent`](@ref) for everything (the calls inside it, reasoning,
 tool calls, retries); `fetch` for its value, typed (the same as calling);
 `close` to cancel it; `FunctAI.text(s)` for the answer so far.
 """
@@ -108,6 +108,18 @@ function watch_ended(s::AIStream, call, value, err=nothing)
     end
 end
 
+function start_stream(thunk)
+    s = AIStream(Event[], Threads.Condition(), false, false, nothing, "", nothing)
+    s.task = @async try
+        with(thunk, WATCHING => s)
+    finally
+        lock(s.cond) do
+            s.finished = true
+            notify(s.cond)
+        end
+    end
+    s
+end
 """
     stream(f, args...; kw...) -> AIStream
     stream(on_piece, f, args...; kw...) -> the value
@@ -122,18 +134,6 @@ answer = stream(haiku, "the first snow") do piece
 end
 ```
 """
-function start_stream(thunk)
-    s = AIStream(Event[], Threads.Condition(), false, false, nothing, "", nothing)
-    s.task = @async try
-        with(thunk, WATCHING => s)
-    finally
-        lock(s.cond) do
-            s.finished = true
-            notify(s.cond)
-        end
-    end
-    s
-end
 LM15.stream(f::AIFunction, args...; kw...) = (inputs = bind_inputs(f, args, kw); start_stream(() -> predict_inputs(f, inputs)))
 LM15.stream(p::AIProgram, args...; kw...) = start_stream(() -> p(args...; kw...))
 function LM15.stream(on_piece::Function, f::Union{AIFunction,AIProgram}, args...; kw...)
@@ -149,12 +149,21 @@ function LM15.stream(on_piece::Function, f::Union{AIFunction,AIProgram}, args...
 end
 
 """
-    events(s::AIStream)
+    eachevent(s::AIStream)
 
-Every event of the watched call, in order, as they happen (a new iteration
-starts from the first).
+An iterator over every event of the watched call, in order, as they happen:
+the calls inside it, text, thinking, tool calls and results, retries, and
+the end (`:done` or `:failed`). A new iteration starts from the first.
+
+```julia
+s = stream(support, "Where is order A-1042?")
+for e in eachevent(s)
+    println(e.kind, " ", e.function)
+end
+```
 """
-events(s::AIStream) = EventIterator(s)
+eachevent(s::AIStream) = EventIterator(s)
+LM15.events(s::AIStream) = EventIterator(s)
 struct EventIterator
     s::AIStream
 end

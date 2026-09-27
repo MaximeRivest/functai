@@ -72,7 +72,7 @@ function warn_once(key, message)
     first_time = lock(WARN_LOCK) do
         key in WARNED ? false : (push!(WARNED, key); true)
     end
-    first_time && @warn "functai: $message"
+    first_time && @warn "$message"
     nothing
 end
 

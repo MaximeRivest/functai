@@ -27,7 +27,7 @@ Anthropic and Gemini (`tools/live.jl`, 2026-09-27: 21 of 21).
 - Tools are Julia functions (arguments from the method, words from the
   docstring); `@program` makes code that calls AI functions one call in the
   log, with theirs as its children.
-- `stream(f, …)`: iterate for the answer's text, `events(s)` for everything,
+- `stream(f, …)`: iterate for the answer's text, `eachevent(s)` for everything,
   `fetch(s)` for the typed value, `close(s)` to cancel; the do form prints as
   it comes.
 - The call log, ratings and `rated` rows (contract/calls.md): written and
@@ -49,5 +49,23 @@ Anthropic and Gemini (`tools/live.jl`, 2026-09-27: 21 of 21).
   language load and are checked to send what was saved; `types` gives the
   fields their Julia types back.
 - `FunctAI.login`, `logins`, `logout`: lm15's sign-ins, shared by every language.
+- Eight tutorials (`docs/julia/`, on the website and in the manual), run on
+  real models by `julia/tutorials`, and a Documenter manual (`julia/docs`):
+  guides whose examples run on every build, the reference from the
+  docstrings, doctests run by `Pkg.test()`. Designed from a reading of the
+  documentation Julia users trust (`design/05-julia-tutorials.md`).
+- Datasets: `FunctAI.tickets()`, `field_notes()`, `refunds()`, the same as
+  Python's and R's, as Tables.jl tables.
+- `Union{T,Missing}` answers: the model may leave them empty, and they come
+  back `missing` (so a column of them is a column with holes, as Julia data
+  has). `predict.(f, column)` is concurrent. `p.probabilities` is keyed by
+  the answer's own type (`p.probabilities.state[damaged]`).
+- `eachevent(s)` (not `events`, which Makie exports); `ai"…"` not exported
+  (PromptingTools.jl exports its own); MLJ's `predict` works on AI functions.
+- `model_capabilities` returns a `NamedTuple`; a mistyped setting suggests
+  the one you meant; keyword inputs are read after the positional ones, as
+  written; `functai.json` is indented, as Python and TypeScript write it;
+  `instruction_search` shows the proposing model only the function's
+  inputs and outputs, never a table's other columns.
 - A precompile workload: the first call of a session compiles in about 10
   seconds instead of about 60 (the rest is lm15's network code).

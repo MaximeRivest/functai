@@ -1,0 +1,81 @@
+id,message,channel,category,order_id
+1,"Hi, my order A-1042 still hasn't arrived and it's been three weeks.",email,shipping,A-1042
+2,The mug arrived in pieces.,chat,shipping,
+3,"I was charged twice for order B-2210, please fix this.",email,billing,B-2210
+4,How do I change the email on my account?,chat,account,
+5,The kettle lid doesn't close properly anymore after a month of use.,email,product,
+6,"I'd like my money back for the toaster, it burns everything.",email,billing,
+7,Tracking for C-3319 hasn't moved since Monday.,chat,shipping,C-3319
+8,I forgot my password and the reset email never comes.,chat,account,
+9,Box was crushed and the lamp inside is cracked. Order D-4001.,email,shipping,D-4001
+10,My coupon code SPRING10 didn't apply at checkout.,chat,billing,
+11,Can the cast iron pan go in the dishwasher?,chat,product,
+12,Please delete my account and all my data.,email,account,
+13,You sent me a blue rug but I ordered the green one (order A-1187).,email,shipping,A-1187
+14,"Refund the blender please, it stopped working after two days.",chat,billing,
+15,The handle came off the saucepan after two uses.,email,product,
+16,Where can I download the invoice for order B-2350? I need it for my taxes.,email,billing,B-2350
+17,The glass carafe was shattered when I opened the package.,chat,shipping,
+18,i cant log in it says my account is locked??,chat,account,
+19,My payment failed but the money left my bank account.,email,billing,
+20,Does the stand mixer come with a dough hook?,chat,product,
+21,Order c3319 was delivered to my neighbour's address instead of mine.,email,shipping,C-3319
+22,"I want a refund for the chair, it wobbles no matter what I do.",email,billing,
+23,How do I turn on two-factor authentication?,chat,account,
+24,The vase arrived with a big crack down the side.,email,shipping,
+25,The non-stick coating is peeling off my frying pan.,chat,product,
+26,Why was I charged for shipping when my order was over $50?,chat,billing,
+27,"Please unsubscribe me from your newsletter, I get three emails a day.",email,account,
+28,My parcel says delivered but it's not here. Order A-1299.,chat,shipping,A-1299
+29,The frying pan arrived with a big dent in it.,email,shipping,
+30,"Money back please, the knife set is not as sharp as advertised.",chat,billing,
+31,What's the warranty on the espresso machine?,email,product,
+32,I need to update the phone number on my profile.,chat,account,
+33,When will order B-2417 ship? It says 'processing' for a week.,email,shipping,B-2417
+34,I returned the lamp two weeks ago and still haven't got my refund.,email,billing,
+35,The timer on the slow cooker stopped working.,chat,product,
+36,Someone else's name shows up on my account page.,email,account,
+37,"Two of the six plates were broken on arrival, order D-4120.",email,shipping,D-4120
+38,Can I pay with a gift card and a credit card together?,chat,billing,
+39,Is the cutting board safe to use for raw meat?,chat,product,
+40,Can you merge my two accounts? I signed up twice by mistake.,email,account,
+41,Order #A-1350 is two weeks late. Any news?,chat,shipping,A-1350
+42,"The duvet shrank in the wash, I'd like my money back.",email,billing,
+43,The thermos doesn't keep coffee hot for more than an hour.,email,product,
+44,I never received the confirmation email for my sign-up.,chat,account,
+45,The picture frame glass was cracked inside the box.,chat,shipping,
+46,You billed me in USD but I'm in Canada.,email,billing,
+47,How often should I descale the kettle?,chat,product,
+48,"My account was hacked, someone ordered things I didn't buy!",email,account,
+49,The courier left my package in the rain and the box is soaked. Order B-2502.,email,shipping,B-2502
+50,Refund please: the towels are much thinner than in the photos.,chat,billing,
+51,The blender makes a grinding noise on the highest setting.,chat,product,
+52,Can I change the password without the old one?,chat,account,
+53,Can I change the delivery address for order C-3480? It hasn't shipped yet.,chat,shipping,C-3480
+54,I was charged for an order I cancelled (A-1401).,email,billing,A-1401
+55,The rice cooker's inner pot has a scratch after the first use.,email,product,
+56,I'd like to download all the data you have about me.,email,account,
+57,Package arrived but the bowl inside was in three pieces.,chat,shipping,
+58,Your site charged my card three times for one order!!,chat,billing,
+59,Are the wine glasses lead-free?,email,product,
+60,I can't find where to log out on the app.,chat,account,
+61,Wrong size: I got the small pot instead of the large one. Order D-4233.,email,shipping,D-4233
+62,"The toaster is fine but I changed my mind, can I get a refund?",email,billing,
+63,The lamp flickers when it's on the lowest brightness.,chat,product,
+64,"Please close my account, I'm moving abroad.",email,account,
+65,The teapot spout was chipped when it arrived. Order b2610.,chat,shipping,B-2610
+66,"The price dropped the day after I bought it, can I get the difference back?",email,billing,
+67,Which filter fits the coffee maker model CM-200?,chat,product,
+68,I get 'invalid token' every time I try to sign in.,chat,account,
+69,My order arrived without the lid for the casserole dish. A-1488.,email,shipping,A-1488
+70,The discount wasn't applied to my invoice.,email,billing,
+71,The mixer's bowl doesn't lock into place.,email,product,
+72,How do I stop my saved card from being used for future orders?,chat,billing,
+73,Delivery was supposed to be yesterday. Where is it?,chat,shipping,
+74,Return the headphones and give me a refund please.,chat,billing,
+75,Can the dutch oven go on an induction hob?,chat,product,
+76,I changed my email and now I can't log in with either.,email,account,
+77,"The ceramic bowls came smashed, all of them. Order C-3555.",email,shipping,C-3555
+78,I want to cancel my subscription and get this month refunded.,email,billing,
+79,The knife rusted after I left it wet overnight.,chat,product,
+80,"Please send the password reset to my new address, not the old one.",chat,account,

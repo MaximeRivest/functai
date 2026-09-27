@@ -58,3 +58,6 @@ ts/dist/
 
 # Julia: a package commits no Manifest (julia/check resolves one)
 julia/Manifest.toml
+julia/docs/Manifest.toml
+julia/docs/build/
+julia/docs/.work/

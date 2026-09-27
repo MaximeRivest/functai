@@ -45,7 +45,8 @@ end; d)
 The logged calls (of `f`, when given: an AI function, a program, or a name),
 oldest first, as rows (a Tables.jl table: `DataFrame(calls(mood))`):
 `id`, `started`, `name`, `module`, `version`, `model`, `seconds`, `inputs`,
-`outputs`, `error`, tokens, `parent`, `language`.
+`outputs`, `error`, tokens, `parent`, `caller` (who called: an evaluation's
+calls have `caller["evaluation"] == e.run`), `language`.
 """
 function calls(f=nothing; folder=nothing, since=nothing)
     recs, _ = read_log(log_root(folder); since)
@@ -60,7 +61,8 @@ function calls(f=nothing; folder=nothing, since=nothing)
       error=get(c, "error", nothing) isa AbstractDict ? c["error"]["type"] * (haskey(c["error"], "message") ? ": " * c["error"]["message"] : "") : missing,
       input_tokens=getpath(c, "usage", "input_tokens"), output_tokens=getpath(c, "usage", "output_tokens"),
       reasoning_tokens=getpath(c, "usage", "reasoning_tokens"), total_tokens=getpath(c, "usage", "total_tokens"),
-      parent=something(get(c, "parent", nothing), missing), language=getpath(c, "process", "language")) for c in mine]
+      parent=something(get(c, "parent", nothing), missing), caller=something(get(c, "caller", nothing), Dict{String,Any}()),
+      language=getpath(c, "process", "language")) for c in mine]
 end
 
 """

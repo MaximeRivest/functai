@@ -1,0 +1,20 @@
+[deps]
+CairoMakie = "13f3f980-e62b-5c42-98c6-ff1f3baf88f0"
+CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
+DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
+DecisionTree = "7806a523-6efd-50cb-b5f6-3fa6f1930dbb"
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+FunctAI = "feb8c6c9-9090-4354-9aa7-5403c44e4a77"
+GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
+HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
+LM15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
+LMCC = "1f0b48a1-bcdc-478a-822a-9743feb77dca"
+MLJ = "add582a8-e3ab-11e8-2d5e-e98b27df1bc7"
+MLJNaiveBayesInterface = "33e4bacb-b9e2-458e-9a13-5d9a90b235fa"
+NaiveBayes = "9bbee03b-0db5-5f46-924f-b5c9c21b8c60"
+StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
+
+[sources]
+FunctAI = {path = ".."}
+LM15 = {path = "../../../lm15-dev/lm15-jl"}
+LMCC = {path = "../../../lmcc/julia"}

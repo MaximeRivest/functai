@@ -26,15 +26,15 @@ end
     table = read_json(joinpath(CONTRACT, "models.json"))
     for p in table["native"]["providers"]
         caps = model_capabilities(p, "some-model")
-        @test caps["stop_sequences"] == !(p in table["native"]["no_stop_sequences"])
-        @test caps["native_function_calling"]
+        @test caps.stop_sequences == !(p in table["native"]["no_stop_sequences"])
+        @test caps.native_function_calling
     end
-    @test model_capabilities("anthropic", "claude-sonnet-4-5")["native_reasoning"]
-    @test model_capabilities("anthropic", "claude-3-5-haiku")["assistant_prefill"]
+    @test model_capabilities("anthropic", "claude-sonnet-4-5").native_reasoning
+    @test model_capabilities("anthropic", "claude-3-5-haiku").assistant_prefill
     @test model_capabilities("claude-code", "claude-sonnet-4-5") == model_capabilities("anthropic", "claude-sonnet-4-5")
-    @test model_capabilities("groq", "x")["native_function_calling"]
-    @test !model_capabilities("ollama", "x")["native_function_calling"]
-    @test model_capabilities("typesafe", "x") == Dict("native_structured_output" => true)
+    @test model_capabilities("groq", "x").native_function_calling
+    @test !model_capabilities("ollama", "x").native_function_calling
+    @test model_capabilities("typesafe", "x") == (native_structured_output = true,)
 end
 
 "A contract definition, written the way a Julia user writes it without the macro."

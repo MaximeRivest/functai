@@ -12,9 +12,9 @@ before adding a language or changing the contract.
 | `contract/` | formats, JSON Schemas and cases every implementation must pass | nothing: it is the authority |
 | `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG | `contract/` |
 | `ts/` | the TypeScript package (`functai` on npm, not published yet): src, tests, tools, README, CHANGELOG. `src/generated/contract.ts` is the contract's data, written by `node tools/generate.ts` | `contract/` |
-| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project; `docs/tutorials/` the Python tutorials, `docs/r/` the R ones (```r cells, outputs written by `r/tutorials`); plots in `docs/_assets/generated/` | the code they show |
+| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project; `docs/tutorials/` the Python tutorials, `docs/r/` the R ones (```r cells, outputs written by `r/tutorials`), `docs/julia/` the Julia ones (```julia cells, outputs written by `julia/tutorials`; also the tutorials of the Julia manual); plots in `docs/_assets/generated/` | the code they show |
 | `r/` | the R package (`functai`, not on CRAN): R, tests, data, README, NEWS. `inst/contract/` is the contract's data, copied by `r/check`; `tools/env.nix` is its R on NixOS | `contract/` |
-| `julia/` | the Julia package (`FunctAI`, not registered): src, ext (StatsModels, CategoricalArrays), test, tools, README, CHANGELOG. `data/contract/` is the contract's data, copied by `julia/check`; lmcc and lm15 come from their checkouts (`Project.toml` `[sources]`) | `contract/` |
+| `julia/` | the Julia package (`FunctAI`, not registered): src, ext (StatsModels, CategoricalArrays), test, tools, docs (the Documenter manual, and the environment `julia/tutorials` runs in), README, CHANGELOG. `data/contract/` is the contract's data, copied by `julia/check`; lmcc and lm15 come from their checkouts (`Project.toml` `[sources]`) | `contract/` |
 | `tools/docs.py` | generates reference/example/news pages, runs notebooks on rat, builds the site | |
 | `tools/crosslang.py` | Python, TypeScript, R and Julia against each other: saved in Python, loaded in the others; one call log | `contract/` |
 | `design/` | numbered design notes | |
@@ -46,6 +46,8 @@ cd ts && npm install && npm test                # TypeScript (needs ../lmcc chec
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
 r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
 julia/check                                     # Julia (needs ../lmcc and ../lm15-dev checked out; Julia from nixpkgs if not on PATH)
+julia/tutorials [docs/julia/0N-*.md ...]        # run the Julia tutorials in fresh sessions, write their outputs (real models; about 50 cents for all eight)
+julia --project=julia/docs julia/docs/make.jl   # the Julia manual (Documenter) into julia/docs/build; runs no model
 r/tutorials [docs/r/0N-*.md ...]                # run the R tutorials in fresh sessions, write their outputs (real models; about 40 cents for all eight)
 python/.venv/bin/python contract/cases/make.py  # after changing a rule: rewrite the cases
 ```

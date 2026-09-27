@@ -13,6 +13,14 @@ An answer from a fixed list, without declaring an `@enum`:
 `::OneOf(:happy, :unhappy, :mixed)` answers a `Symbol`,
 `::OneOf("yes", "no")` a `String`. Its shape is the choice
 `{"enum": [...], "type": "string"}`, as Python's `Literal[...]`.
+
+# Examples
+```jldoctest
+julia> species = ["mallard", "blue jay", "other"];
+
+julia> print(FunctAI.LMCC.json_text(FunctAI.shape_of(OneOf(species))))
+{"enum":["mallard","blue jay","other"],"type":"string"}
+```
 """
 struct OneOf{T}
     values::Vector{T}
@@ -44,23 +52,36 @@ strip_missing(T) = T isa Union ? Base.typesplit(T, Missing) : T
 The JSON Schema shape of a Julia type, as FunctAI writes it in every language:
 `String` → `{"type": "string"}`, `Int` → `integer`, `Float64` → `number`,
 `Bool` → `boolean`, an `@enum` or [`OneOf`](@ref) → a choice,
+`Union{T,Missing}` or `Union{T,Nothing}` → optional (the model may leave it
+empty: `missing` or `nothing` back),
 `Vector{T}` → a list, `Dict{String,T}` → a map, a `NamedTuple` or a struct →
 a record (every field required, in declaration order), `Union{T,Nothing}` →
 optional, `Any` → any JSON. A JSON Schema `Dict` is used as it is.
+
+# Examples
+```jldoctest
+julia> print(FunctAI.LMCC.json_text(FunctAI.shape_of(Union{Int,Missing})))
+{"anyOf":[{"type":"integer"},{"type":"null"}]}
+
+julia> print(FunctAI.LMCC.json_text(FunctAI.shape_of(Vector{@NamedTuple{name::String, age::Int}})))
+{"type":"array","items":{"type":"object","properties":{"name":{"type":"string"},"age":{"type":"integer"}},"required":["name","age"]}}
+```
 """
 shape_of(o::OneOf) = LMCC.jobj("enum" => Any[string(v) for v in o.values], "type" => "string")
 shape_of(d::AbstractDict) = LMCC.deepcopy_json(JObj(String(k) => v for (k, v) in d))
 function shape_of(T::Type; where::AbstractString="value")
     T === Any && return JObj()
     T === Nothing && return LMCC.jobj("type" => "null")
-    T = strip_missing(T)
+    T === Missing && return LMCC.jobj("type" => "null")
     T === Union{} && throw(ArgumentError("$where: a field cannot have type Union{}"))
     T === Bool && return LMCC.jobj("type" => "boolean")
     (T <: AbstractString || T === Symbol || T <: AbstractChar) && return LMCC.jobj("type" => "string")
     T <: Integer && return LMCC.jobj("type" => "integer")
     T <: Real && return LMCC.jobj("type" => "number")
     if T isa Union
-        parts = Any[Base.uniontypes(T)...]
+        # missing and nothing are both JSON's null: the answer may be left empty
+        parts = Any[p === Missing ? Nothing : p for p in Base.uniontypes(T)]
+        unique!(parts)
         sort!(parts; by=p -> p === Nothing)           # the value first, null last: Python's Optional[T]
         return LMCC.jobj("anyOf" => Any[shape_of(p; where) for p in parts])
     end

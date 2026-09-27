@@ -43,12 +43,14 @@ StatsAPI = "1.6"
 StatsModels = "0.7"
 Tables = "1.10"
 DataFrames = "1"
+Documenter = "1"
 GLM = "1"
 MLJBase = "1"
 Test = "1"
 julia = "1.10"
 
 [extras]
+Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 DataFrames = "a93c6f00-e57d-5684-b7b6-d8193f3e46c0"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
@@ -57,4 +59,4 @@ StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["CategoricalArrays", "DataFrames", "GLM", "MLJBase", "StatsModels", "Test"]
+test = ["Documenter", "CategoricalArrays", "DataFrames", "GLM", "MLJBase", "StatsModels", "Test"]

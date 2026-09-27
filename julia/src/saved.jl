@@ -216,6 +216,6 @@ function save(path::AbstractString, f::AIFunction)
     manifest = to_manifest(f)
     mkpath(path)
     file = joinpath(path, "functai.json")
-    write(file, LMCC.json_text(manifest; spaced=true) * "\n")
+    write(file, json_indented(manifest; width=1) * "\n")          # indented as Python and TypeScript write it: a folder to read and diff
     file
 end

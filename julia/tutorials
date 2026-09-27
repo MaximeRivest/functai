@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# Run Julia tutorials top to bottom, each in a fresh Julia process, and write
+# their outputs into them: julia/tutorials docs/julia/01-first-function.md ...
+# (default: all of docs/julia). They call real models (each tutorial prints
+# what it cost), with the keys in the environment or in ../lm15-dev/.env.
+# Julia comes from PATH, else from nixpkgs; the packages from julia/docs's
+# environment (DataFrames, CairoMakie, GLM, MLJ, and FunctAI from this checkout).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "${OPENAI_API_KEY:-}" ] && [ -f "$here/../../lm15-dev/.env" ]; then set -a; . "$here/../../lm15-dev/.env"; set +a; fi
+if command -v julia >/dev/null 2>&1; then JULIA=(julia); else JULIA=(nix shell nixpkgs#julia-bin -c julia); fi
+pages=("$@")
+[ ${#pages[@]} -gt 0 ] || pages=("$here"/../docs/julia/[0-9]*.md)
+"${JULIA[@]}" --project="$here/docs" -e 'using Pkg; Pkg.instantiate(; io=devnull)'
+"${JULIA[@]}" --project="$here/docs" "$here/tools/tutorials.jl" "${pages[@]}"

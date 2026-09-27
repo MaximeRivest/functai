@@ -18,6 +18,11 @@ df.mood = mood.(df.review)             # the whole column, 8 calls at a time
 evaluate(mood, labelled)               # how often it is right, with a 95% range
 ```
 
+**Learn it** with [eight tutorials](../docs/julia/index.md) (from a first
+function to decisions, MLJ and living with a function in use; every output
+from a real run) and the [manual](docs/) (guides and the reference, built
+with Documenter: `julia --project=julia/docs julia/docs/make.jl`).
+
 FunctAI exists in Python, TypeScript, R and Julia, held together by one
 [contract](../contract): the same function has the same version, writes the
 same call log and saves to the same folder in every language. A function
@@ -179,7 +184,7 @@ for piece in stream(haiku, "the first snow")
 end
 
 s = stream(support, "Where is order A-1042?")
-foreach(println, events(s))     # started, text, tool_call, tool_result, retry, done
+foreach(println, eachevent(s))  # started, text, tool_call, tool_result, retry, done
 fetch(s)                        # the typed answer, the same as calling
 close(s)                        # cancels the call
 ```
@@ -228,13 +233,19 @@ its own; what it cannot run is refused with a reason (`LoadRefused`).
 - **Not saved from Julia yet**: code of your own and tools (a folder
   carries no Julia code). A program's version follows the AI functions and
   programs it names, not plain Julia functions it calls.
+- **Names shared with MLJ**: both export `predict` and `evaluate`. With
+  both loaded, bring one in with `import` (tutorial 7 does). `FunctAI.save`,
+  `load` and `login` are not exported (FileIO's names), nor is `ai"…"`
+  (PromptingTools.jl's): `@ai` reads it from your code.
 - **Not yet**: the reply cache, stateful memory, escalation to another
-  model, and baking (training your own weights).
+  model (a `@program` does it by hand), and baking (training your own weights).
 
 ## Developing
 
 ```bash
-julia/check                                     # the contract's data, then Pkg.test() (every contract case)
+julia/check                                     # the contract's data, then Pkg.test() (every contract case, the doctests)
+julia/tutorials [docs/julia/0N-*.md ...]        # run the tutorials on real models, write their outputs (about 50 cents)
+julia --project=julia/docs julia/docs/make.jl   # the manual (Documenter), into julia/docs/build
 set -a; source ~/Projects/lm15-dev/.env; set +a
 julia --project=julia julia/tools/live.jl       # against real models (costs cents)
 ```

@@ -156,10 +156,11 @@ function proposer()
         output=String, module_name="functai.meta", adapter=:xml, include_name=false, reasoning=false)
 end
 
+"A few rows as the proposer sees them: the function's inputs and outputs only (never other columns: they may be answers a person had to read)."
 function examples_text(f::AIFunction, rows; limit=5)
-    ins = input_names(f)
+    ins, outs = input_names(f), output_names(f)
     join((LMCC.json_text(LMCC.jobj("inputs" => JObj(k => logvalue(v) for (k, v) in r if k in ins),
-                                   "outputs" => JObj(k => logvalue(v) for (k, v) in r if !(k in ins))))
+                                   "outputs" => JObj(k => logvalue(v) for (k, v) in r if k in outs)))
           for r in rows[1:min(limit, length(rows))]), "\n")
 end
 
@@ -193,7 +194,7 @@ function instruction_search(f::AIFunction, data; candidates::Integer=6, trials::
             writer(f.definition.name, sprint(show, f), instructions(f), examples_text(f, sample), copy(proposals),
                    isempty(tip) ? "(no tip)" : tip)
         catch err
-            @warn "functai: an instruction proposal failed" error = sprint(showerror, unwrap(err))
+            @warn "an instruction proposal failed" error = sprint(showerror, unwrap(err))
             continue
         end
         text = trim_white(text)

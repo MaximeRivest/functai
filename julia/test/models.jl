@@ -79,9 +79,14 @@ end
     @test isempty(r.requests)
     ŷ = using_fake(() -> MLJBase.predict(mach, X), r)
     @test all(ŷ .== y) && levels(ŷ[1]) == levels(y)
+    @test ŷ isa CategoricalVector && levels(ŷ) == levels(y)
     @test MLJBase.report(mach).examples == 2
     @test MLJBase.fitted_params(mach).fn isa AIFunction
     @test MLJBase.input_scitype(AIModel) == MLJBase.Table
+    # MLJ's predict (another function than StatsAPI's) works on AI functions too
+    r = FakeRouter(; responder=(req, i) -> xml(:result => "happy"))
+    @test using_fake(() -> MLJBase.predict(mood, "x"), r).value === happy
+    @test all(p -> p.value === happy, using_fake(() -> MLJBase.predict.(mood, ["x", "y"]), r))
 end
 
 end

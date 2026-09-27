@@ -62,7 +62,7 @@ for model in models
             text = join(collect(s))
             value = fetch(s)
             strip(text) == strip(value) || error("pieces $(repr(text)) != value $(repr(value))")
-            (pieces=count(e -> e.kind === :text, events(s)), value=value)
+            (pieces=count(e -> e.kind === :text, eachevent(s)), value=value)
         end
         check("a column, concurrently") do
             mood.(["Love it, works perfectly.", "Broke in a day.", missing, "Good product but arrived late and damaged."])

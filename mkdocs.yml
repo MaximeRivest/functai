@@ -103,6 +103,16 @@ nav:
       - r/06-decisions.md
       - r/07-tidymodels.md
       - r/08-living-with-it.md
+  - Julia:
+      - julia/index.md
+      - julia/01-first-function.md
+      - julia/02-types.md
+      - julia/03-is-it-right.md
+      - julia/04-making-it-better.md
+      - julia/05-choosing-a-model.md
+      - julia/06-decisions.md
+      - julia/07-mlj-and-formulas.md
+      - julia/08-living-with-it.md
   - Reference: reference/index.md
   - Examples: examples/index.md
   - News: news.md

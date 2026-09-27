@@ -37,12 +37,50 @@ struct Prediction
     probabilities::JObj
 end
 function Base.getproperty(p::Prediction, name::Symbol)
+    name === :probabilities && return typed_probabilities(p)
     name === :answer && return getproperty(getfield(p, :outputs), Symbol(getfield(p, :answer_name)))
     name === :response && return isempty(getfield(p, :responses)) ? nothing : last(getfield(p, :responses))
     name === :attempts && return length(getfield(p, :responses))
     getfield(p, name)
 end
 Base.propertynames(::Prediction) = (:value, :answer, :outputs, :call, :turn, :response, :responses, :attempts, :repairs, :probabilities)
+
+"An answer as the probabilities spell it: text for a text or choice answer, JSON otherwise."
+answer_json(T, k) = T <: Union{AbstractString,Symbol,Enum} ? k : (try
+    LMCC.parse_json(k)
+catch
+    k
+end)
+
+"""
+The probabilities the model measured for its own answers, by output, with
+the answers as their types: `p.probabilities.result[billing] == 0.93`. Empty
+when the model measures none: only TypeSafe (`typesafe:jev-latest`) and
+servers that score tokens do; other providers give an answer, not a
+distribution (a model's own words about its confidence are not one).
+"""
+function typed_probabilities(p::Prediction)
+    raw = getfield(p, :probabilities)
+    outputs = getfield(p, :outputs)
+    names = Symbol[]
+    dists = Any[]
+    for (field, dist) in raw
+        haskey(outputs, Symbol(field)) || continue
+        T = typeof(outputs[Symbol(field)])
+        typed = OrderedDict{Any,Float64}()
+        for (k, v) in dist
+            key = try
+                fromjson(T, answer_json(T, k), field)
+            catch
+                k
+            end
+            typed[key] = Float64(v)
+        end
+        push!(names, Symbol(field))
+        push!(dists, all(k -> k isa T, keys(typed)) ? OrderedDict{T,Float64}(typed) : typed)
+    end
+    NamedTuple{Tuple(names)}(Tuple(dists))
+end
 function Base.show(io::IO, p::Prediction)
     print(io, "Prediction(")
     show(io, p.value)

@@ -17,9 +17,9 @@ const SETTING_DOCS = (
     api_retries = "re-sends after a transient provider error (default 3)",
     max_steps = "model requests per tool loop (default 8)",
     tool_errors = ":report (the model sees a tool's error, default) or :raise",
-    log_calls = "the call log: a folder, true (the default folder) or false; unset: \$FUNCTAI_LOG_CALLS decides",
+    log_calls = "the call log: a folder, true (the default folder) or false; unset: the environment variable `FUNCTAI_LOG_CALLS` decides",
     log_content = "false: log sizes, times and tokens, never values or messages",
-    caller = "who is calling, added to \$FUNCTAI_CALLER: Dict(\"kind\" => \"notebook\")",
+    caller = "who is calling, added to the environment variable `FUNCTAI_CALLER`: Dict(\"kind\" => \"notebook\")",
     concurrency = "calls in flight at once over a column (broadcasting, map, evaluate; default 8)",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
@@ -31,9 +31,24 @@ const GLOBAL_SETTINGS = Dict{Symbol,Any}()
 const SETTINGS_LOCK = ReentrantLock()
 const SCOPED_SETTINGS = ScopedValue(Dict{Symbol,Any}())
 
+"The Levenshtein distance between two short words (for suggesting a setting's name)."
+function edit_distance(a::AbstractString, b::AbstractString)
+    a, b = collect(a), collect(b)
+    d = collect(0:length(b))
+    for i in 1:length(a)
+        prev, d[1] = d[1], i
+        for j in 1:length(b)
+            prev, d[j+1] = d[j+1], min(d[j+1] + 1, d[j] + 1, prev + (a[i] != b[j]))
+        end
+    end
+    d[end]
+end
+
 function check_setting(name::Symbol, value)
     if !(name in SETTING_NAMES)
-        near = [String(n) for n in SETTING_NAMES if occursin(lowercase(String(name)), String(n)) || occursin(String(n), lowercase(String(name)))]
+        given = lowercase(String(name))
+        near = [String(n) for n in SETTING_NAMES if edit_distance(given, String(n)) <= 2 ||
+                (length(given) >= 3 && (occursin(given, String(n)) || occursin(String(n), given)))]
         hint = name === :module ? "; for reasoning before the answer, use reasoning = true" :
                name === :include_fn_name_in_instructions ? "; use include_name" :
                isempty(near) ? "" : "; did you mean $(join(near, " or "))?"

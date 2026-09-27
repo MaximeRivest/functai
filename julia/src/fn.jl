@@ -494,10 +494,10 @@ Call `f` on each tuple of arguments, `concurrency` at a time. A row with a
 with one warning (see `problems()`); when every call fails, the first
 error is thrown.
 """
-function call_each(f::Function, argtuples::AbstractArray)
+function call_each(f::Function, argtuples::AbstractArray; each=f)
     n = effective(f isa AIFunction ? f.own : Dict{Symbol,Any}())[:concurrency]
     items = vec(collect(argtuples))
-    results, errors = run_concurrently(t -> f(t...), items, n)
+    results, errors = run_concurrently(t -> each(t...), items, n)
     failed = findall(!isnothing, errors)
     for i in failed
         results[i] = missing
@@ -514,9 +514,16 @@ function call_each(f::Function, argtuples::AbstractArray)
     reshape(map(identity, results), size(argtuples))   # map(identity) narrows the element type
 end
 
+broadcast_args(args) = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...))
+
 function Base.Broadcast.broadcasted(f::AIFunction, args...)
-    argtuples = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...))
+    argtuples = broadcast_args(args)
     argtuples isa Tuple ? f(argtuples...) : call_each(f, argtuples)
+end
+# predict.(f, column): every row's Prediction, concurrently too
+function Base.Broadcast.broadcasted(::typeof(StatsAPI.predict), f::AIFunction, args...)
+    argtuples = broadcast_args(args)
+    argtuples isa Tuple ? predict(f, argtuples...) : call_each(f, argtuples; each=(a...) -> predict(f, a...))
 end
 Base.map(f::AIFunction, xs::AbstractArray, more::AbstractArray...) =
     isempty(more) ? call_each(f, map(tuple, xs)) : call_each(f, map(tuple, xs, more...))
@@ -552,7 +559,7 @@ function Base.show(io::IO, ::MIME"text/plain", f::AIFunction)
     shown = lines[1:min(4, length(lines))]
     println(io, "  instruction:  ", isempty(shown) ? "" : first(shown))
     for l in shown[2:end]
-        println(io, "                ", l)
+        println(io, isempty(strip(l)) ? "" : "                " * l)
     end
     length(lines) > 4 && println(io, "                …")
     isempty(f.demos) || println(io, "  examples:     ", length(f.demos))

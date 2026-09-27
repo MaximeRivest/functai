@@ -13,6 +13,12 @@ t975(df) = df <= length(T975) ? T975[df] : Z + (Z^3 + Z) / (4df) + (5Z^5 + 16Z^3
 The mean and its 95% range: Wilson's interval when every value is 0 or 1
 (right or wrong), Student's t otherwise. With fewer than two values there is
 no range (`nothing`).
+
+# Examples
+```jldoctest
+julia> score_interval(vcat(ones(72), zeros(8)))  # right on 72 of 80 rows
+(mean = 0.9, low = 0.8148931111226091, high = 0.9484523846972116)
+```
 """
 function score_interval(values::AbstractVector{<:Real})
     n = length(values)
@@ -59,6 +65,18 @@ end
 The default metric: `1` when every output the answers have a value for equals
 the prediction's (text compared ignoring case and repeated white space;
 numbers by value), else `0`. With several, each also gets `<name>_match`.
+
+# Examples
+```jldoctest
+julia> exact_match(Dict("summary" => "Charged twice", "result" => "billing"),
+                   Dict("summary" => "charged  twice", "result" => "shipping"))
+OrderedCollections.OrderedDict{String, Float64} with 3 entries:
+  "exact_match"   => 0.0
+  "summary_match" => 1.0
+  "result_match"  => 0.0
+```
+
+See also [`evaluate`](@ref).
 """
 function exact_match(answers::AbstractDict, prediction::AbstractDict)
     keys_ = [k for k in keys(prediction) if haskey(answers, k)]
@@ -144,7 +162,7 @@ function Base.show(io::IO, ::MIME"text/plain", e::Evaluation)
     failed = e.failed
     failed > 0 && println(io, "  ", failed, " row", failed == 1 ? "" : "s", " failed (they score 0): ",
                           first(something(e.results[findfirst(r -> r.error !== nothing, e.results)].error, ""), 120))
-    print(io, "  rows: DataFrame(e) or Tables.rows(e); the run's calls carry caller.evaluation = \"", e.run, "\"")
+    print(io, "  every row: DataFrame(e)")
 end
 
 "A metric: `(row, outputs) -> number`, called with the row and the outputs as NamedTuples."

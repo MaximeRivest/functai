@@ -21,12 +21,17 @@
 
 In the body of an [`@ai`](@ref) function, an output the model writes, with
 words about it: `summary::String = ai"one sentence, no names"`.
+It is read by `@ai` from your code before anything runs, so it needs no
+import, and FunctAI doesn't export it (PromptingTools.jl exports its own
+`ai"…"`): outside `@ai` it is `FunctAI.@ai_str`.
 """
-struct AIOutput
-    desc::String
-end
 macro ai_str(s)
     AIOutput(s)
+end
+
+"An output's words, from `ai\"…\"` outside `@ai` (inside it, `@ai` reads them itself)."
+struct AIOutput
+    desc::String
 end
 
 const OPTION_NAMES = (:tools, :demos, :instructions, :module_name)
@@ -68,14 +73,18 @@ function parse_head(head)
     (head isa Expr && head.head === :call && head.args[1] isa Symbol) ||
         throw(ArgumentError("@ai: expected `function name(inputs...)::Type … end`"))
     name = head.args[1]
+    # positional inputs, then keywords: the order they are written in (Julia's
+    # parser stores the keywords first), which is the order the model reads them
     inputs = InputSyntax[]
+    keywords = InputSyntax[]
     for a in head.args[2:end]
         if a isa Expr && a.head === :parameters
-            append!(inputs, parse_input(k, true) for k in a.args)
+            append!(keywords, parse_input(k, true) for k in a.args)
         else
             push!(inputs, parse_input(a, false))
         end
     end
+    append!(inputs, keywords)
     (name, inputs, ret)
 end
 

@@ -116,15 +116,15 @@ function prepare_inputs(sig::LMCC.Signature, values::AbstractDict)
     out
 end
 
-"JSON indented by two spaces, as Python's `json.dumps(indent=2, ensure_ascii=False)` writes it."
-function json_indented(v, depth::Int=0)
-    pad, close = "  "^(depth + 1), "  "^depth
+"JSON indented by `width` spaces, as Python's `json.dumps(indent=width, ensure_ascii=False)` writes it."
+function json_indented(v, depth::Int=0; width::Int=2)
+    pad, close = " "^(width * (depth + 1)), " "^(width * depth)
     if v isa AbstractDict
         isempty(v) && return "{}"
-        return "{\n" * join(("$pad$(LMCC.json_text(String(k))): $(json_indented(x, depth + 1))" for (k, x) in v), ",\n") * "\n$close}"
+        return "{\n" * join(("$pad$(LMCC.json_text(String(k))): $(json_indented(x, depth + 1; width))" for (k, x) in v), ",\n") * "\n$close}"
     elseif v isa AbstractVector
         isempty(v) && return "[]"
-        return "[\n" * join(("$pad$(json_indented(x, depth + 1))" for x in v), ",\n") * "\n$close]"
+        return "[\n" * join(("$pad$(json_indented(x, depth + 1; width))" for x in v), ",\n") * "\n$close]"
     end
     LMCC.json_text(v)
 end
