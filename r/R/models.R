@@ -58,6 +58,32 @@ call_capabilities <- function(provider, model, settings) {
   caps
 }
 
+# Settings a model refuses are left out of its requests, with one warning per
+# provider, instead of failing every call of a function configured for another
+# model (contract/functions.md, "Sampling a model does not take").
+SAMPLING <- c("temperature", "top_p")
+
+refused_settings <- function(provider, model) {
+  if (identical(provider, "openai-codex")) return(c(SAMPLING, "max_tokens"))   # no knobs, no output cap
+  m <- contract_data("models")
+  speaks <- m$speaks_as[[provider]] %||% provider
+  prefixes <- unlist(m$fixed_sampling[[speaks]]) %||% character(0)
+  if (any(startsWith(model, prefixes))) SAMPLING else character(0)
+}
+
+adjust_settings <- function(s, provider, model) {
+  refused <- function(k) {
+    v <- s[[k]]
+    !is.null(v) && (!k %in% SAMPLING || identical(provider, "openai-codex") || !isTRUE(all.equal(as.numeric(v), 1)))
+  }
+  drop <- Filter(refused, refused_settings(provider, model))
+  if (!length(drop)) return(s)
+  warn_once(paste0("refused:", provider, ":", paste(drop, collapse = ",")),
+            sprintf("%s:%s does not take %s; left out of its requests", provider, model, paste(drop, collapse = ", ")))
+  for (k in drop) s[k] <- list(NULL)
+  s
+}
+
 ALIASES <- c(claude = "claude-code", chatgpt = "openai-codex", copilot = "github-copilot", kimi = "kimi-code")
 
 model_string <- function(lm) {

@@ -146,6 +146,15 @@ routes the model to (`provider:model` or a name lm15 knows).
   runs only at temperature 1.
 - Then the function's `capabilities` setting replaces any fact it names.
 
+**Sampling a model does not take.** A model in `fixed_sampling` (by the
+provider it is routed to, or the one that provider speaks as, and a
+model-name prefix) runs only at `temperature` 1 and `top_p` 1. A call
+whose settings give either another value leaves it out of the request
+(the model then samples as at 1), before the capabilities above are
+worked out, and warns once per process and provider that it did. So one
+`temperature = 0` set for a session works across models, and says where
+it could not apply.
+
 A version is computed under the fixed facts of `probe`, with provider
 `"probe"` (a judgment-only layout never applies there).
 

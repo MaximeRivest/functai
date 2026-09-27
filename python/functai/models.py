@@ -40,7 +40,7 @@ JUDGMENT_ONLY = {"typesafe"}
 
 # model-name prefixes with an API-level thinking channel lm15 can request
 _REASONING_PREFIXES = {
-    "openai": ("o1", "o3", "o4", "gpt-5"),
+    "openai": ("o1", "o3", "o4", "gpt-5", "gpt-6"),
     "anthropic": ("claude-opus-4", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet"),
     "gemini": ("gemini-2.5", "gemini-3"),
     "xai": ("grok-3-mini", "grok-4"),
@@ -274,10 +274,18 @@ def resolve(settings: Dict[str, Any]) -> Tuple[Any, str, Any]:
     return router, model, route
 
 
-# lm15 Config fields a provider or model refuses (seen live, 2026-09-26): functai
-# leaves them out of the request, and says so once per process, instead of
-# failing every call of a program configured for another model.
+# lm15 Config fields a provider or model refuses: functai leaves them out of
+# the request, and says so once per process, instead of failing every call of
+# a program configured for another model (contract/functions.md, "Sampling a
+# model does not take").
 _SAMPLING = ("temperature", "top_p")
+
+# models that run only at temperature 1 and top_p 1 (contract/models.json, fixed_sampling)
+_FIXED_SAMPLING = {
+    "openai": ("o1", "o3", "o4", "gpt-5", "gpt-6"),
+    "openai-chat": ("o1", "o3", "o4", "gpt-5", "gpt-6"),
+    "anthropic": ("claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5"),
+}
 
 
 def refused_settings(provider: str, model: str) -> tuple:
@@ -285,10 +293,15 @@ def refused_settings(provider: str, model: str) -> tuple:
         # the ChatGPT subscription backend: no sampling knobs, and no output cap
         # (lm15 refuses to drop a cap on metered APIs; this one is not billed per token)
         return _SAMPLING + ("max_tokens",)
-    if SUBSCRIPTION_AS.get(provider, provider) in ("openai", "openai-chat") and \
-            model.startswith(_REASONING_PREFIXES["openai"]):
-        return _SAMPLING                          # o-series and GPT-5 reject temperature
+    if model.startswith(_FIXED_SAMPLING.get(SUBSCRIPTION_AS.get(provider, provider), ())):
+        return _SAMPLING                          # only 1 is taken; 1 is what they sample at
     return ()
+
+
+def _refused(key: str, value: Any, provider: str) -> bool:
+    if value is None:
+        return False
+    return key not in _SAMPLING or provider == "openai-codex" or value != 1
 
 
 _warned: set = set()
@@ -296,7 +309,7 @@ _warned: set = set()
 
 def adjust(settings: Dict[str, Any], route: Any) -> Dict[str, Any]:
     """The settings as this provider can take them."""
-    drop = [k for k in refused_settings(route.provider, route.model) if settings.get(k) is not None]
+    drop = [k for k in refused_settings(route.provider, route.model) if _refused(k, settings.get(k), route.provider)]
     if not drop:
         return settings
     key = (route.provider, tuple(drop))

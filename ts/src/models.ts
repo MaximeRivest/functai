@@ -58,6 +58,38 @@ export function callCapabilities(provider: string, model: string, settings: { te
   return { ...caps, ...(settings.capabilities ?? {}) };
 }
 
+/** Settings a model refuses are left out of its requests, with one warning per
+ * provider, instead of failing every call (contract/functions.md, "Sampling a
+ * model does not take"). */
+const FIXED_SAMPLING = (MODELS as unknown as { fixed_sampling: Record<string, readonly string[] | string> }).fixed_sampling;
+const SAMPLING = ["temperature", "topP"] as const;
+const refusedWarned = new Set<string>();
+
+export function refusedSettings(provider: string, model: string): string[] {
+  if (provider === "openai-codex") return [...SAMPLING, "maxTokens"];          // no knobs, no output cap
+  const prefixes = FIXED_SAMPLING[SPEAKS_AS[provider] ?? provider];
+  return Array.isArray(prefixes) && prefixes.some((p) => model.startsWith(p)) ? [...SAMPLING] : [];
+}
+
+export function adjustSettings<S extends { temperature?: number | null; topP?: number | null; maxTokens?: number | null }>(
+  s: S, provider: string, model: string,
+): S {
+  const drop = refusedSettings(provider, model).filter((k) => {
+    const v = (s as Record<string, unknown>)[k];
+    return v !== undefined && v !== null && (k === "maxTokens" || provider === "openai-codex" || v !== 1);
+  });
+  if (!drop.length) return s;
+  const key = `${provider}:${drop.join(",")}`;
+  if (!refusedWarned.has(key)) {
+    refusedWarned.add(key);
+    const names = drop.map((k) => (k === "topP" ? "top_p" : k === "maxTokens" ? "max_tokens" : k));
+    console.warn(`functai: ${provider}:${model} does not take ${names.join(", ")}; left out of its requests`);
+  }
+  const out: Record<string, unknown> = { ...s };
+  for (const k of drop) out[k] = null;
+  return out as S;
+}
+
 /** Friendly account prefixes, as in Python: `claude:` is `claude-code:`, … */
 const PREFIX_ALIASES: Record<string, string> = { claude: "claude-code", chatgpt: "openai-codex", copilot: "github-copilot", kimi: "kimi-code" };
 

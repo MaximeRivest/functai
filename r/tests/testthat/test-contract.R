@@ -25,6 +25,18 @@ test_that("capabilities follow the contract's table", {
   expect_identical(model_capabilities("typesafe", "x"), list(native_structured_output = TRUE))
 })
 
+test_that("a sampling the model does not take is left out, with one warning", {
+  the <- functai:::the
+  the$warned <- list()
+  expect_identical(adjust_settings(list(temperature = 1), "openai", "gpt-6-luna"), list(temperature = 1))
+  expect_warning(out <- adjust_settings(list(temperature = 0, top_p = 0.5), "openai", "gpt-6-luna"), "does not take temperature, top_p")
+  expect_null(out$temperature); expect_null(out$top_p)
+  expect_no_warning(adjust_settings(list(temperature = 0, top_p = 0.5), "openai", "gpt-6-luna"))
+  expect_null(suppressWarnings(adjust_settings(list(temperature = 0), "claude-code", "claude-sonnet-5"))$temperature)
+  expect_identical(adjust_settings(list(temperature = 0), "anthropic", "claude-haiku-4-5"), list(temperature = 0))
+  expect_identical(refused_settings("gemini", "gemini-3.8-flash"), character(0))
+})
+
 # ---------------------------------------------------------------- functions
 
 # A contract definition written the way an R user writes it (fields as JSON).

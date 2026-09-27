@@ -5,6 +5,9 @@ Python and TypeScript packages (`../contract`): every function, score,
 rating and saved-folder case, and a check against Python and TypeScript
 themselves (`../tools/crosslang.py`).
 
+* A temperature or top_p a model does not take (GPT-6, the o-series and
+  GPT-5, Claude 5) is left out of its requests with one warning, instead of
+  failing every row (`contract/models.json`, `fixed_sampling`).
 * `ai()`: a vectorised function whose body a model writes. Types are
   prototypes (`character()`, `factor(levels = ...)`, `record()`, a zero-row
   tibble, `vctrs::list_of()`, `optional()`, `described()`); answers come

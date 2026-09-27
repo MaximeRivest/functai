@@ -152,6 +152,7 @@ route <- function(s) {
 run_rows <- function(core, rows, extra = list()) {
   s <- effective(set_all(core$own, extra))
   r <- route(s)
+  s <- adjust_settings(s, r$provider, r$wire)
   caps <- call_capabilities(r$provider, r$wire, s)
   sig <- signature_of(core, s)
   plan <- bind_layout(s$adapter, s$template, sig, caps, r$provider)
@@ -314,6 +315,7 @@ ai_render <- function(fn, ...) {
   core <- core_of(fn)
   s <- effective(core$own)
   r <- route(s)
+  s <- adjust_settings(s, r$provider, r$wire)
   plan <- bind_layout(s$adapter, s$template, signature_of(core, s), call_capabilities(r$provider, r$wire, s), r$provider)
   row <- input_rows(core, named_inputs(core, list(...)))[[1L]]
   values <- prepare_inputs(plan$signature, row)

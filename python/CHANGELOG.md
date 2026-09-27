@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Models that run only at temperature 1 (GPT-6, and Claude Opus, Sonnet,
+  Fable and Mythos 5) no longer fail when a session sets `temperature=0`:
+  the setting is left out of their requests, with one warning (the new
+  `fixed_sampling` table in `contract/models.json`). A temperature of 1 is
+  sent as is. GPT-6 models are declared reasoning models.
+
 ## 1.1.0 (2026-09-27)
 
 New:

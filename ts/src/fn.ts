@@ -20,7 +20,7 @@ import type { Request } from "@lm15/lm15";
 import * as calllog from "./calllog.ts";
 import { run as runEngine, Prediction, watching, type Router, type Tool, type Watch } from "./engine.ts";
 import { bind } from "./layouts.ts";
-import { callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
+import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
 import { configOf, effective, type Settings } from "./settings.ts";
 import { builtin, env } from "./host.ts";
@@ -368,8 +368,9 @@ export function make(core: Core): AIFunction {
     return { model, router, provider: resolution.provider, wire: resolution.model };
   };
 
-  const planFor = (s: Settings) => {
-    const r = route(s);
+  const planFor = <S extends Settings>(given: S) => {
+    const r = route(given);
+    const s = adjustSettings(given, r.provider, r.wire);
     const caps = callCapabilities(r.provider, r.wire, { temperature: s.temperature, capabilities: s.capabilities });
     const key = JSON.stringify(["plan", layoutKey(s), caps, r.provider, s.module ?? null, s.includeFnName ?? null, core.state.instructions]);
     let plan = cache.get(key) as lmcc.Plan | undefined;
@@ -378,7 +379,7 @@ export function make(core: Core): AIFunction {
       if (cache.size > 64) cache.clear();
       cache.set(key, plan);
     }
-    return { plan, ...r };
+    return { plan, ...r, settings: s };
   };
 
   const program = (): calllog.Program => ({
@@ -398,10 +399,10 @@ export function make(core: Core): AIFunction {
     return calllog.current.run(call, () => inside(async () => {
       (watch as Stream | null)?.started(call, bound);
       try {
-        const { plan, model, router, provider } = planFor(s);
+        const { plan, model, router, provider, settings } = planFor(s);
         call.provider = provider;
         const pred = await runEngine({
-          function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings: s, router, model,
+          function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings, router, model,
           tools: core.tools, call, watch, answer,
         });
         call.outputs = pred.outputs as Rec;
@@ -443,10 +444,10 @@ export function make(core: Core): AIFunction {
     stream: (...args: unknown[]) => new Stream((watch) => predict(args, watch)),
     render: (...args: unknown[]): Request => {
       const s = settingsNow();
-      const { plan, model } = planFor(s);
+      const { plan, model, settings } = planFor(s);
       const values = sig.prepareInputs(plan.signature, bindInputs(args));
       if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(s) });
+      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
     },
     using: (settings: Settings) => make({ ...core, own: { ...core.own, ...settings }, state: structuredClone(core.state) }),
     state: (): State => structuredClone(core.state),

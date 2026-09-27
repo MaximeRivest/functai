@@ -6,6 +6,10 @@ The first TypeScript implementation of FunctAI, held to the same contract
 as the Python package (`../contract`): every function, score, rating and
 saved-folder case, and a check against Python itself (`../tools/crosslang.py`).
 
+- A temperature or top_p a model does not take (GPT-6, the o-series and
+  GPT-5, Claude 5) is left out of its requests, with one warning, as in
+  Python (`contract/models.json`, `fixed_sampling`).
+
 - `ai({ name, description, inputs, output | outputs, ...settings })`: a
   typed function whose body a model writes. Shapes with `t`, zod 4 or JSON
   Schema. The layouts `xml` (default), `chat` and `json`, templates,

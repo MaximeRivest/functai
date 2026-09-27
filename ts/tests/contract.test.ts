@@ -10,7 +10,7 @@ import { test } from "node:test";
 import * as lmcc from "lmcc";
 import { ai, exactMatch, fromManifest, interval, LoadRefused, type Tool } from "../src/index.ts";
 import { ratedRows } from "../src/calllog.ts";
-import { capabilities } from "../src/models.ts";
+import { adjustSettings, capabilities, refusedSettings } from "../src/models.ts";
 import { REGISTRY, resolveAdapter } from "../src/layouts.ts";
 import { generate, OUT, CONTRACT } from "../tools/generate.ts";
 
@@ -144,3 +144,20 @@ for (const [name, c] of cases("saved")) {
     assert.equal(fn.signatureId, want.signature_id);
   });
 }
+
+test("a sampling the model does not take is left out, with one warning", () => {
+  const warn = console.warn;
+  const said: string[] = [];
+  console.warn = (m: string) => { said.push(m); };
+  try {
+    assert.deepEqual(adjustSettings({ temperature: 1 }, "openai", "gpt-6-luna"), { temperature: 1 });
+    assert.deepEqual(adjustSettings({ temperature: 0, topP: 0.5 }, "openai", "gpt-6-luna"), { temperature: null, topP: null });
+    adjustSettings({ temperature: 0, topP: 0.5 }, "openai", "gpt-6-luna");
+    assert.equal(said.filter((m) => m.includes("does not take temperature, top_p")).length, 1);
+    assert.equal(adjustSettings({ temperature: 0 }, "claude-code", "claude-sonnet-5").temperature, null);
+    assert.deepEqual(adjustSettings({ temperature: 0 }, "anthropic", "claude-haiku-4-5"), { temperature: 0 });
+    assert.deepEqual(refusedSettings("gemini", "gemini-3.8-flash"), []);
+  } finally {
+    console.warn = warn;
+  }
+});

@@ -141,8 +141,25 @@ def test_the_model_table_is_the_contracts():
     for provider in table["native"]["providers"]:
         caps = models.capabilities(provider, "some-model")
         assert caps["stop_sequences"] == (provider not in table["native"]["no_stop_sequences"])
+    assert {k: tuple(v) for k, v in table["fixed_sampling"].items() if k != "about"} == models._FIXED_SAMPLING
     assert models.capabilities("anthropic", "claude-3-5-haiku")["assistant_prefill"] is True
     assert models.capabilities("openai", "gpt-4.1")["assistant_prefill"] is False
+
+
+
+def test_a_sampling_the_model_does_not_take_is_left_out_once(recwarn):
+    from types import SimpleNamespace
+    models._warned.clear()
+    luna = SimpleNamespace(provider="openai", model="gpt-6-luna")
+    assert models.adjust({"temperature": 1}, luna) == {"temperature": 1}      # 1 is what it samples at
+    out = models.adjust({"temperature": 0, "top_p": 0.5}, luna)
+    assert out["temperature"] is None and out["top_p"] is None and out["_dropped"] == ("temperature", "top_p")
+    models.adjust({"temperature": 0, "top_p": 0.5}, luna)
+    assert len([w for w in recwarn if "does not take" in str(w.message)]) == 1
+    sonnet = SimpleNamespace(provider="claude-code", model="claude-sonnet-5")
+    assert models.adjust({"temperature": 0}, sonnet)["temperature"] is None
+    haiku = SimpleNamespace(provider="anthropic", model="claude-haiku-4-5")
+    assert models.adjust({"temperature": 0}, haiku) == {"temperature": 0}
 
 
 # ------------------------------------------------------------------ scores

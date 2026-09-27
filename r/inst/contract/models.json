@@ -5,12 +5,18 @@
   "providers": ["openai", "anthropic", "gemini", "xai"],
   "no_stop_sequences": ["openai", "xai"],
   "reasoning_prefixes": {
-   "openai": ["o1", "o3", "o4", "gpt-5"],
+   "openai": ["o1", "o3", "o4", "gpt-5", "gpt-6"],
    "anthropic": ["claude-opus-4", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet"],
    "gemini": ["gemini-2.5", "gemini-3"],
    "xai": ["grok-3-mini", "grok-4"]
   },
   "assistant_prefill": ["anthropic"]
+ },
+ "fixed_sampling": {
+  "about": "Models that run only at temperature 1 and top_p 1, and refuse a request with any other value (seen live, 2026-09-27). By the provider (after speaks_as) and model-name prefix.",
+  "openai": ["o1", "o3", "o4", "gpt-5", "gpt-6"],
+  "openai-chat": ["o1", "o3", "o4", "gpt-5", "gpt-6"],
+  "anthropic": ["claude-opus-5", "claude-sonnet-5", "claude-fable-5", "claude-mythos-5"]
  },
  "speaks_as": {
   "about": "Subscription providers that speak another provider's API: the same facts as that provider.",
