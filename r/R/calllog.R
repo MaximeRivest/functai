@@ -75,7 +75,7 @@ caller_of <- function(settings) {
 warn_once <- function(key, message) {
   if (isTRUE(the$warned[[key]])) return(invisible())
   the$warned[[key]] <- TRUE
-  cli::cli_warn(message)
+  cli::cli_warn(message, .envir = parent.frame())
 }
 
 # ---------------------------------------------------------------- a call
@@ -157,7 +157,7 @@ call_record <- function(call, error = NULL) {
   out_sizes <- lmcc::jobj()
   for (k in names(call$outputs)) out_sizes[[k]] <- size_of(call$outputs[[k]])
   rec <- list(functai_call = FORMAT, id = call$id, parent = call$parent, root = call$root, program = program,
-              started = iso(call$started), seconds = round(as.numeric(Sys.time()) - call$started, 6), content = call$content)
+              started = iso(call$started), seconds = round((call$ended %||% as.numeric(Sys.time())) - call$started, 6), content = call$content)
   if (call$content) {
     rec["inputs"] <- list(call$inputs %||% lmcc::jobj())
     rec["outputs"] <- list(if (is.null(call$outputs)) NULL else if (length(call$outputs)) call$outputs else lmcc::jobj())

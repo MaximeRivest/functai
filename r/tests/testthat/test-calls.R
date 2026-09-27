@@ -121,10 +121,13 @@ reviews <- tibble::tibble(review = c("Broke in a day", "Love it", "Good but late
 test_that("predict and augment: tidymodels' columns, with call ids", {
   mood <- mood_of(fake_router(responder = guess))
   p <- predict(mood, reviews)
-  expect_identical(names(p), c(".pred", ".call", ".error"))
-  expect_identical(as.character(p$.pred), c("unhappy", "happy", "mixed", "unhappy"))
+  expect_identical(names(p), c(".pred_class", ".call", ".error"))     # a choice is a class, as in tidymodels
+  expect_identical(as.character(p$.pred_class), c("unhappy", "happy", "mixed", "unhappy"))
   a <- augment(mood, reviews)
-  expect_identical(names(a), c("review", "result", ".pred", ".call", ".error"))
+  expect_identical(names(a), c("review", "result", ".pred_class", ".call", ".error"))
+  n <- ai("n", "Count.", text = character(), .returns = integer(), .lm = "gpt-4.1-mini", .log_calls = FALSE,
+          .router = fake_router(list("<result>\n3\n</result>")))
+  expect_identical(names(predict(n, tibble::tibble(text = "x"))), c(".pred", ".call", ".error"))
   expect_error(predict(mood, tibble::tibble(x = 1)), "no column for input")
 })
 

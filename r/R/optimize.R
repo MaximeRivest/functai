@@ -59,7 +59,7 @@ bootstrap_few_shot <- function(fn, data, max_bootstrapped = 4L, max_labeled = 16
     for (j in seq_along(idx)) {
       if (length(boot) >= max_bootstrapped || !is.na(p$.error[[j]])) next
       row <- lapply(as.list(data[idx[[j]], , drop = FALSE]), element, i = 1L)
-      pred <- if (core$single) stats::setNames(list(element(p$.pred, j)), outs) else
+      pred <- if (core$single) stats::setNames(list(element(p[[pred_names(core)("result")]], j)), outs) else
         stats::setNames(lapply(paste0(".pred_", outs), function(k) element(p[[k]], j)), outs)
       if (passes(score(row, pred))) { boot[[length(boot) + 1L]] <- lmcc::turn_to_list(turns[[j]]); used <- c(used, idx[[j]]) }
     }

@@ -112,21 +112,43 @@ ev
 
 tidy(ev)      # broom's columns: metric, estimate, conf.low, conf.high, n, failed
 glance(ev)    # the first metric, in one row
-augment(ev)   # every row: the data, .pred, .call, .error and the score
+augment(ev)   # every row: the data, .pred_class, .call, .error and the score
 ```
 
 The interval is Wilson's for right-or-wrong scores (Student's t for others),
 computed exactly as Python and TypeScript compute it. `metric =
 function(row, prediction) ...` scores with your own rule.
 
-## tidymodels-style predictions
+## A tidymodels model
+
+An AI function is also a parsnip model, so it fits, predicts, resamples and
+tunes like any other, in the same workflows:
 
 ```r
-predict(team, new_data)   # a tibble: .pred, .call (the call's id), .error
-augment(team, new_data)   # new_data with those columns
+library(tidymodels)
+
+spec <- ai_model("classification", "Which team should answer this customer message?") |>
+  set_engine("functai", lm = "gpt-4.1-mini")
+
+fitted <- fit(spec, category ~ message, data = train)   # free: no call, no weights
+augment(fitted, test) |> accuracy(category, .pred_class)
+extract_fit_engine(fitted)                              # the AI function, callable on columns
 ```
 
-Several outputs are `.pred_<name>`. The `.call` column is what you rate.
+`examples` (how many training rows it sees as worked examples) is tunable
+with `tune()`. `set_engine("functai", samples = 5)` answers each row five
+times, so `type = "prob"` gives each class's share of the answers and the
+class is the majority vote. `evaluate()` scores any model, whether an AI
+function, a parsnip fit or a workflow, with the same 95% interval.
+
+**`vignette("tidymodels", package = "functai")` teaches all of it**, with
+real results: zero-shot against a tf-idf model, tuning, votes as
+probabilities, and a classical model trained on the language model's labels.
+
+`predict(team, new_data)` and `augment(team, new_data)` also work on the AI
+function itself: `.pred_class` for a choice, `.pred` for other answers,
+`.pred_<output>` for several, then `.call` (the call's id, which is what
+you rate) and `.error`.
 
 ## Making it better
 

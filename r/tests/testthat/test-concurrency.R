@@ -26,7 +26,8 @@ test_that("a column's calls are in flight together, and each answer goes to its 
   skip_if(!ok, "the fake server did not start")
 
   router <- lm15::new_router(api_keys = list(openai = "sk-test"), base_urls = list(openai = sprintf("http://127.0.0.1:%d/v1", port)))
-  echo <- ai("echo", "Say which row this is.", text = character(), .lm = "gpt-4.1-mini", .router = router, .log_calls = FALSE, .concurrency = 8L)
+  log <- withr::local_tempdir()
+  echo <- ai("echo", "Say which row this is.", text = character(), .lm = "gpt-4.1-mini", .router = router, .log_calls = log, .concurrency = 8L)
   started <- Sys.time()
   out <- echo(sprintf("row %d", 1:8))
   took <- as.numeric(Sys.time() - started, units = "secs")
@@ -36,4 +37,9 @@ test_that("a column's calls are in flight together, and each answer goes to its 
   out <- update(echo, concurrency = 2L)(sprintf("row %d", 1:4))
   expect_identical(out, sprintf("row %d", 1:4))
   expect_gt(as.numeric(Sys.time() - started, units = "secs"), 0.9)   # two waves of half a second
+  # each call's time is its own request's, not its wave's or its batch's
+  lines <- log_lines(log)
+  expect_length(lines, 12L)
+  own <- vapply(lines, function(l) l$seconds - l$exchanges[[1L]]$seconds, 0)
+  expect_true(all(abs(own) < 0.05), info = paste(round(own, 3), collapse = " "))
 })

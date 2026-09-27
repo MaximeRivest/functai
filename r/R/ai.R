@@ -368,28 +368,104 @@ as_demos <- function(core, demos) {
 
 # ---------------------------------------------------------------- tidymodels-style
 
-pred_names <- function(core) function(n) if (core$single) ".pred" else paste0(".pred_", n)
+# The answer's field when the function has one output, else NULL.
+single_field <- function(core) if (core$single) core$definition$outputs[[1L]] else NULL
+
+is_choice <- function(core) { f <- single_field(core); !is.null(f) && identical(f$kind, "enum") }
+
+pred_names <- function(core) function(n) if (core$single) (if (is_choice(core)) ".pred_class" else ".pred") else paste0(".pred_", n)
+
+# `samples` answers per row at a sampling temperature, remembered per row in
+# `memo` (an environment) so class and probability predictions of the same
+# rows share their calls.
+sampled <- function(core, rows, samples, temperature, memo = NULL, extra = list()) {
+  # what decides the answers: the function's version, the model, the sampling
+  s <- effective(set_all(core$own, extra))
+  prefix <- paste(version_of(core), s$lm %||% "", samples, temperature, sep = "|")
+  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(r)), "")
+  todo <- which(!is.na(keys) & !vapply(keys, function(k) !is.na(k) && !is.null(memo) && !is.null(memo[[k]]), NA))
+  todo <- todo[!duplicated(keys[todo])]
+  if (length(todo)) {
+    many <- rep(rows[todo], each = samples)
+    results <- run_rows(core, many, set_all(extra, list(temperature = temperature)))
+    for (j in seq_along(todo)) {
+      got <- results[(j - 1L) * samples + seq_len(samples)]
+      answers <- lapply(Filter(function(r) is.null(r$error), got), function(r) r$outputs[[answer_name(core)]])
+      value <- list(answers = answers, calls = vapply(got, function(r) r$call %||% NA_character_, ""),
+                    error = if (!length(answers)) conditionMessage(got[[1L]]$error) else NA_character_)
+      if (is.null(memo)) memo <- new.env()
+      memo[[keys[[todo[[j]]]]]] <- value
+    }
+  }
+  lapply(keys, function(k) if (is.na(k)) list(answers = list(), calls = character(0), error = NA_character_) else memo[[k]])
+}
+
+vote_table <- function(core, votes) {
+  lv <- single_field(core)$levels
+  probs <- t(vapply(votes, function(v) {
+    a <- unlist(lapply(v$answers, as.character))
+    if (!length(a)) return(rep(NA_real_, length(lv)))
+    as.numeric(table(factor(a, levels = lv))) / length(a)
+  }, numeric(length(lv))))
+  if (length(votes) == 1L) probs <- matrix(probs, nrow = 1L)
+  colnames(probs) <- lv
+  probs
+}
 
 #' Predictions for a data frame
 #'
 #' One call per row of `new_data` (its columns named like the function's
-#' inputs), with the call's id for [rate()] and the error of a call that
-#' failed. Columns follow tidymodels: `.pred` (one output) or
-#' `.pred_<output>`, then `.call` and `.error`. `augment()` adds them to
-#' `new_data`, ready for yardstick.
+#' inputs). Columns follow tidymodels: `.pred_class` when the answer is a
+#' choice (a factor), `.pred` for other answers, `.pred_<output>` for several
+#' outputs; then `.call` (the call's id, for [rate()]) and `.error`.
+#' `augment()` adds them to `new_data`, ready for yardstick.
+#'
+#' **Probabilities.** Most providers (OpenAI, Anthropic, Gemini) do not
+#' measure how likely each answer is, and FunctAI never makes a number up.
+#' With `samples = k`, each row is answered `k` times at `temperature` (1
+#' by default) and `type = "prob"` gives the share of answers per level
+#' (`.pred_<level>`), while `type = "class"` gives the most frequent one (a
+#' majority vote, which is often more accurate than one answer). It costs
+#' `k` calls per row; class and probability predictions of the same rows
+#' share them.
 #' @param object,x An AI function.
 #' @param new_data A data frame.
+#' @param type `"class"` or `"numeric"` (the answer, whatever its type) or
+#'   `"prob"` (a choice's probabilities; needs `samples`).
+#' @param samples Answers per row (1: one call, no probabilities).
+#' @param temperature The sampling temperature when `samples > 1`.
 #' @param ... Settings for these calls (`lm = ...`).
 #' @return A tibble.
 #' @export
-predict.functai_fn <- function(object, new_data, ...) {
+predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temperature = 1, ...) {
   core <- core_of(object)
+  settings <- check_settings(list(...))
   missing <- setdiff(names(core$definition$inputs), names(new_data))
   if (length(missing)) cli::cli_abort("{.arg new_data} has no column for input{?s} {.field {missing}}")
+  type <- type %||% "class"
+  if (!type %in% c("class", "numeric", "prob", "raw")) cli::cli_abort("{.arg type} is \"class\", \"numeric\" or \"prob\", not {.val {type}}")
   rows <- input_rows(core, as.list(new_data)[names(core$definition$inputs)])
-  results <- if (length(rows)) run_rows(core, rows, check_settings(list(...))) else list()
+  samples <- as.integer(samples)
+  if (type == "prob" || samples > 1L) {
+    if (!is_choice(core)) cli::cli_abort(c("probabilities and votes need an answer that is a choice: {.code .returns = factor(levels = ...)}"))
+    if (samples < 2L) cli::cli_abort(c("OpenAI, Anthropic and Gemini do not measure how likely each answer is, and FunctAI does not make that number up",
+      i = "ask for {.code samples = 5} (or more): each row is answered that many times and the probability is each answer's share (costs 5 calls a row)"))
+    votes <- sampled(core, rows, samples, temperature, core$memo, settings)
+    probs <- vote_table(core, votes)
+    if (type == "prob") {
+      out <- tibble::as_tibble(as.data.frame(probs, check.names = FALSE))
+      names(out) <- paste0(".pred_", names(out))
+      return(out)
+    }
+    lv <- single_field(core)$levels
+    best <- apply(probs, 1L, function(p) if (all(is.na(p))) NA_character_ else lv[[which.max(p)]])
+    return(tibble::tibble(.pred_class = factor(best, levels = lv),
+                          .call = vapply(votes, function(v) paste(stats::na.omit(v$calls), collapse = " "), ""),
+                          .error = vapply(votes, function(v) v$error, "")))
+  }
+  results <- if (length(rows)) run_rows(core, rows, settings) else list()
   out <- answers(core, results, pred_names(core))
-  out <- if (core$single) tibble::tibble(.pred = out) else out
+  if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
   out$.error <- vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), "")
   attr(out, "turns") <- lapply(results, function(r) r$turn)
@@ -404,7 +480,16 @@ generics::augment
 #' @method augment functai_fn
 #' @export
 augment.functai_fn <- function(x, new_data, ...) {
-  p <- predict.functai_fn(x, new_data, ...)
+  args <- list(...)
+  if (is.null(args$type) && !is.null(args$samples) && args$samples > 1L) {
+    core <- core_of(x)
+    if (is.null(core$memo)) { core$memo <- new.env(); x <- make_fn(core) }     # the probabilities reuse the class's calls
+    p <- predict.functai_fn(x, new_data, ...)
+    probs <- predict.functai_fn(x, new_data, type = "prob", ...)
+    p <- vctrs::vec_cbind(p[".pred_class"], probs, p[c(".call", ".error")])
+  } else {
+    p <- predict.functai_fn(x, new_data, ...)
+  }
   attr(p, "turns") <- NULL
   tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(new_data), p))
 }

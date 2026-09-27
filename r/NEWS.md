@@ -18,7 +18,18 @@ themselves (`../tools/crosslang.py`).
   values checked against their types; transient provider errors re-sent.
 * `evaluate()` with broom's `tidy()`, `glance()`, `augment()`; the same scores
   and intervals as Python.
-* `predict()` and `augment()` for AI functions, with tidymodels' `.pred` columns.
+* `ai_model()`: an AI function as a parsnip model (engine `"functai"`), for
+  workflows, rsample, tune (`examples = tune()`, `worked_examples()`) and
+  yardstick. Fitting reads the outcome's levels and picks worked examples;
+  it calls nothing. `extract_fit_engine()` gives the AI function back.
+* `predict()` and `augment()` for AI functions, with tidymodels' columns:
+  `.pred_class` for a choice, `.pred` otherwise. `samples = k` answers each
+  row `k` times: `type = "prob"` gives each class's share, the class is the
+  majority. Without it, probabilities are refused (asked directly) or `NA`
+  (through parsnip): FunctAI never makes a probability up.
+* `evaluate()` scores any model with a `predict()` method (a parsnip fit, a
+  workflow) with the same interval as an AI function.
+* `vignette("tidymodels")`.
 * The call log (`calls()`, `rate()`, `rated()`): the same folder and records
   as Python and TypeScript.
 * `labeled_few_shot()`, `bootstrap_few_shot()`, `with_demos()`,

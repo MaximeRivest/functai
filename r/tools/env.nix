@@ -10,6 +10,8 @@ let
       curl openssl askpass
       # tests and the tidyverse functai pairs with
       testthat dplyr tidyr purrr roxygen2 httpuv
+      # tidymodels, and the vignettes
+      parsnip dials workflows yardstick rsample tune recipes textrecipes glmnet knitr rmarkdown ggplot2 tidymodels
     ];
   };
-in pkgs.buildEnv { name = "functai-r"; paths = [ R pkgs.gcc pkgs.gnumake pkgs.pkg-config pkgs.openssl.dev pkgs.curl.dev ]; }
+in pkgs.buildEnv { name = "functai-r"; paths = [ R pkgs.pandoc pkgs.gcc pkgs.gnumake pkgs.pkg-config pkgs.openssl.dev pkgs.curl.dev ]; }

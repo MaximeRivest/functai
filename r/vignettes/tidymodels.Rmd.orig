@@ -1,0 +1,401 @@
+---
+title: "Language models are models: functai and tidymodels"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Language models are models: functai and tidymodels}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<!-- This file is tidymodels.Rmd.orig. It calls real models (a few cents),
+so it is knitted by hand into tidymodels.Rmd, outputs included:
+  cd r/vignettes && R_LIBS=../.lib Rscript -e 'knitr::knit("tidymodels.Rmd.orig", "tidymodels.Rmd")'
+Edit this file, never tidymodels.Rmd. -->
+
+```{r, include = FALSE}
+knitr::opts_chunk$set(collapse = TRUE, comment = "#>", fig.path = "tidymodels-", fig.width = 7, fig.height = 3.2,
+                      dpi = 110, out.width = "100%", message = FALSE, warning = FALSE)
+options(pillar.width = 90, width = 90)
+pct <- function(x) paste0(round(100 * x), "%")
+```
+
+You know how tidymodels works. You write a model specification, `fit()`
+it on training data, `predict()` new data, and score the predictions with
+yardstick. Swap one model for another and nothing else in your code moves.
+
+This vignette shows that a language model can be one of those models. You
+describe the task in a sentence, and it goes through the same four verbs,
+into the same workflows, through the same resampling and tuning. Along the
+way we'll find out when it is worth it and what it costs, with real
+numbers from a real model.
+
+```{r setup}
+library(tidymodels)
+library(textrecipes)
+library(functai)
+
+log_folder <- tempfile("functai-calls-")
+ai_config(lm = "gpt-4.1-mini", temperature = 0, log_calls = log_folder)
+```
+
+`ai_config()` chooses the model every AI function uses, unless it says
+otherwise. `temperature = 0` asks for its most likely answer every time.
+`log_calls` writes each call down, so we can count them at the end. To run
+this yourself, set `OPENAI_API_KEY` (or name another model: `"claude-haiku-4-5"`,
+`"gemini:gemini-2.5-flash"`, a local `"ollama:qwen3.5:0.8b"`).
+
+## The vocabulary, side by side
+
+| tidymodels | with a language model |
+|---|---|
+| `multinom_reg()` | `ai_model("classification", "the task, in a sentence")` |
+| `set_engine("glmnet")` | `set_engine("functai", lm = "claude-haiku-4-5")`: the language model is the engine |
+| `fit()` estimates weights | `fit()` reads the outcome's levels and, if you ask, picks worked examples. No weights, no calls. |
+| `predict()` computes | `predict()` asks the model, one call per row, 8 at a time |
+| `penalty = tune()` | `examples = tune()`: how many training rows it sees as worked examples |
+| `type = "prob"` | `type = "prob"` when you ask for several answers per row (`samples`) |
+| free to predict | every prediction is a paid call |
+
+The last line is the one to keep in mind. It shapes every choice below.
+
+## The data
+
+`tickets` ships with functai: 80 messages to a small homeware shop, each
+sent to one of four teams. The shop has house rules. A parcel damaged on
+the way is *shipping*, not *product*. A refund is *billing*. Those rules
+are exactly what a model cannot guess.
+
+```{r data}
+tickets <- functai::tickets |> mutate(category = factor(category))
+count(tickets, category)
+
+set.seed(2026)
+split <- initial_split(tickets, prop = 0.5, strata = category)
+train <- training(split)
+test  <- testing(split)
+```
+
+Forty messages to learn from and forty to test on. That's small, and on
+purpose: small labelled data is where most text problems start.
+
+## A classical baseline
+
+First, the model you'd normally reach for. The recipe turns each message
+into word weights (tf-idf), and a penalised multinomial regression learns
+which words point to which team.
+
+```{r baseline}
+tfidf <- recipe(category ~ message, data = train) |>
+  step_tokenize(message) |>
+  step_tokenfilter(message, max_tokens = 300) |>
+  step_tfidf(message)
+
+glmnet_fit <- workflow() |>
+  add_recipe(tfidf) |>
+  add_model(multinom_reg(penalty = 0.01) |> set_engine("glmnet")) |>
+  fit(train)
+
+augment(glmnet_fit, test) |> accuracy(category, .pred_class)
+```
+
+```{r baseline-acc, include = FALSE}
+glmnet_acc <- augment(glmnet_fit, test) |> accuracy(category, .pred_class) |> pull(.estimate)
+```
+
+`r pct(glmnet_acc)` right. That's not bad for forty examples, but a model
+that learns words from forty messages has seen very few words.
+
+## The same four verbs, with a language model
+
+```{r spec}
+ai_spec <- ai_model("classification", "Which team should answer this customer message?") |>
+  set_engine("functai")
+ai_spec
+```
+
+The description is the whole model: what you would tell a new colleague on
+their first day. Now fit it, and time it:
+
+```{r fit}
+system.time(ai_fit <- fit(ai_spec, category ~ message, data = train))
+ai_fit
+```
+
+That took no time because nothing was called. Fitting read the formula (the
+input is `message`), and it read the outcome's four levels (the only
+answers the model may give). The answers in `train` were not used at all:
+this model starts "zero-shot". Predicting is where the work happens:
+
+```{r predict, warning = TRUE}
+ai_pred <- augment(ai_fit, test)
+ai_pred |> select(message, category, .pred_class)
+ai_pred |> accuracy(category, .pred_class)
+ai_pred |> conf_mat(category, .pred_class)
+```
+
+```{r ai-acc, include = FALSE}
+ai_acc <- ai_pred |> accuracy(category, .pred_class) |> pull(.estimate)
+```
+
+`r pct(ai_acc)` right, with no training at all. And `augment()` warned
+that the probability columns are `NA`. That's deliberate, and the section
+on probabilities below explains it.
+
+Which messages did it get wrong?
+
+```{r misses}
+ai_pred |>
+  filter(category != .pred_class) |>
+  select(message, category, .pred_class)
+```
+
+Read them against the shop's house rules. Anything that arrived broken is
+*shipping*, because the carrier pays. Every request for money back is
+*billing*. Problems that appear while using a product are *product*.
+Signing in and personal data are *account*. A model reading a message cold
+can't know where this shop draws those lines, so it makes the reasonable
+call rather than the house call.
+
+## What did `fit()` make? A function
+
+Under the parsnip wrapper, the fitted engine is an ordinary R function:
+
+```{r engine}
+team <- extract_fit_engine(ai_fit)
+team
+team("My card was charged twice for order B-2210.")
+```
+
+It is vectorised, so it also works outside tidymodels, as a column in any
+dplyr verb:
+
+```{r engine-mutate}
+test |>
+  slice(1:4) |>
+  mutate(team = team(message)) |>
+  select(message, team)
+```
+
+Here the two worlds meet. The same object is a tidymodels model, fitted
+and tuned with the grammar you know, and a function you can call wherever
+you have text.
+
+## Comparing fairly
+
+On forty test messages, a difference of a few points could be luck.
+`evaluate()` scores any model, whether a workflow, a parsnip fit or an AI
+function, and gives each score a 95% interval:
+
+```{r compare}
+scores <- bind_rows(
+  tidy(evaluate(glmnet_fit, test)) |> mutate(model = "glmnet on tf-idf (trained on 40)"),
+  tidy(evaluate(ai_fit, test))     |> mutate(model = "gpt-4.1-mini (no training)")
+)
+scores |> select(model, estimate, conf.low, conf.high)
+```
+
+```{r compare-plot, fig.height = 1.8, fig.cap = "How often each model is right on the 40 test messages, with 95% intervals."}
+ggplot(scores, aes(estimate, model)) +
+  geom_pointrange(aes(xmin = conf.low, xmax = conf.high)) +
+  scale_x_continuous(labels = scales::percent, limits = c(0, 1)) +
+  labs(x = "right, with a 95% interval", y = NULL)
+```
+
+```{r compare-overlap, include = FALSE}
+overlap <- scores$conf.high[[1]] >= scores$conf.low[[2]]
+```
+
+`r if (overlap) "The intervals overlap, so forty test messages are too few to be sure which model is better: a bigger test set would tell." else "The intervals don't overlap. With forty test messages that's a big gap, and it means the difference is real, not luck."`
+
+## In a workflow, resampled and tuned
+
+A language model can learn from a few worked examples: a message and its
+right team, shown before each question. `examples` is the model's tuning
+parameter. Here it is in a workflow, tuned by cross-validation like any
+other:
+
+```{r tune}
+ai_wf <- workflow() |>
+  add_formula(category ~ message) |>
+  add_model(
+    ai_model("classification", "Which team should answer this customer message?",
+             examples = tune()) |>
+      set_engine("functai")
+  )
+
+set.seed(1)
+folds <- vfold_cv(train, v = 5, strata = category)
+
+tuned <- tune_grid(ai_wf, folds,
+                   grid = tibble(examples = c(0, 2, 4, 8)),
+                   metrics = metric_set(accuracy))
+collect_metrics(tuned) |> select(examples, mean, std_err)
+```
+
+Two things to notice.
+
+**The formula, not a recipe.** A language model reads the message itself.
+A recipe that turns it into word weights would take the words away. So the
+workflow uses `add_formula()`.
+
+**The metric set.** tune's default metrics include `roc_auc`, which needs
+probabilities. One answer per row has none (see below), so we ask for
+accuracy only.
+
+```{r tune-summary, include = FALSE}
+m <- collect_metrics(tuned)
+at <- function(k) m[m$examples == k, ]
+top <- m[which.max(m$mean), ]
+gain <- top$mean - at(0)$mean
+z <- gain / sqrt(top$std_err^2 + at(0)$std_err^2)   # the gap in units of its own uncertainty
+worse <- m$examples[m$examples > 0 & m$mean < at(0)$mean]
+```
+
+Each value was fitted five times and predicted on eight held-out rows each
+time, so every mean above rests on forty answers. Read it against the
+standard errors, a few points each.
+
+`r if (top$examples == 0) "No examples scored best: the worked examples did not help." else sprintf("%d examples scored best, %d points above none. Measured against the uncertainty of both scores, that gap is about %s times its standard error: %s", top$examples, round(100 * gain), format(round(z, 1)), if (z < 2) "forty answers can't tell it apart from luck." else "suggestive, but see what the test set says below.")`
+`r if (length(worse)) sprintf("And %s example%s scored *lower* than none. A few examples can mislead as well as teach, because the model copies the pattern of whichever messages it happened to see.", paste(worse, collapse = " and "), if (length(worse) == 1 && worse == 1) "" else "s") else ""`
+
+The model already knows the language, so worked examples are only worth
+their price when they teach it something it can't guess. Here that's the
+shop's house rules, and a handful of random rows rarely covers them.
+
+`last_fit()` gives the honest final number: the chosen setting, fitted on
+all of `train`, scored once on `test`.
+
+```{r last-fit}
+best <- select_best(tuned, metric = "accuracy")
+best
+final <- finalize_workflow(ai_wf, best) |>
+  last_fit(split, metrics = metric_set(accuracy))
+collect_metrics(final)
+```
+
+```{r last-fit-n, include = FALSE}
+final_acc <- collect_metrics(final)$.estimate
+```
+
+`r pct(final_acc)` on the test set with `r best$examples` examples, against
+`r pct(ai_acc)` with none. `r if (best$examples == 0) "Tuning kept the zero-shot model, and the test set agrees." else if (final_acc <= ai_acc) "The test set did not confirm the gain. That's the winner's curse: picking the best of four noisy scores favours whichever setting got lucky on these folds. Always check a tuned setting on data it never saw, as last_fit() does, before you pay for it: here, more examples per call bought nothing." else if (final_acc - ai_acc < 0.1) "On forty test messages that difference is within noise, so treat the gain as possible, not proven." else "The test set confirms the gain."`
+
+## Probabilities, honestly
+
+tidymodels models give `type = "prob"`: a probability per class, which
+`roc_auc()`, calibration plots and thresholds need. OpenAI, Anthropic and
+Gemini don't say how likely each answer is, and functai never invents that
+number. That's why `augment()` above had `NA` probabilities.
+
+What you can do is ask the same question several times. With `samples = 5`,
+each message is answered five times at temperature 1. The probability of a
+team is its share of those five answers, and the class is the majority
+vote:
+
+```{r votes}
+voter <- ai_model("classification", "Which team should answer this customer message?") |>
+  set_engine("functai", samples = 5) |>
+  fit(category ~ message, data = train)
+
+votes <- augment(voter, test)
+votes |> select(category, .pred_class, .pred_account:.pred_shipping) |> head()
+votes |> roc_auc(category, .pred_account:.pred_shipping)
+```
+
+Where did the five answers disagree?
+
+```{r votes-unsure}
+votes |>
+  filter(pmax(.pred_account, .pred_billing, .pred_product, .pred_shipping) < 1) |>
+  select(message, category, .pred_class, .pred_account:.pred_shipping)
+```
+
+```{r votes-n, include = FALSE}
+unsure <- votes |> filter(pmax(.pred_account, .pred_billing, .pred_product, .pred_shipping) < 1)
+wrong_unsure <- sum(unsure$category != unsure$.pred_class)
+wrong_all <- sum(votes$category != votes$.pred_class)
+```
+
+Only `r nrow(unsure)` of 40 messages split the vote. `r if (wrong_unsure == 0) sprintf("None of the vote's %d mistakes is among them: on those, all five answers agreed, and were wrong. That's the lesson here. Votes measure how *consistent* the model is, not whether it is *right*, and a model that doesn't know the house rules is consistently wrong about them.", wrong_all) else sprintf("%d of the vote's %d mistakes %s among them, so the split votes do point at messages a person should check.", wrong_unsure, wrong_all, if (wrong_unsure == 1) "is" else "are")`
+
+This cost five calls per message; the class and the probabilities share
+them. The probabilities come in steps of 0.2, and `gpt-4.1-mini` is sure
+of itself most of the time. So `roc_auc` here rewards the model for being
+right, more than for knowing when it might not be. The fix for consistent
+mistakes isn't more votes. It's teaching the rule: write it into the
+description, or show it with worked examples that cover it.
+
+## The other way round: a classical model that learns from the language model
+
+Swapping works in both directions. Say you had thousands of unlabelled
+messages. The language model can label them once, and a classical model
+can learn from those labels, then predict for free, forever, offline.
+
+Here we pretend `train` has no labels: the language model labels it, and
+glmnet learns from its answers instead of a person's.
+
+```{r distill}
+ai_labelled <- train |>
+  select(message) |>
+  mutate(category = team(message))
+
+student <- workflow() |>
+  add_recipe(recipe(category ~ message, data = ai_labelled) |>
+               step_tokenize(message) |>
+               step_tokenfilter(message, max_tokens = 300) |>
+               step_tfidf(message)) |>
+  add_model(multinom_reg(penalty = 0.01) |> set_engine("glmnet")) |>
+  fit(ai_labelled)
+
+bind_rows(
+  tidy(evaluate(glmnet_fit, test)) |> mutate(labels = "a person's"),
+  tidy(evaluate(student, test))    |> mutate(labels = "the language model's")
+) |> select(labels, estimate, conf.low, conf.high)
+```
+
+```{r distill-n, include = FALSE}
+label_agree <- mean(ai_labelled$category == train$category)
+d <- bind_rows(tidy(evaluate(glmnet_fit, test)), tidy(evaluate(student, test)))
+```
+
+The language model's labels matched a person's on `r pct(label_agree)` of
+the training messages. The student learned from those and reached
+`r pct(d$estimate[[2]])`, against `r pct(d$estimate[[1]])` for the model
+trained on a person's labels. `r if (d$conf.high[[2]] >= d$conf.low[[1]] && d$conf.high[[1]] >= d$conf.low[[2]]) "The intervals overlap: with forty messages to learn from, both students are limited by how few messages they saw, far more than by who labelled them." else "The intervals don't overlap here, so the labels' mistakes cost the student something real."`
+
+Forty messages is far too few for a word-counting model, whoever labels
+them. The pattern is what scales. Labelling 40,000 messages is 40,000
+cheap calls, done once. The classical model trained on them then predicts
+for free, offline, in milliseconds. Before you trust it, measure the
+student against a few hundred rows a person labelled.
+
+## What this vignette cost
+
+Every call was logged, so we can count them:
+
+```{r cost}
+calls(folder = log_folder) |>
+  summarise(calls = n(),
+            input_tokens = sum(input_tokens),
+            output_tokens = sum(output_tokens))
+```
+
+A few cents with `gpt-4.1-mini`. Most calls came from tuning (4 values × 40
+rows) and from voting (5 × 40). Resampling and tuning multiply calls like
+nothing else does, so choose small grids.
+
+## Rules of thumb
+
+- **Start zero-shot.** A description and `fit()` cost nothing. Measure it
+  before you tune it.
+- **Measure with intervals.** Small test sets make small differences
+  meaningless; `evaluate()` says how small.
+- **Use the formula, not a word recipe**, for an AI model in a workflow.
+- **Ask for probabilities only when you need them** (`samples`), and for
+  tuning without them, use `metric_set(accuracy)`.
+- **Keep `temperature = 0` for scoring.** Answers can still vary a little
+  from run to run; that's part of why intervals matter.
+- **Call the engine directly** when you just want answers:
+  `extract_fit_engine(fit)` is a vectorised R function.
+- **Let a language model label, and a classical model learn** when you
+  need to predict millions of rows.

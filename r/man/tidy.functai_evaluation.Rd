@@ -23,6 +23,6 @@ A tibble.
 \description{
 \code{tidy()}: one row per metric, broom's columns (\code{estimate}, \code{conf.low},
 \code{conf.high}) and \code{n}, \code{failed}. \code{glance()}: the first metric in one row.
-\code{augment()}: every row with its answer (\code{.pred}...), its score, its call
+\code{augment()}: every row with its answer (\code{.pred_class} or \code{.pred}...), its score, its call
 id and its error.
 }

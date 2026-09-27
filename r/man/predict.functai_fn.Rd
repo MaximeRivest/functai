@@ -5,7 +5,7 @@
 \alias{augment.functai_fn}
 \title{Predictions for a data frame}
 \usage{
-\method{predict}{functai_fn}(object, new_data, ...)
+\method{predict}{functai_fn}(object, new_data, type = NULL, samples = 1L, temperature = 1, ...)
 
 \method{augment}{functai_fn}(x, new_data, ...)
 }
@@ -14,6 +14,13 @@
 
 \item{new_data}{A data frame.}
 
+\item{type}{\code{"class"} or \code{"numeric"} (the answer, whatever its type) or
+\code{"prob"} (a choice's probabilities; needs \code{samples}).}
+
+\item{samples}{Answers per row (1: one call, no probabilities).}
+
+\item{temperature}{The sampling temperature when \code{samples > 1}.}
+
 \item{...}{Settings for these calls (\code{lm = ...}).}
 }
 \value{
@@ -21,8 +28,18 @@ A tibble.
 }
 \description{
 One call per row of \code{new_data} (its columns named like the function's
-inputs), with the call's id for \code{\link[=rate]{rate()}} and the error of a call that
-failed. Columns follow tidymodels: \code{.pred} (one output) or
-\verb{.pred_<output>}, then \code{.call} and \code{.error}. \code{augment()} adds them to
-\code{new_data}, ready for yardstick.
+inputs). Columns follow tidymodels: \code{.pred_class} when the answer is a
+choice (a factor), \code{.pred} for other answers, \verb{.pred_<output>} for several
+outputs; then \code{.call} (the call's id, for \code{\link[=rate]{rate()}}) and \code{.error}.
+\code{augment()} adds them to \code{new_data}, ready for yardstick.
+}
+\details{
+\strong{Probabilities.} Most providers (OpenAI, Anthropic, Gemini) do not
+measure how likely each answer is, and FunctAI never makes a number up.
+With \code{samples = k}, each row is answered \code{k} times at \code{temperature} (1
+by default) and \code{type = "prob"} gives the share of answers per level
+(\verb{.pred_<level>}), while \code{type = "class"} gives the most frequent one (a
+majority vote, which is often more accurate than one answer). It costs
+\code{k} calls per row; class and probability predictions of the same rows
+share them.
 }

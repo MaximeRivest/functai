@@ -2,23 +2,25 @@
 % Please edit documentation in R/evaluate.R
 \name{evaluate}
 \alias{evaluate}
-\title{How often is an AI function right?}
+\title{How often is a model right?}
 \usage{
 evaluate(fn, data, expected = NULL, metric = NULL, ...)
 }
 \arguments{
-\item{fn}{An AI function.}
+\item{fn}{A model: an AI function, a parsnip fit, a workflow, ...}
 
-\item{data}{A data frame: columns named like the inputs, and the right answers.}
+\item{data}{A data frame: the model's inputs, and the right answers.}
 
 \item{expected}{Where the right answers are: a column (bare or quoted) for
 the answer, or a named character vector \code{c(output = "column")}. Default:
-the columns named like the outputs.}
+the columns named like the outputs (an AI function) or the outcome the
+model was fitted on (a parsnip fit or a workflow).}
 
 \item{metric}{A function \verb{(row, prediction)} returning a score (both are
 named lists), or a named list of such functions. Default: \code{\link[=exact_match]{exact_match()}}.}
 
-\item{...}{Settings for these calls (\code{lm = ...}).}
+\item{...}{Settings for an AI function's calls (\code{lm = ...}), or arguments
+to another model's \code{predict()}.}
 }
 \value{
 An evaluation: \code{print()} it, or use \code{\link[generics:tidy]{generics::tidy()}} (the score
@@ -26,7 +28,11 @@ and its 95\% interval), \code{\link[generics:glance]{generics::glance()}} and \c
 (every row, its answer and score).
 }
 \description{
-Runs the function on every row of \code{data} and scores each answer against
-the right one. A row whose call failed scores 0. The calls are logged with
+Runs a model on every row of \code{data} and scores each answer against the
+right one, with a 95\% interval. The model is an AI function, a fitted
+parsnip model, a fitted workflow, or anything with a \code{predict()} method
+returning \code{.pred_class} or \code{.pred}: the same score, the same interval, so
+an AI function and a classical model compare on equal terms. A row whose
+call failed scores 0. An AI function's calls are logged with
 \code{caller.evaluation} set, so they are not mistaken for use.
 }

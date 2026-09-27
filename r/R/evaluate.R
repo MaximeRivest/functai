@@ -61,41 +61,60 @@ exact_match <- function(answers, prediction) {
   out
 }
 
-#' How often is an AI function right?
+#' How often is a model right?
 #'
-#' Runs the function on every row of `data` and scores each answer against
-#' the right one. A row whose call failed scores 0. The calls are logged with
+#' Runs a model on every row of `data` and scores each answer against the
+#' right one, with a 95% interval. The model is an AI function, a fitted
+#' parsnip model, a fitted workflow, or anything with a `predict()` method
+#' returning `.pred_class` or `.pred`: the same score, the same interval, so
+#' an AI function and a classical model compare on equal terms. A row whose
+#' call failed scores 0. An AI function's calls are logged with
 #' `caller.evaluation` set, so they are not mistaken for use.
-#' @param fn An AI function.
-#' @param data A data frame: columns named like the inputs, and the right answers.
+#' @param fn A model: an AI function, a parsnip fit, a workflow, ...
+#' @param data A data frame: the model's inputs, and the right answers.
 #' @param expected Where the right answers are: a column (bare or quoted) for
 #'   the answer, or a named character vector `c(output = "column")`. Default:
-#'   the columns named like the outputs.
+#'   the columns named like the outputs (an AI function) or the outcome the
+#'   model was fitted on (a parsnip fit or a workflow).
 #' @param metric A function `(row, prediction)` returning a score (both are
 #'   named lists), or a named list of such functions. Default: [exact_match()].
-#' @param ... Settings for these calls (`lm = ...`).
+#' @param ... Settings for an AI function's calls (`lm = ...`), or arguments
+#'   to another model's `predict()`.
 #' @return An evaluation: `print()` it, or use [generics::tidy()] (the score
 #'   and its 95% interval), [generics::glance()] and [generics::augment()]
 #'   (every row, its answer and score).
 #' @export
 evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
-  core <- core_of(fn)
-  outs <- names(core$definition$outputs)
   expected_q <- rlang::enexpr(expected)
-  mapping <- if (is.null(expected_q)) { m <- intersect(outs, names(data)); stats::setNames(m, m) }
-    else if (is.symbol(expected_q)) stats::setNames(as.character(expected_q), answer_name(core))
-    else { e <- eval(expected_q, parent.frame()); if (is.null(names(e))) stats::setNames(e, answer_name(core)) else e }
+  expected_v <- if (is.null(expected_q)) NULL else if (is.symbol(expected_q)) as.character(expected_q) else eval(expected_q, parent.frame())
+  metrics <- if (is.null(metric)) NULL else if (is.function(metric)) list(metric = metric) else metric
+  run <- new_id()
+  if (inherits(fn, "functai_fn")) {
+    core <- core_of(fn)
+    outs <- names(core$definition$outputs)
+    mapping <- if (is.null(expected_v)) { m <- intersect(outs, names(data)); stats::setNames(m, m) }
+      else if (is.null(names(expected_v))) stats::setNames(expected_v, answer_name(core)) else expected_v
+    label <- core$definition$name
+    settings <- set_all(list(caller = list(evaluation = run)), list(...))
+    p <- do.call(predict.functai_fn, c(list(fn, data), settings))
+    cols <- if (core$single) stats::setNames(pred_names(core)("result"), outs) else stats::setNames(paste0(".pred_", outs), outs)
+  } else {
+    outcome <- expected_v %||% model_outcome(fn)
+    if (is.null(outcome)) cli::cli_abort("which column holds the right answers? pass {.arg expected}")
+    p <- tibble::as_tibble(stats::predict(fn, data, ...))
+    col <- intersect(c(".pred_class", ".pred"), names(p))
+    if (!length(col)) cli::cli_abort("{.fn predict} on {.cls {class(fn)[[1L]]}} gave no {.field .pred_class} or {.field .pred} column")
+    mapping <- stats::setNames(unname(outcome[[1L]]), "result")
+    cols <- c(result = col[[1L]])
+    label <- if (inherits(fn, "model_fit")) class(fn$spec)[[1L]]
+      else if (inherits(fn, "workflow") && requireNamespace("workflows", quietly = TRUE)) paste0("workflow (", class(workflows::extract_spec_parsnip(fn))[[1L]], ")")
+      else class(fn)[[1L]]
+    if (!".error" %in% names(p)) p$.error <- rep(NA_character_, nrow(p))
+  }
   missing_cols <- setdiff(unname(mapping), names(data))
   if (length(missing_cols)) cli::cli_abort("{.arg data} has no column {.field {missing_cols}}")
-  if (is.null(metric) && !length(mapping)) cli::cli_abort("the data has no column for any output ({.field {outs}}): pass {.arg expected} or {.arg metric}")
-  run <- new_id()
-  settings <- set_all(list(caller = list(evaluation = run)), list(...))
-  p <- do.call(predict.functai_fn, c(list(fn, data), settings))
-  preds <- lapply(seq_len(nrow(data)), function(i) {
-    if (core$single) stats::setNames(list(element(p$.pred, i)), outs) else
-      stats::setNames(lapply(paste0(".pred_", outs), function(k) element(p[[k]], i)), outs)
-  })
-  metrics <- if (is.null(metric)) NULL else if (is.function(metric)) list(metric = metric) else metric
+  if (is.null(metrics) && !length(mapping)) cli::cli_abort("the data has no column for any output: pass {.arg expected} or {.arg metric}")
+  preds <- lapply(seq_len(nrow(data)), function(i) lapply(cols, function(k) element(p[[k]], i)))
   scores <- lapply(seq_len(nrow(data)), function(i) {
     if (!is.na(p$.error[[i]])) return(NULL)
     row <- lapply(as.list(data), element, i = i)
@@ -103,9 +122,22 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
     else vapply(metrics, function(m) as.numeric(m(row, preds[[i]])), 0)
   })
   names_ <- if (!is.null(metrics)) names(metrics) else c("exact_match", if (length(mapping) > 1L) paste0(names(mapping), "_match"))
-  table <- tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(data), tibble::as_tibble(p[setdiff(names(p), character(0))])))
+  table <- tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(data), p[setdiff(names(p), names(data))]))
   for (m in names_) table[[m]] <- vapply(scores, function(s) if (is.null(s)) 0 else s[[m]], 0)
-  structure(list(run = run, metrics = names_, rows = table, fn = core$definition$name), class = "functai_evaluation")
+  structure(list(run = run, metrics = names_, rows = table, fn = label), class = "functai_evaluation")
+}
+
+# The outcome column a fitted parsnip model or workflow was fitted on.
+model_outcome <- function(model) {
+  if (inherits(model, "workflow") && requireNamespace("workflows", quietly = TRUE)) {
+    y <- tryCatch(names(workflows::extract_mold(model)$outcomes), error = function(e) NULL)
+    if (length(y) == 1L && !startsWith(y, "..")) return(y)
+  }
+  if (inherits(model, "model_fit")) {
+    y <- model$preproc$y_var
+    if (length(y) == 1L && !startsWith(y, "..")) return(y)
+  }
+  NULL
 }
 
 #' @importFrom generics tidy
@@ -120,7 +152,7 @@ generics::glance
 #'
 #' `tidy()`: one row per metric, broom's columns (`estimate`, `conf.low`,
 #' `conf.high`) and `n`, `failed`. `glance()`: the first metric in one row.
-#' `augment()`: every row with its answer (`.pred`...), its score, its call
+#' `augment()`: every row with its answer (`.pred_class` or `.pred`...), its score, its call
 #' id and its error.
 #' @param x An evaluation from [evaluate()].
 #' @param ... Unused.

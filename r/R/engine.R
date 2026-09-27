@@ -24,7 +24,12 @@ render_next <- function(job) {
   job$retries <- 0L
 }
 
-fail <- function(job, err) { job$state <- "failed"; job$error <- err }
+fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job) }
+
+# A call's own time: from its first request to its last reply, not its
+# batch's (rows wait their turn in the pool).
+sending <- function(job) if (is.null(job$call$sent)) { job$call$sent <- TRUE; job$call$started <- as.numeric(Sys.time()) }
+ended <- function(job) if (!is.null(job$call)) job$call$ended <- as.numeric(Sys.time())
 
 # The first output value that does not fit its shape, as a parse-value refusal.
 check_values <- function(plan, values) {
@@ -61,6 +66,7 @@ on_response <- function(job, response, started, seconds) {
     outputs <- lmcc::turn_to_list(job$turn)$outputs
     job$outputs <- outputs[names(outputs) != "calls"]
     job$state <- "done"
+    ended(job)
     return(invisible())
   }
   for (c in calls) job$turn <- lmcc::tool_result(job$turn, c$id, run_tool(job, c))
@@ -145,6 +151,7 @@ run_jobs <- function(jobs, router, concurrency) {
     plan <- tryCatch(wire_for(router, job$request), error = identity)
     if (inherits(plan, "error")) { on_error(job, plan, now(), 0); return(FALSE) }
     if (is.null(plan)) { step_job(job, router); return(FALSE) }
+    sending(job)
     started <- now()
     h <- curl::new_handle(url = plan$wire$url)
     curl::handle_setopt(h, customrequest = plan$wire$method, followlocation = FALSE, timeout = 300, connecttimeout = 30)
@@ -187,6 +194,7 @@ run_jobs <- function(jobs, router, concurrency) {
 }
 
 step_job <- function(job, router) {
+  sending(job)
   started <- as.numeric(Sys.time())
   response <- tryCatch(send_one(router, job$request), error = identity)
   seconds <- as.numeric(Sys.time()) - started

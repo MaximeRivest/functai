@@ -4,3 +4,4 @@
 ^data-raw$
 ^README\.Rmd$
 ^.*\.Rproj$
+^vignettes/.*\.orig$

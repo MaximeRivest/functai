@@ -320,6 +320,15 @@ API:
   labeled_few_shot(train)`), as do `with_demos()`, `with_instructions()`
   and `update()`. Settings follow withr (`with_ai_config()`,
   `local_ai_config()`).
+- **It is also a tidymodels model** (`ai_model()`, a parsnip model type
+  with the engine `"functai"`): the language model is the engine;
+  fitting reads the outcome's levels and picks worked examples, and calls
+  nothing; `examples` is tunable. Probabilities: OpenAI, Anthropic and
+  Gemini measure none (lm15 MAP-14), so `samples = k` answers a row `k`
+  times at temperature 1, asked for and paid for explicitly; without it
+  they are refused, or `NA` through parsnip (whose `augment()` always asks).
+  `evaluate()` takes any model with `predict()`. The vignette
+  `tidymodels` teaches this with real results.
 - Names avoid masking: `described()` (testthat has `describe`),
   `model_capabilities()` (base has `capabilities`), `read_ai()`/`write_ai()`
   (base has `load`/`save`).
