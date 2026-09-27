@@ -29,7 +29,10 @@ themselves (`../tools/crosslang.py`).
   (through parsnip): FunctAI never makes a probability up.
 * `evaluate()` scores any model with a `predict()` method (a parsnip fit, a
   workflow) with the same interval as an AI function.
+* `vignette("getting-started")`: from dplyr and ggplot2 to a first tested
+  model, for people who have not used tidymodels.
 * `vignette("tidymodels")`.
+* `?tickets` states the shop's house rules the labels follow.
 * The call log (`calls()`, `rate()`, `rated()`): the same folder and records
   as Python and TypeScript.
 * `labeled_few_shot()`, `bootstrap_few_shot()`, `with_demos()`,

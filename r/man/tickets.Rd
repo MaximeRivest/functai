@@ -5,15 +5,34 @@
 \alias{tickets}
 \title{Customer support messages, with the team each belongs to}
 \format{
-A tibble with \code{id}, \code{message}, \code{channel}, \code{category}, \code{order_id}.
+A tibble with 80 rows: \code{id}, \code{message} (what the customer wrote),
+\code{channel} (\code{"email"} or \code{"chat"}), \code{category} (the team: \code{"shipping"},
+\code{"billing"}, \code{"product"} or \code{"account"}), \code{order_id} (\code{NA} when there is none).
 }
 \usage{
 tickets
 }
 \description{
 80 messages to a small homeware shop. Each goes to one of four teams
-(\code{category}: shipping, billing, product, account); the shop has house
-rules about which one, and about how order numbers are written
-(\code{order_id}). The same table as Python's \code{functai.datasets.tickets()}.
+(\code{category}); the shop has house rules about which one, and about how
+order numbers are written (\code{order_id}). The same table as Python's
+\code{functai.datasets.tickets()}.
 }
+\section{House rules}{
+ The labels follow them:
+\itemize{
+\item Anything wrong with the delivery itself (late, lost, sent to the wrong
+place, the wrong item, something missing, or \strong{broken when it
+arrived}) is \strong{shipping}: the carrier pays.
+\item Anything about money (charges, invoices, coupons, cards, and \strong{every
+request for money back}, whatever the reason) is \strong{billing}.
+\item Problems that appear while using a product, and questions about
+products, are \strong{product}.
+\item Signing in, passwords, profile details, personal data and emails from
+the shop are \strong{account}.
+}
+
+An order number is a letter, a dash and four digits (\code{"A-1042"}).
+}
+
 \keyword{datasets}
