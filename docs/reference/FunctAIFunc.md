@@ -40,6 +40,7 @@ A typed Python function whose body is a model call. Build with ``@ai``.
 | [reset](#functai.FunctAIFunc.reset) | Forget the conversation (stateful functions). |
 | [save](#functai.FunctAIFunc.save) | Write the instruction and demos to a JSON file (``load`` reads it back). |
 | [state](#functai.FunctAIFunc.state) | The instruction and demos in use. |
+| [stream](#functai.FunctAIFunc.stream) | Call the function and watch the answer being written. |
 | [undo_opt](#functai.FunctAIFunc.undo_opt) | Revert the last optimizations. |
 | [unpack](#functai.FunctAIFunc.unpack) | One column per field of the answer, to spread into a table. |
 | [using](#functai.FunctAIFunc.using) | A copy of this function with other settings or another layout. |
@@ -131,8 +132,8 @@ functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)).
 │ ---     ┆ ---     ┆ ---         ┆ ---   ┆ ---      ┆ ---          ┆ ---           ┆ ---                     ┆ ---                          │
 │ i64     ┆ str     ┆ str         ┆ null  ┆ f64      ┆ i64          ┆ i64           ┆ str                     ┆ str                          │
 ╞═════════╪═════════╪═════════════╪═══════╪══════════╪══════════════╪═══════════════╪═════════════════════════╪══════════════════════════════╡
-│ 0       ┆ Norway  ┆ Oslo        ┆ null  ┆ 0.924138 ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-185158-0480 │
-│ 1       ┆ Ghana   ┆ Accra       ┆ null  ┆ 0.753037 ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-185158-0480 │
+│ 0       ┆ Norway  ┆ Oslo        ┆ null  ┆ 0.66214  ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-214026-d47d │
+│ 1       ┆ Ghana   ┆ Accra       ┆ null  ┆ 0.700836 ┆ 42           ┆ 10            ┆ gpt-4.1-mini-2025-04-14 ┆ capital-20260926-214026-d47d │
 └─────────┴─────────┴─────────────┴───────┴──────────┴──────────────┴───────────────┴─────────────────────────┴──────────────────────────────┘
 ```
 
@@ -267,6 +268,62 @@ FunctAIFunc.state()
 ```
 
 The instruction and demos in use.
+
+### stream { #functai.FunctAIFunc.stream }
+
+```{.python .no-run}
+FunctAIFunc.stream(*args, **kwargs)
+```
+
+Call the function and watch the answer being written.
+
+The call starts at once, in the background, and is the same call as
+``fn(...)``: the same retries, tools and call log line, the same value
+in the end. Iterate the stream for the answer's text as it arrives.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name     | Type   | Description                                     | Default   |
+|----------|--------|-------------------------------------------------|-----------|
+| *args    |        | The call's inputs, as for calling the function. | `()`      |
+| **kwargs |        | The call's inputs, as for calling the function. | `()`      |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type   | Description                                                                                                                                                                                                                                                                               |
+|--------|--------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | Stream | ``for piece in s`` (or ``async for``): the answer's text, piece by piece. ``s.result``: the value (waits); ``await s`` in async code. ``s.events()``: everything, with the reasoning, tool calls and retries. ``s.text``, ``s.partial``: the answer so far. ``s.close()``: stop the call. |
+
+#### See Also {.doc-section .doc-section-see-also}
+
+- [`Stream`](Stream.md): what this returns.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```{.python .no-run}
+@ai
+def haiku(topic: str) -> str:
+    """A haiku about the topic."""
+
+for piece in haiku.stream("the first snow"):
+    print(piece, end="", flush=True)
+```
+
+Everything the model writes, reasoning first:
+
+```{.python .no-run}
+@ai
+def solve(problem: str) -> float:
+    """Solve the word problem."""
+    reasoning: str = _ai["Step by step."]
+    return _ai
+
+s = solve.stream("3 pencils cost $1.20. How much do 10 cost?")
+for event in s.events():
+    if event.kind == "text":
+        print(event.text, end="", flush=True)
+s.result
+```
 
 ### undo_opt { #functai.FunctAIFunc.undo_opt }
 

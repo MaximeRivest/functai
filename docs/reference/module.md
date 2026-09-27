@@ -44,6 +44,7 @@ Callable wrapper for an orchestrator function that calls @ai functions.
 | [named_ai_functions](#functai.module.FunctAIModule.named_ai_functions) | Every @ai function this module reaches: called by name, under another |
 | [opt](#functai.module.FunctAIModule.opt) | Tune every @ai function this module calls, against one metric on the |
 | [save](#functai.module.FunctAIModule.save) | Every AI function's instruction and demos, in one JSON file. |
+| [stream](#functai.module.FunctAIModule.stream) | Call the module and watch every AI function it calls, as it works. |
 | [vectorize](#functai.module.FunctAIModule.vectorize) | This module as a dpyr row function (see ``FunctAIFunc.vectorize``); |
 
 ##### map { #functai.module.FunctAIModule.map }
@@ -90,6 +91,20 @@ module.FunctAIModule.save(path)
 ```
 
 Every AI function's instruction and demos, in one JSON file.
+
+##### stream { #functai.module.FunctAIModule.stream }
+
+```{.python .no-run}
+module.FunctAIModule.stream(*args, **kwargs)
+```
+
+Call the module and watch every AI function it calls, as it works.
+
+The call starts at once, in the background, and is the same call as
+``module(...)``. ``s.events()`` shows each call inside it (started,
+its text as it is written, tool calls, retries, done);
+``s.text_of(fn)`` one AI function's answer as it is written;
+``s.result`` what the module returned (waits). See ``Stream``.
 
 ##### vectorize { #functai.module.FunctAIModule.vectorize }
 
@@ -161,5 +176,5 @@ blurb("why paired comparisons need fewer examples")
 
 ```output
 functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-'Paired comparisons simplify decisions, reduce cognitive load, and need fewer examples.'
+'Paired comparisons simplify decisions, needing fewer examples by focusing on two items.'
 ```

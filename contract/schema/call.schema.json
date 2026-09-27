@@ -104,6 +104,8 @@
         "finish": {"type": ["string", "null"]},
         "usage": {"$ref": "#/$defs/counts"},
         "error": {"$ref": "#/$defs/error"},
+        "streamed": {"const": true},
+        "first_delta": {"type": ["number", "null"], "minimum": 0},
         "request": {"type": "object"},
         "response": {"type": "object"}
       }

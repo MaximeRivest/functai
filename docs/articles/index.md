@@ -56,6 +56,9 @@ rat:
 [Reasoning and several answers](outputs.md)
 : Think first, return several values, get everything with `all=True`.
 
+[Watch it being written](streaming.md)
+: The answer as the model writes it, in a notebook, a script or a web app.
+
 [Tools](tools.md)
 : Let the model call your Python functions.
 

@@ -27,7 +27,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import lmcc
 
-from . import adapters, calllog, engine, models
+from . import adapters, calllog, engine, models, streaming
 from .config import DEFAULTS, check, configure, effective, settings  # noqa: F401 — re-exported
 from .data import Prediction
 from .docments import (UNSET, docments, docstring, extract_docstrings, flexiclass,  # noqa: F401
@@ -755,6 +755,13 @@ class FunctAIFunc:
         threshold = float(s.get("escalate_below") if s.get("escalate_below") is not None else 0.9)
         if conf >= threshold:
             return pred, first[0], first[1]
+        watch = calllog.WATCH.get()
+        if watch is not None:
+            target = escalate_to.__name__ if isinstance(escalate_to, FunctAIFunc) else models.model_string(escalate_to) \
+                if not isinstance(escalate_to, str) else escalate_to
+            watch.retry(f"the first model was {conf:.0%} sure (less than {threshold:.0%}); {target} answers instead")
+            if isinstance(escalate_to, FunctAIFunc):
+                watch.delegate()
         if isinstance(escalate_to, FunctAIFunc):
             # the target follows its own escalate_to (a longer chain), never a global one
             from .config import scoped
@@ -857,6 +864,66 @@ class FunctAIFunc:
             return result
         finally:
             _ACTIVE_CALL.reset(token)
+
+    def stream(self, *args, **kwargs) -> "streaming.Stream":
+        '''Call the function and watch the answer being written.
+
+        The call starts at once, in the background, and is the same call as
+        ``fn(...)``: the same retries, tools and call log line, the same value
+        in the end. Iterate the stream for the answer's text as it arrives.
+
+        Parameters
+        ----------
+        *args, **kwargs
+            The call's inputs, as for calling the function.
+
+        Returns
+        -------
+        Stream
+            ``for piece in s`` (or ``async for``): the answer's text, piece
+            by piece. ``s.result``: the value (waits); ``await s`` in async
+            code. ``s.events()``: everything, with the reasoning, tool calls
+            and retries. ``s.text``, ``s.partial``: the answer so far.
+            ``s.close()``: stop the call.
+
+        See Also
+        --------
+        Stream : what this returns.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def haiku(topic: str) -> str:
+            """A haiku about the topic."""
+
+        for piece in haiku.stream("the first snow"):
+            print(piece, end="", flush=True)
+        ```
+
+        Everything the model writes, reasoning first:
+
+        ```python
+        @ai
+        def solve(problem: str) -> float:
+            """Solve the word problem."""
+            reasoning: str = _ai["Step by step."]
+            return _ai
+
+        s = solve.stream("3 pencils cost $1.20. How much do 10 cost?")
+        for event in s.events():
+            if event.kind == "text":
+                print(event.text, end="", flush=True)
+        s.result
+        ```
+        '''
+        from .columns import has_column
+        if has_column(args, kwargs):
+            raise TypeError(f"{self.__name__}.stream watches one call; on columns, use {self.__name__}(col.x)")
+        if "all" in kwargs:
+            raise TypeError("a stream has everything: s.prediction is what all=True returns")
+        self._bind_inputs(args, kwargs)               # wrong arguments fail here, not in the background
+        return streaming.Stream(self, args, kwargs)
 
     # ----- optimization -----
 

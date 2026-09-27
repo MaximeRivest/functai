@@ -75,6 +75,15 @@ Find everything a program depends on, save it to a folder, prove it runs elsewhe
 | [load](load.md#functai.load) | Load a saved program, ready to call. |
 | [file](file.md#functai.file) | A data file the program reads: ``open(functai.file("data/stopwords.txt"))``. |
 
+## Streaming
+
+Watch a call while it is made. `fn.stream(...)` returns a Stream; its events are in `functai.streaming`.
+
+| | |
+| --- | --- |
+| [Stream](Stream.md#functai.Stream) | One call of an AI function or a module, watched while it is made. |
+| [Cancelled](Cancelled.md#functai.Cancelled) | The stream was closed before its call ended. |
+
 ## The call log
 
 Keep every call on disk, mark answers right or wrong, and turn the corrections into rows with known answers.

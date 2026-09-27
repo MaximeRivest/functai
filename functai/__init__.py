@@ -14,6 +14,7 @@ API:
 - Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
 - Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Call log:  configure(log_calls=True); calls(fn), rate(prediction, "right"), rated(fn); fn.version
+- Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s)
 - Utils:     phistory(), inspect_history(), clear_cache()
 - Data:      datasets.tickets(), datasets.field_notes()  (small labelled tables to learn with)
 """
@@ -46,6 +47,7 @@ from .core import (
     signature_text,
 )
 from .calllog import calls, rate, rated
+from .streaming import Cancelled, Stream
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
 from . import datasets  # noqa: F401  (functai.datasets.tickets(), ...)
@@ -104,6 +106,8 @@ __all__ = [
     "calls",
     "rate",
     "rated",
+    "Stream",
+    "Cancelled",
     "Optimizer",
     "LabeledFewShot",
     "BootstrapFewShot",

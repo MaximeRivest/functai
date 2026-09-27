@@ -299,6 +299,8 @@ class Call:
 
 
 _CURRENT: ContextVar[Optional[Call]] = ContextVar("functai_call", default=None)
+# The stream watching the calls made in this context (functai.streaming), or None.
+WATCH: ContextVar[Any] = ContextVar("functai_watch", default=None)
 
 
 def current() -> Optional[Call]:
@@ -310,14 +312,19 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     """Make one call of ``program`` (``invoke()``), followed as a call: an id, a
     parent, and a line in the log when logging is on (``inputs()`` binds the
     arguments to their names; only then)."""
+    watch = WATCH.get()
+    if watch is not None:
+        watch.check()                             # a closed stream starts no new call
     call = Call(program, _CURRENT.get())
+    bound: Optional[Mapping[str, Any]] = None
     try:
         call.target = _target(settings)
-        if call.target is not None:
+        if call.target is not None or watch is not None:
             try:
                 bound = inputs()
             except TypeError:                     # wrong arguments: the call itself says so
                 bound = {}
+        if call.target is not None:
             values = {k: to_json(v) for k, v in bound.items()}
             call.sizes = {k: n for k, (_v, n) in values.items()}
             if call.target.content:
@@ -327,14 +334,20 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
         call.target = None
     token = _CURRENT.set(call)
     try:
+        if watch is not None:
+            watch.started(call, dict(bound or {}))
         out = invoke()
     except BaseException as exc:
         if call.target is not None:
             _finish(call, error=exc)
+        if watch is not None:
+            watch.ended(call, error=exc)
         raise
     else:
         if call.target is not None:
             _finish(call, returned=out)
+        if watch is not None:
+            watch.ended(call, value=out)
         return out
     finally:
         _CURRENT.reset(token)
@@ -356,11 +369,14 @@ def route(provider: Optional[str]) -> None:
 
 
 def exchange(model: str, request: Any, response: Any = None, *, started: float, seconds: float,
-             cached: bool = False, error: Optional[BaseException] = None) -> None:
-    """One request of the call in progress and its reply or error (``engine.send``)."""
+             cached: bool = False, error: Optional[BaseException] = None, streamed: bool = False,
+             first_delta: Optional[float] = None) -> None:
+    """One request of the call in progress and its reply or error (``engine.send``);
+    ``first_delta``: seconds to the first piece of a streamed reply."""
     call = _CURRENT.get()
     if call is not None and call.target is not None:
-        call.exchanges.append((model, call.provider, started, seconds, cached, request, response, error))
+        call.exchanges.append((model, call.provider, started, seconds, cached, request, response, error,
+                               streamed, first_delta))
 
 
 # ------------------------------------------------------------------ versions
@@ -540,9 +556,12 @@ def _usage(response: Any) -> Dict[str, int]:
 
 def _exchange_record(ex: tuple, content: bool) -> Dict[str, Any]:
     from lm15.serde import request_to_dict, response_to_dict
-    model, provider, started, seconds, cached, request, response, error = ex
+    model, provider, started, seconds, cached, request, response, error, streamed, first_delta = ex
     out: Dict[str, Any] = {"model": model, "provider": provider, "started": _iso(started),
                            "seconds": round(seconds, 6), "cached": cached}
+    if streamed:
+        out["streamed"] = True
+        out["first_delta"] = round(first_delta, 6) if first_delta is not None else None
     if response is not None:
         out["finish"] = getattr(response, "finish_reason", None)
         out["usage"] = _usage(response)

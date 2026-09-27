@@ -4,6 +4,18 @@
 
 New:
 
+- **Streaming.** `fn.stream(...)` makes the same call as `fn(...)` (same
+  retries, tools, call log line and value) and lets you watch it being
+  written: `for piece in s` gives the answer's text as it arrives,
+  `s.show()` prints it (labelling a reasoning, tool calls and retries),
+  `s.events()` gives everything (every output's text, thinking, tool calls
+  and results, retries, and the calls inside a module), `s.partial` a
+  record or list as it fills in, and `s.result` the value. Works with
+  `async for` and `await s`; closing the stream (or leaving a `with`
+  block, or Ctrl-C) stops the call. Modules stream too (`module.stream`).
+  Events have `.to_dict()` for web apps; the contract is
+  `contract/streaming.md`. Logged calls record whether each request was
+  streamed and how long its first piece took.
 - **The call log.** `functai.configure(log_calls=True)` (or
   `FUNCTAI_LOG_CALLS=1` in the environment) writes every call of an AI
   function or module to `~/.local/share/functai/calls`, one line of JSON

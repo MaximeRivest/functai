@@ -63,6 +63,18 @@ class FunctAIModule:
 
         return calllog.run(self, effective(), inputs, lambda: self._invoke_original(*args, **kwargs))
 
+    def stream(self, *args, **kwargs):
+        """Call the module and watch every AI function it calls, as it works.
+
+        The call starts at once, in the background, and is the same call as
+        ``module(...)``. ``s.events()`` shows each call inside it (started,
+        its text as it is written, tool calls, retries, done);
+        ``s.text_of(fn)`` one AI function's answer as it is written;
+        ``s.result`` what the module returned (waits). See ``Stream``."""
+        from . import streaming
+        inspect.signature(self._fn).bind(*args, **kwargs)     # wrong arguments fail here
+        return streaming.Stream(self, args, kwargs)
+
     @property
     def version(self) -> str:
         """The module's version: a fingerprint of its code and its AI functions.

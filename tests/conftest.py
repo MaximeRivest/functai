@@ -1,5 +1,6 @@
 """Offline tests: a fake lm15 router stands in for every provider."""
 
+import dataclasses
 import threading
 
 import lm15
@@ -51,6 +52,33 @@ class FakeRouter:
         return lm15.Response(id="r", model=request.model, message=lm15.Message.assistant(parts),
                              finish_reason=finish,
                              usage=lm15.Usage(input_tokens=3, output_tokens=2, total_tokens=5))
+
+    chunk = 3                    # characters per streamed piece
+    stream_error = None          # raised by stream() after this many deltas: (n, exception)
+
+    def stream(self, request):
+        """The reply ``complete`` would give, as lm15 stream events, its text in
+        pieces of ``chunk`` characters (tool calls whole). A provider that
+        answers in one piece refuses, as lm15's does."""
+        if self.resolve(request.model).provider == "typesafe":
+            raise lm15.UnsupportedFeatureError("typesafe: answers in one piece", provider="typesafe",
+                                               feature="stream")
+        response = self.complete(request)
+        return self._events(response)
+
+    def _events(self, response):
+        from lm15.result import response_to_events
+        sent = 0
+        for event in response_to_events(response):
+            delta = getattr(event, "delta", None)
+            if delta is not None and delta.type in ("text", "thinking") and len(delta.text) > self.chunk:
+                for i in range(0, len(delta.text), self.chunk):
+                    if self.stream_error and sent == self.stream_error[0]:
+                        raise self.stream_error[1]
+                    yield lm15.StreamDeltaEvent(dataclasses.replace(delta, text=delta.text[i:i + self.chunk]))
+                    sent += 1
+                continue
+            yield event
 
     # helpers for assertions
     def system(self, i=-1):

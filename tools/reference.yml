@@ -66,6 +66,12 @@ quartodoc:
     - Verification
     - load
     - file
+  - title: Streaming
+    desc: Watch a call while it is made. `fn.stream(...)` returns a Stream; its events
+      are in `functai.streaming`.
+    contents:
+    - Stream
+    - Cancelled
   - title: The call log
     desc: Keep every call on disk, mark answers right or wrong, and turn the corrections
       into rows with known answers.

@@ -262,9 +262,14 @@ def _remember(request: Any, response: Any) -> None:
         rec["exchanges"].append({"request": request_to_dict(request), "response": response_to_dict(response)})
 
 
-def send(router: Any, request: Any, *, function: str, model: str, settings: Dict[str, Any]) -> Any:
+def send(router: Any, request: Any, *, function: str, model: str, settings: Dict[str, Any],
+         plan: Optional[lmcc.Plan] = None) -> Any:
     """One model call: from the cache when allowed, else through the router,
-    re-sent after transient errors (rate limit, 5xx, timeout) with backoff."""
+    re-sent after transient errors (rate limit, 5xx, timeout) with backoff.
+    Watched by a stream (``functai.streaming``), the reply is streamed and
+    shown field by field as it arrives (``plan`` reads it); what is returned
+    is the same whole reply."""
+    watch = calllog.WATCH.get()
     use_cache = bool(settings.get("cache_replies"))
     key = CACHE.key(request) if use_cache else None
     if key is not None:
@@ -273,29 +278,47 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
             _record(CallRecord(function, model, request, hit, cached=True))
             _remember(request, hit)
             calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True)
+            if watch is not None and plan is not None:
+                watch.replay(plan, hit)
             return hit
     retries = max(0, int(settings.get("api_retries") or 0))
+    first: Optional[float] = None
     for attempt in range(retries + 1):
         started, t0 = time.time(), time.perf_counter()
         try:
-            response = router.complete(request)
+            if watch is not None and plan is not None:
+                response, first = watch.request(router, request, plan)
+            else:
+                response = router.complete(request)
             break
         except lm15.RETRYABLE_ERRORS as exc:
-            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc)
+            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
+                             streamed=watch is not None)
             if attempt == retries:
                 _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
                 raise
             wait = getattr(exc, "retry_after", None)
-            time.sleep(float(wait) if isinstance(wait, (int, float)) and wait > 0
-                       else min(30.0, 2 ** attempt) * (0.5 + random.random()))
+            wait = float(wait) if isinstance(wait, (int, float)) and wait > 0 \
+                else min(30.0, 2 ** attempt) * (0.5 + random.random())
+            if watch is not None:
+                watch.retry(f"the provider failed ({type(exc).__name__}); sending again in {wait:.1f} s", wait)
+                watch.sleep(wait)
+            else:
+                time.sleep(wait)
         except Exception as exc:
-            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc)
+            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
+                             streamed=watch is not None)
             _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
             friendly = _login_error(exc)
             if friendly is not None:
                 raise friendly from exc
             raise
-    calllog.exchange(model, request, response, started=started, seconds=time.perf_counter() - t0)
+        except BaseException as exc:                 # a closed stream, Ctrl-C: the exchange still counts
+            calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
+                             streamed=watch is not None)
+            raise
+    calllog.exchange(model, request, response, started=started, seconds=time.perf_counter() - t0,
+                     streamed=watch is not None and first is not None, first_delta=first)
     _record(CallRecord(function, model, request, response))
     _remember(request, response)
     if key is not None and response.finish_reason not in ("error",):
@@ -376,6 +399,13 @@ def _misfit(annotations: Dict[str, Any], values: Dict[str, Any]) -> Optional[str
     return None
 
 
+def _asked_again(err: lmcc.Refusal) -> str:
+    """Why the model is asked again, in a sentence (a stream's Retry event)."""
+    if err.code == "parse-truncated":
+        return "the reply was cut off; asking again with a larger token budget"
+    return f"the reply could not be read ({err.hint}); asking again"
+
+
 def _complete(plan, rendered, *, router, model, settings, function, responses, annotations=None) -> tuple:
     """One model call; after an unreadable reply, up to ``retries`` follow-ups
     that send the reader's hint back (a cut reply is re-sent with twice the
@@ -384,7 +414,7 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     retries = max(0, int(settings.get("retries") or 0))
     overrides: Dict[str, Any] = {}
     for attempt in range(retries + 1):
-        response = send(router, request, function=function, model=model, settings=settings)
+        response = send(router, request, function=function, model=model, settings=settings, plan=plan)
         responses.append(response)
         try:
             reading = lmcc_lm15.read(plan, response)
@@ -410,6 +440,9 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                     response.message,
                     lm15.Message.user(f"Your reply could not be read: {err.hint}. Reply again, in exactly "
                                       f"the form the instructions give."),))
+            watch = calllog.WATCH.get()
+            if watch is not None:
+                watch.retry(_asked_again(err))
     raise AssertionError("unreachable")
 
 
@@ -475,8 +508,14 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
             return Prediction(outputs, turn=turn, response=response, responses=responses,
                               repairs=reading.repairs, attempts=len(responses),
                               probabilities=reading.probabilities, measured_by=reading.measured_by)
+        watch = calllog.WATCH.get()
         for call in calls:
-            turn = turn.tool(call.id, run_tool(tools, call, errors=settings.get("tool_errors") or "report"))
+            if watch is not None:
+                watch.tool_call(call)
+            output = run_tool(tools, call, errors=settings.get("tool_errors") or "report")
+            if watch is not None:
+                watch.tool_result(call, output)
+            turn = turn.tool(call.id, output)
     raise StepLimit(f"{function}: no answer after {max_steps} model steps", turn)
 
 
