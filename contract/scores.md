@@ -17,9 +17,11 @@ Two values are equal when, after normalizing:
 - **text** is normalized by splitting it at white space, joining the
   pieces with one space (so white space at the ends goes, and runs of it
   become one space), then applying Unicode full case folding
-  (`CaseFolding.txt`, statuses C and F; Python's `str.casefold`). So
-  `"  New   York "` equals `"new york"`, and `"Straße"` equals
-  `"STRASSE"`.
+  (`CaseFolding.txt`, statuses C and F; Python's `str.casefold`), code
+  point by code point, as [`unicode/casefold.json`](unicode/casefold.json)
+  lists it (Unicode 16.0). So `"  New   York "` equals `"new york"`, and
+  `"Straße"` equals `"STRASSE"`. A host whose own Unicode data is older
+  may fold a character added since differently; nothing else may differ.
 - anything else is compared as it is: numbers by value (`1` equals
   `1.0`), lists and records item by item, without normalizing the text
   inside them.
