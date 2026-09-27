@@ -119,13 +119,25 @@ outputs are the right answers (or `expected: "category"`). The range is a
 ## Making it better
 
 ```ts
-import { labeledFewShot, bootstrapFewShot } from "functai";
+import { labeledFewShot, bootstrapFewShot, gepa, trials } from "functai";
 
 const taught = labeledFewShot(mood, rows, { k: 8 });            // rows become worked examples
 const better = await bootstrapFewShot(mood, rows, { teacher: "gpt-4.1" });   // runs that were right become examples
+const learned = await gepa(mood, rows, { teacher: "gpt-6-sol" });            // the instruction, rewritten from mistakes
+trials(learned);                                                // the search: every instruction tried
 ```
 
 Each returns an improved copy with a new version.
+
+`gepa` shows a stronger model the function's answers with feedback in
+words ("wrong: the right answer is billing") and keeps the best
+instruction it writes, chosen on rows it never shows the teacher. It is
+Python's `GEPA` and R's `gepa()`, the same algorithm with the same
+prompts (`../design/04-gepa.md` says how it differs from the paper's).
+Live, on refund decisions it took `gpt-5.4-nano` from 68% to 87% on rows
+it never saw; on a split where the model already scored 83% it gained
+little (87%, 8 answers fixed, 6 broken). Measure it on rows it never saw;
+its own score flatters.
 
 ## The call log and ratings
 
@@ -157,7 +169,7 @@ function with code of its own around the model, tools, a baked model.
 ## Not here yet
 
 Compared with the Python package: baking (training your own weights),
-`InstructionSearch` and the random-search optimizer, stateful memory,
+`InstructionSearch` and the random-search optimizer (`gepa` is here), stateful memory,
 escalation to a bigger model, reading tables other than arrays of objects,
 the reply cache, and loading programs with code (only AI functions travel
 between languages). See `../design/01-many-languages.md`.

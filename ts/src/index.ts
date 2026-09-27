@@ -22,6 +22,7 @@ export { Prediction, StepLimit, Cancelled, type Tool } from "./engine.ts";
 export { Stream, type StreamEvent } from "./stream.ts";
 export { evaluate, exactMatch, interval, Evaluation, type EvaluateOptions, type Metric, type RowResult, type Summary } from "./evaluate.ts";
 export { labeledFewShot, bootstrapFewShot, type BootstrapOptions } from "./optimize.ts";
+export { gepa, trials, type GepaOptions, type Feedback, type Search, type Trial } from "./gepa.ts";
 export { load, fromManifest, save, toManifest, LoadRefused } from "./saved.ts";
 export { capabilities } from "./models.ts";
 export { normalize, casefold } from "./text.ts";

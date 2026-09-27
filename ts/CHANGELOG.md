@@ -2,6 +2,13 @@
 
 ## 0.1.0 (unreleased)
 
+- `gepa(fn, rows, { teacher })`: the instruction rewritten from the
+  function's mistakes, as Python's `GEPA` and R's `gepa()` do
+  (`design/04-gepa.md`); `trials(fn)` gives the search.
+- `withSettings({ caller })` adds to the enclosing block's caller instead
+  of replacing it, so an evaluation inside an optimization is logged as
+  both.
+
 The first TypeScript implementation of FunctAI, held to the same contract
 as the Python package (`../contract`): every function, score, rating and
 saved-folder case, and a check against Python itself (`../tools/crosslang.py`).

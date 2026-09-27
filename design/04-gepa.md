@@ -1,6 +1,6 @@
 # 04. GEPA: instructions rewritten from mistakes
 
-Status: Python and R. No change to the contract: the result is a
+Status: Python, R and TypeScript. No change to the contract: the result is a
 function's `state.instructions`, which every language already saves,
 loads and versions.
 

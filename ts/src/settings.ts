@@ -66,7 +66,10 @@ export function configure(settings: Settings = {}): Settings {
 
 /** Run `fn` with these settings over `configure`'s (their own settings still win). */
 export function withSettings<R>(settings: Settings, fn: () => R): R {
-  return scoped.run({ ...(scoped.get() ?? {}), ...settings }, fn);
+  const outer = scoped.get() ?? {};
+  // a caller adds to the enclosing block's (an evaluation inside an optimization is both)
+  const caller = settings.caller ? { caller: { ...(outer.caller ?? {}), ...settings.caller } } : {};
+  return scoped.run({ ...outer, ...settings, ...caller }, fn);
 }
 
 /** The settings a function with `own` settings runs with. */

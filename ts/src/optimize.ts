@@ -16,7 +16,7 @@ import { newId } from "./calllog.ts";
 
 type Rec = Record<string, unknown>;
 
-function random(seed: number): () => number {
+export function random(seed: number): () => number {
   let a = seed >>> 0;
   return () => {
     a = (a + 0x6d2b79f5) >>> 0;
