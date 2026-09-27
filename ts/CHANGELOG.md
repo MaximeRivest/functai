@@ -18,6 +18,10 @@ saved-folder case, and a check against Python itself (`../tools/crosslang.py`).
 - The call log, `rate`, `rated`, `calls`: the same folder and records as
   Python.
 - `evaluate`, `exactMatch`, `interval`: the same scores and ranges as Python.
+- The call log's `program.file` and `.line` are the line that called `ai()`,
+  found by who called rather than by file path: right when bundled (with
+  `--enable-source-maps`, the original file), on Windows paths, `file:`
+  URLs with spaces, and in a project whose own folder is named `functai`.
 - `labeledFewShot`, `bootstrapFewShot`.
 - `load`/`fromManifest`: run an AI function Python saved; `save`/`toManifest`.
 - `module(name, fn, { uses })`: code that calls AI functions, logged as one

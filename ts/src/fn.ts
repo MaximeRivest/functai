@@ -23,7 +23,7 @@ import { bind } from "./layouts.ts";
 import { callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
 import { configOf, effective, type Settings } from "./settings.ts";
-import { env } from "./host.ts";
+import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { Stream } from "./stream.ts";
 
@@ -112,18 +112,81 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   readonly saved?: string;
 }
 
-/** Where the definition was written: the caller of `ai()`, outside this package. */
-function definedAt(): { file?: string; line?: number; module?: string } {
-  const stack = new Error().stack?.split("\n").slice(1) ?? [];
-  for (const frame of stack) {
-    const m = frame.match(/\(?((?:file:\/\/)?[^()\s]+?):(\d+):\d+\)?\s*$/);
-    if (!m) continue;
-    const file = m[1]!.replace(/^file:\/\//, "");
-    if (/\/functai\/(ts\/)?(src|dist)\//.test(file) || file.includes("node:")) continue;
-    const base = file.split("/").pop() ?? "";
-    return { file, line: Number(m[2]), module: base.replace(/\.[cm]?[jt]sx?$/, "") || undefined };
+/**
+ * Where the definition was written: the frame that called `entry` (`ai`).
+ *
+ * The frame is found by who called, never by file path: bundled, this
+ * package's code shares a file with the program that uses it, and a path can
+ * be `C:\...`, a `file:` URL or an `https:` URL. Where the host can cut a
+ * stack at a function (V8: Node, Deno, Chrome; Bun), it cuts at `entry`;
+ * elsewhere the two frames above the caller (this one and `entry`) are
+ * dropped. The stack string is read rather than V8's call sites so that
+ * source maps (`--enable-source-maps`) still name the original file. A caller
+ * with no readable place (eval, native code) gives nothing rather than a guess.
+ */
+export function definedAt(entry: Function): { file?: string; line?: number; module?: string } {
+  const E = Error as ErrorConstructor & { captureStackTrace?: (target: object, cut?: Function) => void };
+  let frames: string[];
+  if (typeof E.captureStackTrace === "function") {
+    const holder: { stack?: string } = {};
+    E.captureStackTrace(holder, entry);
+    frames = framesOf(holder.stack);
+  } else {
+    frames = framesOf(new Error().stack).slice(2);
   }
-  return {};
+  const where = frames[0] === undefined ? null : frameLocation(frames[0]);
+  if (!where) return {};
+  const base = where.file.split(/[\\/]/).pop() ?? "";
+  return { ...where, module: base.replace(/[?#].*$/, "").replace(/\.[cm]?[jt]sx?$/, "") || undefined };
+}
+
+/** The frame lines of a stack string: V8's `    at …` lines, or every line (Firefox, Safari: `name@where`). */
+function framesOf(stack: string | undefined): string[] {
+  const lines = (stack ?? "").split("\n");
+  const v8 = lines.filter((l) => /^\s+at /.test(l));
+  return v8.length ? v8 : lines.filter((l) => /:\d+:\d+$/.test(l.trim()));
+}
+
+/** The file and line of one frame line, or null when it has none (eval, native). */
+export function frameLocation(frame: string): { file: string; line: number } | null {
+  let s = frame.trim();
+  if (s.startsWith("at ")) {                     // V8: `at where`, `at name (where)`, `at async name (where)`
+    s = s.slice(3);
+    if (s.endsWith(")")) {                        // the parenthesis that opens the last group: a path may hold parentheses itself
+      let depth = 0;
+      for (let i = s.length - 1; i >= 0; i--) {
+        if (s[i] === ")") depth++;
+        else if (s[i] === "(" && --depth === 0) { s = s.slice(i + 1, -1); break; }
+      }
+    }
+  } else {
+    const at = s.indexOf("@");                     // Firefox, Safari: `name@where`; a name holds no `@`, a path may
+    if (at >= 0) s = s.slice(at + 1);
+  }
+  if (s.startsWith("eval at ") || s.includes("<anonymous>")) return null;
+  const m = /^(.+):(\d+):\d+$/.exec(s);
+  if (!m) return null;
+  return { file: filePath(m[1]!), line: Number(m[2]) };
+}
+
+/** A `file:` URL as the host's path (`C:\app\x.js` on Windows, spaces decoded); anything else as it is. */
+function filePath(where: string): string {
+  if (!where.startsWith("file:")) return where;
+  const url = builtin("node:url");
+  if (url) {
+    try {
+      return url.fileURLToPath(where);
+    } catch {
+      // a URL the host cannot turn into a path: read it below
+    }
+  }
+  try {
+    const u = new URL(where);
+    const path = decodeURIComponent(u.pathname);
+    return /^\/[A-Za-z]:\//.test(path) ? path.slice(1).replaceAll("/", "\\") : path;
+  } catch {
+    return where;
+  }
 }
 
 function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string): Demo {
@@ -171,7 +234,7 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     : [["result", (def.output ?? { type: "string" }) as FieldSpec]];
   if (!outputSpecs.length) throw new TypeError(`${def.name}: outputs is empty`);
   const outputs = outputSpecs.map(([name, spec]) => ({ name, ...readField(spec, `${def.name}.outputs.${name}`) }));
-  const where = definedAt();
+  const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
   const moduleName = def.definedIn ?? where.module ?? "main";

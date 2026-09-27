@@ -9,6 +9,7 @@ type Builtins = {
   "node:fs": typeof import("node:fs");
   "node:os": typeof import("node:os");
   "node:path": typeof import("node:path");
+  "node:url": typeof import("node:url");
   "node:async_hooks": typeof import("node:async_hooks");
 };
 
