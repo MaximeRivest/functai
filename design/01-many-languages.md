@@ -1,8 +1,10 @@
 # FunctAI in many languages
 
-*Status, 2026-09-27: the direction is agreed and the repository is laid
-out for it. Python is the only implementation. The next step is
-TypeScript.*
+*Status, 2026-09-27: agreed and under way. The repository is laid out
+for it; the contract covers functions, scores, the call log and saved
+functions; TypeScript 0.1.0 passes all of it and is checked against
+Python itself. Neither lmcc's nor FunctAI's TypeScript package is on npm
+yet. Julia and R wait for lmcc in their language.*
 
 ## What we want
 
@@ -35,8 +37,8 @@ implementations that are checked against it.
 | | lm15 (providers, sign-ins) | lmcc (prompt layout, reading answers) | FunctAI |
 |---|---|---|---|
 | Python | reference | reference | 1.0.1 released, 1.1.0 not yet |
-| TypeScript | passes the full contract | passes the same cases as Python, byte for byte | **next** |
-| Julia | at parity with the others since 2026-09-26 | **does not exist** | after lmcc |
+| TypeScript | passes the full contract | passes the same cases as Python, byte for byte (not on npm yet) | **0.1.0, in `ts/`** |
+| Julia | at parity with the others since 2026-09-26 | **started** (`lmcc/julia`, uncommitted, 2026-09-27) | after lmcc |
 | R | pinned to the same contract commit (its README says it passes); not yet in lm15's parity table | **does not exist** | after lmcc |
 
 **TypeScript can start now.** Julia and R need lmcc in their language
@@ -78,10 +80,10 @@ It fixes nothing about how code looks in each language.
 | Area | In the contract? | Today | Still to write |
 |---|---|---|---|
 | Call log, ratings, "rows with known answers" | yes | `calls.md`, schemas, 11 cases | nothing |
-| Versions (what makes two calls the same program) | yes | rules in `calls.md` | cases: sample input → rendered request → version. Needs lmcc parity, so it is also a good cross-language test |
+| An AI function: its signature, layout, model facts, worked examples, request, version | yes | `functions.md`, `layouts/`, `models.json`, 11 cases | nothing |
 | Streaming events | yes | `streaming.md`, schema | cases: a scripted fake model that every language can run |
-| **A saved AI function** (`functai.json`) | should be | described only in `python/functai/saved.py` | `contract/saved.md`, a schema and cases. This is what makes "improve it in Python, run it in R" true |
-| Scores and their ranges | should be | Wilson interval for 0/1 scores, Student's t otherwise (`evaluation.py`) | cases: the same rows give the same numbers, to a stated precision |
+| **A saved AI function** (`functai.json`) | yes | `saved.md`, schema, 11 cases | tools bound by name (today a tool refuses) |
+| Scores and their ranges | yes | `scores.md` (white space and case folding spelled out, `unicode/casefold.json`), 17 cases | nothing |
 | Improving (optimizers) | the meaning, not the bytes | Python only | decide below |
 | Baked models | the folder and the training data | `baked.json`, safetensors weights, tokenizer (`python/functai/bake/`) | `contract/baked.md`. See *Training* |
 | Prompt layout and reading answers | no: it is lmcc's | lmcc corpus | nothing here |
@@ -190,7 +192,7 @@ docs/         the website (Python notebooks today)
 tools/        builds the website
 python/       the Python package: pyproject, uv.lock, .venv, tests, examples,
               README (PyPI's page), CHANGELOG, LICENSE
-ts/           next
+ts/           the TypeScript package (src, tests, tools)
 r/  julia/    later
 check         one command: every language against the contract
 AGENTS.md     the map, for people and agents working here
@@ -254,39 +256,32 @@ runnable in every language.
 ## Order of work
 
 0. **Layout.** Done on 2026-09-27.
-1. **Contract gaps TypeScript needs first:**
-   - the saved AI function format (`contract/saved.md`, schema, cases);
-   - version cases;
-   - score cases;
-   - a scripted fake model for streaming cases.
-   Each is written from the Python behaviour and checked by the Python
-   tests first.
-2. **TypeScript** (`ts/`, on `lmcc` and `@lm15/lm15`), in this order:
-   - write, run and read an AI function;
-   - the call log;
-   - evaluation;
-   - load a function saved in Python;
-   - streaming;
-   - improvement.
+1. **Contract gaps TypeScript needed first.** Done on 2026-09-27:
+   functions, scores and saved functions, with cases Python passes. Still
+   open: streaming cases (a scripted fake model every language can run).
+2. **TypeScript** (`ts/`, on `lmcc` and `@lm15/lm15`). 0.1.0 on
+   2026-09-27: functions, tools, streaming, the call log, evaluation,
+   `labeledFewShot` and `bootstrapFewShot`, loading what Python saved.
+   It passes every case, `tools/crosslang.py` checks it against Python,
+   and it answered live through OpenAI, Anthropic and Gemini. Not yet:
+   `InstructionSearch`, stateful memory, escalation, the reply cache,
+   baking. **To publish it**, lmcc's TypeScript kernel goes to npm first
+   (and lmcc 0.8.4 to PyPI, so both languages run the same kernel).
 3. **lmcc for Julia** (in lmcc), then **FunctAI.jl**.
 4. **lmcc for R** (in lmcc), then **the R package**.
 5. **Baking**, per language, each behind the gate above.
 
 ## Decisions still open
 
-1. **A hand-written function's version includes its source text**
-   (`calls.md`, *Versions*). So the same AI function written in Python
-   and in TypeScript gets two versions, and ratings won't pool across
-   languages.
-   - *Recommendation:* hash only code that runs beside the model. A
-     function whose body is left to the model (`...`) has no code in
-     its version, only its rendered request.
-   - The call log isn't released yet (1.1.0 is unpublished). **Decide
-     before 1.1.0 goes out**, when changing it breaks no one.
-2. **TypeScript's shapes.**
-   - *Recommendation:* zod in the documentation, since TypeScript
-     developers already know it; zod 4 converts to JSON Schema. Also
-     lmcc's own `t` builders, for people who want no dependencies.
+1. ~~A hand-written function's version includes its source text.~~
+   **Decided 2026-09-27:** only code that runs beside the model is
+   hashed; a function the model writes whole is versioned by its request
+   alone. A call's `program.signature` leaves out host type names. The
+   same function now has one version and one signature in every language.
+2. ~~TypeScript's shapes.~~ **Decided:** `t` builders (no dependency) in
+   the documentation, and zod 4 schemas accepted, read as the JSON Schema
+   Python writes for the same type (no `$schema`, no safe-integer bounds,
+   nullable as `anyOf`, a top-level description as the field's words).
 3. **Improving in other languages.** The algorithms use randomness and
    model calls. The contract could fix only their meaning (which
    examples are eligible, what gets scored). Or it could fix exact
@@ -300,3 +295,12 @@ runnable in every language.
 5. **Integrations tied to one ecosystem**, such as Prime Intellect's
    verifiers in `functai_verifiers` and `functai_rows`, stay in their
    language. They are not part of the contract.
+
+## Found on the way
+
+- **The `json` layout with a record answer fails at OpenAI and
+  Anthropic**, in Python and TypeScript alike (their strict schema mode
+  wants `additionalProperties: false` on every object; lmcc's
+  `json_object` reader closes only the outer one). Gemini accepts it. The
+  fix belongs in lmcc's reader or lm15's provider mapping, not here;
+  found live on 2026-09-27.

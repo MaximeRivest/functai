@@ -1,0 +1,48 @@
+{
+  "name": "functai",
+  "version": "0.1.0",
+  "description": "Typed functions whose body is a language model call: write the signature, a model writes the body, you measure how well. The TypeScript implementation of the FunctAI contract.",
+  "type": "module",
+  "license": "MIT",
+  "author": "Maxime Rivest <maxime.rivest@gmail.com>",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/MaximeRivest/functai.git",
+    "directory": "ts"
+  },
+  "homepage": "https://maximerivest.github.io/functai/",
+  "engines": {
+    "node": ">=22.18.0"
+  },
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "functai-source": "./src/index.ts",
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE",
+    "CHANGELOG.md"
+  ],
+  "scripts": {
+    "build": "rm -rf dist && tsc -p tsconfig.build.json",
+    "check": "tsc --noEmit",
+    "test": "node --conditions=functai-source --conditions=lmcc-source --test tests/*.test.ts",
+    "prepublishOnly": "npm run check && npm test && npm run build"
+  },
+  "dependencies": {
+    "@lm15/lm15": "1.0.0-rc.2",
+    "lmcc": "file:../../lmcc/ts"
+  },
+  "devDependencies": {
+    "@types/node": "^22",
+    "typescript": "^5.9",
+    "zod": "^4.6.5"
+  }
+}

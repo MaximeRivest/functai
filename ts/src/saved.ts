@@ -1,0 +1,205 @@
+/**
+ * Saved programs (contract/saved.md). `load` runs an AI function saved in
+ * any language, from its folder's `functai.json`, after checking it sends
+ * exactly what was saved; it refuses, with a reason, what it cannot run
+ * (code of its own, tools, a baked model). `save` writes an AI function
+ * defined here as a folder another language's loader reads.
+ */
+
+import * as lmcc from "lmcc";
+import { Config, stringifyJson } from "@lm15/lm15";
+import { builtin } from "./host.ts";
+import { make, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { REGISTRY } from "./layouts.ts";
+import type { Settings } from "./settings.ts";
+import * as sig from "./signature.ts";
+import { VERSION } from "./calllog.ts";
+
+type Rec = Record<string, unknown>;
+
+export const FORMAT = 1;
+const LANGUAGE = "typescript";
+
+/** A saved program this loader will not run; `code` says why (contract/saved.md). */
+export class LoadRefused extends Error {
+  readonly code: string;
+  constructor(code: string, message: string) {
+    super(`[${code}] ${message}`);
+    this.code = code;
+    this.name = "LoadRefused";
+  }
+}
+
+const refuse = (code: string, message: string): never => {
+  throw new LoadRefused(code, message);
+};
+
+const SNAKE: Record<string, keyof Settings> = {
+  retries: "retries", api_retries: "apiRetries", max_steps: "maxSteps", tool_errors: "toolErrors",
+  capabilities: "capabilities", log_content: "logContent",
+};
+
+function checkForm(m: unknown): Rec {
+  if (typeof m !== "object" || m === null || Array.isArray(m)) refuse("saved-malformed", "functai.json is not a JSON object");
+  const manifest = m as Rec;
+  if (manifest["functai_saved"] !== FORMAT) {
+    refuse("saved-format", `functai.json is format ${JSON.stringify(manifest["functai_saved"])}; this loader reads format ${FORMAT}`);
+  }
+  if (typeof manifest["entry"] !== "string" || typeof manifest["nodes"] !== "object" || manifest["nodes"] === null) {
+    refuse("saved-malformed", "functai.json needs entry and nodes");
+  }
+  return manifest;
+}
+
+/**
+ * An AI function from a saved manifest (the parsed `functai.json`). `node`
+ * names one by key (`module:name`); the default is the entry.
+ */
+export function fromManifest(manifest: unknown, opts: { node?: string; savedId?: string } = {}): AIFunction {
+  const m = checkForm(manifest);
+  const language = (m["language"] as string | undefined) ?? "python";
+  const key = opts.node ?? (m["entry"] as string);
+  const node = (m["nodes"] as Rec)[key] as Rec | undefined;
+  if (!node) refuse("saved-malformed", `functai.json has no node ${JSON.stringify(key)}`);
+  if (node!["kind"] !== "ai") {
+    refuse("saved-not-ai", `${key} is ${node!["kind"] === "module" ? "a module" : `a ${node!["kind"]}`}: code in ${language}, which this loader cannot run. Its AI functions load by key.`);
+  }
+  const data = node!["ai"] as Rec;
+  if (!data || typeof data !== "object") refuse("saved-malformed", `${key} has no "ai" entry`);
+  if (!("body" in data) || data["body"] !== null) {
+    refuse("saved-code", `${key} runs code of its own beside the model (written in ${language}); only ${language} can run it`);
+  }
+  if (Array.isArray(data["tools"]) && data["tools"].length) {
+    refuse("saved-tools", `${key} has tools (${(data["tools"] as unknown[]).map((t) => JSON.stringify(t)).join(", ")}): a tool is code`);
+  }
+  const settingsIn = (data["settings"] ?? {}) as Rec;
+  for (const [k, v] of Object.entries(settingsIn)) {
+    if (typeof v === "object" && v !== null && ("baked" in v || "node" in v)) {
+      refuse("saved-model", `${key}: setting ${k} is ${JSON.stringify(v)}, not something this loader can reach`);
+    }
+  }
+  const signature = lmcc.signatureFromDict(data["signature"] as Record<string, unknown>);
+  const inputs: sig.FieldDef[] = [];
+  const outputs: sig.FieldDef[] = [];
+  let cot = false;
+  for (const f of signature.fields) {
+    if (f.direction === "input" && f.purpose === "plain") inputs.push({ name: f.name, shape: f.shape as Rec, desc: f.desc ?? null });
+    else if (f.direction === "output" && f.purpose === "plain") outputs.push({ name: f.name, shape: f.shape as Rec });
+    else if (f.purpose === "reasoning") cot = true;
+    else refuse("saved-tools", `${key}: field ${f.name} (${f.purpose}) needs tools`);
+  }
+  const own: Settings = {};
+  if (typeof settingsIn["lm"] === "string") own.lm = settingsIn["lm"] as string;
+  if (settingsIn["module"] === "cot" || cot) own.module = "cot";
+  if (settingsIn["include_fn_name_in_instructions"] === false) own.includeFnName = false;
+  if (settingsIn["adapter"] !== undefined && settingsIn["adapter"] !== null) own.adapter = settingsIn["adapter"];
+  for (const [snake, camel] of Object.entries(SNAKE)) if (settingsIn[snake] !== undefined && settingsIn[snake] !== null) (own as Rec)[camel] = settingsIn[snake];
+  if (Array.isArray(data["template"])) own.template = data["template"] as Rec[];
+  const config = data["config"] && Object.keys(data["config"] as Rec).length ? Config.fromJSON(data["config"] as never) : undefined;
+  if (config) {
+    const { temperature, maxTokens, topP, stop, seed, ...rest } = config as Rec;
+    if (temperature !== undefined) own.temperature = temperature as number;
+    if (maxTokens !== undefined) own.maxTokens = maxTokens as number;
+    if (topP !== undefined) own.topP = topP as number;
+    if (stop !== undefined) own.stop = stop as string[];
+    if (seed !== undefined) own.seed = seed as number;
+    if (Object.keys(rest).length) own.config = rest;
+  }
+  const state = (data["state"] ?? { instructions: null, demos: [] }) as { instructions: string | null; demos: Rec[] };
+  const definition: sig.Definition & { written: string } = {
+    name: node!["name"] as string, description: "", inputs, outputs, cot, tools: false,
+    includeName: own.includeFnName !== false, written: signature.instructions,
+  };
+  const fn = make({
+    definition, own, tools: [], module: node!["module"] as string, saved: opts.savedId,
+    state: { instructions: state.instructions ?? null, demos: [] },
+  });
+  fn.demos = (state.demos ?? []) as never;
+  // it must send what was saved (contract/saved.md, "Loading", step 6)
+  const probes = (data["probes"] ?? []) as Rec[];
+  const want = ((data["fingerprints"] as Rec | undefined)?.["requests"] ?? []) as string[];
+  probes.forEach((probe, i) => {
+    let got: string;
+    try {
+      got = lmcc.sha256(fn.probeRequest(probe));
+    } catch (err) {
+      if (!lmcc.isRefusal(err)) throw err;
+      got = `refused:${(err as lmcc.Refusal).code}`;
+    }
+    if (want[i] !== undefined && got !== want[i]) {
+      refuse("saved-differs", `${key}: for probe ${i} (${JSON.stringify(probe).slice(0, 200)}) it would send ${got}, but ${want[i]} was saved`);
+    }
+  });
+  if (typeof data["version"] === "string" && data["version"] !== fn.version) {
+    refuse("saved-differs", `${key}: its version here is ${fn.version}, but ${data["version"]} was saved`);
+  }
+  return fn;
+}
+
+/** An AI function from a saved folder (or its functai.json): Node, Deno, Bun. */
+export function load(path: string, opts: { node?: string } = {}): AIFunction {
+  const fs = builtin("node:fs");
+  const p = builtin("node:path");
+  if (!fs || !p) throw new Error("load(path) needs a file system; parse functai.json yourself and use fromManifest");
+  const file = fs.statSync(path).isDirectory() ? p.join(path, "functai.json") : path;
+  const text = fs.readFileSync(file, "utf8");
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(text);
+  } catch (err) {
+    refuse("saved-malformed", `${file}: ${(err as Error).message}`);
+  }
+  return fromManifest(manifest, { node: opts.node, savedId: "sha256:" + lmcc.sha256Hex(text) });
+}
+
+/** The manifest of an AI function defined here: the part every language reads (contract/saved.md). */
+export function toManifest(fn: AIFunction): Rec {
+  const s = fn.settings;
+  const key = `${fn.module}:${fn.name}`;
+  const settings: Rec = { module: s.module ?? "predict", include_fn_name_in_instructions: s.includeFnName !== false };
+  if (typeof s.lm === "string") settings["lm"] = s.lm;
+  if (s.adapter !== undefined && s.adapter !== null) {
+    settings["adapter"] = s.adapter instanceof lmcc.Adapter ? lmcc.dump(s.adapter, REGISTRY) : s.adapter;
+  }
+  for (const [snake, camel] of Object.entries(SNAKE)) if (s[camel] !== undefined && s[camel] !== null) settings[snake] = s[camel];
+  if (fn.tools.length) throw new LoadRefused("saved-tools", `${fn.name} has tools: a tool is code, and a saved folder carries none from TypeScript yet`);
+  const config: Rec = { ...(s.config ?? {}) };
+  for (const k of ["temperature", "maxTokens", "topP", "stop", "seed"] as const) if (s[k] !== undefined && s[k] !== null) config[k] = s[k];
+  const state = fn.state();
+  const sample = sig.sampleInputs(fn.signature);
+  const probes: Rec[] = [sample];
+  for (const d of state.demos.slice(0, 3)) {
+    const inputs = (d as { inputs: Rec }).inputs;
+    if (!probes.some((p) => lmcc.jsonEqual(p as lmcc.Json, inputs as lmcc.Json))) probes.push(inputs);
+  }
+  const requests = probes.map((p) => {
+    try {
+      return lmcc.sha256(fn.probeRequest(p));
+    } catch (err) {
+      if (!lmcc.isRefusal(err)) throw err;
+      return `refused:${(err as lmcc.Refusal).code}`;
+    }
+  });
+  const ai: Rec = {
+    settings, config: Object.keys(config).length ? JSON.parse(stringifyJson(Config.toJSON(config as Config))) : {},
+    template: s.template ? [...s.template] : null, tools: [], teacher: null, state, requires: [],
+    signature: lmcc.signatureToDict(fn.signature), probes,
+    fingerprints: { signature: lmcc.signatureFingerprint(fn.signature), requests },
+    body: null, version: fn.version,
+  };
+  return {
+    functai_saved: FORMAT, language: LANGUAGE, entry: key, created: new Date().toISOString().replace(/\.\d+Z$/, "+00:00"),
+    functai: VERSION, nodes: { [key]: { kind: "ai", module: fn.module, name: fn.name, ai } },
+  };
+}
+
+/** Write an AI function to a folder (its functai.json), for any language's loader. */
+export function save(fn: AIFunction, folder: string): string {
+  const fs = builtin("node:fs");
+  const p = builtin("node:path");
+  if (!fs || !p) throw new Error("save needs a file system; use toManifest and write it yourself");
+  fs.mkdirSync(folder, { recursive: true });
+  const file = p.join(folder, "functai.json");
+  fs.writeFileSync(file, JSON.stringify(toManifest(fn), null, 1) + "\n");
+  return file;
+}

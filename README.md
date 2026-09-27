@@ -23,12 +23,13 @@ team("I was charged twice for order B-2210, please fix this.")    # 'billing'
 | Language | Folder | Install | Status |
 |---|---|---|---|
 | Python | [`python/`](python/) | `pip install "functai[data]"` | released ([PyPI](https://pypi.org/project/functai/)) |
-| TypeScript / JavaScript | `ts/` | | next |
+| TypeScript / JavaScript | [`ts/`](ts/) | not on npm yet | 0.1.0: passes the whole contract; see [ts/README.md](ts/README.md) |
 | R | `r/` | | planned |
 | Julia | `julia/` | | planned |
 
-Every language follows the same [contract](contract/): a call logged in one
-can be rated in another, and a function improved in one runs in another.
+Every language follows the same [contract](contract/): the same function
+has the same version everywhere, a call logged in one can be rated in
+another, and a function improved and saved in one runs in another.
 [design/01-many-languages.md](design/01-many-languages.md) is the plan.
 
 ## Documentation
@@ -41,7 +42,8 @@ can be rated in another, and a function improved in one runs in another.
 |---|---|
 | [`contract/`](contract/) | what every implementation must agree on: formats, schemas, cases |
 | [`python/`](python/) | the Python package, its tests and examples |
-| [`docs/`](docs/), [`tools/`](tools/) | the website: runnable notebooks, and the tool that runs and builds them |
+| [`ts/`](ts/) | the TypeScript package and its tests |
+| [`docs/`](docs/), [`tools/`](tools/) | the website: runnable notebooks, and the tool that runs and builds them; `tools/crosslang.py` checks the languages against each other |
 | [`design/`](design/) | design notes |
 | [`check`](check) | one command: every implementation against the contract |
 

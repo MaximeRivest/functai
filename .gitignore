@@ -51,3 +51,7 @@ python/examples/custom_adapters/
 site/
 support_router/
 docs/support_router/
+
+# TypeScript
+ts/node_modules/
+ts/dist/
