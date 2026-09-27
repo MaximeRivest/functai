@@ -1,0 +1,79 @@
+{
+ "description": "state.instructions replaces the whole instruction (name, description, guidance), trimmed.",
+ "definition": {
+  "name": "capital",
+  "description": "The country's capital city.",
+  "inputs": [
+   {
+    "name": "country",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "a country"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": "\n  Give the capital city of the country, in English.\n\n",
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Give the capital city of the country, in English.",
+   "fields": [
+    {
+     "name": "country",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain",
+     "desc": "a country"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "country": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Give the capital city of the country, in English.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<country>\nexample text\n</country>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:7c218a3e8ac3542cb45120ce80be094fee708570e97cdabdbac2d4367a7a08b7",
+  "version": "sha256:6781621e6954cb6a32fc5e7690803b37a366578b927a255154a6efa9629f1e9f",
+  "signature_id": "sha256:0a584fbf640f1e5fa6c16c9fa4447c5361b48f9320b5eec626ffc8e520eb31c6"
+ }
+}

@@ -1,0 +1,14 @@
+{
+ "description": "Every row wrong: the bottom of the range is exactly 0.",
+ "kind": "interval",
+ "values": [
+  0,
+  0,
+  0
+ ],
+ "expect": {
+  "mean": 0.0,
+  "low": 0.0,
+  "high": 0.5614970356393196
+ }
+}

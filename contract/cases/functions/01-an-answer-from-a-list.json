@@ -1,0 +1,87 @@
+{
+ "description": "One text input, an answer from a fixed list, the default layout (tags).",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: mood\n\nHow does the customer feel about what they bought?",
+   "fields": [
+    {
+     "name": "review",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "enum": [
+       "happy",
+       "unhappy",
+       "mixed"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "review": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: mood\n\nHow does the customer feel about what they bought?\n\nReply in exactly this form:\n<result>\none of: happy, unhappy, mixed\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<review>\nexample text\n</review>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:50a00f3333e4ca8a02a003b50797ae0d0006ecb5b017cb34de7d98ef92e459a5",
+  "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+  "signature_id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf"
+ }
+}

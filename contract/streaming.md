@@ -8,7 +8,7 @@ second behaviour.
 
 This document is the contract for that view: the events a stream shows,
 in what order, and their JSON form. The Python implementation is
-`functai/streaming.py`; `schema/event.schema.json` checks an event's
+`python/functai/streaming.py`; `schema/event.schema.json` checks an event's
 JSON form.
 
 ## Words

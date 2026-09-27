@@ -1,0 +1,13 @@
+{
+ "description": "Numbers compare by value.",
+ "kind": "match",
+ "answers": {
+  "result": 1
+ },
+ "prediction": {
+  "result": 1.0
+ },
+ "expect": {
+  "exact_match": 1
+ }
+}

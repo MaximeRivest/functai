@@ -1,0 +1,13 @@
+{
+ "description": "No-break and em spaces are white space.",
+ "kind": "match",
+ "answers": {
+  "result": "paris"
+ },
+ "prediction": {
+  "result": " Paris "
+ },
+ "expect": {
+  "exact_match": 1
+ }
+}

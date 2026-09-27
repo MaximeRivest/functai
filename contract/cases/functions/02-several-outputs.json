@@ -1,0 +1,93 @@
+{
+ "description": "Two outputs: the last is the answer. An output's desc goes into the instruction's Output guidance, not into its field.",
+ "definition": {
+  "name": "triage",
+  "description": "Read the ticket.",
+  "inputs": [
+   {
+    "name": "ticket",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "summary",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "one sentence, no names"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    },
+    "desc": "minutes to fix"
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: triage\n\nRead the ticket.\n\nOutput guidance:\n- summary: one sentence, no names\n- result: minutes to fix",
+   "fields": [
+    {
+     "name": "ticket",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "summary",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "ticket": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: triage\n\nRead the ticket.\n\nOutput guidance:\n- summary: one sentence, no names\n- result: minutes to fix\n\nReply in exactly this form:\n<summary>\n...\n</summary>\n<result>\n(integer)\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<ticket>\nexample text\n</ticket>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:e3bb1c600d571b50a7abfa1bb295eff189b557a366510474379c68fe9b314fa9",
+  "version": "sha256:3a1bd79479813808b07d9327f9c31781258a356828c08783f120edae616a2b93",
+  "signature_id": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6"
+ }
+}

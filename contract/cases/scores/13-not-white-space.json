@@ -1,0 +1,13 @@
+{
+ "description": "U+FEFF is not white space (JavaScript's \\s says it is).",
+ "kind": "match",
+ "answers": {
+  "result": "paris"
+ },
+ "prediction": {
+  "result": "paris﻿"
+ },
+ "expect": {
+  "exact_match": 0
+ }
+}

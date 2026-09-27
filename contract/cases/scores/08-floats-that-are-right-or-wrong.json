@@ -1,0 +1,15 @@
+{
+ "description": "0.0 and 1.0 are right or wrong too.",
+ "kind": "interval",
+ "values": [
+  1.0,
+  0.0,
+  1.0,
+  1.0
+ ],
+ "expect": {
+  "mean": 0.75,
+  "low": 0.3006418400969081,
+  "high": 0.954412739704631
+ }
+}

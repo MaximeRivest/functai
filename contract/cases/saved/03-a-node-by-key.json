@@ -1,0 +1,170 @@
+{
+ "description": "Any AI node loads by its key, not only the entry; an improved instruction and the json layout come with it.",
+ "manifest": {
+  "functai_saved": 1,
+  "language": "python",
+  "entry": "shop:capital",
+  "created": "2026-09-27T12:00:00+00:00",
+  "python": "3.13.1",
+  "modules": {
+   "shop": "code/shop.py"
+  },
+  "nodes": {
+   "shop:capital": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "capital",
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [],
+     "teacher": null,
+     "state": {
+      "instructions": "\n  Give the capital city of the country, in English.\n\n",
+      "demos": []
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Give the capital city of the country, in English.",
+      "fields": [
+       {
+        "name": "country",
+        "direction": "input",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "desc": "a country",
+        "type": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "country": "example text"
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:0a584fbf640f1e5fa6c16c9fa4447c5361b48f9320b5eec626ffc8e520eb31c6",
+      "requests": [
+       "sha256:7c218a3e8ac3542cb45120ce80be094fee708570e97cdabdbac2d4367a7a08b7"
+      ]
+     },
+     "body": null,
+     "version": "sha256:6781621e6954cb6a32fc5e7690803b37a366578b927a255154a6efa9629f1e9f"
+    }
+   },
+   "shop:person": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "person",
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true,
+      "adapter": "json"
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [],
+     "teacher": null,
+     "state": {
+      "instructions": null,
+      "demos": []
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Function: person\n\nWho is described?",
+      "fields": [
+       {
+        "name": "text",
+        "direction": "input",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "type": "object",
+         "properties": {
+          "name": {
+           "type": "string"
+          },
+          "age": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "name",
+          "age"
+         ]
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "text": "example text"
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:17e5b2b78ad053f88c562378b21a73d67ac3be003c2e107abf156ffd819521ac",
+      "requests": [
+       "sha256:a4b6e2ff28f887b11c9f29d98c9792578d7871476c17c410928a0abb4aeef171"
+      ]
+     },
+     "body": null,
+     "version": "sha256:b03eb2e4babc361ce5605ac8d04670f5fc5854b9b558a5992b566133be28b088"
+    }
+   }
+  },
+  "requirements": [
+   "functai==1.1.0"
+  ],
+  "allowed": [],
+  "warnings": [],
+  "models": {},
+  "data_files": {},
+  "hashes": {}
+ },
+ "node": "shop:person",
+ "expect": {
+  "loads": {
+   "name": "person",
+   "module": "shop",
+   "version": "sha256:b03eb2e4babc361ce5605ac8d04670f5fc5854b9b558a5992b566133be28b088",
+   "signature_id": "sha256:17e5b2b78ad053f88c562378b21a73d67ac3be003c2e107abf156ffd819521ac",
+   "requests": [
+    "sha256:a4b6e2ff28f887b11c9f29d98c9792578d7871476c17c410928a0abb4aeef171"
+   ]
+  }
+ }
+}

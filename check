@@ -24,11 +24,12 @@ for path in sorted(glob.glob("contract/schema/*.json")):
     jsonschema.Draft202012Validator.check_schema(json.load(open(path)))
 print(f"{len(glob.glob('contract/schema/*.json'))} schemas valid")
 EOF
-before=$(cat contract/cases/*.json | sha256sum)
+cases() { (cd contract/cases && find . -name '*.json' | sort | xargs sha256sum | sha256sum); }
+before=$(cases)
 "$PY" contract/cases/make.py >/dev/null
-after=$(cat contract/cases/*.json | sha256sum)
+after=$(cases)
 if [ "$before" != "$after" ]; then
-  echo "contract/cases/*.json differ from what make.py writes: commit make.py's output, or fix make.py" >&2
+  echo "contract/cases/ differ from what make.py writes: commit make.py's output, or fix make.py" >&2
   exit 1
 fi
 echo "cases match make.py"

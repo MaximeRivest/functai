@@ -1,0 +1,177 @@
+{
+ "description": "Demos become example turns in order; outputs the signature lacks are dropped; a demo left with no output is skipped; an object given to a text input is written as JSON indented by two spaces.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": [
+    {
+     "inputs": {
+      "review": "Broke in a day."
+     },
+     "outputs": {
+      "result": "unhappy"
+     }
+    },
+    {
+     "inputs": {
+      "review": "Great, but late."
+     },
+     "outputs": {
+      "result": "mixed",
+      "stars": 3
+     }
+    },
+    {
+     "inputs": {
+      "review": "Nothing to say."
+     },
+     "outputs": {
+      "stars": 3
+     }
+    },
+    {
+     "inputs": {
+      "review": {
+       "text": "Love it"
+      }
+     },
+     "outputs": {
+      "result": "happy"
+     }
+    }
+   ]
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: mood\n\nHow does the customer feel about what they bought?",
+   "fields": [
+    {
+     "name": "review",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "enum": [
+       "happy",
+       "unhappy",
+       "mixed"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "review": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: mood\n\nHow does the customer feel about what they bought?\n\nReply in exactly this form:\n<result>\none of: happy, unhappy, mixed\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<review>\nBroke in a day.\n</review>\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<result>\nunhappy\n</result>"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<review>\nGreat, but late.\n</review>\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<result>\nmixed\n</result>"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<review>\n{\n  \"text\": \"Love it\"\n}\n</review>\n"
+      }
+     ]
+    },
+    {
+     "role": "assistant",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<result>\nhappy\n</result>"
+      }
+     ]
+    },
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<review>\nexample text\n</review>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:2f94feff2c0e954e997c5d3a73ba0a7cb06380ab41f98f2f45e75426b32de23f",
+  "version": "sha256:0af1ab4c870e1e8d6cccaeb6e7e059b48d6a5f6f2ec413e69dde7d7d51737440",
+  "signature_id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf"
+ }
+}

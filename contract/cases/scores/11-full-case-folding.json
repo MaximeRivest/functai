@@ -1,0 +1,13 @@
+{
+ "description": "Case folding is full: ß is ss, and a final sigma is a sigma.",
+ "kind": "match",
+ "answers": {
+  "result": "STRASSE ΟΔΟΣ"
+ },
+ "prediction": {
+  "result": "straße οδος"
+ },
+ "expect": {
+  "exact_match": 1
+ }
+}

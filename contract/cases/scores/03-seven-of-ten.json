@@ -1,0 +1,21 @@
+{
+ "description": "Right or wrong: Wilson's interval.",
+ "kind": "interval",
+ "values": [
+  1,
+  1,
+  0,
+  1,
+  1,
+  0,
+  1,
+  1,
+  0,
+  1
+ ],
+ "expect": {
+  "mean": 0.7,
+  "low": 0.3967781453459709,
+  "high": 0.892208733443606
+ }
+}

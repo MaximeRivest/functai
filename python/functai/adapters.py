@@ -43,8 +43,11 @@ functai too; importing functai adds lmcc's standard vocabulary to it."""
 lmcc_std.install(REGISTRY)
 
 # Structured values (lists, dicts, dataclasses, pydantic models) are JSON unless an
-# adapter says otherwise; a wildcard never re-spells a scalar.
-DEFAULT_FORMATS = {"*": lmcc.use("json")}
+# adapter says otherwise; a wildcard never re-spells a scalar. The tool list and the
+# calls are bound by type name in the artifact itself, so a layout carries them as
+# data and binds a signature read from JSON (another language's, a saved one) too.
+DEFAULT_FORMATS = {"*": lmcc.use("json"), "list[Tool]": lmcc.use("function_tool"),
+                   "list[ToolCall]": lmcc.use("tool_calls")}
 
 
 # ------------------------------------------------------------------ the reply reader

@@ -608,7 +608,7 @@ def test_reading_skips_partial_lines_and_unknown_records(fake, log):
 
 
 def cases():
-    return sorted((CONTRACT / "cases").glob("*.json"))
+    return sorted((CONTRACT / "cases" / "rated").glob("*.json"))
 
 
 @pytest.mark.parametrize("path", cases(), ids=lambda p: p.stem)

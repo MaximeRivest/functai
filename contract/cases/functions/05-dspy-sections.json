@@ -1,0 +1,79 @@
+{
+ "description": "The chat layout: DSPy's [[ ## name ## ]] sections.",
+ "definition": {
+  "name": "capital",
+  "description": "The country's capital city.",
+  "inputs": [
+   {
+    "name": "country",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {
+   "adapter": "Chat"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: capital\n\nThe country's capital city.",
+   "fields": [
+    {
+     "name": "country",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "country": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: capital\n\nThe country's capital city.\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## result ## ]]\n...\n\n[[ ## completed ## ]]",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "[[ ## country ## ]]\nexample text\n\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "[[ ## completed ## ]]"
+    ]
+   }
+  },
+  "request_hash": "sha256:db0ee9af771bf9924146f026b178259730e581420af6fb1c51fea4dd381cb4ec",
+  "version": "sha256:325025490d0460a297d48a353b58010fb5ce96ac391ba00b81cbc1148551b3c3",
+  "signature_id": "sha256:0a584fbf640f1e5fa6c16c9fa4447c5361b48f9320b5eec626ffc8e520eb31c6"
+ }
+}

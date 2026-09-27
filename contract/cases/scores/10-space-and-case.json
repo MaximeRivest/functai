@@ -1,0 +1,13 @@
+{
+ "description": "Text: white space collapsed, case folded.",
+ "kind": "match",
+ "answers": {
+  "result": "new york"
+ },
+ "prediction": {
+  "result": "  New \t York\n"
+ },
+ "expect": {
+  "exact_match": 1
+ }
+}

@@ -1,0 +1,13 @@
+{
+ "description": "A different answer.",
+ "kind": "match",
+ "answers": {
+  "result": "happy"
+ },
+ "prediction": {
+  "result": "unhappy"
+ },
+ "expect": {
+  "exact_match": 0
+ }
+}

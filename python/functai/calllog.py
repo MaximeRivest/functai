@@ -94,8 +94,70 @@ def _iso(t: float) -> str:
 
 
 def canonical(value: Any) -> str:
-    """lmcc kernel §3a: keys sorted, no whitespace, UTF-8, no NaN."""
-    return json.dumps(value, sort_keys=True, separators=(",", ":"), ensure_ascii=False, allow_nan=False)
+    """lmcc kernel §3a: keys sorted by code point, no white space, UTF-8, no
+    NaN; numbers spelled by §7a (integers in decimal, other numbers as
+    ECMAScript writes them: ``1.0`` is ``1``, ``1e-07`` is ``1e-7``), so every
+    language writes the same bytes for the same data."""
+    parts: List[str] = []
+    _write(value, parts)
+    return "".join(parts)
+
+
+def _write(value: Any, out: List[str]) -> None:
+    if value is None or value is True or value is False:
+        out.append("null" if value is None else "true" if value else "false")
+    elif isinstance(value, str):
+        out.append(json.dumps(value, ensure_ascii=False))
+    elif isinstance(value, int):
+        out.append(str(int(value)))
+    elif isinstance(value, float):
+        out.append(ecmascript_number(value))
+    elif isinstance(value, Mapping):
+        out.append("{")
+        for i, key in enumerate(sorted(value)):
+            if not isinstance(key, str):
+                raise TypeError(f"a JSON object's keys are text, not {type(key).__name__}")
+            if i:
+                out.append(",")
+            out.append(json.dumps(key, ensure_ascii=False))
+            out.append(":")
+            _write(value[key], out)
+        out.append("}")
+    elif isinstance(value, (list, tuple)):
+        out.append("[")
+        for i, item in enumerate(value):
+            if i:
+                out.append(",")
+            _write(item, out)
+        out.append("]")
+    else:
+        raise TypeError(f"{type(value).__name__} has no JSON form")
+
+
+def ecmascript_number(x: float) -> str:
+    """ECMAScript's Number::toString of a finite double (lmcc kernel §7a)."""
+    if x != x or x in (float("inf"), float("-inf")):
+        raise ValueError(f"{x} has no JSON form")
+    if x == 0:
+        return "0"
+    if x < 0:
+        return "-" + ecmascript_number(-x)
+    mantissa, _, exp = repr(x).partition("e")          # repr: the shortest digits that round-trip
+    whole, _, frac = mantissa.partition(".")
+    digits = (whole + frac).lstrip("0")
+    n = len(whole.lstrip("0")) + (int(exp) if exp else 0) if whole.strip("0") else \
+        (int(exp) if exp else 0) - (len(frac) - len(frac.lstrip("0")))
+    digits = digits.rstrip("0") or "0"
+    k = len(digits)
+    if k <= n <= 21:
+        return digits + "0" * (n - k)
+    if 0 < n <= 21:
+        return digits[:n] + "." + digits[n:]
+    if -6 < n <= 0:
+        return "0." + "0" * (-n) + digits
+    e = n - 1
+    sign = "+" if e >= 0 else "-"
+    return (digits[0] + ("." + digits[1:] if k > 1 else "") + "e" + sign + str(abs(e)))
 
 
 def _sha(text: str) -> str:

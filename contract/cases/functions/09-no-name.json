@@ -1,0 +1,80 @@
+{
+ "description": "Without the function's name and without a description, the instruction is the guidance alone.",
+ "definition": {
+  "name": "extract",
+  "description": "",
+  "inputs": [
+   {
+    "name": "text",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "the date, as YYYY-MM-DD"
+   }
+  ],
+  "settings": {
+   "include_fn_name_in_instructions": false
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Output guidance:\n- result: the date, as YYYY-MM-DD",
+   "fields": [
+    {
+     "name": "text",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "text": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Output guidance:\n- result: the date, as YYYY-MM-DD\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<text>\nexample text\n</text>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:c44d1708e967d889740540ccd8e6b9a1f2b211988b63ab14fc893a6dd85d4c2a",
+  "version": "sha256:7f348a9c4fb6a7d716861381fb8fd7ea088351e3b575d4a8f4d32e9b07151931",
+  "signature_id": "sha256:0553dbe4a0c5e2004a138dff3be56e6e622a792fb34c20493475c9c6c2044fa8"
+ }
+}

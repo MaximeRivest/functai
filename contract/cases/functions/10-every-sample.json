@@ -1,0 +1,247 @@
+{
+ "description": "The sample input, one value per shape: the first choice, the first non-null option, text, 3, 2.5, true, [], {}.",
+ "definition": {
+  "name": "describe",
+  "description": "Describe.",
+  "inputs": [
+   {
+    "name": "a",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "b",
+    "shape": {
+     "type": "integer"
+    }
+   },
+   {
+    "name": "c",
+    "shape": {
+     "type": "number"
+    }
+   },
+   {
+    "name": "d",
+    "shape": {
+     "type": "boolean"
+    }
+   },
+   {
+    "name": "e",
+    "shape": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   {
+    "name": "f",
+    "shape": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   },
+   {
+    "name": "g",
+    "shape": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer"
+     }
+    }
+   },
+   {
+    "name": "h",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   },
+   {
+    "name": "i",
+    "shape": {
+     "enum": [
+      "red",
+      "blue"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: describe\n\nDescribe.",
+   "fields": [
+    {
+     "name": "a",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "b",
+     "direction": "input",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "c",
+     "direction": "input",
+     "shape": {
+      "type": "number"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "d",
+     "direction": "input",
+     "shape": {
+      "type": "boolean"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "e",
+     "direction": "input",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "string"
+      }
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "f",
+     "direction": "input",
+     "shape": {
+      "anyOf": [
+       {
+        "type": "integer"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "g",
+     "direction": "input",
+     "shape": {
+      "type": "object",
+      "additionalProperties": {
+       "type": "integer"
+      }
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "h",
+     "direction": "input",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "name"
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "i",
+     "direction": "input",
+     "shape": {
+      "enum": [
+       "red",
+       "blue"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "a": "example text",
+   "b": 3,
+   "c": 2.5,
+   "d": true,
+   "e": [],
+   "f": 3,
+   "g": {},
+   "h": {},
+   "i": "red"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: describe\n\nDescribe.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<a>\nexample text\n</a>\n<b>\n3\n</b>\n<c>\n2.5\n</c>\n<d>\ntrue\n</d>\n<e>\n[]\n</e>\n<f>\n3\n</f>\n<g>\n{}\n</g>\n<h>\n{}\n</h>\n<i>\nred\n</i>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:8364bc9d8130725b33f5a13ada3ce30911e0e29338928a24084868c1224023af",
+  "version": "sha256:0fbd68e041cc8c27f7c232cad6af0fd3ea9ae9c01236386ef7465a4cc3faad31",
+  "signature_id": "sha256:dda774d5d52cfcaed082fb6f4556ad0642e3ac06587e4c633eb0b1b7609cbbe9"
+ }
+}

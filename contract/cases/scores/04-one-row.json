@@ -1,0 +1,12 @@
+{
+ "description": "One row: a mean, no range.",
+ "kind": "interval",
+ "values": [
+  1
+ ],
+ "expect": {
+  "mean": 1.0,
+  "low": null,
+  "high": null
+ }
+}

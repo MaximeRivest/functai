@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/saved.schema.json",
+  "title": "A saved program's manifest, functai.json (format 1, contract/saved.md)",
+  "type": "object",
+  "required": ["functai_saved", "entry", "nodes"],
+  "properties": {
+    "functai_saved": {"const": 1},
+    "language": {"type": "string", "minLength": 1},
+    "entry": {"$ref": "#/$defs/key"},
+    "created": {"type": "string"},
+    "nodes": {
+      "type": "object",
+      "propertyNames": {"$ref": "#/$defs/key"},
+      "additionalProperties": {"$ref": "#/$defs/node"}
+    }
+  },
+  "$defs": {
+    "key": {"type": "string", "pattern": "^[^:]*:[^:]+$"},
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "node": {
+      "type": "object",
+      "required": ["kind", "module", "name"],
+      "properties": {
+        "kind": {"enum": ["ai", "module", "function", "class"]},
+        "module": {"type": "string"},
+        "name": {"type": "string", "minLength": 1},
+        "ai": {"$ref": "#/$defs/ai"}
+      },
+      "if": {"properties": {"kind": {"const": "ai"}}},
+      "then": {"required": ["ai"]}
+    },
+    "ai": {
+      "type": "object",
+      "required": ["signature", "settings", "state", "probes", "fingerprints"],
+      "properties": {
+        "signature": {
+          "type": "object",
+          "required": ["instructions", "fields"],
+          "properties": {
+            "instructions": {"type": "string"},
+            "fields": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["name", "direction", "shape"],
+                "properties": {
+                  "name": {"type": "string", "minLength": 1},
+                  "direction": {"enum": ["input", "output"]},
+                  "shape": {"type": "object"},
+                  "purpose": {"type": "string"},
+                  "type": {"type": ["string", "null"]},
+                  "desc": {"type": ["string", "null"]}
+                }
+              }
+            }
+          }
+        },
+        "settings": {"type": "object"},
+        "config": {"type": "object"},
+        "template": {"type": ["array", "null"], "items": {"type": "object"}},
+        "tools": {"type": "array"},
+        "state": {
+          "type": "object",
+          "required": ["instructions", "demos"],
+          "properties": {
+            "instructions": {"type": ["string", "null"]},
+            "demos": {"type": "array", "items": {"type": "object"}}
+          }
+        },
+        "probes": {"type": "array", "minItems": 1, "items": {"type": "object"}},
+        "fingerprints": {
+          "type": "object",
+          "required": ["signature", "requests"],
+          "properties": {
+            "signature": {"$ref": "#/$defs/sha256"},
+            "requests": {
+              "type": "array",
+              "items": {"type": "string", "pattern": "^(sha256:[0-9a-f]{64}|refused:[a-z0-9-]+)$"}
+            }
+          }
+        },
+        "body": {
+          "oneOf": [
+            {"type": "null"},
+            {"type": "object", "required": ["code"], "properties": {"code": {"$ref": "#/$defs/sha256"}}}
+          ]
+        },
+        "version": {"$ref": "#/$defs/sha256"}
+      }
+    }
+  }
+}

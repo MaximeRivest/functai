@@ -1,0 +1,127 @@
+{
+ "description": "The json layout: one object the provider enforces (the probe facts have native structured output).",
+ "definition": {
+  "name": "person",
+  "description": "Who is described?",
+  "inputs": [
+   {
+    "name": "text",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "age": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "name",
+      "age"
+     ]
+    }
+   }
+  ],
+  "settings": {
+   "adapter": "json"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: person\n\nWho is described?",
+   "fields": [
+    {
+     "name": "text",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "name": {
+        "type": "string"
+       },
+       "age": {
+        "type": "integer"
+       }
+      },
+      "required": [
+       "name",
+       "age"
+      ]
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "text": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: person\n\nWho is described?",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<text>\nexample text\n</text>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "response_format": {
+     "type": "json_schema",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "result": {
+        "type": "object",
+        "properties": {
+         "name": {
+          "type": "string"
+         },
+         "age": {
+          "type": "integer"
+         }
+        },
+        "required": [
+         "name",
+         "age"
+        ]
+       }
+      },
+      "required": [
+       "result"
+      ],
+      "additionalProperties": false
+     }
+    }
+   }
+  },
+  "request_hash": "sha256:a4b6e2ff28f887b11c9f29d98c9792578d7871476c17c410928a0abb4aeef171",
+  "version": "sha256:b03eb2e4babc361ce5605ac8d04670f5fc5854b9b558a5992b566133be28b088",
+  "signature_id": "sha256:17e5b2b78ad053f88c562378b21a73d67ac3be003c2e107abf156ffd819521ac"
+ }
+}

@@ -1,0 +1,87 @@
+{
+ "description": "module cot adds a reasoning output first; without native reasoning it is written in the reply.",
+ "definition": {
+  "name": "solve",
+  "description": "Solve the word problem.",
+  "inputs": [
+   {
+    "name": "problem",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "number"
+    }
+   }
+  ],
+  "settings": {
+   "module": "cot"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: solve\n\nSolve the word problem.",
+   "fields": [
+    {
+     "name": "problem",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "reasoning",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "reasoning"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "number"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "problem": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: solve\n\nSolve the word problem.\n\nReply in exactly this form:\n<reasoning>\n...\n</reasoning>\n<result>\n(number)\n</result>\n\n\nReason step by step in the 'reasoning' section before writing any other section.",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<problem>\nexample text\n</problem>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:79ea3f1acf8f7f8205229f2bb2ad95b4a15692619dfcc912bf4be687ad2f6dd7",
+  "version": "sha256:47778665a43c5e31199be834f077194a43d062241db273cef14e47b3c7607b35",
+  "signature_id": "sha256:a1f9f6c4bf9f3db7c39edb91d5e63301086d42ec22ee4f3991dbf1ac24769d57"
+ }
+}

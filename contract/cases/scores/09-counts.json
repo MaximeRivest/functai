@@ -1,0 +1,17 @@
+{
+ "description": "Counts are scores too.",
+ "kind": "interval",
+ "values": [
+  3,
+  5,
+  4,
+  8,
+  2,
+  6
+ ],
+ "expect": {
+  "mean": 4.666666666666667,
+  "low": 2.399257793084313,
+  "high": 6.934075540249021
+ }
+}

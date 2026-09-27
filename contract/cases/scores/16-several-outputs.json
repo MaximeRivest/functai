@@ -1,0 +1,18 @@
+{
+ "description": "Several outputs: all must match, and each is scored on its own.",
+ "kind": "match",
+ "answers": {
+  "summary": "Charged twice",
+  "result": "billing"
+ },
+ "prediction": {
+  "summary": "charged twice",
+  "result": "shipping",
+  "extra": "not compared"
+ },
+ "expect": {
+  "exact_match": 0,
+  "summary_match": 1,
+  "result_match": 0
+ }
+}

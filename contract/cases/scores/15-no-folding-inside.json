@@ -1,0 +1,17 @@
+{
+ "description": "Text inside a list is compared as it is.",
+ "kind": "match",
+ "answers": {
+  "result": [
+   "A"
+  ]
+ },
+ "prediction": {
+  "result": [
+   "a"
+  ]
+ },
+ "expect": {
+  "exact_match": 0
+ }
+}

@@ -1,0 +1,95 @@
+{
+ "description": "A tool is code: it refuses.",
+ "manifest": {
+  "functai_saved": 1,
+  "language": "python",
+  "entry": "shop:mood",
+  "created": "2026-09-27T12:00:00+00:00",
+  "python": "3.13.1",
+  "modules": {
+   "shop": "code/shop.py"
+  },
+  "nodes": {
+   "shop:mood": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "mood",
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [
+      "shop:lookup_order"
+     ],
+     "teacher": null,
+     "state": {
+      "instructions": null,
+      "demos": []
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Function: mood\n\nHow does the customer feel about what they bought?",
+      "fields": [
+       {
+        "name": "review",
+        "direction": "input",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "enum": [
+          "happy",
+          "unhappy",
+          "mixed"
+         ],
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "review": "example text"
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
+      "requests": [
+       "sha256:50a00f3333e4ca8a02a003b50797ae0d0006ecb5b017cb34de7d98ef92e459a5"
+      ]
+     },
+     "body": null,
+     "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206"
+    }
+   }
+  },
+  "requirements": [
+   "functai==1.1.0"
+  ],
+  "allowed": [],
+  "warnings": [],
+  "models": {},
+  "data_files": {},
+  "hashes": {}
+ },
+ "node": null,
+ "expect": {
+  "refuses": "saved-tools"
+ }
+}

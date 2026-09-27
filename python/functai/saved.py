@@ -46,6 +46,8 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple
 import lm15
 import lmcc
 
+from . import calllog
+
 FORMAT = 1
 MANIFEST = "functai.json"
 
@@ -309,7 +311,7 @@ def probe_request(fn, spec, plan, past, inputs: Dict[str, Any]) -> Dict[str, Any
 
 
 def request_fingerprint(request: Dict[str, Any]) -> str:
-    return "sha256:" + _sha256(_canonical(request).encode())
+    return "sha256:" + _sha256(calllog.canonical(request).encode())
 
 
 def _fingerprints(fn, probes: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -400,6 +402,10 @@ def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None
                 "signature": lmcc.signature_to_dict(fn._spec().signature),
                 "probes": probes,
                 "fingerprints": _fingerprints(fn, probes),
+                # null: the model writes the whole body, so another language can run this
+                # function from this entry alone (contract/saved.md)
+                "body": None if calllog._model_body(fn.__wrapped__) else {"code": calllog.code_hash(fn.__wrapped__)},
+                "version": calllog.ai_version(fn),
             }
         elif n.kind == "module":
             entry["module_program"] = {"call_defaults": lmcc.turn.to_json(dict(n.obj._opt_call_defaults)),
@@ -407,6 +413,7 @@ def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None
         nodes[key] = entry
     return {
         "functai_saved": FORMAT,
+        "language": "python",
         "entry": report.entry,
         "created": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
         "python": ".".join(map(str, sys.version_info[:3])),

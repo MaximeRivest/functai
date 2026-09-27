@@ -7,8 +7,8 @@ it. People's judgements of those calls (right, wrong, and what the right
 answer was) are lines in the same folder, so the log is also a dataset.
 
 This document is the contract. The Python implementation is
-`functai/calllog.py`. A TypeScript implementation must pass
-`contract/cases/` and write records that `contract/schema/` accepts.
+`python/functai/calllog.py`. Every implementation must pass
+`cases/rated/` and write records that `schema/` accepts.
 
 ## Words
 
@@ -222,7 +222,7 @@ The reader is given the program's `name`, and when it knows them its
    (compared as canonical JSON).
 7. Rows are in the order of the calls' `started`, then `id`.
 
-`contract/cases/*.json` pin these rules.
+`cases/rated/*.json` pin these rules.
 
 ## Versions
 
@@ -280,7 +280,13 @@ version of the module.
 ## Canonical JSON
 
 lmcc kernel §3a: object keys sorted by code point, `,` and `:` with no
-whitespace, non-ASCII written as UTF-8, no NaN or infinities.
+whitespace, non-ASCII written as UTF-8, no NaN or infinities; strings
+escape `"`, `\` and U+0000 to U+001F (`\b` `\f` `\n` `\r` `\t`, the
+others `\u00xx` in lowercase hex); numbers by lmcc §7a: integers in
+decimal, every other number as ECMAScript's `Number::toString` writes it
+(`1.0` is `1`, `1e-07` is `1e-7`, `0.00001` is `0.00001`). These are the
+bytes every implementation hashes and measures (`sizes`), whatever its
+host's JSON writer spells.
 
 ## For implementers
 

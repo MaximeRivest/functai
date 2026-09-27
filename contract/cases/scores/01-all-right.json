@@ -1,0 +1,16 @@
+{
+ "description": "Every row right: the mean is 1 and the top of the range exactly 1.",
+ "kind": "interval",
+ "values": [
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "expect": {
+  "mean": 1.0,
+  "low": 0.5655175313406071,
+  "high": 1.0
+ }
+}

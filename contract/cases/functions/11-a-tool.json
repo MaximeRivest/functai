@@ -1,0 +1,180 @@
+{
+ "description": "With tools: a tools input and a calls output; the probe facts call tools natively.",
+ "definition": {
+  "name": "helper",
+  "description": "Help with the order.",
+  "inputs": [
+   {
+    "name": "question",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  },
+  "tools": [
+   {
+    "name": "lookup_order",
+    "description": "Look up an order.",
+    "parameters": {
+     "type": "object",
+     "properties": {
+      "order": {
+       "type": "string"
+      }
+     },
+     "required": [
+      "order"
+     ]
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: helper\n\nHelp with the order.",
+   "fields": [
+    {
+     "name": "question",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "tools",
+     "direction": "input",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "description": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        },
+        "parameters": {
+         "anyOf": [
+          {
+           "type": "object"
+          },
+          {
+           "type": "null"
+          }
+         ]
+        }
+       },
+       "required": [
+        "name",
+        "description",
+        "parameters"
+       ]
+      }
+     },
+     "purpose": "tools"
+    },
+    {
+     "name": "calls",
+     "direction": "output",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "string"
+        },
+        "name": {
+         "type": "string"
+        },
+        "input": {
+         "type": "object"
+        }
+       },
+       "required": [
+        "id",
+        "name",
+        "input"
+       ]
+      }
+     },
+     "purpose": "tools.calls"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "question": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: helper\n\nHelp with the order.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<question>\nexample text\n</question>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   },
+   "tools": [
+    {
+     "type": "function",
+     "name": "lookup_order",
+     "description": "Look up an order.",
+     "parameters": {
+      "type": "object",
+      "properties": {
+       "order": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "order"
+      ]
+     }
+    }
+   ]
+  },
+  "request_hash": "sha256:9f191d0186f15e93b3f924d2515ee5d1494a245642cc8db28835ec6c9ed9018d",
+  "version": "sha256:2f5b01b2bd3e898f8ede777d579b14d847e31261bc32423d5004305892d934e8",
+  "signature_id": "sha256:f9672709c7f5a22eff58f14d63e68f6460c87c20e5fe3e76e6e7e0c8d1e30138"
+ }
+}

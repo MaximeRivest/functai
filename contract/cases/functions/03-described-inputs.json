@@ -1,0 +1,94 @@
+{
+ "description": "An input's desc is its field's desc and a line of Parameter guidance.",
+ "definition": {
+  "name": "capital",
+  "description": "The country's capital city.",
+  "inputs": [
+   {
+    "name": "country",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "an English country name"
+   },
+   {
+    "name": "year",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: capital\n\nThe country's capital city.\n\nParameter guidance:\n- country: an English country name",
+   "fields": [
+    {
+     "name": "country",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain",
+     "desc": "an English country name"
+    },
+    {
+     "name": "year",
+     "direction": "input",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "country": "example text",
+   "year": 3
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: capital\n\nThe country's capital city.\n\nParameter guidance:\n- country: an English country name\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<country>\nexample text\n</country>\n<year>\n3\n</year>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:ab1bdd7df020e126e121cd0a1c6cae9ee667a9a41fc2824e125eb96c38acd819",
+  "version": "sha256:a7396ad7aa7d472d6bb866f1989386d27c5d34a056db0e331a56a5bd43a7412d",
+  "signature_id": "sha256:23dc66e583a2507c0ceba6356a00d979e2ce349eec3eda8bd1ccc2d91b1c7dc5"
+ }
+}
