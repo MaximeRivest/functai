@@ -43,7 +43,7 @@ DEFAULTS: Dict[str, Any] = {
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
     "on_unreadable": "raise",   # "raise" | "record": keep an unreadable reply as a turn with no values
                                 # (prediction.refusal says why); for rollouts that must go on
-    "cache_replies": False,     # True: reuse the reply to an identical request (in memory); lm15's `cache` is prompt caching
+    "cache_replies": False,     # True: reuse the reply to an identical request (in memory; unreadable replies are not kept); lm15's `cache` is prompt caching
 
     # escalation: when the model is less sure than escalate_below (its probability for
     # its own answer), escalate_to answers instead (a model name, a baked model, an AI function)

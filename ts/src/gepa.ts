@@ -155,7 +155,9 @@ export async function gepa<F extends AIFunction, R extends Row<F>>(fn: F, rows: 
     ...(own.logContent !== undefined ? { logContent: own.logContent } : {}),
     ...((opts.teacher ?? own.lm) ? { lm: opts.teacher ?? own.lm } : {}),
   };
-  const meta = { definedIn: "functai.meta", includeFnName: false, adapter: "xml", module: "predict" as const, temperature: 1, ...metaSettings };
+  // the teacher samples (temperature 1): a cached reply would give the same proposal again
+  const meta = { definedIn: "functai.meta", includeFnName: false, adapter: "xml", module: "predict" as const, temperature: 1,
+    cacheReplies: false, ...metaSettings };
   const tagged = <R>(f: () => R): R => withSettings({ caller: { optimization: run } }, f);
   const reflect = ai("_reflect", { description: REFLECT_TEXT, input: { fields: t.string(), instruction: t.string(), cases: t.string(), tried: t.string() }, output: t.string(), ...meta });
   const combine = ai("_combine", { description: COMBINE_TEXT, input: { fields: t.string(), first: t.string(), second: t.string() }, output: t.string(), ...meta });

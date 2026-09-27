@@ -68,6 +68,19 @@ p.answer;       // 15
 - **A call** takes its options second: `await mood(input, { lm:
   "gpt-6-luna", signal })`: settings for that call only, and an
   `AbortSignal` that cancels it (`Cancelled`).
+- **Optional inputs**: an input may be left out when its schema says so,
+  as the schema's library means it: `t.optional(...)` and zod's
+  `.optional()` are sent as `null` (as Python's `x: T | None = None`),
+  zod's `.default(x)` as `x`; `.nullable()` must be given, null or not. A
+  given value is checked by its schema before any call. With exactly one
+  required input, its value alone is the call: `summarize("…")`.
+- **The reply cache**: `cacheReplies: true` answers an identical request
+  (model, messages, every setting sent) with the reply it got before,
+  without a call; any store with `get`, `set` and `delete` (a `Map`,
+  Redis, …) works instead of memory, and is given plain JSON.
+  `clearCache()` empties the memory one. Unreadable replies are not kept.
+  Off by default: it answers identical requests identically, samples
+  included.
 - **Many inputs**: `await mood.map(reviews, { concurrency: 8 })` gives
   every answer, in order, 8 calls at a time; it rejects with the first
   failure and starts no more. (`evaluate` keeps going and scores a failure 0.)
@@ -178,7 +191,7 @@ function with code of its own around the model, tools, a baked model.
 Compared with the Python package: baking (training your own weights),
 `InstructionSearch` and the random-search optimizer (`gepa` is here), stateful memory,
 escalation to a bigger model, reading tables other than arrays of objects,
-the reply cache, and loading programs with code (only AI functions travel
+and loading programs with code (only AI functions travel
 between languages). See `../design/01-many-languages.md`.
 
 ## Developing

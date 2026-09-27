@@ -23,17 +23,38 @@ export interface ZodLike<T = unknown> {
  * (standardschema.dev): zod 4.2+, valibot, arktype, ... Its output type is the
  * field's type; its JSON Schema, the field's shape.
  */
-export interface StandardSchemaLike<T = unknown> {
+export interface StandardSchemaLike<T = unknown, In = unknown> {
   readonly "~standard": {
     readonly vendor: string;
-    readonly types?: { readonly output: T };
+    readonly types?: { readonly input: In; readonly output: T };
+    readonly validate: (value: unknown) => StandardResult | Promise<StandardResult>;
     readonly jsonSchema?: { input(options: { target: string }): JsonObject };
   };
 }
 
+/** What a Standard Schema's `validate` gives: the parsed value, or the issues. */
+export type StandardResult = { readonly value: unknown; readonly issues?: undefined }
+  | { readonly issues: readonly { readonly message: string; readonly path?: readonly unknown[] }[] };
+
 /** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc }`. */
 export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T>
   | { readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>; readonly desc?: string };
+
+/** What a caller passes for an input field: a Standard Schema's input type (before defaults and transforms), else the value type. */
+export type InputValueOf<S> =
+  S extends { readonly shape: infer X } ? InputValueOf<X> :
+  S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? Exclude<T, undefined> :
+  ValueOf<S>;
+
+/**
+ * May a caller leave this input out? A Standard Schema: when it accepts
+ * `undefined` (zod's `.optional()`, `.default(...)`; not `.nullable()`, which
+ * must be given). A shape: when it allows null (`t.optional(...)`).
+ */
+export type IsOptional<S> =
+  S extends { readonly shape: infer X } ? IsOptional<X> :
+  S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? (undefined extends T ? true : false) :
+  S extends lmcc.TypedShape<infer T> ? (unknown extends T ? false : null extends T ? true : false) : false;
 
 /** The value type of a field spec. */
 export type ValueOf<S> =
@@ -64,6 +85,21 @@ function isZod(x: unknown): x is ZodLike {
 function isStandard(x: unknown): x is StandardSchemaLike {
   return (typeof x === "object" || typeof x === "function") && x !== null && "~standard" in x
     && typeof (x as StandardSchemaLike)["~standard"]?.jsonSchema?.input === "function";
+}
+
+/** The schema object of a field spec, when it is a Standard Schema (to validate values with). */
+export function standardOf(spec: FieldSpec): StandardSchemaLike | null {
+  const raw = typeof spec === "object" && spec !== null && "shape" in spec && !isZod(spec) && !isStandard(spec)
+    ? (spec as { shape: unknown }).shape : spec;
+  return isStandard(raw) ? raw : null;
+}
+
+/** Does a shape allow null? */
+export function allowsNull(shape: JsonObject): boolean {
+  const options = (shape["anyOf"] ?? shape["oneOf"]) as JsonObject[] | undefined;
+  if (Array.isArray(options)) return options.some(allowsNull);
+  const type = shape["type"];
+  return type === "null" || (Array.isArray(type) && type.includes("null"));
 }
 
 const SAFE = Number.MAX_SAFE_INTEGER;

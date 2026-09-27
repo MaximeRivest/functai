@@ -15,6 +15,11 @@ does, and a type checker follows it.
   mypy, write `return _ai`. `tests/typing/api.py` pins all of it
   (checked with basedpyright).
 - `fn.predict(...)` replaces `fn(..., all=True)`; an input may be called `all`.
+- The reply cache (`cache_replies=True`) no longer keeps a reply that
+  could not be read, so with `retries=0` one bad reply no longer fails
+  that input until the cache is cleared; and the optimizers' teacher
+  (GEPA, InstructionSearch, synthesis), which samples on purpose, is never
+  answered from it.
 - Async: `await fn.acall(...)`, `await fn.apredict(...)`, and `@ai async
   def` for a function whose body is the model call. Calls run in a worker
   thread (the engine itself is synchronous), with the caller's settings.

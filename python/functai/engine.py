@@ -210,7 +210,9 @@ def phistory(n: int = 1) -> _Text:
 
 class _Cache:
     """Replies by request, in memory: an identical request (model, messages,
-    settings) gets the same reply without a new model call."""
+    settings) gets the same reply without a new model call. A reply that
+    could not be read is forgotten (``discard``), so a passing failure never
+    becomes a permanent one."""
 
     def __init__(self, capacity: int = 20_000):
         self.capacity = capacity
@@ -235,6 +237,10 @@ class _Cache:
             self._data.move_to_end(key)
             while len(self._data) > self.capacity:
                 self._data.popitem(last=False)
+
+    def discard(self, key: str) -> None:
+        with self._lock:
+            self._data.pop(key, None)
 
     def clear(self) -> None:
         with self._lock:
@@ -424,6 +430,8 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 raise lmcc.Refusal("parse-value", problem)
             return response, reading
         except lmcc.Refusal as err:
+            if settings.get("cache_replies"):
+                CACHE.discard(CACHE.key(request))     # not kept: asked again, it is asked of the model
             thought = getattr(response.usage, "reasoning_tokens", None) or 0
             if err.code == "parse-truncated" and thought:
                 err = lmcc.Refusal(err.code, f"{err.hint} (the model spent {thought} of its tokens thinking "

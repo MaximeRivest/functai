@@ -45,5 +45,9 @@ functai.configure(cache_replies=True)
 
 An identical request (same model, same messages, same settings) is then
 answered from memory, so re-running a cell or an evaluation costs
-nothing. `functai.clear_cache()` empties it. It is off by default,
-because a cached answer hides how much a model's answers vary.
+nothing. `functai.clear_cache()` empties it. A reply that could not be
+read is not kept, so asking again reaches the model. It is off by
+default, because a cached answer hides how much a model's answers vary:
+an identical request gets an identical answer even when the model
+samples (the optimizers' teacher is never answered from it, for that
+reason).

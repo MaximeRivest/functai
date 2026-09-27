@@ -6,6 +6,7 @@
  * comes from the plan.
  */
 
+import { cacheOf, forget, keep, lookup, replyKey } from "./cache.ts";
 import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
 import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Request, type Response, type StreamEvent } from "@lm15/lm15";
@@ -118,9 +119,20 @@ const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, 
 
 const retryable = (err: unknown) => RETRYABLE_ERRORS.some((cls) => err instanceof cls);
 
-/** One request: through the router, re-sent after transient errors; streamed when watched. */
+/** One request: from the reply cache when on, else through the router, re-sent after transient errors; streamed when watched. */
 async function send(job: Job, request: Request): Promise<Response> {
   const { call, watch } = job;
+  const cache = cacheOf(job.settings.cacheReplies);
+  const key = cache ? replyKey(request) : null;
+  if (cache && key) {
+    watch?.check();
+    const hit = await lookup(cache, key);
+    if (hit) {
+      call.exchange(job.model, request, hit, Date.now(), 0, { cached: true });
+      if (watch) replay(job, hit);                  // a whole reply: one text piece per field (streaming.md)
+      return hit;
+    }
+  }
   const retries = Math.max(0, job.settings.apiRetries);
   for (let attempt = 0; ; attempt++) {
     watch?.check();
@@ -171,6 +183,7 @@ async function send(job: Job, request: Request): Promise<Response> {
       }
       call.exchange(job.model, request, response, started, (performance.now() - t0) / 1000,
         { streamed: streamed && job.router.stream !== undefined, firstDelta: first });
+      if (cache && key && response.finishReason !== "error") await keep(cache, key, response);
       return response;
     } catch (err) {
       call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000, { error: err, streamed: watch !== null });
@@ -230,6 +243,8 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       return [response, reading];
     } catch (err) {
       if (!lmcc.isRefusal(err)) throw err;
+      const cache = cacheOf(job.settings.cacheReplies);
+      if (cache) await forget(cache, replyKey(request));   // an unreadable reply is not kept: asked again, it is asked of the model
       let refusal = err as lmcc.Refusal;
       const thought = response.usage.reasoningTokens ?? 0;
       if (refusal.code === "parse-truncated" && thought) {

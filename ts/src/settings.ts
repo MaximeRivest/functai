@@ -7,6 +7,7 @@
 import type { Config, Request, Response, StreamEvent } from "@lm15/lm15";
 import { Context } from "./host.ts";
 import type { Capabilities } from "./models.ts";
+import type { ReplyCache } from "./cache.ts";
 
 /** What calls go through: an lm15 `LMRouter`, or anything with its `resolve` and `complete` (a fake, in tests). */
 export interface Router {
@@ -49,6 +50,12 @@ export interface Settings {
   logContent?: boolean | null;
   /** Who is calling, added to `FUNCTAI_CALLER`: `{ kind: "agent", conversation: "…" }`. */
   caller?: Record<string, unknown> | null;
+  /**
+   * Answer an identical request with the reply it got before (`true`: in this
+   * process's memory; or a store: a `Map`, Redis, …). Off by default. It
+   * returns identical samples too: leave it off where you want different ones.
+   */
+  cacheReplies?: boolean | ReplyCache | null;
 }
 
 export const DEFAULTS: Required<Pick<Settings, "retries" | "apiRetries" | "maxSteps" | "toolErrors" | "includeFnName">> = {

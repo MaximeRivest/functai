@@ -26,6 +26,7 @@ export { labeledFewShot, bootstrapFewShot, type BootstrapOptions, type LabeledOp
 export { gepa, type GepaOptions, type GepaResult, type Feedback, type Trial } from "./gepa.ts";
 export { load, fromManifest, save, toManifest, LoadRefused } from "./saved.ts";
 export { capabilities } from "./models.ts";
+export { clearCache, type ReplyCache } from "./cache.ts";
 export { normalize, casefold } from "./text.ts";
 export { VERSION } from "./calllog.ts";
 export { Refusal, isRefusal } from "lmcc";

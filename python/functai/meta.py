@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Optional
 from .core import _ai, ai
 from .docments import get_source
 
+# Not cached: they sample (temperature 1) to propose something new, and a cached
+# reply would propose the same thing again.
 _FIXED = dict(adapter="xml", stateful=False, module="predict", include_fn_name_in_instructions=False,
-              autocompile=False, autoinstruct=False, instruction_autorefine_calls=0)
+              autocompile=False, autoinstruct=False, instruction_autorefine_calls=0, cache_replies=False)
 
 
 @ai(**_FIXED)

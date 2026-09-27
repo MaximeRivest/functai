@@ -18,6 +18,17 @@
   as written); `rated().leftOut` is camelCase.
 - Any Standard Schema with JSON Schema (zod 4, valibot, arktype, ...) is
   a field, typed by its output type.
+- Optional inputs: a field whose schema accepts a missing value may be
+  left out: `t.optional(...)` and zod's `.optional()` are sent as null
+  (the shape says so, so the version is Python's for `x: T | None = None`),
+  `.default(x)` as `x`; `.nullable()` must still be given. Given values
+  are checked (and parsed) by their Standard Schema before any call. With
+  one required input, its value alone is the call; with none, no argument.
+- The reply cache: `cacheReplies: true` (memory, the last 20,000) or any
+  store with `get`/`set`/`delete`, given plain JSON; `clearCache()`. As
+  Python's `cache_replies`, and like it now: an unreadable reply is not
+  kept, and `gepa`'s teacher is never answered from it. A store that
+  fails is skipped with one warning.
 - `tests/types.ts` pins the types (`tsc` checks it; each
   `@ts-expect-error` must stay an error).
 

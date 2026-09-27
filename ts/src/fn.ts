@@ -21,7 +21,8 @@ import * as calllog from "./calllog.ts";
 import { Cancelled, run as runEngine, Prediction, watching, type Router, type Tool, type Watch } from "./engine.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
-import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
+import { allowsNull, readField, standardOf, type FieldSpec, type InputValueOf, type IsOptional, type StandardResult,
+  type StandardSchemaLike, type ValueOf } from "./shapes.ts";
 import { configOf, effective, type Settings } from "./settings.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
@@ -63,7 +64,11 @@ export interface Definition<I extends Fields, O extends Fields | undefined, A ex
   instructions?: string | null;
 }
 
-type Inputs<I extends Fields> = { [K in keyof I]: ValueOf<I[K]> };
+type Simplify<T> = { [K in keyof T]: T[K] } & {};
+type RequiredFields<I> = { [K in keyof I]: IsOptional<I[K]> extends true ? never : K }[keyof I];
+/** What a call takes, by name: the inputs a caller must give, and those it may leave out. */
+type Inputs<I extends Fields> = Simplify<
+  { [K in RequiredFields<I>]: InputValueOf<I[K]> } & { [K in Exclude<keyof I, RequiredFields<I>>]?: InputValueOf<I[K]> }>;
 type Outputs<O extends Fields | undefined, A extends FieldSpec | undefined> =
   O extends Fields ? { [K in keyof O]: ValueOf<O[K]> } : A extends FieldSpec ? { result: ValueOf<A> } : { result: string };
 type Last<T> = T extends Fields ? T[keyof T] : never;
@@ -87,11 +92,22 @@ export type Expected<F, R> = Column<R> | { [K in keyof OutputOf<F>]?: Column<R> 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type AnyAIFunction = AIFunction<any, any, any>;
 
-/** The one key of a record with exactly one key (never otherwise). */
-type OnlyKey<T> = { [K in keyof T]: [Exclude<keyof T, K>] extends [never] ? K : never }[keyof T];
+/** The keys a caller must give. */
+type RequiredKeys<T> = { [K in keyof T]-?: {} extends Pick<T, K> ? never : K }[keyof T];
+/** The one required key, when there is exactly one (never otherwise). */
+type OnlyRequired<T> = { [K in RequiredKeys<T>]: [Exclude<RequiredKeys<T>, K>] extends [never] ? K : never }[RequiredKeys<T>];
 
-/** What a call takes: the inputs by name, or, for a function with one input, its value alone. */
-export type Input<I> = I | ([OnlyKey<I>] extends [never] ? never : I[OnlyKey<I>]);
+/**
+ * What a call takes: the inputs by name, or, for a function with exactly one
+ * required input, that input's value alone (`summarize(text)`, its optional
+ * inputs left out).
+ */
+export type Input<I> = I | ([OnlyRequired<I>] extends [never] ? never : I[OnlyRequired<I>]);
+
+/** A call's arguments: the input (which may be left out when every input is optional), then options. */
+export type CallArgs<I, Options = CallOptions> = {} extends I
+  ? [input?: Input<I>, options?: Options]
+  : [input: Input<I>, options?: Options];
 
 /** One call's options: settings for this call only (they beat the function's own), and a signal to cancel it. */
 export interface CallOptions extends Settings {
@@ -105,7 +121,7 @@ export interface MapOptions extends CallOptions {
 
 /** An AI function: call it with its inputs, get the answer. */
 export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknown> {
-  (input: Input<I>, options?: CallOptions): Promise<A>;
+  (...args: CallArgs<I>): Promise<A>;
   readonly name: string;
   readonly module: string;
   /** The answer's output name (the last output). */
@@ -122,13 +138,13 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   /** The call log's `program.signature`: the fields' names and shapes. */
   readonly signatureId: string;
   /** The call, with every output, the turn and the replies. */
-  predict(input: Input<I>, options?: CallOptions): Promise<Prediction<O, A>>;
+  predict(...args: CallArgs<I>): Promise<Prediction<O, A>>;
   /** Call it and watch the answer being written. */
-  stream(input: Input<I>, options?: CallOptions): Stream<A>;
+  stream(...args: CallArgs<I>): Stream<A>;
   /** Each item's answer, in order, `concurrency` calls at once. Rejects with the first failure, and stops starting new calls. */
   map(inputs: Iterable<Input<I>>, options?: MapOptions): Promise<A[]>;
   /** The exact request a call would send, without sending it. */
-  render(input: Input<I>, options?: Settings): Request;
+  render(...args: CallArgs<I, Settings>): Request;
   /** A copy with other settings (the model, the temperature, …). */
   using(settings: Settings): AIFunction<I, O, A>;
   state(): State;
@@ -238,8 +254,17 @@ function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string)
   return { inputs, outputs };
 }
 
+/** What a call does with one input: fill it when left out (`fill`), and check a given value with its schema. */
+interface InputRule {
+  optional: boolean;
+  fill: unknown;
+  schema: StandardSchemaLike | null;
+}
+
 interface Core {
   definition: sig.Definition;
+  /** By input name; a loaded function has none, and its rules come from its shapes. */
+  rules?: Record<string, InputRule>;
   own: Settings;
   tools: readonly Tool[];
   module: string;
@@ -250,7 +275,8 @@ interface Core {
 }
 
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
-  "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller"]);
+  "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
+  "cacheReplies"]);
 
 /**
  * An AI function: its name, what it does, its input and output fields; a
@@ -263,7 +289,15 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   if (typeof name !== "string" || !name) throw new TypeError('ai(name, { input, output }): the name comes first: ai("mood", { ... })');
   if (!def || typeof def !== "object" || !def.input || typeof def.input !== "object") throw new TypeError(`ai("${name}", { input: { ... } }): the inputs are required`);
   if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${name}: give output (one answer) or outputs (several), not both`);
-  const inputs = Object.entries(def.input).map(([field, spec]) => ({ name: field, ...readField(spec, `${name}.input.${field}`) }));
+  const rules: Record<string, InputRule> = {};
+  const inputs = Object.entries(def.input).map(([field, spec]) => {
+    const read = readField(spec, `${name}.input.${field}`);
+    const rule = ruleOf(spec, read.shape);
+    rules[field] = rule;
+    // left out, it is sent as null (as Python's `x: T | None = None`): the shape says so
+    const shape = rule.optional && rule.fill === null && !allowsNull(read.shape) ? { anyOf: [read.shape, { type: "null" }] } : read.shape;
+    return { name: field, ...read, shape };
+  });
   const outputSpecs: [string, FieldSpec][] = def.outputs
     ? Object.entries(def.outputs)
     : [["result", (def.output ?? { type: "string" }) as FieldSpec]];
@@ -278,12 +312,30 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     cot: false, tools: Boolean(def.tools?.length), includeName: true,
   };
   const core: Core = {
-    definition, own, tools: [...(def.tools ?? [])], module: moduleName, file: where.file, line: where.line,
+    definition, rules, own, tools: [...(def.tools ?? [])], module: moduleName, file: where.file, line: where.line,
     state: { instructions: def.instructions ?? null, demos: [] },
   };
   const fn = make(core) as unknown as AIFunction<Inputs<I>, Outputs<O, A>, Answer<O, A>>;
   if (def.demos) fn.demos = def.demos as Demo[];
   return fn;
+}
+
+/**
+ * How a call treats an input it was not given. A Standard Schema decides
+ * itself: asked to validate `undefined`, zod's `.optional()` accepts it (sent
+ * as null), `.default(x)` gives `x`, and `.nullable()` refuses it (the input
+ * must be given, null or not). A plain shape: optional when it allows null.
+ */
+function ruleOf(spec: FieldSpec, shape: Rec): InputRule {
+  const schema = standardOf(spec);
+  if (!schema) return { optional: allowsNull(shape), fill: null, schema: null };
+  const probe = schema["~standard"].validate(undefined);
+  if (probe instanceof Promise) {                          // an async schema cannot say at definition time
+    probe.catch(() => undefined);
+    return { optional: false, fill: null, schema };
+  }
+  if (probe.issues) return { optional: false, fill: null, schema };
+  return { optional: true, fill: probe.value === undefined ? null : probe.value, schema };
 }
 
 const ids = new WeakMap<object, number>();
@@ -327,18 +379,56 @@ export function make(core: Core): AIFunction {
 
   const plainObject = (x: unknown): x is Rec => typeof x === "object" && x !== null && !Array.isArray(x)
     && Object.getPrototypeOf(x) === Object.prototype;
-  /** A call's argument as inputs by name: the record, or (one input) the value alone. */
-  const bindInputs = (arg: unknown): Rec => {
-    const keyed = plainObject(arg) && (names.length !== 1 || (Object.keys(arg).length === 1 && names[0]! in arg));
+  const rules: Record<string, InputRule> = core.rules ?? Object.fromEntries(core.definition.inputs.map((f) =>
+    [f.name, { optional: allowsNull(f.shape as Rec), fill: null, schema: null }]));
+  const required = names.filter((n) => !rules[n]!.optional);
+  /**
+   * A call's argument as inputs by name: the record, or (exactly one required
+   * input) that input's value alone. Inputs left out get their fill.
+   */
+  const bindInputs = (arg: unknown): Rec => bindFilled(arg)[0];
+  /** The inputs by name, and the names that were left out (and filled). */
+  const bindFilled = (arg: unknown): [Rec, Set<string>] => {
+    const keyed = arg === undefined
+      || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) && required[0]! in arg));
     if (!keyed) {
-      if (names.length === 1) return { [names[0]!]: arg };
+      if (required.length === 1) return bindFilled({ [required[0]!]: arg });
       throw new TypeError(`${core.definition.name} takes its inputs by name: ${core.definition.name}({ ${names.join(", ")} })`);
     }
-    const unknown = Object.keys(arg).filter((k) => !names.includes(k));
+    const given = (arg ?? {}) as Rec;
+    const unknown = Object.keys(given).filter((k) => !names.includes(k));
     if (unknown.length) throw new TypeError(`${core.definition.name} has no input ${unknown.join(", ")} (its inputs: ${names.join(", ")})`);
-    const missing = names.filter((k) => !(k in arg));
+    const missing = required.filter((k) => given[k] === undefined);
     if (missing.length) throw new TypeError(`${core.definition.name} needs ${missing.join(", ")}`);
-    return { ...arg };
+    const out: Rec = {};
+    const filled = new Set<string>();
+    for (const n of names) {
+      if (given[n] === undefined) { out[n] = structuredClone(rules[n]!.fill); filled.add(n); } else out[n] = given[n];
+    }
+    return [out, filled];
+  };
+  /** Given values checked by their schemas, and parsed (defaults, transforms), before any call. */
+  const checked = (bound: Rec, filled: Set<string>, result: (n: string, r: StandardResult) => void): (Promise<void> | void)[] =>
+    names.filter((n) => rules[n]!.schema && !filled.has(n))           // a fill is already the schema's own value
+      .map((n) => {
+        const r = rules[n]!.schema!["~standard"].validate(bound[n]);
+        return r instanceof Promise ? r.then((x) => result(n, x)) : result(n, r);
+      });
+  const accept = (bound: Rec) => (n: string, r: StandardResult) => {
+    if (r.issues) throw new TypeError(`${core.definition.name}: input ${n}: ${r.issues.map((i) => i.message).join("; ")}`);
+    bound[n] = r.value;
+  };
+  const parseInputs = async (arg: unknown): Promise<Rec> => {
+    const [bound, filled] = bindFilled(arg);
+    await Promise.all(checked(bound, filled, accept(bound)));
+    return bound;
+  };
+  const parseInputsNow = (arg: unknown): Rec => {
+    const [bound, filled] = bindFilled(arg);
+    if (checked(bound, filled, accept(bound)).some((x) => x instanceof Promise)) {
+      throw new TypeError(`${core.definition.name}: an input's schema validates asynchronously; render cannot wait for it (predict can)`);
+    }
+    return bound;
   };
 
   /** Worked examples as example turns for this plan (contract/functions.md, "Worked examples"). */
@@ -440,7 +530,7 @@ export function make(core: Core): AIFunction {
     const { signal: own, settings: extra } = callOptions(options);
     const signal = own && watch ? AbortSignal.any([own, watch.signal]) : own ?? watch?.signal;
     if (signal?.aborted) throw new Cancelled();
-    const bound = bindInputs(arg);
+    const bound = await parseInputs(arg);
     const s = settingsNow(extra);
     const call = calllog.start(program, s, bound);
     const inside = <R>(f: () => R): R => (watch ? watching.run(watch, f) : f());
@@ -520,7 +610,7 @@ export function make(core: Core): AIFunction {
     render: (input: unknown, options: Settings = {}): Request => {
       const s = settingsNow(options);
       const { plan, model, settings } = planFor(s);
-      const values = sig.prepareInputs(plan.signature, bindInputs(input));
+      const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
       if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
       return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
     },

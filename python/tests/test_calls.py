@@ -437,6 +437,24 @@ def test_the_reply_cache_is_off_unless_turned_on(fake):
     assert "(from cache)" in functai.phistory(1)
 
 
+def test_an_unreadable_reply_is_not_kept_in_the_cache(fake):
+    @ai(retries=0, cache_replies=True)
+    def g(x: str) -> str: ...
+    replies = iter(["no tags at all", "<result>\nok\n</result>"])
+    r = fake(responder=lambda req: next(replies))
+    with pytest.raises(Exception):
+        g("x")
+    assert g("x") == "ok" and g("x") == "ok"         # not stuck on the bad reply; the good one is kept
+    assert len(r.requests) == 2
+
+
+def test_the_teacher_is_never_answered_from_the_cache(fake):
+    from functai import meta
+    assert meta._reflect._effective()["cache_replies"] is False
+    with configure(cache_replies=True):
+        assert meta._reflect._effective()["cache_replies"] is False   # its own setting wins
+
+
 def test_transient_errors_are_retried(fake, monkeypatch):
     import lm15
     monkeypatch.setattr("time.sleep", lambda s: None)

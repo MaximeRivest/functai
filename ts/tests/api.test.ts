@@ -67,3 +67,33 @@ test("a tool's input is typed from its shape; zod works through Standard Schema"
   assert.equal(await helper("Where is a-1?"), "Stuck.");
   assert.deepEqual(seen, ["A-1"]);
 });
+
+test("an input may be left out when its schema allows it: sent as null, or as the schema's default", async () => {
+  const router = new FakeRouter([], () => "<result>\nok\n</result>");
+  const f = ai("summarize", {
+    description: "Summarize.",
+    input: { text: t.string(), note: t.optional(t.string()), tone: z.string().default("plain"), max: z.number().optional(),
+             lang: z.string().nullable() },
+    router,
+  });
+  await f({ text: "hi", lang: null });
+  assert.match(lastText(router), /<note>\nnull\n<\/note>/);
+  assert.match(lastText(router), /<tone>\nplain\n<\/tone>/);            // the default, from the schema
+  assert.match(lastText(router), /<max>\nnull\n<\/max>/);
+  await assert.rejects(f({ text: "hi" } as never), /needs lang/);          // nullable is not optional: give it, null or not
+  await assert.rejects(f({ text: "hi", lang: null, max: "ten" } as never), /input max: .*expected number/i);   // checked by its schema
+  const shape = (n: string) => f.definition.inputs.find((x) => x.name === n)!.shape;
+  assert.deepEqual(shape("max"), { anyOf: [{ type: "number" }, { type: "null" }] });   // left out is null, and the shape says so
+  assert.deepEqual(shape("tone"), { type: "string", default: "plain" });
+});
+
+test("with one required input, its value alone is the call; the optional ones may be left out", async () => {
+  const router = new FakeRouter([], () => "<result>\nok\n</result>");
+  const f = ai("summarize", { description: "Summarize.", input: { text: t.string(), note: t.optional(t.string()) }, router });
+  assert.equal(await f("hello"), "ok");
+  assert.match(lastText(router), /<text>\nhello\n<\/text>\n<note>\nnull\n<\/note>/);
+  await f({ text: "hi", note: "be brief" });
+  assert.match(lastText(router), /<note>\nbe brief\n<\/note>/);
+  const all = ai("greet", { description: "Greet.", input: { name: t.optional(t.string()) }, router });
+  assert.equal(await all(), "ok");                                          // every input optional: no argument at all
+});

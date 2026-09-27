@@ -135,7 +135,7 @@ function contentOf(setting: Settings["logContent"]): boolean {
 }
 
 const warned = new Set<string>();
-function warnOnce(key: string, message: string): void {
+export function warnOnce(key: string, message: string): void {
   if (warned.has(key)) return;
   warned.add(key);
   console.warn(`functai: ${message}`);

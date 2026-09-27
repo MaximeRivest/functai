@@ -43,6 +43,28 @@ export async function calls() {
   await mood("x", { temprature: 0 });
 }
 
+export async function optionalInputs() {
+  const summarize = ai("summarize", {
+    description: "Summarize.",
+    input: { text: t.string(), note: t.optional(t.string()), tone: z.string().default("plain"), lang: z.string().nullable() },
+  });
+  await summarize({ text: "x", lang: null });                     // note and tone may be left out
+  await summarize({ text: "x", lang: "fr", note: "short", tone: "warm" });
+  const greet = ai("greet", { description: "Greet.", input: { name: t.optional(t.string()) } });
+  await greet();                                                  // every input optional
+  const brief = ai("brief", { description: "Brief.", input: { text: t.string(), note: t.optional(t.string()) } });
+  await brief("text alone");                                      // one required input: its value alone
+
+  // @ts-expect-error: nullable is not optional
+  await summarize({ text: "x" });
+  // @ts-expect-error: tone is text
+  await summarize({ text: "x", lang: null, tone: 3 });
+  // @ts-expect-error: two required inputs: by name
+  await summarize("x");
+  // @ts-expect-error: a function with a required input needs an argument
+  await brief();
+}
+
 export async function rows() {
   const train = [{ message: "Charged twice.", urgent: false, category: "billing" as const }];
   await evaluate(team, train, { expected: "category" });
