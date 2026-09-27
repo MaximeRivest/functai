@@ -41,6 +41,11 @@ package follows the [FunctAI contract](../contract/).
 **Status: 0.1.0, not on CRAN.** It needs lmcc and lm15 for R, which are not
 on CRAN either (see *Install*).
 
+**Learning it?** Eight tutorials, from a first function to decision
+models, model choice by cost, tidymodels and life in production, each run
+end to end on current models for under a dollar:
+[`docs/r/`](../docs/r/index.md) (on the website under *R*).
+
 **New to this?** `vignette("getting-started", package = "functai")` starts
 from dplyr and ggplot2 and ends with your first tested model: no
 tidymodels knowledge assumed. `vignette("tidymodels", package = "functai")`

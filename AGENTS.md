@@ -12,7 +12,7 @@ before adding a language or changing the contract.
 | `contract/` | formats, JSON Schemas and cases every implementation must pass | nothing: it is the authority |
 | `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG | `contract/` |
 | `ts/` | the TypeScript package (`functai` on npm, not published yet): src, tests, tools, README, CHANGELOG. `src/generated/contract.ts` is the contract's data, written by `node tools/generate.ts` | `contract/` |
-| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project | the code they show |
+| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project; `docs/r/` holds the R tutorials (```r cells, outputs written by `r/tutorials`) | the code they show |
 | `r/` | the R package (`functai`, not on CRAN): R, tests, data, README, NEWS. `inst/contract/` is the contract's data, copied by `r/check`; `tools/env.nix` is its R on NixOS | `contract/` |
 | `tools/docs.py` | generates reference/example/news pages, runs notebooks on rat, builds the site | |
 | `tools/crosslang.py` | Python, TypeScript and R against each other: saved in Python, loaded in the others; one call log | `contract/` |
@@ -44,6 +44,7 @@ python/.venv/bin/python tools/docs.py site      # build the website into site/
 cd ts && npm install && npm test                # TypeScript (needs ../lmcc checked out: lmcc is not on npm yet)
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
 r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
+r/tutorials [docs/r/0N-*.md ...]                # run the R tutorials in fresh sessions, write their outputs (real models; about 40 cents for all eight)
 python/.venv/bin/python contract/cases/make.py  # after changing a rule: rewrite the cases
 ```
 

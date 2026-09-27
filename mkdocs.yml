@@ -83,6 +83,16 @@ nav:
           - articles/inspection.md
           - articles/reliability.md
           - articles/upgrading.md
+  - R:
+      - r/index.md
+      - r/01-first-function.md
+      - r/02-types.md
+      - r/03-is-it-right.md
+      - r/04-making-it-better.md
+      - r/05-choosing-a-model.md
+      - r/06-decisions.md
+      - r/07-tidymodels.md
+      - r/08-living-with-it.md
   - Reference: reference/index.md
   - Examples: examples/index.md
   - News: news.md

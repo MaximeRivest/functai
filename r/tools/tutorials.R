@@ -69,12 +69,17 @@ run_page <- function(path) {
     if (failed) next
     n_cells <- n_cells + 1L
     started <- Sys.time()
-    res <- evaluate::evaluate(paste(b$lines, collapse = "\n"), envir = env, stop_on_error = 1L,
-                              new_device = TRUE, keep_warning = TRUE, keep_message = TRUE,
-                              output_handler = evaluate::new_output_handler(value = function(x, visible) if (visible) print(x)))
-    text <- character(0); plots <- list()
     height <- as.numeric(sub(".*fig-height:\\s*", "", grep("^#\\| fig-height:", b$lines, value = TRUE)[1L]))
     if (is.na(height)) height <- 4
+    # plots are drawn on a device of the figure's own size, so layouts that
+    # measure text (rpart.plot, legends) fit the file they are written to
+    grDevices::pdf(NULL, width = 7, height = height)
+    grDevices::dev.control("enable")
+    res <- evaluate::evaluate(paste(b$lines, collapse = "\n"), envir = env, stop_on_error = 1L,
+                              new_device = FALSE, keep_warning = TRUE, keep_message = TRUE,
+                              output_handler = evaluate::new_output_handler(value = function(x, visible) if (visible) print(x)))
+    grDevices::dev.off()
+    text <- character(0); plots <- list()
     for (r in res) {
       if (inherits(r, "source")) next
       if (is.character(r)) text <- c(text, sub("\n$", "", r))
