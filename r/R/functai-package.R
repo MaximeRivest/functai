@@ -32,3 +32,28 @@
 #' `functai.datasets.field_notes()`.
 #' @format A tibble with `id`, `site`, `date`, `note`, `species`, `count`, `behaviour`.
 "field_notes"
+
+#' Refund requests, with the decision the shop's rules give
+#'
+#' 120 refund requests to the homeware shop of [tickets]: what the customer
+#' wrote, what the order system knows, the item's state, and the decision.
+#' The same table as Python's `functai.datasets.refunds()`.
+#'
+#' @section Refund rules: `decision` follows them exactly:
+#' * Damaged on arrival, or the wrong item (or part of the order missing):
+#'   a refund within **60 days** of delivery, final sale or not.
+#' * Faulty (it failed in normal use): a refund within **365 days**, final
+#'   sale or not.
+#' * Unopened, or opened but not used, and no longer wanted: a refund within
+#'   **30 days**, and **never for a final-sale item**.
+#' * Used and no longer wanted: **no refund**.
+#'
+#' The messages were written by a language model from each row's facts, in
+#' varied tones and lengths; some say what happened only indirectly. The
+#' facts, and so the decisions, were drawn first (`data-raw/refunds.R`).
+#' @format A tibble with 120 rows: `id`, `message` (what the customer wrote),
+#'   `item`, `price` (dollars), `days_since_delivery` (from the order system),
+#'   `final_sale` (logical), `state` (a factor: `unopened`, `opened_unused`,
+#'   `used`, `damaged`, `wrong_item`, `faulty`) and `decision` (a factor:
+#'   `approve`, `deny`).
+"refunds"

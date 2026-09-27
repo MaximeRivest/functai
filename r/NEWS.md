@@ -41,4 +41,8 @@ themselves (`../tools/crosslang.py`).
 * `labeled_few_shot()`, `bootstrap_few_shot()`, `with_demos()`,
   `with_instructions()`, `update()`.
 * `read_ai()` runs AI functions saved in Python or TypeScript; `write_ai()`.
-* The `tickets` and `field_notes` datasets.
+* The `tickets`, `field_notes` and `refunds` datasets (`refunds`: 120 refund
+  requests with the decision the shop's rules give, for decision models).
+* `calls()` has `reasoning_tokens` and `total_tokens`: Gemini's
+  `output_tokens` leave its hidden reasoning out, so a cost is
+  `total_tokens - input_tokens` at the output price.

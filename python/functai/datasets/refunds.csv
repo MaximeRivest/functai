@@ -1,0 +1,231 @@
+"id","message","item","price","days_since_delivery","final_sale","state","decision"
+1,"Hiya, just a heads up - the wall clock arrived over 9 weeks ago now and it's totally the wrong colour, I ordered the black one and got a cream one instead, so could I get a refund for it please?","wall clock",28.51,66,FALSE,"wrong_item","deny"
+2,"Ordered the grey rug, got sent green instead 4 weeks ago now, want a refund.","floor rug",39.22,28,FALSE,"wrong_item","approve"
+3,"Hiya, so I'd only made about three batches of cookies with it when it just went quiet mid-knead and hasn't made a peep since, so given it's barely a week and a half in I'm hoping I can just get my money back rather than mess about with fixes.
+
+Ines","stand mixer",9.38,9,FALSE,"faulty","approve"
+4,"Hi, I bought a planter from you about 8 weeks ago and it was fine to begin with, but now it's developed a crack along the base and water seeps out onto the windowsill every time I water the plant. I've tried drying it out and moving it to see if it was just how it was sitting, but the leak keeps happening, so I don't think it's something I can fix. Could I please get a refund for it?","ceramic planter",139.47,57,FALSE,"faulty","approve"
+5,"I'm sorry to even ask this after so long, it's been about a year since these arrived, I've been using them regularly, but the colour just never really settled in with the rest of my bathroom and I keep reaching for a different set instead, so I was hoping a refund might still be possible?
+
+Priya","bath towels",75.9,368,FALSE,"used","deny"
+6,"I need a refund for the chair I got about two and a half weeks ago. It was fine at first but now the height lever won't hold anymore, it just sinks down while I'm sitting in it. This is happening during normal use, I haven't done anything to it. Not acceptable for something this new, so I want my money back.","desk chair",388.71,17,FALSE,"faulty","approve"
+7,"Hello, I ordered a casserole dish about four weeks ago, and after taking it out of the box and having a proper look, I realised the colour just isn't going to work in my kitchen. It's been sitting back in its packaging since then, still exactly as it arrived, and I'd like to arrange a refund.
+
+Thank you,
+Carmen","cast-iron casserole",458.27,26,FALSE,"opened_unused","approve"
+8,"It's been four weeks since this arrived and I still can't pour a cup of tea without the lid nearly falling off, because whatever's sitting on my counter is definitely not the size I picked when I ordered. I double-checked my order confirmation against what showed up and they don't match at all, so clearly something went wrong on your end. I'd like a refund for this, please.","teapot",11.63,28,TRUE,"wrong_item","approve"
+9,"I'm writing about the pair of pillows I got about 3-4 weeks ago. They were fine at first but now the filling has completely clumped and flattened on one side, so they're basically useless to sleep on. I want a refund for these because I shouldn't have to deal with this so soon after getting them.","pillow pair",128.65,25,FALSE,"faulty","approve"
+10,"Hi! So this ended up still boxed up untouched in my hallway since it arrived about three months ago, ended up grabbing a different one for the space, any chance of a refund?","ceramic planter",50.05,94,FALSE,"unopened","deny"
+11,"hi, i got the wool throw about a week ago and its fine and all but the colour just doesnt go with my sofa like i thought it would, so wanted to ask about getting a refund for it.","wool throw",13.26,6,FALSE,"used","deny"
+12,"I ordered the linen duvet cover in charcoal and a white one turned up instead, nearly three weeks ago now. That's not what I paid for, so I want a refund.
+
+Hugo","linen duvet cover",78.35,18,FALSE,"wrong_item","approve"
+13,"hey, i got the bowl about a month ago and its been fine but honestly i just dont like it in my kitchen, the shape isnt really my style. i ended up getting antoher one that suits me better so id like to return this for a refund.
+
+Dev","salad bowl",87.79,31,FALSE,"used","deny"
+14,"I am writing to request a refund for the item I received, as it was already cracked and dented when I opened the parcel almost eight weeks ago. Given the visible damage upon arrival, I would appreciate a full refund at your earliest convenience.","shoe rack",20.62,53,FALSE,"damaged","approve"
+15,"Hi, I'm really sorry to be messaging about this so late, I know it's been a long while since it arrived (over a year now, I think), but I never got round to sorting it and it's been bothering me. When I opened the parcel two of the four were cracked right through and one had a dent knocked into the rim, so really only one came out fine. I was hoping to get a refund for it as it clearly wasn't in a usable state when it turned up. I'm sorry again for only raising this now, I've just been anxious about how to word it, but I wanted to get it sorted before I feel guilty about leaving it any longer.","set of four mugs",263.48,416,FALSE,"damaged","deny"
+16,"I got this blender just over 9 weeks ago and I've been using it since, but honestly it's just not what I wanted. It's too bulky for my counter and I've ended up buying a smaller one that actually suits my kitchen. I'd like to send it back for a refund. I know it's been a little while but I've barely had time to deal with this and it's been sitting there unused for weeks now. Can you sort this out for me?","blender",21.04,64,FALSE,"used","deny"
+17,"Three weeks in and the seam along the corner has completely come apart after just normal washing, honestly not what I expected - I'd like a refund.","linen duvet cover",255.7,22,FALSE,"faulty","approve"
+18,"Opened the box back when it arrived last year and two of them had chunks missing off the edges, another had a crack running clean across the middle. Stacked the rest and just never dealt with it until now. Want a refund for the set, not looking to keep pulling out the damaged ones and eating off what's left.","dinner plates",160.13,400,FALSE,"damaged","deny"
+19,"I ordered these mugs about 15 weeks ago, took them out of the box to look at them but never used them, and honestly the colour just doesn't work in my kitchen. I want to send them back for a refund.","set of four mugs",386.06,107,FALSE,"opened_unused","deny"
+20,"Hi, I'm sorry to bring this up so late, but I only just properly unpacked things and noticed the one that arrived is a squat white bowl shape, not the tall terracotta one I'd been picturing on my windowsill for the last few months. I've double checked my confirmation email a dozen times now and I definitely ordered the taller one, so I'm quite anxious about how to sort this out. Could I please get a refund for it?
+
+Yusuf","ceramic planter",60.35,145,TRUE,"wrong_item","deny"
+21,"hey, i ended up getting one of these as a gift from someone else so i dont need this one anymore, its still sealed up in the box never opened. came about a week and a bit ago, can i get a refund for it please?
+
+Priya","salad bowl",31.3,8,FALSE,"unopened","approve"
+22,"hi, so i finally got round to opening the curtains parcel a few weeks back (its been almost a month now) and when i unrolled them theres this weird crease/tear line running down one panel like it got caught on smth in transit, wasnt like that from how it was folded either. kinda bummed cos i wanted to hang them straight away but obviously couldnt, can i get a refund for it","curtains",283.47,26,FALSE,"damaged","approve"
+23,"So I finally unwrapped the pair I ordered back at the start of last month, ready to pop them on the bed, and ended up with two totally different shades staring back at me instead of the matching set I picked out - not really what I had in mind, so I'd love a refund please!","pillow pair",28.19,67,FALSE,"wrong_item","deny"
+24,"I opened the package this morning and hung them straight up, but the shade in the light was nothing like the swatch I picked, and the length pooling on the floor definitely isn't what I measured for. I checked the order confirmation twice just to be sure I wasn't losing my mind, so something clearly went wrong on your end. I'd like a refund sorted for this rather than going through an exchange.","curtains",11.55,1,FALSE,"wrong_item","approve"
+25,"Hiya! So I opened the box last week all excited to get it set up in the hallway, and one of the side panels had this big crack running along it and the bottom shelf was properly dented in one corner, like it had taken a knock somewhere along the way. I didn't even bother trying to put it together tbh, just stood it against the wall and took some photos - could I get a refund sorted please?
+
+Thanks,
+Farid","shoe rack",168.62,9,FALSE,"damaged","approve"
+26,"It's been about two months since it arrived and honestly it's just been sitting on the counter unused since I found one that actually matches my kitchen better, so I'd like a refund at this point.
+
+Omar","salad bowl",387.64,56,FALSE,"used","deny"
+27,"It's been about three months since this arrived and I've gone through a few smoothies and soups with it, but I keep reaching for my old one instead. Just doesn't fit my counter setup or how I cook, so I'd like a refund.
+
+Tariq","blender",355.72,96,FALSE,"used","deny"
+28,"Hi, I hope this is okay to ask - it's been about 5 weeks since my clock arrived and I still haven't opened the box. I ended up finding one I liked better elsewhere and just don't need this one anymore, so I was hoping to get a refund. I'm a bit worried it's been too long, but everything is completely untouched and sealed just like it came.
+
+Lena","wall clock",118.84,35,FALSE,"unopened","deny"
+29,"I've had this mixer since around February and used it a handful of times, but it's just not something I reach for and I'd rather get my money back. It works fine, I just don't want it anymore. Please advise on returning it.","stand mixer",10.79,220,FALSE,"used","deny"
+30,"Ordered this about ten weeks ago, opened it up but it's too big for the hallway, never used it, want a refund.","shoe rack",68.49,68,FALSE,"opened_unused","deny"
+31,"Hi, I'm really sorry to bring this up so late but I've been meaning to sort it for a while and I'm getting anxious about it. Back when it arrived (it's been about five and a half months now) it wasn't what I ordered at all - I picked the large one for the living room and what turned up was a smaller size in a completely different colour than what I chose. I kept meaning to sort it out sooner but life got in the way, and now I just want to get this resolved and get my money back. Could you please help me with this? I'm honestly a bit worried it's too late but I had to ask.
+
+Carmen","floor rug",169.87,166,FALSE,"wrong_item","deny"
+32,"I opened the box and the pot had a big crack straight across the bottom, must have happened in transit. It's been about 8 weeks now since it turned up like that. I want a refund, not a replacement.","cast-iron casserole",65.11,55,FALSE,"damaged","approve"
+33,"Subject: Refund Request
+
+I am writing regarding the pair of pillows I received about four and a half weeks ago. They were fine to begin with, but after normal use the inner filling in one of them has clumped and sunk badly on one side, so it no longer holds its shape or gives proper support. Given this developed through ordinary use rather than any mishandling on my part, I would like to request a refund. Please let me know how to proceed.","pillow pair",173.61,32,FALSE,"faulty","approve"
+34,"Hi, I unwrapped it and had a look but it's just too bulky for my counter, so I'd like to return it for a refund, please - it arrived about five days ago.
+
+Thanks,
+Hugo","coffee grinder",21.64,5,FALSE,"opened_unused","approve"
+35,"Hi, I ordered a rug about nine weeks ago and when I unrolled it after opening the parcel there was a large crease/dent pressed into one corner along with a small tear in the backing, so I'd like to request a refund for it. Please let me know how to proceed.
+
+Thanks,
+Jonas","floor rug",251.46,66,TRUE,"damaged","deny"
+36,"Hi, I ordered this about a month ago but ended up buying one elsewhere, so it's still sealed and unopened - I'd like to return it for a refund, please.
+
+Thank you,
+Carmen","stand mixer",173.87,29,FALSE,"unopened","approve"
+37,"Hiya, these just aren't working with my living room after all so I'd love a refund please, they've only been out of the packaging to have a look, never hung up - it's been about 8 weeks since they arrived, sorry for the delay in messaging! Zoe","curtains",25.38,55,TRUE,"opened_unused","deny"
+38,"It's been sitting here almost five weeks now, still basically as it came out of the box, because once I unwrapped it I realised it just doesn't work in the room - the proportions are all wrong against the wall I've got. I really don't want to keep something that's just going to sit there taking up space, so I'd like a refund sorted out. This whole thing has been more hassle than it should be.
+
+Hugo","bedside table",58.88,34,FALSE,"opened_unused","deny"
+39,"Hi, I bought a shoe rack about 8 weeks ago and one of the shelf supports has snapped on its own, I'm really worried and would like a refund please.","shoe rack",11.92,59,FALSE,"faulty","approve"
+40,"I ordered this back in March, opened it up and it's just not the right shade for my hallway. Never put it down or stepped on it, still folded up in the packaging. I'd like a refund.
+
+Aiko","doormat",38.79,132,FALSE,"opened_unused","deny"
+41,"The duvet cover arrived just under a week ago and after one wash the corner ties have already torn through the fabric, so it won't stay on the duvet anymore. I'd like a refund.
+
+Grace","linen duvet cover",18.49,4,FALSE,"faulty","approve"
+42,"I ordered this back in early spring, opened it up and looked it over, but it just doesn't work with my hallway colours so it's sat unused since. I'd like a refund for it.
+
+Carmen","doormat",89.47,227,FALSE,"opened_unused","deny"
+43,"I've had this casserole dish about four weeks now and the enamel inside has cracked right across the bottom from normal cooking use. It's not something I did wrong, it just gave out, and now it's not usable. I want a refund.
+
+Omar","cast-iron casserole",150.53,28,FALSE,"faulty","approve"
+44,"I'm so sorry to even ask this, but the bowl's developed a crack along the bottom that's started weeping water onto the counter after less than a week of just tossing salads in it, and I'd really like a refund if possible - Lena","salad bowl",148.25,6,FALSE,"faulty","approve"
+45,"I ordered a lamp for my bedside table and when I opened the box the base was cracked right through and the shade had a dent in it. This was months ago now, about nine months, but I never got round to sorting it and it's still sitting there unusable. It was damaged straight out of the box, not something that happened after. I want a refund for it.","reading lamp",432.62,264,FALSE,"damaged","deny"
+46,"Hi, I've been staring at this for almost a month now feeling a bit silly, but the base that arrived is a completely different shade than what was shown on the product page, and there's no shade included at all, just the base and cord sitting in the box. I've checked the packaging twice thinking I'd missed something, but it's definitely not what I picked out, and I'm getting a bit anxious about how long it's been already. Could I please get a refund sorted for this?
+
+Nadia","table lamp",120.82,27,FALSE,"wrong_item","approve"
+47,"Sorry to bother you, but I've had these up for a few months now and just don't like how they look in the room, so I was hoping to get a refund.","curtains",22.63,191,FALSE,"used","deny"
+48,"I am writing to request a refund for the casserole dish I received about a week ago. It worked fine for the first couple of uses, but now the enamel coating on the inside has cracked and it has started leaking liquid during cooking. As this happened well within normal use, I would like to return it for a full refund.","cast-iron casserole",80.47,6,FALSE,"faulty","approve"
+49,"Hello, I hope you're doing well. I wanted to write about the bowl I ordered, which arrived about four weeks ago now. We'd been using it regularly for salads and mixing, and it was fine at first, but recently I noticed a crack running along the base that wasn't there before, and now anything liquid seeps out onto the counter when it sits for more than a few minutes. I've had to stop using it for anything but dry ingredients, which isn't really what I need it for. Could I please arrange a refund? Thank you for your help with this.
+
+Priya","salad bowl",281.24,27,TRUE,"faulty","approve"
+50,"Hi, I'd like to request a refund for the espresso machine I ordered about 9 weeks ago. I opened the box and had a look at it but never actually used it - it's just too bulky for the space I have in my kitchen, so I've decided not to keep it. Could you let me know how to go about returning it for a refund?","espresso machine",34.98,63,FALSE,"opened_unused","deny"
+51,"It's been a week, it works fine, I just don't want it anymore and would like a refund - Zoe","blender",94.83,7,TRUE,"used","deny"
+52,"hey, so i ordered this a while back but ended up getting gifted the same kinda thing so i never even opened teh box, still sealed and everything. its been sitting in my closet for like almost 3 months now lol, can i just get a refund for it since i genuinely dont need two. lemme know if thats possible","espresso machine",122.87,81,TRUE,"unopened","deny"
+53,"hiya, ive had this kettle since like sept last year and it works fine n all but honeslty just dont like it anymore, wanna return it for a refund if poss","kettle",137.78,267,FALSE,"used","deny"
+54,"I am writing to request a refund for the item I received about two and a half weeks ago. When I opened the parcel, I found that it had a crack running along the base and a noticeable dent on one side, so the damage was clearly present before I even took it out of the packaging. As it arrived in this condition, I would like to proceed with a refund. Please advise on how you would like to handle this.","table lamp",252.73,18,FALSE,"damaged","approve"
+55,"hey, i ordered a lamp about three weeks ago and just took it out of the box to look at it, never actually plugged it in or anything. turns out the colour just doesnt work with my room so i dont want to keep it, can i get a refund?
+
+Rosa","reading lamp",27.2,22,FALSE,"opened_unused","approve"
+56,"I am writing to request a refund for the machine I purchased just over a year ago; it functions properly, but I have found that it simply does not suit my routine and I would prefer not to keep it.
+
+Kind regards,
+Carmen","espresso machine",192.74,404,FALSE,"used","deny"
+57,"Hi, I ordered these about four weeks ago but ended up going with a different style for the living room, so the box has just been sitting untouched in the hallway since it arrived. I'd like to return them for a refund if that's possible. Thank you for your help.
+
+Kofi","curtains",61.04,29,FALSE,"unopened","approve"
+58,"Hi, I ordered a bedside table about nine weeks ago but ended up finding one elsewhere, so it's still sealed in its original box and never opened. Could I please arrange a refund for it?","bedside table",28.49,65,FALSE,"unopened","deny"
+59,"I need a refund. The grinder worked fine for a few days, then just stopped turning on this week - no burning smell, no obvious damage, it just died mid-grind and won't respond now. It's been less than a week since it arrived so this shouldn't be happening already. Please send a refund.
+
+Farid","coffee grinder",120.57,4,FALSE,"faulty","approve"
+60,"This thing worked fine for a few weeks and now the motor just cuts out halfway through blending, it's been about a month since it arrived and I want a refund. Mateo","blender",99.77,29,FALSE,"faulty","approve"
+61,"The mugs arrived fine two weeks ago and worked ok at first, but now two of them have started leaking from a hairline crack near the handle when hot liquid is poured in. It's not from a drop or anything, they just developed the crack on their own. I'd like a refund for the set.
+
+Rosa","set of four mugs",27.29,14,FALSE,"faulty","approve"
+62,"Since about ten weeks in, it's been pooling water underneath after each morning's use, so I'd like to arrange a refund please.","espresso machine",15.76,71,FALSE,"faulty","approve"
+63,"Hello, the curtains I received almost four weeks ago have a track mechanism that has now stopped gliding properly, so I would like to request a refund.
+
+Sven","curtains",50.02,26,FALSE,"faulty","approve"
+64,"Hi! So the rug's been down in our hallway since about six months back, and honestly it's just never quite matched the walls the way I pictured - I keep glancing at it and thinking it's not ""us,"" if that makes sense. It's been walked on plenty and vacuumed a bunch of times but still looks brand new, I just want to swap it out for something else, so could I get a refund sorted?
+
+Thanks so much,
+Ben","floor rug",9.23,184,FALSE,"used","deny"
+65,"I ordered this lamp back in the beginning of the year and it's still sitting here in the sealed box, never opened. I ended up getting a different one elsewhere and just don't need it anymore. I'd like a refund for it.","reading lamp",56.53,157,TRUE,"unopened","deny"
+66,"hey so we've had the mat down by the front door since about last year, and lately its started curling up at the edges and the backing is coming apart where everyone wipes their shoes, cant really lay it flat anymore so wondering if i can get a refund for it.
+
+Kofi","doormat",45.91,385,FALSE,"faulty","deny"
+67,"Hi, I hope this is okay to ask - I ordered a teapot a few days ago but I actually ended up buying one elsewhere before it even arrived, so it's still sitting here sealed in its box, completely untouched. I feel bad asking but I'd really like to get a refund for it if possible. Sorry for the hassle, I just wasn't sure what else to do with it.","teapot",9.03,4,TRUE,"unopened","deny"
+68,"The clock arrived with a cracked face and a dent in the frame, straight out of the box about a month ago now, I want a refund.","wall clock",22.33,27,FALSE,"damaged","approve"
+69,"hey, the teapot i got about 3 weeks ago has started leaking from the bottom when i pour, worked fine at first but now its just dripping everywhere, can i get a refund for it
+
+Kofi","teapot",197.95,23,FALSE,"faulty","approve"
+70,"I got this about three weeks ago and I've been cooking with it since, but honestly it's just not what I wanted - too heavy for how I actually cook and it doesn't fit right on my stove. I'd like a refund. It's cleaned and sitting in the box ready to go back.","cast-iron casserole",14.77,20,FALSE,"used","deny"
+71,"I ordered this casserole dish almost two months ago now, unwrapped it, had a look, and just never got around to sending it back - it's the wrong colour for my kitchen and I want to return it. It's sat in the box ever since, completely unused, so I'd like a refund sorted out for it.
+
+Ben","cast-iron casserole",379.32,55,FALSE,"opened_unused","deny"
+72,"I received this item about a week ago but have decided I no longer need it, and it remains sealed in its original box, so I would like to request a refund.","coffee grinder",454.47,6,FALSE,"unopened","approve"
+73,"Hi there! So it's been sat by my front door since sometime back in the autumn, doing its job and all that, but every time I come home I just find myself a bit deflated looking at it - the colour's not gelling with the new porch tiles like I hoped it would. I've actually gone and picked up a different one from a little market stall that suits the space so much better, so this one's just been demoted to sitting by the back door not really getting used. Would it be possible to get a refund sorted for it? Thanks so much!","doormat",201.45,250,TRUE,"used","deny"
+74,"Filled it with water like normal about three weeks in and found a damp ring spreading under it on the shelf the next morning, same thing happened again after I dried everything off. Want a refund.
+
+Tariq","glass vase",242.28,20,FALSE,"faulty","approve"
+75,"I got this about a week and a half ago and I've decided it's just not what I want in my kitchen, the jug is way too bulky for the space I have. It runs fine and does what it's supposed to, I just picked the wrong one and want to send it back for a refund. Can you sort this out for me please, this is frustrating.","blender",66.37,11,FALSE,"used","deny"
+76,"hiya, so i got the rug about 4-5 weeks ago and it was fine for a bit but now the backing is coming apart underneath, theres a section where its just come unstuck and starting to fray through. its just been laying flat in the living room, nothing crazy happening to it, so wasnt expecting it to start falling apart already. can i get a refund for it please
+
+Tariq","floor rug",403.7,32,FALSE,"faulty","approve"
+77,"Hi there, I wanted to get in touch about an order that arrived a couple of months ago now, back in early spring. When I opened the box the kettle had a big dent along one side and a crack near the base, so it wasn't usable straight out of the packaging. I know it's been a little while since it arrived, but I'd like to request a refund for it. Thank you for your help with this.","kettle",11.57,61,FALSE,"damaged","deny"
+78,"Hi, I'm sorry to bother you but I'm getting a bit worried about this - the towels arrived about two weeks ago and they're the wrong colour, I ordered the grey ones and got white instead, and there were only two in the package when I paid for four. I've checked the box and there's nothing else in there, so I don't think it's just missing in transit. Could I please get a refund for this order, I really don't want to have to keep chasing it up.
+
+Mateo","bath towels",35.4,14,FALSE,"wrong_item","approve"
+79,"The bedside table arrived last week with a cracked corner and a dent on top, I want a refund - Tariq","bedside table",463.45,7,FALSE,"damaged","approve"
+80,"I unwrapped this lamp when it arrived about nine weeks ago but never used it, and having reconsidered how it fits with the room, I'd like to request a refund.
+
+Hugo","reading lamp",18.4,64,FALSE,"opened_unused","deny"
+81,"It's been about a month since it arrived, I've cooked with it a handful of times but just don't reach for it over my other pan - requesting a refund.","frying pan",411.98,31,FALSE,"used","deny"
+82,"I ordered these in grey but you sent them in beige, and it's been over a year sitting in the wrong colour with no fix - I want a refund.
+
+Lena","curtains",9.69,383,FALSE,"wrong_item","deny"
+83,"Boiled water fine for a week, now it just clicks and won't heat, water pooling under the base - want a refund.","kettle",259.79,6,FALSE,"faulty","approve"
+84,"Hi, I ordered these in the dark green for our living room, but what arrived back in early autumn was a much paler shade that just doesn't work with the room at all, so I'd like to request a refund please.","curtains",313.82,70,FALSE,"wrong_item","deny"
+85,"Hiya, ended up getting one as a gift so this one's been sat in the box unopened since it arrived about a month ago - could I get a refund please?","toaster",18.48,27,TRUE,"unopened","deny"
+86,"I ordered a lamp from you about three weeks ago. When I opened the box the base was cracked and there was a dent on one side, clearly damaged before it even got to me. I don't want a replacement, just a refund to my original payment method.
+
+Farid","table lamp",66.8,23,FALSE,"damaged","approve"
+87,"Hi, I wanted to reach out about the planter I ordered about a month ago. It was fine when it first arrived and I've been using it as normal, but over the past week or so it's started leaking water through a small crack near the base after I water the plant. It's made a mess on the windowsill a couple of times now. Given it's developed this fault, I'd like to ask for a refund. Thank you for your help with this.","ceramic planter",50.32,30,FALSE,"faulty","approve"
+88,"I've had the rug for about five weeks now and it's fine, but it just isn't the right style for my room, so I'd like to request a refund.
+
+Quinn","floor rug",421.6,34,FALSE,"used","deny"
+89,"hi, i ordered this kettle like 9 weeks ago but ended up getting a differnt one as a gift so it's just been sitting here still sealed in the box, never opened - can i get a refund for it","kettle",121.58,67,FALSE,"unopened","deny"
+90,"hi, ordered these pillows almost 2 months ago now but the colour just doesnt work in my room, only took them out the bag to look so was wondering about a refund - Ines","pillow pair",83.65,54,FALSE,"opened_unused","deny"
+91,"I got these towels just over two months ago and I've been using them since, but honestly the colour just doesn't work in my bathroom and I've gone with a different set instead. I'd like a refund for them.","bath towels",433.23,65,FALSE,"used","deny"
+92,"I've had this planter for about a month and while it's fine, it just doesn't suit my space, so I'd like to request a refund.","ceramic planter",25.26,32,FALSE,"used","deny"
+93,"Almost two months ago now this arrived and when I opened the box the base had a crack running right across it and one corner was dented in like it had taken a proper knock. I stood there turning it over trying to figure out if it would even sit straight on a shelf, it doesn't. I've had it sitting in the box since because I didn't want to deal with it, but I want a refund at this point.","reading lamp",20.06,54,FALSE,"damaged","approve"
+94,"I've had this grinder since around February, it just doesn't grind fine enough for how I make coffee so I want a refund.","coffee grinder",251.17,260,FALSE,"used","deny"
+95,"I ordered this almost a year ago, opened the box and had a look, but never plugged it in or used it. The colour doesn't suit my kitchen so I don't want to keep it. I'd like a refund.
+
+Ines","toaster",172.79,370,TRUE,"opened_unused","deny"
+96,"Two of the plates have cracked right through after barely two weeks of normal use, I want a refund - Jonas","dinner plates",10.7,15,FALSE,"faulty","approve"
+97,"I've had these hanging up for about four months now but they just don't go with the room the way I hoped, so I want to send them back for a refund. They're not damaged or anything, I just don't want them anymore. Let me know how to sort the payment side.
+
+Quinn","curtains",111.23,116,FALSE,"used","deny"
+98,"Rug's backing came apart in one corner after about a month of normal foot traffic, want a refund.","floor rug",283.19,29,FALSE,"faulty","approve"
+99,"Hiya, hope you're having a good day! So I got my mixer about a month ago now, been having a lovely time making bread and cakes with it, but this past week I went to whip up some buttercream and it just... stopped mid-turn. Like the motor's humming away but the beaters aren't actually moving anymore, if that makes sense. Tried it a few times since, unplugging it, letting it rest, all that, but same thing every time. Bit gutted honestly cause it was going so well before that! Would love to just get a refund sorted if that's possible, rather than mess about with getting it fixed. Thanks so much!","stand mixer",12.27,33,FALSE,"faulty","approve"
+100,"Hiya, hope you're well! Just wanted to say my mixer worked fine for the first couple of weeks but now the motor just makes a horrible grinding noise and won't turn the attachment at all, it's basically dead. It's been about three weeks since it arrived so I don't think I've done anything wrong with it, could I get a refund please?","stand mixer",47.33,22,FALSE,"faulty","approve"
+101,"I bought these towels almost eight weeks ago and used them normally, a wash every week or so. Now the edges are coming apart at the seams and threads pull loose every time they go in the machine. Started fine, not anymore. I'd like a refund.
+
+Kofi","bath towels",357.89,55,FALSE,"faulty","approve"
+102,"hi, the towels i got about 3-4 weeks ago have started fraying and coming apart at the edges after normal washing, can i get a refund","bath towels",43.76,26,FALSE,"faulty","approve"
+103,"so i ordered the planter almost two months ago now and when it finally showed up i unwrapped it and it was this tiny little terracotta looking thing, definitely not the big glazed one i picked out on the site. been sitting in the box since cos i don't even wanna use it since its not what i wanted, kinda over waiting on this. can i just get my money back at this point","ceramic planter",189.77,54,FALSE,"wrong_item","approve"
+104,"Hi there! So I ordered this a couple months back now (think it's been about 8-9 weeks), took it out of the box, had a good look at it, but honestly the colour just doesn't work with my living room at all - I've since gone with a different look in there. It's basically untouched, just sat on my shelf looking pretty but wrong, so I was hoping to get a refund for it.","ceramic planter",27.33,61,FALSE,"opened_unused","deny"
+105,"It's been sitting folded exactly as I unwrapped it almost two months ago because the colour just doesn't work in my bathroom, so I'd like a refund, please - Uma","bath towels",19.75,52,FALSE,"opened_unused","deny"
+106,"The drawer runner on the bedside table has snapped after about five weeks of normal use, so it won't slide open properly anymore. I want a refund.
+
+Sven","bedside table",20.28,34,FALSE,"faulty","approve"
+107,"I bought this over two months ago and it's stopped working. It ran fine for the first few weeks, then the motor started stalling mid-mix and now it won't turn on at all. I want a refund.
+
+Yusuf","stand mixer",438.13,64,FALSE,"faulty","approve"
+108,"I'm really sorry to bother you about this, but I got the rug just over a year ago and after living with it for a while I've realised it just doesn't go with the room at all, the colours clash more than I expected. It's been down on the floor and walked on for weeks so it's not brand new, but it's still in good shape, I just don't want it anymore. I feel bad asking, but is there any way I could get a refund for it?","floor rug",14.1,385,FALSE,"used","deny"
+109,"I ordered this about two weeks ago but changed my mind and it's still sealed in its box, so I'd like a refund, please.
+
+Ines","table lamp",13.98,15,TRUE,"unopened","deny"
+110,"Subject: Refund Request
+
+Dear Sir/Madam,
+
+I am writing regarding the shoe rack delivered to me around a week and a half ago. It functioned properly for the first few days, but one of the side supports has since cracked and given way, causing the shelves to tilt and no longer hold weight securely. As this occurred through normal use and not misuse, I would like to request a full refund. Please advise on how to proceed.
+
+Kind regards,
+Yusuf","shoe rack",41.6,11,TRUE,"faulty","approve"
+111,"Hiya, so I ordered this a little under a month ago now and when I opened the box the base was cracked right through and one of the arms had a proper dent in it, like it had been dropped before it even got to me. Bit gutted honestly because it looked lovely in the photos, but I can't really sit on something that's already damaged like that. Could I get a refund sorted please?","desk chair",54.96,26,FALSE,"damaged","approve"
+112,"I opened the box back when it arrived and two of the plates were already cracked right across the middle, which is honestly pretty frustrating for something meant to be used at the table. It's been about seven months now but I never got around to sorting it out, and I'd like a refund for them please.","dinner plates",9.6,216,FALSE,"damaged","deny"
+113,"Ordered this about a month ago and it's been sitting by the door since, box never even cracked open. Ended up sorting storage a different way, so it's just taking up space at this point. Want to send it back for a refund.
+
+Ben","shoe rack",477.62,26,FALSE,"unopened","approve"
+114,"Hi, I'm so sorry to bring this up but I've been putting off writing because I wasn't sure what to say - when I opened the box about three and a half weeks ago one of the pair had a strange lump pressing through the seam and the other had a corner that just wouldn't puff back out no matter how much I fluffed it. I felt awful even taking photos of them like that, but I did in case it helps, and I really would like a refund if that's possible. Sorry again for the trouble, I just haven't known how to bring it up sooner.","pillow pair",22.99,24,FALSE,"damaged","approve"
+115,"Hi, when I opened the box about three and a half weeks ago one of the side panels was cracked right through and a corner was crushed in, so I'd like to arrange a refund please - Rosa","shoe rack",20.84,24,FALSE,"damaged","approve"
+116,"Hi, I wanted to reach out about the lamp I ordered about a week and a half ago. It was fine for the first several evenings, but the last few nights when I go to switch it on at my desk, it just stays dark no matter how many times I click it. Given that, I'd like to request a refund, please.","reading lamp",31.9,12,FALSE,"faulty","approve"
+117,"I opened the parcel about three weeks ago and the base was cracked and the shade had a dent in it, clearly damaged before it even got to me. I want a refund for it. It's just been sitting boxed up since since I don't want to use something that arrived like this.","table lamp",24.66,22,FALSE,"damaged","approve"
+118,"hiya, i got this a lil over 3 weeks ago and it was working totally fine at first but now its started leaking from the bottom when i boil it, water just pools underneath on the counter. its def not me doing anything weird with it, just normal use and now it does this everytime. was really happy with it before so kinda bummed, but can i get a refund for it please
+
+Uma","kettle",45.43,23,FALSE,"faulty","approve"
+119,"Oh gosh, so this thing turned up about a month ago and when I opened the box there was this massive crack running down one side and a corner all caved in, like it had taken a real knock somewhere along the way - I ended up just leaving it in the box in the hallway since I couldn't exactly put it next to the bed like that! Could I get a refund sorted please?","bedside table",20.44,33,FALSE,"damaged","approve"
+120,"Hiya, so this arrived ages ago (about two months back now, oops for the late message!) but I ordered the tall sage green planter and what turned up was a small white one instead - not what I picked at all. I've had it sitting on my windowsill looking a bit lost because it's just not right for the plant I bought it for, so could I get a refund for it please?","ceramic planter",24.89,62,FALSE,"wrong_item","deny"

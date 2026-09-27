@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `functai.datasets.refunds()`: 120 refund requests to the shop of
+  `tickets`, with the facts its order system knows and the decision its
+  refund rules give (the same table as R's `refunds`).
+
 - Models that run only at temperature 1 (GPT-6, and Claude Opus, Sonnet,
   Fable and Mythos 5) no longer fail when a session sets `temperature=0`:
   the setting is left out of their requests, with one warning (the new

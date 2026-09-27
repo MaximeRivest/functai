@@ -11,7 +11,11 @@ log_folder <- function(folder) folder %||% folder_of(effective()$log_calls %||% 
 #' @return A tibble, one row per call, oldest first: `id`, `started`,
 #'   `name`, `module`, `version`, `model`, `seconds`, `inputs` and `outputs`
 #'   (list columns of JSON values), `error`, `input_tokens`, `output_tokens`,
-#'   `parent`, `caller`, `language`.
+#'   `reasoning_tokens`, `total_tokens`, `parent`, `caller`, `language`.
+#'   Providers count differently: OpenAI's and Anthropic's `output_tokens`
+#'   include the model's hidden reasoning, Gemini's leave it out (it is in
+#'   `reasoning_tokens`). Every one bills `total_tokens - input_tokens` as
+#'   output.
 #' @export
 calls <- function(fn = NULL, folder = NULL, since = NULL) {
   recs <- read_log(log_folder(folder), since)$calls
@@ -32,6 +36,7 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
     inputs = lapply(recs, function(c) c$inputs), outputs = lapply(recs, function(c) c$outputs),
     error = chr(function(c) if (is.null(c$error)) NULL else paste0(c$error$type, if (!is.null(c$error$message)) paste0(": ", c$error$message))),
     input_tokens = num(function(c) c$usage$input_tokens), output_tokens = num(function(c) c$usage$output_tokens),
+    reasoning_tokens = num(function(c) c$usage$reasoning_tokens), total_tokens = num(function(c) c$usage$total_tokens),
     parent = chr(function(c) c$parent), caller = lapply(recs, function(c) c$caller),
     language = chr(function(c) c$process$language))
 }

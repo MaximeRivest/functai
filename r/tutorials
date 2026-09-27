@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Run R tutorials top to bottom, each in a fresh R session, and write their
+# outputs into them: r/tutorials docs/r/01-first-function.md ... (default: all
+# of docs/r). They call real models (each tutorial prints what it cost), with
+# the keys in the environment or in ../lm15-dev/.env. R and packages come from
+# PATH when there, else from nixpkgs (tools/env.nix); functai from r/.lib
+# (r/check installs it there).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+if [ -z "${OPENAI_API_KEY:-}" ] && [ -f "$here/../../lm15-dev/.env" ]; then set -a; . "$here/../../lm15-dev/.env"; set +a; fi
+if command -v Rscript >/dev/null 2>&1 && Rscript -e 'for (p in c("dplyr","ggplot2","tidymodels","evaluate")) library(p, character.only = TRUE)' >/dev/null 2>&1; then
+  RUN=""
+else
+  RUN="nix shell --impure -f $here/tools/env.nix -c"
+fi
+pages=("$@")
+[ ${#pages[@]} -gt 0 ] || pages=("$here"/../docs/r/[0-9]*.md)
+R_LIBS="$here/.lib${R_LIBS:+:$R_LIBS}" $RUN Rscript "$here/tools/tutorials.R" "${pages[@]}"

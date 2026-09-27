@@ -17,7 +17,7 @@ from typing import Any
 
 HERE = Path(__file__).resolve().parent
 
-__all__ = ["field_notes", "tickets"]
+__all__ = ["field_notes", "refunds", "tickets"]
 
 
 def _read(name: str) -> Any:
@@ -104,3 +104,45 @@ def field_notes() -> Any:
     ```
     """
     return _read("field_notes")
+
+
+def refunds() -> Any:
+    """Refund requests to the homeware shop of :func:`tickets`, with the decision its rules give.
+
+    120 rows. What the customer wrote, what the order system knows, what
+    state the item is in, and whether the shop's refund rules say to pay.
+
+    | column | what it holds |
+    |---|---|
+    | ``id`` | the request's number |
+    | ``message`` | what the customer wrote |
+    | ``item`` | what they bought |
+    | ``price`` | what they paid, in dollars |
+    | ``days_since_delivery`` | from the order system, not the message |
+    | ``final_sale`` | bought on final sale (clearance) |
+    | ``state`` | ``"unopened"``, ``"opened_unused"``, ``"used"`` (works, no longer wanted), ``"damaged"`` (on arrival), ``"wrong_item"`` or ``"faulty"`` (failed in normal use) |
+    | ``decision`` | ``"approve"`` or ``"deny"``: what the rules below give |
+
+    Notes
+    -----
+    The refund rules, which ``decision`` follows exactly:
+
+    - Damaged on arrival, or the wrong item (or part of the order missing):
+      a refund within **60 days** of delivery, final sale or not.
+    - Faulty (it failed in normal use): a refund within **365 days**, final
+      sale or not.
+    - Unopened, or opened but not used, and no longer wanted: a refund
+      within **30 days**, and **never for a final-sale item**.
+    - Used and no longer wanted: **no refund**.
+
+    The messages were written by a language model from each row's facts,
+    in varied tones and lengths; some say what happened only indirectly.
+    The facts, and so the decisions, were drawn first (``r/data-raw/refunds.R``).
+
+    Examples
+    --------
+    >>> from functai import datasets
+    >>> datasets.refunds().shape
+    (120, 8)
+    """
+    return _read("refunds")
