@@ -1,16 +1,14 @@
 # functai
 
-**Write a Python function. A language model does the work. You measure how well.**
+**Write a function. A language model does the work. You measure how well.**
 
-functai turns a typed Python function into a call to a language model.
-The function's name, docstring and types say what you want; the answer
-comes back as the type you asked for. Then you run it on a whole table,
-find out how often it is right, and make it better.
+functai turns a typed function into a call to a language model. The
+function's name, description and types say what you want; the answer comes
+back as the type you asked for. Then you run it on a whole table, find out
+how often it is right, and make it better.
 
 ```python
 from typing import Literal
-from dpyr import col
-import functai
 from functai import ai
 
 @ai
@@ -18,42 +16,33 @@ def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
     """Which team should answer this customer message?"""
 
 team("I was charged twice for order B-2210, please fix this.")    # 'billing'
-
-tickets = functai.datasets.tickets()                              # 80 labelled support messages
-tickets.mutate(team=team(col.message))                            # a new column, one call per message
-functai.evaluate(team, tickets, expected="category")              # how often it's right, with a range
 ```
 
-## Installation
+## Languages
 
-```bash
-pip install "functai[data]"      # Python 3.11+
-```
+| Language | Folder | Install | Status |
+|---|---|---|---|
+| Python | [`python/`](python/) | `pip install "functai[data]"` | released ([PyPI](https://pypi.org/project/functai/)) |
+| TypeScript / JavaScript | `ts/` | | next |
+| R | `r/` | | planned |
+| Julia | `julia/` | | planned |
 
-With an API key in your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
-`GEMINI_API_KEY`, …) or a Claude, ChatGPT or Copilot subscription, there's
-nothing to set up: functai picks a small model you can use and tells you
-which. To choose: `functai.configure(lm="claude-haiku-4-5")`.
+Every language follows the same [contract](contract/): a call logged in one
+can be rated in another, and a function improved in one runs in another.
+[design/01-many-languages.md](design/01-many-languages.md) is the plan.
 
 ## Documentation
 
-**[maximerivest.github.io/functai](https://maximerivest.github.io/functai/)**, with three ways in:
+**[maximerivest.github.io/functai](https://maximerivest.github.io/functai/)**
 
-- **[I have a table of text](https://maximerivest.github.io/functai/get-started.html)**: label, sort or score every row, check it, make it better.
-- **[I have notes or documents](https://maximerivest.github.io/functai/articles/notes-to-data.html)**: pull the facts out as columns, following your protocol.
-- **[I have a prompt that works](https://maximerivest.github.io/functai/articles/from-a-prompt.html)**: send it exactly as it is, then add types, tables and tests.
+## This repository
 
-The [examples](examples/) each solve one problem end to end.
+| Path | What it holds |
+|---|---|
+| [`contract/`](contract/) | what every implementation must agree on: formats, schemas, cases |
+| [`python/`](python/) | the Python package, its tests and examples |
+| [`docs/`](docs/), [`tools/`](tools/) | the website: runnable notebooks, and the tool that runs and builds them |
+| [`design/`](design/) | design notes |
+| [`check`](check) | one command: every implementation against the contract |
 
-## Built on
-
-[lm15](https://github.com/lm15-dev/lm15-python) (every provider, no SDKs),
-[lmcc](https://github.com/MaximeRivest/lmcc) (how values are written into
-prompts and read back) and [dpyr](https://github.com/MaximeRivest/dpyr)
-(tables).
-
-## Development
-
-`uv sync --group dev`, then `uv run pytest` (offline, a fake provider).
-The documentation runs against real models: `uv sync --group docs`, then
-`python tests/docs_live.py --render` (costs cents).
+MIT licensed.

@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# The one command. Green here = every implementation keeps the contract.
+#   1) the contract itself: its schemas are valid, its cases are what
+#      contract/cases/make.py writes from the rules
+#   2) Python: the offline tests (a fake provider; the contract's cases and
+#      schemas are read from ../contract)
+# Each new language adds its step here: its own tests, then the contract's
+# cases through it.
+set -euo pipefail
+cd "$(dirname "$0")"
+
+step() { printf '\n== %s ==\n' "$1"; }
+
+PY=python/.venv/bin/python
+if [ ! -x "$PY" ]; then
+  step "setup: python/.venv"
+  (cd python && uv sync --frozen --all-extras --all-groups)
+fi
+
+step "1/2 the contract"
+"$PY" - <<'EOF'
+import glob, json, jsonschema
+for path in sorted(glob.glob("contract/schema/*.json")):
+    jsonschema.Draft202012Validator.check_schema(json.load(open(path)))
+print(f"{len(glob.glob('contract/schema/*.json'))} schemas valid")
+EOF
+before=$(cat contract/cases/*.json | sha256sum)
+"$PY" contract/cases/make.py >/dev/null
+after=$(cat contract/cases/*.json | sha256sum)
+if [ "$before" != "$after" ]; then
+  echo "contract/cases/*.json differ from what make.py writes: commit make.py's output, or fix make.py" >&2
+  exit 1
+fi
+echo "cases match make.py"
+
+step "2/2 python"
+(cd python && HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" .venv/bin/python -m pytest -q -p no:cacheprovider)
+
+printf '\nall green\n'
