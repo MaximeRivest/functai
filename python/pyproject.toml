@@ -40,7 +40,8 @@ dependencies = [
 [project.urls]
 "Homepage" = "https://github.com/maximerivest/functai"
 "Bug Tracker" = "https://github.com/maximerivest/functai/issues"
-"Documentation" = "https://maximerivest.github.io/functai/"
+"Documentation" = "https://maximerivest.github.io/functai/python.html"
+"Changelog" = "https://maximerivest.github.io/functai/news.html"
 "Source" = "https://github.com/maximerivest/functai"
 
 [project.optional-dependencies]

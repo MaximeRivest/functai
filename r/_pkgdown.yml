@@ -1,0 +1,102 @@
+# The R manual (pkgdown): every help page, the vignettes and the news, at
+# https://maximerivest.github.io/functai/r/manual/, beside the website's R
+# tutorials. Built by .github/workflows/docs.yml; locally, from r/:
+#   nix shell --impure -f tools/env.nix -c sh -c 'R_LIBS=.lib Rscript -e "pkgdown::build_site(install = FALSE)"'
+# (after r/check), into r/docs/. It runs no model: the vignettes carry the
+# outputs of their last real run.
+url: https://maximerivest.github.io/functai/r/manual/
+destination: docs
+
+template:
+  bootstrap: 5
+  light-switch: true
+
+home:
+  title: functai for R
+  description: Functions whose body a language model writes, written like a model formula, for the tidyverse and tidymodels.
+
+navbar:
+  structure:
+    left: [intro, tutorials, reference, articles, news]
+    right: [search, site, github, lightswitch]
+  components:
+    tutorials:
+      text: Tutorials
+      href: https://maximerivest.github.io/functai/r/index.html
+    site:
+      text: functai in every language
+      href: https://maximerivest.github.io/functai/
+    github:
+      icon: fab fa-github
+      aria-label: GitHub
+      href: https://github.com/MaximeRivest/functai/tree/master/r
+
+articles:
+  - title: Guides
+    navbar: ~
+    contents:
+      - getting-started
+      - tidymodels
+
+reference:
+  - title: Writing an AI function
+    desc: A formula, a sentence saying what it does, and a codebook of its fields.
+    contents:
+      - ai
+      - choice
+      - record
+      - optional
+      - described
+      - json_shape
+      - ai_tool
+  - title: Settings
+    contents:
+      - ai_config
+      - update.functai_fn
+      - model_capabilities
+  - title: Using it on data
+    contents:
+      - predict.functai_fn
+      - ai_problems
+  - title: How often is it right?
+    contents:
+      - evaluate
+      - tidy.functai_evaluation
+      - exact_match
+      - score_interval
+      - normalize_text
+      - casefold_full
+  - title: Making it better
+    contents:
+      - labeled_few_shot
+      - gepa
+      - ai_trials
+      - with_demos
+  - title: As a tidymodels model
+    contents:
+      - ai_model
+      - worked_examples
+  - title: What it sends, and its version
+    contents:
+      - ai_version
+  - title: The call log and ratings
+    contents:
+      - calls
+      - rate
+      - rated
+      - default_log_folder
+  - title: Saving, and other languages' functions
+    contents:
+      - read_ai
+      - write_ai
+  - title: Datasets
+    contents:
+      - tickets
+      - refunds
+      - field_notes
+  - title: Internals
+    contents:
+      - ai_model_fit
+      - as_field
+      - reexports
+      - functai-package

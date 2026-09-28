@@ -18,26 +18,32 @@ df.mood = mood.(df.review)             # the whole column, 8 calls at a time
 evaluate(mood, labelled)               # how often it is right, with a 95% range
 ```
 
-**Learn it** with [eight tutorials](../docs/julia/index.md) (from a first
+**Learn it** with [eight tutorials](https://maximerivest.github.io/functai/julia/index.html) (from a first
 function to decisions, MLJ and living with a function in use; every output
-from a real run) and the [manual](docs/) (guides and the reference, built
-with Documenter: `julia --project=julia/docs julia/docs/make.jl`).
+from a real run) and the [manual](https://maximerivest.github.io/functai/julia/manual/index.html) (the
+tutorials, how-to guides and the reference, built with Documenter).
 
 FunctAI exists in Python, TypeScript, R and Julia, held together by one
-[contract](../contract): the same function has the same version, writes the
-same call log and saves to the same folder in every language. A function
-improved in Python loads here and sends the same bytes.
+[contract](https://github.com/MaximeRivest/functai/tree/master/contract): the same function has the same
+version, writes the same call log and saves to the same folder in every
+language. A function improved in Python loads here and sends the same
+bytes.
 
 ## Install
 
 Julia 1.10 or newer. FunctAI is not in the General registry yet, and
-neither are the two packages under it (lmcc, lm15), so for now it runs
-from a checkout of this repository next to `lmcc` and `lm15-dev`:
+neither are the two packages under it (lmcc, lm15), so add all three from
+GitHub, in this order:
 
 ```julia
 using Pkg
-Pkg.develop(path = "functai/julia")    # Project.toml's [sources] finds lmcc and lm15
+Pkg.add(url = "https://github.com/MaximeRivest/lmcc", subdir = "julia")
+Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
+Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 ```
+
+To work on FunctAI itself, `Pkg.develop(path = "functai/julia")` from a
+checkout beside `lmcc` and `lm15-dev` (its `[sources]` finds them there).
 
 Set the key of the provider you use (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `GEMINI_API_KEY`, `GROQ_API_KEY`, …), or sign in once with
@@ -218,6 +224,7 @@ mood = FunctAI.load("saved/mood"; types = (result = Mood,))
 A saved folder holds shapes, not Julia types; `types` gives them back. A
 function saved in Python, TypeScript or R loads here when it has no code of
 its own; what it cannot run is refused with a reason (`LoadRefused`).
+TypeScript and R load what Julia saves; Python does not yet.
 
 ## Where Julia differs, stated
 
@@ -238,9 +245,13 @@ its own; what it cannot run is refused with a reason (`LoadRefused`).
   `load` and `login` are not exported (FileIO's names), nor is `ai"…"`
   (PromptingTools.jl's): `@ai` reads it from your code.
 - **Not yet**: the reply cache, stateful memory, escalation to another
-  model (a `@program` does it by hand), and baking (training your own weights).
+  model (a `@program` does it by hand), and baking (training your own
+  weights). The [home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four
+  languages.
 
 ## Developing
+
+From the repository, with lmcc and lm15-dev checked out beside it:
 
 ```bash
 julia/check                                     # the contract's data, then Pkg.test() (every contract case, the doctests)

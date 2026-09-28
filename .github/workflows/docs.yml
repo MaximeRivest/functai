@@ -1,8 +1,18 @@
-# The documentation website: docs/*.md → site/ with Zensical, on GitHub Pages.
+# The documentation website, on GitHub Pages: https://maximerivest.github.io/functai/
 #
-# Nothing runs here and no model is called: the pages are notebooks whose
-# outputs are already in them (written by `python tools/docs.py run`, with
-# keys, on a developer's machine, or by pressing Run in Chattering).
+#   site/               docs/*.md with Zensical (the home page, Python, and every language's tutorials)
+#   site/ts/api/        TypeScript's API reference (TypeDoc, ts/typedoc.json)
+#   site/r/manual/      R's manual (pkgdown, r/_pkgdown.yml): help pages, vignettes, news
+#   site/julia/manual/  Julia's manual (Documenter, julia/docs/make.jl)
+#
+# Each is built in its own job, then placed as `python tools/docs.py site`
+# places them locally. Nothing here calls a model: the pages, tutorials and
+# vignettes carry the outputs of their last real run (written with keys, on
+# a developer's machine, by tools/docs.py run, r/tutorials, julia/tutorials),
+# and no example the manuals run needs one. lmcc and lm15 are not in their
+# registries yet, so the jobs that need them check them out from GitHub
+# beside functai, where the package files look for them. Actions are pinned
+# to commit SHAs.
 name: docs
 
 on:
@@ -12,30 +22,96 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
   cancel-in-progress: true
 
 jobs:
-  build:
+  site:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uvx zensical==0.0.65 build --clean
-      - uses: actions/upload-pages-artifact@v3
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: site, path: site, if-no-files-found: error}
+
+  typescript:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {path: functai}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {repository: MaximeRivest/lmcc, path: lmcc}
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with: {node-version: 24}
+      - run: npm ci
+        working-directory: lmcc/ts
+      - run: npm ci
+        working-directory: functai/ts
+      - run: npx typedoc
+        working-directory: functai/ts
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: ts-api, path: functai/ts/docs-api, if-no-files-found: error}
+
+  r:
+    runs-on: ubuntu-latest
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: r-lib/actions/setup-pandoc@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+      - uses: r-lib/actions/setup-r@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
+        with: {use-public-rspm: true}
+      - uses: r-lib/actions/setup-r-dependencies@f9a764fea8d5c63df6ef9a5c7795bf7deb5d7e05 # v2
         with:
-          path: site
+          working-directory: r
+          extra-packages: any::pkgdown, local::.
+          needs: website
+      - run: Rscript -e 'pkgdown::build_site(install = FALSE, new_process = FALSE)'
+        working-directory: r
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: r-manual, path: r/docs, if-no-files-found: error}
+
+  julia:
+    runs-on: ubuntu-latest
+    env:
+      JULIA_PKG_PRECOMPILE_AUTO: 0   # the manual loads a few of the docs environment's packages; compile only those
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {path: functai}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {repository: MaximeRivest/lmcc, path: lmcc}
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with: {repository: lm15-dev/LM15.jl, path: lm15-dev/lm15-jl}
+      - uses: julia-actions/setup-julia@fa02766e078afaaf09b14210362cee14137e6a32 # v3.0.2
+        with: {version: "1"}
+      - uses: julia-actions/cache@a7bed9df697e5d7309d68afe7542a87621a8b6c8 # v3.3.0
+      - run: julia --project=functai/julia/docs -e 'using Pkg; Pkg.instantiate()'
+      - run: julia --project=functai/julia/docs functai/julia/docs/make.jl
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with: {name: julia-manual, path: functai/julia/docs/build, if-no-files-found: error}
 
   deploy:
-    needs: build
+    needs: [site, typescript, r, julia]
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: site, path: site}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: ts-api, path: site/ts/api}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: r-manual, path: site/r/manual}
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with: {name: julia-manual, path: site/julia/manual}
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with: {path: site}
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

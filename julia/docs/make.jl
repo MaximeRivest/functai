@@ -7,6 +7,8 @@
 # real run, written by julia/tutorials), how-to guides whose examples run on
 # every build (they need no model and cost nothing), and the reference,
 # generated from the docstrings. Doctests run here and in Pkg.test().
+# Published at https://maximerivest.github.io/functai/julia/manual/ by
+# .github/workflows/docs.yml, beside the website.
 # Nothing here calls a model.
 
 using Documenter, FunctAI
@@ -38,7 +40,7 @@ rm(WORK; recursive=true, force=true)
 cp(joinpath(HERE, "src"), WORK)
 mkpath(joinpath(WORK, "tutorials"))
 cp(joinpath(TUTORIALS, "figures"), joinpath(WORK, "tutorials", "figures"))
-tutorials = sort([f for f in readdir(TUTORIALS) if endswith(f, ".md")])
+tutorials = sort([f for f in readdir(TUTORIALS) if endswith(f, ".md") && f != "news.md"])   # news.md: the website's Julia news
 for f in tutorials
     text = read(joinpath(TUTORIALS, f), String)
     text = replace(text, "```{.julia .no-run}" => "```julia", "```output" => "```text")
@@ -56,6 +58,7 @@ makedocs(;
     modules=[FunctAI],
     authors="Maxime Rivest",
     format=Documenter.HTML(; prettyurls=get(ENV, "CI", "false") == "true", edit_link=nothing,
+                           canonical="https://maximerivest.github.io/functai/julia/manual/",
                            repolink="https://github.com/MaximeRivest/functai", size_threshold=400_000),
     remotes=nothing,
     checkdocs=:exports,

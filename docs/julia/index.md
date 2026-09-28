@@ -32,7 +32,7 @@ Pkg.add(["DataFrames", "CairoMakie", "HypothesisTests", "MLJ", "NaiveBayes", "ML
 
 Tutorial 1 assumes you know a little DataFrames.jl. Tutorial 7 assumes MLJ's basics. Nothing else is assumed; from tutorial 2 on, each says at the top what it covers, with a three-question check so you can skip what you already know.
 
-For the reference (every function, with its documentation) and short how-to guides, see the [FunctAI.jl manual](https://github.com/MaximeRivest/functai/tree/master/julia/docs), built with Documenter from the package's docstrings; `?name` in the REPL shows the same text.
+For the reference (every function, with its documentation) and short how-to guides, see the [FunctAI.jl manual](https://maximerivest.github.io/functai/julia/manual/index.html), built with Documenter from the package's docstrings; `?name` in the REPL shows the same text.
 
 ## How these were made
 

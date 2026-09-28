@@ -11,7 +11,7 @@ rat:
 
 You have a table with a column of text: support messages, survey answers, reviews, abstracts. You want a new column: a label, a score, a fact pulled out of each row. And you want to know how often it's right.
 
-We'll use `tickets`, 80 messages sent to a small homeware shop, each already labelled with the team that should answer it. It ships with functai, so everything below runs as is (`pip install "functai[data]"`, and a model: see the [home page](index.md#installation)).
+We'll use `tickets`, 80 messages sent to a small homeware shop, each already labelled with the team that should answer it. It ships with functai, so everything below runs as is (`pip install "functai[data]"`, and a model: see [Installation](python.md#installation)).
 
 ## One message
 
@@ -31,31 +31,8 @@ team("I was charged twice for order B-2210, please fix this.")
 ```
 
 ```output
-Traceback (most recent call last):
-  File "/home/maxime/.cache/rat/kernels/py@functai/python-kernel.py", line 847, in run_code
-    result = eval(compile(expr, "<rat>", "eval"), namespace, namespace)
-  File "<rat>", line 9, in <module>
-  File "/home/maxime/Projects/functai/functai/core.py", line 758, in __call__
-    object.__setattr__(second, "first", pred)
-                   ^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/core.py", line 108, in value
-    self._ai_requested = True
-  File "/home/maxime/Projects/functai/functai/core.py", line 102, in ensure_materialized
-    self._value: Any = None
-                 ^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/core.py", line 636, in _run
-    recent = self.history[-window:] if window > 0 else self.history
-                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/core.py", line 686, in _call_model
-    outs = [f.name for f in spec.signature.outputs if f.purpose != "tools.calls"]
-                             ^^^^^^^^^^^^^^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/core.py", line 554, in _plan_for
-    return {"inputs": ins, "outputs": outs}
-                       ^^^^^^^^^^^^^^^^^^^^
-  File "/home/maxime/Projects/functai/functai/models.py", line 225, in resolve
-    picked = accounts.default_model(settings.get("auth"))
-    if picked is None:
-RuntimeError: no model configured: call functai.configure(lm='gpt-4.1-mini') or pass lm=... to @ai (functai.logins() shows what you can use)
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+'billing'
 ```
 
 What the model saw, and what it answered:
@@ -65,7 +42,34 @@ print(functai.phistory())
 ```
 
 ```output
-(no model calls yet)
+[2026-09-27T20:12:28] team → gpt-4.1-mini
+
+System message:
+
+Function: team
+
+Which team should answer this customer message?
+
+Reply in exactly this form:
+<result>
+one of: shipping, billing, product, account
+</result>
+
+
+User message:
+
+<message>
+I was charged twice for order B-2210, please fix this.
+</message>
+
+
+Response:
+
+<result>
+billing
+</result>
+
+(finish: stop; tokens in 67, out 9)
 ```
 
 No model was named, so functai picked one this machine can use, and said so, once (the first line of the output). `phistory()` shows the conversation it sent: the docstring became the instruction, the parameter became a tagged input, and the return type became the allowed answers. You never write that prompt, but you can always read it.
@@ -116,7 +120,7 @@ routed.select(col.message, col.team)
 │ str                                                                 ┆ str      │
 ╞═════════════════════════════════════════════════════════════════════╪══════════╡
 │ Hi, my order A-1042 still hasn't arrived and it's been three weeks. ┆ shipping │
-│ The mug arrived in pieces.                                          ┆ shipping │
+│ The mug arrived in pieces.                                          ┆ product  │
 │ I was charged twice for order B-2210, please fix this.              ┆ billing  │
 │ How do I change the email on my account?                            ┆ account  │
 │ The kettle lid doesn't close properly anymore after a month of use. ┆ product  │
@@ -141,10 +145,10 @@ routed.count(col.team)
 │ ---      ┆ --- │
 │ str      ┆ i64 │
 ╞══════════╪═════╡
-│ account  ┆ 19  │
+│ account  ┆ 18  │
 │ billing  ┆ 17  │
-│ product  ┆ 22  │
-│ shipping ┆ 22  │
+│ product  ┆ 25  │
+│ shipping ┆ 20  │
 └──────────┴─────┘
 ```
 
@@ -176,22 +180,22 @@ misses.select(col.message, col.category, col.pred_result)
 
 ```output
 # dpyr dataframe · source: polars · showing 7 of 7 rows
-┌─────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
-│ message                                                         ┆ category ┆ pred_result │
-│ ---                                                             ┆ ---      ┆ ---         │
-│ str                                                             ┆ str      ┆ str         │
-╞═════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
-│ Refund the blender please, it stopped working after two days.   ┆ billing  ┆ product     │
-│ Money back please, the knife set is not as sharp as advertised. ┆ billing  ┆ product     │
-│ The duvet shrank in the wash, I'd like my money back.           ┆ billing  ┆ product     │
-│ Refund please: the towels are much thinner than in the photos.  ┆ billing  ┆ product     │
-│ The teapot spout was chipped when it arrived. Order b2610.      ┆ shipping ┆ product     │
-│ Return the headphones and give me a refund please.              ┆ billing  ┆ shipping    │
-│ I want to cancel my subscription and get this month refunded.   ┆ billing  ┆ account     │
-└─────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
+┌────────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
+│ message                                                            ┆ category ┆ pred_result │
+│ ---                                                                ┆ ---      ┆ ---         │
+│ str                                                                ┆ str      ┆ str         │
+╞════════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
+│ You sent me a blue rug but I ordered the green one (order A-1187). ┆ shipping ┆ product     │
+│ Refund the blender please, it stopped working after two days.      ┆ billing  ┆ product     │
+│ I want a refund for the chair, it wobbles no matter what I do.     ┆ billing  ┆ product     │
+│ Money back please, the knife set is not as sharp as advertised.    ┆ billing  ┆ product     │
+│ The duvet shrank in the wash, I'd like my money back.              ┆ billing  ┆ product     │
+│ Refund please: the towels are much thinner than in the photos.     ┆ billing  ┆ product     │
+│ Return the headphones and give me a refund please.                 ┆ billing  ┆ shipping    │
+└────────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
 ```
 
-Read them. They aren't random: something that **arrived broken** went to *product* when this shop sends it to *shipping* (the carrier pays), and **requests for money back** went to whatever they were about, when they all go to *billing*. Those are house rules. No model can guess them.
+Read them. They aren't random: **requests for money back** went to whatever they were about, when this shop sends them all to *billing*; and **the wrong item delivered** went to *product*, when this shop sends anything wrong with a delivery to *shipping* (the carrier pays). Those are house rules. No model can guess them.
 
 ## Say the rules
 
@@ -275,7 +279,7 @@ tickets.mutate(**triage.unpack(col.message)).select(col.message, col.team, col.o
 │ Tracking for C-3319 hasn't moved since Monday.                      ┆ shipping ┆ C-3319   │
 │ I forgot my password and the reset email never comes.               ┆ account  ┆ null     │
 │ Box was crushed and the lamp inside is cracked. Order D-4001.       ┆ shipping ┆ D-4001   │
-│ My coupon code SPRING10 didn't apply at checkout.                   ┆ billing  ┆ null     │
+│ My coupon code SPRING10 didn't apply at checkout.                   ┆ account  ┆ null     │
 └─────────────────────────────────────────────────────────────────────┴──────────┴──────────┘
 ```
 
@@ -289,15 +293,15 @@ triaged.summary
 
 ```output
 # dpyr dataframe · source: polars · showing 3 of 3 rows
-┌────────────────┬───────┬──────────┬──────────┬─────┬────────┐
-│ metric         ┆ mean  ┆ low      ┆ high     ┆ n   ┆ failed │
-│ ---            ┆ ---   ┆ ---      ┆ ---      ┆ --- ┆ ---    │
-│ str            ┆ f64   ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
-╞════════════════╪═══════╪══════════╪══════════╪═════╪════════╡
-│ exact_match    ┆ 0.975 ┆ 0.913356 ┆ 0.993117 ┆ 80  ┆ 0      │
-│ team_match     ┆ 0.975 ┆ 0.913356 ┆ 0.993117 ┆ 80  ┆ 0      │
-│ order_id_match ┆ 1.0   ┆ 0.954182 ┆ 1.0      ┆ 80  ┆ 0      │
-└────────────────┴───────┴──────────┴──────────┴─────┴────────┘
+┌────────────────┬────────┬──────────┬──────────┬─────┬────────┐
+│ metric         ┆ mean   ┆ low      ┆ high     ┆ n   ┆ failed │
+│ ---            ┆ ---    ┆ ---      ┆ ---      ┆ --- ┆ ---    │
+│ str            ┆ f64    ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
+╞════════════════╪════════╪══════════╪══════════╪═════╪════════╡
+│ exact_match    ┆ 0.9625 ┆ 0.895453 ┆ 0.987165 ┆ 80  ┆ 0      │
+│ team_match     ┆ 0.9625 ┆ 0.895453 ┆ 0.987165 ┆ 80  ┆ 0      │
+│ order_id_match ┆ 1.0    ┆ 0.954182 ┆ 1.0      ┆ 80  ┆ 0      │
+└────────────────┴────────┴──────────┴──────────┴─────┴────────┘
 ```
 
 `exact_match` counts messages where everything was right; the other rows score each field alone.
@@ -313,16 +317,16 @@ functai.compare(after, small)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬────────┬─────────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after  ┆ diff    ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---    ┆ ---     ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64    ┆ f64     ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪════════╪═════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.975  ┆ 0.9125 ┆ -0.0625 ┆ -0.136297 ┆ 0.011297 ┆ 2      ┆ 7     ┆ 71   ┆ 80  │
-└─────────────┴────────┴────────┴─────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬──────┬───────────┬───────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high      ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---       ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64       ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪══════╪═══════════╪═══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.975  ┆ 0.875 ┆ -0.1 ┆ -0.175943 ┆ -0.024057 ┆ 1      ┆ 9     ┆ 70   ┆ 80  │
+└─────────────┴────────┴───────┴──────┴───────────┴───────────┴────────┴───────┴──────┴─────┘
 ```
 
-The small model got 7 messages wrong that the bigger one got right, and 2 the other way round: 6 points worse, between −14 and +1. Probably worse, not proven; for routing, where a wrong team costs someone's time, the bigger model looks worth it. [Make it cheaper](articles/cheaper.md) compares four models side by side.
+The small model got 9 messages wrong that the bigger one got right, and 1 the other way round: 10 points worse, between −18 and −2. That range doesn't include 0, so it really is worse; for routing, where a wrong team costs someone's time, the bigger model is worth it. [Make it cheaper](articles/cheaper.md) compares four models side by side.
 
 `using` makes a copy of the function with other settings; the original is untouched. The table of each run also has the tokens and seconds of every row, so the cost is a sum away: `after.table.summarize(tokens=col.input_tokens.sum())`.
 
@@ -338,13 +342,13 @@ functai.save(team, "support_router/", overwrite=True)
 team  AI function (message: str → Literal['shipping', 'billing', 'product', 'account'])  [__main__]
 └── Literal  (stdlib)
 
-requirements: functai @ file:///home/maxime/Projects/functai
+requirements: functai @ file:///home/maxime/Projects/functai/python
 
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python), lmcc (/home/maxime/Projects/lmcc/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
 
-Anyone can load it with `functai.load("support_router/", trust=True)` and get the same function. See [Ship it](articles/saving.md).
+The warning is this website's own: its pages run on a development checkout. Installed with pip, a saved function names released versions, and anyone can load it with `functai.load("support_router/", trust=True)` and get the same function. See [Ship it](articles/saving.md).
 
 ## Where next
 

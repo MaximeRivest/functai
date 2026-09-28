@@ -1,0 +1,19 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "name": "functai for TypeScript",
+  "entryPoints": ["src/index.ts"],
+  "tsconfig": "tsconfig.build.json",
+  "out": "docs-api",
+  "readme": "none",
+  "includeVersion": true,
+  "excludePrivate": true,
+  "excludeInternal": true,
+  "sort": ["kind", "instance-first", "alphabetical-ignoring-documents"],
+  "navigationLinks": {
+    "Guide": "https://maximerivest.github.io/functai/ts/index.html",
+    "functai": "https://maximerivest.github.io/functai/",
+    "GitHub": "https://github.com/MaximeRivest/functai/tree/master/ts"
+  },
+  "sourceLinkTemplate": "https://github.com/MaximeRivest/functai/blob/master/ts/{path}#L{line}",
+  "treatWarningsAsErrors": false
+}

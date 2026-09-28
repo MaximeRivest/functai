@@ -61,3 +61,5 @@ julia/Manifest.toml
 julia/docs/Manifest.toml
 julia/docs/build/
 julia/docs/.work/
+ts/docs-api/
+r/docs/

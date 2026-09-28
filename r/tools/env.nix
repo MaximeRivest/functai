@@ -10,6 +10,8 @@ let
       curl openssl askpass
       # tests and the tidyverse functai pairs with
       testthat dplyr tidyr purrr roxygen2 httpuv evaluate rpart rpart_plot
+      # the manual (_pkgdown.yml)
+      pkgdown
       # tidymodels, and the vignettes
       parsnip dials workflows yardstick rsample tune recipes textrecipes glmnet knitr rmarkdown ggplot2 tidymodels
     ];

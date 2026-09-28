@@ -12,10 +12,11 @@ before adding a language or changing the contract.
 | `contract/` | formats, JSON Schemas and cases every implementation must pass | nothing: it is the authority |
 | `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG | `contract/` |
 | `ts/` | the TypeScript package (`functai` on npm, not published yet): src, tests, tools, README, CHANGELOG. `src/generated/contract.ts` is the contract's data, written by `node tools/generate.ts` | `contract/` |
-| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project; `docs/tutorials/` the Python tutorials, `docs/r/` the R ones (```r cells, outputs written by `r/tutorials`), `docs/julia/` the Julia ones (```julia cells, outputs written by `julia/tutorials`; also the tutorials of the Julia manual); plots in `docs/_assets/generated/` | the code they show |
+| `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project. `index.md` the four-language home, `python.md` Python's landing; `docs/tutorials/` the Python tutorials, `docs/r/` the R ones (```r cells, outputs written by `r/tutorials`), `docs/julia/` the Julia ones (```julia cells, outputs written by `julia/tutorials`; also the tutorials of the Julia manual); `docs/ts/index.md` and every language's `news.md` are generated from the READMEs and changelogs (`tools/docs.py generate`); plots in `docs/_assets/generated/` | the code they show |
 | `r/` | the R package (`functai`, not on CRAN): R, tests, data, README, NEWS. `inst/contract/` is the contract's data, copied by `r/check`; `tools/env.nix` is its R on NixOS | `contract/` |
 | `julia/` | the Julia package (`FunctAI`, not registered): src, ext (StatsModels, CategoricalArrays), test, tools, docs (the Documenter manual, and the environment `julia/tutorials` runs in), README, CHANGELOG. `data/contract/` is the contract's data, copied by `julia/check`; lmcc and lm15 come from their checkouts (`Project.toml` `[sources]`) | `contract/` |
-| `tools/docs.py` | generates reference/example/news pages, runs notebooks on rat, builds the site | |
+| `tools/docs.py` | generates reference/example/news pages, runs notebooks on rat, builds each language's manual (TypeDoc, pkgdown, Documenter) and the site | |
+| `.github/workflows/docs.yml` | the website on GitHub Pages: the site and the three manuals, built in parallel on every push to master, placed as `tools/docs.py site` places them | |
 | `tools/crosslang.py` | Python, TypeScript, R and Julia against each other: saved in Python, loaded in the others; one call log | `contract/` |
 | `design/` | numbered design notes | |
 | `check` | the one command: the contract, then every implementation | |
@@ -41,7 +42,8 @@ cd python && uv sync --all-extras --all-groups  # the Python environment (python
 cd python && .venv/bin/python -m pytest -q      # Python tests only (offline, a fake provider)
 python/.venv/bin/python tools/docs.py generate  # reference, examples, news pages
 python/.venv/bin/python tools/docs.py run [PAGE ...]   # run notebooks (needs model keys; costs cents)
-python/.venv/bin/python tools/docs.py site      # build the website into site/
+python/.venv/bin/python tools/docs.py manuals   # TypeScript's, R's and Julia's manuals (after r/check)
+python/.venv/bin/python tools/docs.py site      # build the website into site/, with the manuals built so far
 cd ts && npm install && npm test                # TypeScript (needs ../lmcc checked out: lmcc is not on npm yet)
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
 r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
@@ -63,7 +65,10 @@ Model keys for live runs: `set -a; source ~/Projects/lm15-dev/.env; set +a`
 ## Releasing Python
 
 Bump `python/pyproject.toml` and `python/CHANGELOG.md`, run `./check`,
-push, then publish a GitHub Release tagged `python-v<version>`.
+push, then publish a GitHub Release tagged `python-v<version>`. When the
+released API is the one the website shows, remove the "follows the next
+release" notes (`python/README.md` *Installation*, `docs/python.md`) and
+the PyPI version in the root README's table.
 `.github/workflows/release.yml` builds `python/` and publishes to PyPI by
 Trusted Publishing (bound to that file name and the `pypi` environment:
 keep both). A bare `v<version>` tag is refused.

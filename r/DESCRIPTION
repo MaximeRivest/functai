@@ -10,11 +10,14 @@ Description: Write a function's inputs, its answer's type and a sentence
     fit, predict, resample and tune with 'tidymodels'. Measure how often a
     function is right with a confidence interval ('broom'-style tidy(),
     glance() and augment()), log every call,
-    rate calls, improve functions with worked examples, and run functions
-    saved in 'Python' or 'TypeScript'. Implements the same contract as the
-    'Python' and 'TypeScript' packages.
+    rate calls, improve functions with worked examples or rewritten
+    instructions, and run functions saved in 'Python', 'TypeScript' or
+    'Julia'. Implements the same contract as the 'Python', 'TypeScript'
+    and 'Julia' packages.
 License: MIT + file LICENSE
-URL: https://github.com/MaximeRivest/functai, https://maximerivest.github.io/functai/
+URL: https://maximerivest.github.io/functai/r/manual/,
+    https://maximerivest.github.io/functai/r/index.html,
+    https://github.com/MaximeRivest/functai
 BugReports: https://github.com/MaximeRivest/functai/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
@@ -24,6 +27,7 @@ Suggests: dials, dplyr, glmnet, httpuv, knitr, parsnip (>= 1.2.0), recipes,
     ggplot2, rmarkdown, rsample, testthat (>= 3.0.0), textrecipes, tidymodels,
     tidyr, tune,
     workflows, yardstick
+Remotes: MaximeRivest/lmcc/r, lm15-dev/lm15-r
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 LazyData: true

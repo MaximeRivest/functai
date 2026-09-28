@@ -1,112 +1,186 @@
----
-rat:
-  project: ../python
-  python:
-    dependencies: ["-e .[data]", "pandas"]
----
-
 # functai
 
-*Write a Python function. A language model does the work. You measure how well.*
+*Write a function's signature and one sentence saying what it does. A language model writes the body. You measure how well.*
 
-functai turns a typed Python function into a call to a language model.
-The function's name, its docstring and its types say what you want; the
-model's answer comes back as the type you asked for. Then you run it on a
-whole table, find out how often it is right, and make it better.
+You already know how to write a good function: say what goes in and what
+comes out, say in one sentence what it does, collect a few examples with
+the answers you expect, then write the body and check it against them.
+functai keeps every step but one. The types are the **signature**, the
+sentence is the **purpose**, your table of trusted answers is the
+**examples**, and a language model writes the **body**. The answer comes
+back as the type you asked for, so you **test** it like any other
+function: on a whole table, with a score and an honest range, and again
+after every change.
 
-```python
-from typing import Literal
-from dpyr import col
-import functai
-from functai import ai
+It exists in Python, TypeScript, R and Julia, each written the way that
+language writes functions. Here is the same function in all four:
 
-@ai
-def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
-    """Which team should answer this customer message?"""
+=== "Python"
 
-tickets = functai.datasets.tickets()                 # 80 real-looking support messages
-tickets.select(col.message).mutate(team=team(col.message)).slice_head(n=5)
-```
+    ```python
+    from typing import Literal
+    from dpyr import col
+    import functai
+    from functai import ai
 
-```output
-functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
-# dpyr dataframe · source: polars · showing 5 of 5 rows
-┌─────────────────────────────────────────────────────────────────────┬──────────┐
-│ message                                                             ┆ team     │
-│ ---                                                                 ┆ ---      │
-│ str                                                                 ┆ str      │
-╞═════════════════════════════════════════════════════════════════════╪══════════╡
-│ Hi, my order A-1042 still hasn't arrived and it's been three weeks. ┆ shipping │
-│ The mug arrived in pieces.                                          ┆ shipping │
-│ I was charged twice for order B-2210, please fix this.              ┆ billing  │
-│ How do I change the email on my account?                            ┆ account  │
-│ The kettle lid doesn't close properly anymore after a month of use. ┆ product  │
-└─────────────────────────────────────────────────────────────────────┴──────────┘
-```
+    functai.configure(lm="gpt-6-luna")
 
-How often is it right? The data has the answers:
+    @ai
+    def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
+        """Which team should answer this customer message?"""
+        ...
 
-```python
-ev = functai.evaluate(team, tickets, expected="category", num_threads=8)
-ev
-```
+    team("I was charged twice for order B-2210, please fix this.")    # 'billing'
 
-```output
-Evaluation(team, 80 examples: exact_match 0.93 [0.85, 0.97])
-```
+    tickets = functai.datasets.tickets()                    # 80 labelled support messages
+    tickets.mutate(team=team(col.message))                  # a new column
+    functai.evaluate(team, tickets, expected="category")    # exact_match 0.97 [0.91, 0.99]
+    ```
 
-The first number is how often it was right; the range in brackets says
-how sure that number is. The
-misses turn out to be the shop's own rules, which the model can't guess:
-write them in the docstring, measure again. That loop (**write, run,
-measure, improve**) is what functai is for.
+    [Start with Python](python.md){ .md-button }
 
-## Where do you start?
+=== "TypeScript"
+
+    ```ts
+    import { ai, t, evaluate, configure } from "functai";
+
+    configure({ lm: "gpt-6-luna" });
+
+    const team = ai("team", {
+      description: "Which team should answer this customer message?",
+      input: { message: t.string() },
+      output: t.enum("shipping", "billing", "product", "account"),
+    });
+
+    await team("I was charged twice for order B-2210, please fix this.");   // "billing"
+
+    // tickets: the same 80 messages, as rows { message, category }
+    await team.map(tickets.map((row) => row.message));   // every answer, in order
+    String(await evaluate(team, tickets, { expected: "category" }));
+    // "exact_match: 0.95 (95% range 0.88 to 0.98), n=80"
+    ```
+
+    [Start with TypeScript](ts/index.md){ .md-button }
+
+=== "R"
+
+    ```r
+    library(functai)
+    library(dplyr)
+
+    ai_config(lm = "gpt-6-luna")
+
+    team <- ai(team ~ message, "Which team should answer this customer message?",
+      team = choice("shipping", "billing", "product", "account"))
+
+    team("I was charged twice for order B-2210, please fix this.")
+    #> [1] billing
+    #> Levels: shipping billing product account
+
+    tickets |> mutate(team = team(message))          # a factor column
+    evaluate(team, tickets, expected = category)
+    #> <evaluation of team> 80 rows
+    #>   exact_match: 0.96  (95% interval 0.90 to 0.99)
+    ```
+
+    [Start with R](r/index.md){ .md-button }
+
+=== "Julia"
+
+    ```julia
+    using FunctAI, DataFrames
+
+    FunctAI.configure!(lm = "gpt-6-luna")
+
+    @enum Team shipping billing product account
+
+    @ai function team(message::String)::Team
+        "Which team should answer this customer message?"
+    end
+
+    team("I was charged twice for order B-2210, please fix this.")   # billing::Team
+
+    tickets = DataFrame(FunctAI.tickets())           # 80 labelled support messages
+    tickets.team = team.(tickets.message)             # the whole column, 8 calls at a time
+    evaluate(team, tickets; expected = :category)     # exact_match 0.96 (95% range 0.90 to 0.99)
+    ```
+
+    [Start with Julia](julia/index.md){ .md-button }
+
+Each ran for real, on the same 80 messages with the same model, and the
+comments are what came back. The four scores differ by a message or two:
+a model does not answer the same way every time, which is why every score
+comes with its range, and why the four ranges overlap.
+
+## One function, four languages
+
+The four implementations follow one
+[contract](https://github.com/MaximeRivest/functai/tree/master/contract),
+checked on every change:
+
+- **The same function has the same version.** `team` above is
+  `sha256:99ae724a…` in all four. The version names everything the
+  function sends besides its inputs, so it changes when the function
+  does, and only then.
+- **One call log.** Turn it on, and every call is a line of JSON in one
+  folder that all four write and read. A call made in Julia can be rated
+  by a person in R, and the rating becomes a row Python improves with.
+- **One saved form.** A function saved to a folder in one language loads
+  in another and sends the same request, byte for byte, when it has no
+  code of its own. TypeScript, R and Julia load folders saved by any of
+  the four; Python loads its own, and the others' next.
+
+## What each language has
+
+Python came first and has the most. The others add what their ecosystem
+expects (tidymodels in R, MLJ and formulas in Julia, compile-time types
+in TypeScript) and catch up on the rest.
+
+| | Python | TypeScript | R | Julia |
+|---|:-:|:-:|:-:|:-:|
+| Typed AI functions: answers checked against their type, asked again when they don't fit | ✓ | ✓ | ✓ | ✓ |
+| Run on a whole table | [dpyr](https://github.com/MaximeRivest/dpyr): pandas, polars, files, databases | arrays of rows | dplyr verbs | broadcasting, DataFrames |
+| How often is it right, with a 95% interval | ✓ | ✓ | ✓ | ✓ |
+| Two versions compared row by row | ✓ | – | – | ✓ |
+| Worked examples chosen from your rows | ✓ | ✓ | ✓ | ✓ |
+| The instruction rewritten from its mistakes (GEPA) | ✓ | ✓ | ✓ | ✓ |
+| Instruction search, random search | ✓ | – | – | ✓ |
+| A model among statistical models | – | – | tidymodels | MLJ, formulas |
+| Tools the model calls | ✓ | ✓ | ✓ | ✓ |
+| Streaming | ✓ | ✓ | – | ✓ |
+| Your code around several AI functions, logged as one call | `@module` | `module()` | – | `@program` |
+| Call log, and people's ratings as data | ✓ | ✓ | ✓ | ✓ |
+| Loads functions saved in other languages | – | ✓ | ✓ | ✓ |
+| Reply cache (off unless you turn it on) | ✓ | ✓ | – | – |
+| Stateful memory, escalation to a bigger model | ✓ | – | – | – |
+| Sign in with a Claude, ChatGPT or Copilot subscription | ✓ | – | – | ✓ |
+| Bake it into a small model you own | ✓ | – | – | – |
+| Released | [PyPI](https://pypi.org/project/functai/) | not yet on npm | not yet on CRAN | not yet registered |
+
+Where a language has no ✓, a key in the environment, your own code, or
+Python does the job for now.
+
+## Pick your language
 
 <div class="journey" markdown>
 
-- **[I have a table of text](get-started.md)**
-  Label, sort or score every row of a table, check it against answers you trust, and make it better. 20 minutes.
-- **[I have notes or documents](articles/notes-to-data.md)**
-  Field notes, reports, emails: pull out the facts as columns, following your protocol, and check every field.
-- **[I have a prompt that works](articles/from-a-prompt.md)**
-  Bring your OpenAI messages as they are. Get the same request, then types, tests and a table for free.
+- **[Python](python.md)**
+  `pip install "functai[data]"`. Three ways in, [eight tutorials](tutorials/index.md), articles, examples and the [reference](reference/index.md).
+- **[TypeScript](ts/index.md)**
+  From a checkout for now. A [guide](ts/index.md), and the [API reference](ts/api/index.html) with every type.
+- **[R](r/index.md)**
+  `remotes::install_github("MaximeRivest/functai", subdir = "r")`. [Eight tutorials](r/index.md) and the [manual](r/manual/index.html), with the vignettes.
+- **[Julia](julia/index.md)**
+  `Pkg.add(url = …)`. [Eight tutorials](julia/index.md) and the [manual](julia/manual/index.html), with guides and the reference.
 
 </div>
 
-All three meet in the same place: [is it right?](articles/accuracy.md),
-[make it better](articles/improving.md), [make it cheaper](articles/cheaper.md),
-[ship it](articles/saving.md).
-
-## Installation
-
-```bash
-pip install "functai[data]"
-```
-
-Python 3.11+. The `[data]` part brings tables (through
-[dpyr](https://github.com/MaximeRivest/dpyr), which reads pandas and
-polars data frames, CSV, parquet, Excel, databases, and more).
-
-functai needs a model. If you have an API key in your environment
-(`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, …) or a Claude,
-ChatGPT or Copilot subscription, there is nothing to set up: functai
-picks a small, capable model you can use and tells you which. To choose
-yourself: `functai.configure(lm="claude-haiku-4-5")`. See
-[Models](articles/models.md) and [Signing in](articles/logins.md).
-
-## The words you'll use
-
-- `@ai`: turns a typed function into a model call. The docstring is the instruction.
-- `fn(col.text)`: runs it on a whole column, each distinct value once, several at a time.
-- `evaluate(fn, data, expected=...)`: how often it is right, with an honest range, and a table of every answer.
-- `compare(before, after)`: did a change really help, or was it luck?
-- `fn.opt(trainset=...)`: let functai pick worked examples (and try instructions) from your data.
-- `save(program, folder)`: everything it needs, in a folder that runs anywhere. 
+The tutorials follow the same path in Python, R and Julia, on the same
+data: a first function, types, is it right, making it better, choosing a
+model, decisions, and living with it in use.
 
 ## Getting help
 
 Something doesn't work the way this site says? Please
 [open an issue](https://github.com/maximerivest/functai/issues) with a
-short example. `print(functai.phistory())` shows exactly what the model
-was sent and what it answered, which is usually where the answer is.
+short example, and say which language.

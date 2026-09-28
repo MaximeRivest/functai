@@ -10,7 +10,7 @@
     "url": "git+https://github.com/MaximeRivest/functai.git",
     "directory": "ts"
   },
-  "homepage": "https://maximerivest.github.io/functai/",
+  "homepage": "https://maximerivest.github.io/functai/ts/index.html",
   "engines": {
     "node": ">=22.18.0"
   },
@@ -34,7 +34,8 @@
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
     "test": "node --conditions=functai-source --conditions=lmcc-source --test tests/*.test.ts",
-    "prepublishOnly": "npm run check && npm test && npm run build"
+    "prepublishOnly": "npm run check && npm test && npm run build",
+    "docs": "typedoc"
   },
   "dependencies": {
     "@lm15/lm15": "1.0.0-rc.2",
@@ -42,6 +43,7 @@
   },
   "devDependencies": {
     "@types/node": "^22",
+    "typedoc": "^0.28.20",
     "typescript": "^5.9",
     "zod": "^4.6.5"
   }

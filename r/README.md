@@ -35,30 +35,30 @@ fit is asked again once, then refused. Each row is one model call, and up to 8 r
 at once (`concurrency`): the 80 tickets above took 9 seconds with
 `gpt-4.1-mini`.
 
-The same function written in Python or TypeScript has the same version,
-writes the same call log and loads from the same saved folder: this
-package follows the [FunctAI contract](../contract/).
+The same function written in Python, TypeScript or Julia has the same
+version, writes the same call log and loads from the same saved folder:
+this package follows the [FunctAI contract](https://github.com/MaximeRivest/functai/tree/master/contract).
 
-**Status: 0.1.0, not on CRAN.** It needs lmcc and lm15 for R, which are not
-on CRAN either (see *Install*).
+**Status: 0.1.0, not on CRAN.** Neither are lmcc and lm15 for R, which it
+needs; installing from GitHub brings them (see *Install*).
 
-**Learning it?** Eight tutorials, from a first function to decision
-models, model choice by cost, tidymodels and life in production, each run
-end to end on current models for under a dollar:
-[`docs/r/`](../docs/r/index.md) (on the website under *R*).
+**Learning it?** [Eight tutorials](https://maximerivest.github.io/functai/r/index.html), from a first function
+to decision models, model choice by cost, tidymodels and life in
+production, each run end to end on current models for under a dollar.
+[The manual](https://maximerivest.github.io/functai/r/manual/index.html) has every function's help page, the
+vignettes and the news.
 
-**New to this?** `vignette("getting-started", package = "functai")` starts
-from dplyr and ggplot2 and ends with your first tested model: no
-tidymodels knowledge assumed. `vignette("tidymodels", package = "functai")`
-goes further, for tidymodels users.
+**New to this?** [Getting started](https://maximerivest.github.io/functai/r/manual/articles/getting-started.html)
+starts from dplyr and ggplot2 and ends with your first tested model: no
+tidymodels knowledge assumed. [tidymodels](https://maximerivest.github.io/functai/r/manual/articles/tidymodels.html)
+goes further, for tidymodels users. Both are also vignettes, installed when
+you install with `build_vignettes = TRUE`.
 
 ## Install
 
 ```r
 # install.packages("remotes")
-remotes::install_github("MaximeRivest/lmcc", subdir = "r")
-remotes::install_github("lm15-dev/lm15-r")
-remotes::install_github("MaximeRivest/functai", subdir = "r")
+remotes::install_github("MaximeRivest/functai", subdir = "r")   # and lmcc and lm15, from GitHub
 ```
 
 Set the key of the provider you call (`OPENAI_API_KEY`,
@@ -179,7 +179,7 @@ times, so `type = "prob"` gives each class's share of the answers and the
 class is the majority vote. `evaluate()` scores any model, whether an AI
 function, a parsnip fit or a workflow, with the same 95% interval.
 
-**`vignette("tidymodels", package = "functai")` teaches all of it**, with
+**[The tidymodels vignette](https://maximerivest.github.io/functai/r/manual/articles/tidymodels.html) teaches all of it**, with
 real results: zero-shot against a tf-idf model, tuning, votes as
 probabilities, and a classical model trained on the language model's labels.
 
@@ -239,8 +239,8 @@ Nothing is written unless you turn the log on.
 ## Across languages
 
 ```r
-team <- read_ai("team/")     # a folder Python's functai.save (or TypeScript) wrote
-write_ai(team, "team/")      # for Python's and TypeScript's loaders
+team <- read_ai("team/")     # a folder Python's functai.save wrote, or TypeScript's, or Julia's
+write_ai(team, "team/")      # for TypeScript's and Julia's loaders
 ```
 
 `read_ai()` checks the function sends exactly what it sent where it was
@@ -263,13 +263,17 @@ Compared with Python: streaming, modules (your code around several AI
 functions, logged as one call), stateful memory, escalation to a bigger
 model, the reply cache, `InstructionSearch`, baking (training your own
 weights), and templates written as R functions. Python cannot yet load a
-function saved from R or TypeScript (R and TypeScript load Python's).
+function saved in R (TypeScript and Julia can). The
+[home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four languages.
 
 ## Developing
 
+From the repository, with lmcc and lm15-dev checked out beside it:
+
 ```bash
 r/check          # installs lmcc and lm15 for R from ../lmcc and ../lm15-dev, then the tests
-../check         # every language, and each against the others
+./check          # every language, and each against the others
+r/tutorials      # runs the eight tutorials on real models, writes their outputs (about 40 cents)
 ```
 
 `r/tools/env.nix` is the R environment the checks use on NixOS

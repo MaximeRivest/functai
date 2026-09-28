@@ -1,7 +1,10 @@
 # The documentation website: docs/*.md (MRMD notebooks, outputs already in
 # them) → site/, with Zensical (`python tools/docs.py site`). Nothing runs here.
+# Each language's own manual is built beside it and linked from its tab:
+# site/ts/api/ (TypeDoc), site/r/manual/ (pkgdown), site/julia/manual/
+# (Documenter); .github/workflows/docs.yml assembles them.
 site_name: functai
-site_description: Write a Python function. A language model does the work. You measure how well.
+site_description: Write a function's signature and one sentence saying what it does. A language model writes the body. You measure how well. In Python, TypeScript, R and Julia.
 site_url: https://maximerivest.github.io/functai/
 repo_url: https://github.com/maximerivest/functai
 repo_name: maximerivest/functai
@@ -40,9 +43,12 @@ extra_css:
   - assets/functai.css
 
 markdown_extensions:
+  - admonition
   - attr_list
   - md_in_html
   - tables
+  - pymdownx.tabbed:
+      alternate_style: true
   - toc:
       permalink: true
   - pymdownx.highlight
@@ -51,68 +57,80 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Get started: get-started.md
-  - Learn:
-      - articles/index.md
-      - Start from what you have:
-          - A table of text: get-started.md
-          - articles/notes-to-data.md
-          - articles/from-a-prompt.md
-          - articles/coming-from.md
-      - Is it good?:
-          - articles/accuracy.md
-          - articles/improving.md
-          - articles/cheaper.md
-          - articles/tables.md
-      - Ship:
-          - articles/saving.md
-          - articles/baking.md
-          - articles/call-log.md
-      - Toolbox:
-          - articles/anatomy.md
-          - articles/types.md
-          - articles/outputs.md
-          - articles/streaming.md
-          - articles/tools.md
-          - articles/memory.md
-          - articles/modules.md
-          - articles/layouts.md
-          - articles/models.md
-          - articles/logins.md
-      - When things go wrong:
-          - articles/inspection.md
-          - articles/reliability.md
-          - articles/upgrading.md
-  - Tutorials:
-      - tutorials/index.md
-      - tutorials/01-first-function.md
-      - tutorials/02-types.md
-      - tutorials/03-is-it-right.md
-      - tutorials/04-making-it-better.md
-      - tutorials/05-choosing-a-model.md
-      - tutorials/06-decisions.md
-      - tutorials/07-a-model-you-own.md
-      - tutorials/08-living-with-it.md
+  - Python:
+      - python.md
+      - Get started: get-started.md
+      - Learn:
+          - articles/index.md
+          - Start from what you have:
+              - A table of text: get-started.md
+              - articles/notes-to-data.md
+              - articles/from-a-prompt.md
+              - articles/coming-from.md
+          - Is it good?:
+              - articles/accuracy.md
+              - articles/improving.md
+              - articles/cheaper.md
+              - articles/tables.md
+          - Ship:
+              - articles/saving.md
+              - articles/baking.md
+              - articles/call-log.md
+          - Toolbox:
+              - articles/anatomy.md
+              - articles/types.md
+              - articles/outputs.md
+              - articles/streaming.md
+              - articles/tools.md
+              - articles/memory.md
+              - articles/modules.md
+              - articles/layouts.md
+              - articles/models.md
+              - articles/logins.md
+          - When things go wrong:
+              - articles/inspection.md
+              - articles/reliability.md
+              - articles/upgrading.md
+      - Tutorials:
+          - tutorials/index.md
+          - tutorials/01-first-function.md
+          - tutorials/02-types.md
+          - tutorials/03-is-it-right.md
+          - tutorials/04-making-it-better.md
+          - tutorials/05-choosing-a-model.md
+          - tutorials/06-decisions.md
+          - tutorials/07-a-model-you-own.md
+          - tutorials/08-living-with-it.md
+      - Examples: examples/index.md
+      - Reference: reference/index.md
+      - News: news.md
+  - TypeScript:
+      - ts/index.md
+      - API reference: ts/api/index.html
+      - News: ts/news.md
   - R:
       - r/index.md
-      - r/01-first-function.md
-      - r/02-types.md
-      - r/03-is-it-right.md
-      - r/04-making-it-better.md
-      - r/05-choosing-a-model.md
-      - r/06-decisions.md
-      - r/07-tidymodels.md
-      - r/08-living-with-it.md
+      - Tutorials:
+          - r/01-first-function.md
+          - r/02-types.md
+          - r/03-is-it-right.md
+          - r/04-making-it-better.md
+          - r/05-choosing-a-model.md
+          - r/06-decisions.md
+          - r/07-tidymodels.md
+          - r/08-living-with-it.md
+      - Manual (pkgdown): r/manual/index.html
+      - News: r/news.md
   - Julia:
       - julia/index.md
-      - julia/01-first-function.md
-      - julia/02-types.md
-      - julia/03-is-it-right.md
-      - julia/04-making-it-better.md
-      - julia/05-choosing-a-model.md
-      - julia/06-decisions.md
-      - julia/07-mlj-and-formulas.md
-      - julia/08-living-with-it.md
-  - Reference: reference/index.md
-  - Examples: examples/index.md
-  - News: news.md
+      - Tutorials:
+          - julia/01-first-function.md
+          - julia/02-types.md
+          - julia/03-is-it-right.md
+          - julia/04-making-it-better.md
+          - julia/05-choosing-a-model.md
+          - julia/06-decisions.md
+          - julia/07-mlj-and-formulas.md
+          - julia/08-living-with-it.md
+      - Manual (Documenter): julia/manual/index.html
+      - News: julia/news.md
