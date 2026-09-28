@@ -11,9 +11,17 @@ language keeps and reads alike, and programs that say what they take.
   input optional; `outputs={...}` declares several; `interface={...}`
   declares it whole) and checked on every call: `InterfaceError`
   (`interface-input`, `interface-output`) before its code runs or when it
-  returns. Interfaces every language would refuse are refused when the
-  program is defined (`interface-malformed`), an AI function's included
-  (an optional input whose default does not fit, or has no JSON form).
+  returns. A missing or unknown input is `interface-input` naming it,
+  derived or declared (`InterfaceError` is a `TypeError`, as Python's own
+  wrong arguments are, and a `ValueError`); a value given under a name
+  the interface lacks is never recorded. Interfaces every language would
+  refuse are refused when the program is defined (`interface-malformed`),
+  an AI function's included (an optional input whose default does not
+  fit, or has no JSON form), and so is a module whose annotations name a
+  type not defined yet (define the type first; a type defined earlier in
+  the enclosing function is found). `@module` keeps the function's
+  parameter and return types for type checkers, as `@ai` does; its `fn`
+  is positional-only.
   `Annotated[int, Field(ge=10)]` now puts its constraint in the shape;
   `x: str = None` is `Optional[str]`. A module's version includes its
   interface (every module's version changes once).
@@ -33,17 +41,43 @@ language keeps and reads alike, and programs that say what they take.
   on every event (`event.position`), and a `Request` event that begins
   every request; a stream opened inside a tree shows the tree's numbers.
 - **Observers and journals**: `observers=[...]` get the kept form of every
-  event (they add up over layers, and never slow a call); `journal=` keeps
-  whole trees in a store while they run, best effort or
-  `functai.Journal(store, required=True)` (the call waits at its start,
-  before each tool and at its end: `JournalError` `journal-barrier`, or
-  `journal-end` holding the outcome, with `err.settle()`). A program cannot
-  replace a host's journal (`journal-policy`). `functai.MemoryStore` keeps
-  logs by the contract's store rules; `functai.Follower` follows them.
+  event, each its own copy (they add up over layers, and never slow a
+  call). A list is given each event as it is made, so it is complete when
+  the call returns; a function is given them from a thread that runs
+  only while events wait for it (`functai.flush()` waits until it caught
+  up), and nothing holds an observer once its trees have ended.
+  `journal=` keeps whole trees in a store while they run, best effort or
+  `functai.Journal(store, required=True, timeout=30, retries=2,
+  backoff=0.05)`: the call waits at its start, before each tool and at
+  its end, each at most `timeout` (`JournalError` `journal-barrier`, or
+  `journal-end` holding the outcome, with `err.settle()`); closing a
+  stream ends its wait. A store answers `"kept"` or `"duplicate"`; any
+  other answer is a refusal (`functai.Store` says the protocol); a store
+  with `extend` is sent what waits as one batch. A program cannot replace
+  a host's journal (`journal-policy`). If an event of a tree cannot be
+  put in its kept form, the kept log stops there (a required journal then
+  refuses) rather than guess. Any observer or journal makes a call
+  watched, so its requests stream (the reply is the same).
+  `functai.MemoryStore` keeps logs by the contract's store rules (an
+  event must pass the event schema); `functai.Follower` follows them, and
+  stops at a format it does not know, when following, resuming or
+  replaying; `follower.forget(tree)` lets a tree go.
 - **Saved folders** carry every program's interface; `functai.describe(path)`
   reads it without loading; a folder another language wrote loads from
   its data (`functai.load`, `functai.saved.from_manifest`), optional inputs
-  and their defaults included.
+  and their defaults included, bound from the interface as data (an
+  optional input may come before a required one; an input may be named
+  `class`: `fn(**{"class": ...})`). Every manifest is checked against the
+  whole saved schema before anything else (`saved-malformed`; FunctAI
+  carries the contract's schemas and checks them itself), every probe
+  must have its fingerprint, and `load(..., trust=True)` checks every
+  interface before running saved code and compares what the loaded code
+  accepts with what was saved. `load(path, node=...)` works for Python
+  folders too. A module with `outputs={...}` saves and loads.
+- **What a call saw** is what it was shown: the turns captured when the
+  call starts, as its plan shows them (a turn made for another signature
+  is shown, and recorded, as its values alone), each known by the turn
+  itself (a turn put in `history` by hand is `{"unrecorded": true}`).
 
 Breaking (see *Upgrading* in the documentation): the API says what it
 does, and a type checker follows it.

@@ -1310,6 +1310,8 @@ class TreeLog:
                     continue
                 feed = self.feeds.get(key)
                 if feed is None:
+                    if self.closed:
+                        continue          # a call still running after its tree ended holds no observer
                     feed = self.feeds[key] = _acquire(o)
                 feed.put(mine)
 

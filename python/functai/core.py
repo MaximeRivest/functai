@@ -344,6 +344,31 @@ class ColumnExpr(Protocol):
     def str_to_lower(self) -> Any: ...
 
 
+def _shown_as(plan: Any, spec: Spec, turns: List[Any], ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Any]]:
+    """How a plan shows earlier turns, and the ``saw`` entries that say so: a
+    turn made for that plan whole, with its steps; one made for another plan
+    as its values alone (``without`` the fields the plan no longer has); one
+    with no output left, not at all. ``ids``: the call each turn was (empty
+    for a turn no logged call made: ``{"unrecorded": true}``)."""
+    entries: List[Dict[str, Any]] = []
+    shown: List[Any] = []
+    for turn, cid in zip(turns, ids):
+        fitted = engine.fit_turn(plan, spec, turn) if plan is not None else turn
+        if fitted is None:
+            continue
+        if not cid:
+            entries.append({"unrecorded": True})
+        elif fitted is turn:
+            entries.append({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid})
+        else:
+            had = set(getattr(turn, "inputs", None) or {}) | set(getattr(turn, "outputs", None) or {})
+            kept = set(getattr(fitted, "inputs", None) or {}) | set(getattr(fitted, "outputs", None) or {})
+            left_out = sorted(had - kept)
+            entries.append({"call": cid, "without": left_out} if left_out else {"call": cid})
+        shown.append(fitted)
+    return entries, shown
+
+
 class FunctAIFunc(Generic[P, R]):
     """A typed Python function whose body is a model call. Build with ``@ai``.
 
@@ -656,12 +681,16 @@ class FunctAIFunc(Generic[P, R]):
     def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
         """(what a call is shown as context, entries of the call log's ``saw``;
         the turns themselves): a stateful function's latest turns, as the ids
-        of the calls they were, each shown with its steps. A turn is matched
-        to its call by identity, so editing ``history`` never lends a turn
-        another call's id: a turn no logged call made (put there by hand, or
-        changed) is written ``{"unrecorded": true}``, which no reader knows
-        (``unknown-key``). The turns returned are the ones the call is shown,
-        whatever happens to ``history`` meanwhile."""
+        of the calls they were, each as the call's plan shows it: whole, with
+        its steps, when the turn was made for that plan; as its values alone
+        (``without`` the fields the plan no longer has) when it was made for
+        another; not at all when none of its outputs is left.
+
+        A turn is matched to its call by identity, so editing ``history``
+        never lends a turn another call's id: a turn no logged call made (put
+        there by hand, or changed) is written ``{"unrecorded": true}``, which
+        no reader knows (``unknown-key``). The turns returned are the ones the
+        call is shown, whatever happens to ``history`` meanwhile."""
         s = self._effective()
         if not s.get("stateful"):
             return [], None
@@ -671,15 +700,18 @@ class FunctAIFunc(Generic[P, R]):
         window = int(s.get("state_window") or 0)
         if window > 0:
             history = history[-window:]
-        entries = []
+        spec = self._spec()
+        try:
+            plan = self._plan_for(spec, s)[0]
+        except Exception:  # noqa: BLE001 — no model to plan for: the call fails there, and says why
+            plan = None
+        ids = []
         for turn in history:
             owner = made.get(id(turn))
-            cid = owner[1] if owner is not None and owner[0] is turn else ""
-            if not cid:
-                entries.append({"unrecorded": True})
-            else:
-                entries.append({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid})
-        return entries, history
+            ids.append(owner[1] if owner is not None and owner[0] is turn else "")
+        entries, shown = _shown_as(plan, spec, history, ids)
+        return entries, {"plan": getattr(plan, "fingerprint", None), "turns": history, "ids": ids,
+                         "entries": entries, "shown": shown}
 
     # ----- signature and plan -----
 
@@ -755,11 +787,18 @@ class FunctAIFunc(Generic[P, R]):
         if settings.get("stateful"):
             call = calllog.current()
             if call is not None and call.program is self and call.context is not None:
-                recent = list(call.context)                # the turns its record says it saw, as captured
-            else:
-                with self._lock:
-                    window = int(settings.get("state_window") or 0)
-                    recent = list(self.history[-window:] if window > 0 else self.history)
+                context = call.context                     # what its record says it saw, as captured
+                if context["plan"] == plan.fingerprint:
+                    return past + list(context["shown"])
+                # another plan than the one its saw was worked out for (an escalation to another model):
+                # shown again as this plan shows it, and if that differs, its record says the context changed
+                entries, refit = _shown_as(plan, spec, context["turns"], context["ids"])
+                if entries != context["entries"] and {"context": "changed"} not in call.saw:
+                    call.saw.append({"context": "changed"})
+                return past + refit
+            with self._lock:
+                window = int(settings.get("state_window") or 0)
+                recent = list(self.history[-window:] if window > 0 else self.history)
             past += [t for t in (engine.fit_turn(plan, spec, h) for h in recent) if t is not None]
         return past
 

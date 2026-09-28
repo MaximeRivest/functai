@@ -64,17 +64,37 @@ for every program it runs (`log_content` only ever removes):
 
 ```python
 with functai.configure(log_calls=True, log_content={"transcript": False}):
-    summarize(transcript)  # the record has every value but the transcript
+    summarize(transcript)  # no transcript in the record, nor anything that could quote it:
+                           # the reasoning, the requests and replies, error messages
 ```
 
 A call tree's events can be watched and kept while it runs, and read
-again elsewhere:
+again elsewhere. An observer gets the kept form of every event (a list
+is complete when the call returns; a function runs in a thread of its
+own: `functai.flush()` waits for it). A required journal makes the call
+wait until its start, each tool call and its end are kept:
 
 ```python
 seen = []
-store = functai.MemoryStore()
-functai.configure(observers=[seen], journal=functai.Journal(store, required=True))
+store = functai.MemoryStore()      # or your own store: see functai.Store
+functai.configure(observers=[seen], journal=functai.Journal(store, required=True, timeout=30))
+
+try:
+    answer = summarize(transcript)
+except functai.JournalError as err:
+    if err.code == "journal-end":             # the call ended; the journal did not confirm its end
+        answer = err.outcome.get()            # what it did (its value, or it raises its error)
+        if err.journal == "unknown":          # no answer came: it may have been kept
+            err.settle(claim=True)            # "kept", "not-kept" or "another-end", for good
+    else:
+        raise                                 # journal-barrier: the code or a tool did not run
 ```
+
+A store answers each append `"kept"` or `"duplicate"`, or raises
+`functai.EventRefused`; any other answer is a refusal, and any other
+exception means no answer came (the event is sent again, with a growing
+pause). A barrier waits at most the journal's `timeout`; a store should
+time out its own I/O too.
 
 ## Documentation
 

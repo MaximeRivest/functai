@@ -898,3 +898,25 @@ def test_an_object_that_is_no_constraint_puts_no_keyword_in_a_shape():
     assert _constraints(Annotated[int, Field(ge=3)]) == {"minimum": 3}
     _ = _ai
     _ = lm15
+
+
+def test_a_turn_made_for_another_plan_is_recorded_as_shown(tmp_path):
+    """A turn made for another signature (reasoning added since) is shown as an example of its values, without its steps: the record says so
+    (``{"call"}``, not ``"steps"``), and what was sent agrees."""
+    router = FakeRouter(responder=lambda request: XML.format("ok"))
+    functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path)
+
+    @ai(stateful=True)
+    def chat(message: str) -> str:
+        """Answer."""
+
+    first = chat.predict("FIRST-MESSAGE")
+    chat.predict("SECOND")
+    second = max(records(tmp_path), key=lambda r: r["id"])
+    assert second["saw"] == [{"call": first.call_id, "steps": True}]          # the same plan: whole, with steps
+    chat.module = "cot"                                                      # another signature from now on
+    router.responder = lambda request: "<reasoning>\nhm\n</reasoning>\n" + XML.format("ok")
+    chat.predict("THIRD")
+    third = max(records(tmp_path), key=lambda r: r["id"])
+    assert third["saw"] == [{"call": first.call_id}, {"call": second["id"]}]  # shown as values, not as steps
+    assert "FIRST-MESSAGE" in str(router.requests[-1])
