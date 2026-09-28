@@ -27,7 +27,7 @@ Suggests: dials, dplyr, glmnet, httpuv, knitr, parsnip (>= 1.2.0), recipes,
     ggplot2, rmarkdown, rsample, testthat (>= 3.0.0), textrecipes, tidymodels,
     tidyr, tune,
     workflows, yardstick
-Remotes: MaximeRivest/lmcc/r, lm15-dev/lm15-r
+Remotes: MaximeRivest/lmcc/r, lm15=lm15-dev/lm15-r
 VignetteBuilder: knitr
 Config/testthat/edition: 3
 LazyData: true
