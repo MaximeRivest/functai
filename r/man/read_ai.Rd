@@ -21,5 +21,7 @@ function in it. It checks the function sends exactly what it sent where it
 was saved, and has its version, before any call. It refuses, with the
 reason, what only the saving language can run: code of its own around the
 model (\code{saved-code}), a module (\code{saved-not-ai}), tools (\code{saved-tools}), a
-baked model (\code{saved-model}).
+baked model (\code{saved-model}). Its inputs a caller may leave out, and what
+each is sent with then, come from the folder's interface of it
+(\code{\link[=ai_interface]{ai_interface()}} describes any program in a folder without loading it).
 }

@@ -20,6 +20,7 @@ new_job <- function(plan, past, inputs, settings, model, tools, call) {
 
 render_next <- function(job) {
   job$rendered <- lmcc::render(job$plan, job$turn, if (length(job$past)) job$past else NULL)
+  job$request_hash <- lmcc::sha256_of(lmcc::request_of(job$rendered))
   job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
   job$retries <- 0L
 }
@@ -41,7 +42,7 @@ check_values <- function(plan, values) {
 }
 
 on_response <- function(job, response, started, seconds) {
-  exchange(job$call, job$model, job$request, response, started, seconds)
+  exchange(job$call, job$model, job$request, response, started, seconds, request_hash = job$request_hash)
   job$responses[[length(job$responses) + 1L]] <- response
   reading <- tryCatch({ r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r },
                       lmcc_refusal = function(e) e)
@@ -79,7 +80,7 @@ on_response <- function(job, response, started, seconds) {
 }
 
 on_error <- function(job, err, started, seconds) {
-  exchange(job$call, job$model, job$request, NULL, started, seconds, error = err)
+  exchange(job$call, job$model, job$request, NULL, started, seconds, error = err, request_hash = job$request_hash)
   if (lm15::retryable(err) && job$api_retries < job$settings$api_retries) {
     wait <- err$retry_after
     if (!is.numeric(wait) || length(wait) != 1L || wait <= 0) wait <- min(30, 2^job$api_retries) * (0.5 + stats::runif(1))

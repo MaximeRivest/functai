@@ -67,8 +67,26 @@ column each, which \code{\link[dplyr:mutate]{dplyr::mutate()}} splices in; name 
 (\code{message = "the customer's own words"});
 \item a type: \code{\link[=choice]{choice()}} (one of a set of answers), \code{integer()}, \code{double()},
 \code{logical()}, \code{character()}, \code{\link[=record]{record()}}, \code{\link[vctrs:list_of]{vctrs::list_of()}},
-\code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}; \code{\link[=described]{described()}} adds words to a type.
+\code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}; \code{\link[=described]{described()}} adds words to a type;
+\item \code{\link[=defaults_to]{defaults_to()}}: an input the caller may leave out, and the value it
+is sent with then (\code{tone = defaults_to("kind")}), as an R function's
+default argument.
 }
+
+\strong{What it takes and gives} is its interface (\code{\link[=ai_interface]{ai_interface()}}), checked
+when the function is defined, as every language checks one: field names
+are ASCII identifiers (\code{order_id}, not \code{order.id}), and a default fits
+its type. A function that breaks these rules is refused then
+(\code{interface-malformed}), not later by whatever reads it.
+
+\strong{What the call log keeps} is \code{.log_content} (see \code{\link[=ai_config]{ai_config()}}):
+\code{TRUE}, \code{FALSE}, \code{c(transcript = FALSE)}, or the names of the fields it
+may keep, \code{c("question")}. It only removes: a block around the call, or
+\code{ai_config()}, may drop more; nothing brings back what one of them drops.
+A name that is not one of the function's fields is refused
+(\code{log-content-field}). A one-output function's answer is \code{result} in the
+log, as in every language; \code{log_content} may call it by the formula's
+name too (\code{c(team = FALSE)}).
 }
 \examples{
 mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
@@ -88,4 +106,9 @@ refund <- ai(decision ~ message + price + final_sale, "Should the shop refund th
 mood("It broke after one day.")
 tickets |> dplyr::mutate(triage(message))
 }
+
+# an input the caller may leave out
+reply <- ai(reply ~ message + tone, "Answer the customer.",
+  tone = defaults_to("kind", choice("kind", "brief")))
+args(reply)
 }

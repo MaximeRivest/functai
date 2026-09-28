@@ -22,7 +22,25 @@
 #'   (`message = "the customer's own words"`);
 #' * a type: [choice()] (one of a set of answers), `integer()`, `double()`,
 #'   `logical()`, `character()`, [record()], [vctrs::list_of()],
-#'   [optional()], [json_shape()]; [described()] adds words to a type.
+#'   [optional()], [json_shape()]; [described()] adds words to a type;
+#' * [defaults_to()]: an input the caller may leave out, and the value it
+#'   is sent with then (`tone = defaults_to("kind")`), as an R function's
+#'   default argument.
+#'
+#' **What it takes and gives** is its interface ([ai_interface()]), checked
+#' when the function is defined, as every language checks one: field names
+#' are ASCII identifiers (`order_id`, not `order.id`), and a default fits
+#' its type. A function that breaks these rules is refused then
+#' (`interface-malformed`), not later by whatever reads it.
+#'
+#' **What the call log keeps** is `.log_content` (see [ai_config()]):
+#' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
+#' may keep, `c("question")`. It only removes: a block around the call, or
+#' `ai_config()`, may drop more; nothing brings back what one of them drops.
+#' A name that is not one of the function's fields is refused
+#' (`log-content-field`). A one-output function's answer is `result` in the
+#' log, as in every language; `log_content` may call it by the formula's
+#' name too (`c(team = FALSE)`).
 #'
 #' @param .formula `outputs ~ inputs`, as names joined by `+`.
 #' @param .description What the function does, in a sentence or a
@@ -60,6 +78,11 @@
 #' mood("It broke after one day.")
 #' tickets |> dplyr::mutate(triage(message))
 #' }
+#'
+#' # an input the caller may leave out
+#' reply <- ai(reply ~ message + tone, "Answer the customer.",
+#'   tone = defaults_to("kind", choice("kind", "brief")))
+#' args(reply)
 #' @export
 ai <- function(.formula, .description = "", ..., .data = NULL, .name = NULL, .tools = NULL, .demos = NULL,
                .instructions = NULL, .defined_in = NULL) {
@@ -72,7 +95,7 @@ ai <- function(.formula, .description = "", ..., .data = NULL, .name = NULL, .to
     i = "the formula comes first, then the description: {.code ai(team ~ message, \"Which team should answer?\")}"))
   settings <- dots[startsWith(nms, ".")]
   names(settings) <- substring(names(settings), 2L)
-  check_settings(settings)
+  settings <- check_settings(settings)
   specs <- dots[!startsWith(nms, ".")]
   stray <- setdiff(names(specs), c(sides$inputs, sides$outputs))
   if (length(stray)) cli::cli_abort(c("{.field {stray}} {?is/are} not in the formula {.code {format_formula(sides)}}",
@@ -95,6 +118,12 @@ ai <- function(.formula, .description = "", ..., .data = NULL, .name = NULL, .to
     definition = list(name = name, description = .description, inputs = inputs, outputs = outputs),
     own = settings, tools = .tools %||% list(), single = single, columns = columns,
     module = .defined_in %||% "__main__", state = list(instructions = .instructions, demos = list()), saved = NULL)
+  outs_with_default <- names(outputs)[vapply(outputs, function(f) isTRUE(f$optional), NA)]
+  if (length(outs_with_default))
+    refuse("interface-malformed", c("{.field {columns[outs_with_default]}} is an output: only an input has a default",
+      i = "{.fn defaults_to} is for an input the caller may leave out"), field = outs_with_default[[1L]])
+  core <- own_settings(core)
+  check_definition(core)
   fn <- make_fn(core)
   if (!is.null(.demos)) fn <- with_demos(fn, .demos)
   fn
@@ -156,11 +185,13 @@ columns_of <- function(core) {
   core$columns %||% stats::setNames(outs, outs)
 }
 
+# The R function: one argument per input, in order; an input with a default
+# (defaults_to()) defaults to it, as one row of its column.
 make_fn <- function(core) {
   env <- new.env(parent = asNamespace("functai"))
   env$.core <- core
   env$.inputs <- names(core$definition$inputs)
-  args <- rep(list(rlang::missing_arg()), length(env$.inputs))
+  args <- lapply(core$definition$inputs, function(f) if (isTRUE(f$optional)) default_value(f) else rlang::missing_arg())
   names(args) <- env$.inputs
   f <- rlang::new_function(args, quote(call_ai(.core, mget(.inputs, envir = environment()))), env)
   structure(f, class = c("functai_fn", "function"))
@@ -226,7 +257,8 @@ program_of <- function(core, version = NULL) {
   function() {
     s <- effective(core$own)
     p <- list(name = core$definition$name, kind = "ai", module = core$module, version = version %||% version_of(core),
-              signature = signature_id(signature_of(core, s)), answer = answer_name(core))
+              signature = signature_id(signature_of(core, s)), interface = interface_signature(interface_of(core)),
+              answer = answer_name(core))
     if (!is.null(core$saved)) p$saved <- core$saved
     p
   }
@@ -255,10 +287,12 @@ run_rows <- function(core, rows, extra = list()) {
   past <- past_turns(core, plan)
   version <- version_of(core)
   program <- program_of(core, version)
+  fields <- call_fields(core, s)
+  keep <- content_kept(fields, content_layers(core, extra$log_content))
   jobs <- list(); calls <- vector("list", length(rows))
   for (i in seq_along(rows)) {
     if (is.null(rows[[i]])) next
-    call <- start_call(program, s, rows[[i]])
+    call <- start_call(program, s, rows[[i]], fields, keep)
     call$provider <- r$provider
     calls[[i]] <- call
     job <- tryCatch(new_job(plan, past, rows[[i]], s, r$model, core$tools, call), error = identity)
@@ -272,6 +306,7 @@ run_rows <- function(core, rows, extra = list()) {
     if (is.null(job)) return(list(skipped = TRUE))
     if (identical(job$state, "done")) {
       job$call$outputs <- job$outputs
+      job$call$probabilities <- job$probabilities
       job$call$confidence <- confidence_of(job$outputs, job$probabilities)
       finish_call(job$call)
       list(outputs = job$outputs, call = job$call$id, model = r$model, turn = job$turn, probabilities = job$probabilities)
@@ -298,8 +333,13 @@ confidence_of <- function(outputs, probabilities) {
   if (length(ps)) min(ps) else NULL
 }
 
-# The inputs, recycled, as one JSON list per row (NULL for a row with a missing input).
+# The inputs, recycled, as one JSON list per row (NULL for a row with a
+# missing input). An input with a default that is not given takes it.
 input_rows <- function(core, inputs) {
+  for (k in names(core$definition$inputs)) {
+    f <- core$definition$inputs[[k]]
+    if (!k %in% names(inputs) && isTRUE(f$optional)) inputs[k] <- list(default_value(f))
+  }
   inputs <- vctrs::vec_recycle_common(!!!inputs)
   n <- vctrs::vec_size_common(!!!inputs)
   fields <- core$definition$inputs
@@ -323,10 +363,13 @@ named_inputs <- function(core, args) {
   if (length(unnamed) > length(free)) cli::cli_abort("{core$definition$name} takes {length(inputs)} input{?s} ({.field {inputs}})")
   nm[unnamed] <- free[seq_along(unnamed)]
   names(args) <- nm
-  missing <- setdiff(inputs, nm)
+  missing <- setdiff(required_inputs(core), nm)
   if (length(missing)) cli::cli_abort("no value for input{?s} {.field {missing}}")
-  args[inputs]
+  args[intersect(inputs, nm)]
 }
+
+# The inputs a caller must give (those without a default).
+required_inputs <- function(core) names(Filter(function(f) !isTRUE(f$optional), core$definition$inputs))
 
 # Columns from the rows' outcomes: a vector (one output) or a tibble.
 answers <- function(core, results, names_as = identity) {
@@ -383,7 +426,8 @@ print.functai_fn <- function(x, ...) {
   w <- max(nchar(names(fields)))
   for (k in names(fields)) {
     f <- fields[[k]]
-    cat(sprintf("  %s  %s%s\n", formatC(k, width = -w), type_label(f), if (is.null(f$desc)) "" else paste0("  # ", gsub("\\s*\n\\s*", " ", f$desc))))
+    default <- if (isTRUE(f$optional)) paste0(" = ", lmcc::canonical_json(f$shape[["default"]])) else ""
+    cat(sprintf("  %s  %s%s%s\n", formatC(k, width = -w), type_label(f), default, if (is.null(f$desc)) "" else paste0("  # ", gsub("\\s*\n\\s*", " ", f$desc))))
     if (length(f$meanings)) {
       lw <- max(nchar(names(f$meanings)))
       cat(sprintf("  %s    %s  %s\n", strrep(" ", w), formatC(names(f$meanings), width = -lw), f$meanings), sep = "")
@@ -415,6 +459,8 @@ type_label <- function(f) {
 update.functai_fn <- function(object, ...) {
   core <- core_of(object)
   core$own <- set_all(core$own, check_settings(list(...)))
+  core <- own_settings(core)
+  check_definition(core)
   make_fn(core)
 }
 
@@ -577,11 +623,11 @@ vote_table <- function(core, votes) {
 predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temperature = 1, ...) {
   core <- core_of(object)
   settings <- check_settings(list(...))
-  missing <- setdiff(names(core$definition$inputs), names(new_data))
+  missing <- setdiff(required_inputs(core), names(new_data))
   if (length(missing)) cli::cli_abort("{.arg new_data} has no column for input{?s} {.field {missing}}")
   type <- type %||% "class"
   if (!type %in% c("class", "numeric", "prob", "raw")) cli::cli_abort("{.arg type} is \"class\", \"numeric\" or \"prob\", not {.val {type}}")
-  rows <- input_rows(core, as.list(new_data)[names(core$definition$inputs)])
+  rows <- input_rows(core, as.list(new_data)[intersect(names(core$definition$inputs), names(new_data))])
   samples <- as.integer(samples)
   if (type == "prob" || samples > 1L) {
     if (!is_choice(core)) cli::cli_abort(c("probabilities and votes need an answer that is a choice: {.code {columns_of(core)[[1L]]} = choice(...)}"))

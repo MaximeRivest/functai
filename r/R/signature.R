@@ -32,7 +32,8 @@ instructions_of <- function(d, include_name, improved = NULL) {
 fields_of <- function(d, cot, tools) {
   out <- list()
   for (n in names(d$inputs)) {
-    f <- list(name = n, direction = "input", shape = d$inputs[[n]]$shape, purpose = "plain")
+    # an input's own default is how a call is bound, not what the model is told (functions.md)
+    f <- list(name = n, direction = "input", shape = data_shape(d$inputs[[n]]$shape), purpose = "plain")
     if (!is.null(field_desc(d$inputs[[n]]))) f$desc <- field_desc(d$inputs[[n]])
     out[[length(out) + 1L]] <- f
   }

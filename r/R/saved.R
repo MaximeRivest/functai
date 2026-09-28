@@ -3,7 +3,7 @@
 # what was saved; refuse, with the reason, what R cannot run.
 
 load_refused <- function(code, message) {
-  stop(structure(class = c("functai_load_refused", "error", "condition"),
+  stop(structure(class = c("functai_load_refused", paste0("functai_", gsub("-", "_", code)), "functai_refusal", "error", "condition"),
                  list(message = sprintf("[%s] %s", code, message), call = NULL, code = code)))
 }
 
@@ -39,27 +39,93 @@ field_from_shape <- function(shape, desc = NULL) {
 #' was saved, and has its version, before any call. It refuses, with the
 #' reason, what only the saving language can run: code of its own around the
 #' model (`saved-code`), a module (`saved-not-ai`), tools (`saved-tools`), a
-#' baked model (`saved-model`).
+#' baked model (`saved-model`). Its inputs a caller may leave out, and what
+#' each is sent with then, come from the folder's interface of it
+#' ([ai_interface()] describes any program in a folder without loading it).
 #' @param path The folder, or its `functai.json`.
 #' @param node Which function, by key (`"module:name"`); default the entry.
 #' @return An AI function.
 #' @export
 read_ai <- function(path, node = NULL) {
+  m <- read_manifest(path)
+  from_manifest(m$manifest, node, saved = m$saved)
+}
+
+# A saved folder's manifest, and the hash that names it (`program.saved`).
+read_manifest <- function(path) {
+  if (!is_str(path)) cli::cli_abort("{.arg path} is a saved folder, or its {.file functai.json}")
   file <- if (dir.exists(path)) file.path(path, "functai.json") else path
+  if (!file.exists(file)) cli::cli_abort("no saved program at {.path {path}} (no {.file functai.json})")
   text <- paste(readLines(file, warn = FALSE, encoding = "UTF-8"), collapse = "\n")
   manifest <- tryCatch(lmcc::parse_json(text), error = function(e) load_refused("saved-malformed", sprintf("%s: %s", file, conditionMessage(e))))
   bytes <- readBin(file, "raw", file.info(file)$size)
-  from_manifest(manifest, node, saved = paste0("sha256:", lmcc::sha256_hex(rawToChar(bytes))))
+  list(manifest = manifest, saved = paste0("sha256:", lmcc::sha256_hex(rawToChar(bytes))))
 }
 
-from_manifest <- function(m, node = NULL, saved = NULL) {
-  if (!is.list(m) || is.null(names(m))) load_refused("saved-malformed", "functai.json is not a JSON object")
-  if (!identical(as.integer(m$functai_saved %||% -1L), 1L)) load_refused("saved-format", sprintf("functai.json is format %s; this loader reads format 1", lmcc::json_text(m$functai_saved)))
-  if (!is.character(m$entry) || !is.list(m$nodes)) load_refused("saved-malformed", "functai.json needs entry and nodes")
-  language <- m$language %||% "python"
+# saved.md, step 1: a format this loader knows, then the manifest's schema
+# (with every node's interface): what either refuses is not read further.
+check_manifest <- function(m) {
+  if (!is_obj(m)) load_refused("saved-malformed", "functai.json is not a JSON object")
+  if (!is_format(m$functai_saved %||% -1L, 1L)) load_refused("saved-format", sprintf("functai.json is format %s; this loader reads format 1", lmcc::json_text(m$functai_saved)))
+  fault <- schema_fault(m, "saved.schema.json")
+  if (!is.null(fault)) load_refused("saved-malformed", sprintf("functai.json does not pass the contract's schema: %s", fault))
+  invisible(m)
+}
+
+manifest_node <- function(m, node) {
   key <- node %||% m$entry
   n <- m$nodes[[key]]
   if (is.null(n)) load_refused("saved-malformed", sprintf("functai.json has no node %s", key))
+  list(key = key, node = n)
+}
+
+# The plain fields of an AI node's signature: what its interface describes.
+plain_fields <- function(n) Filter(function(f) identical(f$purpose %||% "plain", "plain"), n$ai$signature$fields)
+
+# An AI node's interface must describe the data its signature takes and gives
+# (saved.md, step 6); a node written before 2026-09-28 has none, and is
+# described by its signature (its plain fields, its instruction).
+node_interface <- function(key, n) {
+  if (has_key(n, "interface")) {
+    iface <- n$interface
+    problem <- interface_problem(iface, ai = identical(n$kind, "ai"))
+    if (!is.null(problem)) load_refused("interface-malformed", sprintf("%s: its interface is refused (field %s)", key, problem$field %||% "none"))
+    if (identical(n$kind, "ai")) {
+      fields <- plain_fields(n)
+      from_signature <- interface_signature(list(inputs = Filter(function(f) f$direction == "input", fields),
+                                                 outputs = Filter(function(f) f$direction == "output", fields)))
+      if (!identical(interface_signature(iface), from_signature))
+        load_refused("saved-differs", sprintf("%s: its interface promises other data than its signature takes and gives", key))
+    }
+    return(iface)
+  }
+  if (!identical(n$kind, "ai")) load_refused("saved-no-interface", sprintf("%s is a %s saved without its interface: what it takes and gives is not known", key, n$kind))
+  field <- function(f) {
+    out <- list(name = f$name, shape = f$shape)
+    if (is_str(f$desc) && nzchar(f$desc)) out$desc <- f$desc
+    if (is_str(f$type)) out$type <- f$type
+    out
+  }
+  fields <- plain_fields(n)
+  list(description = n$ai$signature$instructions,
+       inputs = lapply(Filter(function(f) f$direction == "input", fields), field),
+       outputs = lapply(Filter(function(f) f$direction == "output", fields), field))
+}
+
+# Describing a node without loading it (saved.md, "Describing without
+# loading").
+describe_manifest <- function(m, node = NULL) {
+  check_manifest(m)
+  x <- manifest_node(m, node)
+  if (!x$node$kind %in% c("ai", "module")) load_refused("saved-not-ai", sprintf("%s is a %s: plain code, not a program", x$key, x$node$kind))
+  node_interface(x$key, x$node)
+}
+
+from_manifest <- function(m, node = NULL, saved = NULL) {
+  check_manifest(m)
+  language <- m$language %||% "python"
+  x <- manifest_node(m, node)
+  key <- x$key; n <- x$node
   if (!identical(n$kind, "ai")) load_refused("saved-not-ai", sprintf("%s is a %s: code in %s, which this loader cannot run. Its AI functions load by key.", key, n$kind, language))
   d <- n$ai
   if (!"body" %in% names(d) || !is.null(d$body)) load_refused("saved-code", sprintf("%s runs code of its own beside the model (written in %s); only %s can run it", key, language, language))
@@ -67,11 +133,21 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   settings_in <- d$settings %||% list()
   for (k in names(settings_in)) if (is.list(settings_in[[k]]) && any(c("baked", "node") %in% names(settings_in[[k]])))
     load_refused("saved-model", sprintf("%s: setting %s is %s, not something this loader can reach", key, k, lmcc::json_text(settings_in[[k]])))
+  iface <- node_interface(key, n)
+  optional <- Filter(function(f) isTRUE(f$optional), iface$inputs)
+  optional <- stats::setNames(optional, vapply(optional, function(f) f$name, ""))
   sig <- d$signature
   inputs <- list(); outputs <- list(); cot <- FALSE
   for (f in sig$fields) {
     purpose <- f$purpose %||% "plain"
-    if (f$direction == "input" && purpose == "plain") inputs[[f$name]] <- field_from_shape(f$shape, f$desc)
+    if (f$direction == "input" && purpose == "plain") {
+      field <- field_from_shape(f$shape, f$desc)
+      if (!is.null(optional[[f$name]])) {                        # its default, from the node's interface
+        field$shape["default"] <- list(optional[[f$name]]$shape[["default"]])
+        field$optional <- TRUE
+      }
+      inputs[[f$name]] <- field
+    }
     else if (f$direction == "output" && purpose == "plain") outputs[[f$name]] <- field_from_shape(f$shape)
     else if (purpose == "reasoning") cot <- TRUE
     else load_refused("saved-tools", sprintf("%s: field %s (%s) needs tools", key, f$name, purpose))
@@ -82,6 +158,7 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   if (isFALSE(settings_in$include_fn_name_in_instructions)) own$include_fn_name <- FALSE
   if (!is.null(settings_in$adapter)) own$adapter <- settings_in$adapter
   for (k in names(SNAKE)) if (!is.null(settings_in[[k]])) own[[SNAKE[[k]]]] <- settings_in[[k]]
+  if (!is.null(own$log_content)) own$log_content <- normalize_log_content(own$log_content)
   if (is.list(d$template)) own$template <- d$template
   cfg <- d$config %||% list()
   for (k in c("temperature", "max_tokens", "top_p", "seed")) if (!is.null(cfg[[k]])) own[[k]] <- lmcc::lm15_plain(cfg[[k]])
@@ -92,7 +169,8 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   core <- list(definition = list(name = n$name, description = "", inputs = inputs, outputs = outputs, written = sig$instructions),
                own = own, tools = list(), single = length(outputs) == 1L && identical(names(outputs), "result"),
                columns = if (identical(names(outputs), "result")) c(result = n$name) else stats::setNames(names(outputs), names(outputs)),
-               module = n$module, state = list(instructions = state$instructions, demos = list()), saved = saved)
+               module = n$module, state = list(instructions = state$instructions, demos = list()), saved = saved,
+               interface = iface)
   core$state$demos <- as_demos(core, state$demos)
   probes <- d$probes %||% list()
   want <- unlist(d$fingerprints$requests)
@@ -103,6 +181,7 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   }
   if (is.character(d$version) && !identical(d$version, version_of(core)))
     load_refused("saved-differs", sprintf("%s: its version here is %s, but %s was saved", key, version_of(core), d$version))
+  tryCatch(check_own_content(core), functai_refusal = function(e) load_refused(e$code, conditionMessage(e)))
   make_fn(core)
 }
 
@@ -145,7 +224,7 @@ to_manifest <- function(fn) {
              signature = lmcc::signature_to_list(sig), probes = probes,
              fingerprints = list(signature = lmcc::signature_fingerprint(sig), requests = lapply(probes, function(p) request_hash(core, p))),
              body = NULL, version = version_of(core))
-  node <- list(kind = "ai", module = core$module, name = core$definition$name, ai = ai)
+  node <- list(kind = "ai", module = core$module, name = core$definition$name, interface = interface_of(core), ai = ai)
   nodes <- list(); nodes[[key]] <- node
   list(functai_saved = 1L, language = "r", entry = key, created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S+00:00", tz = "UTC"),
        functai = as.character(utils::packageVersion("functai")), nodes = nodes)

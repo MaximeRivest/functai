@@ -112,6 +112,15 @@ refund <- ai(decision ~ message + price + days_since_delivery + final_sale,
 | `vctrs::list_of(.ptype = character())` | a list | a `list_of` column |
 | `optional(x)` | `x`, or nothing | `NA` where there is nothing |
 | `described(x, "...")` | | a type with words the model reads |
+| `defaults_to("kind", x)` | | an input the caller may leave out, sent as `"kind"` then |
+
+An input with a default is an argument with a default, as in any R
+function: `reply <- ai(reply ~ message + tone, "Answer the customer.", tone
+= defaults_to("kind", choice("kind", "brief")))` is called `reply(message)`
+or `reply(message, tone = "brief")`. `ai_interface(reply)` is what it takes
+and gives, as every language describes it; a function whose interface no
+language could read back (a default that does not fit its type, a field
+name that is not an identifier) is refused when it is defined.
 
 A choice can say what each answer means, and the model reads it:
 
@@ -233,8 +242,19 @@ calls(team)                                           # every call: inputs, outp
 ```
 
 Every call is one line of JSON in `~/.local/share/functai/calls`, the folder
-Python and TypeScript write too: each reads the others' calls and ratings.
-Nothing is written unless you turn the log on.
+Python, TypeScript and Julia write too: each reads the others' calls and
+ratings (call log format 2, and format 1). Nothing is written unless you
+turn the log on.
+
+`log_content` says which values a call's line keeps, per field, and only
+ever removes: a value is written when no layer (the function's own
+setting, each `with_ai_config()` block, `ai_config()`,
+`FUNCTAI_LOG_CONTENT=0`) drops it. `c(transcript = FALSE)` keeps
+everything but the transcript; `c("question")` keeps only the question,
+the host's safe list. The line then says what it left out, keeps the
+sizes, and keeps no request or reply. `rated()` leaves out calls whose
+inputs were not kept, and pools calls that record the same data (turning
+reasoning on, or changing a default, starts no new pool).
 
 ## Across languages
 
@@ -246,7 +266,8 @@ write_ai(team, "team/")      # for TypeScript's and Julia's loaders
 `read_ai()` checks the function sends exactly what it sent where it was
 saved, and has its version, before any call. It refuses, with the reason,
 what only the saving language can run: code of its own around the model,
-tools, a baked model.
+tools, a baked model. `ai_interface("team/")` describes a saved program
+without loading or running it, a Python module included.
 
 ## Settings
 

@@ -11,7 +11,9 @@ log_folder <- function(folder) folder %||% folder_of(effective()$log_calls %||% 
 #' @return A tibble, one row per call, oldest first: `id`, `started`,
 #'   `name`, `module`, `version`, `model`, `seconds`, `inputs` and `outputs`
 #'   (list columns of JSON values), `error`, `input_tokens`, `output_tokens`,
-#'   `reasoning_tokens`, `total_tokens`, `parent`, `caller`, `language`.
+#'   `reasoning_tokens`, `total_tokens`, `parent`, `caller`, `language`,
+#'   `content` (whether every value was kept), `saw` (the earlier calls it
+#'   was shown, `NULL` when its record does not say).
 #'   Providers count differently: OpenAI's and Anthropic's `output_tokens`
 #'   include the model's hidden reasoning, Gemini's leave it out (it is in
 #'   `reasoning_tokens`). Every one bills `total_tokens - input_tokens` as
@@ -38,7 +40,9 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
     input_tokens = num(function(c) c$usage$input_tokens), output_tokens = num(function(c) c$usage$output_tokens),
     reasoning_tokens = num(function(c) c$usage$reasoning_tokens), total_tokens = num(function(c) c$usage$total_tokens),
     parent = chr(function(c) c$parent), caller = lapply(recs, function(c) c$caller),
-    language = chr(function(c) c$process$language))
+    language = chr(function(c) c$process$language),
+    content = vapply(recs, function(c) isTRUE(c$content), NA),
+    saw = lapply(recs, function(c) c$saw))
 }
 
 #' Say whether calls were right
@@ -89,8 +93,12 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
 #' The inputs of every rated call of `fn` and the right answer (the model's,
 #' when it was rated right; the correction, when wrong), typed like the
 #' function's inputs and outputs: ready for [evaluate()] and the optimizers.
-#' Calls of another signature (the inputs or outputs changed since) and
-#' calls logged without content are left out and counted.
+#' Calls whose data has another shape (the inputs or outputs changed since)
+#' are left out and counted (`other_signature`); calls that record the same
+#' data pool, even when the instruction, a default or reasoning changed. So
+#' are calls whose inputs the log did not keep (`no_content`, `log_content`),
+#' and rated calls that give no answer (`no_answer`: a right verdict on an
+#' answer that was not kept). Reads every language's log, formats 1 and 2.
 #' @param fn An AI function.
 #' @param by Only this person's ratings.
 #' @param folder The log folder.
@@ -103,7 +111,8 @@ rated <- function(fn, by = NULL, folder = NULL, since = NULL) {
   core <- core_of(fn)
   log <- read_log(log_folder(folder), since)
   out <- rated_rows(log$calls, log$ratings, name = core$definition$name, module = core$module,
-                    signature = signature_id(signature_of(core, effective(core$own))), by = by)
+                    signature = signature_id(signature_of(core, effective(core$own))),
+                    interface = interface_signature(interface_of(core)), by = by)
   rows <- out$rows
   fields <- c(core$definition$inputs, core$definition$outputs)
   cols <- list()

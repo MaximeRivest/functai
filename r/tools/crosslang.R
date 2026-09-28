@@ -40,5 +40,6 @@ say("mood written in R has Python's version and signature")
 p <- predict(mood, data.frame(review = "Five stars, would buy again."))
 rate(p$.call, "right", by = "cleo", folder = file.path(work, "log"))
 log <- functai:::read_log(file.path(work, "log"))
-rows <- functai:::rated_rows(log$calls, log$ratings, name = "mood", module = "shop", signature = ai_signature_id(mood))$rows
+rows <- functai:::rated_rows(log$calls, log$ratings, name = "mood", module = "shop", signature = ai_signature_id(mood),
+                             interface = functai:::interface_signature(unclass(ai_interface(mood))))$rows
 writeLines(lmcc::json_text(rows), file.path(work, "r-rated.json"))

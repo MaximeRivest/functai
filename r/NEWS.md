@@ -1,5 +1,46 @@
 # functai 0.1.0 (unreleased)
 
+## Stage 1 foundations (the contract at `c1e5063`)
+
+* The call log is format 2 (`contract/calls.md`): every record has
+  `program.interface`, `saw` (`[]`: R's functions are shown no earlier
+  call) and, when its content is whole, each exchange's `request_hash`.
+  `rated()`, `calls()` and `read_log` read formats 1 and 2 and skip any
+  other.
+* `log_content` per field, as a layer that only removes: the function's
+  own, each `with_ai_config()` block, `ai_config()` and
+  `FUNCTAI_LOG_CONTENT=0` (which now wins over every setting; before, a
+  function's own `log_content` beat it). `c(transcript = FALSE)`, a named
+  list, or `c("question")` (the fields that may be kept). A record not
+  whole says what it `omitted`, keeps no request, reply, request hash or
+  error message, and drops the reasoning and tool calls with any field.
+  A name that is not one of the function's fields refuses when the
+  function is defined (`log-content-field`). A one-output function's
+  answer is `result` in the log; a map may call it by the formula's name
+  too. GEPA's own calls keep no value when the function it improves drops
+  a field.
+* `defaults_to()`: an input the caller may leave out; the R function's
+  argument defaults to it, and the call sends and records it. Defaults
+  are out of the signature and the version (`functions/12`).
+* `ai_interface()`: what an AI function, or any program in a saved
+  folder, takes and gives, as every language describes it. `ai()` checks
+  the interface when the function is defined (`interface-malformed`);
+  `write_ai()` writes it; `read_ai()` checks a node's interface against
+  its signature (`saved-differs`) and takes its optional inputs from it;
+  describing a folder needs no loading (`saved-no-interface` for an old
+  module node).
+* `rated()` pools calls by interface: calls whose data has the same shape
+  pool, reasoning or not; a call whose inputs were not kept as data, or
+  a right verdict on an answer not kept, is left out and counted.
+* Saved folders are checked against the contract's schema before
+  anything else (`saved-malformed`); `calls()` gains `content` and `saw`.
+* Refusals the contract names are errors of class `functai_refusal`
+  (and `functai_<code>`), with `code` and `field`.
+* A field name that is not an ASCII identifier (`my.message`) is refused
+  when the function is defined (lmcc's `signature-malformed`).
+
+## Before stage 1
+
 The first R implementation of FunctAI, held to the same contract as the
 Python and TypeScript packages (`../contract`): every function, score,
 rating and saved-folder case, and a check against Python and TypeScript

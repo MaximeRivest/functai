@@ -3,7 +3,9 @@
 # answers they make. The folder is the interface: Python, TypeScript and R
 # read and write the same one.
 
-FORMAT <- 1L
+CALL_FORMAT <- 2L            # the call log R writes (calls.md, "Formats")
+CALL_FORMATS <- c(1L, 2L)    # the ones it reads
+RATING_FORMAT <- 1L
 MAX_LINE <- 8 * 1024^2
 OFF <- c("", "0", "false", "no", "off")
 ON <- c("1", "true", "yes", "on")
@@ -53,12 +55,6 @@ folder_of <- function(setting) {
   normalizePath(path.expand(folder), mustWork = FALSE)
 }
 
-content_of <- function(setting) {
-  if (!is.null(setting)) return(isTRUE(setting))
-  raw <- tolower(trimws(Sys.getenv("FUNCTAI_LOG_CONTENT")))
-  !(raw %in% OFF && nzchar(raw))
-}
-
 caller_of <- function(settings) {
   raw <- Sys.getenv("FUNCTAI_CALLER")
   base <- list()
@@ -82,7 +78,9 @@ warn_once <- function(key, message) {
 
 size_of <- function(v) nchar(lmcc::canonical_json(v), type = "chars")
 
-start_call <- function(program, settings, inputs) {
+# A call, from its start: `fields` are its fields (content_kept()'s names),
+# `keep` whether each one's value is written.
+start_call <- function(program, settings, inputs, fields, keep) {
   call <- new.env(parent = emptyenv())
   parent <- the$current
   call$id <- new_id()
@@ -93,29 +91,30 @@ start_call <- function(program, settings, inputs) {
   call$exchanges <- list()
   call$provider <- NULL
   call$outputs <- NULL
+  call$probabilities <- NULL
   call$folder <- tryCatch(folder_of(settings$log_calls), error = function(e) NULL)
-  call$content <- content_of(settings$log_content)
+  call$fields <- fields
+  call$keep <- keep
   call$caller <- caller_of(settings)
-  call$inputs <- NULL
-  call$sizes <- lmcc::jobj()
-  if (!is.null(call$folder)) {
-    for (k in names(inputs)) call$sizes[[k]] <- size_of(inputs[[k]])
-    if (call$content) call$inputs <- if (length(inputs)) inputs else lmcc::jobj()
-  }
+  call$inputs <- if (length(inputs)) inputs else lmcc::jobj()
   call
 }
 
-exchange <- function(call, model, request, response, started, seconds, error = NULL) {
+# One request and its reply (or error). `request_hash`: lmcc's hash of the
+# rendered request it was sent from (kernel section 3a, a model step's
+# `request`); a request asked again after an unreadable reply extends that
+# render with FunctAI's own words, and carries its hash.
+exchange <- function(call, model, request, response, started, seconds, error = NULL, request_hash = NULL) {
   call$exchanges[[length(call$exchanges) + 1L]] <- list(model = model, provider = call$provider, started = started,
-    seconds = seconds, request = request, response = response, error = error)
+    seconds = seconds, request = request, request_hash = request_hash, response = response, error = error)
 }
 
-error_json <- function(err, content) {
+error_json <- function(err) {
   cls <- class(err)
   type <- if (inherits(err, "lmcc_refusal")) "Refusal" else if (inherits(err, "LM15Error")) (setdiff(cls, c("LM15Error", "error", "condition"))[1L] %|na|% "LM15Error") else cls[[1L]]
   out <- list(type = type)
-  if (inherits(err, "lmcc_refusal")) out$code <- err$code
-  if (content) out$message <- conditionMessage(err)
+  if (inherits(err, "lmcc_refusal") || inherits(err, "functai_refusal")) out$code <- err$code
+  out$message <- conditionMessage(err)
   out
 }
 `%|na|%` <- function(x, y) if (is.na(x)) y else x
@@ -128,14 +127,13 @@ usage_of <- function(response) {
   if (!length(u)) lmcc::jobj() else lapply(u, as.integer)
 }
 
-exchange_json <- function(ex, content) {
+exchange_json <- function(ex) {
   out <- list(model = ex$model, provider = ex$provider, started = iso(ex$started), seconds = round(ex$seconds, 6), cached = FALSE)
   if (!is.null(ex$response)) { out$finish <- ex$response$finish_reason; out$usage <- usage_of(ex$response) }
-  if (!is.null(ex$error)) out$error <- error_json(ex$error, content)
-  if (content) {
-    out$request <- plain_lm15(ex$request)
-    if (!is.null(ex$response)) out$response <- plain_lm15(ex$response)
-  }
+  if (!is.null(ex$error)) out$error <- error_json(ex$error)
+  out$request <- plain_lm15(ex$request)
+  if (!is.null(ex$request_hash)) out$request_hash <- ex$request_hash
+  if (!is.null(ex$response)) out$response <- plain_lm15(ex$response)
   out
 }
 
@@ -149,28 +147,32 @@ process_json <- function() {
   the$process
 }
 
+# The call's record (format 2): the whole record, then what log_content lets
+# it keep (content.R, kept_record()).
 call_record <- function(call, error = NULL) {
   program <- call$program()
   answered <- Filter(function(e) !is.null(e$response), call$exchanges)
   usage <- list()
   for (e in answered) for (k in names(u <- usage_of(e$response))) usage[[k]] <- (usage[[k]] %||% 0L) + u[[k]]
-  out_sizes <- lmcc::jobj()
+  in_sizes <- lmcc::jobj(); out_sizes <- lmcc::jobj()
+  for (k in names(call$inputs)) in_sizes[[k]] <- size_of(call$inputs[[k]])
   for (k in names(call$outputs)) out_sizes[[k]] <- size_of(call$outputs[[k]])
-  rec <- list(functai_call = FORMAT, id = call$id, parent = call$parent, root = call$root, program = program,
-              started = iso(call$started), seconds = round((call$ended %||% as.numeric(Sys.time())) - call$started, 6), content = call$content)
-  if (call$content) {
-    rec["inputs"] <- list(call$inputs %||% lmcc::jobj())
-    rec["outputs"] <- list(if (is.null(call$outputs)) NULL else if (length(call$outputs)) call$outputs else lmcc::jobj())
-  }
-  rec$sizes <- list(inputs = call$sizes, outputs = out_sizes)
-  rec["error"] <- list(if (is.null(error)) NULL else error_json(error, call$content))
+  rec <- list(functai_call = CALL_FORMAT, id = call$id, parent = call$parent, root = call$root, program = program,
+              started = iso(call$started), seconds = round((call$ended %||% as.numeric(Sys.time())) - call$started, 6), content = TRUE)
+  rec["inputs"] <- list(call$inputs)
+  rec["outputs"] <- list(if (is.null(call$outputs)) NULL else if (length(call$outputs)) call$outputs else lmcc::jobj())
+  probabilities <- Filter(length, call$probabilities %||% list())
+  if (length(probabilities) && !is.null(call$outputs)) rec$probabilities <- probabilities
+  rec$sizes <- list(inputs = in_sizes, outputs = out_sizes)
+  rec["error"] <- list(if (is.null(error)) NULL else error_json(error))
   rec["model"] <- list(if (length(answered)) answered[[length(answered)]]$model else NULL)
   rec$usage <- if (length(usage)) usage else lmcc::jobj()
   rec["confidence"] <- list(call$confidence)
-  rec$exchanges <- lapply(call$exchanges, exchange_json, content = call$content)
+  rec$exchanges <- lapply(call$exchanges, exchange_json)
+  rec$saw <- list()                    # R's AI functions are shown no earlier call
   rec$caller <- call$caller
   rec$process <- process_json()
-  rec
+  kept_record(rec, call$fields, call$keep)
 }
 
 record_line <- function(rec) {
@@ -225,13 +227,17 @@ read_log <- function(folder = NULL, since = NULL) {
         if (!nzchar(trimws(line))) next
         rec <- tryCatch(lmcc::parse_json(line), error = function(e) NULL)
         if (!is.list(rec) || is.null(names(rec))) next
-        if (identical(as.integer(rec$functai_call), FORMAT) && !before(rec$started %||% "", cutoff)) calls[[length(calls) + 1L]] <- rec
-        else if (identical(as.integer(rec$functai_rating), FORMAT) && !before(rec$at %||% "", cutoff)) ratings[[length(ratings) + 1L]] <- rec
+        if (is_format(rec$functai_call, CALL_FORMATS) && !before(rec$started %||% "", cutoff)) calls[[length(calls) + 1L]] <- rec
+        else if (is_format(rec$functai_rating, RATING_FORMAT) && !before(rec$at %||% "", cutoff)) ratings[[length(ratings) + 1L]] <- rec
       }
     }
   }
   list(calls = calls, ratings = ratings)
 }
+
+# A record of a format this reader knows (a record of another format is
+# skipped whole: a later format may mean something else by the same keys).
+is_format <- function(v, known) is_num(v) && num(v) %in% known
 
 later <- function(a, b, key) {
   ta <- a[[key]] %||% ""; tb <- b[[key]] %||% ""
@@ -251,16 +257,40 @@ current_ratings <- function(ratings, by = NULL) {
   lapply(out, function(rs) rs[order(vapply(rs, function(r) paste0(r$at %||% "", "\u0001", r$id %||% ""), ""), method = "radix")])
 }
 
+# The values a counting rating gives (calls.md, rule 4): "right" gives the
+# call's own answer, when it was recorded as data; "wrong" its correction.
 rating_says <- function(rating, call) {
   answer <- call$program$answer %||% "result"
   if (identical(rating$verdict, "right")) {
     outputs <- call$outputs
-    return(if (is.list(outputs) && answer %in% names(outputs)) stats::setNames(list(outputs[[answer]]), answer) else NULL)
+    described <- answer %in% unlist(call$described$outputs)
+    return(if (is.list(outputs) && answer %in% names(outputs) && !described) stats::setNames(list(outputs[[answer]]), answer) else NULL)
   }
   values <- list()
   if ("answer" %in% names(rating)) values[answer] <- list(rating$answer)
   for (k in names(rating$outputs)) if (!k %in% names(values)) values[k] <- list(rating$outputs[[k]])
   if (length(values)) values else NULL
+}
+
+# Whether a call's record holds every input as data (calls.md, rule 3):
+# format 1's content false kept none; format 2's names what it left out;
+# a value written as a description is not data.
+all_inputs_kept <- function(call) {
+  if (isFALSE(call$content) && (!has_key(call, "omitted") || length(call$omitted$inputs))) return(FALSE)
+  if (length(call$described$inputs)) return(FALSE)
+  "inputs" %in% names(call)
+}
+
+# Whether a call is of the program as it is now (calls.md, rule 3): its
+# program.interface is the given interface (format 1, with none: its
+# program.signature, which equals it for an AI function with neither
+# reasoning nor tools), or its program.signature the given signature.
+same_program <- function(call, signature = NULL, interface = NULL) {
+  if (is.null(signature) && is.null(interface)) return(TRUE)
+  p <- call$program
+  by_interface <- !is.null(interface) && identical(if (has_key(p, "interface")) p$interface else p$signature, interface)
+  by_signature <- !is.null(signature) && identical(p$signature, signature)
+  by_interface || by_signature
 }
 
 add_meta <- function(row, meta) {
@@ -273,7 +303,9 @@ add_meta <- function(row, meta) {
 }
 
 # Rows with known answers (contract/calls.md, "Rows with known answers").
-rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by = NULL) {
+rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by = NULL, interface = NULL) {
+  calls <- Filter(function(c) is_format(c$functai_call, CALL_FORMATS), calls)
+  ratings <- Filter(function(r) is_format(r$functai_rating, RATING_FORMAT), ratings)
   counting <- current_ratings(ratings, by)
   left <- list(other_signature = 0L, no_content = 0L, no_answer = 0L)
   mine <- Filter(function(c) identical(c$program$name, name) && (is.null(module) || identical(c$program$module, module)), calls)
@@ -282,8 +314,8 @@ rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by
   for (call in mine) {
     rs <- counting[[call$id]]
     if (!length(rs)) next
-    if (!is.null(signature) && !identical(call$program$signature, signature)) { left$other_signature <- left$other_signature + 1L; next }
-    if (!isTRUE(call$content) || !"inputs" %in% names(call)) { left$no_content <- left$no_content + 1L; next }
+    if (!same_program(call, signature, interface)) { left$other_signature <- left$other_signature + 1L; next }
+    if (!all_inputs_kept(call)) { left$no_content <- left$no_content + 1L; next }
     said <- lapply(rs, rating_says, call = call)
     usable <- which(!vapply(said, is.null, NA))
     if (!length(usable)) { left$no_answer <- left$no_answer + 1L; next }
@@ -305,7 +337,7 @@ rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by
 
 rating_record <- function(call_id, verdict, answer, outputs, note, reasons, by, origin, sample, settings) {
   who <- by %||% caller_of(settings)$user %||% process_json()$user
-  rec <- list(functai_rating = FORMAT, id = new_id(), call = call_id, at = iso(as.numeric(Sys.time())), by = who)
+  rec <- list(functai_rating = RATING_FORMAT, id = new_id(), call = call_id, at = iso(as.numeric(Sys.time())), by = who)
   rec["verdict"] <- list(verdict)
   if (!is.null(answer)) rec["answer"] <- list(answer)
   if (length(outputs)) rec$outputs <- outputs

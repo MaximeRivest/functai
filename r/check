@@ -15,8 +15,9 @@ LM15=${LM15_R:-../../lm15-dev/lm15-r}
 for dir in "$LMCC" "$LM15"; do
   [ -f "$dir/DESCRIPTION" ] || { echo "r/ needs $dir (lmcc and lm15 for R are not on CRAN yet)" >&2; exit 1; }
 done
-mkdir -p .lib
+mkdir -p .lib inst/contract/schema
 cp ../contract/layouts/*.json inst/contract/layouts/
+cp ../contract/schema/*.json inst/contract/schema/
 cp ../contract/models.json inst/contract/
 cp ../contract/unicode/casefold.json inst/contract/unicode/
 for pkg in "$LMCC" "$LM15" .; do

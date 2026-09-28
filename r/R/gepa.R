@@ -19,11 +19,16 @@ Reply with the new instruction only."
 
 # The two AI functions GEPA calls. Their layout is fixed, so a session's
 # ai_config() (another layout, reasoning first) does not change how they work;
-# they reach models, and log, the way the function being improved does.
+# they reach models, and log, the way the function being improved does. Their
+# inputs quote the function's cases, so when the function's own log_content
+# drops any of its fields, theirs drops every value (the blocks and
+# ai_config() around them apply to them as to any call).
 meta_fn <- function(formula, text, name, teacher, like, run_id) {
   s <- effective(like)
+  own <- like$log_content
+  drops <- isFALSE(own) || (is.list(own) && any(vapply(own, isFALSE, NA)))
   ai(formula, text, .name = name, .defined_in = "functai.meta", .lm = teacher %||% s$lm, .router = s$router,
-     .log_calls = s$log_calls, .log_content = s$log_content, .caller = list(optimization = run_id),
+     .log_calls = s$log_calls, .log_content = if (drops) FALSE, .caller = list(optimization = run_id),
      .temperature = 1, .include_fn_name = FALSE, .adapter = "xml", .module = "predict", .on_error = "stop")
 }
 

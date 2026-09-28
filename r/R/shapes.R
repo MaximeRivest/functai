@@ -95,7 +95,8 @@ prototype_of <- function(x) {
 #' @export
 optional <- function(x) {
   f <- as_field(x)
-  f$shape <- list(anyOf = list(f$shape, list(type = "null")))
+  default <- if ("default" %in% names(f$shape)) f$shape["default"]      # an input's own default stays its own
+  f$shape <- c(list(anyOf = list(data_shape(f$shape), list(type = "null"))), default)
   f$nullable <- TRUE
   f
 }
@@ -113,6 +114,8 @@ optional <- function(x) {
 record <- function(...) {
   fields <- lapply(list(...), as_field)
   if (!length(fields) || is.null(names(fields)) || any(!nzchar(names(fields)))) cli::cli_abort("a record's fields are named: {.code record(name = character())}")
+  if (any(vapply(fields, function(f) isTRUE(f$optional), NA)))
+    cli::cli_abort("a default belongs to an input of the function ({.fn defaults_to}), not to a field of a record")
   new_field(list(type = "object", properties = lapply(fields, described_shape), required = as.list(names(fields))), "record", fields = fields)
 }
 
@@ -132,7 +135,7 @@ json_shape <- function(schema) {
 
 new_field <- function(shape, kind, desc = NULL, levels = NULL, fields = NULL, item = NULL, nullable = FALSE) {
   structure(list(shape = shape, kind = kind, desc = desc, levels = levels, fields = fields, item = item,
-                 nullable = nullable, meanings = NULL), class = "functai_field")
+                 nullable = nullable, meanings = NULL, optional = FALSE), class = "functai_field")
 }
 
 #' @export
@@ -166,6 +169,7 @@ as_field <- function(x) {
   }
   if (inherits(x, "vctrs_list_of")) {
     item <- as_field(attr(x, "ptype"))
+    if (isTRUE(item$optional)) cli::cli_abort("a default belongs to an input of the function ({.fn defaults_to}), not to a list's items")
     return(new_field(list(type = "array", items = item$shape), "list", item = item))
   }
   if (is.data.frame(x)) {

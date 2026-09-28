@@ -231,3 +231,192 @@ test_that("record() takes described and optional fields; a null comes back NA", 
   expect_identical(out$order, NA_character_)
   expect_identical(out$days, 3L)
 })
+
+# ---------------------------------------------------------------- stage 1: interfaces, defaults, what the log keeps
+
+reply_of <- function(router = fake_router(responder = function(req, i) "<result>\nHello!\n</result>"), ...) {
+  ai(reply ~ message + tone, "Answer the customer.",
+     message = "the customer's own words",
+     tone = defaults_to("kind", choice("kind", "brief", "formal")),
+     .lm = "gpt-4.1-mini", .router = router, ...)
+}
+
+test_that("an input with a default: the R function's default argument, sent when left out", {
+  r <- fake_router(responder = function(req, i) "<result>\nHello!\n</result>")
+  folder <- withr::local_tempdir()
+  reply <- reply_of(r, .log_calls = folder)
+  expect_identical(formals(reply)$tone, "kind")
+  expect_identical(reply("Hi"), "Hello!")
+  expect_match(message_text(r$env$requests[[1L]], 1L), "<tone>\nkind\n</tone>")
+  reply(c("Hi", "Yo"), tone = "brief")
+  expect_match(message_text(r$env$requests[[3L]], 1L), "<tone>\nbrief\n</tone>")
+  lines <- log_lines(folder)
+  expect_identical(lines[[1L]]$inputs$tone, "kind")                  # the record holds the value sent
+  expect_identical(lines[[1L]]$functai_call, 2L)
+  iface <- ai_interface(reply)
+  expect_s3_class(iface, "functai_interface")
+  expect_identical(lmcc::canonical_json(unclass(iface)$inputs[[2L]]),
+    '{"name":"tone","optional":true,"shape":{"default":"kind","enum":["kind","brief","formal"],"type":"string"}}')
+  expect_output(print(iface), "optional, default \"kind\"")
+  expect_output(print(reply), "tone     one of kind, brief, formal = \"kind\"")
+  # a default is behaviour, not data: neither the signature nor the version sees it
+  other <- ai(reply ~ message + tone, "Answer the customer.", message = "the customer's own words",
+              tone = defaults_to("brief", choice("kind", "brief", "formal")), .lm = "gpt-4.1-mini")
+  expect_identical(ai_signature_id(other), ai_signature_id(reply))
+  expect_identical(ai_version(other), ai_version(reply))
+  expect_identical(lines[[1L]]$program$interface, lines[[1L]]$program$signature)
+  # predict and render take it too when the column is not there
+  p <- predict(reply, tibble::tibble(message = "Hi"))
+  expect_identical(p$.pred, "Hello!")
+  expect_match(ai_render(update(reply, router = fake_router()), "Hi")$messages[[1L]]$parts[[1L]]$text, "kind")
+})
+
+test_that("interfaces are checked when a function is defined", {
+  err <- tryCatch(ai(reply ~ message + tone, "x", tone = defaults_to("loud", choice("kind", "brief"))), functai_refusal = identity)
+  expect_s3_class(err, "functai_interface_malformed")
+  expect_identical(err$field, "tone")
+  expect_match(conditionMessage(err), "default \"loud\" does not fit")
+  err <- tryCatch(ai(team ~ my.message, "x"), lmcc_refusal = identity)      # lmcc checks a signature first
+  expect_identical(err$code, "signature-malformed")
+  err <- tryCatch(ai(n ~ items + at_least, "Count.", at_least = defaults_to(5L, json_shape(list(type = "integer", minimum = 10)))),
+                  functai_refusal = identity)
+  expect_identical(err$field, "at_least")
+  expect_error(ai(team ~ message, "x", team = defaults_to("a")), class = "functai_interface_malformed")
+  expect_error(record(a = defaults_to(1L)), "belongs to an input")
+  expect_error(defaults_to(NULL), "needs its type")
+  # an AI function's shape may carry lmcc's keywords; FunctAI never reads them
+  tagged <- ai(tag ~ code, "Tag.", code = defaults_to("ABC", json_shape(list(type = "string", pattern = "^[a-z]+$"))))
+  expect_identical(formals(tagged)$code, "ABC")
+  expect_identical(bound_row(tagged, list()), list(code = "ABC"))
+  # optional() keeps an input's own default at the top of its shape
+  n <- defaults_to(NA, optional(integer()))
+  expect_identical(lmcc::canonical_json(n$shape), '{"anyOf":[{"type":"integer"},{"type":"null"}],"default":null}')
+  f <- ai(x ~ message + limit, "x", limit = n)
+  expect_identical(formals(f)$limit, NA_integer_)
+})
+
+test_that("log_content keeps what no layer drops, per field; the record says what it left out", {
+  folder <- withr::local_tempdir()
+  guessy <- fake_router(responder = function(req, i) "<summary>\nCharged twice\n</summary>\n<result>\nbilling\n</result>")
+  triage <- ai(summary + result ~ transcript + question, "Sort the ticket.", .name = "triage", .lm = "gpt-4.1-mini",
+               .router = guessy, .log_calls = folder, .log_content = c(transcript = FALSE))
+  triage("Ana: I was charged twice.", "Which team?")
+  rec <- log_lines(folder)[[1L]]
+  expect_false(rec$content)
+  expect_identical(lmcc::canonical_json(rec$omitted), '{"inputs":["transcript"],"outputs":[]}')
+  expect_identical(names(rec$inputs), "question")
+  expect_identical(rec$outputs$result, "billing")
+  expect_identical(rec$sizes$inputs$transcript, 27L)                 # the size is always kept
+  expect_null(rec$exchanges[[1L]]$request)
+  expect_null(rec$exchanges[[1L]]$request_hash)
+  expect_null(schema_fault(rec, "call.schema.json"))
+  # a block can only remove; true in the function's own setting brings nothing back
+  whole <- update(triage, log_content = TRUE)
+  with_ai_config(whole("a", "b"), log_content = c("question"))        # the names of the fields to keep
+  rec <- log_lines(folder)[[2L]]
+  expect_identical(lmcc::canonical_json(rec$omitted), '{"inputs":["transcript"],"outputs":["summary","result"]}')
+  local({ local_ai_config(log_content = list(summary = FALSE)); with_ai_config(whole("a", "b"), log_content = c(result = FALSE)) })
+  rec <- log_lines(folder)[[3L]]
+  expect_identical(lmcc::canonical_json(rec$omitted), '{"inputs":[],"outputs":["summary","result"]}')
+  whole("a", "b")                                                     # outside the blocks: whole again
+  rec <- log_lines(folder)[[4L]]
+  expect_true(rec$content)
+  expect_null(rec$omitted)
+  expect_match(rec$exchanges[[1L]]$request_hash, "^sha256:[0-9a-f]{64}$")
+  expect_null(schema_fault(rec, "call.schema.json"))
+  withr::with_envvar(c(FUNCTAI_LOG_CONTENT = " OFF "), whole("a", "b"))
+  rec <- log_lines(folder)[[5L]]
+  expect_false(rec$content)
+  expect_null(rec$inputs); expect_null(rec$outputs)
+  # a name that is not a field of the function refuses when it is set as its own
+  err <- tryCatch(update(triage, log_content = c(transcrpit = FALSE)), functai_refusal = identity)
+  expect_s3_class(err, "functai_log_content_field")
+  expect_identical(err$field, "transcrpit")
+  expect_error(ai(team ~ message, "x", .log_content = list(tools = FALSE)), class = "functai_log_content_field")
+  # a host's map names fields of every function it runs: one that lacks it is unchanged
+  with_ai_config(whole("a", "b"), log_content = c(notes = FALSE))
+  expect_true(log_lines(folder)[[6L]]$content)
+  # a key that is not a name refuses wherever it is set
+  expect_error(with_ai_config(NULL, log_content = list(`#private` = FALSE)), class = "functai_log_content_field")
+  expect_error(ai_config(log_content = c(`two words` = FALSE)), class = "functai_log_content_field")
+})
+
+test_that("a one-output function's answer is named in log_content by its formula's name or as result", {
+  folder <- withr::local_tempdir()
+  mood <- update(mood_of(fake_router(responder = guess)), log_calls = folder, log_content = c(mood = FALSE))
+  expect_identical(core_of(mood)$own$log_content, list(result = FALSE))     # kept, and saved, by its field's name
+  mood("Love it")
+  expect_identical(lmcc::canonical_json(log_lines(folder)[[1L]]$omitted), '{"inputs":[],"outputs":["result"]}')
+  whole <- update(mood, log_content = TRUE)
+  with_ai_config(whole("Love it"), log_content = c("review"))           # keep only the review
+  expect_identical(lmcc::canonical_json(log_lines(folder)[[2L]]$omitted), '{"inputs":[],"outputs":["result"]}')
+  with_ai_config(whole("Love it"), log_content = c(mood = FALSE, result = TRUE))   # a drop wins
+  expect_identical(lmcc::canonical_json(log_lines(folder)[[3L]]$omitted), '{"inputs":[],"outputs":["result"]}')
+  expect_error(update(mood, log_content = c(moood = FALSE)), "its fields are review and mood")
+})
+
+test_that("the reasoning FunctAI adds goes whenever any field goes", {
+  folder <- withr::local_tempdir()
+  r <- fake_router(responder = function(req, i) "<reasoning>\nThey were charged twice.\n</reasoning>\n<result>\nbilling\n</result>")
+  team <- ai(team ~ message + channel, "Which team?", .lm = "gpt-4.1-mini", .router = r, .log_calls = folder, .module = "cot")
+  team("I was charged twice", "email")
+  expect_identical(names(log_lines(folder)[[1L]]$outputs), c("reasoning", "result"))
+  with_ai_config(team("I was charged twice", "email"), log_content = c(channel = FALSE))
+  rec <- log_lines(folder)[[2L]]
+  expect_identical(lmcc::canonical_json(rec$omitted), '{"inputs":["channel"],"outputs":["reasoning"]}')
+  expect_identical(names(rec$outputs), "result")
+})
+
+test_that("records, ratings and saved folders R writes pass the contract's schemas", {
+  folder <- withr::local_tempdir()
+  mood <- update(mood_of(fake_router(responder = guess)), log_calls = folder)
+  p <- predict(mood, reviews)
+  expect_error(update(mood_of(fake_router(list("nope", "nope"))), log_calls = folder)("x"))
+  rate(p$.call[1:2], c("right", "wrong"), answer = list(NULL, "mixed"), by = "ana", folder = folder)
+  for (rec in log_lines(folder)) {
+    file <- if (!is.null(rec$functai_rating)) "rating.schema.json" else "call.schema.json"
+    expect_null(schema_fault(rec, file))
+  }
+  dir <- withr::local_tempdir()
+  write_ai(reply_of(), dir)
+  m <- read_json_file(file.path(dir, "functai.json"))
+  expect_null(schema_fault(m, "saved.schema.json"))
+  expect_identical(lmcc::canonical_json(m$nodes[["__main__:reply"]]$interface), lmcc::canonical_json(unclass(ai_interface(reply_of()))))
+  expect_identical(lmcc::canonical_json(unclass(ai_interface(dir))), lmcc::canonical_json(unclass(ai_interface(reply_of()))))
+  again <- read_ai(dir)
+  expect_identical(formals(again)$tone, "kind")                      # optional inputs come back from the interface
+  expect_identical(ai_version(again), ai_version(reply_of()))
+  broken <- m
+  broken$nodes[["__main__:reply"]]$interface$outputs[[1L]]$shape <- list(type = "integer")
+  writeLines(lmcc::json_text(broken), file.path(dir, "functai.json"))
+  expect_error(read_ai(dir), class = "functai_saved_differs")
+  expect_error(ai_interface(dir), class = "functai_saved_differs")
+  expect_error(ai_interface(42), "describes an AI function or a saved folder")
+})
+
+test_that("rated() pools calls that record the same data: reasoning turned on changes the signature, not the interface", {
+  folder <- withr::local_tempdir()
+  mood <- update(mood_of(fake_router(responder = guess)), log_calls = folder)
+  thinking <- update(mood_of(fake_router(responder = function(req, i) "<reasoning>\nIt broke.\n</reasoning>\n<result>\nunhappy\n</result>")),
+                     log_calls = folder, module = "cot")
+  expect_false(identical(ai_signature_id(thinking), ai_signature_id(mood)))
+  a <- predict(mood, reviews[1, ]); b <- predict(thinking, reviews[1, ])
+  rate(c(a$.call, b$.call), "right", by = "ana", folder = folder)
+  rows <- rated(mood, folder = folder)
+  expect_identical(nrow(rows), 2L)
+  expect_identical(attr(rows, "left_out")$other_signature, 0L)
+  # a call whose inputs were not kept makes no row
+  hidden <- update(mood, log_content = FALSE)
+  c3 <- predict(hidden, reviews[2, ])$.call
+  rate(c3, "right", by = "ana", folder = folder)
+  expect_identical(attr(rated(mood, folder = folder), "left_out")$no_content, 1L)
+  expect_identical(calls(mood, folder = folder)$content, c(TRUE, TRUE, FALSE))
+  expect_identical(calls(mood, folder = folder)$saw[[1L]], list())
+})
+
+test_that("GEPA's own calls keep nothing when the function it improves drops a field", {
+  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, list(log_content = list(transcript = FALSE)), "run")
+  expect_false(core_of(meta)$own$log_content)
+  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, list(), "run")
+  expect_null(core_of(meta)$own$log_content)
+})

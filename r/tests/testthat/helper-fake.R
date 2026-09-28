@@ -52,3 +52,11 @@ log_lines <- function(folder) {
   lines <- unlist(lapply(sort(list.files(folder, recursive = TRUE, full.names = TRUE, pattern = "\\.jsonl$")), readLines, encoding = "UTF-8"))
   lapply(lines, lmcc::parse_json)
 }
+
+# The inputs an AI function's call binds, given these (its R function's own
+# defaults filling what is left out), as the JSON row it sends.
+bound_row <- function(fn, args) {
+  f <- unclass(fn)
+  body(f) <- quote(input_rows(.core, mget(.inputs, envir = environment()))[[1L]])
+  do.call(f, args)
+}
