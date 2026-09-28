@@ -31,7 +31,12 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #' `with_ai_config(code, log_content = c(transcript = FALSE))`, or, surest
 #' against a misspelt name, the list of what may be kept,
 #' `log_content = c("question")` (the same as `list("*" = FALSE, question =
-#' TRUE)`). `FUNCTAI_LOG_CONTENT=0` drops every value, whatever the
+#' TRUE)`). Mind the difference: `c(question = TRUE)` names one field and
+#' says nothing of the others, so it keeps everything; `c("question")` keeps
+#' only the question. A name is always the field of that name (a field
+#' FunctAI adds included); a one-output function's answer may also be called
+#' by its formula's name when no field has that name.
+#' `FUNCTAI_LOG_CONTENT=0` drops every value, whatever the
 #' settings say. A field FunctAI adds (the reasoning, the tool calls) is
 #' written only when no field of the call is dropped. A record that does not
 #' keep every value keeps no request or reply either, and no error message.

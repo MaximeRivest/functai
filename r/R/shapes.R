@@ -162,6 +162,7 @@ as_field <- function(x) {
     cli::cli_abort(c("a field is a type or one sentence about it, not {length(x)} strings",
       i = "one of several answers is a choice: {.code choice({paste(encodeString(utils::head(x, 2L), quote = '\"'), collapse = ', ')}, ...)}"))
   }
+  if (inherits(x, c("Date", "POSIXt"))) return(new_field(list(type = "string"), "string"))   # dates are text, as a column of them is
   if (is.factor(x)) {
     lv <- levels(x)
     if (!length(lv)) cli::cli_abort("a factor prototype needs its levels: {.code factor(levels = c(\"a\", \"b\"))}")
@@ -199,14 +200,18 @@ element <- function(x, i) {
 is_missing <- function(v) is.null(v) || (is.atomic(v) && length(v) == 1L && is.na(v))
 
 # A value as the JSON its field's shape describes (lmcc's R conventions:
-# named list = object, unnamed list = array, NULL = null).
+# named list = object, unnamed list = array, NULL = null). Nothing is lost on
+# the way: a value that is not of the field's type stays what it is (2.5
+# given to a whole number stays 2.5, a number given to a choice stays a
+# number), so the check of the value refuses it rather than a conversion
+# hiding it; the log writes a value by what it is (calls.md, *Values*).
 to_json <- function(f, v) {
   if (is_missing(v)) return(NULL)
   switch(f$kind,
-    string = , enum = as.character(v),
-    integer = if (is.numeric(v) && abs(v) <= .Machine$integer.max) as.integer(v) else v,
-    number = as.double(v),
-    boolean = as.logical(v),
+    string = , enum = if (is.factor(v)) as.character(v) else if (is.atomic(v) && length(v) == 1L) unname(v) else plain_json(v),
+    integer = if (is.numeric(v) && length(v) == 1L && v == round(v) && abs(v) <= .Machine$integer.max) as.integer(v) else plain_json(v),
+    number = if (is.numeric(v) && length(v) == 1L) as.double(v) else plain_json(v),
+    boolean = if (is.logical(v) && length(v) == 1L) v else plain_json(v),
     record = {
       v <- as.list(v)
       out <- list()
@@ -260,38 +265,3 @@ assemble <- function(f, values) {
     json = values)
 }
 
-# The first place a value does not fit a shape, or NULL (the JSON Schema
-# subset shapes use).
-misfit <- function(shape, v, where) {
-  opts <- shape$anyOf %||% shape$oneOf
-  if (!is.null(opts)) {
-    for (o in opts) if (is.null(misfit(o, v, where))) return(NULL)
-    return(sprintf("%s: %s fits none of its options", where, lmcc::json_text(v)))
-  }
-  if (!is.null(shape$enum) && !any(vapply(shape$enum, function(e) identical(lmcc::canonical_json(e), lmcc::canonical_json(v)), NA)))
-    return(sprintf("%s: %s is not one of %s", where, lmcc::json_text(v), lmcc::json_text(shape$enum)))
-  t <- shape$type
-  if (is.character(t) && length(t) == 1L) {
-    v2 <- num(v)
-    ok <- switch(t,
-      string = is.character(v) && length(v) == 1L,
-      integer = is.numeric(v2) && length(v2) == 1L && !is.na(v2) && v2 == round(v2),
-      number = is.numeric(v2) && length(v2) == 1L,
-      boolean = is.logical(v) && length(v) == 1L,
-      null = is.null(v),
-      array = is.list(v) && is.null(names(v)),
-      object = is.list(v) && (!is.null(names(v)) || !length(v)),
-      TRUE)
-    if (!ok) return(sprintf("%s: expected %s, got %s", where, t, lmcc::json_text(v)))
-  }
-  if (is.list(v) && is.null(names(v)) && is.list(shape$items))
-    for (i in seq_along(v)) { p <- misfit(shape$items, v[[i]], sprintf("%s[%d]", where, i - 1L)); if (!is.null(p)) return(p) }
-  if (is.list(v) && !is.null(names(v))) {
-    for (k in unlist(shape$required)) if (!k %in% names(v)) return(sprintf("%s: missing %s", where, k))
-    for (k in names(v)) {
-      if (!is.null(shape$properties[[k]])) { p <- misfit(shape$properties[[k]], v[[k]], paste0(where, ".", k)); if (!is.null(p)) return(p) }
-      else if (is.list(shape$additionalProperties)) { p <- misfit(shape$additionalProperties, v[[k]], paste0(where, ".", k)); if (!is.null(p)) return(p) }
-    }
-  }
-  NULL
-}

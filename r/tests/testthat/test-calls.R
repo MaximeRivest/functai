@@ -275,7 +275,7 @@ test_that("interfaces are checked when a function is defined", {
   err <- tryCatch(ai(reply ~ message + tone, "x", tone = defaults_to("loud", choice("kind", "brief"))), functai_refusal = identity)
   expect_s3_class(err, "functai_interface_malformed")
   expect_identical(err$field, "tone")
-  expect_match(conditionMessage(err), "default \"loud\" does not fit")
+  expect_match(conditionMessage(err), "tone's default does not fit its type (tone: \"loud\" is not one of", fixed = TRUE)
   err <- tryCatch(ai(team ~ my.message, "x"), lmcc_refusal = identity)      # lmcc checks a signature first
   expect_identical(err$code, "signature-malformed")
   err <- tryCatch(ai(n ~ items + at_least, "Count.", at_least = defaults_to(5L, json_shape(list(type = "integer", minimum = 10)))),
@@ -414,9 +414,20 @@ test_that("rated() pools calls that record the same data: reasoning turned on ch
   expect_identical(calls(mood, folder = folder)$saw[[1L]], list())
 })
 
-test_that("GEPA's own calls keep nothing when the function it improves drops a field", {
-  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, list(log_content = list(transcript = FALSE)), "run")
+test_that("GEPA's own calls keep nothing when a layer in force drops a field of the function it improves", {
+  improved <- function(...) core_of(ai(summary ~ transcript + question, "x", ...))
+  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(.log_content = list(transcript = FALSE)), "run")
   expect_false(core_of(meta)$own$log_content)
-  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, list(), "run")
+  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(), "run")
   expect_null(core_of(meta)$own$log_content)
+  # a host's map names the function's fields, which the meta function has not: it still holds
+  meta <- with_ai_config(meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(), "run"), log_content = c(transcript = FALSE))
+  expect_false(core_of(meta)$own$log_content)
+  old <- the$config
+  ai_config(log_content = c("question"))
+  meta <- meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(), "run")
+  the$config <- old
+  expect_false(core_of(meta)$own$log_content)
+  withr::local_envvar(FUNCTAI_LOG_CONTENT = "0")
+  expect_false(core_of(meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(), "run"))$own$log_content)
 })

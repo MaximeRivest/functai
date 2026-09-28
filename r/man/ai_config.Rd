@@ -43,7 +43,12 @@ value is written only when no layer drops it, so a host holds every
 function it runs to "never write the transcript":
 \code{with_ai_config(code, log_content = c(transcript = FALSE))}, or, surest
 against a misspelt name, the list of what may be kept,
-\code{log_content = c("question")} (the same as \code{list("*" = FALSE, question = TRUE)}). \code{FUNCTAI_LOG_CONTENT=0} drops every value, whatever the
+\code{log_content = c("question")} (the same as \code{list("*" = FALSE, question = TRUE)}). Mind the difference: \code{c(question = TRUE)} names one field and
+says nothing of the others, so it keeps everything; \code{c("question")} keeps
+only the question. A name is always the field of that name (a field
+FunctAI adds included); a one-output function's answer may also be called
+by its formula's name when no field has that name.
+\code{FUNCTAI_LOG_CONTENT=0} drops every value, whatever the
 settings say. A field FunctAI adds (the reasoning, the tool calls) is
 written only when no field of the call is dropped. A record that does not
 keep every value keeps no request or reply either, and no error message.

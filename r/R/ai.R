@@ -33,6 +33,22 @@
 #' its type. A function that breaks these rules is refused then
 #' (`interface-malformed`), not later by whatever reads it.
 #'
+#' **Values are checked on every call**, by the same rules as the defaults:
+#' a value given that does not fit its field's type (`5` for
+#' `json_shape(list(type = "integer", minimum = 10))`, `2.5` for a whole
+#' number) fails that row before any request (`interface-input`, a
+#' `functai_interface_input` condition naming the `field`), and its call
+#' record says so; a reply whose value does not fit is unreadable, and the
+#' model is asked again. A value given to a text input that is not text is
+#' sent as text. An input left out is sent with its default exactly as the
+#' interface holds it.
+#'
+#' **Missing values.** `NA` (or `NULL`) is JSON's null, never "left out": an
+#' input whose type takes null (an [optional()] type, a [json_shape()] that
+#' allows null) is sent null; in an input whose type takes no null, required
+#' or optional, the row has nothing to send and makes no call: its answer is
+#' `NA`, as with a missing value anywhere in R.
+#'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
 #' may keep, `c("question")`. It only removes: a block around the call, or
@@ -118,12 +134,8 @@ ai <- function(.formula, .description = "", ..., .data = NULL, .name = NULL, .to
     definition = list(name = name, description = .description, inputs = inputs, outputs = outputs),
     own = settings, tools = .tools %||% list(), single = single, columns = columns,
     module = .defined_in %||% "__main__", state = list(instructions = .instructions, demos = list()), saved = NULL)
-  outs_with_default <- names(outputs)[vapply(outputs, function(f) isTRUE(f$optional), NA)]
-  if (length(outs_with_default))
-    refuse("interface-malformed", c("{.field {columns[outs_with_default]}} is an output: only an input has a default",
-      i = "{.fn defaults_to} is for an input the caller may leave out"), field = outs_with_default[[1L]])
   core <- own_settings(core)
-  check_definition(core)
+  check_definition(core, call = here)          # an output given a default is refused there, in its turn
   fn <- make_fn(core)
   if (!is.null(.demos)) fn <- with_demos(fn, .demos)
   fn
@@ -186,15 +198,25 @@ columns_of <- function(core) {
 }
 
 # The R function: one argument per input, in order; an input with a default
-# (defaults_to()) defaults to it, as one row of its column.
+# (defaults_to()) shows it as its default argument. A call that leaves such
+# an input out sends the interface's default itself, as JSON (input_rows()):
+# only the arguments the caller gave are read.
 make_fn <- function(core) {
   env <- new.env(parent = asNamespace("functai"))
   env$.core <- core
   env$.inputs <- names(core$definition$inputs)
   args <- lapply(core$definition$inputs, function(f) if (isTRUE(f$optional)) default_value(f) else rlang::missing_arg())
   names(args) <- env$.inputs
-  f <- rlang::new_function(args, quote(call_ai(.core, mget(.inputs, envir = environment()))), env)
+  f <- rlang::new_function(args, quote(call_ai(.core, given_inputs(environment(), .inputs))), env)
   structure(f, class = c("functai_fn", "function"))
+}
+
+# The arguments a call of an AI function was given, by name: an argument
+# left out (its default not given) is not among them.
+given_inputs <- function(env, names) {
+  out <- list()
+  for (n in names) if (!eval(call("missing", as.name(n)), env)) out[n] <- list(get(n, envir = env))
+  out
 }
 
 core_of <- function(fn) {
@@ -292,6 +314,11 @@ run_rows <- function(core, rows, extra = list()) {
   jobs <- list(); calls <- vector("list", length(rows))
   for (i in seq_along(rows)) {
     if (is.null(rows[[i]])) next
+    if (inherits(rows[[i]], "functai_misfit")) {                   # refused before any request
+      call <- start_call(program, s, rows[[i]]$inputs, fields, keep)
+      calls[[i]] <- call
+      next
+    }
     call <- start_call(program, s, rows[[i]], fields, keep)
     call$provider <- r$provider
     calls[[i]] <- call
@@ -302,6 +329,11 @@ run_rows <- function(core, rows, extra = list()) {
   }
   run_jobs(unname(jobs), r$router, s$concurrency)
   lapply(seq_along(rows), function(i) {
+    if (inherits(rows[[i]], "functai_misfit")) {
+      err <- misfit_error(core, rows[[i]])
+      finish_call(calls[[i]], err)
+      return(list(error = err, call = calls[[i]]$id, model = NULL))
+    }
     job <- jobs[[as.character(i)]]
     if (is.null(job)) return(list(skipped = TRUE))
     if (identical(job$state, "done")) {
@@ -333,25 +365,62 @@ confidence_of <- function(outputs, probabilities) {
   if (length(ps)) min(ps) else NULL
 }
 
-# The inputs, recycled, as one JSON list per row (NULL for a row with a
-# missing input). An input with a default that is not given takes it.
-input_rows <- function(core, inputs) {
-  for (k in names(core$definition$inputs)) {
-    f <- core$definition$inputs[[k]]
-    if (!k %in% names(inputs) && isTRUE(f$optional)) inputs[k] <- list(default_value(f))
-  }
-  inputs <- vctrs::vec_recycle_common(!!!inputs)
-  n <- vctrs::vec_size_common(!!!inputs)
+# The inputs given, recycled to `n` rows (default: their common size, or one
+# row when every input is left out), as one JSON list per row:
+# - an input left out takes its shape's default, as the interface holds it
+#   (exact JSON: absent members stay absent, and nothing is made up);
+# - a missing value (`NA`, `NULL`) is JSON's null: where the input's type
+#   does not take null, the row has no value to send and makes no call (NULL:
+#   its answer is `NA`, as a required or an optional input's);
+# - a given value that does not fit its type (programs.md, *Checking
+#   values*) makes a row that fails with `interface-input` before any request
+#   (a `functai_misfit`).
+input_rows <- function(core, inputs, n = NULL) {
   fields <- core$definition$inputs
+  given <- inputs[intersect(names(fields), names(inputs))]
+  unset <- setdiff(required_inputs(core), names(given))
+  if (length(unset)) cli::cli_abort("no value for input{?s} {.field {unset}}", call = NULL)
+  given <- lapply(given, function(v) if (is.null(v)) NA else v)
+  if (length(given)) given <- vctrs::vec_recycle_common(!!!given, .size = n)
+  n <- n %||% if (length(given)) vctrs::vec_size_common(!!!given) else 1L
   lapply(seq_len(n), function(i) {
     row <- list()
     for (k in names(fields)) {
-      v <- element(inputs[[k]], i)
-      if (is_missing(v) && !isTRUE(fields[[k]]$nullable)) return(NULL)
-      row[k] <- list(to_json(fields[[k]], v))
+      f <- fields[[k]]
+      if (!k %in% names(given)) { row[k] <- list(f$shape[["default"]]); next }
+      v <- element(given[[k]], i)
+      if (is_missing(v) && !takes_null(f)) return(NULL)
+      row[k] <- list(to_json(f, v))
+    }
+    for (k in names(given)) {
+      why <- input_fault(fields[[k]], row[[k]], k)
+      if (!is.null(why)) return(structure(list(inputs = row, field = k, message = why), class = "functai_misfit"))
     }
     if (!length(row)) lmcc::jobj() else row
   })
+}
+
+# Whether a field's type takes JSON's null (an optional() type; a JSON shape
+# that allows it).
+takes_null <- function(f) {
+  shape <- data_shape(f$shape)
+  isTRUE(f$nullable) || (well_formed(shape, shape, carry = TRUE) && !loops(shape) && fits_shape(NULL, shape, shape))
+}
+
+# Why a given input's value does not fit its field, or NULL. A value given to
+# a text input that is not text is sent as text (functions.md), so it is
+# checked as the text sent.
+input_fault <- function(f, v, name) {
+  shape <- data_shape(f$shape)
+  if (!well_formed(shape, shape, carry = TRUE) || loops(shape)) return(NULL)    # refused at definition; never here
+  if (is_text_shape(shape) && !is.null(v) && !is_str(v)) v <- text_form(v)
+  shape_fault(v, shape, shape, name)
+}
+
+# A row that did not bind, as the error its call ends with.
+misfit_error <- function(core, row) {
+  rlang::error_cnd(class = c("functai_interface_input", "functai_refusal"),
+                   message = sprintf("%s: input %s", core$definition$name, row$message), code = "interface-input", field = row$field)
 }
 
 # Inputs given by name or by position, named.
@@ -460,7 +529,7 @@ update.functai_fn <- function(object, ...) {
   core <- core_of(object)
   core$own <- set_all(core$own, check_settings(list(...)))
   core <- own_settings(core)
-  check_definition(core)
+  check_definition(core, call = rlang::current_env())
   make_fn(core)
 }
 
@@ -499,6 +568,8 @@ ai_render <- function(fn, ...) {
   s <- adjust_settings(s, r$provider, r$wire)
   plan <- bind_layout(s$adapter, s$template, signature_of(core, s), call_capabilities(r$provider, r$wire, s), r$provider)
   row <- input_rows(core, named_inputs(core, list(...)))[[1L]]
+  if (inherits(row, "functai_misfit")) stop(misfit_error(core, row))
+  if (is.null(row)) cli::cli_abort("an input is missing (NA), and its type takes no null: this call would send nothing")
   values <- prepare_inputs(plan$signature, row)
   if (length(core$tools)) values$tools <- tool_specs(core)
   turns <- past_turns(core, plan)
@@ -565,7 +636,7 @@ sampled <- function(core, rows, samples, temperature, memo = NULL, extra = list(
   # what decides the answers: the function's version, the model, the sampling
   s <- effective(set_all(core$own, extra))
   prefix <- paste(version_of(core), s$lm %||% "", samples, temperature, sep = "|")
-  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(r)), "")
+  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(unclass(r))), "")
   todo <- which(!is.na(keys) & !vapply(keys, function(k) !is.na(k) && !is.null(memo) && !is.null(memo[[k]]), NA))
   todo <- todo[!duplicated(keys[todo])]
   if (length(todo)) {
@@ -627,7 +698,7 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
   if (length(missing)) cli::cli_abort("{.arg new_data} has no column for input{?s} {.field {missing}}")
   type <- type %||% "class"
   if (!type %in% c("class", "numeric", "prob", "raw")) cli::cli_abort("{.arg type} is \"class\", \"numeric\" or \"prob\", not {.val {type}}")
-  rows <- input_rows(core, as.list(new_data)[intersect(names(core$definition$inputs), names(new_data))])
+  rows <- input_rows(core, as.list(new_data)[intersect(names(core$definition$inputs), names(new_data))], n = nrow(new_data))
   samples <- as.integer(samples)
   if (type == "prob" || samples > 1L) {
     if (!is_choice(core)) cli::cli_abort(c("probabilities and votes need an answer that is a choice: {.code {columns_of(core)[[1L]]} = choice(...)}"))
@@ -696,7 +767,7 @@ memo_rows <- function(core, rows, settings) {
   if (is.null(core$memo) || !measures_probabilities(core, settings)) return(if (length(rows)) run_rows(core, rows, settings) else list())
   s <- effective(set_all(core$own, settings))
   prefix <- paste("measured", version_of(core), s$lm %||% "", sep = "|")
-  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(r)), "")
+  keys <- vapply(rows, function(r) if (is.null(r)) NA_character_ else paste0(prefix, "|", lmcc::canonical_json(unclass(r))), "")
   todo <- which(!is.na(keys) & !vapply(keys, function(k) !is.na(k) && !is.null(core$memo[[k]]), NA))
   todo <- todo[!duplicated(keys[todo])]
   if (length(todo)) {

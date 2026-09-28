@@ -7,12 +7,13 @@
 defaults_to(value, type = NULL)
 }
 \arguments{
-\item{value}{The default: one value (a string, a number, \code{TRUE}, a
-one-row tibble for a record, \code{NA} or \code{NULL} for an \code{\link[=optional]{optional()}} type).}
+\item{value}{The default: one value (a string, a number, \code{TRUE}, a date,
+a one-row tibble for a record, \code{NA} or \code{NULL} for an \code{\link[=optional]{optional()}}
+type).}
 
-\item{type}{Its type, as in \code{\link[=ai]{ai()}}: a type, or a sentence (text,
-described by it). Default: the type of \code{value} (text for a string, a
-whole number for an integer, ...).}
+\item{type}{Its type, as in \code{\link[=ai]{ai()}}; or a sentence, words about the type
+\code{value} has. Default: the type of \code{value} (text for a string or a date,
+a whole number for an integer, ...).}
 }
 \value{
 A field.
@@ -28,9 +29,13 @@ changes neither the function's signature nor its version, only what a
 call that leaves the input out sends.
 }
 \details{
-The default must fit the type (a \code{\link[=choice]{choice()}}'s default is one of its
+The default must be of the type, as vctrs casts (\code{defaults_to(2.5, integer())} is refused: it would lose the half; so is \code{defaults_to(TRUE, character())}), and fit it (a \code{\link[=choice]{choice()}}'s default is one of its
 answers); a function whose default does not fit is refused when it is
 defined (\code{interface-malformed}). Only inputs have defaults.
+
+A call that leaves the input out sends the default exactly as the
+interface holds it (its JSON), never a copy made through an R type: a
+record's default that leaves out a member sends it without that member.
 }
 \examples{
 reply <- ai(reply ~ message + tone, "Answer the customer.",
@@ -38,5 +43,5 @@ reply <- ai(reply ~ message + tone, "Answer the customer.",
   tone = defaults_to("kind", choice("kind", "brief", "formal")))
 reply
 ai_interface(reply)
-defaults_to(3L, "how many suggestions to give")
+defaults_to(3L, "how many suggestions to give")     # a whole number, described
 }

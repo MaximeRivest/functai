@@ -59,13 +59,19 @@ call_fields <- function(core, settings) {
 
 # R calls a one-output function's answer by its formula's name (`reply ~
 # message`); its field is `result`, as in every language. A map may say
-# either: this one says the field's name (a drop wins over a keep).
+# either: this one says the field's name (a drop wins over a keep). A name
+# that is a field of the call (an input, an output, one FunctAI adds) is that
+# field, never an alias: a loaded function's answer column is named after the
+# function, and a function may be named like one of its inputs (`secret`),
+# whose rule must not move to the answer.
 field_names_in <- function(layer, core) {
   if (!is.list(layer)) return(layer)
   cols <- columns_of(core)
+  fields <- call_fields(core, effective(core$own))
+  canonical <- c(fields$inputs, fields$outputs)
   for (field in names(cols)) {
     col <- cols[[field]]
-    if (identical(col, field) || !col %in% names(layer)) next
+    if (identical(col, field) || col %in% canonical || !col %in% names(layer)) next
     v <- layer[[col]]
     layer[[col]] <- NULL
     layer[[field]] <- if (field %in% names(layer)) isTRUE(layer[[field]]) && isTRUE(v) else v
@@ -94,7 +100,7 @@ content_kept <- function(fields, layers, environment_off = environment_drops_all
 
 # A function's own map may name only its fields (`tools` is not one): a
 # misspelt name would write the very value it was meant to keep out.
-check_own_content <- function(core) {
+check_own_content <- function(core, call = NULL) {
   own <- core$own$log_content
   if (!is.list(own)) return(invisible())
   fields <- call_fields(core, effective(core$own))
@@ -105,7 +111,7 @@ check_own_content <- function(core) {
     refuse("log-content-field", c("{.fn {core$definition$name}}'s {.arg log_content} names {.field {k}}, which is not one of its fields",
       i = "its fields are {.field {spelled}}",
       i = if (identical(k, "tools")) "its tools are the function itself, not a value of a call: nothing records them"),
-      field = k)
+      field = k, call = call)
   invisible()
 }
 

@@ -111,7 +111,9 @@ exchange <- function(call, model, request, response, started, seconds, error = N
 
 error_json <- function(err) {
   cls <- class(err)
-  type <- if (inherits(err, "lmcc_refusal")) "Refusal" else if (inherits(err, "LM15Error")) (setdiff(cls, c("LM15Error", "error", "condition"))[1L] %|na|% "LM15Error") else cls[[1L]]
+  type <- if (inherits(err, "lmcc_refusal")) "Refusal"
+    else if (inherits(err, c("functai_interface_input", "functai_interface_output"))) "InterfaceError"
+    else if (inherits(err, "LM15Error")) (setdiff(cls, c("LM15Error", "error", "condition"))[1L] %|na|% "LM15Error") else cls[[1L]]
   out <- list(type = type)
   if (inherits(err, "lmcc_refusal") || inherits(err, "functai_refusal")) out$code <- err$code
   out$message <- conditionMessage(err)
@@ -154,6 +156,10 @@ call_record <- function(call, error = NULL) {
   answered <- Filter(function(e) !is.null(e$response), call$exchanges)
   usage <- list()
   for (e in answered) for (k in names(u <- usage_of(e$response))) usage[[k]] <- (usage[[k]] %||% 0L) + u[[k]]
+  if (!is.null(call$outputs)) {                 # in the fields' order (the ones FunctAI adds first, as lmcc's signature has them)
+    ord <- c(intersect(call$fields$outputs, names(call$outputs)), setdiff(names(call$outputs), call$fields$outputs))
+    call$outputs <- call$outputs[ord]
+  }
   in_sizes <- lmcc::jobj(); out_sizes <- lmcc::jobj()
   for (k in names(call$inputs)) in_sizes[[k]] <- size_of(call$inputs[[k]])
   for (k in names(call$outputs)) out_sizes[[k]] <- size_of(call$outputs[[k]])

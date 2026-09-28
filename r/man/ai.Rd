@@ -79,6 +79,22 @@ are ASCII identifiers (\code{order_id}, not \code{order.id}), and a default fits
 its type. A function that breaks these rules is refused then
 (\code{interface-malformed}), not later by whatever reads it.
 
+\strong{Values are checked on every call}, by the same rules as the defaults:
+a value given that does not fit its field's type (\code{5} for
+\code{json_shape(list(type = "integer", minimum = 10))}, \code{2.5} for a whole
+number) fails that row before any request (\code{interface-input}, a
+\code{functai_interface_input} condition naming the \code{field}), and its call
+record says so; a reply whose value does not fit is unreadable, and the
+model is asked again. A value given to a text input that is not text is
+sent as text. An input left out is sent with its default exactly as the
+interface holds it.
+
+\strong{Missing values.} \code{NA} (or \code{NULL}) is JSON's null, never "left out": an
+input whose type takes null (an \code{\link[=optional]{optional()}} type, a \code{\link[=json_shape]{json_shape()}} that
+allows null) is sent null; in an input whose type takes no null, required
+or optional, the row has nothing to send and makes no call: its answer is
+\code{NA}, as with a missing value anywhere in R.
+
 \strong{What the call log keeps} is \code{.log_content} (see \code{\link[=ai_config]{ai_config()}}):
 \code{TRUE}, \code{FALSE}, \code{c(transcript = FALSE)}, or the names of the fields it
 may keep, \code{c("question")}. It only removes: a block around the call, or

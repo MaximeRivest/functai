@@ -142,7 +142,11 @@ tidymodels. What only a regression has, interactions (`a * b`),
 transformed columns (`log(x)`) and intercepts, `ai()` refuses and says why:
 a language model reads all its inputs together, as they are.
 
-A row with a missing input is `NA` without a call. When some calls fail
+A row with a missing input (`NA`) whose type takes no null is `NA`
+without a call, whether the input is required or has a default: `NA` is a
+value given, never "left out". A value that does not fit its field's type
+(`2.5` for a whole number, a number below a `minimum`) fails its row
+before any request. When some calls fail
 (after the re-asks and the provider retries), their rows are `NA` and one
 warning says how many; `ai_problems()` lists them. A single call that fails
 is an error, as is any failure with `.on_error = "stop"`.

@@ -68,7 +68,6 @@ r_function <- function(d) {
 
 within_default <- function(x, default) { x$shape["default"] <- list(default); x }
 
-plain <- function(x) lmcc::canonical_json(unclass(x))
 
 without_type <- function(sig) list(instructions = sig$instructions, fields = lapply(sig$fields, function(f) {
   f$type <- NULL
@@ -114,12 +113,15 @@ for (name in names(cases("scores"))) {
 
 # ---------------------------------------------------------------- rated
 
+# The records are read from a log folder, as rated() reads them (every line,
+# whatever it is; the reader keeps the formats it knows).
 for (name in names(cases("rated"))) {
   test_that(paste("rated case", name), {
     c <- cases("rated")[[name]]
-    calls <- Filter(function(r) !is.null(r$functai_call), c$records)
-    ratings <- Filter(function(r) !is.null(r$functai_rating), c$records)
-    got <- rated_rows(calls, ratings, name = c$rated$name, module = c$rated$module, signature = c$rated$signature,
+    folder <- log_folder_of(c$records)
+    on.exit(unlink(folder, recursive = TRUE))
+    log <- read_log(folder)
+    got <- rated_rows(log$calls, log$ratings, name = c$rated$name, module = c$rated$module, signature = c$rated$signature,
                       by = c$rated$by, interface = c$rated$interface)
     expect_identical(vapply(got$rows, lmcc::canonical_json, ""), vapply(c$expect$rows, lmcc::canonical_json, ""))
     expect_identical(lmcc::canonical_json(got$left_out), lmcc::canonical_json(c$expect$left_out))
@@ -128,15 +130,21 @@ for (name in names(cases("rated"))) {
 
 # ---------------------------------------------------------------- saved
 
+# Each manifest is written to a folder, and loaded (read_ai()) and described
+# (ai_interface()) from it, as a user does. `sends`: the loaded function is
+# called, and its record and request checked (expect_sends()).
 for (name in names(cases("saved"))) {
   test_that(paste("saved case", name), {
     c <- cases("saved")[[name]]
+    dir <- withr::local_tempdir()
+    writeLines(lmcc::json_text(c$manifest), file.path(dir, "functai.json"), useBytes = TRUE)
     if (!is.null(c$expect$refuses)) {
-      err <- tryCatch(from_manifest(c$manifest, c$node), functai_load_refused = function(e) e)
+      err <- tryCatch(read_ai(dir, c$node), functai_load_refused = function(e) e)
       expect_s3_class(err, "functai_load_refused")
       expect_identical(err$code, c$expect$refuses)
+      if (!is.null(c$expect$field)) expect_identical(err$field, c$expect$field)
     } else {
-      fn <- from_manifest(c$manifest, c$node)
+      fn <- read_ai(dir, c$node)
       core <- core_of(fn)
       expect_identical(core$definition$name, c$expect$loads$name)
       expect_identical(core$module, c$expect$loads$module)
@@ -145,11 +153,9 @@ for (name in names(cases("saved"))) {
       probes <- c$manifest$nodes[[c$node %||% c$manifest$entry]]$ai$probes
       expect_identical(vapply(probes, function(p) request_hash(core, p), ""), unlist(c$expect$loads$requests))
       for (send in c$expect$sends)                                # left out, an input is sent with its default
-        expect_identical(request_hash(core, bound_row(fn, send$inputs)), send$request_hash, info = plain(send$inputs))
+        expect_sends(fn, send$inputs, request_hash = send$request_hash)
     }
     # describing the node without loading it, from its folder
-    dir <- withr::local_tempdir()
-    writeLines(lmcc::json_text(c$manifest), file.path(dir, "functai.json"), useBytes = TRUE)
     got <- tryCatch(ai_interface(dir, node = c$node), functai_refusal = function(e) e)
     if (!is.null(c$expect$describe$refuses)) {
       expect_s3_class(got, "functai_refusal")
@@ -184,7 +190,10 @@ for (name in names(Filter(function(c) identical(c$program, "ai"), cases("program
     expect_identical(interface_signature(iface), c$expect$signature)
     expect_identical(ai_signature_id(got), c$expect$signature_id)
     expect_identical(program_of(core_of(got))()$interface, c$expect$signature)
-    for (b in c$binds) expect_identical(plain(bound_row(got, b$inputs)), plain(b$expect$inputs), info = plain(b$inputs))
+    for (b in c$binds) {
+      expect_sends(got, b$inputs, bound = b$expect$inputs)             # the call itself: its record holds what it bound
+      expect_identical(plain(bound_row(got, b$inputs)), plain(b$expect$inputs), info = plain(b$inputs))
+    }
   })
 }
 
@@ -255,6 +264,63 @@ for (name in names(cases("content"))) {
       expect_identical(err$field, c$expect$field)
     } else {
       expect_identical(plain(run()), plain(c$expect$record))
+    }
+  })
+}
+
+# The same layers around a real call of the function, answered by a fake
+# model with the case's values (the tool call first, when it has tools): the
+# record R's writer makes has the case's `content` and `omitted`, keeps the
+# case's values and no others, holds every field's size (`calls` included),
+# and keeps no request, reply, request hash or error message when it is not
+# whole. What R cannot make (`returned`, `probabilities`, an error member of a
+# later contract) is checked above, on the case's record.
+content_replies <- function(c) {
+  outs <- c$record$outputs
+  final <- if (is.null(outs)) "no tags at all" else
+    sprintf("<reasoning>\n%s\n</reasoning>\n<summary>\n%s\n</summary>\n<result>\n%s\n</result>", outs$reasoning, outs$summary, outs$result)
+  tool <- if ("calls" %in% unlist(c$fields$added)) list(list(calls = list(list(id = "call_1", name = "ci_log", input = list(job = 4412L)))))
+  c(tool, list(final, final))
+}
+
+for (name in names(Filter(function(c) !is.null(c$expect$record), cases("content")))) {
+  test_that(paste("content case", name, "(the record a call writes)"), {
+    c <- cases("content")[[name]]
+    if (is.null(c$environment)) withr::local_envvar(FUNCTAI_LOG_CONTENT = NA) else withr::local_envvar(FUNCTAI_LOG_CONTENT = c$environment)
+    want <- c$expect$record
+    own <- Find(function(l) identical(l$where, "own"), c$layers)
+    router <- fake_router(content_replies(c))
+    folder <- withr::local_tempdir()
+    within_layers(c$layers, {
+      fn <- update(content_function(c$fields, own$log_content), router = router, lm = "gpt-4.1-mini", log_calls = folder)
+      tryCatch(fn(transcript = c$record$inputs$transcript, question = c$record$inputs$question), error = function(e) NULL)
+    })
+    recs <- log_lines(folder)
+    expect_length(recs, 1L)
+    rec <- recs[[1L]]
+    expect_null(schema_fault(rec, "call.schema.json"))
+    expect_identical(rec$content, want$content)
+    expect_identical(plain(rec$omitted), plain(want$omitted))
+    expect_identical(plain(rec$inputs), plain(want$inputs))
+    expect_identical(has_key(rec, "outputs"), has_key(want, "outputs"))
+    expect_identical(names(rec$outputs), names(want$outputs))
+    for (k in setdiff(names(want$outputs), "calls")) expect_identical(plain(rec$outputs[[k]]), plain(want$outputs[[k]]), info = k)
+    expect_identical(names(rec$sizes$inputs), names(want$sizes$inputs))
+    expect_identical(names(rec$sizes$outputs), names(want$sizes$outputs))
+    expect_identical(plain(rec$sizes$inputs), plain(want$sizes$inputs))
+    if (!is.null(want$error)) {
+      expect_identical(rec$error$type, want$error$type)
+      expect_setequal(names(rec$error), names(want$error))
+    } else expect_null(rec$error)
+    expect_gte(length(rec$exchanges), 1L)
+    for (ex in rec$exchanges) {
+      if (isTRUE(want$content)) {
+        expect_true(has_key(ex, "request") && has_key(ex, "request_hash"))
+        if (!is.null(ex$finish)) expect_true(has_key(ex, "response"))
+      } else {
+        expect_false(any(c("request", "response", "request_hash") %in% names(ex)))
+        if (!is.null(ex$error)) expect_setequal(names(ex$error), intersect(c("type", "code"), names(ex$error)))
+      }
     }
   })
 }

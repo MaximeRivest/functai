@@ -12,8 +12,10 @@ log_folder <- function(folder) folder %||% folder_of(effective()$log_calls %||% 
 #'   `name`, `module`, `version`, `model`, `seconds`, `inputs` and `outputs`
 #'   (list columns of JSON values), `error`, `input_tokens`, `output_tokens`,
 #'   `reasoning_tokens`, `total_tokens`, `parent`, `caller`, `language`,
-#'   `content` (whether every value was kept), `saw` (the earlier calls it
-#'   was shown, `NULL` when its record does not say).
+#'   `content` (whether every value was kept), `omitted` (when it was not:
+#'   the names of the fields whose values were not kept, as `inputs` and
+#'   `outputs`; `NULL` otherwise), `saw` (the earlier calls it was shown,
+#'   `NULL` when its record does not say).
 #'   Providers count differently: OpenAI's and Anthropic's `output_tokens`
 #'   include the model's hidden reasoning, Gemini's leave it out (it is in
 #'   `reasoning_tokens`). Every one bills `total_tokens - input_tokens` as
@@ -42,6 +44,7 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
     parent = chr(function(c) c$parent), caller = lapply(recs, function(c) c$caller),
     language = chr(function(c) c$process$language),
     content = vapply(recs, function(c) isTRUE(c$content), NA),
+    omitted = lapply(recs, function(c) c$omitted),
     saw = lapply(recs, function(c) c$saw))
 }
 

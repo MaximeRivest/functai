@@ -32,11 +32,16 @@ fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job)
 sending <- function(job) if (is.null(job$call$sent)) { job$call$sent <- TRUE; job$call$started <- as.numeric(Sys.time()) }
 ended <- function(job) if (!is.null(job$call)) job$call$ended <- as.numeric(Sys.time())
 
-# The first output value that does not fit its shape, as a parse-value refusal.
+# The first output value that does not fit its shape, as a parse-value
+# refusal (functions.md: a value that does not fit its type is an unreadable
+# reply). Read by the keywords programs.md lists, as a default and an input
+# are: the same shape accepts the same values wherever it is checked.
 check_values <- function(plan, values) {
   for (f in lmcc::signature_to_list(plan$signature)$fields) {
     if (f$direction != "output" || (f$purpose %||% "plain") != "plain" || !f$name %in% names(values)) next
-    p <- misfit(f$shape, values[[f$name]], f$name)
+    shape <- f$shape
+    if (!well_formed(shape, shape, carry = TRUE) || loops(shape)) next
+    p <- shape_fault(values[[f$name]], shape, shape, f$name)
     if (!is.null(p)) stop(lmcc::refusal("parse-value", p))
   }
 }
@@ -64,8 +69,11 @@ on_response <- function(job, response, started, seconds) {
   calls <- reading$values$calls %||% list()
   if (!length(calls)) {
     job$turn <- lmcc::finish_turn(job$turn)
-    outputs <- lmcc::turn_to_list(job$turn)$outputs
-    job$outputs <- outputs[names(outputs) != "calls"]
+    # the turn's outputs, the fields FunctAI added included: `calls` is what
+    # lmcc's finished turn holds for it (its last model step's, `[]` once the
+    # model answers); the calls made on the way are in the turn's steps and
+    # the call's exchanges
+    job$outputs <- lmcc::turn_to_list(job$turn)$outputs
     job$probabilities <- reading$probabilities %||% list()      # what the provider measured (TypeSafe's Jev), by output
     job$state <- "done"
     ended(job)

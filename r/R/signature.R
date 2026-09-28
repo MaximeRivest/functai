@@ -75,13 +75,16 @@ prepare_inputs <- function(sig, values) {
   for (f in lmcc::signature_to_list(sig)$fields) {
     if (f$direction != "input" || !f$name %in% names(values)) next
     v <- values[[f$name]]
-    if (identical(f$shape$type, "string") && is.null(f$shape$enum) && !is.null(v) && !(is.character(v) && length(v) == 1L)) {
-      v <- if (is.list(v)) json_indented(v) else format(v)
-    }
+    if (is_text_shape(f$shape) && !is.null(v) && !(is.character(v) && length(v) == 1L)) v <- text_form(v)
     out[f$name] <- list(v)
   }
   out
 }
+
+# A text input (a string that is not a choice), and a value as the text it
+# is sent as (functions.md, "Worked examples").
+is_text_shape <- function(shape) identical(shape$type, "string") && is.null(shape$enum)
+text_form <- function(v) if (is.list(v)) json_indented(v) else format(v)
 
 # JSON indented by two spaces, as Python's json.dumps(indent=2) writes it.
 json_indented <- function(v, depth = 0L) {

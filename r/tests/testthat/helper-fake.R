@@ -45,6 +45,9 @@ contract_root <- function() {
   normalizePath(root)
 }
 
+# A value as canonical JSON, to compare as the contract compares.
+plain <- function(x) lmcc::canonical_json(unclass(x))
+
 read_json_file <- function(path) lmcc::parse_json(paste(readLines(path, warn = FALSE, encoding = "UTF-8"), collapse = "\n"))
 
 # The records of a log folder, in the order they were written.
@@ -53,10 +56,64 @@ log_lines <- function(folder) {
   lapply(lines, lmcc::parse_json)
 }
 
-# The inputs an AI function's call binds, given these (its R function's own
-# defaults filling what is left out), as the JSON row it sends.
+# The inputs an AI function's call binds, given these, as the JSON row it
+# sends: the binding alone (no call), for unit tests of it. The contract's
+# `binds` and `sends` are checked by calling the function (probe_call()).
 bound_row <- function(fn, args) {
   f <- unclass(fn)
-  body(f) <- quote(input_rows(.core, mget(.inputs, envir = environment()))[[1L]])
+  body(f) <- quote(input_rows(.core, given_inputs(environment(), .inputs))[[1L]])
   do.call(f, args)
+}
+
+# Calls `fn` for real with `args` (by name), under the probe facts
+# (contract/models.json): its own code binds the inputs, renders and sends one
+# request to a fake provider "probe", which fails at once (so the call ends
+# after that one request, whatever the function's outputs), and writes its
+# record. Returns the record the library wrote and the requests the provider
+# got.
+probe_call <- function(fn, args) {
+  router <- fake_router(responder = function(req, i) simpleError("the probe provider answers nothing"), provider = "probe")
+  folder <- tempfile("probe-log-")
+  on.exit(unlink(folder, recursive = TRUE))
+  g <- update(fn, router = router, lm = "probe-model", capabilities = probe_capabilities(), log_calls = folder,
+              log_content = TRUE, api_retries = 0L, on_error = "stop")
+  tryCatch(do.call(g, args), error = function(e) NULL)
+  recs <- log_lines(folder)
+  list(record = if (length(recs)) recs[[1L]], requests = router$env$requests)
+}
+
+# The hash of the request the probe renders for these inputs (`model`
+# "probe", as a version's), and the hash lmcc records for the same render as
+# a model step's request (no model): what a call's exchange keeps.
+probe_hashes <- function(fn, inputs) {
+  p <- probe_request(core_of(fn), inputs)
+  step <- p; step$model <- NULL
+  list(probe = lmcc::sha256_of(p), step = lmcc::sha256_of(step))
+}
+
+# The contract's `sends`/`binds` expectation, checked on a real call: the
+# record holds the inputs the call bound; the request it sent (the hash of
+# its render, which the record keeps) is the probe's render of those inputs;
+# and that render's hash is `request_hash` (when given).
+expect_sends <- function(fn, inputs, bound = NULL, request_hash = NULL) {
+  got <- probe_call(fn, inputs)
+  testthat::expect_false(is.null(got$record), info = "the call wrote no record")
+  if (is.null(got$record)) return(invisible())
+  rec <- got$record
+  testthat::expect_length(got$requests, 1L)
+  if (!is.null(bound)) testthat::expect_identical(lmcc::canonical_json(rec$inputs), lmcc::canonical_json(bound))
+  h <- probe_hashes(fn, rec$inputs)
+  testthat::expect_identical(rec$exchanges[[1L]]$request_hash, h$step)
+  if (!is.null(request_hash)) testthat::expect_identical(h$probe, request_hash)
+  invisible(rec)
+}
+
+# A folder holding these records as one log file (one line each), as a
+# writer leaves it.
+log_folder_of <- function(records) {
+  folder <- tempfile("log-")
+  day <- file.path(folder, "2026-09-28")
+  dir.create(day, recursive = TRUE)
+  writeLines(vapply(records, lmcc::json_text, ""), file.path(day, "case.jsonl"), useBytes = TRUE)
+  folder
 }

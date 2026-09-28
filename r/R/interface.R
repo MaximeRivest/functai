@@ -109,51 +109,76 @@ loops <- function(root) {
 same_json <- function(a, b) identical(lmcc::canonical_json(a), lmcc::canonical_json(b))
 
 # Whether a JSON value fits a shape, read by the listed keywords alone
-# (programs.md): lengths in code points, equality as canonical JSON.
-fits_shape <- function(v, shape, root) {
+# (programs.md): lengths in code points, equality as canonical JSON. Every
+# check of a value reads this one rule: a default when a function is defined
+# or loaded, an input when a call binds it, an output when a reply is read.
+fits_shape <- function(v, shape, root) is.null(shape_fault(v, shape, root))
+
+# A value as a short text for a message (a value can be long).
+short_json <- function(v) {
+  s <- tryCatch(lmcc::json_text(v), error = function(e) "a value with no JSON form")
+  if (nchar(s) > 80L) paste0(substr(s, 1L, 77L), "...") else s
+}
+
+# Why a JSON value does not fit a shape (the first place it does not, as
+# `where`: `n`, `options.b`, `items[2]`), or NULL when it fits. Only the
+# keywords programs.md lists are read; an AI function's other keywords
+# (`pattern`, `oneOf`, ...) are lmcc's, and never checked here.
+shape_fault <- function(v, shape, root, where = "value") {
   t <- json_type(v)
-  if (has_key(shape, "$ref") && !fits_shape(v, root[["$defs"]][[ref_name(shape[["$ref"]])]], root)) return(FALSE)
+  if (has_key(shape, "$ref")) {
+    p <- shape_fault(v, root[["$defs"]][[ref_name(shape[["$ref"]])]], root, where)
+    if (!is.null(p)) return(p)
+  }
   if (has_key(shape, "type")) {
     names_ <- unlist(if (is_arr(shape$type)) shape$type else list(shape$type))
-    if (!(t %in% names_ || (t == "integer" && "number" %in% names_))) return(FALSE)
+    if (!(t %in% names_ || (t == "integer" && "number" %in% names_)))
+      return(sprintf("%s: %s is not %s", where, short_json(v), paste(names_, collapse = " or ")))
   }
-  if (has_key(shape, "enum") && !any(vapply(shape$enum, same_json, NA, b = v))) return(FALSE)
-  if (has_key(shape, "const") && !same_json(shape[["const"]], v)) return(FALSE)
-  if (has_key(shape, "anyOf") && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA))) return(FALSE)
+  if (has_key(shape, "enum") && !any(vapply(shape$enum, same_json, NA, b = v)))
+    return(sprintf("%s: %s is not one of %s", where, short_json(v), short_json(shape$enum)))
+  if (has_key(shape, "const") && !same_json(shape[["const"]], v))
+    return(sprintf("%s: %s is not %s", where, short_json(v), short_json(shape[["const"]])))
+  if (has_key(shape, "anyOf") && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA)))
+    return(sprintf("%s: %s fits none of its options", where, short_json(v)))
   if (t == "string") {
     n <- nchar(v, type = "chars")
-    if (has_key(shape, "minLength") && n < num(shape$minLength)) return(FALSE)
-    if (has_key(shape, "maxLength") && n > num(shape$maxLength)) return(FALSE)
+    if (has_key(shape, "minLength") && n < num(shape$minLength)) return(sprintf("%s: shorter than %s characters", where, num(shape$minLength)))
+    if (has_key(shape, "maxLength") && n > num(shape$maxLength)) return(sprintf("%s: longer than %s characters", where, num(shape$maxLength)))
   }
   if (t %in% c("integer", "number")) {
     x <- num(v)
-    if (has_key(shape, "minimum") && x < num(shape$minimum)) return(FALSE)
-    if (has_key(shape, "maximum") && x > num(shape$maximum)) return(FALSE)
-    if (has_key(shape, "exclusiveMinimum") && x <= num(shape$exclusiveMinimum)) return(FALSE)
-    if (has_key(shape, "exclusiveMaximum") && x >= num(shape$exclusiveMaximum)) return(FALSE)
+    bound <- function(k, bad, words) if (has_key(shape, k) && bad(x, num(shape[[k]]))) sprintf("%s: %s is %s %s", where, short_json(v), words, short_json(shape[[k]]))
+    p <- bound("minimum", `<`, "less than") %||% bound("maximum", `>`, "more than") %||%
+      bound("exclusiveMinimum", `<=`, "not more than") %||% bound("exclusiveMaximum", `>=`, "not less than")
+    if (!is.null(p)) return(p)
   }
   if (t == "array") {
     prefix <- shape[["prefixItems"]] %||% list()
-    for (i in seq_len(min(length(prefix), length(v)))) if (!fits_shape(v[[i]], prefix[[i]], root)) return(FALSE)
+    at <- function(i) sprintf("%s[%d]", where, i - 1L)
+    for (i in seq_len(min(length(prefix), length(v)))) { p <- shape_fault(v[[i]], prefix[[i]], root, at(i)); if (!is.null(p)) return(p) }
     if (has_key(shape, "items") && length(v) > length(prefix))
-      for (i in (length(prefix) + 1L):length(v)) if (!fits_shape(v[[i]], shape$items, root)) return(FALSE)
-    if (has_key(shape, "minItems") && length(v) < num(shape$minItems)) return(FALSE)
-    if (has_key(shape, "maxItems") && length(v) > num(shape$maxItems)) return(FALSE)
-    if (isTRUE(shape$uniqueItems) && anyDuplicated(vapply(v, lmcc::canonical_json, ""))) return(FALSE)
+      for (i in (length(prefix) + 1L):length(v)) { p <- shape_fault(v[[i]], shape$items, root, at(i)); if (!is.null(p)) return(p) }
+    if (has_key(shape, "minItems") && length(v) < num(shape$minItems)) return(sprintf("%s: fewer than %s items", where, num(shape$minItems)))
+    if (has_key(shape, "maxItems") && length(v) > num(shape$maxItems)) return(sprintf("%s: more than %s items", where, num(shape$maxItems)))
+    if (isTRUE(shape$uniqueItems) && anyDuplicated(vapply(v, lmcc::canonical_json, ""))) return(sprintf("%s: an item is there twice", where))
   }
   if (t == "object") {
     props <- shape[["properties"]] %||% list()
-    for (k in unlist(shape[["required"]])) if (!k %in% names(v)) return(FALSE)
+    for (k in unlist(shape[["required"]])) if (!k %in% names(v)) return(sprintf("%s: no %s", where, k))
     for (k in names(v)) {
+      inner <- paste0(where, ".", k)
       if (k %in% names(props)) {
-        if (!fits_shape(v[[k]], props[[k]], root)) return(FALSE)
+        p <- shape_fault(v[[k]], props[[k]], root, inner)
+        if (!is.null(p)) return(p)
       } else if (has_key(shape, "additionalProperties")) {
         extra <- shape$additionalProperties
-        if (isFALSE(extra) || (is_obj(extra) && !fits_shape(v[[k]], extra, root))) return(FALSE)
+        if (isFALSE(extra)) return(sprintf("%s: no member %s is allowed", where, k))
+        if (is_obj(extra)) { p <- shape_fault(v[[k]], extra, root, inner); if (!is.null(p)) return(p) }
       }
     }
   }
-  TRUE
+  NULL
 }
 
 # A field's shape without its own `default`: what its data looks like.
@@ -216,7 +241,7 @@ interface_of <- function(core) {
     out <- list(name = n, shape = f$shape)
     desc <- field_desc(f)
     if (!is.null(desc) && nzchar(desc)) out$desc <- desc
-    if (input && isTRUE(f$optional)) out$optional <- TRUE
+    if (isTRUE(f$optional)) out$optional <- TRUE     # on an output: refused, in its turn (programs.md)
     out
   }
   json_normal(list(description = d$description,
@@ -236,17 +261,19 @@ refuse <- function(code, message, field = NULL, class = NULL, call = NULL, .envi
 # An AI function is checked when it is defined (functions.md, "A
 # definition"): lmcc's own check of its signature, then its interface by
 # programs.md's rules, then its own log_content map against its fields.
-check_definition <- function(core) {
+check_definition <- function(core, call = NULL) {
   signature_of(core, effective(core$own))                     # lmcc refuses signature-malformed first
   iface <- interface_of(core)
   problem <- interface_problem(iface, ai = TRUE)
   if (!is.null(problem)) {
     f <- problem$field
     why <- interface_fault(iface, f)
-    refuse("interface-malformed", c("{.fn {core$definition$name}} cannot be defined: {why}",
-      i = "an interface every language reads: see {.fn ai_interface}"), field = f)
+    column <- if (!is.null(f)) columns_of(core)[f] else NA
+    shown <- if (!is.na(column %||% NA) && !identical(unname(column), f)) sprintf(" (%s, as the formula names it)", column) else ""
+    refuse("interface-malformed", c("{.fn {core$definition$name}} cannot be defined: {why}{shown}",
+      i = "an interface every language reads: see {.fn ai_interface}"), field = f, call = call)
   }
-  check_own_content(core)
+  check_own_content(core, call = call)
   invisible(core)
 }
 
@@ -269,10 +296,10 @@ interface_fault <- function(iface, f) {
   if (has_key(shape, "default")) {
     ds <- data_shape(shape)
     if (well_formed(shape, shape, carry = TRUE) && !loops(shape) && !fits_shape(shape[["default"]], ds, ds))
-      return(sprintf("%s's default %s does not fit its type", f, lmcc::canonical_json(shape[["default"]])))
+      return(sprintf("%s's default does not fit its type (%s)", f, shape_fault(shape[["default"]], ds, ds, f)))
   }
   if (!is.null(field) && isTRUE(field$optional) && any(vapply(iface$outputs, function(x) identical(x$name, f), NA)))
-    return(sprintf("%s is an output: only an input has a default", f))
+    return(sprintf("%s is an output: only an input has a default (defaults_to() is for an input the caller may leave out)", f))
   sprintf("the field %s: its shape %s uses a keyword with a value of the wrong kind, or a reference that never ends",
           f, lmcc::canonical_json(shape %||% lmcc::jobj()))
 }
@@ -290,14 +317,21 @@ interface_fault <- function(iface, f) {
 #' changes neither the function's signature nor its version, only what a
 #' call that leaves the input out sends.
 #'
-#' The default must fit the type (a [choice()]'s default is one of its
+#' The default must be of the type, as vctrs casts (`defaults_to(2.5,
+#' integer())` is refused: it would lose the half; so is `defaults_to(TRUE,
+#' character())`), and fit it (a [choice()]'s default is one of its
 #' answers); a function whose default does not fit is refused when it is
 #' defined (`interface-malformed`). Only inputs have defaults.
-#' @param value The default: one value (a string, a number, `TRUE`, a
-#'   one-row tibble for a record, `NA` or `NULL` for an [optional()] type).
-#' @param type Its type, as in [ai()]: a type, or a sentence (text,
-#'   described by it). Default: the type of `value` (text for a string, a
-#'   whole number for an integer, ...).
+#'
+#' A call that leaves the input out sends the default exactly as the
+#' interface holds it (its JSON), never a copy made through an R type: a
+#' record's default that leaves out a member sends it without that member.
+#' @param value The default: one value (a string, a number, `TRUE`, a date,
+#'   a one-row tibble for a record, `NA` or `NULL` for an [optional()]
+#'   type).
+#' @param type Its type, as in [ai()]; or a sentence, words about the type
+#'   `value` has. Default: the type of `value` (text for a string or a date,
+#'   a whole number for an integer, ...).
 #' @return A field.
 #' @examples
 #' reply <- ai(reply ~ message + tone, "Answer the customer.",
@@ -305,29 +339,56 @@ interface_fault <- function(iface, f) {
 #'   tone = defaults_to("kind", choice("kind", "brief", "formal")))
 #' reply
 #' ai_interface(reply)
-#' defaults_to(3L, "how many suggestions to give")
+#' defaults_to(3L, "how many suggestions to give")     # a whole number, described
 #' @export
 defaults_to <- function(value, type = NULL) {
-  f <- if (is.null(type)) {
-    if (is.null(value) || (is.atomic(value) && length(value) == 1L && is.na(value)))
-      cli::cli_abort(c("a default of {.code {deparse(value)}} needs its type", i = "{.code defaults_to(NA, optional(integer()))}"))
-    if (is.data.frame(value)) as_field(vctrs::vec_ptype(value))
-    else if (is.factor(value)) as_field(factor(levels = levels(value)))
-    else if (is.atomic(value) && length(value) == 1L) as_field(vctrs::vec_ptype(unname(value)))
-    else cli::cli_abort(c("say the type of a default that is not one value", i = "{.code defaults_to(list(), vctrs::list_of(.ptype = character()))}"))
-  } else as_field(type)
-  if (is.data.frame(value) && nrow(value) != 1L) cli::cli_abort("a record's default is a one-row tibble, not {nrow(value)} rows")
-  if (!is.data.frame(value) && is.atomic(value) && length(value) != 1L && !f$kind %in% c("list", "json"))
-    cli::cli_abort("a default is one value, not {length(value)}")
-  v <- if (is.data.frame(value)) element(value, 1L) else if (f$kind == "list" && !is.list(value)) as.list(value) else value
+  sentence <- rlang::is_string(type)
+  f <- if (is.null(type) || sentence) type_of_value(value) else as_field(type)
+  if (sentence) f <- described(f, type)
   f$shape <- f$shape[names(f$shape) != "default"]
-  f$shape["default"] <- list(to_json(f, v))
+  f$shape["default"] <- list(default_json(f, value))
   f$optional <- TRUE
   f
 }
 
+# The type a default's value has: text for a string (or a date, as a column
+# of dates is text), a whole number for an integer, a record for a one-row
+# tibble, a choice of a factor's levels.
+type_of_value <- function(value) {
+  if (is.null(value) || (is.atomic(value) && length(value) == 1L && is.na(value)))
+    cli::cli_abort(c("a default of {.code {deparse(value)}} needs its type", i = "{.code defaults_to(NA, optional(integer()))}"), call = NULL)
+  if (is.data.frame(value)) return(as_field(vctrs::vec_ptype(value)))
+  if (is.factor(value)) return(as_field(factor(levels = levels(value))))
+  if (is.atomic(value) && length(value) == 1L) return(as_field(prototype_of(value)))
+  cli::cli_abort(c("say the type of a default that is not one value", i = "{.code defaults_to(list(), vctrs::list_of(.ptype = character()))}"), call = NULL)
+}
+
+# A default as the JSON its field holds: cast to the field's R type first, as
+# vctrs casts (refusing what would lose information: 2.5 as a whole number,
+# TRUE as text), then written as a value of that type.
+default_json <- function(f, value) {
+  if (is.null(value)) return(NULL)
+  if (is.data.frame(value)) {
+    if (f$kind != "record") cli::cli_abort("a one-row tibble is the default of a record, not of {type_label(f)}", call = NULL)
+    if (nrow(value) != 1L) cli::cli_abort("a record's default is a one-row tibble, not {nrow(value)} rows", call = NULL)
+    return(to_json(f, element(value, 1L)))
+  }
+  if (is.atomic(value) && length(value) != 1L && !f$kind %in% c("list", "json"))
+    cli::cli_abort("a default is one value, not {length(value)}", call = NULL)
+  proto <- switch(f$kind, string = character(), enum = character(), integer = integer(), number = double(), boolean = logical(), NULL)
+  if (!is.null(proto) && is.atomic(value)) {
+    if (inherits(value, c("Date", "POSIXt")) && is.character(proto)) value <- format(value)
+    value <- tryCatch(vctrs::vec_cast(unname(value), proto, x_arg = "value"), error = function(e)
+      cli::cli_abort(c("the default {.code {deparse(value)}} is not {type_label(f)}",
+                       i = "give a default of the input's type, or say its type: {.code defaults_to(value, type)}"), parent = e, call = NULL))
+  }
+  if (f$kind == "list" && !is.list(value)) value <- as.list(value)
+  to_json(f, value)
+}
+
 # An input's default as one row of its column: what the R function's
-# argument defaults to, and what a row left without the input takes.
+# argument shows as its default. A call that leaves the input out sends the
+# shape's default itself (input_rows()), never this R copy of it.
 default_value <- function(f) {
   json <- f$shape[["default"]]
   if (f$kind == "json" && is.atomic(json) && length(json) == 1L) return(json)     # one value reads as itself
@@ -384,7 +445,8 @@ print.functai_interface <- function(x, ...) {
   w <- max(nchar(vapply(fields, function(f) f$name, "")))
   line <- function(f) {
     shape <- lmcc::canonical_json(data_shape(f$shape))
-    extra <- c(if (isTRUE(f$optional)) paste0("optional, default ", lmcc::canonical_json(f$shape[["default"]])),
+    # optional with no default of its own (a module's): its code's default applies, which may be no JSON value
+    extra <- c(if (isTRUE(f$optional)) (if (has_key(f$shape, "default")) paste0("optional, default ", lmcc::canonical_json(f$shape[["default"]])) else "optional"),
                if (isTRUE(f$opaque)) "opaque")
     cat(sprintf("    %s  %s%s%s\n", formatC(f$name, width = -w), shape, if (length(extra)) paste0("  (", paste(extra, collapse = ", "), ")") else "",
                 if (is.null(f$desc)) "" else paste0("  # ", gsub("\\s*\n\\s*", " ", f$desc))))

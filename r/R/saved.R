@@ -2,9 +2,13 @@
 # language, from its folder's functai.json, after checking it sends exactly
 # what was saved; refuse, with the reason, what R cannot run.
 
-load_refused <- function(code, message) {
-  stop(structure(class = c("functai_load_refused", paste0("functai_", gsub("-", "_", code)), "functai_refusal", "error", "condition"),
-                 list(message = sprintf("[%s] %s", code, message), call = NULL, code = code)))
+# A loader's or a describer's refusal: the contract's code and, where a field
+# is at fault, its name (`field`), as every refusal carries them; the message
+# is taken as written (it quotes JSON, whose braces are not cli's).
+load_refused <- function(code, message, field = NULL) {
+  rlang::abort(sprintf("[%s] %s", code, message),
+               class = c("functai_load_refused", paste0("functai_", gsub("-", "_", code)), "functai_refusal"),
+               code = code, field = field, call = NULL)
 }
 
 SNAKE <- c(retries = "retries", api_retries = "api_retries", max_steps = "max_steps", tool_errors = "tool_errors",
@@ -19,7 +23,7 @@ field_from_shape <- function(shape, desc = NULL) {
     if (length(opts) == 1L && length(shape$anyOf) == 2L) { inner <- opts[[1L]]; nullable <- TRUE }
   }
   f <- if (!is.null(inner$enum) && all(vapply(inner$enum, is.character, NA))) new_field(inner, "enum", levels = unlist(inner$enum))
-    else if (identical(inner$type, "object") && is.list(inner$properties) && length(inner$properties) && !is.null(inner$required)) {
+    else if (is_whole_record(inner)) {
       fields <- lapply(inner$properties, field_from_shape)
       new_field(inner, "record", fields = fields)
     } else if (identical(inner$type, "array") && is.list(inner$items)) new_field(inner, "list", item = field_from_shape(inner$items))
@@ -29,6 +33,16 @@ field_from_shape <- function(shape, desc = NULL) {
   f$nullable <- nullable
   f$desc <- desc
   f
+}
+
+# A shape R reads as a record (a tibble column): an object whose every
+# member is required. Any other object shape (a member it may leave out)
+# stays JSON, so what a caller gives, or a default, is sent as it is: a
+# tibble would have to fill an absent member with a null.
+is_whole_record <- function(shape) {
+  props <- shape$properties
+  identical(shape$type, "object") && is_obj(props) && length(props) > 0L &&
+    is_arr(shape$required) && setequal(names(props), unlist(shape$required))
 }
 
 #' Run a function saved in any language
@@ -88,8 +102,7 @@ plain_fields <- function(n) Filter(function(f) identical(f$purpose %||% "plain",
 node_interface <- function(key, n) {
   if (has_key(n, "interface")) {
     iface <- n$interface
-    problem <- interface_problem(iface, ai = identical(n$kind, "ai"))
-    if (!is.null(problem)) load_refused("interface-malformed", sprintf("%s: its interface is refused (field %s)", key, problem$field %||% "none"))
+    refuse_interface(key, iface, identical(n$kind, "ai"))
     if (identical(n$kind, "ai")) {
       fields <- plain_fields(n)
       from_signature <- interface_signature(list(inputs = Filter(function(f) f$direction == "input", fields),
@@ -107,9 +120,20 @@ node_interface <- function(key, n) {
     out
   }
   fields <- plain_fields(n)
-  list(description = n$ai$signature$instructions,
-       inputs = lapply(Filter(function(f) f$direction == "input", fields), field),
-       outputs = lapply(Filter(function(f) f$direction == "output", fields), field))
+  iface <- list(description = n$ai$signature$instructions,
+                inputs = lapply(Filter(function(f) f$direction == "input", fields), field),
+                outputs = lapply(Filter(function(f) f$direction == "output", fields), field))
+  refuse_interface(key, iface, TRUE)        # read from a saved folder, so checked by the same rules (programs.md)
+  iface
+}
+
+# programs.md's rules for an interface read from a saved folder: refused
+# `interface-malformed`, naming the first field at fault.
+refuse_interface <- function(key, iface, ai) {
+  problem <- interface_problem(iface, ai = ai)
+  if (is.null(problem)) return(invisible())
+  f <- problem$field
+  load_refused("interface-malformed", sprintf("%s: its interface is refused: %s", key, interface_fault(iface, f)), field = f)
 }
 
 # Describing a node without loading it (saved.md, "Describing without
@@ -172,16 +196,22 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
                module = n$module, state = list(instructions = state$instructions, demos = list()), saved = saved,
                interface = iface)
   core$state$demos <- as_demos(core, state$demos)
+  # each probe against its own fingerprint: a probe with none cannot be
+  # checked, and a fingerprint with no probe checks nothing, so either refuses
   probes <- d$probes %||% list()
-  want <- unlist(d$fingerprints$requests)
+  want <- unlist(d$fingerprints$requests) %||% character(0)
+  if (length(want) < length(probes))
+    load_refused("saved-differs", sprintf("%s: probe %d has no request fingerprint: what it sent where it was saved is not known", key, length(want)))
+  if (length(want) > length(probes))
+    load_refused("saved-differs", sprintf("%s: request fingerprint %d has no probe: the fingerprints are not the probes'", key, length(probes)))
   for (i in seq_along(probes)) {
     got <- request_hash(core, probes[[i]])
-    if (i <= length(want) && !identical(got, want[[i]]))
+    if (!identical(got, want[[i]]))
       load_refused("saved-differs", sprintf("%s: for probe %d it would send %s, but %s was saved", key, i - 1L, got, want[[i]]))
   }
   if (is.character(d$version) && !identical(d$version, version_of(core)))
     load_refused("saved-differs", sprintf("%s: its version here is %s, but %s was saved", key, version_of(core), d$version))
-  tryCatch(check_own_content(core), functai_refusal = function(e) load_refused(e$code, conditionMessage(e)))
+  tryCatch(check_own_content(core), functai_refusal = function(e) load_refused(e$code, conditionMessage(e), field = e$field))
   make_fn(core)
 }
 

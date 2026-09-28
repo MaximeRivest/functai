@@ -39,6 +39,42 @@
 * A field name that is not an ASCII identifier (`my.message`) is refused
   when the function is defined (lmcc's `signature-malformed`).
 
+### After review
+
+* An input left out is sent with its default exactly as the interface
+  holds it (its JSON), not through an R copy: a record's default that
+  leaves out a member no longer gains a `null` for it after `read_ai()`.
+  A saved object shape is a tibble column only when every member is
+  required; otherwise its values stay JSON.
+* A default of `null` is sent; `predict()` makes one call per row of
+  `new_data` even when every input is left out, and none for an empty
+  table.
+* Values are checked on every call by the contract's vocabulary: a given
+  input that does not fit fails its row before any request
+  (`interface-input`, recorded as `InterfaceError`); a reply that does not
+  fit is re-asked (`parse-value`), bounds, `const`, references, array and
+  object rules included. A number is no longer truncated to fit a whole
+  number, nor a value given to a choice turned into text.
+* `defaults_to()` casts as vctrs does (`defaults_to(2.5, integer())` is
+  refused), reads a sentence as words about the value's own type, and
+  takes a date as text.
+* A `log_content` name is the field of that name: a function named like
+  one of its inputs, or an answer named like a field FunctAI adds, no
+  longer moves that field's rule to the answer.
+* A tool-using call's record holds `outputs.calls` (the value lmcc's
+  finished turn holds: its last model step's) and its size.
+* `read_saw()` reads only call records of formats 1 and 2; an entry whose
+  known keys hold values of another kind, or two different records with
+  one id, is not guessed at.
+* A saved node without an interface is checked like any other; each probe
+  needs its own fingerprint (`saved-differs`); load and describe refusals
+  carry `field`; describing an optional input with no default no longer
+  prints `default null`.
+* GEPA's own calls keep no value when any layer in force (a block, `ai_config()`,
+  the environment) drops a field of the function it improves.
+* `calls()` gains `omitted`. Interface refusals name the first field at
+  fault, inputs first, and the call they came from.
+
 ## Before stage 1
 
 The first R implementation of FunctAI, held to the same contract as the

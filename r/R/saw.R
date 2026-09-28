@@ -16,6 +16,7 @@ expand_saw <- function(by_id, call, following = character(0)) {
   rec <- by_id[[call]]
   if (is.null(rec) || !has_key(rec, "saw"))
     return(saw_unknown(if (length(following)) "missing-call" else "not-recorded", call))
+  if (!is_arr(rec$saw)) return(saw_unknown("unknown-key", call))       # not a list of entries: not one a reader knows
   out <- list()
   for (i in seq_along(rec$saw)) {
     entry <- rec$saw[[i]]
@@ -29,11 +30,27 @@ expand_saw <- function(by_id, call, following = character(0)) {
       if (inherits(inner, "functai_saw_unknown")) return(inner)
       out <- c(out, inner)
     } else {
-      if (!has_key(entry, "call") || length(setdiff(names(entry), SAW_ENTRY_KEYS))) return(saw_unknown("unknown-key", call))
+      if (!known_entry(entry)) return(saw_unknown("unknown-key", call))
       out[[length(out) + 1L]] <- entry
     }
   }
   out
+}
+
+# An entry this reader knows: a call's id, and only the keys calls.md names,
+# each with a value of its kind (`steps` true; `without` names, at least one,
+# each once; `slot` a name). A known key with a value of another kind says
+# something this reader does not know: it fails closed, as for a key it does
+# not know.
+known_entry <- function(entry) {
+  if (!has_key(entry, "call") || !is_str(entry$call) || length(setdiff(names(entry), SAW_ENTRY_KEYS))) return(FALSE)
+  if (has_key(entry, "steps") && !isTRUE(entry$steps)) return(FALSE)
+  if (has_key(entry, "without")) {
+    w <- entry$without
+    if (!is_arr(w) || !length(w) || !all(vapply(w, function(x) is_str(x) && nzchar(x), NA)) || anyDuplicated(unlist(w))) return(FALSE)
+  }
+  if (has_key(entry, "slot") && !is_name(entry$slot)) return(FALSE)
+  TRUE
 }
 
 # Whether a call's record keeps what an entry says it was shown: the values
@@ -54,12 +71,23 @@ keeps_values <- function(rec, entry) {
 }
 
 # What a call saw, and whether the log keeps what showing it again needs
-# (calls.md, "Reading it", "Knowing is not replaying"). `records`: call
-# records (any format). Returns list(saw = entries, or unknown = list(code,
-# call)) and keeps = list(ok = TRUE) or list(refuses = code, call = id).
+# (calls.md, "Reading it", "Knowing is not replaying"). `records`: lines of
+# a call log, of any kind: only call records of a format this reader knows
+# (1 and 2) are read; any other line (a rating, a later format) is skipped
+# whole, as a reader skips what it does not know. Two different records
+# with one id cannot both be the call: that id is read as a call whose record
+# this reader does not have (the same record written twice is one). Returns
+# list(saw = entries, or unknown = list(code, call)) and keeps = list(ok =
+# TRUE) or list(refuses = code, call = id).
 read_saw <- function(records, call) {
-  by_id <- list()
-  for (r in records) if (is_str(r$id)) by_id[[r$id]] <- r
+  by_id <- list(); twice <- character(0)
+  for (r in records) {
+    if (!is_obj(r) || !is_format(r$functai_call, CALL_FORMATS) || !is_str(r$id)) next
+    old <- by_id[[r$id]]
+    if (!is.null(old) && !same_json(old, r)) twice <- c(twice, r$id)
+    by_id[[r$id]] <- r
+  }
+  by_id[unique(twice)] <- NULL
   entries <- expand_saw(by_id, call)
   if (inherits(entries, "functai_saw_unknown")) {
     why <- unclass(entries)
