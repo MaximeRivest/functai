@@ -228,7 +228,7 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
     const { shape, desc } = readField(s, `${name}.outputs.${field}`);
     return { name: field, shape, ...(desc ? { desc } : {}), ...(isOpaque(s) ? { opaque: true as const } : {}) };
   });
-  const iface = checkInterface({ description: spec.description ?? "", inputs, outputs }, `module("${name}")`);
+  const iface = checkInterface({ description: spec.description ?? "", inputs, outputs }, { where: `module("${name}")` });
   const own: Settings = {};
   for (const [k, v] of Object.entries(spec)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
   checkLogContent(own.logContent, `module("${name}")`, { inputs: inputs.map((f) => f.name), outputs: outputs.map((f) => f.name), added: [] });

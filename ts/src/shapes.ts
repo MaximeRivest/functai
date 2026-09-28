@@ -36,12 +36,25 @@ export interface StandardSchemaLike<T = unknown, In = unknown> {
 export type StandardResult = { readonly value: unknown; readonly issues?: undefined }
   | { readonly issues: readonly { readonly message: string; readonly path?: readonly unknown[] }[] };
 
-/** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc }`. */
-export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T>
-  | { readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>; readonly desc?: string };
+/**
+ * A field with more said about it: its words (`desc`), whether a caller may
+ * leave it out (`optional`: then it takes its shape's `default`, or, for a
+ * module, stays out), and whether its values may have no JSON form
+ * (`opaque`, modules only).
+ */
+export interface FieldWith<T = unknown> {
+  readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>;
+  readonly desc?: string;
+  readonly optional?: boolean;
+  readonly opaque?: boolean;
+}
+
+/** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc?, optional?, opaque? }`. */
+export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T> | FieldWith<T>;
 
 /** What a caller passes for an input field: a Standard Schema's input type (before defaults and transforms), else the value type. */
 export type InputValueOf<S> =
+  S extends { readonly shape: infer X; readonly optional: true } ? Exclude<InputValueOf<X>, undefined> :
   S extends { readonly shape: infer X } ? InputValueOf<X> :
   S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? Exclude<T, undefined> :
   ValueOf<S>;
@@ -52,6 +65,8 @@ export type InputValueOf<S> =
  * must be given). A shape: when it allows null (`t.optional(...)`).
  */
 export type IsOptional<S> =
+  S extends { readonly optional: true } ? true :
+  S extends { readonly optional: false } ? false :
   S extends { readonly shape: infer X } ? IsOptional<X> :
   S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? (undefined extends T ? true : false) :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? false : null extends T ? true : false) : false;
@@ -60,6 +75,7 @@ export type IsOptional<S> =
 export type ValueOf<S> =
   S extends { readonly "~standard": { readonly types?: { readonly output: infer T } } } ? T :
   S extends ZodLike<infer T> ? T :
+  S extends { readonly shape: infer X; readonly optional: true } ? ValueOf<X> | undefined :
   S extends { readonly shape: infer X } ? ValueOf<X> :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? unknown : T) : unknown;
 
@@ -87,11 +103,19 @@ export const t = {
   opaque: <T = unknown>(): Shape<T> => Object.defineProperty({}, OPAQUE, { value: true }) as Shape<T>,
 };
 
-/** Whether a field spec was declared with `t.opaque()`. */
+const isWrapper = (spec: unknown): spec is FieldWith => typeof spec === "object" && spec !== null && "shape" in spec
+  && !("type" in spec) && !isZod(spec) && !isStandard(spec);
+
+/** Whether a field spec was declared opaque (`t.opaque()`, or `{ shape: {}, opaque: true }`). */
 export function isOpaque(spec: unknown): boolean {
-  const raw = typeof spec === "object" && spec !== null && "shape" in spec && !isZod(spec) && !isStandard(spec)
-    ? (spec as { shape: unknown }).shape : spec;
+  if (isWrapper(spec) && spec.opaque === true) return true;
+  const raw = isWrapper(spec) ? spec.shape : spec;
   return typeof raw === "object" && raw !== null && (raw as Record<symbol, unknown>)[OPAQUE] === true;
+}
+
+/** Whether a field spec says itself whether it may be left out (`{ shape, optional }`): true, false, or undefined (inferred). */
+export function saysOptional(spec: unknown): boolean | undefined {
+  return isWrapper(spec) && typeof spec.optional === "boolean" ? spec.optional : undefined;
 }
 
 /** A field with words about it: `describe(t.string(), "the customer's own words")`. */
@@ -164,9 +188,9 @@ function fromZod(schema: JsonObject): JsonObject {
 export function readField(spec: FieldSpec, where: string): { shape: JsonObject; desc: string | null } {
   let desc: string | null = null;
   let raw: unknown = spec;
-  if (typeof spec === "object" && spec !== null && "shape" in spec && !("type" in spec) && !isZod(spec) && !isStandard(spec)) {
-    desc = (spec as { desc?: string }).desc ?? null;
-    raw = (spec as { shape: unknown }).shape;
+  if (isWrapper(spec)) {
+    desc = spec.desc ?? null;
+    raw = spec.shape;
   }
   let shape: JsonObject;
   if (isStandard(raw)) shape = fromZod(raw["~standard"].jsonSchema!.input({ target: "draft-2020-12" }));

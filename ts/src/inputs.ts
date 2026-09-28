@@ -5,7 +5,7 @@
  */
 
 import { InterfaceError, type InterfaceField } from "./interface.ts";
-import { allowsNull, isOpaque, readField, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
+import { allowsNull, isOpaque, readField, saysOptional, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
 import { byCodePoint, jsonForm } from "./values.ts";
 
 type Rec = Record<string, unknown>;
@@ -41,9 +41,13 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
     throw new InterfaceError("interface-malformed", name, `${where}: an AI function's input is sent to a model: it cannot be opaque`);
   }
   const schema = standardOf(spec);
+  const said = saysOptional(spec);
   let optional = false;
   let fill: { value: unknown } | undefined;
-  if (schema) {
+  if (said !== undefined) {
+    optional = said;
+    if (said && "default" in read) fill = { value: structuredClone(read["default"]) };
+  } else if (schema) {
     const probe = schema["~standard"].validate(undefined);
     if (probe instanceof Promise) probe.catch(() => undefined);     // an async schema cannot say at definition time: required
     else if (!probe.issues) {
@@ -105,8 +109,9 @@ export class Binder {
   /** The inputs given by name (`undefined` is left out), and whether each left-out one takes a value. */
   bind(arg: unknown, opts: { fill?: boolean; check?: boolean } = {}): [Rec, Set<string>] {
     const { names, required, name } = this;
+    // an object is the inputs by name when every key is an input's, or it holds the one required input's name; else it is that input's value
     const keyed = arg === undefined
-      || (plainObject(arg) && (required.length !== 1 || (Object.keys(arg).every((k) => names.includes(k)) && required[0]! in arg)));
+      || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) || required[0]! in arg));
     if (!keyed) {
       if (required.length === 1) return this.bind({ [required[0]!]: arg }, opts);
       throw new InterfaceError("interface-input", null, `${name} takes its inputs by name: ${name}({ ${names.join(", ")} })`);

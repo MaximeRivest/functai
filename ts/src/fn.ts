@@ -322,7 +322,7 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   };
   // lmcc checks the signature first (signature-malformed), then the interface is checked by the contract's rules
   const signature = sig.signature(definition, def.instructions ?? null);
-  const iface = checkInterface(interfaceOf(definition), `ai("${name}")`, { ai: true });
+  const iface = checkInterface(interfaceOf(definition), { ai: true, where: `ai("${name}")` });
   checkLogContent(own.logContent, `ai("${name}")`, fieldsOf(iface, signature));
   const core: Core = {
     definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],

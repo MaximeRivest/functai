@@ -276,8 +276,14 @@ export function malformed(iface: unknown, opts: { ai?: boolean } = {}): { field:
   return null;
 }
 
-/** Refuse an interface that breaks the rules: `InterfaceError` (`interface-malformed`). */
-export function checkInterface(iface: unknown, where: string, opts: { ai?: boolean } = {}): Interface {
+/**
+ * An interface, checked by the contract's rules (programs.md, "Interfaces
+ * that are refused"): returned when it is accepted, else `InterfaceError`
+ * (`interface-malformed`, naming the first field at fault). `ai`: an AI
+ * function's, whose shapes may carry lmcc's other keywords.
+ */
+export function checkInterface(iface: unknown, opts: { ai?: boolean; where?: string } = {}): Interface {
+  const where = opts.where ?? "interface";
   const fault = malformed(iface, opts);
   if (fault) {
     throw new InterfaceError("interface-malformed", fault.field,
