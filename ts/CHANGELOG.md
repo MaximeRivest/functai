@@ -30,7 +30,8 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   `journal-scope`, `journal-barrier`, `journal-end` with `outcome`,
   `event` and `settle()`).
 - **Saved folders**: nodes carry their interface; loading takes optional
-  inputs from it and checks it; `describeSaved()`. The manifest is checked
+  inputs from it and checks it; `describeSaved()`; `save(module)` writes
+  the module's node and the AI functions it uses. The manifest is checked
   against the contract's schema.
 - `sawOf` and `keepsSaw` read what a call saw.
 - An object argument is the inputs by name when every key is an input's or

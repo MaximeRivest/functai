@@ -10,6 +10,7 @@ import * as lmcc from "lmcc";
 import { Config, stringifyJson } from "@lm15/lm15";
 import { builtin } from "./host.ts";
 import { make, type AnyAIFunction as AIFunction } from "./fn.ts";
+import type { AnyModule } from "./module.ts";
 import { interfaceSignature, malformed, type Interface, type InterfaceField } from "./interface.ts";
 import { REGISTRY } from "./layouts.ts";
 import { passes } from "./schema.ts";
@@ -217,10 +218,9 @@ export function load(path: string, opts: { node?: string } = {}): AIFunction {
   return fromManifest(manifest, { node: opts.node, savedId: "sha256:" + lmcc.sha256Hex(text) });
 }
 
-/** The manifest of an AI function defined here: the part every language reads (contract/saved.md). */
-export function toManifest(fn: AIFunction): Rec {
+/** An AI function's `ai` entry (contract/saved.md). */
+function aiEntry(fn: AIFunction): Rec {
   const s = fn.settings;
-  const key = `${fn.module}:${fn.name}`;
   const settings: Rec = { module: s.module ?? "predict", include_fn_name_in_instructions: s.includeFnName !== false };
   if (typeof s.lm === "string") settings["lm"] = s.lm;
   if (s.adapter !== undefined && s.adapter !== null) {
@@ -245,21 +245,45 @@ export function toManifest(fn: AIFunction): Rec {
       return `refused:${(err as lmcc.Refusal).code}`;
     }
   });
-  const ai: Rec = {
+  return {
     settings, config: Object.keys(config).length ? JSON.parse(stringifyJson(Config.toJSON(config as Config))) : {},
     template: s.template ? [...s.template] : null, tools: [], teacher: null, state, requires: [],
     signature: lmcc.signatureToDict(fn.signature), probes,
     fingerprints: { signature: lmcc.signatureFingerprint(fn.signature), requests },
     body: null, version: fn.version,
   };
+}
+
+const isModule = (p: AIFunction | AnyModule): p is AnyModule => Array.isArray((p as AnyModule).uses) && !("signatureId" in p);
+
+/**
+ * The manifest of a program defined here: the part every language reads
+ * (contract/saved.md). An AI function is its node; a module is its node
+ * (with its interface, so any language can describe it; its code runs only
+ * here) and a node for each AI function and module it uses, which other
+ * languages load by key.
+ */
+export function toManifest(program: AIFunction | AnyModule): Rec {
+  const nodes: Rec = {};
+  const add = (p: AIFunction | AnyModule) => {
+    const key = `${p.module}:${p.name}`;
+    if (key in nodes) return;
+    if (isModule(p)) {
+      nodes[key] = { kind: "module", module: p.module, name: p.name, interface: p.interface };
+      for (const u of p.uses) add(u);
+    } else {
+      nodes[key] = { kind: "ai", module: p.module, name: p.name, interface: p.interface, ai: aiEntry(p) };
+    }
+  };
+  add(program);
   return {
-    functai_saved: FORMAT, language: LANGUAGE, entry: key, created: new Date().toISOString().replace(/\.\d+Z$/, "+00:00"),
-    functai: VERSION, nodes: { [key]: { kind: "ai", module: fn.module, name: fn.name, interface: fn.interface, ai } },
+    functai_saved: FORMAT, language: LANGUAGE, entry: `${program.module}:${program.name}`,
+    created: new Date().toISOString().replace(/\.\d+Z$/, "+00:00"), functai: VERSION, nodes,
   };
 }
 
-/** Write an AI function to a folder (its functai.json), for any language's loader. */
-export function save(fn: AIFunction, folder: string): string {
+/** Write a program (an AI function, or a module and what it uses) to a folder (its functai.json), for any language's loader. */
+export function save(fn: AIFunction | AnyModule, folder: string): string {
   const fs = builtin("node:fs");
   const p = builtin("node:path");
   if (!fs || !p) throw new Error("save needs a file system; use toManifest and write it yourself");

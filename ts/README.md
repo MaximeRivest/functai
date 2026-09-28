@@ -260,7 +260,9 @@ its version, and refuses (with the reason) what only the saving language
 can run: a function with code of its own around the model, tools, a baked
 model.
 `save(fn, "folder/")` writes a TypeScript function the same way, with its
-interface. `describeSaved("mood/")` says what a saved program (an AI
+interface; `save(module, "folder/")` writes a module's interface and the AI
+functions it uses (another language describes the module, and loads its
+AI functions by key). `describeSaved("mood/")` says what a saved program (an AI
 function or a module, in any language) takes and gives, without running
 anything.
 

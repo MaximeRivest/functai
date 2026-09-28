@@ -12,8 +12,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import * as z from "zod";
 import {
-  ai, Cancelled, configure, EventUnknown, Follower, InterfaceError, JournalError, MemoryStore, module, SettingError, stateOf, t, tool,
-  views, withSettings, type AppendAnswer, type Position, type StreamEvent,
+  ai, Cancelled, configure, describeSaved, EventUnknown, Follower, fromManifest, InterfaceError, JournalError, LoadRefused, MemoryStore,
+  module, SettingError, stateOf, t, toManifest, tool, views, withSettings, type AppendAnswer, type Position, type StreamEvent,
 } from "../src/index.ts";
 import { passes } from "../src/schema.ts";
 import { FakeRouter } from "./fake.ts";
@@ -324,4 +324,17 @@ test("a follower of a live stream across a later writer rewinds; one that misses
   assert.equal(reader.receive(whole[2]!), "loss");            // it missed one
   await reader.recover(s.tree!, store);                         // a live reader starts again from a store
   assert.deepEqual(reader.state(s.tree!), stateOf(store.events(s.tree!)));
+});
+
+test("a module saves with its interface and the AI functions it uses: described in any language, its AI functions loaded by key", () => {
+  const answer = mood(new FakeRouter([]), { definedIn: "shop" });
+  const support = module("support", { description: "Answer a customer.", input: { message: t.string() }, output: t.string(), uses: [answer], definedIn: "shop" },
+    async ({ message }) => String(await answer(message)));
+  const manifest = JSON.parse(JSON.stringify(toManifest(support)));
+  assert.ok(passes("saved", manifest));
+  assert.deepEqual(Object.keys(manifest.nodes), ["shop:support", "shop:mood"]);
+  assert.deepEqual(describeSaved(manifest), support.interface);
+  assert.deepEqual(describeSaved(manifest, { node: "shop:mood" }), answer.interface);
+  assert.throws(() => fromManifest(manifest), (e: unknown) => e instanceof LoadRefused && e.code === "saved-not-ai");
+  assert.equal(fromManifest(manifest, { node: "shop:mood" }).version, answer.version);
 });
