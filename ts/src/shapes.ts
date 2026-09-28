@@ -63,15 +63,36 @@ export type ValueOf<S> =
   S extends { readonly shape: infer X } ? ValueOf<X> :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? unknown : T) : unknown;
 
-/** Builders for shapes (lmcc's, plus a map and `optional`). Each takes extra JSON Schema keys. */
+const OPAQUE = Symbol.for("functai.opaque");
+
+/** Any JSON value. */
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+
+/** Builders for shapes (lmcc's, plus a map, `optional`, `json` and `opaque`). Each takes extra JSON Schema keys. */
 export const t = {
   ...lmcc.t,
   /** Text, integers, numbers or yes/no: `t.string()`, `t.integer()`, `t.number()`, `t.boolean()`. */
   /** A map from text keys to values: `t.record(t.integer())`. */
   record: <V>(values: Shape<V>): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values }) as Shape<Record<string, V>>,
-  /** The shape or null. */
+  /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
+  /** Any JSON value (shape `{}`). */
+  json: (): Shape<Json> => ({}) as Shape<Json>,
+  /**
+   * A module's field whose values may have no JSON form (a class instance, a
+   * buffer, a data frame): never checked, written in the log as a
+   * description. It cannot cross a boundary that needs data (a server, a
+   * conversation store). `t.opaque<Buffer>()`.
+   */
+  opaque: <T = unknown>(): Shape<T> => Object.defineProperty({}, OPAQUE, { value: true }) as Shape<T>,
 };
+
+/** Whether a field spec was declared with `t.opaque()`. */
+export function isOpaque(spec: unknown): boolean {
+  const raw = typeof spec === "object" && spec !== null && "shape" in spec && !isZod(spec) && !isStandard(spec)
+    ? (spec as { shape: unknown }).shape : spec;
+  return typeof raw === "object" && raw !== null && (raw as Record<symbol, unknown>)[OPAQUE] === true;
+}
 
 /** A field with words about it: `describe(t.string(), "the customer's own words")`. */
 export function describe<S extends Shape | ZodLike | StandardSchemaLike>(shape: S, desc: string): { shape: S; desc: string } {

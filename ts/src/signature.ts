@@ -12,9 +12,18 @@ type JsonObject = Record<string, unknown>;
 
 export interface FieldDef {
   readonly name: string;
+  /** Its shape; an optional input's holds its `default`, the value it is sent with when left out. */
   readonly shape: JsonObject;
   readonly desc?: string | null;
+  /** Inputs only: a caller may leave it out. */
+  readonly optional?: boolean;
 }
+
+/** A shape without its own `default` (functions.md: a default is how a call is bound, not what the model is told). */
+const withoutDefault = (shape: JsonObject): JsonObject => {
+  const { default: _default, ...rest } = shape;
+  return rest;
+};
 
 /** A definition as data: what every language's AI function comes down to. */
 export interface Definition {
@@ -67,7 +76,7 @@ export function instructions(d: Definition, improved: string | null | undefined)
 /** The fields, in the contract's order. */
 export function fields(d: Definition): lmcc.FieldInput[] {
   const out: lmcc.FieldInput[] = d.inputs.map((f) => ({
-    name: f.name, direction: "input", shape: f.shape as lmcc.JsonObject, purpose: "plain", ...(f.desc ? { desc: f.desc } : {}),
+    name: f.name, direction: "input", shape: withoutDefault(f.shape) as lmcc.JsonObject, purpose: "plain", ...(f.desc ? { desc: f.desc } : {}),
   }));
   if (d.tools) out.push({ name: "tools", direction: "input", shape: TOOL_LIST as lmcc.JsonObject, purpose: "tools", type: "list[Tool]" });
   const names = new Set([...d.inputs.map((f) => f.name), ...d.outputs.map((f) => f.name)]);
