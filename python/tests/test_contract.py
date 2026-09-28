@@ -6,7 +6,6 @@ manifests (saved.md). The call log's cases are in test_call_log.py."""
 import dataclasses
 import json
 import textwrap
-from pathlib import Path
 
 import jsonschema
 import pytest

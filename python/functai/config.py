@@ -180,7 +180,14 @@ class configure:
         ``api_retries``, ``cache_replies``, ``teacher_lm``, ``debug``...
         An unknown setting raises ``TypeError``. The call log:
         ``log_calls`` (``True``, or a folder: keep every call),
-        ``log_content`` and ``caller`` (who is calling, a dict).
+        ``log_content`` (``False``, or ``{"transcript": False}``: what the
+        log may not keep; it only ever removes, so a block's ``False``
+        holds for every call inside it), and ``caller`` (who is calling, a
+        dict). Each call tree's events: ``observers`` (a list of functions
+        or lists, given the kept form of every event; they add up over
+        blocks) and ``journal`` (a store, ``functai.Journal(store,
+        required=True)``, or ``False``: where whole trees are kept while
+        they run; a program cannot replace or remove the one you set).
 
     Returns
     -------

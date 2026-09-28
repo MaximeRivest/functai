@@ -715,9 +715,8 @@ def _end(call: Call, value: Any, error: Optional[BaseException]) -> Optional[Bas
             log.release(call, event)
         return None
     call.journal_status = "refused" if status == "refused" else "unknown"
-    from . import eventlog
     outcome = Outcome(value=None if error is not None else value, error=error)
-    end = {"writer": log.writer, "seq": log.seq}
+    end = {"writer": event.writer, "seq": event.seq} if event is not None else {"writer": log.writer, "seq": log.seq}
     what = "refused it" if status == "refused" else "did not answer (it may have kept it)"
     return JournalError("journal-end", f"{call.function} ended, and the journal {what}: its outcome is on "
                                        f"err.outcome; err.settle() says whether the journal kept it",

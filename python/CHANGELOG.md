@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+Stage 1 of the contract (`design/08-stage1-foundations.md`): logs every
+language keeps and reads alike, and programs that say what they take.
+
+- **Interfaces.** Every program has `.interface`, its inputs and outputs
+  as data. A `@module`'s is derived from its function (`Any`, `object`
+  or no annotation: opaque; `functai.JSON`: any JSON; a default makes an
+  input optional; `outputs={...}` declares several; `interface={...}`
+  declares it whole) and checked on every call: `InterfaceError`
+  (`interface-input`, `interface-output`) before its code runs or when it
+  returns. Interfaces every language would refuse are refused when the
+  program is defined (`interface-malformed`), an AI function's included
+  (an optional input whose default does not fit, or has no JSON form).
+  `Annotated[int, Field(ge=10)]` now puts its constraint in the shape;
+  `x: str = None` is `Optional[str]`. A module's version includes its
+  interface (every module's version changes once).
+- **The call log is format 2** (both formats are read): `program.interface`
+  on every record, `program.signature` for AI functions only, `saw` (the
+  earlier calls a stateful function was shown, by id), `described` (values
+  written as descriptions), `request_hash` on exchanges, `journal`.
+  `functai.calllog.saw` and `check_kept` read what a call saw.
+- **`log_content` per field**: `{"transcript": False}`, `{"*": False,
+  "question": True}`. It only removes: a block's or `configure`'s `False`
+  beats a function's own `True`, `FUNCTAI_LOG_CONTENT=0` beats everything.
+  Dropping any field drops the reasoning and tool calls FunctAI adds, and
+  every request, reply and error message. A misspelt name in a function's
+  own map is `LogContentError`. `@module` takes `log_content`, `log_calls`,
+  `caller`, `observers` and `journal`.
+- **Stream events are format 2**: `tree`, `writer`, `seq`, `after`, `at`
+  on every event (`event.position`), and a `Request` event that begins
+  every request; a stream opened inside a tree shows the tree's numbers.
+- **Observers and journals**: `observers=[...]` get the kept form of every
+  event (they add up over layers, and never slow a call); `journal=` keeps
+  whole trees in a store while they run, best effort or
+  `functai.Journal(store, required=True)` (the call waits at its start,
+  before each tool and at its end: `JournalError` `journal-barrier`, or
+  `journal-end` holding the outcome, with `err.settle()`). A program cannot
+  replace a host's journal (`journal-policy`). `functai.MemoryStore` keeps
+  logs by the contract's store rules; `functai.Follower` follows them.
+- **Saved folders** carry every program's interface; `functai.describe(path)`
+  reads it without loading; a folder another language wrote loads from
+  its data (`functai.load`, `functai.saved.from_manifest`), optional inputs
+  and their defaults included.
+
 Breaking (see *Upgrading* in the documentation): the API says what it
 does, and a type checker follows it.
 

@@ -10,14 +10,17 @@
 
 A stream runs the call in a thread of its own, started at once, in a copy
 of the caller's context (so ``with configure(...)`` and the call log's
-parent reach it). The call is the ordinary one: ``calllog.run`` reports
-each call's start and end to the stream watching it (``calllog.WATCH``),
-``engine.send`` streams each model request instead of waiting for it
-(the reply it assembles is the one ``complete`` would return, so reading,
-retries, the cache and the log are unchanged) and reports retries and
-tools. lmcc's streaming reader (kernel §8) turns the reply's pieces into
-each field's text; the reply is still read whole at the end, which is the
-only authority on values. The contract is ``contract/streaming.md``.
+parent reach it). The call is the ordinary one: ``calllog.run`` places each
+call in its tree's log (``eventlog.TreeLog``), which numbers every event
+and hands it to the streams, observers and journal that see the call; a
+stream sees the whole log of its call and the calls inside it.
+``engine.send`` streams each model request of a watched call instead of
+waiting for it (the reply it assembles is the one ``complete`` would
+return, so reading, retries, the cache and the log are unchanged), and
+each request begins a ``Request`` event. lmcc's streaming reader (kernel
+§8) turns the reply's pieces into each field's text; the reply is still
+read whole at the end, which is the only authority on values. The
+contract is ``contract/streaming.md`` (events format 2).
 """
 
 from __future__ import annotations

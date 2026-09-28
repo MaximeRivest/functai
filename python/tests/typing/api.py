@@ -2,7 +2,7 @@
 checks it with basedpyright. A `# pyright: ignore[...]` line is an error the
 checker must report (an unneeded ignore fails the check); `assert_type` pins a type."""
 
-from typing import Literal, assert_type
+from typing import Any, Dict, Literal, assert_type
 
 import functai
 from dpyr import col
@@ -66,3 +66,31 @@ def improving(rows: list[dict[str, str]]) -> None:
     assert_type(functai.gepa(team, rows, teacher="gpt-6-sol").predict("x"), Prediction)
     assert_type(team.opt(rows)("x", urgent=True), Literal["shipping", "billing"])
     functai.gepa(team, rows)(123)      # pyright: ignore[reportCallIssue, reportArgumentType]
+
+
+@functai.module
+def blurb(topic: str, options: functai.JSON = None) -> str:
+    return team(topic)
+
+
+@functai.module(outputs={"team": str, "result": str}, log_content={"topic": False})
+def routed(topic: str) -> dict:
+    return {"team": team(topic), "result": "ok"}
+
+
+def interfaces_and_logs() -> None:
+    assert_type(team.interface, Dict[str, Any])
+    assert_type(blurb.interface, Dict[str, Any])
+    assert_type(routed, functai.FunctAIModule)
+    store = functai.MemoryStore()
+    journal = functai.Journal(store, required=True)
+    functai.configure(observers=[print], journal=journal, log_content={"*": False, "message": True})
+    reader = functai.Follower()
+    for event in store.read("some-tree"):
+        assert_type(reader.receive(event), str)
+    try:
+        team("x")
+    except functai.JournalError as err:
+        assert_type(err.code, str)
+        err.settle()
+    functai.describe("saved/")

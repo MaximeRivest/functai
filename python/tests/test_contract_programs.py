@@ -50,24 +50,28 @@ def check_inputs(m, got, inputs):
     return {"inputs": as_json(dict(got))}
 
 
-def check_returned(iface, returned, tmp_path):
-    """What the code returned, as the call's outputs (the call log's record)."""
-    value = native(returned)
+def returning(iface, tmp_path):
+    """A module declaring ``iface`` whose code returns what it is told to,
+    its calls logged: what a check reads back is the call's record."""
+    holder = {}
 
     def body(**_inputs):
-        return value
+        return holder["value"]
 
-    m = module(interface=iface, log_calls=tmp_path)(body)
-    inputs = {f["name"]: _sample(f) for f in iface["inputs"] if not f.get("optional")}
-    before = set(tmp_path.rglob("*.jsonl"))
+    return module(interface=iface, log_calls=tmp_path)(body), holder
+
+
+def check_returned(m, holder, returned, tmp_path):
+    """What the code returned, as the call's outputs (the call log's record)."""
+    holder["value"] = native(returned)
+    inputs = {f["name"]: _sample(f) for f in m.interface["inputs"] if not f.get("optional")}
     try:
         m(**inputs)
     except functai.InterfaceError as err:
         assert err.code == "interface-output"
         return refusal(err)
-    records = [json.loads(line) for f in sorted(tmp_path.rglob("*.jsonl")) for line in f.read_text().splitlines()]
-    assert before is not None
-    rec = records[-1]
+    records = [json.loads(line) for f in sorted(set(tmp_path.rglob("*.jsonl"))) for line in f.read_text().splitlines()]
+    rec = max(records, key=lambda r: (r["started"], r["id"]))
     assert rec["error"] is None
     if rec.get("described"):
         # a value with no JSON form is written as its description, and named so
@@ -105,11 +109,12 @@ def test_programs_case(path, tmp_path):
         m, got = declared(case["interface"])
         assert interface.signature(m.interface) == case["expect"]["signature"]
         assert m.interface == case["interface"]
+        r, holder = returning(case["interface"], tmp_path)
         for check in case["checks"]:
             if "inputs" in check:
                 assert check_inputs(m, got, check["inputs"]) == check["expect"], check
             else:
-                assert check_returned(case["interface"], check["returned"], tmp_path) == check["expect"], check
+                assert check_returned(r, holder, check["returned"], tmp_path) == check["expect"], check
     elif kind == "definitions":
         for x in case["interfaces"]:
             iface, expect = x["interface"], x["expect"]

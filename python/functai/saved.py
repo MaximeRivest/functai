@@ -826,8 +826,13 @@ def _rebuild_module(fn: Any, key: str):
 
 def _verify_loaded(package: str, manifest: Dict[str, Any]) -> List[str]:
     """Fingerprints recomputed here against the saved ones."""
+    from .interface import signature
     problems = []
     for key, node in manifest["nodes"].items():
+        if node["kind"] in ("ai", "module") and isinstance(node.get("interface"), dict):
+            obj = _node_object(package, manifest, key)
+            if signature(obj.interface) != signature(node["interface"]):
+                problems.append(f"{key}: it takes or gives other data than its saved interface says")
         if node["kind"] != "ai":
             continue
         fn = _node_object(package, manifest, key)
@@ -1453,7 +1458,7 @@ def _loaded_class():
             self.load_state(ProgramState.from_dict(data.get("state") or {}))
 
         def _check_definition(self) -> None:
-            return None                     # a saved node is checked by from_manifest (saved.md, step 6)
+            self._check_log_content()      # its interface is checked by from_manifest (saved.md, step 6)
 
         def _spec(self, instructions: Optional[str] = None):
             from .signature import Spec

@@ -44,6 +44,38 @@ With an API key in your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 nothing to set up: functai picks a small model you can use and tells you
 which. To choose: `functai.configure(lm="claude-haiku-4-5")`.
 
+## Programs you can describe, logs you can keep
+
+Every program says what it takes and gives, as data, and a `@module`
+checks every call against it:
+
+```python
+@functai.module
+def support(message: str, tone: str = "kind") -> str:
+    ...
+
+support.interface          # {"description", "inputs": [...], "outputs": [...]}: served, saved, described
+support(3)                 # InterfaceError (interface-input): 3 does not fit {"type":"string"}
+functai.describe("saved/") # what a saved program takes and gives, without loading it
+```
+
+The call log keeps what you allow, field by field, and a host's rule holds
+for every program it runs (`log_content` only ever removes):
+
+```python
+with functai.configure(log_calls=True, log_content={"transcript": False}):
+    summarize(transcript)  # the record has every value but the transcript
+```
+
+A call tree's events can be watched and kept while it runs, and read
+again elsewhere:
+
+```python
+seen = []
+store = functai.MemoryStore()
+functai.configure(observers=[seen], journal=functai.Journal(store, required=True))
+```
+
 ## Documentation
 
 **[maximerivest.github.io/functai](https://maximerivest.github.io/functai/python.html)**, with three ways in:

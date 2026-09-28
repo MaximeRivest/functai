@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import copy
 import dataclasses
-import enum
 import inspect
 import math
 import re
@@ -118,7 +117,7 @@ def _shape_fault(shape: Any, root: Dict[str, Any], carry: bool) -> Optional[str]
     for k, v in shape.items():
         if k in WORDS:
             kind = WORDS[k]
-            if kind is not object and not (isinstance(v, kind) and not (kind is not bool and isinstance(v, bool))):
+            if kind is not object and not isinstance(v, kind):
                 return f"{k!r} must be {'text' if kind is str else 'true or false' if kind is bool else 'a list'}"
             continue
         if k not in LISTED:
@@ -638,14 +637,6 @@ def of_ai(fn: Any) -> Dict[str, Any]:
             field["type"] = f.type
         outputs.append(field)
     return {"description": inspect.cleandoc(fn.__wrapped__.__doc__ or ""), "inputs": inputs, "outputs": outputs}
-
-
-def field_names(interface: Mapping[str, Any]) -> Tuple[List[str], List[str]]:
-    return [f["name"] for f in interface["inputs"]], [f["name"] for f in interface["outputs"]]
-
-
-def _enum_value(v: Any) -> Any:
-    return v.value if isinstance(v, enum.Enum) else v
 
 
 __all__ = ["JSON", "check", "signature", "fits", "bind_inputs", "check_outputs", "of_function", "of_ai",

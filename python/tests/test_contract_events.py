@@ -3,8 +3,6 @@ format 2): replaying and following them, their kept form, the rules a store
 keeps, a writer keeping a log in a journal that fails, and which receivers a
 tree gets from the layers of settings around it."""
 
-import copy
-import json
 
 import pytest
 

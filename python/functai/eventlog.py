@@ -42,7 +42,7 @@ import warnings
 from collections.abc import Mapping
 from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
-from .errors import EventRefused, JournalError, Outcome
+from .errors import EventRefused, JournalError
 
 FORMAT = 2
 KINDS = ("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed")
@@ -135,10 +135,10 @@ def read_after(events: Sequence[Mapping[str, Any]], after: Optional[Mapping[str,
     that has events up to ``after``: the events after it, in order, or
     ``EventRefused("event-unknown")`` when it does not have that event."""
     if after is None:
-        return [dict(e) for e in events]
+        return copy.deepcopy([dict(e) for e in events])
     for i, e in enumerate(events):
         if _same(position(e), after):
-            return [dict(x) for x in events[i + 1:]]
+            return copy.deepcopy([dict(x) for x in events[i + 1:]])
     raise EventRefused("event-unknown", f"this source has no event {after}")
 
 
@@ -355,8 +355,18 @@ def _is_event(e: Any) -> bool:
     after = e.get("after")
     ok_after = after is None or (isinstance(after, Mapping) and set(after) == {"writer", "seq"} and all(
         isinstance(after[k], int) and not isinstance(after[k], bool) and after[k] >= 1 for k in ("writer", "seq")))
-    return ints and ok_after and isinstance(e.get("kind"), str) and isinstance(e.get("tree"), str) \
-        and isinstance(e.get("call"), str) and isinstance(e.get("function"), str) and bool(e.get("function"))
+    if not (ints and ok_after and isinstance(e.get("kind"), str) and isinstance(e.get("tree"), str)
+            and isinstance(e.get("call"), str) and isinstance(e.get("function"), str) and bool(e.get("function"))
+            and isinstance(e.get("at"), str)):
+        return False
+    return all(k in e for k in _REQUIRED.get(e["kind"], ()))
+
+
+# The keys each kind this contract names must have (event.schema.json); a kind
+# a later stage adds is open.
+_REQUIRED = {"started": ("parent", "root", "program", "content", "saw"), "request": ("request", "model"),
+             "text": ("field", "answer", "text"), "thinking": ("text",), "tool_call": ("id", "name"),
+             "tool_result": ("id", "name"), "retry": ("wait",), "done": (), "failed": ("error",)}
 
 
 class MemoryStore:
@@ -913,7 +923,11 @@ class TreeLog:
             from . import streaming
             event = streaming.make_event(kind, call=call.id, function=call.function, tree=self.tree,
                                          writer=self.writer, seq=self.seq, after=after, at=at, **fields)
-            self._deliver(call, event, journal_only=hold)
+            try:
+                self._deliver(call, event, journal_only=hold)
+            except Exception as exc:  # noqa: BLE001 — watching a call never stands in its way
+                _warn_once(("deliver", type(exc).__name__), f"an event of {call.function} could not be given to "
+                                                            f"its readers: {type(exc).__name__}: {exc}")
             return event
 
     def _deliver(self, call: Any, event: Any, *, journal_only: bool = False, readers_only: bool = False) -> None:
@@ -952,7 +966,11 @@ class TreeLog:
         """Give readers an event held back until the journal confirmed it."""
         if event is not None:
             with self.lock:
-                self._deliver(call, event, readers_only=True)
+                try:
+                    self._deliver(call, event, readers_only=True)
+                except Exception as exc:  # noqa: BLE001
+                    _warn_once(("deliver", type(exc).__name__), f"an event of {call.function} could not be given "
+                                                                f"to its readers: {type(exc).__name__}: {exc}")
 
     def barrier(self) -> str:
         return self.sender.barrier() if self.sender is not None else "confirmed"

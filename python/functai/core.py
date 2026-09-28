@@ -413,6 +413,9 @@ class FunctAIFunc(Generic[P, R]):
         no JSON default...), and a ``log_content`` map naming a field it lacks."""
         from . import interface as _interface
         _interface.check(self.interface, ai=True, program=self.__name__)
+        self._check_log_content()
+
+    def _check_log_content(self) -> None:
         content = self._settings.get("log_content")
         if isinstance(content, dict):
             ins, outs, added = self._fields()
@@ -1419,9 +1422,21 @@ def ai(_fn: Any = None, /, **cfg: Any) -> Any:
     log_calls : bool or folder, optional
         Keep this function's calls in the call log (see ``functai.calls``);
         ``False`` keeps them out, whatever ``configure`` says.
-    log_content : bool, optional
+    log_content : bool or dict, optional
         ``False``: log only sizes, times and tokens, never the values (for a
-        function that sees secrets).
+        function that sees secrets). ``{"transcript": False}``: every value
+        but that input's; ``{"*": False, "question": True}``: only the
+        question's. It only removes: a host's ``configure`` or block that
+        drops a value wins over the function's own ``True``. A name the
+        function has no field for is an error (``LogContentError``).
+    observers : list, optional
+        Functions (or lists) given each event of this function's calls as
+        they happen, in the form a log keeps (``functai.eventlog``), beside
+        the host's observers.
+    journal : store or Journal, optional
+        Where the call tree's events are kept while it runs (a
+        ``functai.MemoryStore``, or ``functai.Journal(store,
+        required=True)``); only where the host sets none.
     **settings
         Any other setting ``configure`` takes (``api_key``, ``client``,
         ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An

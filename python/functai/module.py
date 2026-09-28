@@ -18,10 +18,9 @@ from __future__ import annotations
 
 import copy
 import inspect
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple, overload
 
 from .core import FunctAIFunc
-from .errors import InterfaceError
 
 # The settings a module takes for itself: where its calls go and what is kept
 # of them. Model settings belong to the AI functions it calls (or to a block).
@@ -314,8 +313,18 @@ class FunctAIModule:
         return out
 
 
-def module(fn: Callable[..., Any] | None = None, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-           outputs: Optional[Mapping[str, Any]] = None, **settings: Any):
+@overload
+def module(fn: Callable[..., Any], /) -> FunctAIModule: ...
+
+
+@overload
+def module(fn: None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
+           outputs: Optional[Mapping[str, Any]] = None, **settings: Any) -> Callable[[Callable[..., Any]], FunctAIModule]:
+    ...
+
+
+def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
+           outputs: Optional[Mapping[str, Any]] = None, **settings: Any) -> Any:
     '''Make a Python function that calls AI functions into one program.
 
     The body is ordinary Python: loops, ifs, helpers, several AI functions.

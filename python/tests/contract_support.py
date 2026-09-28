@@ -7,7 +7,6 @@ lets ``$`` match before a final newline too, so a stock validator would
 accept ``"message\\n"`` as a name where every other language refuses it
 (design/08, *Found while doing this*)."""
 
-import dataclasses
 import json
 import re
 import tempfile
@@ -73,13 +72,10 @@ def native(value):
     if is_stand_in(value):
         cls = _classes.get(value["$type"])
         if cls is None:
-            text = {}
-
             def rep(self):
                 return self._repr
 
             cls = _classes[value["$type"]] = type(value["$type"], (), {"__repr__": rep, "__slots__": ("_repr",)})
-            _ = text
         obj = cls()
         obj._repr = value["$repr"]
         return obj
