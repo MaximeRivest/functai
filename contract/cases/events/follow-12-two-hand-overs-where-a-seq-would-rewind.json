@@ -1,9 +1,7 @@
 {
- "description": "The journal refuses an event in the middle (another writer took the log): the writer appends nothing more, the call stops at the next barrier (the tool), and its end cannot be kept: journal \"refused\".",
- "kind": "journal",
- "mode": "required",
- "retries": 2,
- "events": [
+ "description": "The same, when the reader holds writer 1's seqs 1 to 6: writer 3's failed names writer 2's seq 4, below the reader's last seq. The reader holds a seq 4, but writer 1's: it does not rewind to it (a seq alone would, and keep writer 1's text), since the event named is not one it holds. A loss.",
+ "kind": "follow",
+ "received": [
   {
    "functai_event": 2,
    "kind": "started",
@@ -13,11 +11,11 @@
    "after": null,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
+   "function": "gardener",
    "parent": null,
    "root": "01926c00-0001-7000-8000-000000000000",
    "program": {
-    "name": "helper",
+    "name": "gardener",
     "kind": "ai",
     "module": "shop",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -26,7 +24,7 @@
     "answer": "result"
    },
    "inputs": {
-    "question": "Where is B-2210?"
+    "request": "Merge groceries.md into todo.md"
    },
    "content": true,
    "saw": []
@@ -43,13 +41,13 @@
    },
    "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
+   "function": "gardener",
    "request": 1,
    "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
-   "kind": "thinking",
+   "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 3,
@@ -59,8 +57,10 @@
    },
    "at": "2026-09-28T10:00:00.030000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
-   "text": "Look the order up first."
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "OLD"
   },
   {
    "functai_event": 2,
@@ -74,14 +74,14 @@
    },
    "at": "2026-09-28T10:00:00.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
+   "function": "gardener",
    "field": "result",
    "answer": true,
-   "text": "Let me check."
+   "text": " TAIL"
   },
   {
    "functai_event": 2,
-   "kind": "tool_call",
+   "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 5,
@@ -91,16 +91,14 @@
    },
    "at": "2026-09-28T10:00:00.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
-   "id": "call_1",
-   "name": "lookup_order",
-   "input": {
-    "order": "B-2210"
-   }
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": " MORE"
   },
   {
    "functai_event": 2,
-   "kind": "tool_result",
+   "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 6,
@@ -110,24 +108,84 @@
    },
    "at": "2026-09-28T10:00:00.060000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
-   "id": "call_1",
-   "name": "lookup_order",
-   "output": "In the Leeds depot, 7 days late."
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": " AGAIN"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 3,
+   "seq": 5,
+   "after": {
+    "writer": 2,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:40.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "error": {
+    "type": "Cancelled"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "gardener",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "request": "Merge groceries.md into todo.md"
+   },
+   "content": true,
+   "saw": []
   },
   {
    "functai_event": 2,
    "kind": "request",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 7,
+   "seq": 2,
    "after": {
     "writer": 1,
-    "seq": 6
+    "seq": 1
    },
-   "at": "2026-09-28T10:00:00.070000Z",
+   "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
+   "function": "gardener",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:20.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
    "request": 2,
    "model": "gpt-4.1-mini"
   },
@@ -135,59 +193,40 @@
    "functai_event": 2,
    "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 8,
+   "writer": 2,
+   "seq": 4,
    "after": {
-    "writer": 1,
-    "seq": 7
+    "writer": 2,
+    "seq": 3
    },
-   "at": "2026-09-28T10:00:00.080000Z",
+   "at": "2026-09-28T10:00:20.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
+   "function": "gardener",
    "field": "result",
    "answer": true,
-   "text": "It is in Leeds, "
+   "text": "NEW"
   },
   {
    "functai_event": 2,
-   "kind": "text",
+   "kind": "failed",
    "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 9,
+   "writer": 3,
+   "seq": 5,
    "after": {
-    "writer": 1,
-    "seq": 8
+    "writer": 2,
+    "seq": 4
    },
-   "at": "2026-09-28T10:00:00.090000Z",
+   "at": "2026-09-28T10:00:40.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
-   "field": "result",
-   "answer": true,
-   "text": "a week late."
-  },
-  {
-   "functai_event": 2,
-   "kind": "done",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 10,
-   "after": {
-    "writer": 1,
-    "seq": 9
-   },
-   "at": "2026-09-28T10:00:00.100000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "helper",
-   "value": "It is in Leeds, a week late."
+   "function": "gardener",
+   "error": {
+    "type": "Cancelled"
+   }
   }
  ],
- "script": [
-  "ok",
-  "ok",
-  "conflict"
- ],
- "expect": {
-  "log": [
+ "recover": {
+  "form": "same",
+  "source": [
    {
     "functai_event": 2,
     "kind": "started",
@@ -197,11 +236,11 @@
     "after": null,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
+    "function": "gardener",
     "parent": null,
     "root": "01926c00-0001-7000-8000-000000000000",
     "program": {
-     "name": "helper",
+     "name": "gardener",
      "kind": "ai",
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -210,7 +249,7 @@
      "answer": "result"
     },
     "inputs": {
-     "question": "Where is B-2210?"
+     "request": "Merge groceries.md into todo.md"
     },
     "content": true,
     "saw": []
@@ -227,141 +266,135 @@
     },
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
+    "function": "gardener",
     "request": 1,
     "model": "gpt-4.1-mini"
    },
    {
     "functai_event": 2,
-    "kind": "thinking",
+    "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
+    "writer": 2,
     "seq": 3,
     "after": {
      "writer": 1,
      "seq": 2
     },
-    "at": "2026-09-28T10:00:00.030000Z",
+    "at": "2026-09-28T10:00:20.030000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "text": "Look the order up first."
+    "function": "gardener",
+    "request": 2,
+    "model": "gpt-4.1-mini"
    },
    {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
+    "writer": 2,
     "seq": 4,
     "after": {
-     "writer": 1,
+     "writer": 2,
      "seq": 3
     },
-    "at": "2026-09-28T10:00:00.040000Z",
+    "at": "2026-09-28T10:00:20.040000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
+    "function": "gardener",
     "field": "result",
     "answer": true,
-    "text": "Let me check."
-   },
-   {
-    "functai_event": 2,
-    "kind": "tool_call",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 5,
-    "after": {
-     "writer": 1,
-     "seq": 4
-    },
-    "at": "2026-09-28T10:00:00.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "id": "call_1",
-    "name": "lookup_order",
-    "input": {
-     "order": "B-2210"
-    }
+    "text": "NEW"
    },
    {
     "functai_event": 2,
     "kind": "failed",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 6,
+    "writer": 3,
+    "seq": 5,
     "after": {
-     "writer": 1,
-     "seq": 5
+     "writer": 2,
+     "seq": 4
     },
-    "at": "2026-09-28T10:00:00.060000Z",
+    "at": "2026-09-28T10:00:40.050000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
+    "function": "gardener",
     "error": {
-     "type": "JournalError",
-     "code": "journal-barrier",
-     "message": "the journal did not keep event 5"
+     "type": "Cancelled"
     }
    }
+  ]
+ },
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "loss"
   ],
-  "trace": [
-   {
-    "seq": 1,
-    "transport": "ok",
-    "answer": "kept"
-   },
-   {
-    "seq": 2,
-    "transport": "ok",
-    "answer": "kept"
-   },
-   {
-    "seq": 3,
-    "transport": "conflict",
-    "answer": "event-conflict"
-   }
-  ],
-  "shown": [
-   1,
-   2,
-   3,
-   4,
-   5
-  ],
-  "kept": {
-   "events": [
-    {
-     "writer": 1,
-     "seq": 1
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "OLD TAIL MORE AGAIN"
+      }
+     }
     },
-    {
-     "writer": 1,
-     "seq": 2
-    }
-   ],
-   "finished": false
+    "finished": false
+   }
   },
-  "caller": {
-   "raises": {
-    "type": "JournalError",
-    "code": "journal-end",
-    "journal": "refused",
-    "event": {
-     "writer": 1,
-     "seq": 6
+  "recover": {
+   "reads": [
+    {
+     "after": {
+      "writer": 1,
+      "seq": 6
+     },
+     "expect": {
+      "refuses": "event-unknown"
+     }
     },
-    "outcome": {
-     "failed": {
-      "type": "JournalError",
-      "code": "journal-barrier"
+    {
+     "after": null,
+     "expect": {
+      "events": [
+       {
+        "writer": 1,
+        "seq": 1
+       },
+       {
+        "writer": 1,
+        "seq": 2
+       },
+       {
+        "writer": 2,
+        "seq": 3
+       },
+       {
+        "writer": 2,
+        "seq": 4
+       },
+       {
+        "writer": 3,
+        "seq": 5
+       }
+      ]
      }
     }
+   ],
+   "state": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "failed",
+      "fields": {
+       "result": "NEW"
+      }
+     }
+    },
+    "finished": true
    }
-  },
-  "record": {
-   "error": {
-    "type": "JournalError",
-    "code": "journal-barrier"
-   },
-   "journal": "refused"
   }
  }
 }

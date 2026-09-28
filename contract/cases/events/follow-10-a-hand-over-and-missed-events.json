@@ -1,7 +1,7 @@
 {
- "description": "log_content false: started keeps no input and names every field in omitted; no piece of text or thinking is kept, not even its size; requests stay (they hold no value); the retry keeps no reason, done no value.",
- "kind": "kept",
- "events": [
+ "description": "A reader of the whole log holds writer 1's seqs 1 to 5 (pieces of a field the log does not keep); writer 2 took over after seq 2, and the reader misses its seqs 3 and 4. Writer 2's done names writer 2's seq 4: the reader holds writer 1's seq 4, another event, so this is a loss, not a rewind. The store gives another form (the kept form): the reader starts again from the beginning in it.",
+ "kind": "follow",
+ "received": [
   {
    "functai_event": 2,
    "kind": "started",
@@ -11,11 +11,11 @@
    "after": null,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
+   "function": "gardener",
    "parent": null,
    "root": "01926c00-0001-7000-8000-000000000000",
    "program": {
-    "name": "triage_build",
+    "name": "gardener",
     "kind": "ai",
     "module": "shop",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -24,8 +24,7 @@
     "answer": "result"
    },
    "inputs": {
-    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.",
-    "question": "Is it broken for a real reason?"
+    "request": "Merge groceries.md into todo.md"
    },
    "content": true,
    "saw": []
@@ -42,13 +41,13 @@
    },
    "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
+   "function": "gardener",
    "request": 1,
    "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
-   "kind": "thinking",
+   "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 3,
@@ -58,8 +57,10 @@
    },
    "at": "2026-09-28T10:00:00.030000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "text": "Ben says the upload test is flaky."
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "Merging "
   },
   {
    "functai_event": 2,
@@ -73,14 +74,14 @@
    },
    "at": "2026-09-28T10:00:00.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "field": "summary",
-   "answer": false,
-   "text": "A flaky test."
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "the two "
   },
   {
    "functai_event": 2,
-   "kind": "retry",
+   "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 5,
@@ -90,90 +91,110 @@
    },
    "at": "2026-09-28T10:00:00.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "reason": "Your reply could not be read: <result> must be yes or no.",
-   "wait": null
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "notes"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 5,
+   "after": {
+    "writer": 2,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:30.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "value": "Done."
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "gardener",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "request": "Merge groceries.md into todo.md"
+   },
+   "content": false,
+   "omitted": {
+    "inputs": [],
+    "outputs": [
+     "result"
+    ]
+   },
+   "saw": []
   },
   {
    "functai_event": 2,
    "kind": "request",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 6,
+   "seq": 2,
    "after": {
     "writer": 1,
-    "seq": 5
+    "seq": 1
    },
-   "at": "2026-09-28T10:00:00.060000Z",
+   "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
+   "function": "gardener",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:30.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
    "request": 2,
    "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
-   "kind": "text",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 7,
-   "after": {
-    "writer": 1,
-    "seq": 6
-   },
-   "at": "2026-09-28T10:00:00.070000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "field": "summary",
-   "answer": false,
-   "text": "A flaky upload test."
-  },
-  {
-   "functai_event": 2,
-   "kind": "text",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 8,
-   "after": {
-    "writer": 1,
-    "seq": 7
-   },
-   "at": "2026-09-28T10:00:00.080000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "field": "result",
-   "answer": true,
-   "text": "no"
-  },
-  {
-   "functai_event": 2,
    "kind": "done",
    "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 9,
+   "writer": 2,
+   "seq": 5,
    "after": {
-    "writer": 1,
-    "seq": 8
+    "writer": 2,
+    "seq": 3
    },
-   "at": "2026-09-28T10:00:00.090000Z",
+   "at": "2026-09-28T10:00:30.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "value": "no"
+   "function": "gardener",
+   "content": false
   }
  ],
- "kept": {
-  "01926c00-0001-7000-8000-000000000000": {
-   "inputs": {
-    "transcript": false,
-    "question": false
-   },
-   "outputs": {
-    "summary": false,
-    "result": false
-   }
-  }
- },
- "expect": {
-  "events": [
+ "recover": {
+  "form": "other",
+  "source": [
    {
     "functai_event": 2,
     "kind": "started",
@@ -183,11 +204,11 @@
     "after": null,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
+    "function": "gardener",
     "parent": null,
     "root": "01926c00-0001-7000-8000-000000000000",
     "program": {
-     "name": "triage_build",
+     "name": "gardener",
      "kind": "ai",
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -195,14 +216,13 @@
      "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "answer": "result"
     },
+    "inputs": {
+     "request": "Merge groceries.md into todo.md"
+    },
     "content": false,
     "omitted": {
-     "inputs": [
-      "transcript",
-      "question"
-     ],
+     "inputs": [],
      "outputs": [
-      "summary",
       "result"
      ]
     },
@@ -220,39 +240,23 @@
     },
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
+    "function": "gardener",
     "request": 1,
     "model": "gpt-4.1-mini"
    },
    {
     "functai_event": 2,
-    "kind": "retry",
+    "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 5,
+    "writer": 2,
+    "seq": 3,
     "after": {
      "writer": 1,
      "seq": 2
     },
-    "at": "2026-09-28T10:00:00.050000Z",
+    "at": "2026-09-28T10:00:30.030000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
-    "wait": null,
-    "content": false
-   },
-   {
-    "functai_event": 2,
-    "kind": "request",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 6,
-    "after": {
-     "writer": 1,
-     "seq": 5
-    },
-    "at": "2026-09-28T10:00:00.060000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
+    "function": "gardener",
     "request": 2,
     "model": "gpt-4.1-mini"
    },
@@ -260,17 +264,76 @@
     "functai_event": 2,
     "kind": "done",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 9,
+    "writer": 2,
+    "seq": 5,
     "after": {
-     "writer": 1,
-     "seq": 6
+     "writer": 2,
+     "seq": 3
     },
-    "at": "2026-09-28T10:00:00.090000Z",
+    "at": "2026-09-28T10:00:30.050000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
+    "function": "gardener",
     "content": false
    }
   ]
+ },
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "loss"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Merging the two notes"
+      }
+     }
+    },
+    "finished": false
+   }
+  },
+  "recover": {
+   "reads": [
+    {
+     "after": null,
+     "expect": {
+      "events": [
+       {
+        "writer": 1,
+        "seq": 1
+       },
+       {
+        "writer": 1,
+        "seq": 2
+       },
+       {
+        "writer": 2,
+        "seq": 3
+       },
+       {
+        "writer": 2,
+        "seq": 5
+       }
+      ]
+     }
+    }
+   ],
+   "state": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {}
+     }
+    },
+    "finished": true
+   }
+  }
  }
 }

@@ -1,5 +1,5 @@
 {
- "description": "One call: its answer's pieces add up; the log is finished when the tree's outermost call is done. A reader that has events up to N gets those after N.",
+ "description": "One call: its answer's pieces add up; the log is finished when the tree's outermost call is done. A reader that has events up to one (named by its writer and seq) gets those after it; a position the log does not have (writer 2's seq 3) is event-unknown.",
  "kind": "replay",
  "events": [
   {
@@ -8,7 +8,7 @@
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 1,
-   "after": 0,
+   "after": null,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -35,7 +35,10 @@
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 2,
-   "after": 1,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
    "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -48,7 +51,10 @@
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 3,
-   "after": 2,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
    "at": "2026-09-28T10:00:00.030000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -62,7 +68,10 @@
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 4,
-   "after": 3,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
    "at": "2026-09-28T10:00:00.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -76,7 +85,10 @@
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 5,
-   "after": 4,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
    "at": "2026-09-28T10:00:00.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -136,26 +148,71 @@
  },
  "resume": [
   {
-   "after": 0,
-   "seqs": [
-    1,
-    2,
-    3,
-    4,
-    5
-   ]
+   "after": null,
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     },
+     {
+      "writer": 1,
+      "seq": 3
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     }
+    ]
+   }
   },
   {
-   "after": 2,
-   "seqs": [
-    3,
-    4,
-    5
-   ]
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 3
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     }
+    ]
+   }
   },
   {
-   "after": 5,
-   "seqs": []
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "expect": {
+    "events": []
+   }
+  },
+  {
+   "after": {
+    "writer": 2,
+    "seq": 3
+   },
+   "expect": {
+    "refuses": "event-unknown"
+   }
   }
  ]
 }

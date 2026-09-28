@@ -1,0 +1,281 @@
+{
+ "description": "A shape's words are checked for their kind too (title is text, examples a list), prefixItems and anyOf hold at least one shape, a count is an integer (2.0 is one: every language reads it so), and additionalProperties is a shape, true or false. A $ref that comes back to itself through $ref and anyOf alone, never passing into an item or a member, is refused: checking a value against it would never end. A record that holds a list of itself descends into a smaller value, and is accepted.",
+ "program": "definitions",
+ "interfaces": [
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string",
+       "title": 7
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "array",
+       "prefixItems": []
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string",
+       "examples": "hi"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Loop": {
+         "$ref": "#/$defs/Loop"
+        }
+       },
+       "$ref": "#/$defs/Loop"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "A": {
+         "anyOf": [
+          {
+           "type": "string"
+          },
+          {
+           "$ref": "#/$defs/B"
+          }
+         ]
+        },
+        "B": {
+         "$ref": "#/$defs/A"
+        }
+       },
+       "$ref": "#/$defs/A"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Loop": {
+         "$ref": "#/$defs/Loop"
+        }
+       },
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "object",
+       "additionalProperties": true
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:bbe177bf9461dda7c5ba960414151011a49ccb97dbced316d42b7cae41964916"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "string"
+       },
+       "minItems": 2.0
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:e95aa2392cf7aaaab403cd1d3470dfa5663a327c294e35ef6ce3cddf717cc965"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$ref": "#/$defs/Node",
+       "$defs": {
+        "Node": {
+         "type": "object",
+         "properties": {
+          "name": {
+           "type": "string"
+          },
+          "children": {
+           "type": "array",
+           "items": {
+            "$ref": "#/$defs/Node"
+           }
+          }
+         },
+         "required": [
+          "name",
+          "children"
+         ]
+        }
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:d848ccf1697ed252d66a3cf707968bec61245fae07d1d813b68f3b1c0d6d1d4d"
+   }
+  }
+ ]
+}

@@ -140,13 +140,13 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `outputs` | each output the model gave (the fields FunctAI added included), as JSON; `null` when the call failed before an answer. For a module, its outputs by name (`{"result": <what it returned>}` for a module with one output named `result`). When `content` is false: only the outputs recorded (absent when there are none, `null` when the call failed before an answer). |
 | `returned` | an AI function whose code changed the answer before returning it (`return round(answer, 2)`): what it returned. Absent otherwise, and when the answer is not recorded. |
 | `sizes` | always: for each input and output, the length in Unicode code points of its canonical JSON (see *Canonical JSON*). |
-| `error` | `null`, or `{"type", "message", "code"?}`: the error the call's program ended with (its outcome). `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, `InterfaceError`, `JournalError`, …), `code` lmcc's refusal code (or FunctAI's) when there is one. `message` is absent when `content` is false (it can quote the reply, or an input). A call cancelled by closing its stream has `type` `Cancelled`; a call stopped at a required journal's barrier, `JournalError` with code `journal-barrier` ([streaming.md](streaming.md)). A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
+| `error` | `null`, or `{"type", "message", "code"?}`: the error the call's program ended with (its outcome). `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, `InterfaceError`, `JournalError`, …), `code` lmcc's refusal code (or FunctAI's) when there is one. When `content` is false it keeps only `type` and `code`: `message` can quote the reply or an input, and a member this contract does not name (a later version's) may hold a value. A call cancelled by closing its stream has `type` `Cancelled`; a call stopped at a required journal's barrier, `JournalError` with code `journal-barrier` ([streaming.md](streaming.md)). A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
 | `model` | the model asked for the answer (the last exchange that got a reply), or `null` when no model was called. |
 | `usage` | token counts summed over this call's own exchanges (integers only). A module's usage is in its children; sum a tree for its cost. |
 | `confidence` | the probability the model gave its own answer (the lowest over the outputs it measured), or `null`. Only baked models and providers that return probabilities measure it. |
 | `probabilities` | `{output: {answer: probability}}` when measured, for the outputs recorded. Absent when none is. |
 | `escalated` | `true` when a first model was unsure and another answered; absent otherwise. |
-| `exchanges` | each model request of this call, in order, including failed attempts (`error`, whose `message` follows the call's `error.message`) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there. Only when `content` is true: `request` and `response` (lm15's canonical JSON: a request holds every input, a response every output) and `request_hash`, lmcc's hash of the rendered request (kernel §3a, a model step's `request`), which shows a later reader rebuilt the same request (a hash of a short value can be guessed back, so it goes with the values). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
+| `exchanges` | each model request of this call, in order, including failed attempts (`error`, kept as the call's `error` is) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there. Only when `content` is true: `request` and `response` (lm15's canonical JSON: a request holds every input, a response every output) and `request_hash`, lmcc's hash of the rendered request (kernel §3a, a model step's `request`), which shows a later reader rebuilt the same request (a hash of a short value can be guessed back, so it goes with the values). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
 | `saw` | the calls this call was given as context, beyond its inputs and its program's state (see *Saw*). `[]` when none. Always there in format 2. A format-1 record has none: what it saw was not recorded, never "none". |
 | `described` | present when some value the record holds had no JSON form and is written as a description (*Values*): `{"inputs": [...], "outputs": [...]}`, their names. Such a value is not data: it cannot be asked again or shown again. |
 | `journal` | present when the call had a required journal that did not confirm its last event ([streaming.md](streaming.md), *Keeping a log while it is written*): `"refused"` (the journal did not keep it) or `"unknown"` (no answer: it may be kept; the journal's log settles it). The rest of the record is the call's outcome as it was: a call whose value was not confirmed kept is not a failed call. The caller got `JournalError` (code `journal-end`) holding that outcome. |
@@ -277,15 +277,22 @@ summary of old turns, a turn merged from another program): the schema
 accepts any object. A reader that does not know a key, or an entry with
 no `call`, cannot know what was shown (`unknown-key`).
 
-**The turn an entry stands for.** Showing the call again is placing, in
-the entry's slot, the lmcc turn (kernel §3a) the call's record stands
-for, with every field in `without` taken out of its inputs, its outputs
-and each of its model steps' outputs.
+**The turn an entry stands for.** Showing an AI function's call again
+is placing, in the entry's slot, the lmcc turn (kernel §3a) the call's
+record stands for, with every field in `without` taken out of its
+inputs, its outputs and each of its model steps' outputs.
 
-- The turn's `signature` is the record's `program.signature`; its
-  `inputs` are the record's `inputs`; its `outputs` the record's
-  `outputs`: what the model gave (the fields FunctAI added included), not
-  what the code returned (`returned`).
+- The record is of the plan it is shown with when its
+  `program.signature` is that plan's (both computed with every type name
+  empty, so the same in every language); otherwise it cannot be shown
+  with that plan (`turn-invalid`, lmcc's word). The turn's `signature` is
+  then the plan's own fingerprint, the one lmcc checks (kernel §3a, type
+  names included): a language's type names are how it spells the same
+  shapes, never a reason to refuse. A conversation store compares
+  records by `program.signature`, never by a fingerprint with type
+  names. Its `inputs` are the record's `inputs`; its `outputs` the
+  record's `outputs`: what the model gave (the fields FunctAI added
+  included), not what the code returned (`returned`).
 - Without `steps` the turn has no steps (its inputs, then its outputs).
 - With `steps`, its model and tool steps come too; a model step whose
   outputs held a field taken out loses its recorded message, so it is
@@ -301,6 +308,12 @@ and each of its model steps' outputs.
   mode writes them. Stage 5 (`rated` with earlier turns) fixes it, and a
   replay that rebuilds a request checks it against the exchange's
   `request_hash`. Until then a reader shows calls without steps only.
+- A module's call (its record has no `program.signature`) is not shown
+  by this recipe: how a module's turn is shown (a conversation with a
+  module, vignette 11's outer turns) is stage 3's, and until then a
+  reader shows only AI functions' calls. What a module's call saw, and
+  whether the log keeps it (*Reading it*, *Knowing is not replaying*),
+  are read as for any call.
 
 `cases/saw/12`, `13` and `16` pin the turn, starting from the turn a
 record stands for.

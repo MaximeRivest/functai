@@ -99,6 +99,15 @@ def refusals() -> None:
     e = copy.deepcopy(events.a_tool().events[0])
     del e["writer"]
     bad.append(("an event with no writer number", EVENT, e))
+    e = copy.deepcopy(events.a_tool().events[1])
+    e["after"] = 1
+    bad.append(("an after that is a seq alone, not a position", EVENT, e))
+    e = copy.deepcopy(events.a_tool().events[1])
+    e["after"] = {"seq": 1}
+    bad.append(("an after with no writer", EVENT, e))
+    e = copy.deepcopy(events.a_tool().events[0])
+    e["after"] = 0
+    bad.append(("a first event whose after is 0, not null", EVENT, e))
     r = copy.deepcopy(rec)
     r["journal"] = "failed"
     bad.append(("a journal outcome that is neither refused nor unknown", CALL, r))

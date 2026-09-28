@@ -1,7 +1,7 @@
 {
- "description": "A best-effort journal that does not answer the done: the call does not wait, returns its value, and every event is shown as it is made; the log stays unfinished.",
+ "description": "The done never reaches the journal; meanwhile another writer claims the log and ends it (Cancelled). The caller gets JournalError (journal-end, \"unknown\") naming the event it attempted (writer 1, seq 10). Reading the journal settles it: the log is finished, but not with that event (seq 10 is writer 2's): another writer ended it, and the caller's outcome was not kept. A finished log is not enough.",
  "kind": "journal",
- "mode": "best-effort",
+ "mode": "required",
  "retries": 2,
  "events": [
   {
@@ -192,6 +192,7 @@
   "ok",
   "ok",
   "down",
+  "ended",
   "down",
   "down"
  ],
@@ -426,6 +427,10 @@
     "answer": null
    },
    {
+    "other": "ended",
+    "writer": 2
+   },
+   {
     "seq": 10,
     "transport": "down",
     "answer": null
@@ -445,8 +450,7 @@
    6,
    7,
    8,
-   9,
-   10
+   9
   ],
   "kept": {
    "events": [
@@ -485,15 +489,32 @@
     {
      "writer": 1,
      "seq": 9
+    },
+    {
+     "writer": 2,
+     "seq": 10
     }
    ],
-   "finished": false
+   "finished": true
   },
   "caller": {
-   "returns": "It is in Leeds, a week late."
+   "raises": {
+    "type": "JournalError",
+    "code": "journal-end",
+    "journal": "unknown",
+    "event": {
+     "writer": 1,
+     "seq": 10
+    },
+    "outcome": {
+     "done": "It is in Leeds, a week late."
+    }
+   }
   },
   "record": {
-   "error": null
-  }
+   "error": null,
+   "journal": "unknown"
+  },
+  "settled": "another-end"
  }
 }

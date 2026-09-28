@@ -1,5 +1,5 @@
 {
- "description": "An event whose seq is not greater than its after is refused.",
+ "description": "An event whose seq is not greater than its after's is refused, and so is one whose after names an event of a later writer than its own (no form puts a later writer's event before an earlier one's).",
  "kind": "store",
  "steps": [
   {
@@ -9,7 +9,7 @@
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 1,
-    "after": 0,
+    "after": null,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
@@ -39,7 +39,10 @@
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 2,
-    "after": 2,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
@@ -55,7 +58,29 @@
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 2,
-    "after": 1,
+    "after": {
+     "writer": 2,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "event-malformed"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
@@ -69,9 +94,15 @@
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
-    "seqs": [
-     1,
-     2
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     }
     ],
     "writer": 1,
     "finished": false

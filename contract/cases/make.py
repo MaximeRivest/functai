@@ -72,12 +72,16 @@ def check(folder: str, cases: dict) -> None:
                 schemas.check(schemas.INTERFACE, iface, f"{where} interface")
         elif folder == "events":
             kind = case["kind"]
+            if kind == "receivers":
+                continue
             evs = ([x["append"] for x in case["steps"] if "append" in x] if kind == "store" else
                    case["received"] if kind == "follow" else list(case["events"]))
             if kind == "kept":
                 evs += case["expect"]["events"]
             if kind == "journal":
                 evs += case["expect"]["log"]
+            if kind == "follow" and "recover" in case:
+                evs += case["recover"]["source"]
             malformed = [x["append"] for x in case.get("steps", []) if x.get("expect") == "event-malformed"]
             for i, e in enumerate(evs):
                 if any(e is m for m in malformed):

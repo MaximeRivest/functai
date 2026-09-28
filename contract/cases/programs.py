@@ -20,17 +20,21 @@ Four kinds of case, told apart by "program":
   "interface-output", "field"}. An object that is exactly {"$type",
   "$repr"} stands for a value with no JSON form (the harness gives the
   program a native value of its own for it).
-- "definitions": {"interfaces": [{"interface", "expect": {"signature"} or
-  {"refuses": "interface-malformed", "field": name or null}}]}. Defining a
-  module with each interface (or reading it from a saved folder).
+- "definitions": {"interfaces": [{"interface", "ai"?: true, "expect":
+  {"signature"} or {"refuses": "interface-malformed", "field": name or
+  null}}]}. Defining a module with each interface, or reading it from a
+  saved folder (with ``ai``: an AI node's interface, whose shapes may
+  carry keywords the vocabulary does not list).
 - "same-data": {"interfaces": [...], "expect": {"signatures": [...]},
   "checks": [{"inputs", "expect": [one result per interface]}]}. The
   signature says what data looks like, not which calls are accepted.
 
-"Fits" is programs.md's: the keywords it lists, read as it says. This
+"Fits" is programs.md's: the keywords it lists, read as it says, for
+every interface (an AI function's other keywords are never read). This
 script checks each value by those rules, and asserts that a validator of
-JSON Schema draft 2020-12 (jsonschema) agrees on every case, so the
-vocabulary means what the standard means by it.
+JSON Schema draft 2020-12 (jsonschema) agrees wherever a shape has only
+listed keywords, and that every shape the vocabulary accepts is a valid
+2020-12 schema, so the vocabulary means what the standard means by it.
 """
 
 import copy
@@ -46,8 +50,9 @@ S, I, N, B = {"type": "string"}, {"type": "integer"}, {"type": "number"}, {"type
 NULL = {"type": "null"}
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 TYPES = ("null", "boolean", "integer", "number", "string", "array", "object")
-ANNOTATIONS = {"title", "description", "default", "examples", "format", "$comment", "deprecated", "readOnly",
-               "writeOnly"}
+ANNOTATIONS = {"title": str, "description": str, "format": str, "$comment": str, "deprecated": bool,
+               "readOnly": bool, "writeOnly": bool, "examples": list, "default": object}
+DESCENDS = ("items", "prefixItems", "properties", "additionalProperties")
 ASSERTIONS = {"type", "enum", "const", "anyOf", "items", "prefixItems", "minItems", "maxItems", "uniqueItems",
               "properties", "required", "additionalProperties", "minLength", "maxLength", "minimum", "maximum",
               "exclusiveMinimum", "exclusiveMaximum", "$ref", "$defs"}
@@ -92,14 +97,20 @@ def is_number(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool)
 
 
-def well_formed(shape, root) -> bool:
-    """Whether a shape uses only the vocabulary programs.md lists, each keyword with a value of its kind."""
+def well_formed(shape, root, *, carry: bool = False) -> bool:
+    """Whether a shape uses the vocabulary programs.md lists, each keyword (annotations included) with a
+    value of its kind. ``carry``: an AI function's shape, whose other keywords are lmcc's, carried and never
+    read here; a module's may have no other keyword."""
     if not isinstance(shape, dict):
         return False
     for k, v in shape.items():
         if k in ANNOTATIONS:
+            if not isinstance(v, ANNOTATIONS[k]):
+                return False
             continue
         if k not in ASSERTIONS:
+            if carry:
+                continue
             return False
         if k == "type":
             names = v if isinstance(v, list) else [v]
@@ -107,22 +118,21 @@ def well_formed(shape, root) -> bool:
                 return False
         elif k == "enum" and not (isinstance(v, list) and v):
             return False
-        elif k == "anyOf" and not (isinstance(v, list) and v and all(well_formed(x, root) for x in v)):
+        elif k in ("anyOf", "prefixItems") and not (
+                isinstance(v, list) and v and all(well_formed(x, root, carry=carry) for x in v)):
             return False
-        elif k == "prefixItems" and not (isinstance(v, list) and all(well_formed(x, root) for x in v)):
+        elif k == "items" and not well_formed(v, root, carry=carry):
             return False
-        elif k == "items" and not well_formed(v, root):
+        elif k in ("properties", "$defs") and not (
+                isinstance(v, dict) and all(well_formed(x, root, carry=carry) for x in v.values())):
             return False
-        elif k in ("properties", "$defs") and not (isinstance(v, dict)
-                                                   and all(well_formed(x, root) for x in v.values())):
-            return False
-        elif k == "additionalProperties" and not (isinstance(v, bool) or well_formed(v, root)):
+        elif k == "additionalProperties" and not (isinstance(v, bool) or well_formed(v, root, carry=carry)):
             return False
         elif k == "required" and not (isinstance(v, list) and all(isinstance(x, str) for x in v)
                                       and len(set(v)) == len(v)):
             return False
         elif k in ("minItems", "maxItems", "minLength", "maxLength") and not (
-                isinstance(v, int) and not isinstance(v, bool) and v >= 0):
+                json_type(v) == "integer" and v >= 0):
             return False
         elif k in ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum") and not is_number(v):
             return False
@@ -135,7 +145,34 @@ def well_formed(shape, root) -> bool:
     return True
 
 
+def same_value_refs(shape: dict) -> set:
+    """The $defs a shape checks the same value against: its $ref, and those of its anyOf's shapes, without
+    passing into an item or a member."""
+    out = set()
+    if "$ref" in shape:
+        out.add(REF.match(shape["$ref"]).group(1))
+    for x in shape.get("anyOf", []):
+        out |= same_value_refs(x)
+    return out
+
+
+def loops(root: dict) -> bool:
+    """Whether a $defs entry reaches itself through $ref and anyOf alone: checking a value against it would
+    never end (a record that holds a list of itself descends into a smaller value, and is not a loop)."""
+    defs = root.get("$defs") or {}
+    graph = {n: same_value_refs(d) for n, d in defs.items()}
+
+    def reaches(start, seen):
+        for n in graph.get(start, ()):
+            if n == seen[0] or (n not in seen and reaches(n, seen + (n,))):
+                return True
+        return False
+    return any(reaches(n, (n,)) for n in graph)
+
+
 def json_type(v) -> str:
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        return "integer" if float(v).is_integer() else "number"
     if v is None:
         return "null"
     if isinstance(v, bool):
@@ -195,14 +232,21 @@ def fits_shape(v, shape: dict, root: dict) -> bool:
     return True
 
 
+def vocabulary_only(shape) -> bool:
+    return well_formed(shape, shape)
+
+
 def fits(value, field: dict) -> bool:
+    """programs.md: the listed keywords decide; another keyword (in an AI function's shape, lmcc's) is never
+    read. Where a shape has only listed keywords, a draft 2020-12 validator must agree."""
     if field.get("opaque"):
         return True
     if no_json(value):
         return False
     shape = data_shape(field["shape"])
     got = fits_shape(value, shape, shape)
-    assert got == jsonschema.Draft202012Validator(shape).is_valid(value), (value, shape)
+    if vocabulary_only(shape):
+        assert got == jsonschema.Draft202012Validator(shape).is_valid(value), (value, shape)
     return got
 
 
@@ -235,21 +279,15 @@ def malformed(interface, *, ai: bool = False):
             shape = f.get("shape")
             if not isinstance(shape, dict):
                 return at_fault
-            if ai:
-                try:
-                    jsonschema.Draft202012Validator.check_schema(shape)
-                except jsonschema.SchemaError:
-                    return at_fault
-                if f.get("optional") and "default" not in shape:
-                    return at_fault                 # a model is sent every input: an optional one needs a default
-            elif not well_formed(shape, shape):
+            if not well_formed(shape, shape, carry=ai) or loops(shape):
                 return at_fault
+            if ai and f.get("optional") and "default" not in shape:
+                return at_fault                     # a model is sent every input: an optional one needs a default
             if f.get("opaque") and shape != {}:
                 return at_fault
             if "default" in shape:
                 ds = data_shape(shape)
-                if not (fits_shape(shape["default"], ds, ds) if not ai
-                        else jsonschema.Draft202012Validator(ds).is_valid(shape["default"])):
+                if not fits_shape(shape["default"], ds, ds):
                     return at_fault
     return None
 
@@ -336,6 +374,15 @@ SHAPES = interface("Tag an order.",
                    [("result", S, {})])
 
 
+NODE = {"$ref": "#/$defs/Node",
+        "$defs": {"Node": {"type": "object", "properties": {"name": S, "children": {"type": "array",
+                                                                                   "items": {"$ref": "#/$defs/Node"}}},
+                           "required": ["name", "children"]}}}
+AI_PATTERN = interface("Tag a ticket.", [("code", {"type": "string", "pattern": "^[a-z]+$", "default": "ABC"},
+                                          {"optional": True})],
+                       [("result", {"oneOf": [S, NULL]}, {})])
+
+
 def module_case(description, iface, inputs=(), returned=()):
     assert malformed(iface) is None
     checks = [{"inputs": i, "expect": check_inputs(iface, i)} for i in inputs]
@@ -354,13 +401,20 @@ def ai_case(description, key, binds=()):
             "binds": [{"inputs": i, "expect": check_inputs(iface, i)} for i in binds]}
 
 
-def definitions_case(description, interfaces):
+def definitions_case(description, interfaces, ai=()):
+    """``ai``: the indexes of the interfaces read as an AI node's."""
     out = []
-    for iface in interfaces:
-        refused = malformed(iface)
+    for i, iface in enumerate(interfaces):
+        refused = malformed(iface, ai=i in ai)
         if refused is None:
             assert schemas.INTERFACE.is_valid(iface), iface
-        out.append({"interface": iface, "expect": refused or {"signature": signature(iface)}})
+            for f in iface["inputs"] + iface["outputs"]:
+                if vocabulary_only(f["shape"]):
+                    jsonschema.Draft202012Validator.check_schema(f["shape"])
+        entry = {"interface": iface}
+        if i in ai:
+            entry["ai"] = True
+        out.append(entry | {"expect": refused or {"signature": signature(iface)}})
     return {"description": description, "program": "definitions", "interfaces": out}
 
 
@@ -491,6 +545,38 @@ def cases() -> dict:
             inputs=[{"ticket": "?", "zeta": 1, "Alpha": 2, "alpha": 3}],
             returned=[{"team": "billing", "result": {"reply": "Refunded.", "escalate": False}, "z": 1, "b": 2},
                       {"result": {"reply": "Refunded.", "escalate": False}, "team": 3}]),
+        "16-shapes-that-are-refused": definitions_case(
+            "A shape's words are checked for their kind too (title is text, examples a list), prefixItems and "
+            "anyOf hold at least one shape, a count is an integer (2.0 is one: every language reads it so), and "
+            "additionalProperties is a shape, true or false. A $ref that comes back to itself through $ref and "
+            "anyOf alone, never passing into an item or a member, is refused: checking a value against it would "
+            "never end. A record that holds a list of itself descends into a smaller value, and is accepted.",
+            [field_with(SUPPORT, "inputs", 0, shape={"type": "string", "title": 7}),
+             field_with(SUPPORT, "inputs", 0, shape={"type": "array", "prefixItems": []}),
+             field_with(SUPPORT, "inputs", 0, shape={"type": "string", "examples": "hi"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Loop": {"$ref": "#/$defs/Loop"}},
+                                                     "$ref": "#/$defs/Loop"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"A": {"anyOf": [S, {"$ref": "#/$defs/B"}]},
+                                                               "B": {"$ref": "#/$defs/A"}},
+                                                     "$ref": "#/$defs/A"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Loop": {"$ref": "#/$defs/Loop"}}, "type": "string"}),
+             field_with(SUPPORT, "inputs", 0, shape={"type": "object", "additionalProperties": True}),
+             field_with(SUPPORT, "inputs", 0, shape={"type": "array", "items": S, "minItems": 2.0}),
+             field_with(SUPPORT, "inputs", 0, shape=NODE)]),
+        "17-a-record-that-holds-itself": module_case(
+            "A shape by reference to itself, through an item: checking descends into the value, and ends.",
+            interface("Count a tree's leaves.", [("tree", NODE, {})], [("result", I, {})]),
+            inputs=[{"tree": {"name": "root", "children": [{"name": "a", "children": []}]}},
+                    {"tree": {"name": "root", "children": [{"name": "a", "children": [1]}]}}]),
+        "18-an-ai-functions-shapes": definitions_case(
+            "An AI node's interface, read from a saved folder: its shapes are lmcc's, and may carry keywords "
+            "the vocabulary does not list (pattern, oneOf), which lmcc passes on and FunctAI never reads. Its "
+            "default fits by the listed keywords alone: a default that a pattern would refuse is accepted, the "
+            "same in every language. A listed keyword with a value of the wrong kind is refused as for a "
+            "module. The same interface is refused as a module's (pattern is not in the vocabulary).",
+            [AI_PATTERN, field_with(AI_PATTERN, "inputs", 0, shape={"type": "string", "minLength": "3",
+                                                                     "default": "abc"}),
+             AI_PATTERN], ai=(0, 1)),
     }
     same = [out["01-an-ai-function-is-its-definition"], out["02-several-outputs-keep-their-words"],
             out["13-an-optional-input-of-an-ai-function"]]

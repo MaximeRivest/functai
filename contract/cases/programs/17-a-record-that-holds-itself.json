@@ -1,0 +1,93 @@
+{
+ "description": "A shape by reference to itself, through an item: checking descends into the value, and ends.",
+ "program": "module",
+ "interface": {
+  "description": "Count a tree's leaves.",
+  "inputs": [
+   {
+    "name": "tree",
+    "shape": {
+     "$ref": "#/$defs/Node",
+     "$defs": {
+      "Node": {
+       "type": "object",
+       "properties": {
+        "name": {
+         "type": "string"
+        },
+        "children": {
+         "type": "array",
+         "items": {
+          "$ref": "#/$defs/Node"
+         }
+        }
+       },
+       "required": [
+        "name",
+        "children"
+       ]
+      }
+     }
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:a34f96f15bcf8b25cfcf2263d80621d71e4f12ff148a858e34e2817d27585f9f"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "tree": {
+     "name": "root",
+     "children": [
+      {
+       "name": "a",
+       "children": []
+      }
+     ]
+    }
+   },
+   "expect": {
+    "inputs": {
+     "tree": {
+      "name": "root",
+      "children": [
+       {
+        "name": "a",
+        "children": []
+       }
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "tree": {
+     "name": "root",
+     "children": [
+      {
+       "name": "a",
+       "children": [
+        1
+       ]
+      }
+     ]
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "tree"
+   }
+  }
+ ]
+}

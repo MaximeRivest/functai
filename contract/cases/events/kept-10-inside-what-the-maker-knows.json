@@ -1,5 +1,5 @@
 {
- "description": "Tool calls and results keep their id and name, not their input or output; an error keeps its type, not its message.",
+ "description": "Every value kept, but objects this contract defines carry members the maker does not know: the error a detail, the program an owner, saw an entry of a kind it does not know. The error and the program keep only their known members; the unknown saw entry becomes {} (still an entry no reader knows, so what the call saw stays not known, but nothing of it is passed on).",
  "kind": "kept",
  "events": [
   {
@@ -21,14 +21,21 @@
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "owner": "Ana"
    },
    "inputs": {
-    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.",
-    "question": "Is it broken for a real reason?"
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test."
    },
    "content": true,
-   "saw": []
+   "saw": [
+    {
+     "call": "01926c00-0007-7000-8000-000000000000"
+    },
+    {
+     "summary": "Ana is upset."
+    }
+   ]
   },
   {
    "functai_event": 2,
@@ -48,7 +55,7 @@
   },
   {
    "functai_event": 2,
-   "kind": "tool_call",
+   "kind": "failed",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 3,
@@ -59,69 +66,20 @@
    "at": "2026-09-28T10:00:00.030000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "triage_build",
-   "id": "call_1",
-   "name": "ci_log",
-   "input": {
-    "job": 4412
-   }
-  },
-  {
-   "functai_event": 2,
-   "kind": "tool_result",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 4,
-   "after": {
-    "writer": 1,
-    "seq": 3
-   },
-   "at": "2026-09-28T10:00:00.040000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "id": "call_1",
-   "name": "ci_log",
-   "output": "upload_test: timeout after 30 s"
-  },
-  {
-   "functai_event": 2,
-   "kind": "request",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 5,
-   "after": {
-    "writer": 1,
-    "seq": 4
-   },
-   "at": "2026-09-28T10:00:00.050000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
-   "request": 2,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "failed",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 6,
-   "after": {
-    "writer": 1,
-    "seq": 5
-   },
-   "at": "2026-09-28T10:00:00.060000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "triage_build",
    "error": {
-    "type": "StepLimit",
-    "message": "8 requests and still asking for tools: Ana: the build is re"
+    "type": "ProviderError",
+    "message": "503",
+    "code": "provider-down",
+    "detail": {
+     "body": "Ana: the build is re"
+    }
    }
   }
  ],
  "kept": {
   "01926c00-0001-7000-8000-000000000000": {
    "inputs": {
-    "transcript": false,
-    "question": true
+    "transcript": true
    },
    "outputs": {
     "result": true
@@ -152,16 +110,15 @@
      "answer": "result"
     },
     "inputs": {
-     "question": "Is it broken for a real reason?"
+     "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test."
     },
-    "content": false,
-    "omitted": {
-     "inputs": [
-      "transcript"
-     ],
-     "outputs": []
-    },
-    "saw": []
+    "content": true,
+    "saw": [
+     {
+      "call": "01926c00-0007-7000-8000-000000000000"
+     },
+     {}
+    ]
    },
    {
     "functai_event": 2,
@@ -181,7 +138,7 @@
    },
    {
     "functai_event": 2,
-    "kind": "tool_call",
+    "kind": "failed",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 3,
@@ -192,60 +149,11 @@
     "at": "2026-09-28T10:00:00.030000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "triage_build",
-    "id": "call_1",
-    "name": "ci_log",
-    "content": false
-   },
-   {
-    "functai_event": 2,
-    "kind": "tool_result",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 4,
-    "after": {
-     "writer": 1,
-     "seq": 3
-    },
-    "at": "2026-09-28T10:00:00.040000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
-    "id": "call_1",
-    "name": "ci_log",
-    "content": false
-   },
-   {
-    "functai_event": 2,
-    "kind": "request",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 5,
-    "after": {
-     "writer": 1,
-     "seq": 4
-    },
-    "at": "2026-09-28T10:00:00.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
-    "request": 2,
-    "model": "gpt-4.1-mini"
-   },
-   {
-    "functai_event": 2,
-    "kind": "failed",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 6,
-    "after": {
-     "writer": 1,
-     "seq": 5
-    },
-    "at": "2026-09-28T10:00:00.060000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "triage_build",
     "error": {
-     "type": "StepLimit"
-    },
-    "content": false
+     "type": "ProviderError",
+     "message": "503",
+     "code": "provider-down"
+    }
    }
   ]
  }

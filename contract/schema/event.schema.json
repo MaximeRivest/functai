@@ -7,6 +7,16 @@
   "then": {"$ref": "#/$defs/format2"},
   "else": {"$ref": "#/$defs/format1"},
   "$defs": {
+    "position": {
+      "description": "An event of a log, named by the writer that numbered it and its seq (with the log's tree, its name in every form).",
+      "type": "object",
+      "required": ["writer", "seq"],
+      "properties": {
+        "writer": {"type": "integer", "minimum": 1},
+        "seq": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
     "format2": {
       "type": "object",
       "required": ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"],
@@ -20,7 +30,10 @@
         "tree": {"$ref": "call.schema.json#/$defs/uuid"},
         "writer": {"type": "integer", "minimum": 1},
         "seq": {"type": "integer", "minimum": 1},
-        "after": {"type": "integer", "minimum": 0},
+        "after": {
+          "description": "The event before this one in the form being read, named by its writer and seq; null for the form's first event.",
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/position"}]
+        },
         "at": {"$ref": "call.schema.json#/$defs/time"},
         "call": {"$ref": "call.schema.json#/$defs/uuid"},
         "function": {"type": "string", "minLength": 1},

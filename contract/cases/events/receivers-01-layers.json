@@ -1,0 +1,193 @@
+{
+ "description": "Observers add up over every layer (a program's own is given events beside the host's). The closest journal setting decides, null meaning none, except that a closer layer cannot replace, weaken or remove a required journal set farther out: the tree's outermost call is refused journal-policy before it runs. A closer layer may name the same required journal, or make a best-effort one required.",
+ "kind": "receivers",
+ "scenarios": [
+  {
+   "layers": [
+    {
+     "where": "own",
+     "observers": [
+      "debug-print"
+     ]
+    },
+    {
+     "where": "block",
+     "observers": [
+      "page"
+     ]
+    },
+    {
+     "where": "configure",
+     "observers": [
+      "telemetry"
+     ]
+    }
+   ],
+   "expect": {
+    "observers": [
+     "telemetry",
+     "page",
+     "debug-print"
+    ],
+    "journal": null
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": {
+      "name": "notes-folder",
+      "mode": "best-effort"
+     }
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "tmp",
+      "mode": "best-effort"
+     }
+    }
+   ],
+   "expect": {
+    "observers": [],
+    "journal": {
+     "name": "notes-folder",
+     "mode": "best-effort"
+    }
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": null
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "notes-folder",
+      "mode": "best-effort"
+     }
+    }
+   ],
+   "expect": {
+    "observers": [],
+    "journal": null
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": {
+      "name": "notes-folder",
+      "mode": "best-effort"
+     }
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    }
+   ],
+   "expect": {
+    "refuses": "journal-policy"
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": null
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    }
+   ],
+   "expect": {
+    "refuses": "journal-policy"
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "best-effort"
+     }
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    }
+   ],
+   "expect": {
+    "refuses": "journal-policy"
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    },
+    {
+     "where": "block",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    },
+    {
+     "where": "configure"
+    }
+   ],
+   "expect": {
+    "observers": [],
+    "journal": {
+     "name": "chattering-store",
+     "mode": "required"
+    }
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "journal": {
+      "name": "notes-folder",
+      "mode": "required"
+     }
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "notes-folder",
+      "mode": "best-effort"
+     }
+    }
+   ],
+   "expect": {
+    "observers": [],
+    "journal": {
+     "name": "notes-folder",
+     "mode": "required"
+    }
+   }
+  }
+ ]
+}

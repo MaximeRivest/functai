@@ -1,5 +1,5 @@
 {
- "description": "An event whose after is beyond the last kept is refused; the log goes on when the missing event comes.",
+ "description": "A writer's tool call is kept but its answer is lost; another writer claims the log; the first sends the tool call again. The store checks the writer before anything else: the resend is refused (event-conflict), not answered duplicate, so a fenced writer never passes a barrier. It learns what was kept by reading, which is never fenced.",
  "kind": "store",
  "steps": [
   {
@@ -72,28 +72,6 @@
   {
    "append": {
     "functai_event": 2,
-    "kind": "tool_call",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 1,
-    "seq": 5,
-    "after": {
-     "writer": 1,
-     "seq": 4
-    },
-    "at": "2026-09-28T10:00:00.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "id": "call_1",
-    "name": "lookup_order",
-    "input": {
-     "order": "B-2210"
-    }
-   },
-   "expect": "event-gap"
-  },
-  {
-   "append": {
-    "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
@@ -132,9 +110,57 @@
     }
    },
    "expect": "kept"
+  },
+  {
+   "claim": "01926c00-0001-7000-8000-000000000000",
+   "expect": {
+    "writer": 2,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    }
+   }
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "id": "call_1",
+    "name": "lookup_order",
+    "input": {
+     "order": "B-2210"
+    }
+   },
+   "expect": "event-conflict"
   }
  ],
- "reads": [],
+ "reads": [
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 5
+     }
+    ]
+   }
+  }
+ ],
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
@@ -160,7 +186,7 @@
       "seq": 5
      }
     ],
-    "writer": 1,
+    "writer": 2,
     "finished": false
    }
   }

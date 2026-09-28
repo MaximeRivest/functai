@@ -1,0 +1,112 @@
+{
+ "description": "An AI node's interface, read from a saved folder: its shapes are lmcc's, and may carry keywords the vocabulary does not list (pattern, oneOf), which lmcc passes on and FunctAI never reads. Its default fits by the listed keywords alone: a default that a pattern would refuse is accepted, the same in every language. A listed keyword with a value of the wrong kind is refused as for a module. The same interface is refused as a module's (pattern is not in the vocabulary).",
+ "program": "definitions",
+ "interfaces": [
+  {
+   "interface": {
+    "description": "Tag a ticket.",
+    "inputs": [
+     {
+      "name": "code",
+      "shape": {
+       "type": "string",
+       "pattern": "^[a-z]+$",
+       "default": "ABC"
+      },
+      "optional": true
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "oneOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "ai": true,
+   "expect": {
+    "signature": "sha256:42cb93d33a8d202f66859dc7338ec7497ce31bad503bf2c8f414157af5fab1d0"
+   }
+  },
+  {
+   "interface": {
+    "description": "Tag a ticket.",
+    "inputs": [
+     {
+      "name": "code",
+      "shape": {
+       "type": "string",
+       "minLength": "3",
+       "default": "abc"
+      },
+      "optional": true
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "oneOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "ai": true,
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "code"
+   }
+  },
+  {
+   "interface": {
+    "description": "Tag a ticket.",
+    "inputs": [
+     {
+      "name": "code",
+      "shape": {
+       "type": "string",
+       "pattern": "^[a-z]+$",
+       "default": "ABC"
+      },
+      "optional": true
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "oneOf": [
+        {
+         "type": "string"
+        },
+        {
+         "type": "null"
+        }
+       ]
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "code"
+   }
+  }
+ ]
+}

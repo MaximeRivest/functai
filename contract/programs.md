@@ -33,7 +33,7 @@ A field:
 | key | meaning |
 |---|---|
 | `name` | an ASCII identifier, used once among the program's inputs and outputs. |
-| `shape` | JSON Schema (draft 2020-12), as [functions.md](functions.md) *Shapes* says; a module's uses only the keywords *Checking values* lists. `{}` is any JSON value. A `default` in an input's shape is the value it takes when it is left out, and must fit the shape. |
+| `shape` | JSON Schema (draft 2020-12), as [functions.md](functions.md) *Shapes* says, read by the keywords *Checking values* lists: a module's uses no other; an AI function's may carry others, which are lmcc's. `{}` is any JSON value. A `default` in an input's shape is the value it takes when it is left out, and must fit the shape. |
 | `desc` | words about the field. |
 | `type` | the host language's name for the type (`str`, `pd.DataFrame`), for people; never compared across languages. |
 | `opaque` | `true` when the field's values may have no JSON form in the language that declared it (a data frame, a file handle, an unannotated Python argument, Python's `Any`). Its shape is `{}`. Its values are never checked. It says what the field accepts and where it may go, not how a value is written: the log writes each value by what it is (JSON when it has a JSON form, else a description: calls.md, *Values*). A boundary that needs data (serving, a conversation store: stages 2 and 3) cannot carry the field, and says so before any call. |
@@ -77,11 +77,13 @@ folder, is refused `interface-malformed` when:
 - a field has a key the tables above do not name, `desc` or `type` that
   is not text, or `opaque` or `optional` that is not `true`; its name is
   not an ASCII identifier, or is used twice among the inputs and
-  outputs; its shape is not an object, or (in a module's interface) uses
-  a keyword *Checking values* does not list, or a listed keyword with a
-  value of the wrong kind; its `default` does not fit its shape; it is
-  `opaque` with a shape other than `{}`; it is an output marked
-  `optional`; or it is an AI function's optional input with no `default`.
+  outputs; its shape is not an object, uses a keyword *Checking values*
+  lists with a value of the wrong kind, has a reference that comes back
+  to itself without passing into a value, or (in a module's interface)
+  uses a keyword *Checking values* does not list; its `default` does not
+  fit its shape; it is `opaque` with a shape other than `{}`; it is an
+  output marked `optional`; or it is an AI function's optional input with
+  no `default`.
 
 Form and meaning are checked together, field by field: the refusal names
 the first field at fault, inputs then outputs, in order, whatever its
@@ -137,35 +139,61 @@ value has a JSON form (calls.md, *Values*) and that form fits the
 field's shape. A value with no JSON form (written in the log as a
 description) fits only an opaque field.
 
-A module's shapes use only these keywords, read as JSON Schema draft
-2020-12 reads them, so that every language checks alike without a full
-JSON Schema validator:
+Values are checked by these keywords, read as JSON Schema draft 2020-12
+reads them, so that every language checks alike without a full JSON
+Schema validator:
 
 - `type`: one of `null`, `boolean`, `integer`, `number`, `string`,
-  `array`, `object`, or a list of them. An integer is a number with no
-  fraction (`5.0` is one); every integer is a number; `true` is not a
-  number.
-- `enum` (a list), `const`: equal as canonical JSON (calls.md), so `1`
-  and `1.0` are equal and `true` is not `1`.
-- `anyOf` (a list of shapes): fits one of them.
-- For arrays: `items`, `prefixItems`, `minItems`, `maxItems`,
-  `uniqueItems` (unique as canonical JSON).
-- For objects: `properties`, `required`, `additionalProperties` (a
-  shape, or `false`).
+  `array`, `object`, or a list of them, each once. An integer is a
+  number with no fraction (`5.0` is one); every integer is a number;
+  `true` is not a number.
+- `enum` (a list of at least one value), `const`: equal as canonical
+  JSON (calls.md), so `1` and `1.0` are equal and `true` is not `1`.
+- `anyOf` (a list of at least one shape): fits one of them.
+- For arrays: `items` (a shape), `prefixItems` (a list of at least one
+  shape), `minItems`, `maxItems`, `uniqueItems` (a boolean; unique as
+  canonical JSON).
+- For objects: `properties` (shapes by name), `required` (names, each
+  once), `additionalProperties` (a shape, `true` or `false`).
 - For strings: `minLength`, `maxLength`, counted in Unicode code points.
 - For numbers: `minimum`, `maximum`, `exclusiveMinimum`,
-  `exclusiveMaximum`.
-- `$defs`, and `$ref` of the form `#/$defs/<name>` naming one of the
-  shape's own (a record by reference, as pydantic writes one).
-- Words that are never checked: `title`, `description`, `default`,
-  `examples`, `format`, `$comment`, `deprecated`, `readOnly`,
-  `writeOnly`.
+  `exclusiveMaximum` (numbers).
+- `$defs` (shapes by name), and `$ref` of the form `#/$defs/<name>`
+  naming one of the shape's own (a record by reference, as pydantic
+  writes one).
+- Words that are never checked, each of its kind: `title`,
+  `description`, `format`, `$comment` (text), `deprecated`, `readOnly`,
+  `writeOnly` (booleans), `examples` (a list), `default` (any value,
+  which must fit).
 
-Any other keyword (`pattern`, whose regular expressions differ between
-languages; `oneOf`; `multipleOf`, whose floating point differs) refuses
-`interface-malformed`: an interface either says what every language
-checks, or is refused. A later contract may add keywords (lmcc's
-`media`, stage 3's boundaries).
+A count (`minItems`, `maxItems`, `minLength`, `maxLength`) is an integer
+of at least 0, by the rule above: `2.0` is `2`, since some languages
+cannot tell them apart once read. A keyword with a value of another kind
+refuses `interface-malformed`.
+
+**References end.** Checking a value follows `$ref` and `anyOf` without
+moving into the value, and moves into it through `items`, `prefixItems`,
+`properties` and `additionalProperties`. A `$defs` entry that comes back
+to itself by `$ref` and `anyOf` alone (`{"$defs": {"A": {"$ref":
+"#/$defs/A"}}, …}`) would never end, and refuses `interface-malformed`,
+whether or not anything names it. A record holding a list of itself is
+checked one level of the value at a time, and ends.
+
+**A module's shapes** use only these keywords. Any other (`pattern`,
+whose regular expressions differ between languages; `oneOf`;
+`multipleOf`, whose floating point differs) refuses
+`interface-malformed`: a module's interface either says what every
+language checks, or is refused. A later contract may add keywords
+(lmcc's `media`, stage 3's boundaries).
+
+**An AI function's shapes** are lmcc's, and may carry other keywords
+(`pattern`, `oneOf`, `media`), which lmcc passes on to formats and to
+the provider untouched. FunctAI checks an AI function's values (a
+default here; a served call's inputs in stage 3) by the keywords above
+alone, and never reads the others: a default that a `pattern` would
+refuse fits, the same in every language. The keywords above still refuse
+when their value is of the wrong kind, and references must end, as for
+a module.
 
 When several names are at fault, the one named is the first in
 code-point order of the names: a map's order is not the same in every

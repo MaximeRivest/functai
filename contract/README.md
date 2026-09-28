@@ -58,9 +58,9 @@ is kept, shown, accepted or replayed must not guess, and fails closed.
 |---|---|
 | a call record, a rating, a manifest | skipped (a record of a format it does not know is skipped whole) |
 | a stream event, read to replay or follow | skipped: an unknown kind takes its place and changes nothing; an unknown format stops the reader |
-| a stream event, made into the kept form, a view, an observer's feed | left out: it may hold a value |
+| a stream event, made into the kept form, a view, an observer's feed | left out: it may hold a value; so is a member it does not know of an object this contract defines inside a known key (an `error`, a `program`), and a `saw` entry it does not know becomes `{}` |
 | a `saw` entry | not known (`unknown-key`): what was shown cannot be reproduced |
-| a program's interface, or a shape keyword a module's check does not list | refused (`interface-malformed`): it may narrow what is accepted, or say how a field is kept |
+| a program's interface, or a shape keyword a module's check does not list | refused (`interface-malformed`): it may narrow what is accepted, or say how a field is kept (an AI function's shape carries lmcc's keywords to lmcc, and FunctAI's checks never read them) |
 | a `log_content` key that is not a field name or `"*"` | refused (`log-content-field`): kept for kinds of data |
 
 The streaming contract's cases (`cases/events/`) pin what can be
@@ -89,6 +89,7 @@ thing it cannot do yet wait for it, and are not failures.
 | `programs/` of kinds `module`, `definitions`, `same-data` | a module's interface, its refusals and its checks | every language with modules |
 | `events/` `replay-*`, `follow-*`, `kept-*` | events as data | every language that streams |
 | `events/` `journal-*` | a writer keeping a log in a journal that fails | every language that streams and has journals |
+| `events/` `receivers-*` | which observers and journal a tree gets from the layers around it | every language that streams and has journals |
 | `events/` `store-*` | the rules a store keeps | every language that keeps logs (stage 2), or a store written in any language |
 
 Today (2026-09-28): Python, TypeScript and Julia stream and have modules;
@@ -114,6 +115,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`, `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface` | [saved.md](saved.md) | loading or describing a saved folder |
 | `not-recorded`, `missing-call`, `unknown-key`, `saw-cycle`, `not-kept`, `turn-invalid` (lmcc's word) | [calls.md](calls.md), *Saw* | what a call saw cannot be known, or shown again |
 | `journal-scope` | [streaming.md](streaming.md) | a required journal set inside a tree |
+| `journal-policy` | [streaming.md](streaming.md) | a closer layer (a program's own setting) replacing, weakening or removing a required journal set farther out |
 | `journal-barrier`, `journal-end` | [streaming.md](streaming.md) | codes of `JournalError`: a call stopped at a required journal's barrier; a call whose end the journal did not confirm |
 | `event-malformed`, `event-conflict`, `event-gap`, `event-after-end`, `event-start`, `event-unknown` | [streaming.md](streaming.md) | a store refusing an append, a claim or a read |
 

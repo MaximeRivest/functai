@@ -1,5 +1,5 @@
 {
- "description": "A best-effort journal that does not answer the done: the call does not wait, returns its value, and every event is shown as it is made; the log stays unfinished.",
+ "description": "A best-effort journal keeps the done but its answer is lost: the call returns its value, and the log is finished. What the writer confirmed (up to seq 9) is all it knows; the store may hold more, the end included.",
  "kind": "journal",
  "mode": "best-effort",
  "retries": 2,
@@ -191,7 +191,7 @@
   "ok",
   "ok",
   "ok",
-  "down",
+  "lost",
   "down",
   "down"
  ],
@@ -422,7 +422,7 @@
    },
    {
     "seq": 10,
-    "transport": "down",
+    "transport": "lost",
     "answer": null
    },
    {
@@ -485,9 +485,13 @@
     {
      "writer": 1,
      "seq": 9
+    },
+    {
+     "writer": 1,
+     "seq": 10
     }
    ],
-   "finished": false
+   "finished": true
   },
   "caller": {
    "returns": "It is in Leeds, a week late."

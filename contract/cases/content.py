@@ -29,6 +29,7 @@ NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALWAYS_KEPT = ("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
                "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
 DROPPED_FROM_EXCHANGES = ("request", "response", "request_hash")
+ERROR_KEPT = ("type", "code")        # of an error, when content is not whole: never a member this contract does not name
 
 
 # ------------------------------------------------------------------ the rules
@@ -105,12 +106,12 @@ def written(record: dict, fields: dict, keep: dict) -> dict:
         if probabilities:
             out["probabilities"] = probabilities
     error = record["error"]
-    out["error"] = None if error is None else {k: v for k, v in error.items() if k != "message"}
+    out["error"] = None if error is None else {k: v for k, v in error.items() if k in ERROR_KEPT}
     exchanges = []
     for ex in record["exchanges"]:
         ex = {k: copy.deepcopy(v) for k, v in ex.items() if k not in DROPPED_FROM_EXCHANGES}
         if "error" in ex:
-            ex["error"] = {k: v for k, v in ex["error"].items() if k != "message"}
+            ex["error"] = {k: v for k, v in ex["error"].items() if k in ERROR_KEPT}
         exchanges.append(ex)
     out["exchanges"] = exchanges
     order = list(record)
@@ -179,9 +180,14 @@ def record(*, failed=False, tools=False) -> dict:
     return rec
 
 
-def case(description, layers=(), environment=None, *, failed=False, fields=FIELDS):
+def case(description, layers=(), environment=None, *, failed=False, fields=FIELDS, error_extra=None):
     layers = [{"where": w, "log_content": v} for w, v in layers]
     rec = record(failed=failed, tools=fields is TOOLS)
+    if error_extra:
+        rec["error"].update(error_extra)
+        for ex in rec["exchanges"]:
+            if "error" in ex:
+                ex["error"].update(error_extra)
     refused = refusal(fields, layers)
     expect = refused or {"record": written(rec, fields, kept(fields, layers, environment))}
     return {"description": description, "fields": fields, "layers": layers, "environment": environment,
@@ -252,4 +258,9 @@ def cases() -> dict:
             "The tools input FunctAI adds to a function's signature is the function's state (its tools, in its "
             "version), not a field of a call: no record holds it, and a function's own map that names it refuses.",
             [("own", {"tools": False})], fields=TOOLS),
+        "20-an-error-member-this-contract-does-not-name": case(
+            "A failed call whose errors carry a member this contract does not name (a later version's "
+            "diagnostic, which may quote a value): with content not whole, an error keeps only its type and "
+            "code, the call's and each exchange's alike.",
+            [("own", False)], failed=True, error_extra={"detail": {"body": "Ana: the build is red again."}}),
     }
