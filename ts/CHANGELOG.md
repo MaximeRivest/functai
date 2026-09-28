@@ -2,6 +2,41 @@
 
 ## 0.1.0 (unreleased)
 
+Stage 1 of the contract (design/08-stage1-foundations.md):
+
+- **`module(name, { description, input, output | outputs, uses }, run)`**
+  (breaking; was `module(name, run, { uses })`): a module declares its
+  interface, checked on every call (`InterfaceError`, logged); `run` gets
+  its inputs by name and `{ signal, callId }`. Its version includes its
+  interface; its code hash is now `sha256:`-prefixed (every module's
+  version changed once). `.stream()`, `.using()`, `.interface`.
+- **Interfaces**: every program has `.interface` and `.interfaceId` (the
+  call log's `program.interface`); an AI function's is checked when it is
+  defined; `checkInterface()`. An optional input's default is in its
+  interface and left out of the signature (zod's `.default(x)` changes
+  the version once). `t.withDefault`, `t.json`, `t.opaque`, and
+  `{ shape, desc, optional, opaque }` for a field.
+- **Call log format 2**: `program.interface`, `saw` (`[]`), `request_hash`,
+  `described`, `journal`; `logContent` by field, only removing, over every
+  layer (`SettingError` for a misspelled name); reading formats 1 and 2
+  (`rated` by interface).
+- **Stream events format 2**: `tree`, `writer`, `seq`, `after`, `at`, the
+  `request` event (a field's text is its latest request's); a stream
+  opened inside a tree shows the tree's numbers. Forms (`"kept"`), views,
+  resuming (`after`, `read`), `Follower`, `replay`, `keptLog`.
+- **Observers and journals** (`observers`, `journal` settings):
+  `MemoryStore` (claims, appends, batches, reads), best-effort and
+  required journals with barriers, `JournalError` (`journal-policy`,
+  `journal-scope`, `journal-barrier`, `journal-end` with `outcome`,
+  `event` and `settle()`).
+- **Saved folders**: nodes carry their interface; loading takes optional
+  inputs from it and checks it; `describeSaved()`. The manifest is checked
+  against the contract's schema.
+- `sawOf` and `keepsSaw` read what a call saw.
+- An object argument is the inputs by name when every key is an input's or
+  it holds the one required input's name (else, that input's value); input
+  errors are `InterfaceError`s (a `TypeError`).
+
 - The API follows TypeScript: `ai("mood", { description, input, output })`
   (the name first; `input`, as for `tool`); a call takes its inputs by
   name, typed, or a one-input function its value alone, and nothing else,

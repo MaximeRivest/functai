@@ -144,11 +144,12 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
     this.controller.abort();
   }
 
+  /** @internal */
   check(): void {
     if (this.controller.signal.aborted) throw new Cancelled();
   }
 
-  /** Given each whole event of the calls it watches (by the log). */
+  /** @internal Given each whole event of the calls it watches (by the log). */
   receive(e: StreamEvent, node: Node): void {
     if (this.outer === null && e.kind === "started") {
       this.outer = e.call;

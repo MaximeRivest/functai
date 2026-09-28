@@ -13,7 +13,12 @@ import {
 
 type Rec = Record<string, unknown>;
 
-/** Gets the kept form of every event of every call in its scope, in order, as it happens. Never slows the call. */
+/**
+ * Gets the kept form of every event of every call in its scope, in order, as
+ * it happens. It is called on the call's own turn: keep it quick, or return
+ * a promise (it is not awaited). One that throws or rejects is warned about
+ * once and given no more events.
+ */
 export type Observer = (event: StreamEvent) => void | PromiseLike<void>;
 
 /**
@@ -212,6 +217,7 @@ export interface Made {
 }
 
 const failedObservers = new WeakSet<Observer>();
+const warnedJournals = new WeakSet<EventStore>();
 
 /**
  * One call tree's log in this process: it numbers every event made (writer
@@ -233,7 +239,11 @@ export class TreeLog {
     this.tree = tree;
     this.journal = journal;
     this.journalWriter = journal
-      ? new JournalWriter(journal, (what) => warnOnce(`journal:${tree}`, `${what} (log ${tree})`))
+      ? new JournalWriter(journal, (what) => {
+        if (warnedJournals.has(journal.store)) return;          // once per journal, not per tree
+        warnedJournals.add(journal.store);
+        warnOnce(`journal:${tree}`, `${what} (log ${tree}); calls go on`);
+      })
       : null;
   }
 

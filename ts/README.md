@@ -113,17 +113,29 @@ The model calls tools until it answers (at most `maxSteps`, default 8).
 ```ts
 import { module } from "functai";
 
-const reply = module("reply", async (ticket: string) =>
-  (await triage.predict(ticket)).outputs.minutes > 60 ? escalate(ticket) : support(ticket),
-  { uses: [triage, support] });
+const reply = module("reply", {
+  description: "Answer a ticket, or hand it to a person when it is long work.",
+  input: { ticket: t.string(), minutes: t.withDefault(t.integer(), 60) },
+  output: t.string(),
+  uses: [triage, support],
+}, async ({ ticket, minutes }, { signal }) =>
+  (await triage.predict(ticket, { signal })).outputs.minutes > minutes ? escalate(ticket) : support(ticket, { signal }));
 
 await reply("I was charged twice for order B-2210.");
+reply.interface;   // { description, inputs: [...], outputs: [...] }: the same JSON in every language
 ```
 
-A module is your own code that calls AI functions. It is logged as one
-call, with theirs as its children, and its version changes when the code
-or an AI function it `uses` changes (Python's `@module`, Julia's
-`@program`).
+A module is your own code that calls AI functions (Python's `@module`,
+Julia's `@program`). It declares what it takes and gives, as `ai()` does,
+and every call is checked against that at both ends: a wrong input or
+output is an `InterfaceError` (`code`, `field`), recorded like any failed
+call. Its code gets the inputs by name (a left-out input takes its
+default; `{ shape, optional: true }` with none stays out) and the call's
+`signal`. It is logged as one call, with the calls it makes as its
+children, and its version changes when its code, its interface or
+anything it `uses` changes. A field `t.opaque()` takes values with no
+JSON form (a buffer, a class instance), unchecked; `t.json()` any JSON.
+Every program has `.interface`; `checkInterface()` checks one.
 
 ## Streaming
 
@@ -131,11 +143,43 @@ or an AI function it `uses` changes (Python's `@module`, Julia's
 for await (const piece of haiku.stream("the first snow")) process.stdout.write(piece);
 
 const s = support.stream("Where is A-1042?");
-for await (const e of s.events()) console.log(e.kind);   // started, text, tool_call, tool_result, ..., done
-await s.result;                                          // the same value as calling it
+for await (const e of s.events()) console.log(e.seq, e.kind);   // started, request, text, tool_call, tool_result, ..., done
+await s;                                                        // the same value as calling it
 ```
 
 A stream is the same call, watched: the same retries, tools and log line.
+Its events are the call tree's log (format 2): each has its `tree`, its
+position (`writer` and `seq`) and `after`, the position of the event before
+it in the form you read, so a reader knows when it missed one. `request`
+and `retry` start a field's text afresh (`s.text` is the answer so far).
+`s.events({ form: "kept" })` gives what the log may keep (`logContent`),
+`{ view }` a view of it (`views.boundary(callId)`), and `{ after }`
+resumes after an event you have (`s.read(tree, after)` too).
+
+A reader elsewhere (a page, another process) follows a log with
+`Follower`: it drops stale and duplicate events, takes the next, rewinds
+when a later writer continued the log, and says `"loss"` when it must read
+again (`await reader.recover(tree, source)`, from the process or a store).
+
+## Keeping calls while they run: observers and journals
+
+```ts
+configure({
+  observers: [(e) => socket.send(JSON.stringify(e))],     // the kept form of every event, as it happens; never slows a call
+  journal: { store, mode: "required" },                   // or a store alone: best effort, the call never waits
+});
+```
+
+A journal keeps each call tree's kept log in a store while it is written,
+with appends the store answers (`MemoryStore` here; any object with
+`append` and `read`, and `claim` if a later writer may continue a log).
+A required one makes the call wait until its events are kept, before its
+code runs, before each tool and before it returns, and raises
+`JournalError` when they are not: `journal-barrier` (the tool did not
+run), or `journal-end`, which holds the call's outcome (`err.outcome`) and
+the position of its end (`await err.settle()` finds out whether it was
+kept). A program's own settings cannot replace or remove a host's journal
+(`journal-policy`); observers add up over every layer.
 
 ## How often is it right?
 
@@ -191,7 +235,16 @@ calls(mood);                                   // every call, typed: started, se
 
 Every call is one line of JSON in `~/.local/share/functai/calls`, the
 folder Python, R and Julia write too; ratings are lines next to them. Each
-language reads the others' calls and ratings.
+language reads the others' calls and ratings (formats 1 and 2).
+
+`logContent` says which values are written: `false`, or by field
+(`{ transcript: false }`; `{ "*": false, question: true }` keeps only the
+question). It only removes: a value is written only when no layer (the
+program's own, `withSettings`, a call's options, `configure`,
+`FUNCTAI_LOG_CONTENT=0`) drops it. A record without every value says so
+(`content: false`, `omitted`) and keeps no request, reply or error message.
+A misspelled field name in a program's own map is refused when it is
+defined (`SettingError`).
 
 ## Running what another language saved
 
@@ -206,13 +259,16 @@ await mood("Late, but fine.");
 its version, and refuses (with the reason) what only the saving language
 can run: a function with code of its own around the model, tools, a baked
 model.
-`save(fn, "folder/")` writes a TypeScript function the same way.
+`save(fn, "folder/")` writes a TypeScript function the same way, with its
+interface. `describeSaved("mood/")` says what a saved program (an AI
+function or a module, in any language) takes and gives, without running
+anything.
 
 ## Not here yet
 
 Compared with the Python package: baking (training your own weights),
 the instruction-search and random-search optimizers (`gepa` is here),
-stateful memory, escalation to a bigger model, reading tables other than
+stateful memory (every call records what it saw: `[]`), escalation to a bigger model, reading tables other than
 arrays of objects, signing in with a subscription (set a key), and loading
 programs with code (only AI functions travel between languages). The
 [home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four languages;

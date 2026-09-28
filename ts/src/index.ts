@@ -27,7 +27,8 @@ export { Prediction, StepLimit, Cancelled, type Tool } from "./engine.ts";
 export { Stream, PredictionStream, EventUnknown, views, type EventsOptions, type Form, type View } from "./stream.ts";
 export {
   Follower, MemoryStore, Replay, keptLog, replay, resume, settle, receivers, stateOf, positionOf, samePosition,
-  type AppendAnswer, type CallState, type ClaimAnswer, type DoneEvent, type ErrorInfo, type EventSource, type EventStore,
+  type AppendAnswer, type CallState, type ClaimAnswer, type DoneEvent, type ErrorInfo, type EventLike, type EventSource, type EventStore,
+  type JournalChoice, type ReceiverLayer,
   type FailedEvent, type FollowResult, type KeptFields, type LogState, type Position, type ProgramInfo, type ReadAnswer,
   type RequestEvent, type RetryEvent, type SawEntry, type StartedEvent, type StoreCode, type StreamEvent, type TextEvent,
   type ThinkingEvent, type ToolCallEvent, type ToolResultEvent,
