@@ -7,6 +7,8 @@
  * can ask for less, never for more.
  */
 
+import { getOwn, setOwn } from "./values.ts";
+
 type Rec = Record<string, unknown>;
 
 /** Which values the log may keep: all (`true`), none (`false`), or by field (`{ transcript: false }`, `{ "*": false, question: true }`). */
@@ -79,8 +81,8 @@ export function environmentDrops(environment: string | null | undefined): boolea
 export function keptFields(fields: CallFields, layers: readonly LogContent[], environment: string | null | undefined): Record<string, boolean> {
   const off = environmentDrops(environment);
   const out: Record<string, boolean> = {};
-  for (const name of [...fields.inputs, ...fields.outputs]) out[name] = !off && !layers.some((v) => drops(v, name));
-  if (!Object.values(out).every(Boolean)) for (const n of fields.added) out[n] = false;
+  for (const name of [...fields.inputs, ...fields.outputs]) setOwn(out, name, !off && !layers.some((v) => drops(v, name)));
+  if (!Object.values(out).every(Boolean)) for (const n of fields.added) setOwn(out, n, false);
   return out;
 }
 
@@ -103,10 +105,10 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
     if (ALWAYS_KEPT.has(k)) out[k] = structuredClone(v);
     if (k === "content") {
       out["content"] = false;
-      out["omitted"] = { inputs: fields.inputs.filter((n) => !keep[n]), outputs: fields.outputs.filter((n) => !keep[n]) };
+      out["omitted"] = { inputs: fields.inputs.filter((n) => getOwn(keep, n) !== true), outputs: fields.outputs.filter((n) => getOwn(keep, n) !== true) };
     }
   }
-  const only = (values: Rec) => Object.fromEntries(Object.entries(values).filter(([k]) => keep[k]));
+  const only = (values: Rec) => Object.fromEntries(Object.entries(values).filter(([k]) => getOwn(keep, k) === true));
   const answer = (record["program"] as Rec)["answer"] as string;
   const inputs = only((record["inputs"] ?? {}) as Rec);
   if (Object.keys(inputs).length) out["inputs"] = inputs;
@@ -117,10 +119,10 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
   }
   if (record["described"]) {
     const d = record["described"] as Record<string, string[]>;
-    const described = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.filter((n) => keep[n])]));
+    const described = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.filter((n) => getOwn(keep, n) === true)]));
     if (Object.values(described).some((v) => v.length)) out["described"] = described;
   }
-  if ("returned" in record && keep[answer]) out["returned"] = record["returned"];
+  if ("returned" in record && getOwn(keep, answer) === true) out["returned"] = record["returned"];
   if (record["probabilities"]) {
     const p = only(record["probabilities"] as Rec);
     if (Object.keys(p).length) out["probabilities"] = p;

@@ -14,7 +14,7 @@ import { writtenRecord, type CallFields } from "./content.ts";
 import type { Node } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
-import { toJson } from "./values.ts";
+import { setOwn, toJson } from "./values.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -159,8 +159,12 @@ export class Call {
   readonly started = now();
   readonly exchanges: Exchange[] = [];
   provider: string | null = null;
-  /** The inputs it was called with, by name (left-out optional inputs of a module are absent). */
-  inputs: Rec = {};
+  /**
+   * Its inputs as the record holds them, by its interface's names, each as
+   * [JSON, size, whether it is a description]: written when the call starts
+   * (left-out optional inputs of a module with no default are absent).
+   */
+  inputsJson: Record<string, readonly [unknown, number, boolean]> = {};
   /** Its outputs by name, once it has them. */
   outputs: Rec | null = null;
   confidence: number | null = null;
@@ -281,18 +285,19 @@ function processJson(): Rec {
 export function record(call: Call, opts: { returned?: unknown; error?: unknown; hasReturned?: boolean } = {}): Rec {
   const program = call.program();
   const described: { inputs: string[]; outputs: string[] } = { inputs: [], outputs: [] };
-  const values = (from: Rec, which: "inputs" | "outputs"): [Rec, Record<string, number>] => {
+  const written = (from: Record<string, readonly [unknown, number, boolean]>, which: "inputs" | "outputs"): [Rec, Record<string, number>] => {
     const data: Rec = {};
     const sizes: Record<string, number> = {};
-    for (const [k, v] of Object.entries(from)) {
-      const [json, n, isDescription] = toJson(v);
-      data[k] = json;
-      sizes[k] = n;
+    for (const [k, [json, n, isDescription]] of Object.entries(from)) {
+      setOwn(data, k, json);
+      setOwn(sizes, k, n);
       if (isDescription) described[which].push(k);
     }
     return [data, sizes];
   };
-  const [inputs, inSizes] = values(call.inputs, "inputs");
+  const values = (from: Rec, which: "inputs" | "outputs") =>
+    written(Object.fromEntries(Object.entries(from).map(([k, v]) => [k, toJson(v)])), which);
+  const [inputs, inSizes] = written(call.inputsJson, "inputs");
   const failed = opts.error !== undefined;
   const [outputs, outSizes] = call.outputs && !failed ? values(call.outputs, "outputs") : [null, {}];
   const answered = call.exchanges.filter((e) => e.response !== null);

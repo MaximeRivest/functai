@@ -18,15 +18,17 @@ import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
 import type { Request } from "@lm15/lm15";
 import type * as calllog from "./calllog.ts";
-import { checkLogContent, type CallFields } from "./content.ts";
+import type { CallFields } from "./content.ts";
 import { Cancelled, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
-import { Binder, declareInput, rulesOf, type InputRule } from "./inputs.ts";
+import { Binder, declareInput, declareOutput, rulesOf, type InputRule } from "./inputs.ts";
 import { checkInterface, interfaceSignature, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
 import { runCall } from "./program.ts";
-import { readField, type FieldSpec, type InputValueOf, type IsOptional, type ValueOf } from "./shapes.ts";
-import { configOf, effective, type Settings } from "./settings.ts";
+import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
+import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
+import { JournalError } from "./log.ts";
+import { setOwn } from "./values.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
@@ -311,7 +313,10 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     ? Object.entries(def.outputs)
     : [["result", (def.output ?? { type: "string" }) as FieldSpec]];
   if (!outputSpecs.length) throw new TypeError(`${name}: outputs is empty`);
-  const outputs = outputSpecs.map(([field, spec]) => ({ name: field, ...readField(spec, `${name}.outputs.${field}`) }));
+  const outputs = outputSpecs.map(([field, spec]) => {
+    const declared = declareOutput(field, spec, `${name}.outputs.${field}`, "ai");
+    return { name: field, shape: declared.shape, desc: declared.desc ?? null };
+  });
   const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
@@ -323,7 +328,7 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   // lmcc checks the signature first (signature-malformed), then the interface is checked by the contract's rules
   const signature = sig.signature(definition, def.instructions ?? null);
   const iface = checkInterface(interfaceOf(definition), { ai: true, where: `ai("${name}")` });
-  checkLogContent(own.logContent, `ai("${name}")`, fieldsOf(iface, signature));
+  checkSettings(own, `ai("${name}")`, fieldsOf(iface, signature));
   const core: Core = {
     definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],
     module: moduleName, file: where.file, line: where.line, state: { instructions: def.instructions ?? null, demos: [] },
@@ -382,11 +387,6 @@ export function make(core: Core): AIFunction {
   const binder = new Binder(core.definition.name, names, rules);
   /** A call's argument as inputs by name; inputs left out get their default. */
   const bindInputs = (arg: unknown): Rec => binder.bind(arg)[0];
-  const parseInputs = async (arg: unknown): Promise<Rec> => {
-    const [bound, filled] = binder.bind(arg);
-    await binder.parse(bound, filled);
-    return bound;
-  };
   const parseInputsNow = (arg: unknown): Rec => {
     const [bound, filled] = binder.bind(arg);
     binder.parse(bound, filled, true);
@@ -482,14 +482,30 @@ export function make(core: Core): AIFunction {
     ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
   });
 
+  /** Every output the model gave, the fields FunctAI added included (`reasoning`, `calls`: the last step's), in the signature's order: the record's. */
+  const recordOutputs = (pred: Prediction, signature: lmcc.Signature): Rec => {
+    const all = (pred.turn.outputs ?? {}) as Rec;
+    const mine = pred.outputs as Rec;
+    const out: Rec = {};
+    for (const f of signature.fields) {
+      if (f.direction !== "output") continue;
+      if (Object.hasOwn(mine, f.name)) setOwn(out, f.name, mine[f.name]);
+      else if (Object.hasOwn(all, f.name)) setOwn(out, f.name, all[f.name]);
+    }
+    return out;
+  };
+
   const predict = async (arg: unknown, options: CallOptions = {}, stream?: PredictionStream): Promise<Prediction> => {
     const { signal, ...extra } = options;
     if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
-    const bound = await parseInputs(arg);
+    const [bound, filled] = binder.bind(arg);
+    const given = { ...bound };                          // the record's: the values as given (defaults filled), before a schema's own parsing
+    await binder.parse(bound, filled);
     const s = settingsNow(extra);
+    const signature = signatureNow(s);
     return runCall<Prediction>({
-      program: () => program(s), fields: fieldsOf(core.interface, signatureNow(s)), own: core.own, options: extra as Settings,
-      settings: s, stream, signal, inputs: bound,
+      program: () => program(s), fields: fieldsOf(core.interface, signature), own: core.own, options: extra as Settings,
+      settings: s, stream, signal, inputs: given,
       body: async (call) => {
         const { plan, model, router, provider, settings } = planFor(s);
         call.provider = provider;
@@ -497,10 +513,14 @@ export function make(core: Core): AIFunction {
           function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings, router, model,
           tools: core.tools, call, answer,
         });
-        return { value: pred, outputs: pred.outputs as Rec, shown: pred.answer, returned: pred.answer };
+        return { value: pred, outputs: recordOutputs(pred, signature), shown: pred.answer, returned: pred.answer };
       },
     });
   };
+  /** What `fn(x)` gives: the answer; a journal that did not keep the end holds the answer too. */
+  const answerOf = (p: Promise<Prediction>): Promise<unknown> => p.then((pred) => pred.answer, (err: unknown) => {
+    throw err instanceof JournalError ? err.withDone((v) => (v as Prediction).answer) : err;
+  });
 
   const map = async (items: Iterable<unknown>, options: MapOptions = {}): Promise<unknown[]> => {
     const { concurrency = 8, ...call } = options;
@@ -512,7 +532,7 @@ export function make(core: Core): AIFunction {
     const worker = async () => {
       while (next < list.length && !signal.aborted) {
         const i = next++;
-        out[i] = (await predict(list[i], { ...call, signal })).answer;
+        out[i] = await answerOf(predict(list[i], { ...call, signal }));
       }
     };
     try {
@@ -525,7 +545,7 @@ export function make(core: Core): AIFunction {
     return out;
   };
 
-  const fn = (async (input: unknown, options?: CallOptions) => (await predict(input, options)).answer) as unknown as AIFunction;
+  const fn = ((input: unknown, options?: CallOptions) => answerOf(predict(input, options))) as unknown as AIFunction;
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },
     module: { get: () => core.module },
@@ -565,7 +585,7 @@ export function make(core: Core): AIFunction {
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
-      checkLogContent(own.logContent, `${core.definition.name}.using`, fieldsOf(core.interface, sig.signature(definitionNow(own), core.state.instructions)));
+      checkSettings(own, `${core.definition.name}.using`, fieldsOf(core.interface, sig.signature(definitionNow(own), core.state.instructions)));
       return make({ ...core, own, state: structuredClone(core.state) });
     },
     state: (): State => structuredClone(core.state),

@@ -17,7 +17,7 @@ import {
   keptEvent, known, positionOf, Relink, resume, type KeptFields, type Position, type ReadAnswer, type EventSource,
   type StartedEvent, type StreamEvent,
 } from "./events.ts";
-import type { Node, Watcher } from "./log.ts";
+import { JournalError, type Node, type Watcher } from "./log.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -108,11 +108,19 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   readonly result: Promise<A>;
 
   constructor(start: (stream: Stream<A>) => Promise<A>, signal?: AbortSignal) {
-    if (signal) {                                  // the caller's signal closes the stream too
+    let onAbort: (() => void) | null = null;
+    if (signal) {                                  // the caller's signal closes the stream too, until the call ends
       if (signal.aborted) this.controller.abort();
-      else signal.addEventListener("abort", () => this.controller.abort(), { once: true });
+      else signal.addEventListener("abort", onAbort = () => this.controller.abort(), { once: true });
     }
-    this.result = start(this).finally(() => {
+    let started: Promise<A>;
+    try {
+      started = start(this);
+    } catch (err) {
+      started = Promise.reject(err);
+    }
+    this.result = started.finally(() => {
+      if (onAbort) signal!.removeEventListener("abort", onAbort);   // a long-lived signal keeps no finished stream
       this.finished = true;
       this.wake();
     });
@@ -241,8 +249,15 @@ export class PredictionStream<A = unknown, P = unknown> extends Stream<A> {
   constructor(start: (stream: Stream<A>) => Promise<P>, answer: (p: P) => A, signal?: AbortSignal) {
     let prediction!: Promise<P>;
     super((s) => {
-      prediction = start(s);
-      return prediction.then(answer);
+      try {
+        prediction = start(s);
+      } catch (err) {
+        prediction = Promise.reject(err);
+      }
+      // a journal that did not keep the end: the error holds what this reader would have got (the answer)
+      return prediction.then(answer, (err: unknown) => {
+        throw err instanceof JournalError ? err.withDone((p) => answer(p as P)) : err;
+      });
     }, signal);
     prediction.catch(() => undefined);
     this.prediction = prediction;

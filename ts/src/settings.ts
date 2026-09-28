@@ -1,17 +1,27 @@
 /**
- * Settings: where a call goes and how it behaves. A function's own settings
- * beat a call's options, which beat `withSettings(...)` blocks, which beat
- * `configure(...)`, which beats the defaults (the order Python uses). Three
- * settings are policy, and combine over every layer instead: `logContent`
- * (a value is written only when no layer drops it), `observers` (they add
- * up) and `journal` (a program cannot replace or remove a host's, and no
- * closer layer a required one).
+ * Settings: where a call goes and how it behaves. A call's options beat the
+ * program's own settings (`ai(...)`, `.using(...)`), which beat
+ * `withSettings(...)` blocks (the closest first), which beat
+ * `configure(...)`, which beats the defaults.
+ *
+ * Three settings are policy, and combine over every layer instead
+ * (contract/calls.md, "Content"; streaming.md, "Keeping a log while it is
+ * written"): `logContent` (a value is written only when no layer drops it),
+ * `observers` (they add up) and `journal` (a program's own setting cannot
+ * replace or remove a host's journal, and no closer layer a required one).
+ * For those, the layers are, closest first: the program's own settings, a
+ * call's options (a block around that one call), the blocks, `configure`.
+ *
+ * A setting that could only fail later refuses where it is set: a
+ * `logContent` key that is not a field name (`SettingError`), an observer
+ * that is neither a function nor has `postMessage`, a journal that is not a
+ * store (`TypeError`).
  */
 
 import type { Config, Request, Response, StreamEvent } from "@lm15/lm15";
-import { checkLogContent, type LogContent, type Where } from "./content.ts";
+import { checkLogContent, type CallFields, type LogContent, type Where } from "./content.ts";
 import { Context } from "./host.ts";
-import type { Journal, Observer } from "./log.ts";
+import { checkObservers, journalOf, type Journal, type Observer } from "./log.ts";
 import type { Capabilities } from "./models.ts";
 import type { ReplyCache } from "./cache.ts";
 
@@ -61,18 +71,23 @@ export interface Settings {
    */
   logContent?: LogContent | null;
   /**
-   * Functions given the kept form of every event of the calls in scope, as it
-   * happens (a page, telemetry). They add up over the layers, and never slow
-   * a call: one that throws is warned about once and given no more events.
+   * Receivers of the kept form of every event of the calls in scope (a
+   * page, telemetry). They add up over the layers (`configure`'s replaces
+   * `configure`'s: keep your own list to add one). A function is called
+   * soon after each event, off the call's own turn, from a bounded queue
+   * (an observer 10,000 events behind loses events); it still runs on this
+   * thread, so heavy work belongs in a `Worker`: an object with
+   * `postMessage` is posted each event. One that throws is warned about
+   * once and given no more events.
    */
   observers?: readonly Observer[] | null;
   /**
    * Where each call tree's kept log is written while it runs: a store
    * (best effort: the call never waits), or `{ store, mode: "required" }`
    * (the call waits until its events are kept, before its code runs, before
-   * each tool and before it returns). `null`: none. A program's own setting
-   * cannot replace or remove a host's journal (`JournalError`
-   * `journal-policy`).
+   * each tool and before it returns; at most `timeout` ms, 30 s by default).
+   * `null`: none. A program's own setting cannot replace or remove a host's
+   * journal (`JournalError` `journal-policy`).
    */
   journal?: Journal | null;
   /** Who is calling, added to `FUNCTAI_CALLER`: `{ kind: "agent", conversation: "…" }`. */
@@ -94,19 +109,33 @@ let global: Settings = {};
 const scoped = new Context<readonly Settings[]>();
 
 /**
+ * Refuse, where they are set, the policy settings that could only fail later:
+ * `logContent` (`SettingError` `log-content-field`: a key that is not a
+ * field name or `"*"`; with `fields`, a program's own map naming a field it
+ * does not have), `observers` and `journal` (`TypeError`).
+ */
+export function checkSettings(settings: Settings | null | undefined, where: string, fields?: CallFields): void {
+  if (!settings) return;
+  checkLogContent(settings.logContent, where, fields);
+  checkObservers(settings.observers, where);
+  if (settings.journal !== undefined) journalOf(settings.journal, where);
+}
+
+/**
  * Settings for every program (their own settings still win). Returns the
  * settings now in force. A `logContent` key that is not a field name refuses
- * here (`SettingError`, `log-content-field`).
+ * here (`SettingError`, `log-content-field`), and so does an observer or a
+ * journal that could only fail later (`TypeError`).
  */
 export function configure(settings: Settings = {}): Settings {
-  checkLogContent(settings.logContent, "configure");
+  checkSettings(settings, "configure");
   global = { ...global, ...settings };
   return { ...global };
 }
 
 /** Run `fn` with these settings over `configure`'s (a program's own settings and a call's options still win). */
 export function withSettings<R>(settings: Settings, fn: () => R): R {
-  checkLogContent(settings.logContent, "withSettings");
+  checkSettings(settings, "withSettings");
   return scoped.run([...(scoped.get() ?? []), settings], fn);
 }
 

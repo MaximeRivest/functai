@@ -33,7 +33,7 @@ function plain(v: unknown): lmcc.Json {
     const proto = Object.getPrototypeOf(v);
     if (proto !== Object.prototype && proto !== null) throw new TypeError("not plain data");
     const out: Record<string, lmcc.Json> = {};
-    for (const [k, x] of Object.entries(v as Rec)) if (x !== undefined) out[k] = plain(x);
+    for (const [k, x] of Object.entries(v as Rec)) if (x !== undefined) setOwn(out, k, plain(x));
     return out;
   }
   throw new TypeError(typeof v);
@@ -57,6 +57,20 @@ export function toJson(value: unknown): [lmcc.Json, number, boolean] {
   }
   const described = { $type: typeName(value), $repr: [...text].slice(0, 2000).join("") };
   return [described, [...lmcc.canonicalJson(described)].length, true];
+}
+
+/**
+ * Set an own property, whatever its name: `obj["__proto__"] = v` would set
+ * the object's prototype instead (a JSON member named `__proto__` is data).
+ */
+export function setOwn(obj: object, key: string, value: unknown): void {
+  if (key === "__proto__") Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
+  else (obj as Record<string, unknown>)[key] = value;
+}
+
+/** An own property's value (never an inherited one: `toString`, `constructor`), or undefined. */
+export function getOwn<T>(obj: Readonly<Record<string, T>> | null | undefined, key: string): T | undefined {
+  return obj !== null && obj !== undefined && Object.hasOwn(obj, key) ? obj[key] : undefined;
 }
 
 /** Code-point order of two strings (JavaScript's `<` compares UTF-16 code units). */

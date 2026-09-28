@@ -7,7 +7,7 @@
  * ```ts
  * const support = module("support", {
  *   description: "Answer a customer's message.",
- *   input: { message: t.string(), tone: t.string({ default: "kind" }) },
+ *   input: { message: t.string(), tone: t.string({ default: "kind" }) },   // tone may be left out
  *   output: t.string(),
  *   uses: [topic, answer],
  * }, async ({ message, tone }, { signal }) => answer({ message, tone, topic: await topic(message) }, { signal }));
@@ -19,15 +19,16 @@
 
 import * as lmcc from "lmcc";
 import type * as calllog from "./calllog.ts";
-import { checkLogContent, type CallFields } from "./content.ts";
+import type { CallFields } from "./content.ts";
 import { Cancelled } from "./engine.ts";
 import { definedAt, type AnyAIFunction, type CallArgs, type CallOptions } from "./fn.ts";
-import { Binder, declareInput, type InputRule } from "./inputs.ts";
-import { checkInputs, checkInterface, checkReturned, interfaceSignature, type Interface, type InterfaceField } from "./interface.ts";
+import { Binder, declareInput, declareOutput, type InputRule } from "./inputs.ts";
+import { checkInputs, checkInterface, checkReturned, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
 import { runCall } from "./program.ts";
-import { effective, type Settings } from "./settings.ts";
-import { isOpaque, readField, type FieldSpec, type InputValueOf, type IsOptional, type ValueOf } from "./shapes.ts";
+import { checkSettings, effective, type Settings } from "./settings.ts";
+import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
+import { getOwn, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 type Fields = Record<string, FieldSpec>;
@@ -57,9 +58,17 @@ type RequiredFields<I> = { [K in keyof I]: IsOptional<I[K]> extends true ? never
 /** What a call of a module takes, by name. */
 export type ModuleArgs<I> = Simplify<
   { [K in RequiredFields<I>]: InputValueOf<I[K]> } & { [K in Exclude<keyof I, RequiredFields<I>>]?: InputValueOf<I[K]> }>;
-/** What a module returns: its one output's value, or its outputs by name. */
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+/** Whether an object type has exactly one key. */
+type OneKey<O> = [keyof O] extends [never] ? false : true extends IsUnion<keyof O> ? false : true;
+/**
+ * What a module returns: its one output's value (`output`, or `outputs`
+ * naming one), or its several outputs by name (programs.md, "Checking
+ * values": one output is the value).
+ */
 export type ModuleResult<O extends Fields | undefined, A extends FieldSpec | undefined> =
-  O extends Fields ? { [K in keyof O]: ValueOf<O[K]> } : A extends FieldSpec ? ValueOf<A> : never;
+  O extends Fields ? (OneKey<O> extends true ? ValueOf<O[keyof O]> : { [K in keyof O]: ValueOf<O[K]> })
+    : A extends FieldSpec ? ValueOf<A> : never;
 
 /** What a module's code is given besides its inputs. */
 export interface ModuleContext {
@@ -141,31 +150,40 @@ function makeModule(core: ModuleCore): AnyModule {
     const { signal, ...extra } = options;
     if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
     const s = effective({ ...core.own, ...extra });
-    const given = binder.bind(arg, { fill: false, check: false })[0];
-    let inputs: Rec = given;
+    // Inputs are checked before the code runs; a refusal is the call's outcome, recorded (programs.md). The record and the
+    // events hold only the interface's fields: a value given under another name is named by the refusal, never kept.
+    let given: Rec = {};
+    let inputs: Rec = {};
     let refused: unknown;
     try {
+      given = binder.bind(arg, { fill: false, check: false })[0];
       inputs = checkInputs(iface, given, name);
       for (const f of iface.inputs) {                     // a left-out input takes its default as the program declared it (a zod default's own value)
         const fill = core.rules[f.name]?.fill;
-        if (given[f.name] === undefined && fill && f.name in inputs) {
+        if (getOwn(given, f.name) === undefined && fill && Object.hasOwn(inputs, f.name)) {
+          let value: unknown;
           try {
-            inputs[f.name] = structuredClone(fill.value);
+            value = structuredClone(fill.value);
           } catch {
-            inputs[f.name] = fill.value;
+            value = fill.value;
           }
+          setOwn(inputs, f.name, value);
         }
       }
     } catch (err) {
       refused = err;
+      inputs = recordedInputs(iface, given);
     }
     return runCall<unknown>({
       program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs,
+      ...(refused !== undefined ? { refused } : {}),
       body: async (c) => {
-        if (refused) throw refused;
-        await binder.parse(inputs, new Set(names.filter((n) => !(n in given) || given[n] === undefined)));
-        const controller = c.signal ?? new AbortController().signal;
-        const returned = await core.run(inputs, { signal: controller, callId: c.id });
+        const values: Rec = { ...inputs };                 // the code's own: what it does with them never reaches the record
+        await binder.parse(values, new Set(names.filter((n) => getOwn(given, n) === undefined)));
+        const cancelled = c.signal ?? new AbortController().signal;
+        if (cancelled.aborted) throw new Cancelled();
+        const returned = await core.run(values, { signal: cancelled, callId: c.id });
+        if (cancelled.aborted) throw new Cancelled();
         const outputs = checkReturned(iface, returned, name);
         return { value: returned, outputs };
       },
@@ -186,7 +204,7 @@ function makeModule(core: ModuleCore): AnyModule {
     stream: (input: unknown, options: CallOptions = {}) => new Stream((st) => call(input, options, st), options.signal),
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
-      checkLogContent(own.logContent, `${name}.using`, fields);
+      checkSettings(own, `${name}.using`, fields);
       return makeModule({ ...core, own });
     },
     _reach: () => reach(core),
@@ -224,14 +242,11 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
     return declared.field;
   });
   const outputSpecs: [string, FieldSpec][] = spec.outputs ? Object.entries(spec.outputs) : [["result", spec.output as FieldSpec]];
-  const outputs: InterfaceField[] = outputSpecs.map(([field, s]) => {
-    const { shape, desc } = readField(s, `${name}.outputs.${field}`);
-    return { name: field, shape, ...(desc ? { desc } : {}), ...(isOpaque(s) ? { opaque: true as const } : {}) };
-  });
+  const outputs: InterfaceField[] = outputSpecs.map(([field, s]) => declareOutput(field, s, `${name}.outputs.${field}`, "module"));
   const iface = checkInterface({ description: spec.description ?? "", inputs, outputs }, { where: `module("${name}")` });
   const own: Settings = {};
   for (const [k, v] of Object.entries(spec)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
-  checkLogContent(own.logContent, `module("${name}")`, { inputs: inputs.map((f) => f.name), outputs: outputs.map((f) => f.name), added: [] });
+  checkSettings(own, `module("${name}")`, { inputs: inputs.map((f) => f.name), outputs: outputs.map((f) => f.name), added: [] });
   const where = definedAt(module);
   return makeModule({
     name, where: spec.definedIn ?? where.module ?? "main", file: where.file, line: where.line, iface, rules,

@@ -135,7 +135,7 @@ for (const [name, c] of cases("programs")) {
 test("an interface a module cannot say is refused when it is defined", () => {
   assert.throws(() => module("m", { input: { code: t.string({ pattern: "^B-[0-9]+$" }) }, output: t.string() }, () => ""),
     (err: unknown) => err instanceof InterfaceError && err.code === "interface-malformed" && err.field === "code");
-  assert.throws(() => module("m", { input: { message: t.string() }, outputs: { message: t.string() } }, () => ({ message: "" })),
+  assert.throws(() => module("m", { input: { message: t.string() }, outputs: { message: t.string() } }, () => ""),
     (err: unknown) => err instanceof InterfaceError && err.field === "message");
   assert.throws(() => ai("f", { input: { frame: t.opaque() } }), (err: unknown) => err instanceof InterfaceError && err.field === "frame");
 });

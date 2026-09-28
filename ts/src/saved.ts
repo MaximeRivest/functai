@@ -9,12 +9,12 @@
 import * as lmcc from "lmcc";
 import { Config, stringifyJson } from "@lm15/lm15";
 import { builtin } from "./host.ts";
-import { make, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { fieldsOf, make, type AnyAIFunction as AIFunction } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
 import { interfaceSignature, malformed, type Interface, type InterfaceField } from "./interface.ts";
 import { REGISTRY } from "./layouts.ts";
 import { passes } from "./schema.ts";
-import type { Settings } from "./settings.ts";
+import { checkSettings, type Settings } from "./settings.ts";
 import * as sig from "./signature.ts";
 import { VERSION } from "./calllog.ts";
 
@@ -175,6 +175,8 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
     definition, interface: iface, own, tools: [], module: node!["module"] as string, saved: opts.savedId,
     state: { instructions: state.instructions ?? null, demos: [] },
   });
+  // its own policy, as a definition's is checked: a misspelt field would write the very value it keeps out (calls.md, "Content")
+  checkSettings(own, `${key} (loaded)`, fieldsOf(iface, fn.signature));
   fn.demos = (state.demos ?? []) as never;
   // it must send what was saved (contract/saved.md, "Loading", step 6)
   const probes = (data["probes"] ?? []) as Rec[];

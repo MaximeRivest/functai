@@ -81,8 +81,10 @@ class ScriptedStore implements EventStore {
 const withoutMessage = (e: Rec | null) => (e ? Object.fromEntries(Object.entries(e).filter(([k]) => k !== "message")) : null);
 const envelope = new Set(["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"]);
 
+// Each case runs twice: with `batch: 1` (every send compared with the case's trace) and with the default batch setting (the
+// case's writer confirms each event before the next is made, so no batch forms: failure-paths.test.ts drives real batches).
 for (const [name, c] of cases("events", "journal-")) for (const batch of [1, undefined]) {
-  test(`events case ${name}${batch ? "" : " (batched sends)"}`, async () => {
+  test(`events case ${name}${batch ? "" : " (default batch setting)"}`, async () => {
     const folder = mkdtempSync(join(tmpdir(), "functai-journal-"));
     const store = new ScriptedStore(c.script);
     const [started, ...rest] = c.events as Rec[];

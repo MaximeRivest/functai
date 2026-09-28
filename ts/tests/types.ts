@@ -5,7 +5,7 @@
  */
 
 import * as z from "zod";
-import { ai, evaluate, gepa, labeledFewShot, module, t, tool, type Prediction } from "../src/index.ts";
+import { ai, evaluate, gepa, JournalError, labeledFewShot, module, t, tool, type Prediction } from "../src/index.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const is = <T extends true>(_: T) => undefined;
@@ -119,4 +119,34 @@ export async function modules() {
   await support({ frame: new Map() });
   // @ts-expect-error: several outputs are returned by name
   module("m", { input: {}, outputs: { a: t.string(), b: t.integer() } }, () => ({ a: "x" }));
+
+  // one output, whatever its name, is the value (programs.md, "Checking values")
+  const one = module("one", { input: {}, outputs: { count: t.integer() } }, () => 1);
+  is<Equal<Awaited<ReturnType<typeof one>>, number>>(true);
+  // @ts-expect-error: one named output is returned as its value, not as a record
+  module("one", { input: {}, outputs: { count: t.integer() } }, () => ({ count: 1 }));
+
+  // a builder's default says the input may be left out, in the types too
+  const polite = module("polite", { input: { message: t.string(), tone: t.string({ default: "kind" }), n: t.integer({ default: 1 }) }, output: t.string() },
+    ({ message, tone, n }) => {
+      is<Equal<typeof tone, string>>(true);
+      is<Equal<typeof n, number>>(true);
+      return `${tone}: ${message}`.repeat(n);
+    });
+  await polite("Where is my parcel?");                              // one required input: its value alone
+  await polite({ message: "x", tone: "brief" });
+  // @ts-expect-error: tone is text
+  await polite({ message: "x", tone: 3 });
+  t.json({ description: "each input by name" });                    // words about any JSON
+}
+
+export async function journalErrors() {
+  try {
+    await team({ message: "x", urgent: false });
+  } catch (err) {
+    if (err instanceof JournalError && err.outcome && "done" in err.outcome) {
+      const d = err.outcome.done;
+      is<Equal<typeof d, unknown>>(true);                          // never any: say what you expect
+    }
+  }
 }

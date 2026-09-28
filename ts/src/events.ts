@@ -13,6 +13,7 @@
 
 import * as lmcc from "lmcc";
 import { passes } from "./schema.ts";
+import { getOwn, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -128,30 +129,44 @@ export interface LogState {
   finished: boolean;
 }
 
+/** Whether an object is an event of the format this reader knows (2): what its numbers mean is known. */
+export const knownFormat = (e: unknown): boolean =>
+  typeof e === "object" && e !== null && (e as Rec)["functai_event"] === 2;
+
 /**
  * Replaying a form of a log (streaming.md, "Replaying"): `started` adds a
  * call; `request` and `retry` empty its fields; `text` appends; `done` and
- * `failed` end it. A kind it does not know changes nothing.
+ * `failed` end it. A kind it does not know changes nothing; an event of a
+ * format it does not know stops it (`stopped`): it applies nothing more.
  */
 export class Replay {
   private calls: Record<string, CallState> = {};
   private tree: string | null = null;
   finished = false;
+  /** Set once an event of a format it does not know came: nothing after it was applied. */
+  stopped = false;
 
   apply(e: EventLike): this {
+    if (this.stopped) return this;
+    if (!knownFormat(e)) {
+      this.stopped = true;
+      return this;
+    }
     const kind = e.kind as string;
     const c = e["call"] as string;
     this.tree ??= (e["tree"] as string) ?? null;
     if (!KINDS.has(kind)) return this;
     if (kind === "started") {
-      this.calls[c] = { ended: null, fields: {} };
+      setOwn(this.calls, c, { ended: null, fields: {} });
       return this;
     }
-    const call = this.calls[c];
+    const call = getOwn(this.calls, c);
     if (!call) return this;                         // its started is not in this form: nothing to apply it to
     if (kind === "request" || kind === "retry") call.fields = {};
-    else if (kind === "text") call.fields[e["field"] as string] = (call.fields[e["field"] as string] ?? "") + (e["text"] as string);
-    else if (kind === "done" || kind === "failed") {
+    else if (kind === "text") {
+      const field = e["field"] as string;
+      setOwn(call.fields, field, (getOwn(call.fields, field) ?? "") + (e["text"] as string));
+    } else if (kind === "done" || kind === "failed") {
       call.ended = kind;
       if (c === this.tree) this.finished = true;
     }
@@ -163,11 +178,15 @@ export class Replay {
   }
 }
 
-/** The state after each event of a form, and whether the log is finished. */
-export function replay(events: readonly EventLike[]): { views: { calls: Record<string, CallState> }[]; finished: boolean } {
+/**
+ * The state after each event of a form, and whether the log is finished.
+ * `stopped` is there (true) when an event of a format this reader does not
+ * know came: nothing from it on was applied.
+ */
+export function replay(events: readonly EventLike[]): { views: { calls: Record<string, CallState> }[]; finished: boolean; stopped?: true } {
   const r = new Replay();
   const views = events.map((e) => ({ calls: r.apply(e).state.calls }));
-  return { views, finished: r.finished };
+  return { views, finished: r.finished, ...(r.stopped ? { stopped: true as const } : {}) };
 }
 
 /** The state after every event of a form. */
@@ -226,7 +245,7 @@ export class Follower {
    * number), or `"store"`; a live reader's default is the event's writer.
    */
   receive(e: EventLike, opts: { from?: number | "store" } = {}): FollowResult {
-    if (this.stopped || e["functai_event"] !== 2) {
+    if (this.stopped || !knownFormat(e)) {
       this.stopped = true;
       return "unknown-format";
     }
@@ -249,6 +268,11 @@ export class Follower {
     t.held.push({ event: e, from: opts.from ?? (this.form === "live" ? w : "store") });
     t.last = positionOf(e);
     return result;
+  }
+
+  /** Let a tree go (a finished log a page no longer shows): it keeps nothing of it. */
+  forget(tree: string): void {
+    this.trees.delete(tree);
   }
 
   /** The last event it holds of a tree (null: none). */
@@ -285,9 +309,12 @@ export class Follower {
    * Read a tree again from a source (after a loss, a reconnection): after its
    * last event when it may resume in place, and from the beginning when it
    * may not or the source answers `event-unknown` (dropping what it held).
-   * Returns the reads it made, in order.
+   * Returns the reads it made, in order. A source it can read lets a stopped
+   * reader follow again; an event of a format it does not know stops it
+   * there (it takes nothing from that event on).
    */
   async recover(tree: string, source: EventSource): Promise<{ after: Position | null; answer: ReadAnswer }[]> {
+    this.stopped = false;
     let t = this.trees.get(tree);
     if (!t) this.trees.set(tree, t = { held: [], last: null });
     const reads: { after: Position | null; answer: ReadAnswer }[] = [];
@@ -305,6 +332,10 @@ export class Follower {
     if ("events" in answer) {
       const from = source.writer ?? "store";
       for (const e of answer.events) {
+        if (!knownFormat(e)) {
+          this.stopped = true;
+          break;
+        }
         t.held.push({ event: e, from });
         t.last = positionOf(e);
       }
@@ -358,8 +389,8 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
   if (Object.values(all).every(Boolean)) return out;
   switch (kind) {
     case "started": {
-      const given = (e["inputs"] ?? {}) as Rec;
-      const inputs = Object.fromEntries(Object.entries(given).filter(([k]) => keep.inputs[k]));
+      const given = (out["inputs"] ?? {}) as Rec;               // the copy: nothing a receiver does reaches the call's own event
+      const inputs = Object.fromEntries(Object.entries(given).filter(([k]) => getOwn(keep.inputs, k) === true));
       const shaped: Rec = {};
       for (const [k, v] of Object.entries(out)) {
         if (k === "inputs") continue;
@@ -377,7 +408,7 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
     case "request":
       return out;
     case "text":
-      return keep.outputs[e["field"] as string] ? out : null;
+      return getOwn(keep.outputs, e["field"] as string) === true ? out : null;
     case "thinking":
       return null;
     case "tool_call":
@@ -391,7 +422,7 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
       break;
     case "done": {
       const holds = program.kind === "ai" ? [program.answer] : Object.keys(keep.outputs);
-      if (holds.every((k) => keep.outputs[k])) return out;
+      if (holds.every((k) => getOwn(keep.outputs, k) === true)) return out;
       delete out["value"];
       break;
     }

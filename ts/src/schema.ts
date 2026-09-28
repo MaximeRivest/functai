@@ -67,7 +67,7 @@ function valid(v: unknown, s: unknown, root: SchemaName): boolean {
     const types = Array.isArray(schema["type"]) ? schema["type"] as string[] : [schema["type"] as string];
     if (!types.some((t) => typeFits(v, t))) return false;
   }
-  if ("const" in schema && !lmcc.jsonEqual(schema["const"] as lmcc.Json, v as lmcc.Json)) return false;
+  if (Object.hasOwn(schema, "const") && !lmcc.jsonEqual(schema["const"] as lmcc.Json, v as lmcc.Json)) return false;
   if (Array.isArray(schema["enum"]) && !schema["enum"].some((x) => lmcc.jsonEqual(x as lmcc.Json, v as lmcc.Json))) return false;
   for (const key of ["allOf", "anyOf", "oneOf"] as const) {
     const list = schema[key] as unknown[] | undefined;
@@ -96,11 +96,11 @@ function valid(v: unknown, s: unknown, root: SchemaName): boolean {
   }
   if (isObject(v)) {
     if (typeof schema["maxProperties"] === "number" && Object.keys(v).length > schema["maxProperties"]) return false;
-    if (Array.isArray(schema["required"]) && !(schema["required"] as string[]).every((k) => k in v)) return false;
+    if (Array.isArray(schema["required"]) && !(schema["required"] as string[]).every((k) => Object.hasOwn(v, k))) return false;
     const props = (schema["properties"] ?? {}) as Rec;
     for (const [k, x] of Object.entries(v)) {
       if (schema["propertyNames"] !== undefined && !valid(k, schema["propertyNames"], root)) return false;
-      if (k in props) {
+      if (Object.hasOwn(props, k)) {
         if (!valid(x, props[k], root)) return false;
       } else if (schema["additionalProperties"] !== undefined && !valid(x, schema["additionalProperties"], root)) {
         return false;

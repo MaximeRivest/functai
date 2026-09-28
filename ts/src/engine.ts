@@ -9,10 +9,11 @@
 import { cacheOf, forget, keep, lookup, replyKey } from "./cache.ts";
 import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
-import { Delta, Message, Request as Requests, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Request, type Response,
+import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Request, type Response,
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
+import { setOwn } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
 
@@ -96,8 +97,19 @@ export interface Job {
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
-  const t = setTimeout(resolve, ms);
-  signal?.addEventListener("abort", () => { clearTimeout(t); reject(new Cancelled()); }, { once: true });
+  if (signal?.aborted) {
+    reject(new Cancelled());
+    return;
+  }
+  const onAbort = () => {
+    clearTimeout(t);
+    reject(new Cancelled());
+  };
+  const t = setTimeout(() => {
+    signal?.removeEventListener("abort", onAbort);
+    resolve();
+  }, ms);
+  signal?.addEventListener("abort", onAbort, { once: true });
 });
 
 const retryable = (err: unknown) => RETRYABLE_ERRORS.some((cls) => err instanceof cls);
@@ -234,9 +246,9 @@ function askedAgain(err: lmcc.Refusal): string {
 async function complete(job: Job, rendered: lmcc.RenderResult, responses: Response[]): Promise<[Response, lmcc.Reading]> {
   const overrides: Rec = {};
   let request = bridge.request(rendered, { model: job.model, config: configOf(job.settings) });
-  const base = rendered.request();
-  // lmcc's hash of the rendered request (a model step's `request`); a re-ask sends it with the reply and the re-ask after it
-  let requestHash = lmcc.sha256(base as lmcc.Json);
+  // lmcc's hash of the rendered request (a model step's `request`, kernel §3a): every exchange made from it has it,
+  // a re-ask (the reply and the re-ask sentence appended) and a re-send with a larger token budget included, as in Python
+  const requestHash = lmcc.sha256(rendered.request() as lmcc.Json);
   const retries = Math.max(0, job.settings.retries);
   for (let attempt = 0; ; attempt++) {
     const response = await send(job, request, requestHash);
@@ -265,7 +277,6 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
           ...request, messages: [...request.messages, response.message,
             Message.user(`Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`)],
         };
-        requestHash = lmcc.sha256({ ...base, messages: Requests.toJSON(request)["messages"] } as lmcc.Json);
       }
       job.call.event("retry", { reason: askedAgain(refusal), wait: null });
     }
@@ -304,12 +315,13 @@ export async function run(job: Job): Promise<Prediction> {
     if (!calls.length) {
       turn = turn.finish();
       const outputs: Rec = {};
-      for (const [k, v] of Object.entries(turn.outputs ?? {})) if (k !== "calls") outputs[k] = v;
+      for (const [k, v] of Object.entries(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
       return new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
     }
     for (const c of calls) {
       const asked = job.call.event("tool_call", { id: c.id, name: c.name, input: c.input ?? {} });
-      await job.call.node?.log.barrier(asked);         // a required journal keeps the request before the tool runs
+      // a required journal keeps the request before the tool runs (at most its timeout; a cancelled call stops waiting)
+      if (await job.call.node?.log.barrier(asked, job.call.signal) === "cancelled") throw new Cancelled();
       stopped(job);
       const output = await runTool(job.tools, c, job.settings.toolErrors);
       job.call.event("tool_result", { id: c.id, name: c.name, output });

@@ -33,7 +33,7 @@ export {
   type RequestEvent, type RetryEvent, type SawEntry, type StartedEvent, type StoreCode, type StreamEvent, type TextEvent,
   type ThinkingEvent, type ToolCallEvent, type ToolResultEvent,
 } from "./events.ts";
-export { JournalError, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
+export { JournalError, flush, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
 export { sawOf, keepsSaw, SawUnknown, type SawCode } from "./saw.ts";
 export { evaluate, exactMatch, interval, Evaluation, type EvaluateOptions, type Metric, type RowResult, type Summary } from "./evaluate.ts";
 export { labeledFewShot, bootstrapFewShot, type BootstrapOptions, type LabeledOptions } from "./optimize.ts";

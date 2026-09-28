@@ -10,7 +10,9 @@ import { test } from "node:test";
 import * as lmcc from "lmcc";
 import { describeSaved, exactMatch, fromManifest, interval, LoadRefused } from "../src/index.ts";
 import { ratedRows } from "../src/calllog.ts";
-import { adjustSettings, capabilities, refusedSettings } from "../src/models.ts";
+import { adjustSettings, capabilities, PROBE, refusedSettings } from "../src/models.ts";
+import { Request, stringifyJson } from "@lm15/lm15";
+import { FakeRouter } from "./fake.ts";
 import { REGISTRY, resolveAdapter } from "../src/layouts.ts";
 import { generate, OUT, CONTRACT } from "../tools/generate.ts";
 
@@ -109,7 +111,7 @@ for (const [name, c] of cases("rated")) {
 // ------------------------------------------------------------------ saved
 
 for (const [name, c] of cases("saved")) {
-  test(`saved case ${name}`, () => {
+  test(`saved case ${name}`, async () => {
     const node = c.node ?? undefined;
     if (c.expect.describe.refuses) {
       assert.throws(() => describeSaved(c.manifest, { node }), (err: unknown) => err instanceof LoadRefused && err.code === c.expect.describe.refuses);
@@ -127,7 +129,15 @@ for (const [name, c] of cases("saved")) {
     assert.equal(fn.module, want.module);
     assert.equal(fn.version, want.version);
     assert.equal(fn.signatureId, want.signature_id);
-    for (const send of c.expect.sends ?? []) assert.equal(lmcc.sha256(fn.probeRequest(send.inputs)), send.request_hash, JSON.stringify(send.inputs));
+    const saved = c.manifest.nodes[c.node ?? c.manifest.entry].ai;
+    assert.deepEqual(saved.probes.map((p: Rec) => lmcc.sha256(fn.probeRequest(p))), want.requests, "requests");
+    for (const send of c.expect.sends ?? []) {
+      // a real call of the loaded function, under the probe facts (no sampling: where a version runs is not what it sends)
+      const router = new FakeRouter([], () => "<result>\nok\n</result>", "probe");
+      await fn.using({ lm: "probe", router: router as never, capabilities: PROBE, temperature: null, maxTokens: null, topP: null, seed: null, logCalls: false })(send.inputs);
+      const sent = JSON.parse(stringifyJson(Request.toJSON(router.requests[0]!)));
+      assert.equal(lmcc.sha256(sent), send.request_hash, JSON.stringify(send.inputs));
+    }
   });
 }
 

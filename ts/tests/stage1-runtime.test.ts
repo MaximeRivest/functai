@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import * as z from "zod";
 import {
-  ai, Cancelled, configure, describeSaved, EventUnknown, Follower, fromManifest, InterfaceError, JournalError, LoadRefused, MemoryStore,
+  ai, Cancelled, configure, describeSaved, flush, EventUnknown, Follower, fromManifest, InterfaceError, JournalError, LoadRefused, MemoryStore,
   module, SettingError, stateOf, t, toManifest, tool, views, withSettings, type AppendAnswer, type Position, type StreamEvent,
 } from "../src/index.ts";
 import { passes } from "../src/schema.ts";
@@ -113,6 +113,7 @@ test("observers get the kept form of the calls in scope, added up over layers; o
     const f = mood(new FakeRouter([], () => "<result>\nhappy\n</result>"), { observers: [(e: StreamEvent) => { seen.own.push(e); }], logContent: { review: false } });
     await withSettings({ observers: [(e) => { seen.block.push(e); }] }, () => f("secret words"));
     await f("again");
+    assert.ok(await flush());                                   // observers are given events off the call's turn
   } finally {
     configure({ observers: undefined });
     console.warn = warn;
@@ -120,7 +121,7 @@ test("observers get the kept form of the calls in scope, added up over layers; o
   assert.equal(seen.host.length, seen.own.length);
   assert.equal(seen.block.length, seen.host.length / 2);                                          // the block's scope: the first call
   assert.ok(!JSON.stringify(seen.host).includes("secret"));
-  assert.equal(warned.filter((w) => w.includes("observer failed")).length, 1);
+  assert.equal(warned.filter((w) => w.includes("observer broken failed")).length, 1);  // named, once
 });
 
 /** A tree with a tool: helper asks lookup_order, then answers. */

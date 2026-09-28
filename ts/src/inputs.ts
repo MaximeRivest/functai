@@ -6,7 +6,7 @@
 
 import { InterfaceError, type InterfaceField } from "./interface.ts";
 import { allowsNull, isOpaque, readField, saysOptional, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
-import { byCodePoint, jsonForm } from "./values.ts";
+import { byCodePoint, getOwn, jsonForm, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -35,7 +35,7 @@ export interface DeclaredInput {
  * input with no default stays left out.
  */
 export function declareInput(name: string, spec: FieldSpec, where: string, program: "ai" | "module"): DeclaredInput {
-  const { shape: read, desc } = readField(spec, where);
+  const { shape: read, desc } = readField(spec, where, name);
   const opaque = isOpaque(spec);
   if (opaque && program === "ai") {
     throw new InterfaceError("interface-malformed", name, `${where}: an AI function's input is sent to a model: it cannot be opaque`);
@@ -80,6 +80,23 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
   return { field, rule: { optional, ...(fill ? { fill } : {}), schema } };
 }
 
+/**
+ * An output as declared: its interface field. An output cannot be
+ * `optional` (a program gives every output), and an AI function's cannot be
+ * opaque (a model writes JSON): both refuse `interface-malformed`.
+ */
+export function declareOutput(name: string, spec: FieldSpec, where: string, program: "ai" | "module"): InterfaceField {
+  if (saysOptional(spec) === true) {
+    throw new InterfaceError("interface-malformed", name, `${where}: an output cannot be optional (a program gives every output)`);
+  }
+  const opaque = isOpaque(spec);
+  if (opaque && program === "ai") {
+    throw new InterfaceError("interface-malformed", name, `${where}: an AI function's output is written by a model: it cannot be opaque`);
+  }
+  const { shape, desc } = readField(spec, where, name);
+  return { name, shape, ...(desc ? { desc } : {}), ...(opaque ? { opaque: true as const } : {}) };
+}
+
 /** The rules of inputs read from an interface (a loaded program): optional as it says, filled with its default. */
 export function rulesOf(fields: readonly InterfaceField[]): Record<string, InputRule> {
   return Object.fromEntries(fields.map((f) => [f.name, {
@@ -111,7 +128,7 @@ export class Binder {
     const { names, required, name } = this;
     // an object is the inputs by name when every key is an input's, or it holds the one required input's name; else it is that input's value
     const keyed = arg === undefined
-      || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) || required[0]! in arg));
+      || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) || Object.hasOwn(arg, required[0]!)));
     if (!keyed) {
       if (required.length === 1) return this.bind({ [required[0]!]: arg }, opts);
       throw new InterfaceError("interface-input", null, `${name} takes its inputs by name: ${name}({ ${names.join(", ")} })`);
@@ -126,28 +143,55 @@ export class Binder {
       if (missing.length) throw new InterfaceError("interface-input", missing[0]!, `${name} needs ${missing.join(", ")}`);
     }
     for (const n of names) {
-      if (given[n] !== undefined) out[n] = given[n];
+      const value = getOwn(given, n);
+      if (value !== undefined) setOwn(out, n, value);
       else if (opts.fill !== false && this.rules[n]!.fill) {
-        out[n] = structuredClone(this.rules[n]!.fill!.value);
+        setOwn(out, n, structuredClone(this.rules[n]!.fill!.value));
         filled.add(n);
       }
     }
-    if (opts.check === false) for (const [k, v] of Object.entries(given)) if (!names.includes(k) && v !== undefined) out[k] = v;
+    if (opts.check === false) for (const [k, v] of Object.entries(given)) if (!names.includes(k) && v !== undefined) setOwn(out, k, v);
     return [out, filled];
   }
 
-  /** Given values checked and parsed by their Standard Schemas (defaults, transforms); a filled value is already the schema's. */
+  /**
+   * Given values checked and parsed by their Standard Schemas (defaults,
+   * transforms); a filled value is already the schema's. Every validation
+   * started is awaited or observed on every path (a refusal from one never
+   * leaves another's rejection unhandled); the first refusal, in the
+   * interface's order, is the one thrown.
+   */
   parse(bound: Rec, skip: Set<string>, sync = false): Promise<void> | void {
+    const outcomes: Array<{ n: string; r: StandardResult | Promise<StandardResult> } | { n: string; error: unknown }> = [];
+    for (const n of this.names) {
+      if (!this.rules[n]!.schema || skip.has(n) || !Object.hasOwn(bound, n)) continue;
+      try {
+        const r = this.rules[n]!.schema!["~standard"].validate(bound[n]);
+        if (r instanceof Promise) r.catch(() => undefined);            // observed now: whichever way this call goes
+        outcomes.push({ n, r });
+      } catch (error) {
+        outcomes.push({ n, error });
+      }
+    }
     const accept = (n: string, r: StandardResult) => {
       if (r.issues) throw new InterfaceError("interface-input", n, `${this.name}: input ${n}: ${r.issues.map((i) => i.message).join("; ")}`);
-      bound[n] = r.value;
+      setOwn(bound, n, r.value);
     };
-    const pending = this.names.filter((n) => this.rules[n]!.schema && !skip.has(n) && n in bound).map((n) => {
-      const r = this.rules[n]!.schema!["~standard"].validate(bound[n]);
-      return r instanceof Promise ? r.then((x) => accept(n, x)) : accept(n, r);
-    });
-    if (!pending.some((x) => x instanceof Promise)) return;
-    if (sync) throw new TypeError(`${this.name}: an input's schema validates asynchronously; render cannot wait for it (predict can)`);
-    return Promise.all(pending).then(() => undefined);
+    const later = outcomes.some((o) => "r" in o && o.r instanceof Promise);
+    if (later && sync) throw new TypeError(`${this.name}: an input's schema validates asynchronously; render cannot wait for it (predict can)`);
+    if (!later) {
+      for (const o of outcomes) {
+        if ("error" in o) throw o.error;
+        accept(o.n, o.r as StandardResult);
+      }
+      return;
+    }
+    return (async () => {
+      const settled = await Promise.allSettled(outcomes.map((o) => ("error" in o ? Promise.reject(o.error) : Promise.resolve(o.r))));
+      settled.forEach((x, i) => {
+        if (x.status === "rejected") throw x.reason;
+        accept(outcomes[i]!.n, x.value);
+      });
+    })();
   }
 }

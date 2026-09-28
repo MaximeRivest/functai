@@ -4,28 +4,38 @@
  * observers (the kept form) and to the tree's journal (the kept form, with
  * acknowledged conditional appends: best effort, or required, with barriers
  * at the tree's start, before each tool and at its end).
+ *
+ * Nothing here waits without a bound, and nothing a receiver does reaches
+ * the call: every append has a deadline and its resends back off; a barrier
+ * stops at its deadline or when the call is cancelled; observers are given
+ * events later, from a bounded queue, each its own copy.
  */
 
-import { iso, warnOnce } from "./calllog.ts";
+import { iso } from "./calllog.ts";
 import {
-  keptEvent, positionOf, Relink, settle, type AppendAnswer, type EventStore, type KeptFields, type Position, type StreamEvent,
+  keptEvent, positionOf, Relink, settle, type EventStore, type KeptFields, type Position, type StreamEvent,
 } from "./events.ts";
 
 type Rec = Record<string, unknown>;
 
 /**
- * Gets the kept form of every event of every call in its scope, in order, as
- * it happens. It is called on the call's own turn: keep it quick, or return
- * a promise (it is not awaited). One that throws or rejects is warned about
- * once and given no more events.
+ * Gets the kept form of every event of every call in its scope, in order.
+ * A function is called soon after each event is made, never on the call's
+ * own turn (from a queue drained between the call's steps; an observer that
+ * returns a promise is not awaited); an object with `postMessage` (a
+ * `Worker`, a `MessagePort`, a `BroadcastChannel`) is posted each event, so
+ * it handles them on another thread. Each observer gets its own copy. One
+ * that throws or rejects is warned about once and given no more events; one
+ * that falls more than 10,000 events behind loses events (it then sees a
+ * gap in `after`).
  */
-export type Observer = (event: StreamEvent) => void | PromiseLike<void>;
+export type Observer = ((event: StreamEvent) => void | PromiseLike<void>) | { postMessage(event: StreamEvent): void };
 
 /**
  * A journal: a store that keeps whole trees' kept logs while they are
  * written. A store alone is best effort; `{ store, mode: "required" }` makes
  * calls wait until their events are kept (at the tree's start, before each
- * tool, at its end).
+ * tool, at its end), at most `timeout` milliseconds at each.
  */
 export type Journal = EventStore | JournalSetting;
 
@@ -37,32 +47,82 @@ export interface JournalSetting {
   readonly retries?: number;
   /** Most events in one append (default 64; 1 sends each event alone). */
   readonly batch?: number;
+  /**
+   * Milliseconds (default 30,000): the longest an append is waited for (its
+   * `signal` aborts then, and no answer came), and the longest a barrier
+   * waits before the call goes on as if the journal did not answer.
+   * `Infinity` waits for ever.
+   */
+  readonly timeout?: number;
+  /** Milliseconds before the first resend of an append; each next one waits twice as long, up to 2 s (default 50). */
+  readonly backoff?: number;
 }
 
-/** A journal setting as the rules read it: its store and mode (two are the same when both are). */
+/** A journal setting as the rules read it: its store and mode (two are the same when both are), and how it sends. */
 export interface ResolvedJournal {
   readonly store: EventStore;
   readonly mode: "required" | "best-effort";
   readonly retries: number;
   readonly batch: number;
+  readonly timeout: number;
+  readonly backoff: number;
 }
 
-const isStore = (x: unknown): x is EventStore => typeof x === "object" && x !== null && typeof (x as EventStore).append === "function";
+const isStore = (x: unknown): x is EventStore => typeof x === "object" && x !== null
+  && typeof (x as EventStore).append === "function" && typeof (x as EventStore).read === "function";
 
-/** A `journal` setting as its store and mode (null: no journal). */
-export function journalOf(j: Journal | null): ResolvedJournal | null {
+const count = (v: unknown, least: number) => typeof v === "number" && Number.isInteger(v) && v >= least;
+const millis = (v: unknown, least: number) => typeof v === "number" && !Number.isNaN(v) && v >= least;
+
+/**
+ * A `journal` setting as its store, mode and sending (null: no journal).
+ * A setting that could only fail later refuses here (`TypeError`).
+ */
+export function journalOf(j: Journal | null, where = "journal"): ResolvedJournal | null {
   if (j === null) return null;
-  if (isStore(j)) return { store: j, mode: "best-effort", retries: 2, batch: 64 };
-  if (typeof j !== "object" || !isStore(j.store)) throw new TypeError("journal: a store ({ append, read }), or { store, mode: \"required\" | \"best-effort\" }");
-  const mode = j.mode ?? "best-effort";
-  if (mode !== "required" && mode !== "best-effort") throw new TypeError(`journal mode is "required" or "best-effort", not ${JSON.stringify(mode)}`);
-  return { store: j.store, mode, retries: Math.max(0, j.retries ?? 2), batch: Math.max(1, j.batch ?? 64) };
+  const defaults = { mode: "best-effort" as const, retries: 2, batch: 64, timeout: 30_000, backoff: 50 };
+  if (isStore(j)) return { store: j, ...defaults };
+  if (typeof j !== "object" || !isStore((j as JournalSetting).store)) {
+    throw new TypeError(`${where}: a store ({ append, read }), or { store, mode: "required" | "best-effort" }; null for none`);
+  }
+  const s = j as JournalSetting;
+  const known = new Set(["store", "mode", "retries", "batch", "timeout", "backoff"]);
+  const extra = Object.keys(s).filter((k) => !known.has(k));
+  if (extra.length) throw new TypeError(`${where}: a journal setting has no ${extra.join(", ")} (it has store, mode, retries, batch, timeout, backoff)`);
+  const mode = s.mode ?? "best-effort";
+  if (mode !== "required" && mode !== "best-effort") throw new TypeError(`${where}: mode is "required" or "best-effort", not ${JSON.stringify(mode)}`);
+  if (s.retries !== undefined && !count(s.retries, 0)) throw new TypeError(`${where}: retries is a whole number of at least 0`);
+  if (s.batch !== undefined && !count(s.batch, 1)) throw new TypeError(`${where}: batch is a whole number of at least 1`);
+  if (s.timeout !== undefined && !(millis(s.timeout, 1))) throw new TypeError(`${where}: timeout is milliseconds, at least 1 (Infinity: wait for ever)`);
+  if (s.backoff !== undefined && !(millis(s.backoff, 0) && Number.isFinite(s.backoff))) throw new TypeError(`${where}: backoff is milliseconds, at least 0`);
+  return {
+    store: s.store, mode, retries: s.retries ?? defaults.retries, batch: s.batch ?? defaults.batch,
+    timeout: s.timeout ?? defaults.timeout, backoff: s.backoff ?? defaults.backoff,
+  };
+}
+
+/** Whether something can be an observer: a function, or an object with `postMessage`. */
+export function isObserver(o: unknown): o is Observer {
+  return typeof o === "function" || (typeof o === "object" && o !== null && typeof (o as { postMessage?: unknown }).postMessage === "function");
+}
+
+/** An `observers` setting, checked (`TypeError` for one that could only fail later). */
+export function checkObservers(value: unknown, where = "observers"): void {
+  if (value === undefined || value === null) return;
+  if (!Array.isArray(value)) throw new TypeError(`${where}: observers is a list: observers: [(e) => socket.send(JSON.stringify(e))]`);
+  for (const o of value) {
+    if (!isObserver(o)) throw new TypeError(`${where}: an observer is a function of one event, or an object with postMessage (a Worker, a MessagePort); not ${o === null ? "null" : typeof o}`);
+  }
 }
 
 export type JournalCode = "journal-policy" | "journal-scope" | "journal-barrier" | "journal-end";
 
-/** A call's outcome as `JournalError` holds it: its value, or its error. */
-export type Outcome<A = unknown> = { readonly done: A } | { readonly failed: unknown };
+/**
+ * A call's outcome as `JournalError` holds it: what the call would have
+ * given its caller (its value: the answer for `fn(x)`, the `Prediction` for
+ * `fn.predict(x)`), or its error.
+ */
+export type Outcome = { readonly done: unknown } | { readonly failed: unknown };
 
 /**
  * A journal decided a call (streaming.md, "Keeping a log while it is
@@ -70,20 +130,21 @@ export type Outcome<A = unknown> = { readonly done: A } | { readonly failed: unk
  * policy (refused before it runs). `journal-scope`: a required journal set
  * only inside a tree. `journal-barrier`: a required journal did not confirm
  * the events before the code or a tool ran. `journal-end`: it did not confirm
- * the call's end: `outcome` is what the call did (its value, or its error),
- * `event` names the event that records it, and `journal` says whether the
- * journal refused it or did not answer (`settle()` finds out which).
+ * the call's end: `outcome` is what the call did (what it would have given
+ * you, or its error), `event` names the event that records it, and
+ * `journal` says whether the journal refused it or did not answer
+ * (`settle()` finds out which).
  */
-export class JournalError<A = unknown> extends Error {
+export class JournalError extends Error {
   readonly code: JournalCode;
   readonly journal?: "refused" | "unknown";
   readonly event?: Position;
-  readonly outcome?: Outcome<A>;
+  readonly outcome?: Outcome;
   readonly tree?: string;
   private readonly store?: EventStore;
 
   constructor(code: JournalCode, message: string, opts: {
-    journal?: "refused" | "unknown"; event?: Position; outcome?: Outcome<A>; tree?: string; store?: EventStore;
+    journal?: "refused" | "unknown"; event?: Position; outcome?: Outcome; tree?: string; store?: EventStore;
   } = {}) {
     super(message);
     this.name = "JournalError";
@@ -93,6 +154,17 @@ export class JournalError<A = unknown> extends Error {
     if (opts.outcome) this.outcome = opts.outcome;
     if (opts.tree) this.tree = opts.tree;
     Object.defineProperty(this, "store", { value: opts.store, enumerable: false });
+  }
+
+  /** @internal The same error, its value as another caller gets it (the answer of a `Prediction`). */
+  withDone(f: (value: unknown) => unknown): JournalError {
+    if (!this.outcome || !("done" in this.outcome)) return this;
+    const copy = new JournalError(this.code, this.message, {
+      ...(this.journal ? { journal: this.journal } : {}), ...(this.event ? { event: this.event } : {}),
+      ...(this.tree ? { tree: this.tree } : {}), store: this.store, outcome: { done: f(this.outcome.done) },
+    });
+    copy.stack = this.stack;
+    return copy;
   }
 
   /**
@@ -106,89 +178,350 @@ export class JournalError<A = unknown> extends Error {
   }
 }
 
+// ------------------------------------------------------------------ timers
+
+type Timer = ReturnType<typeof setTimeout>;
+
+/** A timer; `hold: false` lets the process end while it waits (a best-effort journal's resends). */
+function timer(ms: number, fn: () => void, hold: boolean): Timer | null {
+  if (!Number.isFinite(ms)) return null;
+  const t = setTimeout(fn, ms);
+  if (!hold) (t as { unref?: () => void }).unref?.();
+  return t;
+}
+
+const pause = (ms: number, hold: boolean) => new Promise<void>((resolve) => {
+  if (ms <= 0) resolve();
+  else timer(ms, resolve, hold);
+});
+
+/** Later, after the current turn and the promise jobs it queued: a macrotask. */
+const later: (fn: () => void) => void = typeof globalThis.setImmediate === "function"
+  ? (fn) => { globalThis.setImmediate(fn); }
+  : (fn) => { setTimeout(fn, 0); };
+
+// ------------------------------------------------------------------ journals
+
 type Status = "confirmed" | "refused" | "unanswered";
+
+interface Waiter {
+  readonly n: number;
+  readonly done: (s: Status) => void;
+}
+
+/** The writers sending now (for `flush`). */
+const busy = new Set<JournalWriter>();
 
 /**
  * Sends a tree's kept events to its journal, in order, each append naming
  * where it goes (`after`). It keeps every event not confirmed and sends it
- * again; after a refusal it sends nothing more.
+ * again (after `backoff`, doubling); after a refusal it sends nothing more.
+ * Each append is given fresh copies, and waited for at most `timeout`: a
+ * store that throws, never answers, or answers something else than kept or
+ * duplicate never holds the writer, nor reaches the call.
  */
 export class JournalWriter {
-  private readonly pending: { e: Rec; n: number }[] = [];
+  private pending: { e: Rec; n: number }[] = [];
   private added = 0;
   private confirmedN = 0;
-  private active: Promise<Status> | null = null;
+  private running = false;
+  private readonly waiters = new Set<Waiter>();
+  private idlers: Array<() => void> = [];
   refused = false;
   readonly journal: ResolvedJournal;
-  private readonly onTrouble: (what: string) => void;
+  private readonly trouble: { fail(what: string): void; ok(): void };
+  /** Appends made (a batch is one), for tests and hosts measuring a store. */
+  appends = 0;
 
-  constructor(journal: ResolvedJournal, onTrouble: (what: string) => void = () => undefined) {
+  constructor(journal: ResolvedJournal, trouble: { fail(what: string): void; ok(): void } = { fail: () => undefined, ok: () => undefined }) {
     this.journal = journal;
-    this.onTrouble = onTrouble;
+    this.trouble = trouble;
   }
 
-  /** Queue an event (in the kept form); returns its number in this writer, for `confirm`. */
+  /** Queue an event (in the kept form; a copy is taken); returns its number in this writer, for `confirm`. */
   add(e: Rec): number {
     const n = ++this.added;
     if (this.refused) return n;
-    this.pending.push({ e, n });
-    this.kick();
+    this.pending.push({ e: structuredClone(e), n });
+    this.start();
     return n;
   }
 
-  private kick(): Promise<Status> {
-    this.active ??= this.run();
-    return this.active;
+  private start(): void {
+    if (this.running) return;
+    this.running = true;                             // set before any store code runs: a store that throws at once cannot leave it stale
+    busy.add(this);
+    queueMicrotask(() => { void this.pump(); });
   }
 
-  private async run(): Promise<Status> {
-    const { store, retries, batch } = this.journal;
-    const done = (s: Status) => {
-      this.active = null;
-      return s;
-    };
-    while (this.pending.length) {
-      const sending = this.pending.slice(0, batch);
-      let answer: AppendAnswer | null = null;
-      for (let attempt = 0; attempt <= retries; attempt++) {
-        try {
-          answer = await store.append(sending.map((p) => p.e));
+  /** Send what waits, in order, batch by batch, until it is all confirmed, one is refused, or a round gives up. */
+  private async pump(): Promise<void> {
+    let gaveUp = false;
+    try {
+      while (this.pending.length && !this.refused) {
+        const sending = this.pending.slice(0, this.journal.batch);
+        const answer = await this.round(sending);
+        if (answer === "unanswered") {
+          gaveUp = true;
+          this.trouble.fail("the journal did not answer (the log is kept at least up to the events it confirmed; sending again with the next event)");
           break;
-        } catch {
-          answer = null;
         }
+        if (answer === "refused") break;
+        this.pending.splice(0, sending.length);
+        this.confirmedN = sending[sending.length - 1]!.n;
+        this.trouble.ok();
+        for (const w of this.waiters) if (w.n <= this.confirmedN) w.done("confirmed");
       }
-      if (answer === null) {
-        this.onTrouble(`the journal did not answer (the log is kept at least up to the events it confirmed; sending again later)`);
-        return done("unanswered");
-      }
-      if (answer !== "kept" && answer !== "duplicate") {
-        this.refused = true;
-        this.pending.length = 0;
-        this.onTrouble(`the journal refused event ${answer.event.writer}:${answer.event.seq} (${answer.refuses}); nothing more is sent to it for this log`);
-        return done("refused");
-      }
-      this.pending.splice(0, sending.length);
-      this.confirmedN = sending[sending.length - 1]!.n;
+    } catch {
+      gaveUp = true;                                 // the writer's own fault: nothing is known of what was kept
+    } finally {
+      this.running = false;
+      busy.delete(this);
+      const status: Status = this.refused ? "refused" : gaveUp ? "unanswered" : "confirmed";
+      for (const w of this.waiters) w.done(w.n <= this.confirmedN ? "confirmed" : status);
+      const idlers = this.idlers;
+      this.idlers = [];
+      for (const f of idlers) f();
+      settled();
     }
-    return done("confirmed");
+  }
+
+  /** One append of `sending`, sent again after no answer (backing off): its answer. */
+  private async round(sending: readonly { e: Rec; n: number }[]): Promise<Status> {
+    const { retries, backoff } = this.journal;
+    let wait = backoff;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      if (attempt) {
+        await pause(wait, this.journal.mode === "required");
+        wait = Math.min(wait * 2, 2000);
+      }
+      const answer = await this.attempt(sending.map((p) => structuredClone(p.e)));
+      if (answer === NO_ANSWER) continue;
+      if (answer === "kept" || answer === "duplicate") return "confirmed";
+      this.refuse(answer, sending[0]!.e);
+      return "refused";
+    }
+    return "unanswered";
+  }
+
+  /** One append, waited for at most `timeout`: its answer, or NO_ANSWER (it threw, rejected, or did not answer in time). */
+  private attempt(events: Rec[]): Promise<unknown> {
+    const { store, timeout, mode } = this.journal;
+    this.appends++;
+    return new Promise((resolve) => {
+      let over = false;
+      const controller = new AbortController();
+      const finish = (v: unknown) => {
+        if (over) return;
+        over = true;
+        if (t !== null) clearTimeout(t);
+        resolve(v);
+      };
+      const t = timer(timeout, () => {
+        finish(NO_ANSWER);
+        controller.abort(new Error(`the journal did not answer within ${timeout} ms`));
+      }, mode === "required");
+      let answered: Promise<unknown>;
+      try {
+        answered = Promise.resolve(store.append(events, { signal: controller.signal }));
+      } catch {
+        answered = Promise.resolve(NO_ANSWER);
+      }
+      answered.then(finish, () => finish(NO_ANSWER));
+    });
+  }
+
+  private refuse(answer: unknown, first: Rec): void {
+    this.refused = true;
+    this.pending = [];
+    const a = answer as { refuses?: unknown; event?: { writer?: unknown; seq?: unknown } } | null;
+    const code = typeof a === "object" && a !== null && typeof a.refuses === "string" ? a.refuses : null;
+    const at = typeof a === "object" && a !== null && typeof a.event === "object" && a.event !== null
+      && typeof a.event.writer === "number" && typeof a.event.seq === "number"
+      ? `${a.event.writer}:${a.event.seq}` : `${first["writer"]}:${first["seq"]}`;
+    this.trouble.fail(code
+      ? `the journal refused event ${at} (${code}); nothing more is sent to it for this log`
+      : `the journal answered ${describe(answer)} to event ${at}, which is neither kept, duplicate nor a refusal; nothing more is sent to it for this log`);
   }
 
   /**
    * Wait until every event up to `n` is confirmed: `"confirmed"`, `"refused"`,
-   * or `"unanswered"` (the sends since it was added gave up on it).
+   * `"unanswered"` (the sends that carried it, or an event before it, gave
+   * up, or `timeout` passed), or `"cancelled"` (the signal aborted).
    */
-  async confirm(n: number): Promise<Status> {
-    while (this.active) await this.active;
-    if (this.confirmedN >= n) return "confirmed";
-    return this.refused ? "refused" : "unanswered";
+  confirm(n: number, signal?: AbortSignal): Promise<Status | "cancelled"> {
+    if (this.confirmedN >= n) return Promise.resolve("confirmed");
+    if (this.refused) return Promise.resolve("refused");
+    if (!this.running) return Promise.resolve("unanswered");          // the last round gave up on it
+    if (signal?.aborted) return Promise.resolve("cancelled");
+    return new Promise((resolve) => {
+      let t: Timer | null = null;
+      const onAbort = () => done("cancelled");
+      const done = (s: Status | "cancelled") => {
+        if (!this.waiters.delete(w)) return;
+        if (t !== null) clearTimeout(t);
+        signal?.removeEventListener("abort", onAbort);
+        resolve(s);
+      };
+      const w: Waiter = { n, done };
+      this.waiters.add(w);
+      t = timer(this.journal.timeout, () => done("unanswered"), true);
+      signal?.addEventListener("abort", onAbort, { once: true });
+    });
   }
 
   /** Resolves when nothing is being sent. */
-  async idle(): Promise<void> {
-    while (this.active) await this.active;
+  idle(): Promise<void> {
+    return this.running ? new Promise((resolve) => this.idlers.push(resolve)) : Promise.resolve();
+  }
+
+  /** Whether it is sending now. */
+  get busy(): boolean {
+    return this.running;
   }
 }
+
+const NO_ANSWER = Symbol("no answer");
+
+function describe(v: unknown): string {
+  try {
+    const s = JSON.stringify(v);
+    return s === undefined ? String(v) : s.length > 80 ? s.slice(0, 77) + "..." : s;
+  } catch {
+    return Object.prototype.toString.call(v);
+  }
+}
+
+/** A journal's trouble, warned about once per outage of its store (again after it has answered well). */
+const troubled = new WeakSet<EventStore>();
+function journalTrouble(store: EventStore, tree: string): { fail(what: string): void; ok(): void } {
+  return {
+    fail(what) {
+      if (troubled.has(store)) return;
+      troubled.add(store);
+      console.warn(`functai: ${what} (log ${tree}); calls go on. Further trouble with this journal is not reported until it answers again.`);
+    },
+    ok() {
+      troubled.delete(store);
+    },
+  };
+}
+
+// ------------------------------------------------------------------ observers
+
+/** Events waiting for their observers, in the order they were made. */
+let queue: ({ o: Observer; e: StreamEvent } | undefined)[] = [];
+let head = 0;
+let draining = false;
+const behind = new Map<Observer, number>();
+const broken = new WeakSet<object>();
+const warnedObservers = new WeakSet<object>();
+/** The most events one observer may have waiting; past it, its events are dropped (it sees a gap). */
+export const OBSERVER_QUEUE = 10_000;
+/** How long one turn of giving events to observers may run, in milliseconds, before the process gets its turn back. */
+const SLICE = 8;
+
+const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
+const observerName = (o: Observer) => (typeof o === "function" && o.name ? `observer ${o.name}` : "an observer");
+
+function warnObserver(o: Observer, message: string): void {
+  if (warnedObservers.has(o)) return;
+  warnedObservers.add(o);
+  console.warn(`functai: ${observerName(o)} ${message}`);
+}
+
+function fail(o: Observer, err: unknown): void {
+  broken.add(o);
+  warnObserver(o, `failed (${(err as Error)?.message ?? String(err)}); it gets no more events`);
+}
+
+/** Queue an event (its own copy) for an observer. */
+function deliver(o: Observer, e: StreamEvent): void {
+  if (broken.has(o)) return;
+  const n = behind.get(o) ?? 0;
+  if (n >= OBSERVER_QUEUE) {
+    warnObserver(o, `is ${OBSERVER_QUEUE} events behind: events are dropped (it sees a gap in after)`);
+    return;
+  }
+  behind.set(o, n + 1);
+  queue.push({ o, e });
+  if (!draining) {
+    draining = true;
+    later(drain);
+  }
+}
+
+/** Give observers what waits for them, for one slice of time, then let the process go on. */
+function drain(): void {
+  const until = clock() + SLICE;
+  while (head < queue.length) {
+    const item = queue[head]!;
+    queue[head++] = undefined;
+    const left = (behind.get(item.o) ?? 1) - 1;
+    if (left > 0) behind.set(item.o, left);
+    else behind.delete(item.o);
+    if (!broken.has(item.o)) give(item.o, item.e);
+    if (clock() >= until) break;
+  }
+  if (head < queue.length) {
+    later(drain);
+    return;
+  }
+  queue = [];
+  head = 0;
+  draining = false;
+  settled();
+}
+
+function give(o: Observer, e: StreamEvent): void {
+  try {
+    if (typeof o === "function") {
+      const r = o(e);
+      if (r && typeof (r as PromiseLike<void>).then === "function") (r as PromiseLike<void>).then(undefined, (err: unknown) => fail(o, err));
+    } else {
+      o.postMessage(e);
+    }
+  } catch (err) {
+    fail(o, err);
+  }
+}
+
+// ------------------------------------------------------------------ flush
+
+let waitingForIdle: Array<() => void> = [];
+const idleNow = () => !draining && busy.size === 0;
+
+function settled(): void {
+  if (!idleNow()) return;
+  const w = waitingForIdle;
+  waitingForIdle = [];
+  for (const f of w) f();
+}
+
+/**
+ * Wait until every observer has been given the events made so far, and
+ * every journal has tried to keep them (at most `timeout` milliseconds;
+ * default 5,000). True when all of it was done in time. For a process that
+ * is about to end, and for tests.
+ */
+export async function flush(opts: { timeout?: number } = {}): Promise<boolean> {
+  if (idleNow()) return true;
+  const timeout = opts.timeout ?? 5000;
+  return new Promise<boolean>((resolve) => {
+    let t: Timer | null = null;
+    const done = () => {
+      if (t !== null) clearTimeout(t);
+      resolve(true);
+    };
+    waitingForIdle.push(done);
+    t = timer(timeout, () => {
+      waitingForIdle = waitingForIdle.filter((f) => f !== done);
+      resolve(idleNow());
+    }, true);
+  });
+}
+
+// ------------------------------------------------------------------ a tree's log
 
 /** One call in its tree's log: what its events need. */
 export interface Node {
@@ -210,14 +543,12 @@ export interface Watcher {
   receive(e: StreamEvent, node: Node): void;
 }
 
-/** An event as made: the event, and its number in the journal writer (0 when none). */
+/** An event as made: the event, its kept form (null when the kept form leaves it out), and its number in the journal writer (0 when none). */
 export interface Made {
   readonly event: StreamEvent;
+  readonly kept: Rec | null;
   readonly n: number;
 }
-
-const failedObservers = new WeakSet<Observer>();
-const warnedJournals = new WeakSet<EventStore>();
 
 /**
  * One call tree's log in this process: it numbers every event made (writer
@@ -238,13 +569,7 @@ export class TreeLog {
   constructor(tree: string, journal: ResolvedJournal | null) {
     this.tree = tree;
     this.journal = journal;
-    this.journalWriter = journal
-      ? new JournalWriter(journal, (what) => {
-        if (warnedJournals.has(journal.store)) return;          // once per journal, not per tree
-        warnedJournals.add(journal.store);
-        warnOnce(`journal:${tree}`, `${what} (log ${tree}); calls go on`);
-      })
-      : null;
+    this.journalWriter = journal ? new JournalWriter(journal, journalTrouble(journal.store, tree)) : null;
   }
 
   /** Whether anything receives this call's events (then streams read replies in pieces). */
@@ -258,40 +583,28 @@ export class TreeLog {
     return this.lastAt;
   }
 
-  /** Make and number an event of a call: the event, and its number in the journal writer (0 when none). */
+  /** Make and number an event of a call; its kept form goes to the journal (a copy). */
   make(node: Node, kind: StreamEvent["kind"], fields: Rec): Made {
     const e = {
       functai_event: 2, kind, tree: this.tree, writer: this.writer, seq: ++this.seq, after: this.last, at: this.stamp(),
       call: node.id, function: node.name, ...fields,
     } as unknown as StreamEvent;
     this.last = positionOf(e);
+    const kept = node.observers.length || this.journalWriter ? keptEvent(e, node.keep, node.program) : null;
     let n = 0;
-    if (this.journalWriter) {
-      const kept = keptEvent(e, node.keep, node.program);
-      if (kept) n = this.journalWriter.add(this.toJournal.take(kept));
-    }
-    return { event: e, n };
+    if (this.journalWriter && kept) n = this.journalWriter.add(this.toJournal.take(kept));
+    return { event: e, kept, n };
   }
 
-  /** Give an event to the streams and observers of its call. */
-  show(e: StreamEvent, node: Node): void {
-    for (const s of node.streams) s.receive(e, node);
+  /** Give an event to the streams of its call, and (each its own copy of the kept form, later) to its observers. */
+  show(made: Made, node: Node): void {
+    for (const s of node.streams) s.receive(made.event, node);
+    if (!made.kept) return;
     for (const o of node.observers) {
-      if (failedObservers.has(o)) continue;
+      if (broken.has(o)) continue;
       let link = this.observed.get(o);
       if (!link) this.observed.set(o, link = new Relink());
-      const kept = keptEvent(e, node.keep, node.program);
-      if (!kept) continue;
-      const fail = (err: unknown) => {
-        failedObservers.add(o);
-        warnOnce(`observer:${o.name || "anonymous"}`, `an observer failed (${(err as Error)?.message ?? err}); it gets no more events`);
-      };
-      try {
-        const r = o(link.take(kept) as unknown as StreamEvent);
-        if (r && typeof (r as PromiseLike<void>).then === "function") (r as PromiseLike<void>).then(undefined, fail);
-      } catch (err) {
-        fail(err);
-      }
+      deliver(o, link.take(structuredClone(made.kept)) as unknown as StreamEvent);
     }
   }
 
@@ -299,7 +612,7 @@ export class TreeLog {
   emit(node: Node, kind: StreamEvent["kind"], fields: Rec): Made | null {
     if (!this.watched(node)) return null;
     const made = this.make(node, kind, fields);
-    this.show(made.event, node);
+    this.show(made, node);
     return made;
   }
 
@@ -309,36 +622,42 @@ export class TreeLog {
   }
 
   /**
-   * A required journal's barrier after event `e` (the tree's start, a tool
-   * call): wait until every event up to it is confirmed, or throw
-   * `JournalError` (`journal-barrier`): the code or the tool does not run.
+   * A required journal's barrier after event `made` (the tree's start, a
+   * tool call): wait until every event up to it is confirmed (at most the
+   * journal's `timeout`), then go on; else `"cancelled"` (the signal
+   * aborted: the caller stops the call), or `JournalError`
+   * (`journal-barrier`): the code or the tool does not run.
    */
-  async barrier(made: Made | null): Promise<void> {
-    if (!this.required || !this.journalWriter || made === null) return;
-    const status = await this.journalWriter.confirm(made.n);
+  async barrier(made: Made | null, signal?: AbortSignal): Promise<"passed" | "cancelled"> {
+    if (!this.required || !this.journalWriter || made === null) return "passed";
+    const status = await this.journalWriter.confirm(made.n, signal);
+    if (status === "cancelled") return "cancelled";
     if (status !== "confirmed") {
-      throw new JournalError("journal-barrier", `the journal did not keep event ${made.event.seq}`,
-        { tree: this.tree, event: positionOf(made.event) });
+      // the message is the contract's (cases/events/journal-*: the failed event holds it)
+      throw new JournalError("journal-barrier", `the journal did not keep event ${made.event.seq}`, { tree: this.tree, event: positionOf(made.event) });
     }
+    return "passed";
   }
 
   /**
    * The tree's end: make the outermost call's `done` or `failed`; with a
-   * required journal, show it only once confirmed. Returns what the journal
-   * said when it did not confirm it.
+   * required journal, show it only once confirmed (at most the journal's
+   * `timeout`: the outcome is decided, and a cancelled caller still waits for
+   * it to be kept, or for the deadline). Returns what the journal said when
+   * it did not confirm it.
    */
   async end(node: Node, kind: "done" | "failed", fields: Rec): Promise<{ journal: "refused" | "unknown"; event: Position } | null> {
     if (!this.watched(node)) return null;
-    const { event: e, n } = this.make(node, kind, fields);
+    const made = this.make(node, kind, fields);
     if (!this.required || !this.journalWriter) {
-      this.show(e, node);
+      this.show(made, node);
       return null;
     }
-    const status = this.journalWriter.refused ? "refused" : await this.journalWriter.confirm(n);
+    const status = await this.journalWriter.confirm(made.n);
     if (status === "confirmed") {
-      this.show(e, node);
+      this.show(made, node);
       return null;
     }
-    return { journal: status === "refused" ? "refused" : "unknown", event: positionOf(e) };
+    return { journal: status === "refused" ? "refused" : "unknown", event: positionOf(made.event) };
   }
 }

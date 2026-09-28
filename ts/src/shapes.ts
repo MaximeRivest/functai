@@ -6,6 +6,7 @@
  */
 
 import * as lmcc from "lmcc";
+import { InterfaceError } from "./interface.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -85,18 +86,30 @@ const OPAQUE = Symbol.for("functai.opaque");
 /** Any JSON value. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
+/** Extra JSON Schema keys a builder takes (`{ description }`, `{ minimum: 0 }`, `{ default: "kind" }`). */
+type Extra = Record<string, unknown>;
+/** A shape of values `T`; with a `default`, one a caller may leave out (its type says so). */
+type Built<E, T> = E extends { readonly default: unknown } ? Shape<T> & { readonly default: T } : Shape<T>;
+
 /** Builders for shapes (lmcc's, plus a map, `optional`, `json` and `opaque`). Each takes extra JSON Schema keys. */
 export const t = {
   ...lmcc.t,
-  /** Text, integers, numbers or yes/no: `t.string()`, `t.integer()`, `t.number()`, `t.boolean()`. */
+  /** Text: `t.string()`; `t.string({ default: "kind" })` may be left out (and is typed so). */
+  string: <const E extends Extra = {}>(extra?: E): Built<E, string> => lmcc.t.string((extra ?? {}) as never) as never,
+  /** An integer; `t.integer({ default: 3 })` may be left out. */
+  integer: <const E extends Extra = {}>(extra?: E): Built<E, number> => lmcc.t.integer((extra ?? {}) as never) as never,
+  /** A number; `t.number({ default: 0.5 })` may be left out. */
+  number: <const E extends Extra = {}>(extra?: E): Built<E, number> => lmcc.t.number((extra ?? {}) as never) as never,
+  /** Yes or no; `t.boolean({ default: false })` may be left out. */
+  boolean: <const E extends Extra = {}>(extra?: E): Built<E, boolean> => lmcc.t.boolean((extra ?? {}) as never) as never,
   /** A map from text keys to values: `t.record(t.integer())`. */
   record: <V>(values: Shape<V>): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
   withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => ({ ...shape, default: value }) as Shape<T> & { readonly default: T },
-  /** Any JSON value (shape `{}`). */
-  json: (): Shape<Json> => ({}) as Shape<Json>,
+  /** Any JSON value (shape `{}`), with words about it if you like: `t.json({ description: "each input by name" })`. */
+  json: (extra: Extra = {}): Shape<Json> => ({ ...extra }) as Shape<Json>,
   /**
    * A module's field whose values may have no JSON form (a class instance, a
    * buffer, a data frame): never checked, written in the log as a
@@ -187,19 +200,41 @@ function fromZod(schema: JsonObject): JsonObject {
   return walk(schema) as JsonObject;
 }
 
-/** A field spec as `{shape, desc}`: a top-level `description` in the shape becomes the desc. */
-export function readField(spec: FieldSpec, where: string): { shape: JsonObject; desc: string | null } {
+/**
+ * A field spec as `{shape, desc}`: a top-level `description` in the shape
+ * becomes the desc. `field`: the interface field it declares (then a spec
+ * that is not a shape refuses `interface-malformed`, naming it).
+ */
+export function readField(spec: FieldSpec, where: string, field?: string): { shape: JsonObject; desc: string | null } {
   let desc: string | null = null;
   let raw: unknown = spec;
+  const refuse = (why: string): never => {
+    if (field !== undefined) throw new InterfaceError("interface-malformed", field, `${where}: ${why}`);
+    throw new TypeError(`${where}: ${why}`);
+  };
   if (isWrapper(spec)) {
+    if (spec.desc !== undefined && spec.desc !== null && typeof spec.desc !== "string") refuse("desc is text");
     desc = spec.desc ?? null;
     raw = spec.shape;
   }
   let shape: JsonObject;
   if (isStandard(raw)) shape = fromZod(raw["~standard"].jsonSchema!.input({ target: "draft-2020-12" }));
   else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
-  else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) shape = structuredClone(raw) as JsonObject;
-  else throw new TypeError(`${where}: expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${JSON.stringify(raw)}`);
+  else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+    try {
+      shape = structuredClone(raw) as JsonObject;
+    } catch {
+      return refuse("a shape is JSON Schema: plain data");
+    }
+  } else {
+    let shown: string;
+    try {
+      shown = JSON.stringify(raw) ?? String(raw);
+    } catch {
+      shown = typeof raw;
+    }
+    return refuse(`expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${shown}`);
+  }
   if (typeof shape["description"] === "string") {
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];
