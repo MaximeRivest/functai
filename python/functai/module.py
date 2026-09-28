@@ -171,7 +171,10 @@ class FunctAIModule:
         from . import interface as _interface
         iface = self._derive()
         given = self._given(args, kwargs)
-        own_defaults = [n for n, p in self._signature.parameters.items() if p.default is not inspect.Parameter.empty]
+        # Derived from the function, an input's shape default is its Python default as JSON: the code gets
+        # its own (native) default. Declared, the interface's default is the one that applies.
+        own_defaults = () if self._declared else [
+            n for n, p in self._signature.parameters.items() if p.default is not inspect.Parameter.empty]
         checked = _interface.bind_inputs(iface, given, program=self.__name__, has_default=own_defaults)
         if self._declared:
             out = self._invoke_original(**checked)

@@ -115,7 +115,7 @@ def test_a_declared_interface_is_the_whole_interface():
              "outputs": [{"name": "result", "shape": {"type": "string"}}]}
 
     @module(interface=iface)
-    def support(message, tone):
+    def support(message, tone="curt"):         # declared: the interface's default applies, not the code's
         return f"{tone}: {message}"
 
     assert support.interface == iface
