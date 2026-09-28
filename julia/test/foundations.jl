@@ -76,7 +76,7 @@ end
     @program outputs = (team = String, minutes = Int) function sort_ticket(ticket::String)
         (team = "billing", minutes = 5.0)
     end
-    @test sort_ticket("x") == (team = "billing", minutes = 5.0)          # 5.0 is an integer (programs.md)
+    @test sort_ticket("x") === (team = "billing", minutes = 5)           # 5.0 is an integer (programs.md), returned as the Int declared
     @program outputs = (team = String, minutes = Int) function chatty(ticket::String)
         (team = "billing", minutes = 5, note = "extra")
     end
@@ -96,6 +96,7 @@ end
     with_settings(log_calls=dir, log_content=Dict("*" => false), observers=[e -> push!(seen, e)]) do
         @test_throws InterfaceError p(; text="a", secret="b")
     end
+    @test FunctAI.drain()
     rec = only(first(FunctAI.read_log(dir)))
     @test rec["error"]["code"] == "interface-input" && !haskey(rec, "inputs") && rec["sizes"]["inputs"] == Dict("text" => 3)
     @test [e.kind for e in seen] == [:started, :failed]
@@ -150,13 +151,18 @@ end
     with_settings(observers=[e -> push!(host, e)]) do
         using_fake(() -> f("secret review"), fake(xml(:result => "happy")))
     end
+    @test FunctAI.drain()                                                      # observers get events on tasks of their own
     @test [e.kind for e in seen] == [e.kind for e in host] == [:started, :request, :done]
     @test seen[1].content == false && !haskey(seen[1], "inputs") && seen[1].omitted["inputs"] == ["review"]
     @test seen[end].content == false && !haskey(seen[end], "value")
     @test seen[2].after == FunctAI.Position(seen[1])                           # each observer's own chain
     # a failing observer is given no more events, with one warning; the call goes on
     boom = e -> error("down")
-    @test (@test_logs (:warn, r"observer failed") match_mode = :any using_fake(() -> mood("x"), fake(xml(:result => "happy")); observers=[boom])) === happy
+    @test (@test_logs (:warn, r"observer .* failed") match_mode = :any begin
+        v = using_fake(() -> mood("x"), fake(xml(:result => "happy")); observers=[boom])
+        FunctAI.drain()
+        v
+    end) === happy
 end
 
 @testset "a required journal: barriers, and an end it does not confirm" begin

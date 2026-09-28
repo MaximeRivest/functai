@@ -151,6 +151,16 @@ mood("Broke after a day.")        # unhappy
 df.mood = mood.(df.review)        # the column, 8 calls at a time
 ```
 
+An input with a default may be left out: `tone::String = "kind"`. The
+default is written in the function's [`interface`](@ref) and sent to the
+model whenever the input is left out, so it is data, the same for every
+call: a literal (`"kind"`, `3`, `String[]`, `(a = 1,)`) or a constant
+(`const TONE = "kind"`, an `@enum` value). A default that uses another
+input, or is computed (`at::Float64 = time()`), is refused when the
+function is defined, rather than computed once then and shared by every
+call (unlike Julia, which runs a default on each call); give such a value
+at each call. Each call gets its own copy of the default.
+
 With several outputs, calling returns them all as a `NamedTuple`
 (`(; summary, minutes) = triage(ticket)`). With code after the outputs, that
 code runs on them, and its value is what calling returns:
@@ -232,8 +242,9 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
 
     # the inputs, positional then keyword, as Julia binds them. An input with a
     # default may be left out: the binder leaves it out, and the call takes the
-    # default from the interface (evaluated once, here: it is data, written in
-    # the interface and sent to the model; contract/programs.md)
+    # default from the interface. The default is data (written in the interface
+    # and sent to the model; contract/programs.md), so it is a literal or a
+    # constant, known when the function is defined; each call gets a copy.
     given = NOTHING_GIVEN
     params = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if !x.keyword]
     kwparams = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if x.keyword]
@@ -248,7 +259,7 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
         push!(assigns, :($(x.name) = haskey($row, $col) ? $row[$col] : $absent))
     end
     from_row = Expr(:->, row, Expr(:block, assigns..., dict))
-    defaults = Expr(:tuple, (Expr(:(=), x.name, :($(default_now)(() -> $(x.default), $(String(name)), $(String(x.name)))))
+    defaults = Expr(:tuple, (Expr(:(=), x.name, ai_default(mod, x.default, input_names, String(name), String(x.name)))
                              for x in inputs if x.has_default)...)
 
     body_fn = nothing
@@ -289,15 +300,86 @@ guidance_spec(type, desc) = desc === nothing || isempty(desc) ? type : :($type =
 "The inputs a call gave, by name (an input left out is not there)."
 given_inputs(pairs::Pair...) = OrderedDict{String,Any}(k => v for (k, v) in pairs if v !== NOTHING_GIVEN)
 
-"An input's default, evaluated when the function is defined (it is data: written in the interface, sent when left out)."
-function default_now(thunk, fname, input)
-    try
-        thunk()
-    catch err
-        err isa UndefVarError || rethrow()
-        throw(ArgumentError("@ai $fname: the default of $input is sent to the model when $input is left out, so it is a " *
-                            "value known when the function is defined; it cannot use $(err.var) (another input?)"))
+# ------------------------------------------------------------------ defaults that are data
+
+"Whether an expression names one of `names` (a quoted symbol, `:x`, names nothing)."
+mentions(x, names) = x isa Symbol ? String(x) in names :
+                     x isa Expr ? x.head !== :quote && any(a -> mentions(a, names), x.args) : false
+
+"""
+A literal default: a number, text, a Bool, `nothing`, a quoted symbol, and
+lists, tuples, named tuples, typed vectors (`String[]`) and `Dict`s of them.
+"""
+function is_literal(x)
+    x isa Union{Number,AbstractString} && return true
+    x === :nothing && return true
+    x isa QuoteNode && return x.value isa Symbol
+    x isa Expr || return false
+    named(a) = a isa Expr && a.head === :(=) && a.args[1] isa Symbol && is_literal(a.args[2])
+    x.head === :vect && return all(is_literal, x.args)
+    x.head === :tuple && return all(a -> is_literal(a) || named(a), x.args)
+    x.head === :parameters && return all(a -> named(a) || (a isa Expr && a.head === :kw && is_literal(a.args[2])), x.args)
+    x.head === :ref && return !isempty(x.args) && x.args[1] isa Symbol && all(is_literal, x.args[2:end])
+    pair(a) = a isa Expr && a.head === :call && a.args[1] === :(=>) && length(a.args) == 3 && is_literal(a.args[2]) && is_literal(a.args[3])
+    x.head === :call && x.args[1] === :Dict && return all(pair, x.args[2:end])
+    false
+end
+
+"A name, or a dotted path of names (`TONE`, `Settings.TONE`): what may be a constant."
+is_name_path(x) = x isa Symbol || (x isa Expr && x.head === :. && length(x.args) == 2 && is_name_path(x.args[1]) &&
+                                   x.args[2] isa QuoteNode && x.args[2].value isa Symbol)
+
+"The value of a constant named by a name path in `mod`, or `NOTHING_GIVEN` when it is not a constant."
+function constant_value(mod::Module, x)
+    owner, name = if x isa Symbol
+        (mod, x)
+    else
+        m = constant_value(mod, x.args[1])
+        m isa Module || return NOTHING_GIVEN
+        (m, x.args[2].value)
     end
+    isdefined(owner, name) && isconst(owner, name) ? getfield(owner, name) : NOTHING_GIVEN
+end
+
+"""
+A `@program` argument's default as the interface writes it, when it is data
+(a literal, or a constant, and no other argument): the expression that
+gives it when the program is defined, else `NOTHING_GIVEN` (it is Julia code,
+run on each call, and the input is optional with no default in its shape).
+"""
+function default_data(mod::Module, default, arg_names)
+    mentions(default, arg_names) && return NOTHING_GIVEN
+    is_literal(default) && return default
+    is_name_path(default) && return :($(constant_value)($mod, $(QuoteNode(default))))
+    NOTHING_GIVEN
+end
+
+"""
+An `@ai` input's default, as the expression that gives it when the function
+is defined: it is written in the interface and sent to the model whenever
+the input is left out, so it is data, the same for every call: a literal or
+a constant. Anything else is refused when the function is defined, rather
+than computed once and silently shared (`time()` would be the definition's
+time on every call).
+"""
+function ai_default(mod::Module, default, input_names, fname, input)
+    if mentions(default, input_names)
+        used = join(sort!([n for n in input_names if mentions(default, [n])]), ", ")
+        return :(throw(ArgumentError($("@ai $fname: the default of $input uses $used, another input. A default is data, " *
+                                        "sent to the model whenever $input is left out: write a literal or a constant, or give $input at each call"))))
+    end
+    is_literal(default) && return default
+    is_name_path(default) && return :($(ai_constant)($mod, $(QuoteNode(default)), $fname, $input))
+    :(throw(ArgumentError($("@ai $fname: the default of $input ($(default)) is computed. A default is data, written in the " *
+                            "function's interface and sent to the model whenever $input is left out, the same for every call: " *
+                            "write a literal or a constant (const X = …), or leave the default out and give $input at each call"))))
+end
+
+function ai_constant(mod::Module, x, fname, input)
+    v = constant_value(mod, x)
+    v === NOTHING_GIVEN && throw(ArgumentError("@ai $fname: the default of $input ($x) is not a constant. A default is data, " *
+        "sent to the model whenever $input is left out, the same for every call: make it one (const $x = …), or write a literal"))
+    v
 end
 
 "The @ai macro's constructor: checks what only evaluated types can say, then makes the function."

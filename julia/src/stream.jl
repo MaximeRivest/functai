@@ -41,7 +41,7 @@ end
 "An event of the tree: the stream takes it when it is about its call or a call inside it."
 function offer!(s::AIStream, e::Event)
     mine = e.call in s.calls
-    if !mine && e.kind === :started && get(e.data, "parent", nothing) in s.calls
+    if !mine && e.kind === :started && datum(e, "parent") in s.calls
         push!(s.calls, e.call)
         mine = true
     end
@@ -50,9 +50,9 @@ function offer!(s::AIStream, e::Event)
         linked = relinked(e, s.last)
         s.last = Position(linked)
         if e.call == s.outer
-            e.kind === :started && (s.answer = e.data["program"]["answer"])
+            e.kind === :started && (s.answer = datum(e, "program")["answer"])
             e.kind in (:request, :retry) && (s.answer_text = "")          # law 3
-            e.kind === :text && e.data["answer"] === true && (s.answer_text *= e.data["text"])
+            e.kind === :text && datum(e, "answer") === true && (s.answer_text *= datum(e, "text"))
         end
         push!(s.log, linked)
         notify(s.cond)

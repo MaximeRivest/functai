@@ -31,12 +31,42 @@ struct AIProgram <: Function
     file::Union{Nothing,String}
     line::Union{Nothing,Int}
     interface::JObj
-    defaults::Dict{String,Any}      # native values of the defaults written in the interface
+    own_defaults::Bool              # its code has its own defaults (@program): it gets only the inputs given
     returns::Any                    # the declared return type, or nothing
+    output_types::Dict{String,Any}  # the declared type of each of several outputs
 end
 Base.nameof(p::AIProgram) = Symbol(p.name)
 Base.show(io::IO, p::AIProgram) = print(io, "program ", p.name, "(", join((f["name"] for f in p.interface["inputs"]), ", "), ") (", p.module_name, ")")
 (p::AIProgram)(args...; kw...) = run_program(p, p.binder(args...; kw...))
+
+"""
+The inputs a call gave, by name: positional arguments in the order of
+`positional`, keywords by their names (any input may be given by name, as
+a call from data gives them). What the interface cannot take is kept to be
+refused as the call's own error: arguments beyond the positional ones, and
+an input given twice.
+"""
+function bind_named(positional::Vector{String}, args, kw)
+    given = OrderedDict{String,Any}()
+    for (i, a) in enumerate(args)
+        i <= length(positional) && (given[positional[i]] = a)
+    end
+    twice = String[]
+    for (k, v) in kw
+        key = String(k)
+        haskey(given, key) && push!(twice, key)
+        given[key] = v
+    end
+    (given=given, extra=max(0, length(args) - length(positional)), twice=sort!(twice), positional=positional)
+end
+
+"The refusal of what a call gave that binds to no input (programs.md: `interface-input`), or `nothing`."
+function binding_refusal(p::AIProgram, bound)
+    isempty(bound.twice) || return InterfaceError("interface-input", bound.twice[1], "$(bound.twice[1]) was given twice (by position and by name)")
+    bound.extra > 0 && return InterfaceError("interface-input", nothing,
+        "$(p.name) takes $(length(bound.positional)) input(s) by position ($(join(bound.positional, ", "))), not $(length(bound.positional) + bound.extra)")
+    nothing
+end
 
 interface(p::AIProgram) = p.interface
 interface_signature(p::AIProgram) = interface_signature(p.interface)
@@ -96,34 +126,71 @@ end
 """
 Run a program as one call: its inputs checked (and optional ones left out
 given their defaults), its code, what it returned checked; logged and
-watched, with the AI calls inside it as its children.
+watched, with the AI calls inside it as its children. A call its interface
+refuses is a call too: it starts, fails with the `InterfaceError`, and is
+recorded (with only the inputs the interface names); its code does not run.
 """
-function run_program(p::AIProgram, given::AbstractDict)
+function run_program(p::AIProgram, bound)
     s = effective(Dict{Symbol,Any}())
     names = [f["name"] for f in p.interface["inputs"]]
     fields = (inputs=names, outputs=[f["name"] for f in p.interface["outputs"]], added=String[])
+    refusal = binding_refusal(p, bound)
+    checked = nothing
+    if refusal === nothing
+        try
+            checked = check_inputs(p.interface, bound.given)
+        catch err
+            err isa InterfaceError || rethrow()
+            refusal = err
+        end
+    end
     # the record names the inputs as the interface does: the values given, and defaults taken
     # (a call refused for an input the interface lacks did not receive it)
-    logged = try
-        check_inputs(p.interface, given; defaults=p.defaults)
-    catch err
-        err isa InterfaceError || rethrow()
-        OrderedDict{String,Any}(String(k) => v for (k, v) in given if String(k) in names)
-    end
+    logged = checked !== nothing ? checked : OrderedDict{String,Any}(k => v for (k, v) in bound.given if k in names)
     call = start_call(program_of(p), p.name, s, Dict{Symbol,Any}(), logged, fields)
     run_call(call) do call
-        inputs = check_inputs(p.interface, given; defaults=p.defaults)
-        value = p.run(inputs)
-        if p.returns !== nothing && !(value isa p.returns)
-            value = try
-                convert(p.returns, value)            # as a Julia function's return type converts
-            catch
-                value                                # and the interface says why it does not fit
-            end
-        end
+        refusal === nothing || throw(refusal)
+        # @program's code takes its own defaults, made anew on each call as Julia makes them; a program
+        # from data gets the interface's (a copy each call)
+        inputs = p.own_defaults ? OrderedDict{String,Any}(k => v for (k, v) in checked if haskey(bound.given, k)) : checked
+        value = as_declared(p, p.run(inputs))
         call.outputs = check_returned(p.interface, value)
         value
     end
+end
+
+"A value as a declared type: itself, converted, or read from its JSON form; else as it is (the interface says why it does not fit)."
+function as_output(T, v)
+    (T isa Type && !(v isa T)) || return v
+    try
+        return convert(T, v)
+    catch
+    end
+    data = json_form(v)
+    if data !== NOJSON
+        try
+            return fromjson(T, data, "")
+        catch
+        end
+    end
+    v
+end
+
+"What the code returned, as its declaration types it (as a Julia function's return type converts): one output, or each of several."
+function as_declared(p::AIProgram, value)
+    p.returns !== nothing && return as_output(p.returns, value)
+    isempty(p.output_types) && return value
+    if value isa NamedTuple
+        ks = keys(value)
+        return NamedTuple{ks}(Tuple(as_output(get(p.output_types, String(k), nothing), value[k]) for k in ks))
+    elseif value isa AbstractDict
+        out = empty(value, keytype(value), Any)
+        for (k, v) in value
+            out[k] = as_output(get(p.output_types, string(k), nothing), v)
+        end
+        return out
+    end
+    value
 end
 
 # ------------------------------------------------------------------ an interface from Julia's declarations
@@ -156,13 +223,14 @@ end
 """
 The interface `@program` declares (contract/programs.md, "How each program
 has one"): each argument an input (untyped, `Any`, or a type with no JSON
-form: opaque); an argument with a default is optional, and a default
-written as a literal is in its shape (any other default is Julia code, run
-on each call: the input stays left out); the return type is one output,
-`result`, or `outputs = (name = T, …)` declares several.
+form: opaque); an argument with a default is optional, and a default that
+is data (a literal, or a constant: the rule `@ai` keeps) is in its shape;
+any other default is Julia code, and the input stays left out. The code
+always makes its defaults anew on each call, as Julia does. The return type
+is one output, `result`, or `outputs = (name = T, …)` declares several.
 """
-function define_program(name, mod, module_name, code, body, file, line; description, inputs, outputs, returns, binder, run)
-    ins = Any[declared_field(n, T; optional=has_default, default=literal) for (n, T, has_default, literal) in inputs]
+function define_program(name, mod, module_name, code, body, file, line; description, inputs, outputs, returns, positional, run)
+    ins = Any[declared_field(n, T; optional=has_default, default=data) for (n, T, has_default, data) in inputs]
     outs = if outputs !== nothing
         Any[declared_field(n, T) for (n, T) in pairs(outputs)]
     else
@@ -170,9 +238,10 @@ function define_program(name, mod, module_name, code, body, file, line; descript
     end
     iface = LMCC.jobj("description" => description, "inputs" => ins, "outputs" => outs)
     check_interface(iface; what="@program $name")
-    defaults = Dict{String,Any}(n => literal for (n, T, has_default, literal) in inputs
-                                if literal !== NOTHING_GIVEN && haskey(iface["inputs"][findfirst(f -> f["name"] == n, iface["inputs"])]["shape"], "default"))
-    AIProgram(name, mod, module_name, run, binder, code, body, file, line, iface, defaults, outputs === nothing ? returns : nothing)
+    order = String[positional...]
+    binder = (args...; kw...) -> bind_named(order, args, kw)
+    types = outputs === nothing ? Dict{String,Any}() : Dict{String,Any}(String(n) => T for (n, T) in pairs(outputs))
+    AIProgram(name, mod, module_name, run, binder, code, body, file, line, iface, true, outputs === nothing ? returns : nothing, types)
 end
 
 """
@@ -187,18 +256,11 @@ positional arguments in the interface's order, or keywords.
 function AIProgram(name::AbstractString, code; interface::AbstractDict, module_name::AbstractString="__main__")
     iface = LMCC.deepcopy_json(interface)
     check_interface(iface; what="program $name")
-    names = [f["name"] for f in iface["inputs"]]
-    binder = (args...; kw...) -> begin
-        length(args) <= length(names) || throw(InterfaceError("interface-input", nothing, "$name takes $(length(names)) input(s), not $(length(args))"))
-        out = OrderedDict{String,Any}(names[i] => a for (i, a) in enumerate(args))
-        for (k, v) in kw
-            out[String(k)] = v
-        end
-        out
-    end
+    names = String[f["name"] for f in iface["inputs"]]
+    binder = (args...; kw...) -> bind_named(names, args, kw)
     run = inputs -> code(; (Symbol(k) => v for (k, v) in inputs)...)
     code_hash = LMCC.sha256_of(LMCC.jobj("program" => String(name), "code" => string(code)))
-    AIProgram(String(name), nothing, String(module_name), run, binder, code_hash, nothing, nothing, nothing, iface, Dict{String,Any}(), nothing)
+    AIProgram(String(name), nothing, String(module_name), run, binder, code_hash, nothing, nothing, nothing, iface, false, nothing, Dict{String,Any}())
 end
 
 "A value given to a typed argument, as that type: itself, converted, or read from its JSON form."
@@ -218,9 +280,6 @@ function as_input(::Type{T}, v, name) where {T}
     throw(InterfaceError("interface-input", name, "$name: a $(typeof(v)) is not a $T"))
 end
 
-"A literal default (a number, text, a Bool, nothing, a symbol, and lists or tuples of them): data, the same on every call."
-is_literal(x) = x isa Union{Number,AbstractString,Bool} || x === :nothing || x isa QuoteNode ||
-                (x isa Expr && x.head in (:vect, :tuple) && all(is_literal, x.args))
 
 """
     @program [outputs = (name = T, …)] function name(args...; kw...)::T
@@ -236,11 +295,20 @@ of it shows them all. Broadcasting it (`support.(tickets)`) runs the rows
 Its [`interface`](@ref) is read from the declaration (contract/programs.md):
 each argument is an input, typed by its Julia type (an untyped argument,
 `Any`, or a type with no JSON form is opaque: never checked); an argument
-with a default may be left out; the return type is its one output,
-`result` (none: opaque), or `outputs = (summary = String, minutes = Int)`
-declares several, returned as a `NamedTuple` or `Dict`. Every call checks
-its inputs before the code runs and its outputs when it returns
-(`InterfaceError`). The first string of the body is its description.
+with a default may be left out (a default that is data, a literal or a
+constant, is written in the interface; the code makes its defaults anew on
+each call, as Julia does); the return type is its one output, `result`
+(none: opaque), or `outputs = (summary = String, minutes = Int)` declares
+several, returned as a `NamedTuple` or `Dict` and converted to the declared
+types. Arguments are given by position, as declared, or any of them by name.
+Every call checks its inputs before the code runs and its outputs when it
+returns (`InterfaceError`, naming the field): a refused call is still a call
+(its events, its record), and its code does not run. The first string of
+the body is its description.
+
+A call made inside it, even on a task it starts, is a step of it: its call
+ends once they all have. Start work meant to outlive it with
+[`FunctAI.detached`](@ref).
 """
 macro program(args...)
     isempty(args) && throw(ArgumentError("@program needs a function: @program function name(x::String) … end"))
@@ -282,11 +350,8 @@ macro program(args...)
     stmts = statements(body)
     description = !isempty(stmts) && stmts[1] isa AbstractString ? String(stmts[1]) : ""
     given = NOTHING_GIVEN
-    params = Any[p[4] ? Expr(:kw, p[1], given) : p[1] for p in parsed if !p[5]]
-    kwparams = Any[p[4] ? Expr(:kw, p[1], given) : p[1] for p in parsed if p[5]]
-    dict = :($(given_inputs)($((:($(String(p[1])) => $(p[1])) for p in parsed)...)))
-    binder = isempty(kwparams) ? Expr(:->, Expr(:tuple, params...), dict) :
-             Expr(:->, Expr(:tuple, Expr(:parameters, kwparams...), params...), dict)
+    arg_names = [String(p[1]) for p in parsed]
+    positional = [String(p[1]) for p in parsed if !p[5]]
     ins = gensym(:inputs)
     binds = Any[]
     for (n, T, default, has_default, _) in parsed
@@ -295,8 +360,9 @@ macro program(args...)
         push!(binds, has_default ? :($n = haskey($ins, $key) ? $value : $default) : :($n = $value))
     end
     run = Expr(:->, ins, Expr(:let, Expr(:block), Expr(:block, binds..., body)))
+    # a default that is data (a literal, or a constant, and no other input) is in the interface
     input_specs = Expr(:vect, (Expr(:tuple, String(n), T === nothing ? nothing : T, has_default,
-                                    has_default && is_literal(default) ? default : given)
+                                    has_default ? default_data(__module__, default, arg_names) : given)
                                for (n, T, default, has_default, _) in parsed)...)
     code = LMCC.sha256_of(code_data(Base.remove_linenums!(deepcopy(fexpr))))
     mname = __module__ === Main ? "__main__" : join(string.(fullname(__module__)), ".")
@@ -304,7 +370,7 @@ macro program(args...)
     file = __source__.file === nothing ? nothing : String(__source__.file)
     esc(:($name = $(define_program)($(String(name)), $__module__, $mname, $code, $body_q, $file, $(__source__.line);
                                     description=$description, inputs=$input_specs, outputs=$outputs, returns=$ret,
-                                    binder=$binder, run=$run)))
+                                    positional=$positional, run=$run)))
 end
 
 Base.Broadcast.broadcasted(p::AIProgram, args...) = (t = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...));

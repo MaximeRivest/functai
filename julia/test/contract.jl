@@ -62,7 +62,8 @@ end
 @testset "the contract" begin
 
 @testset "the contract's data in data/contract is the contract's" begin
-    for f in ["layouts/xml.json", "layouts/chat.json", "layouts/json.json", "models.json", "unicode/casefold.json"]
+    for f in ["layouts/xml.json", "layouts/chat.json", "layouts/json.json", "models.json", "unicode/casefold.json",
+              ("schema/$n.schema.json" for n in FunctAI.SCHEMA_NAMES)...]
         @test read(joinpath(FunctAI.CONTRACT_DATA, f), String) == read(joinpath(CONTRACT, f), String)
     end
 end
@@ -88,6 +89,28 @@ end
     @test model_capabilities("groq", "x").native_function_calling
     @test !model_capabilities("ollama", "x").native_function_calling
     @test model_capabilities("typesafe", "x") == (native_structured_output = true,)
+end
+
+"""
+Call an AI function as a user does (keywords by name), where the probe facts
+hold (contract/calls.md, "Versions"): on a fake model named `probe` with the
+probe's capabilities (contract/models.json), and without the function's own
+model and sampling settings (where a version runs is not part of what it
+sends). The request it sent, and the record it wrote. Its reply is not read
+(the call fails): what it sent and what it was called with are observed.
+"""
+function call_under_probe(f, inputs)
+    router = FakeRouter(Any["(no answer)"]; provider="probe")
+    dir = mktempdir()
+    g = configure(f; lm="probe", temperature=nothing, top_p=nothing, max_tokens=nothing, seed=nothing, stop=nothing, config=nothing)
+    try
+        with_settings(router=router, capabilities=Dict{String,Any}(FunctAI.PROBE), retries=0, log_calls=dir) do
+            g(; (Symbol(k) => v for (k, v) in inputs)...)
+        end
+    catch err
+        err isa LMCC.Refusal || rethrow()
+    end
+    (request=only(router.requests), record=only(first(FunctAI.read_log(dir))))
 end
 
 "A contract definition, written the way a Julia user writes it without the macro (an optional input: `defaults`)."
@@ -118,7 +141,9 @@ end
     @test LMCC.canonical_json(without_type(FunctAI.signature(f))) ==
           LMCC.canonical_json(Dict("instructions" => want["instructions"],
                                    "fields" => [merge(Dict{String,Any}("purpose" => "plain"), x) for x in want["fields"]]))
-    request = FunctAI.probe_request(f, c["expect"]["sample"])
+    # the sample input is the function's own (calls.md, "Versions"), and so is the request rendered for it
+    @test same(FunctAI.sample_inputs(FunctAI.signature(f)), c["expect"]["sample"])
+    request = FunctAI.probe_request(f)
     @test LMCC.canonical_json(request) == LMCC.canonical_json(c["expect"]["request"])
     @test LMCC.sha256_of(request) == c["expect"]["request_hash"]
     @test version(f) == c["expect"]["version"]
@@ -163,10 +188,12 @@ end
         @test f.module_name == want["module"]
         @test version(f) == want["version"]
         @test signature_id(f) == want["signature_id"]
-        # called with an optional input left out, it sends its default (saved.md, step 5)
-        for s in get(c["expect"], "sends", Any[])
-            bound = FunctAI.bind_inputs(f, (), pairs((; (Symbol(k) => v for (k, v) in s["inputs"])...)))
-            @test FunctAI.request_hash(f, bound) == s["request_hash"]
+        probes = c["manifest"]["nodes"][something(node, c["manifest"]["entry"])]["ai"]["probes"]
+        @test [FunctAI.request_hash(f, p) for p in probes] == want["requests"]
+        # called with an optional input left out, it sends its default (saved.md, step 5): the request it sent
+        for x in get(c["expect"], "sends", Any[])
+            sent = call_under_probe(f, x["inputs"]).request
+            @test LMCC.sha256_of(LM15.to_dict(sent)) == x["request_hash"]
         end
     end
     # described without loading
@@ -193,8 +220,8 @@ end
             @test FunctAI.interface_signature(f) == c["expect"]["signature"]
             @test signature_id(f) == c["expect"]["signature_id"]
             for b in c["binds"]
-                bound = FunctAI.bind_inputs(f, (), pairs((; (Symbol(k) => v for (k, v) in b["inputs"])...)))
-                @test same(Dict("inputs" => bound), b["expect"])
+                # called with these inputs, the values it is called with: the ones its record holds
+                @test same(Dict("inputs" => call_under_probe(f, b["inputs"]).record["inputs"]), b["expect"])
             end
         end
     elseif kind == "module"
@@ -206,10 +233,19 @@ end
             else
                 returned[] = native(check["returned"]) isa Stand ? native(check["returned"]) :
                              check["returned"] isa AbstractDict ? Dict{String,Any}(k => native(v) for (k, v) in check["returned"]) : check["returned"]
-                err = refusal_of(() -> p(; (Symbol(k) => v for (k, v) in valid_inputs(c["interface"]))...))
-                outputs = c["interface"]["outputs"]
-                result = err === nothing ? Dict("outputs" => length(outputs) == 1 ? Dict(outputs[1]["name"] => back(returned[])) : back(returned[])) :
-                         err isa InterfaceError ? Dict("refuses" => err.code, "field" => err.field) : err
+                dir = mktempdir()
+                err = refusal_of(() -> with_settings(() -> p(; (Symbol(k) => v for (k, v) in valid_inputs(c["interface"]))...); log_calls=dir))
+                # the outputs the program gave: its record's (a value with no JSON form is written as a description:
+                # the harness's own stand-in, read back as the case's)
+                rec = only(first(FunctAI.read_log(dir)))
+                result = if err === nothing
+                    stands = Dict(k => v for (k, v) in (returned[] isa AbstractDict ? returned[] : Dict(only(c["interface"]["outputs"])["name"] => returned[])))
+                    described = get(get(rec, "described", Dict()), "outputs", Any[])
+                    Dict("outputs" => Dict(k => (k in described ? back(stands[k]) : v) for (k, v) in rec["outputs"]))
+                else
+                    @test rec["outputs"] === nothing && rec["error"]["code"] == err.code
+                    err isa InterfaceError ? Dict("refuses" => err.code, "field" => err.field) : err
+                end
                 @test same(result, check["expect"])
             end
         end
@@ -222,7 +258,8 @@ end
             @test same(got, x["expect"])
             if !ai              # a module defined with it is refused, or defined, the same way
                 err = refusal_of(() -> AIProgram("m", (; kw...) -> nothing; interface=x["interface"]))
-                @test haskey(x["expect"], "refuses") ? err isa InterfaceError && err.field == x["expect"]["field"] : err === nothing
+                @test haskey(x["expect"], "refuses") ?
+                      err isa InterfaceError && err.code == x["expect"]["refuses"] && err.field == x["expect"]["field"] : err === nothing
             end
         end
     elseif kind == "same-data"

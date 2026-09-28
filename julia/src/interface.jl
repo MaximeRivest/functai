@@ -268,15 +268,16 @@ interface_signature(iface::AbstractDict) = LMCC.sha256_of(Any[
               "shape" => data_shape(f["shape"]), "type" => "") for d in ("inputs", "outputs") for f in iface[d]])
 
 """
-    check_inputs(interface, given; defaults) -> OrderedDict
+    check_inputs(interface, given) -> OrderedDict
 
-The inputs a program's code gets (programs.md, "Checking values", 1): every
+The inputs a program's call has (programs.md, "Checking values", 1): every
 input given is one the interface has, fits, and a required one is there; an
-optional input left out takes its shape's `default` (`defaults` gives the
-program's own native value for it), and otherwise stays left out. Throws
-`InterfaceError` `interface-input`, naming the input.
+optional input left out takes its shape's `default` (a copy of it), and
+otherwise stays left out. Throws `InterfaceError` `interface-input`, naming
+the input; its message says what the value is (its kind, its size), never
+the value: an error's message goes where the input's value may not.
 """
-function check_inputs(iface::AbstractDict, given::AbstractDict; defaults::AbstractDict=Dict{String,Any}())
+function check_inputs(iface::AbstractDict, given::AbstractDict)
     names = [f["name"] for f in iface["inputs"]]
     unknown = sort!([String(k) for k in keys(given) if !(String(k) in names)])
     isempty(unknown) || throw(InterfaceError("interface-input", unknown[1], "it takes no input $(unknown[1]); its inputs: $(join(names, ", "))"))
@@ -289,8 +290,6 @@ function check_inputs(iface::AbstractDict, given::AbstractDict; defaults::Abstra
             out[name] = v
         elseif get(f, "optional", false) !== true
             throw(InterfaceError("interface-input", name, "no value for $name"))
-        elseif haskey(defaults, name)
-            out[name] = defaults[name]
         elseif haskey(f["shape"], "default")
             out[name] = LMCC.deepcopy_json(f["shape"]["default"])
         end                                           # else left out: the program's own default applies
@@ -302,8 +301,10 @@ end
     check_returned(interface, value) -> OrderedDict
 
 A program's outputs by name, from what its code returned (programs.md,
-"Checking values", 2): the value when it has one output; a record holding
-each output by name, and nothing else, when it has several. Throws
+"Checking values", 2): the value when it has one output; a record (a
+`NamedTuple` or a `Dict`) holding each output by name, and nothing else,
+when it has several. The record needs no JSON form of its own: each output
+is checked against its field (an opaque one is never checked). Throws
 `InterfaceError` `interface-output`, naming the field.
 """
 function check_returned(iface::AbstractDict, value)
@@ -312,7 +313,7 @@ function check_returned(iface::AbstractDict, value)
     values = if length(outputs) == 1
         OrderedDict{String,Any}(first_name => value)
     else
-        (value isa Union{NamedTuple,AbstractDict} && json_form(value) !== NOJSON) ||
+        value isa Union{NamedTuple,AbstractDict} ||
             throw(InterfaceError("interface-output", first_name, "it returned a $(typeof(value)), not a record of its outputs ($(join((f["name"] for f in outputs), ", ")))"))
         OrderedDict{String,Any}(string(k) => v for (k, v) in pairs(value))
     end
@@ -329,8 +330,12 @@ function check_returned(iface::AbstractDict, value)
     out
 end
 
+"Why a value does not fit a field, without the value: its kind and size, and the field's shape."
 function describe_misfit(v, f)
     data = json_form(v)
     data === NOJSON && return "a $(typeof(v)) has no JSON form, and the field is not opaque"
-    "$(first(LMCC.json_text(data), 200)) does not fit $(LMCC.json_text(data_shape(f["shape"])))"
+    "$(json_kind_text(data)) does not fit $(first(LMCC.json_text(data_shape(f["shape"])), 300))"
 end
+json_kind_text(d) = d === nothing ? "null" : d isa Bool ? "a boolean" : d isa Real ? (isinteger(d) ? "an integer" : "a number") :
+                    d isa AbstractString ? "a text of $(length(d)) characters" : d isa AbstractVector ? "a list of $(length(d)) items" :
+                    d isa AbstractDict ? "an object of $(length(d)) members" : "a value"

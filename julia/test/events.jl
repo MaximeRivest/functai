@@ -33,12 +33,15 @@ A journal whose transport follows a script (cases/README.md, `journal`):
 each send meets the script's next word; between sends, another writer may
 claim the log, or claim it and end it.
 """
-mutable struct ScriptedStore
+mutable struct ScriptedStore <: FunctAI.EventStore
     store::FunctAI.MemoryStore
     script::Vector{Any}
     trace::Vector{Any}
 end
 struct Unreachable <: Exception end
+# reading is never fenced, and takes no send: the caller settles by reading the journal itself
+FunctAI.events_after(j::ScriptedStore, tree, after) = FunctAI.events_after(j.store, tree, after)
+FunctAI.claim!(j::ScriptedStore, tree) = FunctAI.claim!(j.store, tree)
 
 function next_word!(j::ScriptedStore, tree)
     while true
@@ -85,53 +88,75 @@ function FunctAI.keep!(j::ScriptedStore, e::Event)
     Symbol(answer)
 end
 
+"An error of the type a case names (a provider's, say), with its message."
+struct CaseError <: Exception
+    type::String
+    msg::String
+end
+FunctAI.error_type(e::CaseError) = e.type
+
+"A case's time as seconds since the epoch (the clock its call is numbered by)."
+case_seconds(at) = FunctAI.Dates.datetime2unix(FunctAI.Dates.DateTime(at[1:23])) + parse(Int, at[24:26]) / 1e6
+
 """
 A writer keeping one AI function's log (the case's events: the tree's only
-call) in a journal that fails: the call's steps as a call makes them, its
-barriers, its end, what the caller gets and what its record says.
+call) in a journal that fails, through the engine: the call starts, runs
+and ends as every call does (`run_call`: the start barrier, the outcome
+decided before the journal is asked, the end withheld and confirmed, the
+record, the caller's error), and its code makes the case's events between
+its start and its end, a tool call through the engine's own barrier
+(`tool_called!`). Only the call's id and clock are the case's (`SCRIPTED`),
+so its events are the case's, byte for byte.
 """
 function run_journal_case(c)
     required = c["mode"] == "required"
     events = [Event(e) for e in c["events"]]
-    tree = events[1].tree
+    start, outcome = events[1], events[end]
+    tree = start.tree
     j = ScriptedStore(FunctAI.MemoryStore(), Any[c["script"]...], Any[])
-    w = FunctAI.LogWriter(FunctAI.Journal(j; required, retries=c["retries"]), tree)
-    made, shown = Event[], Int[]
-    outcome = nothing
-    for (i, e) in enumerate(events)
-        if e.call == tree && e.kind in (:done, :failed)
-            outcome = e
-            break
+    journal = FunctAI.Journal(j; required, retries=c["retries"])
+    times = Dict(e.seq => case_seconds(e.at) for e in events)
+    made = Event[]
+    dir = mktempdir()
+    program = start.program
+    inputs = start.inputs
+    fields = (inputs=collect(keys(inputs)), outputs=[program["answer"]], added=String[])
+    body = call -> begin
+        for e in events[2:end-1]
+            data = FunctAI.LMCC.JObj(k => getproperty(e, Symbol(k)) for k in keys(getfield(e, :data)))
+            e.kind === :tool_call ? FunctAI.tool_called!(call, data) : FunctAI.emit!(call, e.kind, data)
         end
-        push!(made, e)
-        push!(shown, e.seq)
-        push!(w, e)
-        if required && (i == 1 || e.kind === :tool_call) && FunctAI.confirmation(w) !== :confirmed
-            # the barrier is not passed: the call stops, its outcome JournalError journal-barrier
-            err = FunctAI.barrier_error(e)
-            seq = e.seq + 1
-            at = "2026-09-28T10:00:$(lpad(seq ÷ 100, 2, '0')).$(lpad((seq % 100) * 10000, 6, '0'))Z"
-            outcome = Event(:failed, tree, e.writer, seq, Position(e), at, tree, e.function,
-                            FunctAI.LMCC.jobj("error" => FunctAI.error_json(err, true)))
-            break
+        outcome.kind === :done ? outcome.value : throw(CaseError(outcome.error["type"], outcome.error["message"]))
+    end
+    s = with_settings(journal=journal, log_calls=dir) do
+        FunctAI.with(FunctAI.SCRIPTED => (id=tree, clock=seq -> times[seq], tap=made)) do
+            FunctAI.start_stream(() -> begin
+                call = FunctAI.start_call(program, start.function, FunctAI.effective(Dict{Symbol,Any}()), Dict{Symbol,Any}(), inputs, fields)
+                FunctAI.run_call(body, call)
+            end)
         end
     end
-    push!(made, outcome)
-    push!(w, outcome)
-    status = FunctAI.confirmation(w)
-    close(w)
-    (!required || status === :confirmed) && push!(shown, outcome.seq)
-    error = outcome.kind === :done ? nothing : Dict(k => v for (k, v) in outcome.error if k != "message")
-    record = Dict{String,Any}("error" => error)
+    raised = try
+        fetch(s)
+        nothing
+    catch e
+        e
+    end
+    @test FunctAI.drain(10)                     # a best-effort writer may still be sending when the call has returned
+    shown = [e.seq for e in eachevent(s)]
+    rec = only(first(FunctAI.read_log(dir)))
+    record = Dict{String,Any}("error" => rec["error"] === nothing ? nothing : Dict(k => v for (k, v) in rec["error"] if k != "message"))
+    haskey(rec, "journal") && (record["journal"] = rec["journal"])
     settled = nothing
-    caller = if required && status !== :confirmed
-        err = FunctAI.end_error(status, outcome, outcome.kind === :done ? (done=outcome.value,) : (failed=error,))
-        record["journal"] = err.journal
-        err.journal == "unknown" && (settled = String(FunctAI.settle(j.store, tree, err.event)))
-        Dict("raises" => Dict("type" => "JournalError", "code" => err.code, "journal" => err.journal,
-                              "event" => pos_json(err.event), "outcome" => Dict(String(k) => v for (k, v) in pairs(err.outcome))))
+    caller = if raised isa JournalError && raised.code == "journal-end"
+        raised.journal == "unknown" && (settled = String(FunctAI.settle(raised)))
+        out = haskey(raised.outcome, :done) ? Dict("done" => raised.outcome.done) : Dict("failed" => FunctAI.error_json(raised.outcome.failed, false))
+        Dict("raises" => Dict("type" => "JournalError", "code" => raised.code, "journal" => raised.journal,
+                              "event" => pos_json(raised.event), "outcome" => out))
+    elseif raised === nothing
+        Dict("returns" => outcome.value)
     else
-        outcome.kind === :done ? Dict("returns" => outcome.value) : Dict("raises" => error)
+        Dict("raises" => FunctAI.error_json(raised, false))
     end
     kept = tree in FunctAI.trees(j.store) ? FunctAI.events_after(j.store, tree, nothing) : Event[]
     got = Dict{String,Any}("log" => Any[event_json(e) for e in made], "trace" => j.trace, "shown" => shown,
@@ -195,15 +220,13 @@ function run_receivers_scenario(scenario)
             else
                 @test err === nothing
             end
+            @test FunctAI.drain(10)                       # observers get events on their own tasks
             for n in want["observers"]
                 kinds = [e.kind for e in seen[n]]
                 @test kinds[1] === :started && kinds[end] === (haskey(want, "refuses") ? :failed : :done)
             end
             for (n, store) in stores
-                # a best-effort journal never makes the call wait: its writer may still be sending
-                eventually(() -> !(want["journal"] !== nothing && want["journal"]["name"] == n) ||
-                                 (length(FunctAI.trees(store)) == 1 && FunctAI.finished(store, only(FunctAI.trees(store)))))
-                logged = FunctAI.trees(store)
+                logged = FunctAI.trees(store)          # drained: a best-effort writer has sent what it had
                 if want["journal"] !== nothing && want["journal"]["name"] == n
                     log = FunctAI.events_after(store, only(logged), nothing)
                     @test haskey(want, "refuses") ? [e.kind for e in log] == [:started, :failed] &&

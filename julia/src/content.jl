@@ -87,12 +87,23 @@ content_layers(own::AbstractDict{Symbol}) = Any[v for v in (get(own, :log_conten
 
 environment_content() = (v = get(ENV, "FUNCTAI_LOG_CONTENT", nothing); v === nothing ? nothing : String(v))
 
-"Which of a call's fields are kept, as the kept form of its events reads it: by input and by output."
+"""
+Which of a call's fields are kept, as the kept form of its events reads it:
+by input and by output; and `holds`, the outputs its `done` event's value
+holds when the call says so (`nothing`: as its program's kind says, an AI
+function's answer or a module's outputs).
+"""
 struct Keep
     inputs::OrderedDict{String,Bool}
     outputs::OrderedDict{String,Bool}
+    holds::Union{Nothing,Vector{String}}
 end
-Keep(fields, keep::AbstractDict) = Keep(OrderedDict(n => keep[n] for n in fields.inputs), OrderedDict(n => keep[n] for n in fields.outputs))
+Keep(inputs::AbstractDict, outputs::AbstractDict) =
+    Keep(OrderedDict{String,Bool}(inputs), OrderedDict{String,Bool}(outputs), nothing)
+"The `Keep` of a call's fields `(inputs, outputs, added[, holds])` from `content_keep`'s decisions."
+Keep(fields::NamedTuple, keep::AbstractDict) =
+    Keep(OrderedDict{String,Bool}(n => keep[n] for n in fields.inputs), OrderedDict{String,Bool}(n => keep[n] for n in fields.outputs),
+         haskey(fields, :holds) ? String[fields.holds...] : nothing)
 whole(k::Keep) = all(values(k.inputs)) && all(values(k.outputs))
 kept(k::Keep, name) = get(k.inputs, name, get(k.outputs, name, false))     # a name that is no field: not kept
 

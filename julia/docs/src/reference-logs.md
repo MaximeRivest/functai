@@ -23,8 +23,12 @@ FunctAI.kept_event
 FunctAI.kept_log
 FunctAI.Journal
 JournalError
+FunctAI.drain
+FunctAI.detached
+FunctAI.EventStore
 FunctAI.MemoryStore
 FunctAI.claim!
+FunctAI.Claim
 FunctAI.keep!
 FunctAI.events_after
 FunctAI.settle

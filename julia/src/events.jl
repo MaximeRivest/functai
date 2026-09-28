@@ -49,6 +49,10 @@ where it is in its log (`tree`, `writer`, `seq`, `after`: a
 is about and that call's program (`e.function`), and the keys of its kind
 (`e.text`, `e.field`, `e.answer`, `e.value`, `e.error`, `e.request`, …).
 `FunctAI.event_json(e)` is its JSON form; `FunctAI.Event(json)` reads one.
+
+An event is a value: nothing changes it once made. Its keys are read as
+copies (`e.inputs["x"] = …` changes a copy, never the event, a store's log or
+what another reader was given), and it holds nothing but its JSON form.
 """
 struct Event
     kind::Symbol
@@ -59,21 +63,28 @@ struct Event
     at::String
     call::String
     fn::String
-    data::JObj          # the keys of its kind (and any a later writer added), in order
-    native::Any         # a done event's value as the Julia code returned it (not part of its JSON)
+    data::JObj          # the keys of its kind (and any a later writer added), in order; never changed once made
+    # made here from data nothing else holds (no copy); the one way events are built inside the package
+    global owned_event(kind, tree, writer, seq, after, at, call, fn, data::JObj) =
+        new(kind, String(tree), writer, seq, after, String(at), String(call), String(fn), data)
 end
-Event(kind, tree, writer, seq, after, at, call, fn, data) = Event(kind, tree, writer, seq, after, at, call, fn, data, nothing)
+"An event from its parts; `data` is copied, so the event never changes with it."
+Event(kind::Symbol, tree, writer, seq, after, at, call, fn, data::AbstractDict) =
+    owned_event(kind, tree, Int(writer), Int(seq), position_of(after), at, call, fn, LMCC.deepcopy_json(JObj(data)))
 
-const EVENT_FIELDS = (:kind, :tree, :writer, :seq, :after, :at, :call, :data)
+const EVENT_FIELDS = (:kind, :tree, :writer, :seq, :after, :at, :call)
 function Base.getproperty(e::Event, name::Symbol)
-    (name in EVENT_FIELDS || name === :fn || name === :native) && return getfield(e, name)
-    name === :function && return getfield(e, :fn)
-    haskey(getfield(e, :data), String(name)) || throw(ArgumentError("a $(getfield(e, :kind)) event has no $name; it has $(join(keys(getfield(e, :data)), ", "))"))
-    getfield(e, :data)[String(name)]
+    name in EVENT_FIELDS && return getfield(e, name)
+    (name === :function || name === :fn) && return getfield(e, :fn)
+    data = getfield(e, :data)
+    haskey(data, String(name)) || throw(ArgumentError("a $(getfield(e, :kind)) event has no $name; it has $(join(keys(data), ", "))"))
+    LMCC.deepcopy_json(data[String(name)])
 end
 Base.propertynames(e::Event) = (EVENT_FIELDS..., :function, Symbol.(keys(getfield(e, :data)))...)
 Base.haskey(e::Event, key::AbstractString) = haskey(getfield(e, :data), key)
 Position(e::Event) = Position(e.writer, e.seq)
+"A key of an event's kind, read without a copy (inside the package, which never changes it)."
+datum(e::Event, key::AbstractString, default=nothing) = get(getfield(e, :data), key, default)
 
 function Base.show(io::IO, e::Event)
     print(io, "Event(:", e.kind, ", ", getfield(e, :fn), ", ", e.writer, "/", e.seq)
@@ -84,15 +95,15 @@ function Base.show(io::IO, e::Event)
 end
 
 "A copy of an event with another predecessor (a form of a log sets its own `after`) or other keys of its kind."
-relinked(e::Event, after) = Event(e.kind, e.tree, e.writer, e.seq, after, e.at, e.call, e.fn, e.data, e.native)
-with_data(e::Event, data::JObj) = Event(e.kind, e.tree, e.writer, e.seq, e.after, e.at, e.call, e.fn, data, e.native)
+relinked(e::Event, after) = owned_event(e.kind, e.tree, e.writer, e.seq, after, e.at, e.call, getfield(e, :fn), getfield(e, :data))
+with_data(e::Event, data::JObj) = owned_event(e.kind, e.tree, e.writer, e.seq, e.after, e.at, e.call, getfield(e, :fn), data)
 
-"An event as the contract's JSON (schema/event.schema.json)."
+"An event as the contract's JSON (schema/event.schema.json): a new object, which the event does not share."
 function event_json(e::Event)
     out = LMCC.jobj("functai_event" => EVENT_FORMAT, "kind" => String(e.kind), "tree" => e.tree, "writer" => e.writer,
-                    "seq" => e.seq, "after" => position_json(e.after), "at" => e.at, "call" => e.call, "function" => e.fn)
+                    "seq" => e.seq, "after" => position_json(e.after), "at" => e.at, "call" => e.call, "function" => getfield(e, :fn))
     for (k, v) in getfield(e, :data)
-        out[k] = v
+        out[k] = LMCC.deepcopy_json(v)
     end
     out
 end
@@ -103,75 +114,33 @@ struct UnknownFormat <: Exception
 end
 Base.showerror(io::IO, e::UnknownFormat) = print(io, "UnknownFormat: an event of format $(repr(e.format)); this reader knows format $EVENT_FORMAT")
 
-const UUID7 = r"\A[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\z"
-const EVENT_TIME = r"\A[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{6}Z\z"
-const KIND_NAME = r"\A[a-z][a-z0-9_]*\z"
-nonempty_text(x) = x isa AbstractString && !isempty(x)
-
 """
-Why a JSON object is not an event of format 2 (the envelope, and the keys
-each kind this contract names requires), or `nothing`.
+Why a JSON object is not an event of format 2 (it does not pass
+`schema/event.schema.json`, read as the schema itself), or `nothing`.
 """
 function event_fault(d)
     d isa AbstractDict || return "not an object"
     get(d, "functai_event", nothing) == EVENT_FORMAT || return "not format $EVENT_FORMAT"
-    for k in ENVELOPE
-        haskey(d, k) || return "no $k"
-    end
-    (d["kind"] isa AbstractString && occursin(KIND_NAME, d["kind"])) || return "kind is not a name"
-    (d["tree"] isa AbstractString && occursin(UUID7, d["tree"])) || return "tree is not an id"
-    (d["call"] isa AbstractString && occursin(UUID7, d["call"])) || return "call is not an id"
-    (is_count(d["writer"]) && is_count(d["seq"])) || return "writer and seq are integers of at least 1"
-    try
-        position_of(d["after"])
-    catch
-        return "after is not a position"
-    end
-    (d["at"] isa AbstractString && occursin(EVENT_TIME, d["at"])) || return "at is not a time"
-    nonempty_text(d["function"]) || return "function is not a name"
-    haskey(d, "content") && !(d["content"] isa Bool) && return "content is true or false"
-    kind = Symbol(d["kind"])
-    content = get(d, "content", true) !== false
-    has(k) = haskey(d, k)
-    ok = if kind === :started
-        all(has, ("parent", "root", "program", "content", "saw")) && d["program"] isa AbstractDict && d["saw"] isa AbstractVector &&
-            (d["content"] === true ? has("inputs") && !has("omitted") : has("omitted"))
-    elseif kind === :request
-        has("request") && is_count(d["request"]) && has("model") && !has("content")
-    elseif kind === :text
-        has("field") && nonempty_text(d["field"]) && has("answer") && d["answer"] isa Bool && has("text") && nonempty_text(d["text"]) && !has("content")
-    elseif kind === :thinking
-        has("text") && nonempty_text(d["text"]) && !has("content")
-    elseif kind in (:tool_call, :tool_result)
-        key = kind === :tool_call ? "input" : "output"
-        has("id") && nonempty_text(d["id"]) && has("name") && nonempty_text(d["name"]) && (content ? has(key) : !has(key))
-    elseif kind === :retry
-        has("wait") && (content ? has("reason") : !has("reason"))
-    elseif kind === :done
-        content ? has("value") : !has("value")
-    elseif kind === :failed
-        has("error") && d["error"] isa AbstractDict && (content || !haskey(d["error"], "message"))
-    else
-        true                                        # a kind a later stage adds
-    end
-    ok ? nothing : "a $(kind) event without the keys its kind has"
+    schema_fault("event", d)
 end
+event_fault(e::Event) = event_fault(event_json(e))
 
 """
     Event(json::AbstractDict) -> Event
 
-An event read from its JSON form. Throws `UnknownFormat` for an event of a
-format this reader does not know, and `ArgumentError` for one that is not
-an event of format 2.
+An event read from its JSON form (copied: the event does not share it).
+Throws `UnknownFormat` for an event of a format this reader does not know,
+and `ArgumentError` for one that is not an event of format 2 (it does not
+pass the contract's schema).
 """
 function Event(d::AbstractDict)
     fmt = get(d, "functai_event", nothing)
     fmt == EVENT_FORMAT || throw(UnknownFormat(fmt))
     fault = event_fault(d)
     fault === nothing || throw(ArgumentError("not an event of format $EVENT_FORMAT: $fault"))
-    data = JObj(String(k) => v for (k, v) in d if !(k in ENVELOPE))
-    Event(Symbol(d["kind"]), d["tree"], Int(d["writer"]), Int(d["seq"]), position_of(d["after"]), d["at"], d["call"],
-          d["function"], data, nothing)
+    data = JObj(String(k) => LMCC.deepcopy_json(v) for (k, v) in d if !(k in ENVELOPE))
+    owned_event(Symbol(d["kind"]), d["tree"], Int(d["writer"]), Int(d["seq"]), position_of(d["after"]), d["at"], d["call"],
+                d["function"], data)
 end
 Event(e::Event) = e
 
@@ -320,13 +289,19 @@ takes this one), `:loss` (events were lost: read again, [`recover!`](@ref)),
 or `:unknown_format` (it stops following: nothing after is read). Positions
 are compared whole, writer and seq together. `from` is the process that
 gave it (a writer number, or `:store`), which decides where it may resume.
+
+An object that says it is of format 2 but is not an event of it (it does
+not pass the contract's schema) is `:malformed`: dropped, changing nothing.
+Its position cannot be trusted, so the next event shows whether any was
+lost.
 """
 function receive!(f::Follower, x; from=nothing)
     f.stopped && throw(ArgumentError("this follower stopped at an event of a format it does not know"))
-    if !(x isa Event) && get(x, "functai_event", nothing) != EVENT_FORMAT
+    if !(x isa Event) && !(x isa AbstractDict && get(x, "functai_event", nothing) == EVENT_FORMAT)
         f.stopped = true
         return :unknown_format
     end
+    x isa Event || event_fault(x) === nothing || return :malformed
     e = Event(x)
     t = get!(() -> Followed(Event[], Any[]), f.trees, e.tree)
     last = last_position(t)
@@ -406,7 +381,7 @@ const SAW_KEYS = Set(["call", "steps", "without", "slot", "saw_of"])
 "What a form maker keeps of an event of a kind it knows: the keys it knows, and inside the objects it knows, their known members."
 function known(e::Event)
     allowed = KIND_KEYS[e.kind]
-    data = JObj(k => LMCC.deepcopy_json(v) for (k, v) in e.data if k in allowed)
+    data = JObj(k => LMCC.deepcopy_json(v) for (k, v) in getfield(e, :data) if k in allowed)
     haskey(data, "error") && data["error"] isa AbstractDict && (data["error"] = JObj(k => v for (k, v) in data["error"] if k in ERROR_KEYS))
     haskey(data, "program") && data["program"] isa AbstractDict && (data["program"] = JObj(k => v for (k, v) in data["program"] if k in PROGRAM_KEYS))
     if haskey(data, "saw") && data["saw"] isa AbstractVector
@@ -416,11 +391,20 @@ function known(e::Event)
 end
 
 """
+The outputs a `done` event's value holds: the ones the call said (`keep.holds`:
+the writer knows its own events), else by its program's kind: an AI
+function's answer, a module's outputs.
+"""
+value_holds(keep::Keep, program) = keep.holds !== nothing ? keep.holds :
+    get(program, "kind", "ai") == "ai" ? String[program["answer"]] : collect(keys(keep.outputs))
+
+"""
     kept_event(e, keep::Keep, program) -> Event or nothing
 
 The kept form of one event (contract/streaming.md, "The kept form"), given
 which fields of its call are kept and its call's `program` (the `started`
-event's: its kind and answer). `nothing`: not in the kept log.
+event's: its kind and answer). `nothing`: not in the kept log. It is made
+from the event's JSON form only: nothing else of the call goes with it.
 """
 function kept_event(e::Event, keep::Keep, program)
     e.kind in EVENT_KINDS || return nothing
@@ -429,7 +413,7 @@ function kept_event(e::Event, keep::Keep, program)
     data = getfield(out, :data)
     kind = e.kind
     if kind === :started
-        inputs = JObj(k => v for (k, v) in e.data["inputs"] if get(keep.inputs, k, false))     # a name it does not know: not kept
+        inputs = JObj(k => v for (k, v) in data["inputs"] if get(keep.inputs, k, false))     # a name it does not know: not kept
         rest = JObj()
         for (k, v) in data
             k == "inputs" && continue
@@ -443,14 +427,14 @@ function kept_event(e::Event, keep::Keep, program)
         end
         isempty(inputs) || (rest["inputs"] = inputs)
         # the event's own order: inputs where it was
-        order = collect(keys(e.data))
+        order = collect(keys(getfield(e, :data)))
         i = findfirst(==("content"), order)
         i === nothing || insert!(order, i + 1, "omitted")
         return with_data(out, JObj(k => rest[k] for k in sort(collect(keys(rest)); by=k -> something(findfirst(==(k), order), length(order) + 1))))
     elseif kind === :request
         return out
     elseif kind === :text
-        return get(keep.outputs, e.data["field"], false) ? out : nothing
+        return get(keep.outputs, data["field"], false) ? out : nothing
     elseif kind === :thinking
         return nothing
     elseif kind === :tool_call
@@ -460,8 +444,7 @@ function kept_event(e::Event, keep::Keep, program)
     elseif kind === :retry
         delete!(data, "reason")
     elseif kind === :done
-        holds = get(program, "kind", "ai") == "ai" ? [program["answer"]] : collect(keys(keep.outputs))
-        all(k -> get(keep.outputs, k, false), holds) && return out
+        all(k -> get(keep.outputs, k, false), value_holds(keep, program)) && return out
         delete!(data, "value")
     elseif kind === :failed
         data["error"] = error_without_content(data["error"])
@@ -478,11 +461,32 @@ The kept form of a whole log: each event's kept form, by its call's `Keep`
 """
 function kept_log(events, keeps::AbstractDict)
     evs = Event[Event(x) for x in events]
-    programs = Dict(e.call => e.data["program"] for e in evs if e.kind === :started)
+    programs = Dict(e.call => datum(e, "program") for e in evs if e.kind === :started)
     relink(filter(!isnothing, [kept_event(e, keeps[e.call], get(programs, e.call, JObj())) for e in evs]))
 end
 
 # ------------------------------------------------------------------ a store
+
+"""
+    FunctAI.EventStore
+
+What keeps call trees' logs for others to read, by the rules every store
+keeps (contract/streaming.md, "The rules a store keeps"). A store is a
+subtype with three methods:
+
+- `FunctAI.keep!(store, event_or_batch)` appends an [`Event`](@ref) (or a
+  vector of them, one step): returns `:kept` or `:duplicate`, or throws a
+  [`StoreRefusal`](@ref) with the contract's code. Any other exception is
+  "no answer" (the append may have been kept: the writer sends it again),
+  except a fault of the store's own code (`MethodError`, `ArgumentError`, …),
+  which stops the journal writer, with its cause.
+- `FunctAI.claim!(store, tree)` gives a later writer a [`Claim`](@ref).
+- `FunctAI.events_after(store, tree, after)` reads the kept events after a
+  position (every event after `nothing`), or refuses `event-unknown`.
+
+[`MemoryStore`](@ref) is one, in memory.
+"""
+abstract type EventStore end
 
 """
     MemoryStore(name = "memory")
@@ -490,8 +494,10 @@ end
 A store of logs in memory, by the rules every store keeps (contract/
 streaming.md, "The rules a store keeps"): [`claim!`](@ref), [`keep!`](@ref)
 (an event, or a batch), [`events_after`](@ref). Each claim and each append
-is one step per log. A journal ([`Journal`](@ref)) keeps call trees' logs
-in it while they are written:
+is one step per log. Every event is checked against the contract's event
+schema before anything else, whether it comes as JSON or as an `Event`. A
+journal ([`Journal`](@ref)) keeps call trees' logs in it while they are
+written:
 
 ```julia
 store = FunctAI.MemoryStore()
@@ -501,7 +507,7 @@ end
 FunctAI.events_after(store, tree, nothing)
 ```
 """
-mutable struct MemoryStore
+mutable struct MemoryStore <: EventStore
     name::String
     logs::Dict{String,Vector{Event}}
     writers::Dict{String,Int}
@@ -520,6 +526,7 @@ is_end(log, tree) = !isempty(log) && last(log).call == tree && last(log).kind in
 
 "Whether the store holds the end of a tree's log (its outermost call's `done` or `failed`)."
 finished(s::MemoryStore, tree::AbstractString) = lock(() -> is_end(get(s.logs, tree, Event[]), tree), s.lock)
+finished(s, tree::AbstractString) = is_end(events_after(s, tree, nothing), tree)
 
 """
     claim!(store, tree) -> Claim
@@ -540,11 +547,23 @@ function claim!(s::MemoryStore, tree::AbstractString)
     end
 end
 
+"""
+An append's event, checked first against the contract's schema (as JSON, or
+as an `Event`'s JSON form: a struct built by hand is no certificate), as an
+`Event` that shares nothing with what was given.
+"""
+function checked_event(x)
+    json = x isa Event ? event_json(x) : x
+    fault = event_fault(json)
+    fault === nothing || throw(StoreRefusal("event-malformed", stated_position(json), "not an event of format $EVENT_FORMAT: $fault"))
+    Event(json)
+end
+stated_position(x) = x isa AbstractDict && is_count(get(x, "writer", nothing)) && is_count(get(x, "seq", nothing)) ?
+                     Position(Int(x["writer"]), Int(x["seq"])) : nothing
+
 "The answer to one append, on a log and its writer number (checked in the contract's order); the log is changed when kept."
 function append_one!(log::Vector{Event}, writer::Int, x, tree=nothing)
-    fault = x isa Event ? nothing : event_fault(x)
-    fault === nothing || throw(StoreRefusal("event-malformed", "not an event of format $EVENT_FORMAT: $fault"))
-    e = Event(x)
+    e = checked_event(x)
     p = Position(e)
     tree !== nothing && e.tree != tree && throw(StoreRefusal("event-malformed", p, "an event of another log"))
     a = e.after
@@ -579,7 +598,8 @@ check it: an event sent again is `:duplicate`; otherwise it throws a
 [`StoreRefusal`](@ref) (`event-malformed`, `event-conflict`, `event-gap`,
 `event-after-end`, `event-start`). A batch is checked event by event as if
 each were appended alone, and kept whole or not at all: `:duplicate` when
-every event is one; a refusal names the first event refused.
+every event is one; a refusal names the first event refused. What is kept
+is a copy: nothing the caller does to what it gave changes the log.
 """
 function keep!(s::MemoryStore, x)
     tree = x isa Event ? x.tree : x isa AbstractDict ? get(x, "tree", nothing) : nothing
@@ -595,7 +615,8 @@ function keep!(s::MemoryStore, x)
 end
 function keep!(s::MemoryStore, xs::AbstractVector)
     isempty(xs) && return :duplicate
-    first_tree = xs[1] isa Event ? xs[1].tree : get(xs[1], "tree", nothing)
+    first_tree = xs[1] isa Event ? xs[1].tree : xs[1] isa AbstractDict ? get(xs[1], "tree", nothing) : nothing
+    first_tree isa AbstractString || throw(StoreRefusal("event-malformed", "not an event"))
     lock(s.lock) do
         trial = copy(get(s.logs, first_tree, Event[]))
         writer = get(s.writers, first_tree, 1)
@@ -605,9 +626,7 @@ function keep!(s::MemoryStore, xs::AbstractVector)
                 push!(answers, append_one!(trial, writer, x, first_tree))
             catch err
                 err isa StoreRefusal || rethrow()
-                p = err.event !== nothing ? err.event :
-                    x isa AbstractDict && is_count(get(x, "writer", nothing)) && is_count(get(x, "seq", nothing)) ?
-                    Position(Int(x["writer"]), Int(x["seq"])) : nothing
+                p = err.event !== nothing ? err.event : stated_position(x isa Event ? event_json(x) : x)
                 throw(StoreRefusal(err.code, p, err.msg))
             end
         end
@@ -623,7 +642,7 @@ The kept events of a tree's log after the one `after` names (all of them
 after `nothing`). Refused `event-unknown` when the store does not have that
 event. Reading is never fenced.
 """
-events_after(s::MemoryStore, tree::AbstractString, after) = lock(() -> resume(get(s.logs, tree, Event[]), after), s.lock)
+events_after(s::MemoryStore, tree::AbstractString, after) = lock(() -> resume(copy(get(s.logs, tree, Event[])), after), s.lock)
 
 "Every tree the store has a log of."
 trees(s::MemoryStore) = lock(() -> collect(keys(s.logs)), s.lock)

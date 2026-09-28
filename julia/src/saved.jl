@@ -23,88 +23,13 @@ refuse_load(code, msg) = throw(LoadRefused(code, msg))
 
 const SNAKE_SETTINGS = (:retries, :api_retries, :max_steps, :tool_errors, :capabilities, :log_content)
 
-const NODE_KEY = r"\A[^:]*:[^:]+\z"
-const SHA256 = r"\Asha256:[0-9a-f]{64}\z"
-const REQUEST_FINGERPRINT = r"\A(sha256:[0-9a-f]{64}|refused:[a-z0-9-]+)\z"
-text_or_null(x) = x === nothing || x isa AbstractString
-isobject(x) = x isa AbstractDict
-islist(x) = x isa AbstractVector
 
 """
-Why an interface does not pass `schema/interface.schema.json` (its form:
-keys, kinds, names), or `nothing`. What the schema cannot see (names used
-twice, shapes, defaults) is programs.md's (`interface_fault`).
+Why a manifest does not pass `schema/saved.schema.json` (with
+`schema/interface.schema.json` for every node's interface), read as the
+schemas themselves, or `nothing`.
 """
-function interface_schema_fault(iface)
-    (isobject(iface) && issubset(keys(iface), ("description", "inputs", "outputs")) &&
-     all(k -> haskey(iface, k), ("description", "inputs", "outputs"))) || return "an interface has description, inputs and outputs, and nothing else"
-    iface["description"] isa AbstractString || return "its description is text"
-    (islist(iface["inputs"]) && islist(iface["outputs"]) && !isempty(iface["outputs"])) || return "inputs and outputs are lists, with at least one output"
-    for (direction, allowed) in (("inputs", INPUT_KEYS), ("outputs", OUTPUT_KEYS)), f in iface[direction]
-        isobject(f) && issubset(keys(f), allowed) && haskey(f, "name") && haskey(f, "shape") || return "a field of $direction has name and shape, and only the keys a field has"
-        is_name(f["name"]) || return "a field's name is an identifier: $(repr(f["name"]))"
-        isobject(f["shape"]) || return "$(f["name"])'s shape is an object"
-        all(k -> !haskey(f, k) || f[k] isa AbstractString, ("desc", "type")) || return "$(f["name"]): desc and type are text"
-        all(k -> !haskey(f, k) || f[k] === true, ("opaque", "optional")) || return "$(f["name"]): opaque and optional are true"
-        haskey(f, "opaque") && !isempty(f["shape"]) && return "$(f["name"]): an opaque field's shape is {}"
-    end
-    nothing
-end
-
-"""
-Why a manifest does not pass `schema/saved.schema.json` (its form), or
-`nothing`: the schema written as code (this package carries no JSON Schema
-validator).
-"""
-function manifest_fault(m)
-    isobject(m) || return "functai.json is not a JSON object"
-    all(k -> haskey(m, k), ("functai_saved", "entry", "nodes")) || return "functai.json needs functai_saved, entry and nodes"
-    haskey(m, "language") && !(m["language"] isa AbstractString && !isempty(m["language"])) && return "language is a name"
-    (m["entry"] isa AbstractString && occursin(NODE_KEY, m["entry"])) || return "entry is a key module:name"
-    haskey(m, "created") && !(m["created"] isa AbstractString) && return "created is a time"
-    isobject(m["nodes"]) || return "nodes is an object"
-    for (key, n) in m["nodes"]
-        occursin(NODE_KEY, key) || return "$(repr(key)) is not a key module:name"
-        (isobject(n) && all(k -> haskey(n, k), ("kind", "module", "name"))) || return "$key needs kind, module and name"
-        n["kind"] in ("ai", "module", "function", "class") || return "$key: kind is ai, module, function or class"
-        (n["module"] isa AbstractString && n["name"] isa AbstractString && !isempty(n["name"])) || return "$key: module and name are text"
-        n["kind"] == "ai" && !haskey(n, "ai") && return "$key: an AI node has ai"
-        if haskey(n, "interface")
-            why = interface_schema_fault(n["interface"])
-            why === nothing || return "$key's interface: $why"
-        end
-        haskey(n, "ai") || continue
-        a = n["ai"]
-        (isobject(a) && all(k -> haskey(a, k), ("signature", "settings", "state", "probes", "fingerprints"))) ||
-            return "$key: ai has signature, settings, state, probes and fingerprints"
-        sig = a["signature"]
-        (isobject(sig) && get(sig, "instructions", nothing) isa AbstractString && islist(get(sig, "fields", nothing))) ||
-            return "$key: its signature has instructions and fields"
-        for f in sig["fields"]
-            (isobject(f) && get(f, "name", nothing) isa AbstractString && !isempty(f["name"]) && get(f, "direction", nothing) in ("input", "output") &&
-             isobject(get(f, "shape", nothing)) && (!haskey(f, "purpose") || f["purpose"] isa AbstractString) &&
-             text_or_null(get(f, "type", nothing)) && text_or_null(get(f, "desc", nothing))) || return "$key: a signature field has name, direction and shape"
-        end
-        isobject(a["settings"]) || return "$key: settings is an object"
-        haskey(a, "config") && !isobject(a["config"]) && return "$key: config is an object"
-        haskey(a, "template") && !(a["template"] === nothing || (islist(a["template"]) && all(isobject, a["template"]))) && return "$key: template is a list of messages or null"
-        haskey(a, "tools") && !islist(a["tools"]) && return "$key: tools is a list"
-        st = a["state"]
-        (isobject(st) && haskey(st, "instructions") && text_or_null(st["instructions"]) && islist(get(st, "demos", nothing)) &&
-         all(isobject, st["demos"])) || return "$key: state has instructions and demos"
-        (islist(a["probes"]) && !isempty(a["probes"]) && all(isobject, a["probes"])) || return "$key: probes is a list of at least one input"
-        fp = a["fingerprints"]
-        (isobject(fp) && get(fp, "signature", nothing) isa AbstractString && occursin(SHA256, fp["signature"]) &&
-         islist(get(fp, "requests", nothing)) && all(r -> r isa AbstractString && occursin(REQUEST_FINGERPRINT, r), fp["requests"])) ||
-            return "$key: fingerprints has signature and requests"
-        if haskey(a, "body")
-            b = a["body"]
-            (b === nothing || (isobject(b) && get(b, "code", nothing) isa AbstractString && occursin(SHA256, b["code"]))) || return "$key: body is null or {code}"
-        end
-        haskey(a, "version") && !(a["version"] isa AbstractString && occursin(SHA256, a["version"])) && return "$key: version is a sha256"
-    end
-    nothing
-end
+manifest_fault(m) = schema_fault("saved", m)
 
 "The manifest's first checks (saved.md, step 1): its format, then its schema."
 function check_form(m)
@@ -150,17 +75,30 @@ function describe(m::AbstractDict; node=nothing)
     n["kind"] in ("ai", "module") || refuse_load("saved-not-ai", "$key is a $(n["kind"]): plain code, with no interface")
     haskey(n, "interface") && return LMCC.deepcopy_json(check_node_interface(key, n))
     n["kind"] == "module" && refuse_load("saved-no-interface", "$key was saved before programs had interfaces: what it takes is not known")
+    LMCC.deepcopy_json(signature_interface(key, n))
+end
+
+"""
+The interface an AI node written before nodes had one is read from
+(saved.md, "Describing without loading"): its signature's plain fields, its
+instruction as the description, no input optional. Checked as every
+interface read from a folder is (`interface-malformed`).
+"""
+function signature_interface(key, n)
     field(f) = begin
-        out = LMCC.jobj("name" => f["name"], "shape" => f["shape"])
+        out = LMCC.jobj("name" => f["name"], "shape" => LMCC.deepcopy_json(f["shape"]))
         d = get(f, "desc", nothing)
         d isa AbstractString && !isempty(d) && (out["desc"] = d)
         t = get(f, "type", nothing)
         t isa AbstractString && (out["type"] = t)
         out
     end
-    LMCC.deepcopy_json(LMCC.jobj("description" => n["ai"]["signature"]["instructions"],
-                                 "inputs" => Any[field(f) for f in plain_fields(n, "input")],
-                                 "outputs" => Any[field(f) for f in plain_fields(n, "output")]))
+    iface = LMCC.jobj("description" => n["ai"]["signature"]["instructions"],
+                      "inputs" => Any[field(f) for f in plain_fields(n, "input")],
+                      "outputs" => Any[field(f) for f in plain_fields(n, "output")])
+    fault = interface_fault(iface; ai=true)
+    fault === nothing || refuse_load("interface-malformed", "$key: the interface its signature gives is refused: $(fault.msg)")
+    iface
 end
 describe(path::AbstractString; node=nothing) = describe(first(manifest_at(path)); node)
 
@@ -208,6 +146,7 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         err isa LMCC.Refusal ? refuse_load("saved-malformed", "$key: $(err.hint)") : rethrow()
     end
     declared = haskey(n, "interface") ? JObj(check_node_interface(key, n)) : nothing
+    declared === nothing && signature_interface(key, n)            # an old folder's: checked, as describing checks it
     optional = Dict{String,Any}()          # an optional input's default, from the node's interface (saved.md, step 5)
     if declared !== nothing
         for f in declared["inputs"]

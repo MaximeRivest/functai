@@ -202,9 +202,13 @@ and follow (`FunctAI.replay`, `FunctAI.Follower`). Receivers keep it while it
 is written, whether or not anyone streams the call:
 
 ```julia
-with_settings(observers = [e -> println(FunctAI.event_json(e))]) do … end   # watching, best effort
+with_settings(observers = [e -> println(FunctAI.event_json(e))]) do … end   # watching, best effort, never slows a call
 FunctAI.configure!(journal = FunctAI.Journal(store; required = true))      # keeping: waits at start, tools, end
 ```
+
+Observers get the kept form (what `log_content` keeps, nothing more), each
+on a task of its own; `FunctAI.drain()` waits until they have had every
+event.
 
 ## Tools and programs
 
@@ -230,7 +234,10 @@ it made as its children. Every program has an interface, read from its
 declaration (an untyped or `Any` argument is opaque; `outputs = (a = T, …)`
 declares several outputs) and checked on every call (`InterfaceError`). An
 AI function's input with a default may be left out: the default is in its
-interface and is sent.
+interface and is sent, so it is data, a literal or a constant (a computed
+default is refused when the function is defined). A program's call ends
+once every call made inside it has; `FunctAI.detached` starts work meant to
+outlive it.
 
 ## Saving
 
@@ -253,12 +260,22 @@ TypeScript and R load what Julia saves; Python does not yet.
 - **`reasoning = true`** is Python's `module = "cot"` (`module` is a Julia keyword).
 - **A column keeps the answers it paid for**: a failed row is `missing`
   with a warning, where plain Julia would stop at the first error.
-- **An AI function's default is evaluated once**, when it is defined, not on
-  each call as Julia does: it is written in the function's interface and
-  sent when the input is left out (`since::String = string(today())` is the
-  day it was defined). A `@program`'s literal default is data too; any other
-  default of a program stays Julia code, run on each call, and the input is
-  optional with no default in its interface.
+- **An AI function's default is data**, not code run on each call as Julia
+  runs it: it is written in the function's interface and sent when the
+  input is left out, so it is a literal or a constant, and each call gets a
+  copy. A computed default (`since::String = string(today())`) or one that
+  uses another input is refused when the function is defined, rather than
+  frozen at that moment; give such a value at each call. A `@program`'s
+  default that is data (a literal or a constant) is written in its interface
+  too; any other stays Julia code and the input is optional with no default
+  in its interface. Either way a program's code makes its defaults anew on
+  each call, as Julia does.
+- **A call ends after the calls made inside it.** A program that starts a
+  task calling an AI function and returns without waiting for it returns
+  once that call has ended (the log's last event is the program's end); work
+  meant to outlive it is started with `FunctAI.detached`.
+- **Observers run on tasks of their own**: a script that reads what an
+  observer collected right after a call first calls `FunctAI.drain()`.
 - **Code of your own is versioned by its parsed form**, not its text:
   reformatting or editing comments does not make a new version. A Julia
   function with code of its own never shares a version with another
@@ -280,7 +297,7 @@ TypeScript and R load what Julia saves; Python does not yet.
 From the repository, with lmcc and lm15-dev checked out beside it:
 
 ```bash
-julia/check                                     # the contract's data, then Pkg.test() (every contract case, the doctests)
+julia/check                                     # the contract's data, then Pkg.test() on 4 threads (every contract case, the doctests)
 julia/tutorials [docs/julia/0N-*.md ...]        # run the tutorials on real models, write their outputs (about 60 cents)
 julia --project=julia/docs julia/docs/make.jl   # the manual (Documenter), into julia/docs/build
 set -a; source ~/Projects/lm15-dev/.env; set +a

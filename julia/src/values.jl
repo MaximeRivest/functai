@@ -180,13 +180,21 @@ function jsonvalue(x::T) where {T}
 end
 
 "A value as the call log writes it: its JSON, or `{\$type, \$repr}` when it has none."
-function logvalue(x)
+logvalue(x) = first(logvalue_described(x))
+
+"""
+A value as the call log writes it, and whether that is a description (it
+has no JSON form: calls.md, "Values"). Said by how it was written, never
+guessed from what was written: a dictionary that holds `\$type` and
+`\$repr` keys of its own is data.
+"""
+function logvalue_described(x)
     try
-        return jsonvalue(x)
+        return (jsonvalue(x), false)
     catch err
         err isa NoJSON || rethrow()
         text = sprint(show, x; context=:limit => true)
-        return LMCC.jobj("\$type" => string(typeof(x)), "\$repr" => first(text, 2000))
+        return (LMCC.jobj("\$type" => string(typeof(x)), "\$repr" => first(text, 2000)), true)
     end
 end
 

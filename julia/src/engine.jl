@@ -245,8 +245,9 @@ unreadable(r::LMCC.Refusal) = startswith(r.code, "parse-") || r.code == "format-
 function complete_once(job::Job, rendered, responses)
     s = job.settings
     request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s))
-    rendered_request = LMCC.request(rendered)
-    request_hash = LMCC.sha256_of(rendered_request)
+    first_rendered = LMCC.request(rendered)
+    first_hash = LMCC.sha256_of(first_rendered)
+    rendered_request, request_hash = first_rendered, first_hash      # what the next exchange sends, and its hash
     budget = nothing
     retries = max(0, s[:retries])
     attempt = 0
@@ -268,8 +269,10 @@ function complete_once(job::Job, rendered, responses)
             end
             (attempt < retries && unreadable(refusal)) || throw(refusal)
             if refusal.code == "parse-truncated"
+                # asked again from the start, with a larger budget: the first request's messages, and its hash
                 budget = 2 * something(budget, setting(s, :max_tokens), 1024)
                 request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))
+                rendered_request, request_hash = first_rendered, first_hash
             else
                 words = "Your reply could not be read: $(refusal.hint). Reply again, in exactly the form the instructions give."
                 again = LM15.user(words)
@@ -298,6 +301,9 @@ function run_tool(tools, call, errors::Symbol)
         invoke_tool(tools[i], something(get(call, "input", nothing), JObj()))
     catch err
         errors === :raise && rethrow()
+        # what stops the call is never a tool's answer: a journal's barrier or scope (a call the tool made),
+        # a closed stream, an interrupt
+        unwrap(err) isa Union{JournalError,Cancelled,InterruptException} && throw(unwrap(err))
         err = unwrap(err)
         return "error: $(error_type(err)): $(error_message(err))"
     end
@@ -323,8 +329,7 @@ function run_job(job::Job)
         end
         for c in calls
             id, name = string(c["id"]), string(c["name"])
-            asked = emit!(job.call, :tool_call, LMCC.jobj("id" => id, "name" => name, "input" => something(get(c, "input", nothing), JObj())))
-            tool_barrier(job.call, asked)
+            tool_called!(job.call, LMCC.jobj("id" => id, "name" => name, "input" => something(get(c, "input", nothing), JObj())))
             output = run_tool(job.tools, c, Symbol(job.settings[:tool_errors]))
             emit!(job.call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output))
             turn = LMCC.tool(turn, id, output)

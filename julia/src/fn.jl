@@ -423,7 +423,7 @@ function with_defaults(f::AIFunction, given::AbstractDict)
         if haskey(given, x.name)
             out[x.name] = given[x.name]
         elseif x.optional
-            out[x.name] = x.native
+            out[x.name] = deepcopy(x.native)          # each call its own: code that changes it changes no other call
         end
     end
     missing_names = [x.name for x in f.definition.inputs if !haskey(out, x.name)]
@@ -476,10 +476,36 @@ id (to rate it), the turn and the replies. `missing` in, `missing` out.
 """
 StatsAPI.predict(f::AIFunction, args...; kw...) = predict_inputs(f, bind_inputs(f, args, kw))
 
+"""
+The outputs what calling `f` returns holds (its `done` event's value): every
+declared output when it returns them all (several, and no code of its own),
+else its answer (the model's, or as its own code returned it: calls.md).
+"""
+value_holds(f::AIFunction) = f.body === nothing && length(f.definition.outputs) > 1 ? output_names(f) : String[answer_name(f)]
+
+"""
+The outputs a call's record holds, in its fields' order: the reasoning and
+the declared outputs as read, and the tool calls of the model's last step
+(the field FunctAI adds with tools: calls.md, "Words").
+"""
+function recorded_outputs(f::AIFunction, fields, outputs::NamedTuple, turn)
+    out = OrderedDict{String,Any}()
+    last_step = turn isa LMCC.Turn && turn.outputs !== nothing ? turn.outputs : JObj()
+    for name in fields.outputs
+        if haskey(outputs, Symbol(name))
+            out[name] = outputs[Symbol(name)]
+        elseif name == "calls"
+            out[name] = something(get(last_step, "calls", nothing), Any[])
+        end
+    end
+    out
+end
+
 function predict_inputs(f::AIFunction, inputs::AbstractDict)
     has_missing(inputs) && return missing
     s = effective(f.own)
-    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, program_fields(f, s))
+    fields = merge(program_fields(f, s), (holds=value_holds(f),))
+    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields)
     prediction = Ref{Any}(nothing)
     run_call(call) do call
         r = plan_for(f, s)
@@ -487,7 +513,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
                   f.tools, call, values -> typed_outputs(f, values))
         outputs, turn, responses, reading = run_job(job)
-        call.outputs = outputs
+        call.outputs = recorded_outputs(f, fields, outputs, turn)
         probs = reading.probabilities
         if !isempty(probs)
             chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]

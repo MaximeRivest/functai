@@ -50,6 +50,7 @@ include("text.jl")
 include("values.jl")
 include("settings.jl")
 include("interface.jl")
+include("schema.jl")
 include("content.jl")
 include("events.jl")
 include("journal.jl")
@@ -85,5 +86,8 @@ export rate, calls, rated
 export tool, AITool, Event, AIStream, StepLimit, Cancelled, LoadRefused
 export InterfaceError, LogContentError, JournalError
 export model_capabilities, casefold, normalize_text
+
+# observers and journal writers work off the calls' tasks: give them a moment when Julia exits
+__init__() = atexit(() -> drain(2.0))
 
 end

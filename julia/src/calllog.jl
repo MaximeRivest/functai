@@ -138,10 +138,18 @@ mutable struct Call
     value::Any                          # what the call returned (its done event's value)
     confidence::Any
     requests::Int
+    released::Bool                      # its tree no longer waits for it
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
 const STREAM_OPENING = ScopedValue{Any}(nothing)
+"""
+Internal: a scripted outermost call's id, the clock its tree's events are
+numbered by (`seq -> seconds`), and a vector that gets a copy of every event
+of the whole log as it is numbered. The contract's journal cases run through
+the engine with it (their ids and times are fixed); nothing else sets it.
+"""
+const SCRIPTED = ScopedValue{Any}(nothing)
 
 function exchange!(call::Call, model, request, response, started, seconds; cached=false, error=nothing, streamed=false,
                    first_delta=nothing, request_hash=nothing)
@@ -154,26 +162,52 @@ end
 Start a call of a program: an id, its parent (the call it runs inside), the
 tree's log it is in (a new one for an outermost call, with the journal its
 layers give), which of its fields the log keeps, its observers, and its
-inputs as the log writes them. Nothing here throws into the call: a
-journal policy it breaks is kept in `refusal`, raised once it has started.
+inputs as the log writes them. Nothing here throws into the call but a
+closed stream (no call starts inside a cancelled one): a journal policy it
+breaks is kept in `refusal`, raised once it has started. A call made inside
+a tree that has already ended (a task its outermost call did not wait for)
+starts a tree of its own.
 """
 function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
                     inputs::AbstractDict, fields)
+    parent = CURRENT_CALL[]
+    check_cancelled(parent)
+    if parent !== nothing
+        attached = lock(parent.tree.lock) do
+            parent.tree.ended ? false : (parent.tree.open += 1; true)
+        end
+        if !attached
+            warn_once("after-end:$(program["module"]).$name", "$name was called inside a call that has ended; " *
+                      "it runs as a call of its own (its own tree)")
+            parent = nothing
+        end
+    end
+    try
+        new_call(parent, program, name, s, own, inputs, fields)
+    catch
+        # it never runs: the tree does not wait for it
+        parent === nothing || lock(() -> (parent.tree.open -= 1; notify(parent.tree.cond)), parent.tree.lock)
+        rethrow()
+    end
+end
+
+function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
+                  inputs::AbstractDict, fields)
     folder = nothing
     try
         folder = folder_of(setting(s, :log_calls))
     catch err
         warn_once("start:$(typeof(err))", "calls are not logged: $(sprint(showerror, err))")
     end
-    parent = CURRENT_CALL[]
-    id = new_id()
+    scripted = parent === nothing ? SCRIPTED[] : nothing
+    id = scripted === nothing ? new_id() : String(scripted.id)
     layers = receiver_layers(own)
     got = receivers(layers)
     refusal = nothing
     if parent === nothing
         got.refused && (refusal = JournalError("journal-policy",
             "a setting replaces or removes the journal a host layer set, or weakens a required one: the tree does not run"))
-        tree = TreeLog(id, got.journal)
+        tree = scripted === nothing ? TreeLog(id, got.journal) : TreeLog(id, got.journal; clock=scripted.clock, tap=scripted.tap)
     else
         tree = parent.tree
         mine = chosen_journal(layers)
@@ -190,12 +224,12 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
     watchers = parent === nothing ? Any[] : copy(parent.watchers)
     call = Call(id, parent === nothing ? nothing : parent.id, parent === nothing ? id : parent.root, time(), program, String(name),
                 folder, caller_of(s), tree, fields, keep, got.observers, watchers, refusal, Exchange[], nothing, JObj(), JObj(),
-                String[], nothing, nothing, false, nothing, nothing, 0)
+                String[], nothing, nothing, false, nothing, nothing, 0, false)
     for (k, v) in inputs
-        data = logvalue(v)
+        data, described = logvalue_described(v)
         call.inputs[String(k)] = data
         call.sizes[String(k)] = jsonsize(data)
-        is_description(v, data) && push!(call.described, String(k))
+        described && push!(call.described, String(k))
     end
     lock(tree.lock) do
         tree.keeps[id] = keep
@@ -207,9 +241,6 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
     end
     call
 end
-
-"Whether a value was written as a description (it has no JSON form)."
-is_description(v, data) = data isa AbstractDict && !(v isa AbstractDict) && haskey(data, "\$type") && haskey(data, "\$repr") && length(data) == 2
 
 "Whether a stream watching this call (or a call around it) was closed."
 cancelled(call::Call) = any(s -> s.closed, call.watchers)
@@ -294,10 +325,10 @@ function call_record(call::Call; error=nothing, journal=nothing)
     if call.outputs !== nothing
         outputs = JObj()
         for (k, v) in pairs(call.outputs)
-            data = logvalue(v)
+            data, described = logvalue_described(v)
             outputs[String(k)] = data
             out_sizes[String(k)] = jsonsize(data)
-            is_description(v, data) && push!(out_described, String(k))
+            described && push!(out_described, String(k))
         end
     end
     answered = [e for e in call.exchanges if e.response !== nothing]

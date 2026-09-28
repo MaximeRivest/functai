@@ -15,6 +15,7 @@ delete!(ENV, "FUNCTAI_CALLER")
     include("functions.jl")
     include("calls.jl")
     include("foundations.jl")
+    include("guarantees.jl")
     include("gepa.jl")
     include("models.jl")
 end
