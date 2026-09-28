@@ -1,12 +1,13 @@
 {
  "description": "Nothing is kept after the outermost call's end; its last event sent again is still a duplicate.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -32,10 +33,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -47,10 +49,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "thinking",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 3,
     "after": 2,
     "at": "2026-09-28T10:00:00.030000Z",
@@ -61,10 +64,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 4,
     "after": 3,
     "at": "2026-09-28T10:00:00.040000Z",
@@ -77,10 +81,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "tool_call",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 5,
     "after": 4,
     "at": "2026-09-28T10:00:00.050000Z",
@@ -95,10 +100,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "tool_result",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 6,
     "after": 5,
     "at": "2026-09-28T10:00:00.060000Z",
@@ -111,10 +117,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 7,
     "after": 6,
     "at": "2026-09-28T10:00:00.070000Z",
@@ -126,10 +133,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 8,
     "after": 7,
     "at": "2026-09-28T10:00:00.080000Z",
@@ -142,10 +150,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 9,
     "after": 8,
     "at": "2026-09-28T10:00:00.090000Z",
@@ -158,10 +167,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "done",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 10,
     "after": 9,
     "at": "2026-09-28T10:00:00.100000Z",
@@ -172,10 +182,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 11,
     "after": 10,
     "at": "2026-09-28T10:00:00.100000Z",
@@ -188,10 +199,11 @@
    "expect": "event-after-end"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "done",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 10,
     "after": 9,
     "at": "2026-09-28T10:00:00.100000Z",
@@ -202,6 +214,7 @@
    "expect": "duplicate"
   }
  ],
+ "reads": [],
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
@@ -217,6 +230,7 @@
      9,
      10
     ],
+    "writer": 1,
     "finished": true
    }
   }

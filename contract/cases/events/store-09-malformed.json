@@ -1,12 +1,13 @@
 {
  "description": "An event whose seq is not greater than its after is refused.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -32,10 +33,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 2,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -47,10 +49,11 @@
    "expect": "event-malformed"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -62,6 +65,7 @@
    "expect": "kept"
   }
  ],
+ "reads": [],
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
@@ -69,6 +73,7 @@
      1,
      2
     ],
+    "writer": 1,
     "finished": false
    }
   }

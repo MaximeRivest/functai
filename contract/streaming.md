@@ -11,7 +11,8 @@ makes, in what order, their JSON form, what of them may be kept, and how
 they are read again later, by the same process or another one. The
 Python implementation is `python/functai/streaming.py`;
 `schema/event.schema.json` checks an event's JSON form; `cases/events/`
-pins replay, following, the kept form and the rules a store keeps.
+pins replay, following, the kept form, the rules a store keeps and a
+writer keeping a log in a journal.
 
 ## Words
 
@@ -20,6 +21,10 @@ pins replay, following, the kept form and the rules a store keeps.
   it. Its **outermost call** is the one the process started it with.
 - **Log**: the events of one call tree, numbered in the order they
   happen. Its id is its outermost call's id.
+- **Writer**: the process that numbers a log's events. A log has one at
+  a time: the process running the tree. When it stops before the log's
+  end, a later writer may continue the log (*Continuing a log*). Writers
+  are numbered: `1` for the first, one more for each later one.
 - **Stream**: one call, watched from its start: the events of that call
   and of every call inside it. A stream shows part of a log (all of it
   when it watches the outermost call).
@@ -36,16 +41,17 @@ pins replay, following, the kept form and the rules a store keeps.
 
 ## Events
 
-Every event says which log it is in and where (`tree`, `seq`, `after`),
-when it was numbered (`at`), the call it is about (`call`, the call log's
-id) and that call's program (`function`, the program's name).
+Every event says which log it is in and where (`tree`, `writer`, `seq`,
+`after`), when it was numbered (`at`), the call it is about (`call`, the
+call log's id) and that call's program (`function`, the program's name).
 
 | key | meaning |
 |---|---|
 | `functai_event` | the format, `2`. Its presence says the object is an event of this format. |
 | `kind` | what happened (the table below). |
 | `tree` | the log's id: the id of the call tree's outermost call. |
-| `seq` | the event's place in its log: `1` for the first event, then one more for each event, with no gaps in the whole log. `(tree, seq)` names one event, in every form. |
+| `writer` | the number of the writer that numbered the event: `1`, or the number a later writer was given (*Continuing a log*). |
+| `seq` | the event's place in its log: `1` for the first event, then one more for each event its writer numbers, with no gaps in the whole log. A later writer numbers on from the last *kept* event, so it may use again a number an earlier writer used for an event that was never kept. `(tree, writer, seq)` names one event, in every form. |
 | `after` | the `seq` of the event before this one in the form being read (`0` for the first). In the whole log it is `seq − 1`; in other forms it skips what the form leaves out. |
 | `at` | when the writer numbered the event: RFC 3339 UTC with exactly six fraction digits, the call log's time format, read from the writer's clock and never less than the `at` before it in the log (a clock set back repeats the last time). Order is `seq`'s, never `at`'s. |
 | `call` | the id of the call it is about (a UUIDv7, as in the call log). |
@@ -63,6 +69,9 @@ id) and that call's program (`function`, the program's name).
 | `done` | the call ended with a value | `value`: what the call returned, as JSON (an AI function's answer, as its code returned it; a module's output, or its outputs by name when it has several). A value with no JSON form is described as in the call log. |
 | `failed` | the call ended with an error | `error` `{"type", "message", "code"?}` as in the call log |
 
+A later stage may add kinds (an approval, stage 4) and keys; what a
+reader does with what it does not know is in *Formats*.
+
 Laws:
 
 1. **Order.** A call's events come in the order they happened: `started`,
@@ -72,7 +81,8 @@ Laws:
    `started`; its last is that call's `done` or `failed`, and nothing
    follows it. When calls inside run at the same time, their events are
    interleaved in the order the writer received them, and `seq` numbers
-   that one order.
+   that one order. (A log whose writer stops before its end is
+   unfinished: *Keeping a log while it is written*.)
 2. **Text is exact.** Within one request, the concatenation of a field's
    `text` pieces is that field's raw text in the reply (lmcc kernel §8: a
    piece is shown only once no later byte can change it). Pieces are never
@@ -96,8 +106,14 @@ Laws:
    `adapter="json"`) shows its fields at the end of the request.
 7. **One happening, one event.** A tree has one log. A stream opened on a
    call inside it (Python `fn.stream()` in a module's body) shows the
-   same events, with the same `tree` and `seq`: it starts at that call's
-   `started`, and its `after` skips the events of calls outside it.
+   same events, with the same `tree`, `writer` and `seq`: it starts at
+   that call's `started` (its `after` is `0`), and each `after` skips the
+   events of calls outside it.
+8. **A request is an exchange.** A call's *n*th `request` event is its
+   call record's *n*th exchange: failed attempts and replies from the
+   cache included (a cached reply is a request answered at once).
+   Retries inside the transport (lm15 sending again after a dropped
+   connection) are neither.
 
 ## Replaying
 
@@ -110,29 +126,49 @@ A reader keeps, for each call it has seen start: whether it ended, and
 each field's text so far. `started` adds the call with no fields; `request`
 and `retry` empty every field of their call; `text` appends to its field;
 `done` and `failed` mark the call ended. `thinking`, `tool_call` and
-`tool_result` are shown as they come and change no field. The log is
-**finished** once its outermost call has ended. `cases/events/replay-*.json`
-pin this.
+`tool_result` are shown as they come and change no field. An event of a
+kind the reader does not know changes nothing. The log is **finished**
+once its outermost call has ended. `cases/events/replay-*.json` pin this.
 
-**Resuming.** A reader that has events up to `seq` N asks for the events
-after N, in the same form, and gets those with `seq` greater than N, in
-order. It goes on from the state it had at N: the events after N alone do
-not give the text so far.
+**Resuming.** A reader that has events up to one it names by `writer`
+and `seq` asks its source for the events after that one, in the same
+form, and gets them in order. It goes on from the state it had there: the
+events after it alone do not give the text so far. A source that does
+not have that event in that form (a store never kept it: a piece of a
+field it does not keep, an event a writer numbered but never had kept)
+refuses `event-unknown`; the reader then starts again from the beginning,
+in a form the source can give (*Where each form can be read*). It never
+waits for a chain the source cannot give.
 
 ## Following a log
 
-A reader that follows a form live (a page, another process) keeps the
-`seq` of the last event it has, starting from `0`, and for each event it
-receives:
+A reader that follows a form live (a page, another process) keeps, for
+each tree it follows, the last event it has (its `writer` and `seq`;
+`0` and `0` at first), and for each event it receives, in this order:
 
-- `seq` not greater than its last: a **duplicate**, dropped (a writer or a
-  transport may send an event again);
-- `after` equal to its last: the next event; it takes it;
+- an event whose format it does not know: it cannot know what the
+  event's numbers mean, and stops following that source (it may start
+  again from a source it can read);
+- `writer` less than its last's: **stale**, dropped (a writer the log has
+  left behind, whose event came late);
+- the same `writer` and a `seq` not greater than its last: a
+  **duplicate**, dropped (a writer or a transport may send an event
+  again);
+- `after` equal to its last's `seq`: the **next** event; it takes it;
+- a later `writer` and an `after` less than its last's `seq`: the log was
+  continued by a later writer from an earlier point (*Continuing a log*).
+  The reader drops what it has after `after` (it **rewinds**: the state
+  it had at `after`, or, when it did not keep that, the form read again
+  from the beginning), then takes the event. When it does not have
+  `after` itself, it is not reading the form it thinks, and starts again
+  from the beginning;
 - anything else: events were **lost**. It reads the same form again after
-  its last `seq`.
+  its last event (*Resuming*).
 
-`after` makes this work in every form, though only the whole log has no
-gaps in `seq`. `cases/events/follow-*.json` pin it.
+It takes the place of an event of a kind it does not know (the next
+event's `after` may name it) and applies nothing for it. `after` makes
+this work in every form, though only the whole log has no gaps in `seq`.
+`cases/events/follow-*.json` pin it.
 
 ## The kept form
 
@@ -155,13 +191,18 @@ kept thus:
 | `done` | `value` when every output it holds is kept (an AI function's answer; a module's outputs); else no `value`, and `content: false` |
 | `failed` | no `error.message`; `content: false` |
 
-The kept form keeps each event's `seq`, and sets `after` to the `seq` of
-the kept event before it. So a watcher in another process sees the tree's
-shape (who called what, when, how many requests) and the values the log
-keeps, and nothing of the rest: neither its text nor the length of each
-piece (a sequence of piece lengths is enough to guess much of a reply's
-text). The call record's `sizes` gives each field's total.
-`cases/events/kept-*.json` pin this.
+The kept form keeps each event's `writer` and `seq`, and sets `after` to
+the `seq` of the kept event before it. So a watcher in another process
+sees the tree's shape (who called what, when, how many requests) and the
+values the log keeps, and nothing of the rest: neither its text nor the
+length of each piece (a sequence of piece lengths is enough to guess much
+of a reply's text). The call record's `sizes` gives each field's total.
+
+What makes a form (the kept form, a view, an observer's feed) keeps only
+what it knows: an event of a kind it does not know is left out, and so
+is a key it does not know on an event it knows, whatever the content,
+since it cannot know whether they hold a value. The writer knows its own
+events, so its kept form keeps them. `cases/events/kept-*.json` pin this.
 
 ## Views
 
@@ -169,20 +210,22 @@ A view is what one kind of reader may see of a log: the owner sees the
 whole log; a caller who sees only a program's boundary sees less (stage
 3 names the views and who chooses them). A view:
 
-- keeps each event's `seq`, and sets `after` to the event before it in
-  the view;
+- keeps each event's `writer` and `seq`, and sets `after` to the event
+  before it in the view;
 - shows a call's `started` before any other event of that call it shows,
   and its `done` or `failed` when it shows the call;
 - shows every `request` and `retry` of a call whose text it shows (it may
   leave out the retry's `reason`, with `content: false`): they hold no
   value, and without them its reader would keep text the call voided;
-- may leave out events and values; it never changes one.
+- may leave out events and values; it never alters a value it shows and
+  never invents one; like the kept form, it leaves out what it does not
+  know.
 
-A view is made from the whole log in the process that runs the tree, or
-from a kept log. What a view can show of a module's own answer while it
-is written is not settled here: a module's code writes no pieces, so a
-view that shows only the module shows its `started`, then its `done`,
-until stage 3 lets a module say that a child's field is its output.
+Whether a view may show an event of a call inside a module as the
+module's own (a child's field as the module's answer while it is written,
+or an approval three calls down as the boundary's) is stage 3's: until
+then, a view that shows only the module shows its `started`, then its
+`done`.
 
 **Retention is not disclosure.** The kept form is about what may be
 *kept*. Sending events live to a reader the host allows (a page, a
@@ -190,6 +233,18 @@ worker's parent process) keeps nothing, and follows the view the host
 chooses for that reader, not `log_content`. The whole form leaves the
 process only that way: through the stream its caller watches, which
 decides where it goes.
+
+## Where each form can be read
+
+The process running a tree can give any form of its log, while it runs.
+A store keeps the kept form, so it can give the kept form and views made
+from it, and no other. A reader of another form (the whole log, or a view
+made from it that shows values the kept form lacks) can resume it only
+from the process that runs the tree. From a store, it resumes only after
+an event the store has; otherwise the store refuses `event-unknown` and
+the reader starts again from the beginning in a form the store gives,
+dropping what it had (values that were shown live and never kept are
+then gone, as retention said they would be).
 
 ## Keeping a log while it is written
 
@@ -200,66 +255,142 @@ behaviour does not change (laws above; the call log is the same).
 
 **Observers** receive the kept form of every event of every call in their
 scope, in order, as it happens (their `after` skips what is outside their
-scope): a log for watching (a socket, a telemetry exporter, a page). An
-observer never gets in the way: if it fails, the implementation warns
-once and stops giving it events. A slow observer does not slow the call:
-an implementation may hand events to it from another thread, in order,
-and may drop them (the observer then sees a loss: *Following a log*).
+scope; a reader of an observer's feed keeps a last event per tree): a log
+for watching (a socket, a telemetry exporter, a page). An observer never
+gets in the way: if it fails, the implementation warns once and stops
+giving it events. A slow observer does not slow the call: an
+implementation may hand events to it from another thread, in order, and
+may drop them (the observer then sees a loss: *Following a log*).
 
-**Journals** keep logs: a store, a folder (stage 2's stores are
-journals). A journal keeps the kept form of the whole log of every tree
-whose outermost call starts in its scope; the journal a tree has is
-decided when its outermost call starts. A call inside a tree does not
-start another log: a journal set only around calls inside a tree (a block
-in a module's body) keeps nothing of it, and the implementation warns
-once (a required journal refuses `journal-scope` when that call starts,
-before it runs).
+**Journals** keep logs for watching: a folder, a store. A journal keeps
+the kept form of the whole log of every tree whose outermost call starts
+in its scope; the journal a tree has is decided when its outermost call
+starts. A call inside a tree does not start another log: a journal set
+only around calls inside a tree (a block in a module's body) keeps
+nothing of it, and the implementation warns once (a required journal
+refuses `journal-scope` when that call starts, before it runs).
 
-- **Appending.** The writer (the process running the tree) appends each
-  event in order, alone or in batches, with the `after` the journal
-  checks (*The rules a store keeps*): an append says where it goes. A
-  journal **acknowledges** an append once it has kept it as surely as it
-  says it keeps things (a store declares that: stage 2). The writer keeps
-  every event not yet acknowledged, and sends it again after a failure
-  (a resend of a kept event is a `duplicate`).
-- **Best effort** (the default): a journal that fails does not stop the
-  call. The implementation warns once, and keeps sending; if it gives up,
-  it stops appending to that log, which stays kept up to its last
-  acknowledged event, unfinished.
-- **Required** (the host asks for it): the call waits for the journal's
-  acknowledgement before its first request or its code runs (its
-  `started` is kept), before each tool runs (what the model asked for is
-  kept before anything acts on it: stage 4 says which tools need this),
-  and before the call returns or raises (its last event is kept). A
-  journal that cannot acknowledge (after the writer's own retries) fails
-  the call with `JournalError`; the caller gets that error, and the call
-  log records it.
-- A writer whose append is refused `event-conflict` has lost the log to
-  another writer: it stops appending to it, and never appends to it again.
+A journal is the watching log, under `log_content`. It is not a
+conversation's memory (what later turns are shown: stage 2's
+conversation store, under its own setting), nor the checkpoint a waiting
+turn resumes from (the model's steps as lmcc keeps them, provider
+thinking and tool outputs as parts, what each tool was given: stage 4's,
+under its own retention). A kept `tool_call` has no `input` when content
+is not whole, and a kept `thinking` is gone: resuming a model from the
+events alone would be a guess. Each of the three is its own record.
+
+- **Appending.** The writer appends each event in order, alone or in
+  batches (a batch is kept whole or not at all), with the `after` the
+  journal checks (*The rules a store keeps*): an append says where it
+  goes. The journal **answers** an append once it has kept it as surely
+  as it says it keeps things (a store declares that: stage 2). An event
+  is **confirmed** when the journal answers kept or duplicate; **refused**
+  when it answers anything else; **unanswered** when no answer comes. An
+  unanswered append may have been kept: the writer cannot tell. It keeps
+  every event not confirmed and sends it again (a resend of a kept event
+  is a duplicate, which confirms it). After a refusal it appends nothing
+  more to that log: `event-conflict` means another writer has it; the
+  others are faults.
+- **Best effort** (the default): the call never waits. A journal that
+  fails does not stop the call; the implementation warns once, and keeps
+  sending; if it gives up, the log stays kept up to its last confirmed
+  event, unfinished. Every event is shown to readers as it is made.
+- **Required** (the host asks for it): the call waits, until every event
+  up to it is confirmed, at three **barriers**: after its outermost
+  call's `started` (before any code or request runs); after each
+  `tool_call` (before that tool runs); and after the outermost call's
+  `done` or `failed` (before the call returns or raises). Calls inside
+  the tree have no start or end barrier of their own: the tree's are
+  enough, since appends are in order.
+
+**A required journal that does not confirm.** A call's **outcome** is what
+its program did: its value, or its error. It is decided before the
+journal is asked, and nothing the journal answers changes it: the `done`
+or `failed` event records it, and so does the call record.
+
+1. At the start or before a tool, when an event up to the barrier is
+   refused or stays unanswered (after the writer's own resends), the
+   call does not go past the barrier: the code or tool does not run, and
+   the outcome is the error `JournalError` with code `journal-barrier`.
+   Its `failed` event is made as usual, and the writer sends what is not
+   confirmed, then it (not after a refusal).
+2. At the end, the outermost call's `done` or `failed` is confirmed: the
+   call returns its value, or raises its error, as without a journal.
+3. At the end, it is not confirmed: the call raises `JournalError` with
+   code `journal-end`, holding the outcome (Python `err.outcome`) and
+   saying `journal`: `"refused"` (the journal answered that it did not
+   keep it) or `"unknown"` (no answer: it may be kept). The call record
+   keeps the outcome (its outputs, or its error), and says `journal` with
+   the same word. It never records a failure the call did not have.
+4. With a required journal, the log's last event is given to readers
+   (the stream, observers) only once it is confirmed; every other event
+   is given as it is made. So a reader never sees an end that a store
+   does not hold. When the end is not confirmed, the stream's reader
+   sees no end (its result raises the `JournalError`), as when a writer
+   stops.
+
+The caller settles `"unknown"` by reading the log from the journal: if
+it is finished, the outcome was kept. The writer may go on sending the
+end after the call has raised (a duplicate if it was kept).
+`cases/events/journal-*.json` pin this, one step at a time.
 
 A log whose outermost call's `done` or `failed` is kept is **finished**.
 Until then it is **unfinished**: its writer may still be running, or may
-have stopped. A later writer may continue it (a process that resumes a
-waiting turn after a restart: stage 4): it reads the kept log, and
-appends after the log's last kept event, numbering on from there; its
-first append is refused if the log went on meanwhile. Who may continue a log,
-how a stopped writer is kept out (a lease, a token), and how a log is
-ended by someone other than its writer are stage 2's and stage 4's.
+have stopped.
 
-**The rules a store keeps.** Anything that keeps logs for others to read
-appends the events of one log in order, checking each (a batch is kept
-whole or not at all), in this order:
+## Continuing a log
+
+A later writer may continue an unfinished log (a process that resumes a
+waiting turn after a restart: stage 4):
+
+1. It **claims** the log from the store: the store gives it a writer
+   number, one more than any it gave for that log, and names the last
+   kept event. From then on the store refuses every event of an earlier
+   writer (`event-conflict`): the earlier writer is **fenced**, even
+   when it is still running and its event would fit the chain. Each
+   claim fences every earlier one, so two writers never hold one number.
+2. It reads the kept log up to that event, and numbers on from it: its
+   first event's `seq` is one more than that event's, with its own
+   `writer`, and `after` that event's `seq`. The numbers an earlier
+   writer used after it (for events never kept) are used again, for
+   other events: `writer` tells them apart.
+3. Each call's next request number is one more than the highest in the
+   kept log's `request` events of that call; `at` is never less than the
+   last kept event's.
+
+Readers following the log across the change rewind (*Following a log*).
+Who may claim a log (a lease), when a writer counts as stopped, what the
+later writer does with calls that were running (a tool that may have
+run), and how a log is ended by someone other than a writer are stage
+2's and stage 4's.
+
+## The rules a store keeps
+
+Anything that keeps logs for others to read keeps them by these rules.
+
+**Claiming** a log for a later writer: refused `event-unknown` when the
+store has no event of that log, `event-after-end` when the log is
+finished; otherwise the store gives the next writer number and names the
+last kept event, as *Continuing a log* says.
+
+**Appending** the events of one log, in order, checking each (a batch is
+kept whole or not at all), in this order:
 
 | appending an event | result |
 |---|---|
-| `seq` not greater than `after` | refused `event-malformed` |
+| not an event of this format (it does not pass the schema), `tree` not the log it is appended to, or `seq` not greater than `after` | refused `event-malformed` |
 | a `seq` already kept, and the same event (equal canonical JSON) | nothing changes (`duplicate`): a writer may send an event again after a failure |
 | a `seq` already kept, and another event | refused `event-conflict`: two writers are writing one log |
+| in a log that has events, a `writer` other than the log's (the last number given; `1` before any claim) | refused `event-conflict`: an earlier writer, fenced, or a number the store never gave |
 | any event after the log's last (its outermost call's `done` or `failed`) | refused `event-after-end` |
 | `after` greater than the last kept `seq` (`0` for a new log) | refused `event-gap`: events are missing before it |
-| `after` less than the last kept `seq`, or `seq` less than it | refused `event-conflict`: the log went on another way |
-| a first event that is not the log's outermost call's `started` (`call` not the `tree`, or another kind) | refused `event-start` |
+| `after` less than the last kept `seq` | refused `event-conflict`: the log went on another way |
+| a first event that is not the log's outermost call's `started` from writer `1` (`call` not the `tree`, another kind, another writer) | refused `event-start` |
 | otherwise | kept |
+
+**Reading** a log after an event named by `writer` and `seq` gives the
+kept events after it, in order; after `0`, all of them. A store that
+does not have that event refuses `event-unknown` (*Resuming*).
 
 `cases/events/store-*.json` pin these rules.
 
@@ -292,12 +423,21 @@ wait a person feels). A cancelled call's `error` is `{"type":
 
 ## Formats
 
-Format 2 (2026-09-28) added `functai_event`, `tree`, `seq`, `after`, `at`,
-the `request` kind, `started`'s `root`, `program`, `content`, `omitted`
-and `saw`, the kept form, views, and the rules a store keeps; a
-`tool_call`'s `id` is never null. Format 1 events (no `functai_event` key)
-were only ever shown inside the process that made them, never kept; the
-schema still accepts them, so that a reader meeting one knows it. A reader
-skips an event whose `functai_event` it does not know, and an event `kind`
-it does not know: a later kind never changes what the kinds above mean (a
-change that would is a new format).
+Format 2 (2026-09-28) added `functai_event`, `tree`, `writer`, `seq`,
+`after`, `at`, the `request` kind, `started`'s `root`, `program`,
+`content`, `omitted` and `saw`, the kept form, views, journals and the
+rules a store keeps; a `tool_call`'s `id` is never null. Format 1 events
+(no `functai_event` key) were only ever shown inside the process that
+made them, never kept; the schema still accepts them, so that a reader
+meeting one knows it.
+
+**What a later writer may add, and what a reader does with it.** A later
+stage may add kinds of event and keys of an event, in format 2, when they
+never change what the kinds and keys above mean (an approval, a tool
+invocation's id on `started`). The schema accepts them. A reader that
+replays or follows skips what it does not know (it takes an unknown
+kind's place and applies nothing). What makes a form leaves it out
+(*The kept form*): a reader may ignore, but a maker must not pass on what
+it cannot judge. A change that would alter what a known kind or key means
+(a new kind that empties fields, say) is a new format, and a reader
+stops at an event whose format it does not know.

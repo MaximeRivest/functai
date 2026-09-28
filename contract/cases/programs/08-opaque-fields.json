@@ -1,5 +1,5 @@
 {
- "description": "An opaque field (a type with no JSON form, such as a data frame) takes any value and is never checked; only the names are. Its values cannot cross a boundary that needs data.",
+ "description": "An opaque field (a type with no JSON form, such as a data frame) takes any value and is never checked; only the names are. Its values cannot cross a boundary that needs data. How a value is written in the log does not depend on the field: [1, 2] is written as JSON, a data frame as a description (calls.md, Values).",
  "program": "module",
  "interface": {
   "description": "A pipeline over a data frame.",
@@ -28,7 +28,7 @@
   ]
  },
  "expect": {
-  "signature": "sha256:1b8d8f61e4271650dddd886ac647df730e974dc878359f87cc7c949d4ef24f1b"
+  "signature": "sha256:8e2ee2011730711de511df558cbd8509e6b164cc30bdf45d6c4b2b89b082bf45"
  },
  "checks": [
   {

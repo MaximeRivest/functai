@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/maximerivest/functai/contract/schema/saved.schema.json",
-  "title": "A saved program's manifest, functai.json (format 1, contract/saved.md; interfaces: contract/programs.md, $defs/interface)",
+  "title": "A saved program's manifest, functai.json (format 1, contract/saved.md; a program's interface: interface.schema.json)",
   "type": "object",
   "required": ["functai_saved", "entry", "nodes"],
   "properties": {
@@ -26,48 +26,10 @@
         "module": {"type": "string"},
         "name": {"type": "string", "minLength": 1},
         "ai": {"$ref": "#/$defs/ai"},
-        "interface": {"$ref": "#/$defs/interface"}
+        "interface": {"$ref": "interface.schema.json"}
       },
       "if": {"properties": {"kind": {"const": "ai"}}},
       "then": {"required": ["ai"]}
-    },
-    "interface": {
-      "description": "A program's interface (contract/programs.md): on module and AI nodes written since 2026-09-28. What the schema cannot check (names used once, shapes valid, defaults that fit) is refused interface-malformed (programs.md).",
-      "type": "object",
-      "required": ["description", "inputs", "outputs"],
-      "properties": {
-        "description": {"type": "string"},
-        "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
-        "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/field"}}
-      },
-      "additionalProperties": false
-    },
-    "field": {
-      "type": "object",
-      "required": ["name", "shape"],
-      "properties": {
-        "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-        "shape": {"type": "object"},
-        "desc": {"type": "string"},
-        "type": {"type": "string"},
-        "opaque": {"const": true}
-      },
-      "additionalProperties": false,
-      "if": {"required": ["opaque"]}, "then": {"properties": {"shape": {"maxProperties": 0}}}
-    },
-    "input": {
-      "type": "object",
-      "required": ["name", "shape"],
-      "properties": {
-        "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
-        "shape": {"type": "object"},
-        "desc": {"type": "string"},
-        "type": {"type": "string"},
-        "opaque": {"const": true},
-        "optional": {"const": true}
-      },
-      "additionalProperties": false,
-      "if": {"required": ["opaque"]}, "then": {"properties": {"shape": {"maxProperties": 0}}}
     },
     "ai": {
       "type": "object",

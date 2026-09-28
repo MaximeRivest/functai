@@ -1,0 +1,346 @@
+{
+ "description": "The journal does not answer the tool call: the tool does not run. The outcome is JournalError (journal-barrier). The journal comes back: the tool call and the failed are kept, and the caller gets that outcome as it is.",
+ "kind": "journal",
+ "mode": "required",
+ "retries": 2,
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": 0,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "helper",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "question": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": 1,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "thinking",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": 2,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "text": "Look the order up first."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": 3,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "Let me check."
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": 4,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "input": {
+    "order": "B-2210"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": 5,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "output": "In the Leeds depot, 7 days late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": 6,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": 7,
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "It is in Leeds, "
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": 8,
+   "at": "2026-09-28T10:00:00.090000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "a week late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 10,
+   "after": 9,
+   "at": "2026-09-28T10:00:00.100000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "value": "It is in Leeds, a week late."
+  }
+ ],
+ "script": [
+  "ok",
+  "ok",
+  "ok",
+  "ok",
+  "down",
+  "down",
+  "down"
+ ],
+ "expect": {
+  "log": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": 0,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "helper",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "question": "Where is B-2210?"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": 1,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "thinking",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": 2,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "text": "Look the order up first."
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": 3,
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "field": "result",
+    "answer": true,
+    "text": "Let me check."
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": 4,
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "id": "call_1",
+    "name": "lookup_order",
+    "input": {
+     "order": "B-2210"
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": 5,
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "error": {
+     "type": "JournalError",
+     "code": "journal-barrier",
+     "message": "the journal did not keep event 5"
+    }
+   }
+  ],
+  "trace": [
+   {
+    "seq": 1,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 2,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 3,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 4,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 5,
+    "transport": "down",
+    "answer": null
+   },
+   {
+    "seq": 5,
+    "transport": "down",
+    "answer": null
+   },
+   {
+    "seq": 5,
+    "transport": "down",
+    "answer": null
+   },
+   {
+    "seq": 5,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 6,
+    "transport": "ok",
+    "answer": "kept"
+   }
+  ],
+  "shown": [
+   1,
+   2,
+   3,
+   4,
+   5,
+   6
+  ],
+  "kept": {
+   "seqs": [
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "finished": true
+  },
+  "caller": {
+   "raises": {
+    "type": "JournalError",
+    "code": "journal-barrier"
+   }
+  },
+  "record": {
+   "error": {
+    "type": "JournalError",
+    "code": "journal-barrier"
+   }
+  }
+ }
+}

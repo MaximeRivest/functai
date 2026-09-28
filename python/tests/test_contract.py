@@ -186,9 +186,13 @@ def test_score_case(path):
 
 @pytest.fixture(scope="module")
 def saved_schema():
-    schema = load(CONTRACT / "schema" / "saved.schema.json")
-    jsonschema.Draft202012Validator.check_schema(schema)
-    return schema
+    """The manifest's schema, with the interface schema it refers to."""
+    from referencing import Registry, Resource
+    docs = [load(CONTRACT / "schema" / f"{n}.schema.json") for n in ("saved", "interface")]
+    for d in docs:
+        jsonschema.Draft202012Validator.check_schema(d)
+    registry = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in docs])
+    return jsonschema.Draft202012Validator(docs[0], registry=registry)
 
 
 @pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)
@@ -196,9 +200,9 @@ def test_saved_case_manifests_pass_the_schema(path, saved_schema):
     case = load(path)
     if case["expect"].get("refuses") == "saved-format":
         with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(case["manifest"], saved_schema)
+            saved_schema.validate(case["manifest"])
     else:
-        jsonschema.validate(case["manifest"], saved_schema)
+        saved_schema.validate(case["manifest"])
 
 
 def test_a_python_save_writes_what_another_language_loads(tmp_path, saved_schema, monkeypatch):
@@ -222,7 +226,7 @@ def test_a_python_save_writes_what_another_language_loads(tmp_path, saved_schema
     functai.save(shop.mood, tmp_path / "mood")
     functai.save(shop.rounded, tmp_path / "rounded")
     m = load(tmp_path / "mood" / "functai.json")
-    jsonschema.validate(m, saved_schema)
+    saved_schema.validate(m)
     node = m["nodes"]["shop:mood"]["ai"]
     assert m["language"] == "python" and node["body"] is None and node["version"] == shop.mood.version
     r = load(tmp_path / "rounded" / "functai.json")["nodes"]["shop:rounded"]["ai"]

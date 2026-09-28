@@ -220,7 +220,7 @@
     "unknown": "unknown-key",
     "call": "01926b00-0002-7000-8000-000000000000"
    },
-   "replay": {
+   "keeps": {
     "refuses": "unknown-key",
     "call": "01926b00-0002-7000-8000-000000000000"
    }
@@ -231,7 +231,7 @@
     "unknown": "unknown-key",
     "call": "01926b00-0003-7000-8000-000000000000"
    },
-   "replay": {
+   "keeps": {
     "refuses": "unknown-key",
     "call": "01926b00-0003-7000-8000-000000000000"
    }
@@ -242,7 +242,7 @@
     "unknown": "unknown-key",
     "call": "01926b00-0004-7000-8000-000000000000"
    },
-   "replay": {
+   "keeps": {
     "refuses": "unknown-key",
     "call": "01926b00-0004-7000-8000-000000000000"
    }

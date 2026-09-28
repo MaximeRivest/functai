@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/maximerivest/functai/contract/schema/event.schema.json",
-  "title": "One event of a call tree's log (functai streaming, format 2; format 1 as shown before 2026-09-28)",
+  "title": "One event of a call tree's log (functai streaming, format 2; format 1 as shown before 2026-09-28). Keys a later writer adds are allowed: readers ignore them, form makers leave them out.",
   "type": "object",
   "if": {"required": ["functai_event"]},
   "then": {"$ref": "#/$defs/format2"},
@@ -9,14 +9,16 @@
   "$defs": {
     "format2": {
       "type": "object",
-      "required": ["functai_event", "kind", "tree", "seq", "after", "at", "call", "function"],
+      "required": ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"],
       "properties": {
         "functai_event": {"const": 2},
         "kind": {
-          "enum": ["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done",
-                   "failed"]
+          "description": "streaming.md names nine kinds; a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
         },
         "tree": {"$ref": "call.schema.json#/$defs/uuid"},
+        "writer": {"type": "integer", "minimum": 1},
         "seq": {"type": "integer", "minimum": 1},
         "after": {"type": "integer", "minimum": 0},
         "at": {"$ref": "call.schema.json#/$defs/time"},

@@ -1,0 +1,136 @@
+{
+ "description": "A stream opened on a call inside a tree (law 7) shows the tree's seqs; its first event's after is 0, each after skips the events of calls outside it.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": 0,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "topic",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210? It's a week late."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": 2,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": 4,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "field": "result",
+   "answer": true,
+   "text": "ship"
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": 6,
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "reason": "Your reply could not be read: <result> must be one of billing, shipping, product.",
+   "wait": 0.5
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": 8,
+   "at": "2026-09-28T10:00:00.090000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 11,
+   "after": 9,
+   "at": "2026-09-28T10:00:00.110000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "field": "result",
+   "answer": true,
+   "text": "shipping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 12,
+   "after": 11,
+   "at": "2026-09-28T10:00:00.120000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "value": "shipping"
+  }
+ ],
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    },
+    "finished": false
+   }
+  }
+ }
+}

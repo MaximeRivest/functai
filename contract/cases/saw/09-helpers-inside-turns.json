@@ -323,7 +323,7 @@
      }
     ]
    },
-   "replay": {
+   "keeps": {
     "refuses": "not-kept",
     "call": "01926b00-0001-7000-8000-000000000000"
    }
@@ -337,7 +337,7 @@
      }
     ]
    },
-   "replay": {
+   "keeps": {
     "ok": true
    }
   },
@@ -346,7 +346,7 @@
    "expect": {
     "saw": []
    },
-   "replay": {
+   "keeps": {
     "ok": true
    }
   }

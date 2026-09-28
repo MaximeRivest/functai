@@ -1,12 +1,13 @@
 {
- "description": "A kept log leaves out events (thinking here), so its seqs skip; each event's after says what comes before it, and the store checks that.",
+ "description": "A kept log leaves out events (thinking here), so its seqs skip; each event's after says what comes before it, and the store checks that. A reader that names an event the store does not have (seq 3, the thinking a live reader of the whole log saw) is told so (event-unknown): it starts again from the beginning, in the form the store keeps; it never waits for a chain that cannot come.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -38,10 +39,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -53,10 +55,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 4,
     "after": 2,
     "at": "2026-09-28T10:00:00.040000Z",
@@ -69,10 +72,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "retry",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 5,
     "after": 4,
     "at": "2026-09-28T10:00:00.050000Z",
@@ -84,10 +88,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 6,
     "after": 5,
     "at": "2026-09-28T10:00:00.060000Z",
@@ -99,10 +104,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 7,
     "after": 6,
     "at": "2026-09-28T10:00:00.070000Z",
@@ -115,10 +121,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 8,
     "after": 7,
     "at": "2026-09-28T10:00:00.080000Z",
@@ -131,10 +138,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "done",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 9,
     "after": 8,
     "at": "2026-09-28T10:00:00.090000Z",
@@ -143,6 +151,51 @@
     "value": "no"
    },
    "expect": "kept"
+  }
+ ],
+ "reads": [
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "expect": {
+    "refuses": "event-unknown"
+   }
+  },
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "expect": {
+    "seqs": [
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   }
+  },
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": 0,
+   "expect": {
+    "seqs": [
+     1,
+     2,
+     4,
+     5,
+     6,
+     7,
+     8,
+     9
+    ]
+   }
   }
  ],
  "expect": {
@@ -158,6 +211,7 @@
      8,
      9
     ],
+    "writer": 1,
     "finished": true
    }
   }

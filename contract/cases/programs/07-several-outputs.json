@@ -1,5 +1,5 @@
 {
- "description": "A module that declares several outputs returns one record with each by name, and nothing else; the last is the answer; each must be there and fit.",
+ "description": "A module that declares several outputs returns one record with each by name, and nothing else; the last is the answer; each must be there and fit. An integer is a number with no fraction: 5.0 fits, 5.5 does not.",
  "program": "module",
  "interface": {
   "description": "Sort a ticket and say how urgent it is.",

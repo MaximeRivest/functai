@@ -58,7 +58,7 @@
    "expect": {
     "saw": []
    },
-   "replay": {
+   "keeps": {
     "ok": true
    }
   }

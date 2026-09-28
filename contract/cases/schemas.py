@@ -20,7 +20,7 @@ def validator(name: str, pointer: str = "") -> jsonschema.Draft202012Validator:
 
 
 CALL, RATING, EVENT, SAVED = validator("call"), validator("rating"), validator("event"), validator("saved")
-INTERFACE = validator("saved", "/$defs/interface")
+INTERFACE = validator("interface")
 SAW_ENTRY = validator("call", "/$defs/saw_entry")
 
 
@@ -96,16 +96,30 @@ def refusals() -> None:
     e["content"] = False
     bad.append(("started not whole without omitted", EVENT, e))
 
+    e = copy.deepcopy(events.a_tool().events[0])
+    del e["writer"]
+    bad.append(("an event with no writer number", EVENT, e))
+    r = copy.deepcopy(rec)
+    r["journal"] = "failed"
+    bad.append(("a journal outcome that is neither refused nor unknown", CALL, r))
+
     iface = {"description": "", "inputs": [{"name": "frame", "shape": {"type": "array"}, "opaque": True}],
              "outputs": [{"name": "result", "shape": {}}]}
     bad.append(("an opaque field with a shape", INTERFACE, iface))
     iface = {"description": "", "inputs": [], "outputs": [{"name": "result", "shape": {}, "optional": True}]}
     bad.append(("an optional output", INTERFACE, iface))
+    iface = {"description": "", "inputs": [{"name": "q", "shape": {}, "label": "private"}],
+             "outputs": [{"name": "result", "shape": {}}]}
+    bad.append(("an interface key this contract does not name (refused, not ignored)", INTERFACE, iface))
 
     for why, v, value in bad:
         assert not v.is_valid(value), f"the schema accepts {why}"
 
+    later = copy.deepcopy(events.a_tool().events[1])
+    later.update(kind="approval", asked="May I?")
+    del later["request"], later["model"]
     good = [("a saw entry of a kind a later writer added", SAW_ENTRY, {"summary": "Alex struggles."}),
+            ("an event of a kind a later stage adds", EVENT, later),
             ("a saw entry with a key a later writer added", SAW_ENTRY,
              {"call": rec["id"], "children": "first-layer"})]
     for why, v, value in good:

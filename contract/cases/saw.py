@@ -3,17 +3,21 @@ call log, written from ../calls.md, section "Saw". Two kinds, told apart
 by "kind":
 
 - "read": {"records": [call records], "queries": [{"call": id, "expect":
-  {"saw": [entries]} or {"unknown": code, "call": id}, "replay": {"ok":
+  {"saw": [entries]} or {"unknown": code, "call": id}, "keeps": {"ok":
   true} or {"refuses": code, "call": id}}]}. ``saw`` is the call's entries
   with every ``saw_of`` replaced, recursively, by the entries of the call
   it names; ``unknown`` is why they cannot be known (not-recorded,
   missing-call, unknown-key, saw-cycle), and whose record says so.
-  ``replay`` is whether the call can be shown its context again as it
-  was: every call it saw is in the log with the values it was shown
-  (missing-call, not-kept).
-- "shown": {"turn": an lmcc turn (kernel §3a) made from a call's record,
-  "entry": a saw entry naming that call, "expect": {"slot", "turn"}}. The
-  turn the entry says was shown, and the slot it was placed in.
+  ``keeps`` is whether the log keeps what showing the call its context
+  again needs: every call it saw is in the log, not truncated, with the
+  values it was shown as data (missing-call, not-kept), and, with
+  steps, each exchange's request hash and reply; an entry no call can
+  have been shown refuses turn-invalid. It is not the showing itself:
+  turning a record's exchanges into steps is stage 5's.
+- "shown": {"turn": an lmcc turn (kernel §3a), the one a call's record
+  stands for, "entry": a saw entry naming that call, "expect": {"slot",
+  "turn"} or {"refuses": "turn-invalid"}}. The turn the entry says was
+  shown, and the slot it was placed in.
 
 An implementation passes a case when reading each query from the records,
 or showing the turn, gives ``expect``.
@@ -53,17 +57,28 @@ def expand(records: dict, call: str, following=()) -> list:
     return out
 
 
+CALLS = "calls"
+
+
 def has_values(rec: dict, entry: dict) -> bool:
-    """Whether a call's record keeps what the entry says it was shown."""
+    """Whether a call's record keeps what the entry says it was shown: the values of the fields it was shown
+    with, as data (not descriptions of values with no JSON form); with steps, every exchange's request hash
+    and, when a reply came, the reply."""
     if rec.get("truncated"):
         return False
+    left_out = set(entry.get("without", []))
+    shown = set(rec["sizes"]["inputs"]) | set(rec["sizes"]["outputs"])
+    shown -= left_out
+    described = rec.get("described", {"inputs": [], "outputs": []})
+    if shown & (set(described["inputs"]) | set(described["outputs"])):
+        return False
     if entry.get("steps"):
-        return rec["content"] is True
+        return rec["content"] is True and all(
+            "request_hash" in ex and ("response" in ex or ex.get("finish") is None) for ex in rec["exchanges"])
     if rec["content"] is True:
         return True
     if "omitted" not in rec:                    # format 1, or no value kept
         return False
-    left_out = set(entry.get("without", []))
     return not ((set(rec["omitted"]["inputs"]) | set(rec["omitted"]["outputs"])) - left_out)
 
 
@@ -73,14 +88,16 @@ def read(records: list, call: str) -> dict:
         entries = expand(by_id, call)
     except Unknown as why:
         return {"expect": {"unknown": why.code, "call": why.call},
-                "replay": {"refuses": why.code, "call": why.call}}
+                "keeps": {"refuses": why.code, "call": why.call}}
     for entry in entries:
+        if entry.get("steps") and CALLS in entry.get("without", []):
+            return {"expect": {"saw": entries}, "keeps": {"refuses": "turn-invalid", "call": entry["call"]}}
         rec = by_id.get(entry["call"])
         if rec is None:
-            return {"expect": {"saw": entries}, "replay": {"refuses": "missing-call", "call": entry["call"]}}
+            return {"expect": {"saw": entries}, "keeps": {"refuses": "missing-call", "call": entry["call"]}}
         if not has_values(rec, entry):
-            return {"expect": {"saw": entries}, "replay": {"refuses": "not-kept", "call": entry["call"]}}
-    return {"expect": {"saw": entries}, "replay": {"ok": True}}
+            return {"expect": {"saw": entries}, "keeps": {"refuses": "not-kept", "call": entry["call"]}}
+    return {"expect": {"saw": entries}, "keeps": {"ok": True}}
 
 
 # ------------------------------------------------------------------ the rules: the turn shown
@@ -88,6 +105,9 @@ def read(records: list, call: str) -> dict:
 
 def shown(turn: dict, entry: dict) -> dict:
     left_out = set(entry.get("without", []))
+    calls_fields = {s["calls_field"] for s in turn["steps"] if s["kind"] == "model" and s.get("calls_field")}
+    if entry.get("steps") and left_out & calls_fields:
+        return {"refuses": "turn-invalid"}      # its tool steps would answer no call (lmcc kernel §3a)
 
     def strip(values):
         return None if values is None else {k: v for k, v in values.items() if k not in left_out}
@@ -113,7 +133,7 @@ def cid(n):
 
 
 def rec(n, saw, *, name="tutor", kind="ai", parent=None, root=None, content=True, inputs=None, outputs=None,
-        omitted=None, fmt=2):
+        omitted=None, fmt=2, described=None, exchanges=(), truncated=False):
     inputs = inputs if inputs is not None else {"message": f"message {n}"}
     outputs = outputs if outputs is not None else {"result": f"reply {n}"}
     program = {"name": name, "kind": kind, "module": "school", "version": "sha256:" + "1" * 64,
@@ -140,13 +160,32 @@ def rec(n, saw, *, name="tutor", kind="ai", parent=None, root=None, content=True
             r["outputs"] = kept_out
     r["sizes"] = {"inputs": {k: len(str(v)) + 2 for k, v in inputs.items()},
                   "outputs": {k: len(str(v)) + 2 for k, v in outputs.items()}}
+    if described:
+        r["described"] = described
     r.update(error=None, model="gpt-4.1-mini" if kind == "ai" else None, usage={}, confidence=None,
-             exchanges=[], caller={"kind": "conversation"},
+             exchanges=[exchange(x, content=r["content"]) for x in exchanges], caller={"kind": "conversation"},
              process={"host": "lambda", "pid": 1, "user": "maxime", "language": "python", "runtime": "3.13.1",
                       "functai": "1.2.0"})
     if saw is not None:
         r["saw"] = saw
+    if truncated:
+        r["truncated"] = True
     return r
+
+
+def exchange(how: str, *, content=True) -> dict:
+    """An exchange: "replied" (a reply came), "no reply" (a failed attempt with no reply), "reply not kept" (a
+    reply came; the record lost it)."""
+    ex = {"model": "gpt-4.1-mini", "provider": "openai", "started": "2026-09-28T10:00:00.100000Z", "seconds": 0.5,
+          "cached": False, "finish": None if how == "no reply" else "stop"}
+    if how == "no reply":
+        ex["error"] = {"type": "ProviderError", **({"message": "503"} if content else {})}
+    if content:
+        ex["request"] = {"messages": []}
+        ex["request_hash"] = "sha256:" + "a" * 64
+        if how == "replied":
+            ex["response"] = {"message": {"role": "assistant", "parts": []}}
+    return ex
 
 
 def call(n, **kw):
@@ -251,4 +290,30 @@ def cases() -> dict:
         "13-shown-without-steps": shown_case(
             "A call shown without steps is its inputs and outputs only, in the slot its entry names (turns when "
             "none).", TURN, call(1, without=["photo"])),
+        "14-a-context-that-changed": case(
+            "A call whose context changed between its requests (an agent that compacted its history) writes, "
+            "last, an entry no reader knows today: what it saw is not known (unknown-key), rather than a list "
+            "that is true of its first request only.",
+            [rec(1, []), rec(2, [call(1), {"context": "changed"}])], [2]),
+        "15-what-showing-again-needs": case(
+            "Showing a call again needs its values as data: an input written as a description (a value with no "
+            "JSON form) is not the value (not-kept), unless the entry left it out. With steps, every exchange "
+            "keeps its request hash and, when a reply came, its reply (a failed attempt with no reply needs "
+            "none); a truncated record keeps too little. With steps, an entry that leaves out the tool calls "
+            "is one no call can have been shown: its tool steps would answer nothing (turn-invalid).",
+            [rec(1, [], inputs={"message": "Hi", "frame": {"$type": "DataFrame", "$repr": "   a\n0  1"}},
+                 described={"inputs": ["frame"], "outputs": []}),
+             rec(2, [call(1)]),
+             rec(3, [call(1, without=["frame"])]),
+             rec(4, [], exchanges=["no reply", "replied"]),
+             rec(5, [call(4, steps=True)]),
+             rec(6, [], exchanges=["reply not kept"]),
+             rec(7, [call(6, steps=True)]),
+             rec(8, [], truncated=True),
+             rec(9, [call(8)]),
+             rec(10, [call(4, steps=True, without=["calls"])])], [2, 3, 5, 7, 9, 10]),
+        "16-shown-without-the-tool-calls": shown_case(
+            "With steps, leaving out the field that holds a step's tool calls would leave tool steps that "
+            "answer no call: refused (turn-invalid, lmcc's word), never shown.",
+            TURN, call(1, steps=True, without=["tool_calls"])),
     }

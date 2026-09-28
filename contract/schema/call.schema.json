@@ -129,6 +129,14 @@
         "escalated": {"const": true},
         "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange2"}},
         "saw": {"$ref": "#/$defs/saw"},
+        "described": {
+          "description": "calls.md, Values: the recorded values written as descriptions ($type, $repr), having no JSON form. Absent when there are none.",
+          "$ref": "#/$defs/omitted"
+        },
+        "journal": {
+          "description": "streaming.md, Keeping a log while it is written: a required journal did not confirm the call's last event: it refused it, or did not answer (it may have kept it). Absent otherwise.",
+          "enum": ["refused", "unknown"]
+        },
         "caller": {"type": "object"},
         "process": {
           "type": "object",

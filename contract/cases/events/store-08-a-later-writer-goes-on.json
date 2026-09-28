@@ -1,12 +1,13 @@
 {
- "description": "A log whose writer stopped can be continued by another (after a restart): it appends after the last kept event, numbering on from there. An event of the first writer that comes late is refused.",
+ "description": "A log whose writer stopped is continued by another (after a restart). The later writer claims the log: the store gives it writer number 2 and names the last kept event (seq 2), and from then on refuses every event of writer 1 (it is fenced), even one that would fit the chain (seq 3 after 2, sent late). The later writer numbers on from the last kept event: its seq 3 is not the first writer's seq 3 (a piece never kept). A reader that names the first writer's seq 3 is told the store does not have it.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -26,16 +27,23 @@
     "inputs": {
      "request": "Merge groceries.md into todo.md"
     },
-    "content": true,
+    "content": false,
+    "omitted": {
+     "inputs": [],
+     "outputs": [
+      "result"
+     ]
+    },
     "saw": []
    },
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -47,10 +55,18 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "claim": "01926c00-0001-7000-8000-000000000000",
+   "expect": {
+    "writer": 2,
+    "after": 2
+   }
+  },
+  {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 3,
     "after": 2,
     "at": "2026-09-28T10:00:00.030000Z",
@@ -58,18 +74,19 @@
     "function": "gardener",
     "field": "result",
     "answer": true,
-    "text": "Merging"
+    "text": "Merging "
    },
-   "expect": "kept"
+   "expect": "event-conflict"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "seq": 4,
-    "after": 3,
-    "at": "2026-09-28T10:00:30.040000Z",
+    "writer": 2,
+    "seq": 3,
+    "after": 2,
+    "at": "2026-09-28T10:00:30.030000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "gardener",
     "request": 2,
@@ -78,50 +95,92 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "seq": 4,
+    "writer": 1,
+    "seq": 5,
     "after": 3,
-    "at": "2026-09-28T10:00:00.030000Z",
+    "at": "2026-09-28T10:00:00.050000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "gardener",
     "field": "result",
     "answer": true,
-    "text": " now"
+    "text": "notes"
    },
    "expect": "event-conflict"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 4,
+    "after": 3,
+    "at": "2026-09-28T10:00:30.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "field": "result",
+    "answer": true,
+    "text": "Done."
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
     "seq": 5,
     "after": 4,
     "at": "2026-09-28T10:00:30.050000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "gardener",
-    "field": "result",
-    "answer": true,
-    "text": "Merged."
+    "value": "Done."
    },
    "expect": "kept"
+  }
+ ],
+ "reads": [
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "expect": {
+    "refuses": "event-unknown"
+   }
   },
   {
-   "event": {
-    "functai_event": 2,
-    "kind": "done",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "seq": 6,
-    "after": 5,
-    "at": "2026-09-28T10:00:30.060000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
-    "value": "Merged."
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 2,
+    "seq": 3
    },
-   "expect": "kept"
+   "expect": {
+    "seqs": [
+     4,
+     5
+    ]
+   }
+  },
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "expect": {
+    "seqs": [
+     3,
+     4,
+     5
+    ]
+   }
   }
  ],
  "expect": {
@@ -132,9 +191,9 @@
      2,
      3,
      4,
-     5,
-     6
+     5
     ],
+    "writer": 2,
     "finished": true
    }
   }

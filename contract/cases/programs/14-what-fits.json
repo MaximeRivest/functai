@@ -1,0 +1,150 @@
+{
+ "description": "Fits is checked with the keywords programs.md lists, the same in every language: lengths count code points; items are unique by canonical JSON (1 and 1.0 are one value); a record by reference to $defs; words such as title, format and default are never checked.",
+ "program": "module",
+ "interface": {
+  "description": "Tag an order.",
+  "inputs": [
+   {
+    "name": "code",
+    "shape": {
+     "type": "string",
+     "minLength": 1,
+     "maxLength": 1,
+     "title": "Code"
+    }
+   },
+   {
+    "name": "tags",
+    "shape": {
+     "type": "array",
+     "items": {},
+     "uniqueItems": true
+    }
+   },
+   {
+    "name": "order",
+    "shape": {
+     "$ref": "#/$defs/Order",
+     "$defs": {
+      "Order": {
+       "type": "object",
+       "properties": {
+        "id": {
+         "type": "integer"
+        }
+       },
+       "required": [
+        "id"
+       ]
+      }
+     }
+    }
+   },
+   {
+    "name": "day",
+    "shape": {
+     "type": "string",
+     "format": "date",
+     "default": "2026-09-28"
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:24a4c8dcb5421efa7d432579baf57c811da1433c9f3f40babef762fdf638bc4e"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "code": "é",
+    "tags": [
+     "a",
+     "b"
+    ],
+    "order": {
+     "id": 1
+    },
+    "day": "not a date"
+   },
+   "expect": {
+    "inputs": {
+     "code": "é",
+     "tags": [
+      "a",
+      "b"
+     ],
+     "order": {
+      "id": 1
+     },
+     "day": "not a date"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "code": "",
+    "tags": [
+     "a"
+    ],
+    "order": {
+     "id": 1
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "code"
+   }
+  },
+  {
+   "inputs": {
+    "code": "é",
+    "tags": [
+     1,
+     1.0
+    ],
+    "order": {
+     "id": 1
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "tags"
+   }
+  },
+  {
+   "inputs": {
+    "code": "éé",
+    "tags": [],
+    "order": {
+     "id": 1
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "code"
+   }
+  },
+  {
+   "inputs": {
+    "code": "é",
+    "tags": [],
+    "order": {
+     "id": "1"
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "order"
+   }
+  }
+ ]
+}

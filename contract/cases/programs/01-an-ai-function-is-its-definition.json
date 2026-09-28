@@ -58,5 +58,6 @@
   },
   "signature": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
   "signature_id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf"
- }
+ },
+ "binds": []
 }

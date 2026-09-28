@@ -6,6 +6,7 @@
    "functai_event": 2,
    "kind": "started",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 1,
    "after": 0,
    "at": "2026-09-28T10:00:00.010000Z",
@@ -32,6 +33,7 @@
    "functai_event": 2,
    "kind": "request",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 2,
    "after": 1,
    "at": "2026-09-28T10:00:00.020000Z",
@@ -44,6 +46,7 @@
    "functai_event": 2,
    "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 4,
    "after": 3,
    "at": "2026-09-28T10:00:00.040000Z",
@@ -57,6 +60,7 @@
    "functai_event": 2,
    "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 3,
    "after": 2,
    "at": "2026-09-28T10:00:00.030000Z",
@@ -70,6 +74,7 @@
    "functai_event": 2,
    "kind": "text",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 4,
    "after": 3,
    "at": "2026-09-28T10:00:00.040000Z",
@@ -83,6 +88,7 @@
    "functai_event": 2,
    "kind": "done",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 5,
    "after": 4,
    "at": "2026-09-28T10:00:00.050000Z",
@@ -94,6 +100,7 @@
    "functai_event": 2,
    "kind": "done",
    "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
    "seq": 5,
    "after": 4,
    "at": "2026-09-28T10:00:00.050000Z",
@@ -102,13 +109,28 @@
    "value": "shipping"
   }
  ],
- "expect": [
-  "kept",
-  "kept",
-  "loss",
-  "kept",
-  "kept",
-  "kept",
-  "duplicate"
- ]
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "loss",
+   "kept",
+   "kept",
+   "kept",
+   "duplicate"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    },
+    "finished": true
+   }
+  }
+ }
 }

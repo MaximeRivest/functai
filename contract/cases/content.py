@@ -9,8 +9,9 @@ first), "environment": the value of FUNCTAI_LOG_CONTENT or null (unset),
 written} or {"refuses": "log-content-field", "field": key}}.
 
 ``fields`` are the call's fields: its interface's inputs and outputs, and
-``added``, the outputs FunctAI adds to an AI function (``reasoning``);
-``added`` are among ``outputs`` too, in the record's order.
+``added``, the outputs FunctAI adds to an AI function (``reasoning``,
+``calls``); ``added`` are among ``outputs`` too, in the record's order.
+The ``tools`` input FunctAI adds is not a field of a call.
 
 An implementation passes a case when, with those settings, the record it
 writes for that call is ``expect.record`` (compared as JSON), or when the
@@ -26,7 +27,7 @@ from common import canonical, sha
 OFF = {"0", "false", "no", "off"}
 NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 ALWAYS_KEPT = ("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
-               "confidence", "caller", "process", "saw", "escalated", "truncated")
+               "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
 DROPPED_FROM_EXCHANGES = ("request", "response", "request_hash")
 
 
@@ -59,13 +60,14 @@ def says_drop(v, name: str) -> bool:
 
 def kept(fields: dict, layers: list, environment) -> dict:
     """For each field, whether its value is written: only when no layer drops it,
-    and, for an added field, only when every other field is written too."""
+    and, for an added field, only when no field of the call is dropped (an added
+    field can quote any input, anticipate any output, and quote another added
+    field)."""
     env_off = environment is not None and environment.strip().lower() in OFF
     out = {}
     for name in fields["inputs"] + fields["outputs"]:
         out[name] = not env_off and not any(says_drop(layer["log_content"], name) for layer in layers)
-    plain = [n for n in out if n not in fields["added"]]
-    if not all(out[n] for n in plain):
+    if not all(out.values()):
         for n in fields["added"]:
             out[n] = False
     return out
@@ -92,6 +94,10 @@ def written(record: dict, fields: dict, keep: dict) -> dict:
         outputs = {k: v for k, v in record["outputs"].items() if keep[k]}
         if outputs:
             out["outputs"] = outputs
+    if "described" in record:
+        described = {k: [n for n in v if keep[n]] for k, v in record["described"].items()}
+        if any(described.values()):
+            out["described"] = described
     if "returned" in record and keep[answer]:
         out["returned"] = record["returned"]
     if "probabilities" in record:
@@ -116,6 +122,9 @@ def written(record: dict, fields: dict, keep: dict) -> dict:
 
 
 FIELDS = {"inputs": ["transcript", "question"], "outputs": ["reasoning", "summary", "result"], "added": ["reasoning"]}
+TOOLS = {"inputs": ["transcript", "question"], "outputs": ["reasoning", "calls", "summary", "result"],
+         "added": ["reasoning", "calls"]}
+CALLS = [{"id": "call_1", "name": "ci_log", "input": {"job": 4412}}]
 TRANSCRIPT = "Ana: the build is red again.\nBen: it is the flaky upload test.\n" * 3
 QUESTION = "Is the build broken for a real reason?"
 CALL = "01926a8e-0001-7000-8000-000000000000"
@@ -125,10 +134,13 @@ def size(value) -> int:
     return len(canonical(value))
 
 
-def record(*, failed=False) -> dict:
+def record(*, failed=False, tools=False) -> dict:
     inputs = {"transcript": TRANSCRIPT, "question": QUESTION}
     outputs = None if failed else {"reasoning": "Ben says the upload test is flaky, so the build is not broken.",
                                    "summary": "A flaky upload test fails the build.", "result": "no"}
+    if tools and outputs:
+        outputs = {"reasoning": outputs["reasoning"], "calls": CALLS, "summary": outputs["summary"],
+                   "result": outputs["result"]}
     rec = {"functai_call": 2, "id": CALL, "parent": None, "root": CALL,
            "program": {"name": "triage_build", "kind": "ai", "module": "ci", "version": "sha256:" + "1" * 64,
                        "signature": "sha256:" + "5" * 64, "interface": "sha256:" + "6" * 64, "answer": "result"},
@@ -169,7 +181,7 @@ def record(*, failed=False) -> dict:
 
 def case(description, layers=(), environment=None, *, failed=False, fields=FIELDS):
     layers = [{"where": w, "log_content": v} for w, v in layers]
-    rec = record(failed=failed)
+    rec = record(failed=failed, tools=fields is TOOLS)
     refused = refusal(fields, layers)
     expect = refused or {"record": written(rec, fields, kept(fields, layers, environment))}
     return {"description": description, "fields": fields, "layers": layers, "environment": environment,
@@ -229,4 +241,15 @@ def cases() -> dict:
         "16-a-key-that-is-not-a-name": case(
             "A map key that is neither a field name nor \"*\" refuses wherever it is set (keys of another form "
             "are kept for later).", [("block", {"#private": False})]),
+        "17-the-tool-calls-dropped": case(
+            "A function with tools and reasoning: FunctAI adds two fields, calls and reasoning. Dropping the "
+            "calls drops the reasoning too (an added field is written only when no field of the call is "
+            "dropped).", [("own", {"calls": False})], fields=TOOLS),
+        "18-the-reasoning-dropped-with-tools": case(
+            "Dropping the reasoning drops the calls too, for the same reason: every other value is written.",
+            [("configure", {"reasoning": False})], fields=TOOLS),
+        "19-the-tools-input-is-not-a-field": case(
+            "The tools input FunctAI adds to a function's signature is the function's state (its tools, in its "
+            "version), not a field of a call: no record holds it, and a function's own map that names it refuses.",
+            [("own", {"tools": False})], fields=TOOLS),
     }

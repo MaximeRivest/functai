@@ -72,13 +72,19 @@ def check(folder: str, cases: dict) -> None:
                 schemas.check(schemas.INTERFACE, iface, f"{where} interface")
         elif folder == "events":
             kind = case["kind"]
-            evs = ([a["event"] for a in case["appends"]] if kind == "store" else
+            evs = ([x["append"] for x in case["steps"] if "append" in x] if kind == "store" else
                    case["received"] if kind == "follow" else list(case["events"]))
             if kind == "kept":
                 evs += case["expect"]["events"]
+            if kind == "journal":
+                evs += case["expect"]["log"]
+            malformed = [x["append"] for x in case.get("steps", []) if x.get("expect") == "event-malformed"]
             for i, e in enumerate(evs):
-                if kind == "store" and case["appends"][i]["expect"] == "event-malformed":
+                if any(e is m for m in malformed):
                     continue                                    # seq not above after: the schema cannot say
+                if e.get("functai_event") not in (None, 2):     # a format no reader knows
+                    assert not schemas.EVENT.is_valid(e), where
+                    continue
                 schemas.check(schemas.EVENT, e, f"{where} event {i}")
 
 

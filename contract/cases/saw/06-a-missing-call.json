@@ -169,7 +169,7 @@
     "unknown": "missing-call",
     "call": "01926b00-0001-7000-8000-000000000000"
    },
-   "replay": {
+   "keeps": {
     "refuses": "missing-call",
     "call": "01926b00-0001-7000-8000-000000000000"
    }
@@ -180,7 +180,7 @@
     "unknown": "missing-call",
     "call": "01926b00-0003-7000-8000-000000000000"
    },
-   "replay": {
+   "keeps": {
     "refuses": "missing-call",
     "call": "01926b00-0003-7000-8000-000000000000"
    }

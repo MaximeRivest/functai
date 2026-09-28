@@ -1,5 +1,5 @@
 {
- "description": "Required and optional inputs of one shape have one signature: the signature says what recorded data looks like, not which calls are accepted (compare interfaces for that). A default is part of the shape, so it is part of the signature.",
+ "description": "Required and optional inputs of one shape have one signature: the signature says what recorded data looks like, not which calls are accepted (compare interfaces for that). A default is behaviour, not data: it is left out of the signature, so a default computed when the program is loaded (today's date) does not split its records.",
  "program": "same-data",
  "interfaces": [
   {
@@ -82,13 +82,57 @@
      }
     }
    ]
+  },
+  {
+   "description": "Plan the day.",
+   "inputs": [
+    {
+     "name": "since",
+     "shape": {
+      "type": "string",
+      "default": "2026-09-28"
+     },
+     "optional": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  },
+  {
+   "description": "Plan the day.",
+   "inputs": [
+    {
+     "name": "since",
+     "shape": {
+      "type": "string",
+      "default": "2026-09-29"
+     },
+     "optional": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
   }
  ],
  "expect": {
   "signatures": [
    "sha256:101fbfc510beb73e77a6f9dd8b5295aacc0b43304b6cfad5ddd8060ad63e2791",
    "sha256:101fbfc510beb73e77a6f9dd8b5295aacc0b43304b6cfad5ddd8060ad63e2791",
-   "sha256:0b462036abefc4ff08e985bd73cc8f3e824294d20d546c209a91108cd941907a"
+   "sha256:101fbfc510beb73e77a6f9dd8b5295aacc0b43304b6cfad5ddd8060ad63e2791",
+   "sha256:54c199fc59b19fc812a91821a218ae08771a4b8a9d0109fa347f9655f0ec213d",
+   "sha256:54c199fc59b19fc812a91821a218ae08771a4b8a9d0109fa347f9655f0ec213d"
   ]
  },
  "checks": [

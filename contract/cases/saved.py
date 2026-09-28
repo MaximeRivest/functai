@@ -4,17 +4,21 @@ fingerprints are the requests functions.py derives (the same rules).
 
 A case file: {"description", "manifest", "node": key or null (the
 entry), "expect": {"refuses": code} or {"loads": {"name", "module",
-"version", "signature_id", "requests"}}, and "describe": {"interface"}
-or {"refuses": code}}. ``describe`` is what describing the node without
-loading it gives (saved.md, "Describing without loading";
-../programs.md): the node's ``interface`` (checked), or, for an AI node
-written before nodes had one, the interface its signature gives.
+"version", "signature_id", "requests"}, "sends"?: [{"inputs",
+"request_hash"}]}, and "describe": {"interface"} or {"refuses": code}}.
+``describe`` is what describing the node without loading it gives
+(saved.md, "Describing without loading"; ../programs.md): the node's
+``interface`` (checked), or, for an AI node written before nodes had one,
+the interface its signature gives. ``sends``: the loaded function called
+with ``inputs`` (an optional one left out) sends the request whose hash
+is ``request_hash``, rendered under the probe facts.
 """
 
 import copy
 
 import functions
 import programs
+import schemas
 from common import sha
 
 LANG = "python"
@@ -89,11 +93,13 @@ def describe(m: dict, key) -> dict:
     """What describing a node without loading it gives (saved.md, programs.md)."""
     if m.get("functai_saved") != 1:
         return {"refuses": "saved-format"}
+    if not schemas.SAVED.is_valid(m):
+        return {"refuses": "saved-malformed"}
     n = m["nodes"][key or m["entry"]]
     if n["kind"] not in ("ai", "module"):
         return {"refuses": "saved-not-ai"}
     if "interface" in n:
-        refused = programs.malformed(n["interface"])
+        refused = programs.malformed(n["interface"], ai=n["kind"] == "ai")
         if refused:
             return {"refuses": refused["refuses"]}
         if n["kind"] == "ai" and differs(n):
@@ -115,7 +121,7 @@ def describe(m: dict, key) -> dict:
 def loads(key: str, m: dict) -> dict:
     n = m["nodes"][key]
     if "interface" in n:
-        if programs.malformed(n["interface"]):
+        if programs.malformed(n["interface"], ai=True):
             return {"refuses": "interface-malformed"}
         if differs(n):
             return {"refuses": "saved-differs"}
@@ -233,6 +239,19 @@ def cases() -> dict:
         "description": "An interface the schema accepts can still be refused (programs.md): describing the "
                        "node says interface-malformed.",
         "manifest": m, "node": None, "expect": {"refuses": "saved-not-ai"}}
+
+    reply = functions.DEFINITIONS["12-an-optional-input"][1]
+    m = manifest({"shop:reply": node("reply", reply)}, "shop:reply")
+    out["16-an-optional-input"] = {
+        "description": "An AI function with an input a caller may leave out: its interface says optional, with "
+                       "the default in the shape; describing shows it; loading takes it from the interface, so "
+                       "the loaded function called without the input sends the default, as the saving language "
+                       "does (a folder without an interface has no optional input).",
+        "manifest": m, "node": None,
+        "expect": {**loads("shop:reply", m),
+                   "sends": [{"inputs": i, "request_hash": functions.expect(with_sample(reply, {**b}))["request_hash"]}
+                             for i, b in (({"message": "Hi"}, {"message": "Hi", "tone": "kind"}),
+                                          ({"message": "Hi", "tone": "brief"}, {"message": "Hi", "tone": "brief"}))]}}
 
     for case in out.values():
         case["expect"]["describe"] = describe(case["manifest"], case["node"])

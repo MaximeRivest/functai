@@ -1,0 +1,98 @@
+{
+ "description": "When several names are at fault, the first in code-point order is named (a map has no order every language keeps); unknown names before anything else, then each field in the interface's order.",
+ "program": "module",
+ "interface": {
+  "description": "Sort a ticket and say how urgent it is.",
+  "inputs": [
+   {
+    "name": "ticket",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "team",
+    "shape": {
+     "enum": [
+      "billing",
+      "shipping",
+      "product"
+     ],
+     "type": "string"
+    }
+   },
+   {
+    "name": "minutes",
+    "shape": {
+     "type": "integer"
+    },
+    "desc": "to fix"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "reply": {
+       "type": "string"
+      },
+      "escalate": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "reply",
+      "escalate"
+     ]
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:66bc637df09e8de507eabf8ecd1d172f98d94ec7f14a4542d614bf996cefe3c5"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "ticket": "?",
+    "zeta": 1,
+    "Alpha": 2,
+    "alpha": 3
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "Alpha"
+   }
+  },
+  {
+   "returned": {
+    "team": "billing",
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    },
+    "z": 1,
+    "b": 2
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "b"
+   }
+  },
+  {
+   "returned": {
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    },
+    "team": 3
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "team"
+   }
+  }
+ ]
+}

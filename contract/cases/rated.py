@@ -37,7 +37,7 @@ def at(minute, second=0):
 
 
 def call(n, minute, inputs, outputs, *, name="team", module="support", version=V1, signature=SIG,
-         answer="result", content=True, error=None, omitted=None, fmt=1, interface=None):
+         answer="result", content=True, error=None, omitted=None, fmt=1, interface=None, described=None):
     """``omitted``: {"inputs": [...], "outputs": [...]}, the fields whose values were not written
     (calls.md, "Content", format 2); the record then keeps the other values, with content false.
     ``fmt``: the record's format; a format-2 record has ``program.interface``."""
@@ -63,6 +63,8 @@ def call(n, minute, inputs, outputs, *, name="team", module="support", version=V
                                for k, v in inputs.items()},
                     "outputs": {k: len(json.dumps(v, ensure_ascii=False, separators=(",", ":")))
                                 for k, v in (outputs or {}).items()}}
+    if described:
+        rec["described"] = described
     rec.update(error=error, model="gpt-4.1-mini", usage={"input_tokens": 200, "output_tokens": 3}, confidence=None,
                exchanges=[], caller={}, process={"host": "lambda", "pid": 1, "user": "maxime", "language": "python",
                                                  "runtime": "3.13.1", "functai": "1.1.0"})
@@ -243,6 +245,22 @@ CASES = {
                          row(M2, {"result": "shipping"}, 2, rating_="right", by="maxime"),
                          row(M1, {"result": "billing"}, 4, rating_="right", by="maxime")],
                 "left_out": {**LEFT, "other_signature": 2}}),
+    "16-a-value-written-as-a-description": dict(
+        description="A value with no JSON form is written as a description ($type, $repr), and the record's "
+                    "described names it. An input written so is not data to ask again: left out, no_content. "
+                    "A right verdict on an answer written so gives nothing (no_answer). Another output written "
+                    "so changes nothing: the row is made from the answer.",
+        records=[call(1, 1, {**M1, "frame": {"$type": "DataFrame", "$repr": "   a\n0  1"}}, {"result": "billing"},
+                      fmt=2, described={"inputs": ["frame"], "outputs": []}),
+                 call(2, 2, M2, {"result": {"$type": "Reply", "$repr": "Reply(team='shipping')"}}, fmt=2,
+                      described={"inputs": [], "outputs": ["result"]}),
+                 call(3, 3, M3, {"notes": {"$type": "Notes", "$repr": "Notes(...)"}, "result": "product"}, fmt=2,
+                      described={"inputs": [], "outputs": ["notes"]}),
+                 rating(1, 1, 5, "maxime", "right"), rating(2, 2, 5, "maxime", "right"),
+                 rating(3, 3, 5, "maxime", "right")],
+        rated=TEAM,
+        expect={"rows": [row(M3, {"result": "product"}, 3, rating_="right", by="maxime")],
+                "left_out": {**LEFT, "no_content": 1, "no_answer": 1}}),
     "15-a-format-this-reader-does-not-know": dict(
         description="A call or rating record of a format the reader does not know is skipped: it makes no "
                     "row and is not counted. A later format may mean something else by the same keys.",

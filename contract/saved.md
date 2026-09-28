@@ -12,7 +12,8 @@ holds the ordinary code between its AI calls (Python writes it to
 loader refuses, before any call and with a reason, what it cannot run:
 it never guesses.
 
-`schema/saved.schema.json` checks a manifest's form.
+`schema/saved.schema.json` checks a manifest's form, with
+`schema/interface.schema.json` for its programs' interfaces.
 `cases/saved/` holds manifests and what loading each must do.
 
 ## The folder
@@ -67,9 +68,11 @@ refuses `saved-no-interface`; an AI node's is read from its signature
 A loader in a language other than the folder's `language`:
 
 1. Reads `functai.json` and the node it is asked for (`entry` by
-   default). Refuses `saved-malformed` when the manifest does not pass
-   the schema, and `saved-format` when `functai_saved` is not a format
-   it knows.
+   default). Refuses `saved-format` when `functai_saved` is not a format
+   it knows, then `saved-malformed` when the manifest does not pass the
+   schema (`schema/saved.schema.json`, with `schema/interface.schema.json`
+   for every node's interface: a fault the schema sees in any node's
+   interface is the manifest's).
 2. Refuses `saved-not-ai` when the node is not `kind: "ai"` (a module is
    code in the folder's language), and `saved-code` when its `body` is
    not `null`: code of its own runs beside the model, in a language
@@ -80,7 +83,9 @@ A loader in a language other than the folder's `language`:
    `{"node": ...}`.
 5. Builds the function from `signature`, `settings`, `config`,
    `template` and `state`, with the node's `name`, and its `module` as
-   the call log's `program.module`.
+   the call log's `program.module`. Its optional inputs, and the default
+   each is sent with when left out, come from the node's `interface`
+   (without one, every input is required).
 6. **Checks it sends what was saved**: renders each probe under the probe
    facts and compares the hash with `fingerprints.requests` (the same
    `"refused:<code>"` counts as equal). Any difference refuses
@@ -101,9 +106,10 @@ A loader in the folder's own language runs the saved code (Python:
 ## Describing without loading
 
 Every program node can be described in every language without running
-anything, by its `interface`: refused `interface-malformed` when
-programs.md refuses it, and, for an AI node, `saved-differs` when it does
-not match its signature (as in step 6). So `check`, a server or a page
+anything, by its `interface`, after the checks of step 1 (`saved-format`,
+then `saved-malformed`): refused `interface-malformed` when programs.md
+refuses it, and, for an AI node, `saved-differs` when it does not match
+its signature (as in step 6). So `check`, a server or a page
 can say what the entry takes and gives before deciding to load it,
 whatever language wrote it.
 

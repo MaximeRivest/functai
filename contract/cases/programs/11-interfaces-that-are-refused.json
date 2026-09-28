@@ -1,5 +1,5 @@
 {
- "description": "An interface is refused when it is defined or read (interface-malformed), naming the first field at fault, inputs then outputs, in order; null when it has no output. A name is an ASCII identifier used once across inputs and outputs; a shape is valid JSON Schema; a default fits its shape; an opaque field's shape is {}; only inputs are optional.",
+ "description": "An interface is refused when it is defined or read (interface-malformed), its form and its meaning checked together, field by field: the refusal names the first field at fault, inputs then outputs, in order; null when the fault is not a field's (no output; a key the interface does not have). A field has only the keys programs.md names (a later key is refused, not ignored); a name is an ASCII identifier used once across inputs and outputs; a shape uses only the listed keywords; a default fits its shape; an opaque field's shape is {}; only inputs are optional, and optional and opaque are true when present.",
  "program": "definitions",
  "interfaces": [
   {
@@ -227,6 +227,205 @@
    "expect": {
     "refuses": "interface-malformed",
     "field": "a"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      },
+      "optional": false
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      },
+      "label": "private"
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "version": 2
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": null
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string",
+       "pattern": "^B-[0-9]+$"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "$ref": "#/$defs/Reply"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "result"
+   }
+  },
+  {
+   "interface": {
+    "description": "A form fault after a meaning fault: the first field is named.",
+    "inputs": [
+     {
+      "name": "a",
+      "shape": {
+       "type": "strin"
+      }
+     },
+     {
+      "name": "b",
+      "shape": {
+       "type": "string"
+      },
+      "optional": false
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "a"
+   }
+  },
+  {
+   "interface": {
+    "description": "A record by reference, as pydantic writes one.",
+    "inputs": [
+     {
+      "name": "order",
+      "shape": {
+       "$ref": "#/$defs/Order",
+       "$defs": {
+        "Order": {
+         "type": "object",
+         "title": "Order",
+         "properties": {
+          "id": {
+           "type": "integer"
+          }
+         },
+         "required": [
+          "id"
+         ]
+        }
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:bf976223d43495a21b7dfb8113e6543db8eb0370ddda4003202bccf126a56e4e"
    }
   }
  ]

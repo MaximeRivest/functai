@@ -1,12 +1,13 @@
 {
  "description": "An event whose after is beyond the last kept is refused; the log goes on when the missing event comes.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -32,10 +33,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -47,10 +49,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "thinking",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 3,
     "after": 2,
     "at": "2026-09-28T10:00:00.030000Z",
@@ -61,10 +64,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "tool_call",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 5,
     "after": 4,
     "at": "2026-09-28T10:00:00.050000Z",
@@ -79,10 +83,11 @@
    "expect": "event-gap"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 4,
     "after": 3,
     "at": "2026-09-28T10:00:00.040000Z",
@@ -95,10 +100,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "tool_call",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 5,
     "after": 4,
     "at": "2026-09-28T10:00:00.050000Z",
@@ -113,6 +119,7 @@
    "expect": "kept"
   }
  ],
+ "reads": [],
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
@@ -123,6 +130,7 @@
      4,
      5
     ],
+    "writer": 1,
     "finished": false
    }
   }

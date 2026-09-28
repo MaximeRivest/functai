@@ -1,12 +1,13 @@
 {
  "description": "Two trees in one store are numbered each on its own.",
  "kind": "store",
- "appends": [
+ "steps": [
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -32,10 +33,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "started",
     "tree": "01926c00-0002-7000-8000-000000000000",
+    "writer": 1,
     "seq": 1,
     "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
@@ -61,10 +63,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -76,10 +79,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0002-7000-8000-000000000000",
+    "writer": 1,
     "seq": 2,
     "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
@@ -91,10 +95,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "thinking",
     "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
     "seq": 3,
     "after": 2,
     "at": "2026-09-28T10:00:00.030000Z",
@@ -105,10 +110,11 @@
    "expect": "kept"
   },
   {
-   "event": {
+   "append": {
     "functai_event": 2,
     "kind": "text",
     "tree": "01926c00-0002-7000-8000-000000000000",
+    "writer": 1,
     "seq": 3,
     "after": 2,
     "at": "2026-09-28T10:00:00.030000Z",
@@ -121,6 +127,7 @@
    "expect": "kept"
   }
  ],
+ "reads": [],
  "expect": {
   "logs": {
    "01926c00-0001-7000-8000-000000000000": {
@@ -129,6 +136,7 @@
      2,
      3
     ],
+    "writer": 1,
     "finished": false
    },
    "01926c00-0002-7000-8000-000000000000": {
@@ -137,6 +145,7 @@
      2,
      3
     ],
+    "writer": 1,
     "finished": false
    }
   }

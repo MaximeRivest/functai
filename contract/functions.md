@@ -27,7 +27,7 @@ its docstring; TypeScript: `ai({...})`), it comes down to this data:
 |---|---|
 | `name` | the function's name. |
 | `description` | what it does, in words (Python: the docstring). May be empty. |
-| `inputs` | in order, each `{name, shape, desc?}`: `shape` a JSON Schema (below), `desc` words about it. |
+| `inputs` | in order, each `{name, shape, desc?, optional?}`: `shape` a JSON Schema (below), `desc` words about it, `optional` true when a caller may leave it out; an optional input's shape has a `default`, the value it is sent with then ([programs.md](programs.md)). |
 | `outputs` | in order, each `{name, shape, desc?}`. The **last is the answer** (`program.answer` in the call log). One output is usually named `result`. |
 | `settings` | the ones that shape the request: `adapter`, `template`, `module`, `include_fn_name_in_instructions`, `capabilities`, `tools`. |
 | `state` | what improving changes: `instructions` (text that replaces the written instruction, or null) and `demos` (worked examples). |
@@ -50,7 +50,9 @@ A definition becomes an lmcc signature (`instructions` and `fields`).
 **Fields**, in this order:
 
 1. the inputs, each `direction: "input"`, `purpose: "plain"`, its `desc`
-   when it has one;
+   when it has one, its shape without its `default` (a default is how a
+   call is bound before the request, not what the model is told: an
+   input left out is sent with its default, like any given value);
 2. with tools, the input `tools` (purpose `tools`, type `list[Tool]`,
    lmcc_std's tool list shape);
 3. with `module: "cot"`, the output `reasoning` (`{"type": "string"}`,
