@@ -1,5 +1,6 @@
 {
- "description": "A record without saw (written before 2026-09-28, or by a writer that does not record it) says nothing: what it saw is not known, never taken to be nothing.",
+ "description": "A record without saw (format 1, or a writer that does not record it) says nothing: what it saw is not known, never taken to be nothing.",
+ "kind": "read",
  "records": [
   {
    "functai_call": 1,
@@ -53,7 +54,12 @@
   {
    "call": "01926b00-0001-7000-8000-000000000000",
    "expect": {
-    "unknown": "not-recorded"
+    "unknown": "not-recorded",
+    "call": "01926b00-0001-7000-8000-000000000000"
+   },
+   "replay": {
+    "refuses": "not-recorded",
+    "call": "01926b00-0001-7000-8000-000000000000"
    }
   }
  ]

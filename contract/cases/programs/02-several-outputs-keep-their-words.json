@@ -1,5 +1,5 @@
 {
- "description": "Outputs keep their desc in the interface (they are not in the signature's fields); the id leaves descriptions out, so it is still the signature's.",
+ "description": "Outputs keep their desc in the interface (they are not in the signature's fields); the signature leaves descriptions out, so it is still program.signature.",
  "program": "ai",
  "definition": {
   "name": "triage",
@@ -62,7 +62,7 @@
     }
    ]
   },
-  "id": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6",
+  "signature": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6",
   "signature_id": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6"
  }
 }

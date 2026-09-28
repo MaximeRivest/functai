@@ -1,0 +1,157 @@
+{
+ "description": "Required and optional inputs of one shape have one signature: the signature says what recorded data looks like, not which calls are accepted (compare interfaces for that). A default is part of the shape, so it is part of the signature.",
+ "program": "same-data",
+ "interfaces": [
+  {
+   "description": "Greet someone.",
+   "inputs": [
+    {
+     "name": "name",
+     "shape": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  },
+  {
+   "description": "Greet someone.",
+   "inputs": [
+    {
+     "name": "name",
+     "shape": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "optional": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  },
+  {
+   "description": "Greet someone.",
+   "inputs": [
+    {
+     "name": "name",
+     "shape": {
+      "anyOf": [
+       {
+        "type": "string"
+       },
+       {
+        "type": "null"
+       }
+      ],
+      "default": "friend"
+     },
+     "optional": true
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  }
+ ],
+ "expect": {
+  "signatures": [
+   "sha256:101fbfc510beb73e77a6f9dd8b5295aacc0b43304b6cfad5ddd8060ad63e2791",
+   "sha256:101fbfc510beb73e77a6f9dd8b5295aacc0b43304b6cfad5ddd8060ad63e2791",
+   "sha256:0b462036abefc4ff08e985bd73cc8f3e824294d20d546c209a91108cd941907a"
+  ]
+ },
+ "checks": [
+  {
+   "inputs": {},
+   "expect": [
+    {
+     "refuses": "interface-input",
+     "field": "name"
+    },
+    {
+     "inputs": {}
+    },
+    {
+     "inputs": {
+      "name": "friend"
+     }
+    }
+   ]
+  },
+  {
+   "inputs": {
+    "name": null
+   },
+   "expect": [
+    {
+     "inputs": {
+      "name": null
+     }
+    },
+    {
+     "inputs": {
+      "name": null
+     }
+    },
+    {
+     "inputs": {
+      "name": null
+     }
+    }
+   ]
+  },
+  {
+   "inputs": {
+    "name": "Ana"
+   },
+   "expect": [
+    {
+     "inputs": {
+      "name": "Ana"
+     }
+    },
+    {
+     "inputs": {
+      "name": "Ana"
+     }
+    },
+    {
+     "inputs": {
+      "name": "Ana"
+     }
+    }
+   ]
+  }
+ ]
+}

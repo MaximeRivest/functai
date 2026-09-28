@@ -1,8 +1,9 @@
 {
- "description": "How each call was shown travels with it: a photo left out after its first answer, a helper's steps shown; saw_of copies entries exactly as the named call has them.",
+ "description": "How each call was shown travels with it: a photo left out after its first answer, a helper's steps shown, a slot other than turns; saw_of copies entries exactly as the named call has them.",
+ "kind": "read",
  "records": [
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0001-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0001-7000-8000-000000000000",
@@ -12,7 +13,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:01:00.000000Z",
    "seconds": 1.0,
@@ -20,7 +22,8 @@
    "inputs": {
     "message": "What is wrong with my plant?",
     "photo": {
-     "$media": "image/jpeg"
+     "$media": "image/jpeg",
+     "sha256": "9c1e000000000000000000000000000000000000000000000000000000000000"
     }
    },
    "outputs": {
@@ -29,7 +32,7 @@
    "sizes": {
     "inputs": {
      "message": 30,
-     "photo": 26
+     "photo": 104
     },
     "outputs": {
      "result": 9
@@ -54,7 +57,7 @@
    "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0002-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0002-7000-8000-000000000000",
@@ -64,7 +67,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:02:00.000000Z",
    "seconds": 1.0,
@@ -106,7 +110,7 @@
    ]
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0003-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0003-7000-8000-000000000000",
@@ -116,7 +120,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:03:00.000000Z",
    "seconds": 1.0,
@@ -160,12 +165,13 @@
     },
     {
      "call": "01926b00-0002-7000-8000-000000000000",
-     "steps": true
+     "steps": true,
+     "slot": "helper"
     }
    ]
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0004-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0004-7000-8000-000000000000",
@@ -175,7 +181,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:04:00.000000Z",
    "seconds": 1.0,
@@ -229,6 +236,9 @@
       "call": "01926b00-0001-7000-8000-000000000000"
      }
     ]
+   },
+   "replay": {
+    "ok": true
    }
   },
   {
@@ -243,9 +253,13 @@
      },
      {
       "call": "01926b00-0002-7000-8000-000000000000",
-      "steps": true
+      "steps": true,
+      "slot": "helper"
      }
     ]
+   },
+   "replay": {
+    "ok": true
    }
   },
   {
@@ -260,12 +274,16 @@
      },
      {
       "call": "01926b00-0002-7000-8000-000000000000",
-      "steps": true
+      "steps": true,
+      "slot": "helper"
      },
      {
       "call": "01926b00-0003-7000-8000-000000000000"
      }
     ]
+   },
+   "replay": {
+    "ok": true
    }
   }
  ]

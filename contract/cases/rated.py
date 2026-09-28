@@ -4,9 +4,11 @@ the rows ``rated`` must make from it, written from the rules in
 make.py writes them.
 
 A case file: {"description", "records": [...], "rated": {name, module,
-signature, by}, "expect": {"rows": [...], "left_out": {...}}}. An
-implementation passes a case when rated(records, **rated) gives exactly
-``expect`` (rows in order, keys and values; left_out counts).
+signature, by, and interface when given}, "expect": {"rows": [...],
+"left_out": {...}}}. An implementation passes a case when rated(records,
+**rated) gives exactly ``expect`` (rows in order, keys and values;
+left_out counts). Records are of format 1 and 2 (and, in one case, of a
+format no reader knows).
 """
 
 import json
@@ -15,6 +17,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 SIG = "sha256:" + "5" * 64
 SIG_OLD = "sha256:" + "4" * 64
+SIG_COT = "sha256:" + "7" * 64
+SIG_OLD_COT = "sha256:" + "8" * 64
 V1 = "sha256:" + "1" * 64
 V2 = "sha256:" + "2" * 64
 LEFT = {"other_signature": 0, "no_content": 0, "no_answer": 0}
@@ -33,12 +37,15 @@ def at(minute, second=0):
 
 
 def call(n, minute, inputs, outputs, *, name="team", module="support", version=V1, signature=SIG,
-         answer="result", content=True, error=None, omitted=None):
-    """``omitted``: {"inputs": [...], "outputs": [...]}, the fields written as their size only
-    (calls.md, "Content"); the record then keeps the other values, with content false."""
-    rec = {"functai_call": 1, "id": cid(n), "parent": None, "root": cid(n),
-           "program": {"name": name, "kind": "ai", "module": module, "version": version, "signature": signature,
-                       "answer": answer},
+         answer="result", content=True, error=None, omitted=None, fmt=1, interface=None):
+    """``omitted``: {"inputs": [...], "outputs": [...]}, the fields whose values were not written
+    (calls.md, "Content", format 2); the record then keeps the other values, with content false.
+    ``fmt``: the record's format; a format-2 record has ``program.interface``."""
+    program = {"name": name, "kind": "ai", "module": module, "version": version, "signature": signature}
+    if fmt >= 2:
+        program["interface"] = interface or signature
+    program["answer"] = answer
+    rec = {"functai_call": fmt, "id": cid(n), "parent": None, "root": cid(n), "program": program,
            "started": at(minute), "seconds": 0.4, "content": content if omitted is None else False}
     if omitted is not None:
         rec["omitted"] = omitted
@@ -50,6 +57,8 @@ def call(n, minute, inputs, outputs, *, name="team", module="support", version=V
             rec["outputs"] = kept_out
     elif content:
         rec["inputs"], rec["outputs"] = inputs, outputs
+    elif fmt >= 2:
+        rec["omitted"] = {"inputs": list(inputs), "outputs": list(outputs or {})}
     rec["sizes"] = {"inputs": {k: len(json.dumps(v, ensure_ascii=False, separators=(",", ":")))
                                for k, v in inputs.items()},
                     "outputs": {k: len(json.dumps(v, ensure_ascii=False, separators=(",", ":")))
@@ -57,6 +66,9 @@ def call(n, minute, inputs, outputs, *, name="team", module="support", version=V
     rec.update(error=error, model="gpt-4.1-mini", usage={"input_tokens": 200, "output_tokens": 3}, confidence=None,
                exchanges=[], caller={}, process={"host": "lambda", "pid": 1, "user": "maxime", "language": "python",
                                                  "runtime": "3.13.1", "functai": "1.1.0"})
+    if fmt >= 2:
+        rec["saw"] = []
+        rec["process"]["functai"] = "1.2.0"
     return rec
 
 
@@ -190,20 +202,20 @@ CASES = {
     "12-some-inputs-not-written": dict(
         description="A call whose record kept some values but not every input (content false, omitted.inputs "
                     "not empty) has no inputs to ask again: left out, no_content, as a call with no values.",
-        records=[call(1, 1, {**M1, "transcript": "…"}, {"result": "billing"},
+        records=[call(1, 1, {**M1, "transcript": "…"}, {"result": "billing"}, fmt=2,
                       omitted={"inputs": ["transcript"], "outputs": []}),
                  rating(1, 1, 5, "maxime", "right")],
         rated=TEAM,
         expect={"rows": [], "left_out": {**LEFT, "no_content": 1}}),
     "13-every-input-written-an-output-not": dict(
-        description="A call whose record kept every input but not an output makes rows: a correction gives "
-                    "the answer; a right verdict gives nothing when the answer itself was not written "
-                    "(no_answer), and the call's other outputs when they were.",
-        records=[call(1, 1, M1, {"summary": "Charged twice.", "result": "billing"}, answer="result",
+        description="A call whose record kept every input but not every output makes rows: a correction gives "
+                    "the answer; a right verdict gives the call's own answer when it was written, and nothing "
+                    "when it was not (no_answer).",
+        records=[call(1, 1, M1, {"summary": "Charged twice.", "result": "billing"}, answer="result", fmt=2,
                       omitted={"inputs": [], "outputs": ["result"]}),
-                 call(2, 2, M2, {"summary": "Lost parcel.", "result": "shipping"}, answer="result",
+                 call(2, 2, M2, {"summary": "Lost parcel.", "result": "shipping"}, answer="result", fmt=2,
                       omitted={"inputs": [], "outputs": ["result"]}),
-                 call(3, 3, M3, {"summary": "Broken kettle.", "result": "product"}, answer="result",
+                 call(3, 3, M3, {"summary": "Broken kettle.", "result": "product"}, answer="result", fmt=2,
                       omitted={"inputs": [], "outputs": ["summary"]}),
                  rating(1, 1, 5, "maxime", "wrong", answer="shipping"), rating(2, 2, 5, "maxime", "right"),
                  rating(3, 3, 5, "maxime", "right")],
@@ -211,4 +223,32 @@ CASES = {
         expect={"rows": [row(M1, {"result": "shipping"}, 1, rating_="wrong", by="maxime"),
                          row(M3, {"result": "product"}, 3, rating_="right", by="maxime")],
                 "left_out": {**LEFT, "no_answer": 1}}),
+    "14-the-interface-decides": dict(
+        description="Given the program's interface, a call is used when its program.interface is that one "
+                    "(format 2), or when its program.signature is (format 1: an AI function with neither "
+                    "reasoning nor tools has the two equal), or when its program.signature is the given "
+                    "signature. Turning reasoning on changes program.signature, not program.interface: the "
+                    "rows pool. Others are other_signature.",
+        records=[call(1, 1, M1, {"reasoning": "They mention a charge.", "result": "billing"}, fmt=2,
+                      signature=SIG_COT, interface=SIG),
+                 call(2, 2, M2, {"result": "shipping"}, fmt=2, signature=SIG, interface=SIG),
+                 call(3, 3, M3, {"result": "product"}, fmt=2, signature=SIG_OLD, interface=SIG_OLD),
+                 call(4, 4, M1, {"result": "billing"}, signature=SIG),
+                 call(5, 5, M2, {"reasoning": "Lost.", "result": "shipping"}, signature=SIG_OLD_COT),
+                 rating(1, 1, 9, "maxime", "right"), rating(2, 2, 9, "maxime", "right"),
+                 rating(3, 3, 9, "maxime", "right"), rating(4, 4, 9, "maxime", "right"),
+                 rating(5, 5, 9, "maxime", "right")],
+        rated={**TEAM, "signature": SIG_COT, "interface": SIG},
+        expect={"rows": [row(M1, {"result": "billing"}, 1, rating_="right", by="maxime"),
+                         row(M2, {"result": "shipping"}, 2, rating_="right", by="maxime"),
+                         row(M1, {"result": "billing"}, 4, rating_="right", by="maxime")],
+                "left_out": {**LEFT, "other_signature": 2}}),
+    "15-a-format-this-reader-does-not-know": dict(
+        description="A call or rating record of a format the reader does not know is skipped: it makes no "
+                    "row and is not counted. A later format may mean something else by the same keys.",
+        records=[call(1, 1, M1, {"result": "billing"}, fmt=3), call(2, 2, M2, {"result": "shipping"}),
+                 rating(1, 1, 5, "maxime", "right"), rating(2, 2, 5, "maxime", "right"),
+                 {**rating(3, 2, 6, "ana", "wrong", answer="billing"), "functai_rating": 2}],
+        rated=TEAM,
+        expect={"rows": [row(M2, {"result": "shipping"}, 2, rating_="right", by="maxime")], "left_out": LEFT}),
 }

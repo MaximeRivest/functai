@@ -1,8 +1,8 @@
 {
- "description": "A call whose record kept every input but not an output makes rows: a correction gives the answer; a right verdict gives nothing when the answer itself was not written (no_answer), and the call's other outputs when they were.",
+ "description": "A call whose record kept every input but not every output makes rows: a correction gives the answer; a right verdict gives the call's own answer when it was written, and nothing when it was not (no_answer).",
  "records": [
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926a8e-0001-7000-8000-000000000000",
    "parent": null,
    "root": "01926a8e-0001-7000-8000-000000000000",
@@ -12,6 +12,7 @@
     "module": "support",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "answer": "result"
    },
    "started": "2026-09-26T10:01:00.000000Z",
@@ -53,11 +54,12 @@
     "user": "maxime",
     "language": "python",
     "runtime": "3.13.1",
-    "functai": "1.1.0"
-   }
+    "functai": "1.2.0"
+   },
+   "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926a8e-0002-7000-8000-000000000000",
    "parent": null,
    "root": "01926a8e-0002-7000-8000-000000000000",
@@ -67,6 +69,7 @@
     "module": "support",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "answer": "result"
    },
    "started": "2026-09-26T10:02:00.000000Z",
@@ -108,11 +111,12 @@
     "user": "maxime",
     "language": "python",
     "runtime": "3.13.1",
-    "functai": "1.1.0"
-   }
+    "functai": "1.2.0"
+   },
+   "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926a8e-0003-7000-8000-000000000000",
    "parent": null,
    "root": "01926a8e-0003-7000-8000-000000000000",
@@ -122,6 +126,7 @@
     "module": "support",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "answer": "result"
    },
    "started": "2026-09-26T10:03:00.000000Z",
@@ -163,8 +168,9 @@
     "user": "maxime",
     "language": "python",
     "runtime": "3.13.1",
-    "functai": "1.1.0"
-   }
+    "functai": "1.2.0"
+   },
+   "saw": []
   },
   {
    "functai_rating": 1,

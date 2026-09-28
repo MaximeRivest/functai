@@ -1,5 +1,5 @@
 {
- "description": "A shape of {} (no JSON type the language knows) accepts every value: such a module is never refused, and only its names are checked.",
+ "description": "An opaque field (a type with no JSON form, such as a data frame) takes any value and is never checked; only the names are. Its values cannot cross a boundary that needs data.",
  "program": "module",
  "interface": {
   "description": "A pipeline over a data frame.",
@@ -7,7 +7,8 @@
    {
     "name": "frame",
     "shape": {},
-    "type": "pd.DataFrame"
+    "type": "pd.DataFrame",
+    "opaque": true
    },
    {
     "name": "args",
@@ -21,12 +22,13 @@
   "outputs": [
    {
     "name": "result",
-    "shape": {}
+    "shape": {},
+    "opaque": true
    }
   ]
  },
  "expect": {
-  "id": "sha256:1b8d8f61e4271650dddd886ac647df730e974dc878359f87cc7c949d4ef24f1b"
+  "signature": "sha256:1b8d8f61e4271650dddd886ac647df730e974dc878359f87cc7c949d4ef24f1b"
  },
  "checks": [
   {

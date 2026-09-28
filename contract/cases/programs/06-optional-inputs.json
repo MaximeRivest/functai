@@ -1,5 +1,5 @@
 {
- "description": "An optional input left out takes its shape's default, or null without one; a given value is kept even when it is the default; desc and optional are not part of the id.",
+ "description": "An optional input left out takes its shape's default; without one it stays left out (never null: the program's own default applies, and the record has no value for it). A given value is checked, null included.",
  "program": "module",
  "interface": {
   "description": "Answer a customer's message, in a tone.",
@@ -32,6 +32,13 @@
      ]
     },
     "optional": true
+   },
+   {
+    "name": "since",
+    "shape": {
+     "type": "string"
+    },
+    "optional": true
    }
   ],
   "outputs": [
@@ -44,7 +51,7 @@
   ]
  },
  "expect": {
-  "id": "sha256:926d06303159d73ccf14b63b60ab57db3fe135a64820ba986b2d9ef9669c89bc"
+  "signature": "sha256:bc9df20861e99877d421f19e6daa9554fed86133ba4c09d2756101d3ae250dd0"
  },
  "checks": [
   {
@@ -54,8 +61,7 @@
    "expect": {
     "inputs": {
      "message": "Hi",
-     "tone": "kind",
-     "order": null
+     "tone": "kind"
     }
    }
   },
@@ -67,8 +73,7 @@
    "expect": {
     "inputs": {
      "message": "Hi",
-     "tone": "brief",
-     "order": null
+     "tone": "brief"
     }
    }
   },
@@ -82,6 +87,19 @@
      "message": "Hi",
      "tone": "kind",
      "order": "B-2210"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "order": null
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind",
+     "order": null
     }
    }
   },

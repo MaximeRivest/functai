@@ -1,8 +1,9 @@
 {
- "description": "A helper that remembers its own calls in the conversation: its call in the second turn saw its call in the first; the module's turns saw each other. Ids are kept when values are not (content false).",
+ "description": "A helper that remembers its own calls in the conversation: its call in the second turn saw its call in the first; the module's turns saw each other. Ids are kept when values are not (content false), so what was seen is known, but a turn whose values were not kept cannot be shown again (not-kept).",
+ "kind": "read",
  "records": [
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0001-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0001-7000-8000-000000000000",
@@ -11,17 +12,19 @@
     "kind": "module",
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:01:00.000000Z",
    "seconds": 1.0,
-   "content": true,
-   "inputs": {
-    "message": "message 1"
-   },
-   "outputs": {
-    "result": "reply 1"
+   "content": false,
+   "omitted": {
+    "inputs": [
+     "message"
+    ],
+    "outputs": [
+     "result"
+    ]
    },
    "sizes": {
     "inputs": {
@@ -50,7 +53,7 @@
    "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0002-7000-8000-000000000000",
    "parent": "01926b00-0001-7000-8000-000000000000",
    "root": "01926b00-0001-7000-8000-000000000000",
@@ -60,7 +63,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:02:00.000000Z",
    "seconds": 1.0,
@@ -98,7 +102,7 @@
    "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0003-7000-8000-000000000000",
    "parent": "01926b00-0001-7000-8000-000000000000",
    "root": "01926b00-0001-7000-8000-000000000000",
@@ -108,7 +112,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:03:00.000000Z",
    "seconds": 1.0,
@@ -146,7 +151,7 @@
    "saw": []
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0004-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0004-7000-8000-000000000000",
@@ -155,12 +160,18 @@
     "kind": "module",
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:04:00.000000Z",
    "seconds": 1.0,
-   "content": false,
+   "content": true,
+   "inputs": {
+    "message": "message 4"
+   },
+   "outputs": {
+    "result": "reply 4"
+   },
    "sizes": {
     "inputs": {
      "message": 11
@@ -195,7 +206,7 @@
    ]
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0005-7000-8000-000000000000",
    "parent": "01926b00-0004-7000-8000-000000000000",
    "root": "01926b00-0004-7000-8000-000000000000",
@@ -205,11 +216,20 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:05:00.000000Z",
    "seconds": 1.0,
    "content": false,
+   "omitted": {
+    "inputs": [
+     "message"
+    ],
+    "outputs": [
+     "result"
+    ]
+   },
    "sizes": {
     "inputs": {
      "message": 11
@@ -244,7 +264,7 @@
    ]
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0006-7000-8000-000000000000",
    "parent": "01926b00-0004-7000-8000-000000000000",
    "root": "01926b00-0004-7000-8000-000000000000",
@@ -254,7 +274,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:06:00.000000Z",
    "seconds": 1.0,
@@ -301,6 +322,10 @@
       "call": "01926b00-0001-7000-8000-000000000000"
      }
     ]
+   },
+   "replay": {
+    "refuses": "not-kept",
+    "call": "01926b00-0001-7000-8000-000000000000"
    }
   },
   {
@@ -311,12 +336,18 @@
       "call": "01926b00-0002-7000-8000-000000000000"
      }
     ]
+   },
+   "replay": {
+    "ok": true
    }
   },
   {
    "call": "01926b00-0006-7000-8000-000000000000",
    "expect": {
     "saw": []
+   },
+   "replay": {
+    "ok": true
    }
   }
  ]

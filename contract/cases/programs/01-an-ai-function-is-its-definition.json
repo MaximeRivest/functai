@@ -1,5 +1,5 @@
 {
- "description": "An AI function's interface is its definition's inputs and outputs; with neither reasoning nor tools its id is its program.signature.",
+ "description": "An AI function's interface is its definition's inputs and outputs; with neither reasoning nor tools its signature is its program.signature.",
  "program": "ai",
  "definition": {
   "name": "mood",
@@ -56,7 +56,7 @@
     }
    ]
   },
-  "id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
+  "signature": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
   "signature_id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf"
  }
 }

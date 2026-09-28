@@ -1,0 +1,102 @@
+{
+ "description": "A shape of {} that is not opaque is JSON Schema's: any JSON value. A value with no JSON form does not fit it.",
+ "program": "module",
+ "interface": {
+  "description": "Store any JSON value under a key.",
+  "inputs": [
+   {
+    "name": "key",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "value",
+    "shape": {},
+    "type": "JSON"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {}
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:3b3ca9ebfa4116220e9b3241bfe65408f9e0facf267197d59d48c11aa0d3e93b"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "key": "k",
+    "value": {
+     "a": [
+      1,
+      null
+     ]
+    }
+   },
+   "expect": {
+    "inputs": {
+     "key": "k",
+     "value": {
+      "a": [
+       1,
+       null
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "key": "k",
+    "value": null
+   },
+   "expect": {
+    "inputs": {
+     "key": "k",
+     "value": null
+    }
+   }
+  },
+  {
+   "inputs": {
+    "key": "k",
+    "value": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "value"
+   }
+  },
+  {
+   "returned": [
+    1,
+    "two"
+   ],
+   "expect": {
+    "outputs": {
+     "result": [
+      1,
+      "two"
+     ]
+    }
+   }
+  },
+  {
+   "returned": {
+    "$type": "DataFrame",
+    "$repr": "   a\n0  1"
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "result"
+   }
+  }
+ ]
+}

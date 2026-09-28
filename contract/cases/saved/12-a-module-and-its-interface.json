@@ -14,6 +14,30 @@
     "kind": "ai",
     "module": "shop",
     "name": "mood",
+    "interface": {
+     "description": "How does the customer feel about what they bought?",
+     "inputs": [
+      {
+       "name": "review",
+       "shape": {
+        "type": "string"
+       }
+      }
+     ],
+     "outputs": [
+      {
+       "name": "result",
+       "shape": {
+        "enum": [
+         "happy",
+         "unhappy",
+         "mixed"
+        ],
+        "type": "string"
+       }
+      }
+     ]
+    },
     "ai": {
      "settings": {
       "lm": "gpt-4.1-mini",

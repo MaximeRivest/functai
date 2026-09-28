@@ -1,0 +1,204 @@
+{
+ "description": "An AI node written since 2026-09-28 has its interface: describing it gives the function's description and its fields' words, not its instruction; loading it checks that the interface's signature is its signature's plain fields' (words may differ).",
+ "manifest": {
+  "functai_saved": 1,
+  "language": "python",
+  "entry": "shop:mood",
+  "created": "2026-09-27T12:00:00+00:00",
+  "python": "3.13.1",
+  "modules": {
+   "shop": "code/shop.py"
+  },
+  "nodes": {
+   "shop:mood": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "mood",
+    "interface": {
+     "description": "How does the customer feel about what they bought?",
+     "inputs": [
+      {
+       "name": "review",
+       "shape": {
+        "type": "string"
+       },
+       "desc": "what the customer wrote"
+      }
+     ],
+     "outputs": [
+      {
+       "name": "result",
+       "shape": {
+        "enum": [
+         "happy",
+         "unhappy",
+         "mixed"
+        ],
+        "type": "string"
+       }
+      }
+     ]
+    },
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [],
+     "teacher": null,
+     "state": {
+      "instructions": null,
+      "demos": [
+       {
+        "inputs": {
+         "review": "Broke in a day."
+        },
+        "outputs": {
+         "result": "unhappy"
+        }
+       },
+       {
+        "inputs": {
+         "review": "Great, but late."
+        },
+        "outputs": {
+         "result": "mixed",
+         "stars": 3
+        }
+       },
+       {
+        "inputs": {
+         "review": "Nothing to say."
+        },
+        "outputs": {
+         "stars": 3
+        }
+       },
+       {
+        "inputs": {
+         "review": {
+          "text": "Love it"
+         }
+        },
+        "outputs": {
+         "result": "happy"
+        }
+       }
+      ]
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Function: mood\n\nHow does the customer feel about what they bought?",
+      "fields": [
+       {
+        "name": "review",
+        "direction": "input",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "enum": [
+          "happy",
+          "unhappy",
+          "mixed"
+         ],
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "review": "example text"
+      },
+      {
+       "review": "Broke in a day."
+      },
+      {
+       "review": "Great, but late."
+      },
+      {
+       "review": "Nothing to say."
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
+      "requests": [
+       "sha256:2f94feff2c0e954e997c5d3a73ba0a7cb06380ab41f98f2f45e75426b32de23f",
+       "sha256:6de63fb33a6bf49d23afc95400ad349e56de2925bc657aa1bea5ab2ebdd2bc52",
+       "sha256:0e52eb1171dd2d413232f1cd67763fa86b68610460e32e8ba5dd1058aeee5a44",
+       "sha256:d7485d6eac27b9d2e305206af62e775daf0186981ba39dc03b2fd6f5d65a3c24"
+      ]
+     },
+     "body": null,
+     "version": "sha256:0af1ab4c870e1e8d6cccaeb6e7e059b48d6a5f6f2ec413e69dde7d7d51737440"
+    }
+   }
+  },
+  "requirements": [
+   "functai==1.1.0"
+  ],
+  "allowed": [],
+  "warnings": [],
+  "models": {},
+  "data_files": {},
+  "hashes": {}
+ },
+ "node": null,
+ "expect": {
+  "loads": {
+   "name": "mood",
+   "module": "shop",
+   "version": "sha256:0af1ab4c870e1e8d6cccaeb6e7e059b48d6a5f6f2ec413e69dde7d7d51737440",
+   "signature_id": "sha256:b2f7596c2f780b7897bba9412442f78b406dfaae76e81acdff4e705cc5acb7bf",
+   "requests": [
+    "sha256:2f94feff2c0e954e997c5d3a73ba0a7cb06380ab41f98f2f45e75426b32de23f",
+    "sha256:6de63fb33a6bf49d23afc95400ad349e56de2925bc657aa1bea5ab2ebdd2bc52",
+    "sha256:0e52eb1171dd2d413232f1cd67763fa86b68610460e32e8ba5dd1058aeee5a44",
+    "sha256:d7485d6eac27b9d2e305206af62e775daf0186981ba39dc03b2fd6f5d65a3c24"
+   ]
+  },
+  "describe": {
+   "interface": {
+    "description": "How does the customer feel about what they bought?",
+    "inputs": [
+     {
+      "name": "review",
+      "shape": {
+       "type": "string"
+      },
+      "desc": "what the customer wrote"
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "enum": [
+        "happy",
+        "unhappy",
+        "mixed"
+       ],
+       "type": "string"
+      }
+     }
+    ]
+   }
+  }
+ }
+}

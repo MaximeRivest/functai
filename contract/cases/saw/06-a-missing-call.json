@@ -1,8 +1,9 @@
 {
  "description": "saw_of naming a call the log does not have, or one whose record has no saw, cannot be read: what the call saw is not known (a row asked again from it would be a guess).",
+ "kind": "read",
  "records": [
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0002-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0002-7000-8000-000000000000",
@@ -12,7 +13,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:02:00.000000Z",
    "seconds": 1.0,
@@ -104,7 +106,7 @@
    }
   },
   {
-   "functai_call": 1,
+   "functai_call": 2,
    "id": "01926b00-0004-7000-8000-000000000000",
    "parent": null,
    "root": "01926b00-0004-7000-8000-000000000000",
@@ -114,7 +116,8 @@
     "module": "school",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
    },
    "started": "2026-09-28T10:04:00.000000Z",
    "seconds": 1.0,
@@ -163,13 +166,23 @@
   {
    "call": "01926b00-0002-7000-8000-000000000000",
    "expect": {
-    "unknown": "missing-call"
+    "unknown": "missing-call",
+    "call": "01926b00-0001-7000-8000-000000000000"
+   },
+   "replay": {
+    "refuses": "missing-call",
+    "call": "01926b00-0001-7000-8000-000000000000"
    }
   },
   {
    "call": "01926b00-0004-7000-8000-000000000000",
    "expect": {
-    "unknown": "missing-call"
+    "unknown": "missing-call",
+    "call": "01926b00-0003-7000-8000-000000000000"
+   },
+   "replay": {
+    "refuses": "missing-call",
+    "call": "01926b00-0003-7000-8000-000000000000"
    }
   }
  ]

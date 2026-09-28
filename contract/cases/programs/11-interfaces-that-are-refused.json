@@ -1,0 +1,233 @@
+{
+ "description": "An interface is refused when it is defined or read (interface-malformed), naming the first field at fault, inputs then outputs, in order; null when it has no output. A name is an ASCII identifier used once across inputs and outputs; a shape is valid JSON Schema; a default fits its shape; an opaque field's shape is {}; only inputs are optional.",
+ "program": "definitions",
+ "interfaces": [
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:fe7368110315350b0ace26b1495a05d87ed7e45f4e220918efe2ab97f184e20f"
+   }
+  },
+  {
+   "interface": {
+    "description": "No output.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": []
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": null
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "the message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "the message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "text"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string",
+       "default": 3
+      },
+      "optional": true
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      },
+      "opaque": true
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      },
+      "optional": true
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "result"
+   }
+  },
+  {
+   "interface": {
+    "description": "Two faults: the first is named.",
+    "inputs": [
+     {
+      "name": "a",
+      "shape": {
+       "type": "strin"
+      }
+     },
+     {
+      "name": "a",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "a"
+   }
+  }
+ ]
+}

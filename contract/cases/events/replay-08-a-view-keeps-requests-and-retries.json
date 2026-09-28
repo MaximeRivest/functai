@@ -1,12 +1,13 @@
 {
- "description": "A view that hides retries, tool events and thinking skips seq numbers; a piece of a higher request still starts the call's fields afresh, so it shows what the whole stream shows once the new request writes.",
+ "description": "A view that hides tool traffic, thinking and retry reasons keeps every request and retry (they hold no value), so after each event it shows, its fields are the whole log's.",
  "kind": "replay",
  "events": [
   {
    "functai_event": 2,
    "kind": "started",
-   "stream": "01926c00-0001-7000-8000-000000000000",
+   "tree": "01926c00-0001-7000-8000-000000000000",
    "seq": 1,
+   "after": 0,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
@@ -18,6 +19,7 @@
     "module": "shop",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "answer": "result"
    },
    "inputs": {
@@ -28,49 +30,86 @@
   },
   {
    "functai_event": 2,
-   "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
    "seq": 2,
+   "after": 1,
    "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
-   "field": "result",
-   "answer": true,
    "request": 1,
-   "text": "bill"
+   "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
    "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
+   "tree": "01926c00-0001-7000-8000-000000000000",
    "seq": 3,
+   "after": 2,
    "at": "2026-09-28T10:00:00.030000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
    "field": "result",
    "answer": true,
-   "request": 1,
-   "text": "ing?"
+   "text": "bill"
   },
   {
    "functai_event": 2,
    "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 5,
-   "at": "2026-09-28T10:00:00.050000Z",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "after": 3,
+   "at": "2026-09-28T10:00:00.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
    "field": "result",
    "answer": true,
+   "text": "ing?"
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "after": 4,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "wait": null,
+   "content": false
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 6,
+   "after": 5,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
    "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 7,
+   "after": 6,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
    "text": "billing"
   },
   {
    "functai_event": 2,
    "kind": "done",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 6,
-   "at": "2026-09-28T10:00:00.060000Z",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 8,
+   "after": 7,
+   "at": "2026-09-28T10:00:00.080000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "team",
    "value": "billing"
@@ -78,6 +117,14 @@
  ],
  "expect": {
   "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
    {
     "calls": {
      "01926c00-0001-7000-8000-000000000000": {
@@ -110,6 +157,22 @@
     "calls": {
      "01926c00-0001-7000-8000-000000000000": {
       "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
       "fields": {
        "result": "billing"
       }
@@ -133,8 +196,11 @@
   {
    "after": 3,
    "seqs": [
+    4,
     5,
-    6
+    6,
+    7,
+    8
    ]
   }
  ]

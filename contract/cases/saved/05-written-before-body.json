@@ -1,5 +1,5 @@
 {
- "description": "A folder written before `body` existed: read as code, so it refuses.",
+ "description": "A folder written before `body` existed: read as code, so it refuses. Written before nodes had an interface too: describing it reads the interface from the signature, with the instruction as its description (all an old folder has).",
  "manifest": {
   "functai_saved": 1,
   "entry": "shop:mood",

@@ -1,13 +1,14 @@
 {
- "description": "An event beyond the next seq is refused; the stream is kept up to the last event before the gap, and goes on when the missing event comes.",
+ "description": "An event whose after is beyond the last kept is refused; the log goes on when the missing event comes.",
  "kind": "store",
  "appends": [
   {
    "event": {
     "functai_event": 2,
     "kind": "started",
-    "stream": "01926c00-0001-7000-8000-000000000000",
+    "tree": "01926c00-0001-7000-8000-000000000000",
     "seq": 1,
+    "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
@@ -19,6 +20,7 @@
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
      "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "answer": "result"
     },
     "inputs": {
@@ -32,13 +34,28 @@
   {
    "event": {
     "functai_event": 2,
-    "kind": "thinking",
-    "stream": "01926c00-0001-7000-8000-000000000000",
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
     "seq": 2,
+    "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
     "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "thinking",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 3,
+    "after": 2,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
     "text": "Look the order up first."
    },
    "expect": "kept"
@@ -46,15 +63,33 @@
   {
    "event": {
     "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 5,
+    "after": 4,
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "id": "call_1",
+    "name": "lookup_order",
+    "input": {
+     "order": "B-2210"
+    }
+   },
+   "expect": "event-gap"
+  },
+  {
+   "event": {
+    "functai_event": 2,
     "kind": "text",
-    "stream": "01926c00-0001-7000-8000-000000000000",
-    "seq": 3,
-    "at": "2026-09-28T10:00:00.030000Z",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 4,
+    "after": 3,
+    "at": "2026-09-28T10:00:00.040000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
     "field": "result",
     "answer": true,
-    "request": 1,
     "text": "Let me check."
    },
    "expect": "kept"
@@ -62,25 +97,11 @@
   {
    "event": {
     "functai_event": 2,
-    "kind": "tool_result",
-    "stream": "01926c00-0001-7000-8000-000000000000",
-    "seq": 5,
-    "at": "2026-09-28T10:00:00.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "id": "call_1",
-    "name": "lookup_order",
-    "output": "In the Leeds depot, 7 days late."
-   },
-   "expect": "event-gap"
-  },
-  {
-   "event": {
-    "functai_event": 2,
     "kind": "tool_call",
-    "stream": "01926c00-0001-7000-8000-000000000000",
-    "seq": 4,
-    "at": "2026-09-28T10:00:00.040000Z",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 5,
+    "after": 4,
+    "at": "2026-09-28T10:00:00.050000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
     "id": "call_1",
@@ -90,25 +111,10 @@
     }
    },
    "expect": "kept"
-  },
-  {
-   "event": {
-    "functai_event": 2,
-    "kind": "tool_result",
-    "stream": "01926c00-0001-7000-8000-000000000000",
-    "seq": 5,
-    "at": "2026-09-28T10:00:00.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "id": "call_1",
-    "name": "lookup_order",
-    "output": "In the Leeds depot, 7 days late."
-   },
-   "expect": "kept"
   }
  ],
  "expect": {
-  "streams": {
+  "logs": {
    "01926c00-0001-7000-8000-000000000000": {
     "seqs": [
      1,

@@ -1,13 +1,14 @@
 {
- "description": "Two streams in one store are numbered each on its own.",
+ "description": "Two trees in one store are numbered each on its own.",
  "kind": "store",
  "appends": [
   {
    "event": {
     "functai_event": 2,
     "kind": "started",
-    "stream": "01926c00-0001-7000-8000-000000000000",
+    "tree": "01926c00-0001-7000-8000-000000000000",
     "seq": 1,
+    "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
@@ -19,6 +20,7 @@
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
      "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "answer": "result"
     },
     "inputs": {
@@ -33,8 +35,9 @@
    "event": {
     "functai_event": 2,
     "kind": "started",
-    "stream": "01926c00-0002-7000-8000-000000000000",
+    "tree": "01926c00-0002-7000-8000-000000000000",
     "seq": 1,
+    "after": 0,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0002-7000-8000-000000000000",
     "function": "team",
@@ -46,6 +49,7 @@
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
      "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "answer": "result"
     },
     "inputs": {
@@ -59,13 +63,43 @@
   {
    "event": {
     "functai_event": 2,
-    "kind": "thinking",
-    "stream": "01926c00-0001-7000-8000-000000000000",
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
     "seq": 2,
+    "after": 1,
     "at": "2026-09-28T10:00:00.020000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "helper",
     "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0002-7000-8000-000000000000",
+    "seq": 2,
+    "after": 1,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "team",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "thinking",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 3,
+    "after": 2,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
     "text": "Look the order up first."
    },
    "expect": "kept"
@@ -74,50 +108,21 @@
    "event": {
     "functai_event": 2,
     "kind": "text",
-    "stream": "01926c00-0002-7000-8000-000000000000",
-    "seq": 2,
-    "at": "2026-09-28T10:00:00.020000Z",
+    "tree": "01926c00-0002-7000-8000-000000000000",
+    "seq": 3,
+    "after": 2,
+    "at": "2026-09-28T10:00:00.030000Z",
     "call": "01926c00-0002-7000-8000-000000000000",
     "function": "team",
     "field": "result",
     "answer": true,
-    "request": 1,
     "text": "other"
-   },
-   "expect": "kept"
-  },
-  {
-   "event": {
-    "functai_event": 2,
-    "kind": "text",
-    "stream": "01926c00-0001-7000-8000-000000000000",
-    "seq": 3,
-    "at": "2026-09-28T10:00:00.030000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "helper",
-    "field": "result",
-    "answer": true,
-    "request": 1,
-    "text": "Let me check."
-   },
-   "expect": "kept"
-  },
-  {
-   "event": {
-    "functai_event": 2,
-    "kind": "done",
-    "stream": "01926c00-0002-7000-8000-000000000000",
-    "seq": 3,
-    "at": "2026-09-28T10:00:00.030000Z",
-    "call": "01926c00-0002-7000-8000-000000000000",
-    "function": "team",
-    "value": "other"
    },
    "expect": "kept"
   }
  ],
  "expect": {
-  "streams": {
+  "logs": {
    "01926c00-0001-7000-8000-000000000000": {
     "seqs": [
      1,
@@ -132,7 +137,7 @@
      2,
      3
     ],
-    "finished": true
+    "finished": false
    }
   }
  }

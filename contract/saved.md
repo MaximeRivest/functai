@@ -41,11 +41,13 @@ Only `functai.json` is read by every language.
 
 A node is `{"kind", "module", "name", ...}`. `kind` is `"ai"` (an AI
 function), `"module"` (code that calls AI functions), `"function"` or
-`"class"` (plain code). A `"module"` node has `interface`: the inputs
-and outputs it declares ([programs.md](programs.md)). Absent in folders
-written before 2026-09-28: the module's interface is not known, and a
+`"class"` (plain code). An `"ai"` or `"module"` node has `interface`: the
+inputs and outputs a caller gives and gets ([programs.md](programs.md)),
+with the program's description and its fields' words. Absent in folders
+written before 2026-09-28: a module's interface is then not known, and a
 loader that needs it (to describe, serve or converse with the program)
-refuses `saved-no-interface`. An `"ai"` node has `ai`:
+refuses `saved-no-interface`; an AI node's is read from its signature
+(*Describing without loading*). An `"ai"` node has `ai`:
 
 | key | what it is |
 |---|---|
@@ -83,7 +85,11 @@ A loader in a language other than the folder's `language`:
    facts and compares the hash with `fingerprints.requests` (the same
    `"refused:<code>"` counts as equal). Any difference refuses
    `saved-differs` and names the probe. When `version` is present, the
-   loaded function's version must equal it.
+   loaded function's version must equal it. When the node has an
+   `interface`, it must not be refused (`interface-malformed`), and its
+   signature must be the signature of the plain fields of `signature`
+   (else `saved-differs`: the node would promise other data than the
+   function takes and gives; its words may differ).
 
 The loaded function then behaves as it did where it was saved: the same
 requests, the same version and signature in the call log, so its calls
@@ -95,8 +101,16 @@ A loader in the folder's own language runs the saved code (Python:
 ## Describing without loading
 
 Every program node can be described in every language without running
-anything: a module node by its `interface`, an AI node by the interface
-its `signature` gives (the fields whose `purpose` is `plain`;
-[programs.md](programs.md)). So `check`, a server or a page can say what
-the entry takes and gives before deciding to load it, whatever language
-wrote it.
+anything, by its `interface`: refused `interface-malformed` when
+programs.md refuses it, and, for an AI node, `saved-differs` when it does
+not match its signature (as in step 6). So `check`, a server or a page
+can say what the entry takes and gives before deciding to load it,
+whatever language wrote it.
+
+A node written before 2026-09-28 has no `interface`. A module node then
+refuses `saved-no-interface`. An AI node is described by the interface its
+`signature` gives: its fields whose `purpose` is `plain`, and its
+instruction as the description. That is all such a folder holds: the
+instruction is the prompt (with `Function: <name>` and any improvement),
+output words are in it, and no input is known to be optional. A server
+should not show it to outside callers as it is.

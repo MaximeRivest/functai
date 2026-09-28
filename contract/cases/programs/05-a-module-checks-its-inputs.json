@@ -21,7 +21,7 @@
   ]
  },
  "expect": {
-  "id": "sha256:fe7368110315350b0ace26b1495a05d87ed7e45f4e220918efe2ab97f184e20f"
+  "signature": "sha256:fe7368110315350b0ace26b1495a05d87ed7e45f4e220918efe2ab97f184e20f"
  },
  "checks": [
   {

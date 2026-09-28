@@ -1,0 +1,76 @@
+{
+ "description": "An event whose seq is not greater than its after is refused.",
+ "kind": "store",
+ "appends": [
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 1,
+    "after": 0,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "helper",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "question": "Where is B-2210?"
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "kept"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 2,
+    "after": 2,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "event-malformed"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "seq": 2,
+    "after": 1,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  }
+ ],
+ "expect": {
+  "logs": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "seqs": [
+     1,
+     2
+    ],
+    "finished": false
+   }
+  }
+ }
+}

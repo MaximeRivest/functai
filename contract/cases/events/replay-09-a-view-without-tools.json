@@ -1,12 +1,13 @@
 {
- "description": "The same, for the request after tool results.",
+ "description": "The same, for the request after tool results: seqs skip, after links each event to the one before it in the view.",
  "kind": "replay",
  "events": [
   {
    "functai_event": 2,
    "kind": "started",
-   "stream": "01926c00-0001-7000-8000-000000000000",
+   "tree": "01926c00-0001-7000-8000-000000000000",
    "seq": 1,
+   "after": 0,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
@@ -18,6 +19,7 @@
     "module": "shop",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
     "answer": "result"
    },
    "inputs": {
@@ -28,49 +30,74 @@
   },
   {
    "functai_event": 2,
-   "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 3,
-   "at": "2026-09-28T10:00:00.030000Z",
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "after": 1,
+   "at": "2026-09-28T10:00:00.020000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
-   "field": "result",
-   "answer": true,
    "request": 1,
-   "text": "Let me check."
+   "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
    "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 6,
-   "at": "2026-09-28T10:00:00.060000Z",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "after": 2,
+   "at": "2026-09-28T10:00:00.040000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
    "field": "result",
    "answer": true,
+   "text": "Let me check."
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 7,
+   "after": 4,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
    "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 8,
+   "after": 7,
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
    "text": "It is in Leeds, "
   },
   {
    "functai_event": 2,
    "kind": "text",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 7,
-   "at": "2026-09-28T10:00:00.070000Z",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 9,
+   "after": 8,
+   "at": "2026-09-28T10:00:00.090000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
    "field": "result",
    "answer": true,
-   "request": 2,
    "text": "a week late."
   },
   {
    "functai_event": 2,
    "kind": "done",
-   "stream": "01926c00-0001-7000-8000-000000000000",
-   "seq": 8,
-   "at": "2026-09-28T10:00:00.080000Z",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "seq": 10,
+   "after": 9,
+   "at": "2026-09-28T10:00:00.100000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
    "value": "It is in Leeds, a week late."
@@ -90,9 +117,25 @@
     "calls": {
      "01926c00-0001-7000-8000-000000000000": {
       "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
       "fields": {
        "result": "Let me check."
       }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
      }
     }
    },
@@ -129,5 +172,15 @@
   ],
   "finished": true
  },
- "resume": []
+ "resume": [
+  {
+   "after": 4,
+   "seqs": [
+    7,
+    8,
+    9,
+    10
+   ]
+  }
+ ]
 }

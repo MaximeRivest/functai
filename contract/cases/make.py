@@ -11,7 +11,8 @@ implementation's output:
     events/      ../streaming.md                             (events.py)
 
 Every record, event, manifest and interface a case holds is checked
-against ../schema as it is written (schemas.py).
+against ../schema as it is written, and the schemas are checked to refuse
+what must never be written (schemas.py).
 
     python contract/cases/make.py      (python/.venv has lmcc for functions/)
 """
@@ -34,13 +35,21 @@ import schemas  # noqa: E402
 import scores  # noqa: E402
 
 
+KNOWN = {"functai_call": (1, 2), "functai_rating": (1,)}
+
+
 def check(folder: str, cases: dict) -> None:
     """Each case's data passes the contract's schemas."""
     for name, case in cases.items():
         where = f"{folder}/{name}"
-        if folder in ("rated", "saw"):
+        if folder == "rated" or (folder == "saw" and case["kind"] == "read"):
             for i, rec in enumerate(case["records"]):
+                if any(k in rec and rec[k] not in v for k, v in KNOWN.items()):   # a format no reader knows
+                    assert not schemas.CALL.is_valid(rec) and not schemas.RATING.is_valid(rec), where
+                    continue
                 schemas.record(rec, f"{where} records[{i}]")
+        elif folder == "saw":
+            schemas.check(schemas.SAW_ENTRY, case["entry"], f"{where} entry")
         elif folder == "content":
             schemas.check(schemas.CALL, case["record"], f"{where} record")
             if "record" in case["expect"]:
@@ -51,13 +60,25 @@ def check(folder: str, cases: dict) -> None:
             else:
                 schemas.check(schemas.SAVED, case["manifest"], f"{where} manifest")
         elif folder == "programs":
-            iface = case.get("interface") or case["expect"]["interface"]
-            schemas.check(schemas.INTERFACE, iface, f"{where} interface")
+            if case["program"] == "ai":
+                ifaces = [case["expect"]["interface"]]
+            elif case["program"] == "definitions":
+                ifaces = [x["interface"] for x in case["interfaces"] if "signature" in x["expect"]]
+            elif case["program"] == "same-data":
+                ifaces = case["interfaces"]
+            else:
+                ifaces = [case["interface"]]
+            for iface in ifaces:
+                schemas.check(schemas.INTERFACE, iface, f"{where} interface")
         elif folder == "events":
-            evs = [a["event"] for a in case["appends"]] if case["kind"] == "store" else list(case["events"])
-            if case["kind"] == "stored":
+            kind = case["kind"]
+            evs = ([a["event"] for a in case["appends"]] if kind == "store" else
+                   case["received"] if kind == "follow" else list(case["events"]))
+            if kind == "kept":
                 evs += case["expect"]["events"]
             for i, e in enumerate(evs):
+                if kind == "store" and case["appends"][i]["expect"] == "event-malformed":
+                    continue                                    # seq not above after: the schema cannot say
                 schemas.check(schemas.EVENT, e, f"{where} event {i}")
 
 
@@ -73,6 +94,7 @@ def write(folder: str, cases: dict) -> int:
 
 
 if __name__ == "__main__":
+    schemas.refusals()
     n = write("rated", rated.CASES) + write("functions", functions.cases()) + write("scores", scores.cases()) \
         + write("saved", saved.cases()) + write("programs", programs.cases()) + write("content", content.cases()) \
         + write("saw", saw.cases()) + write("events", events.cases())
