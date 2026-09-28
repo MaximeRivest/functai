@@ -207,8 +207,8 @@ def test_tool_calls_and_results_are_shown_whole(streaming):
     streaming([call], XML.format("Sunny, 22C."))
     s = assistant_.stream("Weather in Montreal?")
     events = list(s.events())
-    assert kinds(events) == ["started", "tool_call", "tool_result"] + ["text"] * 4 + ["done"]
-    tc, tr = events[1], events[2]
+    assert kinds(events) == ["started", "request", "tool_call", "tool_result", "request"] + ["text"] * 4 + ["done"]
+    tc, tr = events[2], events[3]
     assert (tc.id, tc.name, tc.input) == ("c1", "get_weather", {"city": "Montreal"})
     assert (tr.id, tr.output) == ("c1", "Sunny and 22C in Montreal.")
     assert s.result == "Sunny, 22C."
@@ -232,7 +232,7 @@ def test_a_tool_that_calls_an_ai_function_shows_its_call_inside(streaming):
     s = helper.stream("Who helps me?")
     events = list(s.events())
     inner = [e for e in events if e.function == "team"]
-    assert kinds(inner) == ["started", "text", "text", "text", "done"] and inner[0].parent == s.call_id
+    assert kinds(inner) == ["started", "request", "text", "text", "text", "done"] and inner[0].parent == s.call_id
     assert "".join(s) == "Billing will help you."             # only the stream's own answer
 
 
@@ -253,8 +253,8 @@ def test_a_module_stream_shows_every_call_inside(streaming):
     s = blurb.stream("snow")
     events = list(s.events())
     assert [(e.kind, e.function) for e in events if e.kind != "text"] == [
-        ("started", "blurb"), ("started", "draft"), ("done", "draft"), ("started", "shorten"),
-        ("done", "shorten"), ("done", "blurb")]
+        ("started", "blurb"), ("started", "draft"), ("request", "draft"), ("done", "draft"),
+        ("started", "shorten"), ("request", "shorten"), ("done", "shorten"), ("done", "blurb")]
     assert "".join(s.text_of(shorten)) == "Snow, briefly."
     assert "".join(s.text_of(draft)) == "A long paragraph about snow."
     assert s.result == "Snow, briefly."
@@ -561,10 +561,15 @@ def test_events_as_json_match_the_contract(streaming):
     for d in dicts:
         errors = list(validator.iter_errors(d))
         assert not errors, (d, errors[0].message)
-    assert {d["kind"] for d in dicts} == {"started", "tool_call", "tool_result", "retry", "text", "done"}
+    assert {d["kind"] for d in dicts} == {"started", "request", "tool_call", "tool_result", "retry", "text", "done"}
     assert dicts[-1]["value"] == {"name": "Ada", "city": "Oslo", "age": 36}
+    assert [d["seq"] for d in dicts] == list(range(1, len(dicts) + 1))            # one numbering per tree
+    assert all(d["tree"] == s.call_id and d["writer"] == 1 for d in dicts)
+    assert [d["after"] for d in dicts] == [None] + [{"writer": 1, "seq": d["seq"]} for d in dicts[:-1]]
+    assert [d["at"] for d in dicts] == sorted(d["at"] for d in dicts)
+    assert [d["request"] for d in dicts if d["kind"] == "request"] == [1, 2, 3]
     json.dumps(dicts)
-    failed = Failed(s.call_id, "x", ValueError("bad")).to_dict()
+    failed = Failed(s.call_id, "x", ValueError("bad"), tree=s.call_id, seq=9).to_dict()
     assert failed["error"] == {"type": "ValueError", "message": "bad"} and not list(validator.iter_errors(failed))
 
 

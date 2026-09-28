@@ -5,7 +5,6 @@ manifests (saved.md). The call log's cases are in test_call_log.py."""
 
 import dataclasses
 import json
-import tempfile
 import textwrap
 from pathlib import Path
 
@@ -15,74 +14,10 @@ import pytest
 import functai
 from functai import adapters, calllog, evaluation, models
 from functai.saved import probe_plan, probe_request, request_fingerprint
-
-CONTRACT = Path(__file__).resolve().parents[2] / "contract"
-
-
-def load(path: Path):
-    return json.loads(path.read_text())
+from contract_support import CONTRACT, case_files, load, python_function
 
 
-def case_files(folder: str):
-    return sorted((CONTRACT / "cases" / folder).glob("*.json"))
-
-
-# ------------------------------------------------------------------ a definition as Python code
-
-
-def annotation(shape: dict, name: str, classes: list) -> str:
-    """Python type for a JSON Schema shape (records become dataclasses in ``classes``)."""
-    if "enum" in shape:
-        return "Literal[" + ", ".join(repr(v) for v in shape["enum"]) + "]"
-    if "anyOf" in shape:
-        [inner] = [s for s in shape["anyOf"] if s.get("type") != "null"]
-        return f"Optional[{annotation(inner, name, classes)}]"
-    t = shape.get("type")
-    if t == "array":
-        return f"list[{annotation(shape['items'], name, classes)}]"
-    if t == "object" and "properties" in shape:
-        cls = f"Rec_{name}"
-        lines = [f"@dataclasses.dataclass\nclass {cls}:"]
-        lines += [f"    {k}: {annotation(v, name + '_' + k, classes)}" for k, v in shape["properties"].items()]
-        classes.append("\n".join(lines))
-        return cls
-    if t == "object":
-        return f"dict[str, {annotation(shape['additionalProperties'], name, classes)}]"
-    return {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}[t]
-
-
-def python_function(d: dict):
-    """The definition written the way a Python user writes it, then decorated."""
-    classes: list = []
-    params = []
-    for f in d["inputs"]:
-        params.append(f"    {f['name']}: {annotation(f['shape'], f['name'], classes)},"
-                      + (f"  # {f['desc']}" if f.get("desc") else ""))
-    *extras, main = d["outputs"]
-    body = [f'    """{d["description"]}"""'] if d["description"] else []
-    for f in extras:
-        body.append(f"    {f['name']}: {annotation(f['shape'], f['name'], classes)} = "
-                    f"_ai[{f.get('desc', '')!r}]")
-    if main.get("desc"):
-        body.append(f"    {main['name']}: {annotation(main['shape'], main['name'], classes)} = _ai[{main['desc']!r}]")
-    if not body:
-        body = ["    ..."]
-    returns = annotation(main["shape"], "result", classes)
-    source = "\n\n".join(classes) + "\n\n" + f"def {d['name']}(\n" + "\n".join(params) + \
-        f"\n) -> {returns}:\n" + "\n".join(body) + "\n"
-    namespace = {"__name__": "contract_case"}
-    # a real file, so inspect finds the source (comments are guidance)
-    path = Path(tempfile.mkdtemp()) / "contract_case.py"
-    path.write_text("import dataclasses\nfrom typing import Literal, Optional\nfrom functai import _ai\n\n" + source)
-    exec(compile(path.read_text(), str(path), "exec"), namespace)
-    fn = namespace[d["name"]]
-    settings = {k: v for k, v in d["settings"].items()}
-    if d.get("tools"):
-        from lmcc_std.tools import Tool
-        settings["tools"] = [Tool(**t) for t in d["tools"]]
-    program = functai.ai(**settings)(fn) if settings else functai.ai(fn)
-    program.load_state(d["state"])
-    return program
+# ------------------------------------------------------------------ AI functions (functions.md)
 
 
 def without_type(signature) -> dict:
@@ -232,3 +167,64 @@ def test_a_python_save_writes_what_another_language_loads(tmp_path, saved_schema
     r = load(tmp_path / "rounded" / "functai.json")["nodes"]["shop:rounded"]["ai"]
     assert r["body"] == {"code": calllog.code_hash(shop.rounded.__wrapped__)}
     _ = dataclasses
+
+
+# ------------------------------------------------------------------ saved folders another language reads (saved.md)
+
+
+def loaded(case):
+    """What loading the case's node gives, in the case's words."""
+    from functai.saved import from_manifest
+    try:
+        fn = from_manifest(case["manifest"], node=case["node"])
+    except functai.LoadRefused as err:
+        return {"refuses": err.code}, None
+    spec, settings = fn._spec(), fn._effective()
+    plan, past = probe_plan(fn, spec, settings)
+    node = case["manifest"]["nodes"][case["node"] or case["manifest"]["entry"]]
+    requests = []
+    for probe in node["ai"]["probes"]:
+        try:
+            requests.append(request_fingerprint(probe_request(fn, spec, plan, past, probe)))
+        except __import__("lmcc").Refusal as exc:
+            requests.append(f"refused:{exc.code}")
+    return {"loads": {"name": fn.__name__, "module": calllog.program_info(fn)["module"], "version": fn.version,
+                      "signature_id": calllog.signature_id(fn.signature), "requests": requests}}, fn
+
+
+@pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)
+def test_saved_case_loads(path):
+    case = load(path)
+    expect = {k: v for k, v in case["expect"].items() if k not in ("describe", "sends")}
+    got, fn = loaded(case)
+    assert got == expect
+    for send in case["expect"].get("sends", []):
+        # the loaded function called with an optional input left out sends its default
+        inputs = fn._bind_inputs((), dict(send["inputs"]))
+        spec, settings = fn._spec(), fn._effective()
+        plan, past = probe_plan(fn, spec, settings)
+        assert request_fingerprint(probe_request(fn, spec, plan, past, inputs)) == send["request_hash"]
+
+
+@pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)
+def test_saved_case_describes(path):
+    case = load(path)
+    try:
+        got = {"interface": functai.describe(case["manifest"], node=case["node"])}
+    except functai.LoadRefused as err:
+        got = {"refuses": err.code}
+    assert got == case["expect"]["describe"]
+
+
+def test_a_folder_of_another_language_loads_from_its_data(tmp_path, fake):
+    """functai.load reads a folder another language wrote without running any
+    code (no trust needed), and the function it gives calls a model."""
+    case = load(CONTRACT / "cases" / "saved" / "16-an-optional-input.json")
+    manifest = {**case["manifest"], "language": "typescript"}
+    (tmp_path / "functai.json").write_text(json.dumps(manifest))
+    reply = functai.load(tmp_path)
+    assert reply.interface == manifest["nodes"]["shop:reply"]["interface"]
+    router = fake("<result>\nHello!\n</result>")
+    assert reply("Hi") == "Hello!"
+    assert "<tone>\nkind\n</tone>" in router.user()               # the default, from the interface
+    assert functai.describe(tmp_path)["inputs"][1]["optional"] is True

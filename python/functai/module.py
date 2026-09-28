@@ -1,7 +1,7 @@
 """``@module``: a plain Python function that calls @ai functions, optimized as one program.
 
     @module
-    def research(claim: str, hops: int = 2):
+    def research(claim: str, hops: int = 2) -> list[str]:
         facts = []
         for _ in range(hops):
             query = generate_query(claim, facts)
@@ -9,16 +9,23 @@
         return facts
 
     better = research.opt(rows, metric=...)   # a copy with generate_query and append_notes tuned together
+    research.interface                        # what it takes and gives, as data (checked on every call)
 
 The metric sees ``Prediction(result=<what the module returned>)``.
 """
 
 from __future__ import annotations
 
+import copy
 import inspect
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 from .core import FunctAIFunc
+from .errors import InterfaceError
+
+# The settings a module takes for itself: where its calls go and what is kept
+# of them. Model settings belong to the AI functions it calls (or to a block).
+MODULE_SETTINGS = ("log_calls", "log_content", "caller", "observers", "journal")
 
 
 def _reachable_ai_functions(fn: Callable[..., Any]) -> List[FunctAIFunc]:
@@ -35,9 +42,15 @@ def _reachable_ai_functions(fn: Callable[..., Any]) -> List[FunctAIFunc]:
 
 
 class FunctAIModule:
-    """Callable wrapper for an orchestrator function that calls @ai functions."""
+    """A Python function that calls AI functions, as one program: called,
+    streamed, evaluated, optimized and saved as a whole. Build with ``@module``.
 
-    def __init__(self, fn: Callable[..., Any], *, requires: Any = ()):
+    Its ``interface`` (what it takes and gives, as data) is checked on every
+    call: its inputs before its code runs, its outputs when it returns
+    (``InterfaceError``)."""
+
+    def __init__(self, fn: Callable[..., Any], *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
+                 outputs: Optional[Mapping[str, Any]] = None, **settings: Any):
         if not callable(fn):
             raise TypeError("@module must wrap a callable function")
         self._fn = fn
@@ -52,6 +65,121 @@ class FunctAIModule:
         # the improved states of the AI functions it calls, for an improved copy
         # (applied while it runs; a candidate state being tried still wins)
         self._states: Dict[FunctAIFunc, Any] = {}
+        other = sorted(set(settings) - set(MODULE_SETTINGS))
+        if other:
+            raise TypeError(f"@module on {self.__name__}: {other} are settings of the AI functions it calls (set "
+                            f"them on those, or in a `with functai.configure(...)` block around the call); a module "
+                            f"takes {list(MODULE_SETTINGS)}")
+        from .config import check
+        self._settings: Dict[str, Any] = check({k: v for k, v in settings.items() if v is not None},
+                                               f"@module on {self.__name__}")
+        if interface is not None and outputs is not None:
+            raise TypeError(f"@module on {self.__name__}: give interface= (everything, as data) or outputs=, not both")
+        self._declared = interface is not None
+        self._outputs = dict(outputs) if outputs is not None else None
+        self._interface: Optional[Dict[str, Any]] = None
+        if interface is not None:
+            self._interface = copy.deepcopy(dict(interface))
+        self._signature = inspect.signature(fn)
+        self._check_definition()
+
+    # ----- the interface -----
+
+    def _derive(self) -> Dict[str, Any]:
+        from . import interface as _interface
+        if self._interface is None:
+            self._interface = _interface.of_function(self._fn, outputs=self._outputs)
+            _interface.check(self._interface, program=self.__name__)
+        return self._interface
+
+    def _check_definition(self) -> None:
+        """Refuse, when the module is defined, an interface every language
+        would refuse, a declared one its code cannot take, and a log_content
+        map naming a field it lacks. A name its annotations use that is not
+        defined yet is looked up at the first call instead."""
+        from . import interface as _interface
+        if self._declared:
+            _interface.check(self._interface, program=self.__name__)
+            self._check_code_takes(self._interface)
+        else:
+            try:
+                self._derive()
+            except NameError:
+                self._interface = None            # a forward reference: derived when first used
+        content = self._settings.get("log_content")
+        if isinstance(content, dict) and self._interface is not None:
+            from .calllog import check_log_content
+            ins, outs, _added = self._fields()
+            check_log_content(content, [*ins, *outs], program=self.__name__)
+
+    def _check_code_takes(self, iface: Mapping[str, Any]) -> None:
+        params = self._signature.parameters
+        takes_any = any(p.kind is inspect.Parameter.VAR_KEYWORD for p in params.values())
+        names = {f["name"] for f in iface["inputs"]}
+        for f in iface["inputs"]:
+            p = params.get(f["name"])
+            if (p is None and not takes_any) or (p is not None and p.kind is inspect.Parameter.POSITIONAL_ONLY):
+                raise TypeError(f"@module on {self.__name__}: its interface has the input {f['name']!r}, which its "
+                                f"code does not take by name")
+        for name, p in params.items():
+            if p.default is inspect.Parameter.empty and p.kind in (inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                                                                    inspect.Parameter.KEYWORD_ONLY) \
+                    and name not in names:
+                raise TypeError(f"@module on {self.__name__}: its code needs {name!r}, which its interface does not "
+                                f"give")
+
+    @property
+    def interface(self) -> Dict[str, Any]:
+        """What the module takes and gives, as data (contract/programs.md).
+
+        Derived from the function: each parameter an input (``Any``,
+        ``object`` or no annotation: opaque, any value, never checked;
+        ``functai.JSON``: any JSON value; a default makes it optional), the
+        return annotation one output, ``result`` (``outputs={...}`` declares
+        several). Or declared whole with ``interface={...}``."""
+        return copy.deepcopy(self._derive())
+
+    def _fields(self) -> Tuple[List[str], List[str], List[str]]:
+        iface = self._derive()
+        return [f["name"] for f in iface["inputs"]], [f["name"] for f in iface["outputs"]], []
+
+    def _given(self, args: tuple, kwargs: Dict[str, Any]) -> Dict[str, Any]:
+        """The inputs a call gives, by name, as the interface names them."""
+        if self._declared:
+            names = [f["name"] for f in self._interface["inputs"]]     # type: ignore[index]
+            if len(args) > len(names):
+                raise TypeError(f"{self.__name__}() takes {len(names)} inputs, {len(args)} were given")
+            given = dict(zip(names, args))
+            for k, v in kwargs.items():
+                if k in given:
+                    raise TypeError(f"{self.__name__}() got two values for {k!r}")
+                given[k] = v
+            return given
+        bound = self._signature.bind(*args, **kwargs)
+        given = {}
+        for name, value in bound.arguments.items():
+            kind = self._signature.parameters[name].kind
+            if kind is inspect.Parameter.VAR_POSITIONAL:
+                given[name] = list(value)
+            elif kind is inspect.Parameter.VAR_KEYWORD:
+                given[name] = dict(value)
+            else:
+                given[name] = value
+        return given
+
+    def _invoke_checked(self, args: tuple, kwargs: Dict[str, Any]) -> Any:
+        """Check the inputs, run the code, check what it returned."""
+        from . import interface as _interface
+        iface = self._derive()
+        given = self._given(args, kwargs)
+        own_defaults = [n for n, p in self._signature.parameters.items() if p.default is not inspect.Parameter.empty]
+        checked = _interface.bind_inputs(iface, given, program=self.__name__, has_default=own_defaults)
+        if self._declared:
+            out = self._invoke_original(**checked)
+        else:
+            out = self._invoke_original(*args, **kwargs)
+        _interface.check_outputs(iface, out, program=self.__name__)
+        return out
 
     def _own_states(self):
         """Run with this copy's states, under any states already set (an optimizer's candidates)."""
@@ -72,14 +200,14 @@ class FunctAIModule:
         if has_column(args, kwargs):                  # research(col.claim): a column, for dpyr
             return self.vectorize()(*args, **kwargs)
         from . import calllog
+        from . import interface as _interface
         from .config import effective
+
         def inputs():
-            bound = inspect.signature(self._fn).bind(*args, **kwargs)
-            bound.apply_defaults()
-            return dict(bound.arguments)
+            return _interface.recorded_inputs(self._derive(), self._given(args, kwargs))
 
         with self._own_states():
-            return calllog.run(self, effective(), inputs, lambda: self._invoke_original(*args, **kwargs))
+            return calllog.run(self, effective(self._settings), inputs, lambda: self._invoke_checked(args, kwargs))
 
     def stream(self, *args, **kwargs):
         """Call the module and watch every AI function it calls, as it works.
@@ -90,7 +218,7 @@ class FunctAIModule:
         ``s.text_of(fn)`` one AI function's answer as it is written;
         ``s.result`` what the module returned (waits). See ``Stream``."""
         from . import streaming
-        inspect.signature(self._fn).bind(*args, **kwargs)     # wrong arguments fail here
+        self._given(args, kwargs)                              # wrong arguments fail here
         return streaming.Stream(self, args, kwargs)
 
     @property
@@ -186,7 +314,8 @@ class FunctAIModule:
         return out
 
 
-def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
+def module(fn: Callable[..., Any] | None = None, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
+           outputs: Optional[Mapping[str, Any]] = None, **settings: Any):
     '''Make a Python function that calls AI functions into one program.
 
     The body is ordinary Python: loops, ifs, helpers, several AI functions.
@@ -194,11 +323,29 @@ def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
     learns from the runs the metric accepts), run on a table, and saved as
     one program. Use it bare (``@module``) or with requirements.
 
+    Its interface (``blurb.interface``) is derived from the function and
+    checked on every call: inputs before the code runs, outputs when it
+    returns (``InterfaceError``). ``Any``, ``object`` or no annotation is an
+    opaque field (any value, never checked, for data frames and the like);
+    ``functai.JSON`` is any JSON value; a parameter with a default is
+    optional.
+
     Parameters
     ----------
     requires : list of str
         Packages the program needs that functai cannot see from the code
         (``["numpy>=2"]``), for ``functai.save``.
+    outputs : dict, optional
+        Several outputs, by name and type: ``outputs={"team": str, "minutes":
+        int, "result": Reply}``; the code returns a dict of them. The last is
+        the answer.
+    interface : dict, optional
+        The whole interface as data (contract/programs.md), instead of
+        deriving it; the code is then called with the inputs by keyword.
+    log_calls, log_content, caller, observers, journal
+        The call log and receiver settings, for this module's calls (as for
+        ``@ai``). ``log_content={"transcript": False}`` keeps an input out of
+        the log.
 
     Returns
     -------
@@ -232,5 +379,6 @@ def module(fn: Callable[..., Any] | None = None, *, requires: Any = ()):
     ```
     '''
     if fn is None:
-        return lambda real_fn: FunctAIModule(real_fn, requires=requires)
-    return FunctAIModule(fn, requires=requires)
+        return lambda real_fn: FunctAIModule(real_fn, requires=requires, interface=interface, outputs=outputs,
+                                             **settings)
+    return FunctAIModule(fn, requires=requires, interface=interface, outputs=outputs, **settings)

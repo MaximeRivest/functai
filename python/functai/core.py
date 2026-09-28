@@ -16,6 +16,7 @@ call and reads the reply; lm15 talks to the provider (see ``engine``).
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import functools
 import inspect
@@ -398,9 +399,24 @@ class FunctAIFunc(Generic[P, R]):
         self._instr_refined = 0
         self._instr_frozen = False
         self._autoinstructed = False
+        self._history_calls: List[str] = []                   # the call ids of `history`'s turns
+        self._interface_cache: Optional[Tuple[Any, Dict[str, Any]]] = None
         self._spec()                                          # signature errors surface at definition
+        self._check_definition()                              # and interface and log_content ones
         if examples:
             self._state = ProgramState(demos=tuple(self._example_demo(e) for e in examples))
+
+    def _check_definition(self) -> None:
+        """What every language refuses when an AI function is defined (after
+        lmcc accepted its signature): an interface that breaks programs.md's
+        rules (an optional input whose default does not fit its shape, one with
+        no JSON default...), and a ``log_content`` map naming a field it lacks."""
+        from . import interface as _interface
+        _interface.check(self.interface, ai=True, program=self.__name__)
+        content = self._settings.get("log_content")
+        if isinstance(content, dict):
+            ins, outs, added = self._fields()
+            calllog.check_log_content(content, [*ins, *outs, *added], program=self.__name__)
 
     # ----- settings -----
 
@@ -524,10 +540,14 @@ class FunctAIFunc(Generic[P, R]):
         elif checked.get("adapter") is not None:
             clone._template = None
         clone.history = []
+        clone._history_calls = []
+        clone._interface_cache = None
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
         clone._opt_runs = list(self._opt_runs)
         clone._vectorized = {}
+        if "log_content" in checked or "module" in checked or "tools" in checked:
+            clone._check_definition()
         return clone
 
     # ----- state (what optimizers change) -----
@@ -598,7 +618,56 @@ class FunctAIFunc(Generic[P, R]):
 
     def reset(self) -> None:
         """Forget the conversation (stateful functions)."""
-        self.history.clear()
+        with self._lock:
+            self.history.clear()
+            self._history_calls.clear()
+
+    # ----- the interface, and what a call records -----
+
+    @property
+    def interface(self) -> Dict[str, Any]:
+        """What a caller gives and gets, as data (contract/programs.md): the
+        docstring as ``description``, the parameters as ``inputs`` (a parameter
+        with a default is ``optional``, its default in the shape), the outputs
+        the body declares and the answer (last) as ``outputs``; not the fields
+        FunctAI adds (reasoning, tools). The call log records its signature as
+        ``program.interface``; ``functai.save`` writes it; another language
+        reads it."""
+        from . import interface as _interface
+        spec = self._spec()
+        cached = self._interface_cache
+        if cached is None or cached[0] is not spec:
+            cached = self._interface_cache = (spec, _interface.of_ai(self))
+        return copy.deepcopy(cached[1])
+
+    def _fields(self) -> Tuple[List[str], List[str], List[str]]:
+        """(inputs, outputs, added) of this function's calls, in the record's
+        order: the interface's, and the outputs FunctAI adds (reasoning, calls)."""
+        spec = self._spec()
+        ins = [f.name for f in spec.signature.inputs if f.purpose == "plain"]
+        outs = [f.name for f in spec.signature.outputs]
+        added = [f.name for f in spec.signature.outputs if f.purpose in ("reasoning", "tools.calls")]
+        return ins, outs, added
+
+    def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
+        """(what a call is shown as context, entries of the call log's ``saw``;
+        the turns themselves): a stateful function's latest turns, as the ids
+        of the calls they were, each shown with its steps."""
+        s = self._effective()
+        if not s.get("stateful"):
+            return [], None
+        with self._lock:
+            history = list(self.history)
+            ids = list(self._history_calls)[-len(history):] if history else []
+        ids = [""] * (len(history) - len(ids)) + ids          # turns put in `history` by hand have no call
+        pairs = list(zip(ids, history))
+        window = int(s.get("state_window") or 0)
+        if window > 0:
+            pairs = pairs[-window:]
+        # A turn no logged call made is shown too: an entry no reader knows says so (unknown-key).
+        entries = [({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid}) if cid
+                   else {"unrecorded": True} for cid, turn in pairs]
+        return entries, [turn for _cid, turn in pairs]
 
     # ----- signature and plan -----
 
@@ -672,8 +741,12 @@ class FunctAIFunc(Generic[P, R]):
     def _past(self, plan: lmcc.Plan, spec: Spec, settings: Dict[str, Any]) -> List[lmcc.Turn]:
         past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos) if t is not None]
         if settings.get("stateful") and self.history:
-            window = int(settings.get("state_window") or 0)
-            recent = self.history[-window:] if window > 0 else self.history
+            call = calllog.current()
+            if call is not None and call.program is self and call.context is not None:
+                recent = call.context                      # the turns its record says it saw
+            else:
+                window = int(settings.get("state_window") or 0)
+                recent = self.history[-window:] if window > 0 else self.history
             past += [t for t in (engine.fit_turn(plan, spec, h) for h in recent) if t is not None]
         return past
 
@@ -755,11 +828,14 @@ class FunctAIFunc(Generic[P, R]):
         if escalate_to is not None:
             pred, model, plan = self._maybe_escalate(pred, inputs, s, escalate_to, (model, plan))
         if s.get("stateful"):
+            call = calllog.current()
             with self._lock:
                 self.history.append(pred.turn)
+                self._history_calls.append(call.id if call is not None and call.program is self else "")
                 window = int(s.get("state_window") or 0)
                 if window > 0 and len(self.history) > window:
                     del self.history[:-window]
+                    del self._history_calls[:-window]
         trace = _TRACE.get()
         if trace is not None:
             trace.append((self, pred))
@@ -785,13 +861,14 @@ class FunctAIFunc(Generic[P, R]):
         threshold = float(s.get("escalate_below") if s.get("escalate_below") is not None else 0.9)
         if conf >= threshold:
             return pred, first[0], first[1]
-        watch = calllog.WATCH.get()
-        if watch is not None:
+        call = calllog.current()
+        if call is not None:
             target = escalate_to.__name__ if isinstance(escalate_to, FunctAIFunc) else models.model_string(escalate_to) \
                 if not isinstance(escalate_to, str) else escalate_to
-            watch.retry(f"the first model was {conf:.0%} sure (less than {threshold:.0%}); {target} answers instead")
+            call.emit("retry", reason=f"the first model was {conf:.0%} sure (less than {threshold:.0%}); {target} "
+                                      f"answers instead", wait=None)
             if isinstance(escalate_to, FunctAIFunc):
-                watch.delegate()
+                call.delegating = True                   # the next call inside this one answers for it
         if isinstance(escalate_to, FunctAIFunc):
             # the target follows its own escalate_to (a longer chain), never a global one
             from .config import scoped

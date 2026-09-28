@@ -16,9 +16,11 @@ from __future__ import annotations
 
 import contextlib
 import contextvars
-from typing import Any, Dict, Iterator
+from typing import Any, Dict, Iterator, List, Tuple
 
 import lm15
+
+from .errors import LogContentError
 
 # lm15 Config fields may be set anywhere a functai setting can:
 # temperature, max_tokens, top_p, seed, stop, reasoning, ...
@@ -72,8 +74,14 @@ DEFAULTS: Dict[str, Any] = {
     # the call log (contract/calls.md): every call, one line of JSON in a folder
     "log_calls": None,         # None: as $FUNCTAI_LOG_CALLS says (off when unset) | True (that folder, else
                                 # ~/.local/share/functai/calls) | a folder | False (never)
-    "log_content": None,       # None/True: the values and messages too | False: sizes, times and tokens only
+    "log_content": None,       # None/True: the values and messages too | False: sizes, times and tokens only |
+                                # {field: bool, "*": bool}: per field. Only ever removes: a value is written only
+                                # when no layer (the function, each block, configure, $FUNCTAI_LOG_CONTENT) drops it
     "caller": None,            # who is calling, added to $FUNCTAI_CALLER: {"kind": "agent", "conversation": ...}
+
+    # receivers of each call tree's events (contract/streaming.md): they add up over the layers
+    "observers": None,         # [callable or list, ...]: given the kept form of every event, best effort
+    "journal": None,           # a store, functai.Journal(store, required=True), or False (none): one per tree
 
     # debug
     "debug": False,
@@ -86,6 +94,9 @@ _LOCK = __import__("threading").Lock()
 _ABSENT = object()
 _SCOPED: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("functai_scoped", default={})
 _FORCED: contextvars.ContextVar[Dict[str, Any]] = contextvars.ContextVar("functai_forced", default={})
+# Each enclosing block's own settings, outermost first: the settings that combine
+# over layers instead of the closest one deciding (log_content, observers, journal).
+_BLOCKS: contextvars.ContextVar[Tuple[Dict[str, Any], ...]] = contextvars.ContextVar("functai_blocks", default=())
 
 
 def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
@@ -119,9 +130,29 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
                 or settings.get("caller") is not None:
             from . import calllog
             calllog.check_settings(settings)
+        if settings.get("observers") is not None or settings.get("journal") is not None:
+            from . import eventlog
+            settings = {**settings, **eventlog.check_settings(settings)}
+    except LogContentError:
+        raise
     except (TypeError, ValueError) as exc:
         raise type(exc)(f"{where}: {exc}") from None
     return dict(settings)
+
+
+def layers(own: Dict[str, Any] | None = None) -> List[Tuple[str, Dict[str, Any]]]:
+    """The settings around a call, closest first, each as it was set:
+    ``("own", the program's own)``, then each enclosing block's (``"block"``,
+    innermost first), then ``("configure", the process-wide ones)``. For the
+    settings that combine over layers (log_content only removes; observers
+    add up; a host's journal holds against a program's)."""
+    out: List[Tuple[str, Dict[str, Any]]] = [("own", dict(own or {}))]
+    forced = _FORCED.get()
+    if forced:
+        out.append(("block", forced))
+    out += [("block", b) for b in reversed(_BLOCKS.get())]
+    out.append(("configure", dict(_GLOBAL)))
+    return out
 
 
 def effective(fn_settings: Dict[str, Any] | None = None) -> Dict[str, Any]:
@@ -200,11 +231,13 @@ class configure:
                     else:
                         _GLOBAL[k] = old
         self._token = _SCOPED.set({**_SCOPED.get(), **self._overrides})
+        self._block = _BLOCKS.set((*_BLOCKS.get(), self._overrides))
         return self
 
     def __exit__(self, *exc):
         if self._token is not None:
             _SCOPED.reset(self._token)
+            _BLOCKS.reset(self._block)
             self._token = None
         return False
 
@@ -216,10 +249,13 @@ class configure:
 def scoped(**overrides) -> Iterator[None]:
     """Like ``with configure(...)``, without ever touching the process-wide settings
     (functai's own internal use)."""
-    token = _SCOPED.set({**_SCOPED.get(), **check(overrides, "scoped")})
+    checked = check(overrides, "scoped")
+    token = _SCOPED.set({**_SCOPED.get(), **checked})
+    block = _BLOCKS.set((*_BLOCKS.get(), checked))
     try:
         yield
     finally:
+        _BLOCKS.reset(block)
         _SCOPED.reset(token)
 
 

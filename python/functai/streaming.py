@@ -48,20 +48,45 @@ class Cancelled(BaseException):
 # ------------------------------------------------------------------ events
 
 
+def _envelope(**kw: Any) -> Any:
+    return dataclasses.field(kw_only=True, **kw)
+
+
 @dataclasses.dataclass(frozen=True)
 class Event:
-    """Something that happened in a call: ``call`` is its id (as in the call
-    log), ``function`` its program's name."""
+    """Something that happened in a call tree (contract/streaming.md): ``call``
+    is the call's id (as in the call log), ``function`` its program's name.
+
+    Where it is in its tree's log: ``tree`` (the outermost call's id),
+    ``writer`` and ``seq`` (its position), ``after`` (the position of the
+    event before it in the form being read, None for the first) and ``at``
+    (when it was numbered)."""
     call: str
     function: str
+    tree: str = _envelope(default="")
+    writer: int = _envelope(default=1)
+    seq: int = _envelope(default=0)
+    after: Optional[Dict[str, int]] = _envelope(default=None, compare=False)
+    at: str = _envelope(default="")
 
     kind = "event"
 
+    @property
+    def position(self) -> Dict[str, int]:
+        """The event's name in its tree's log: its writer and seq."""
+        return {"writer": self.writer, "seq": self.seq}
+
     def to_dict(self) -> Dict[str, Any]:
-        """The event as JSON data (``contract/schema/event.schema.json``),
-        for sending to a browser or another process."""
-        out: Dict[str, Any] = {"kind": self.kind}
+        """The event as JSON data (``contract/schema/event.schema.json``, format
+        2), for sending to a browser or another process."""
+        out: Dict[str, Any] = {"functai_event": 2, "kind": self.kind, "tree": self.tree or self.call,
+                               "writer": self.writer, "seq": self.seq,
+                               "after": dict(self.after) if self.after is not None else None,
+                               "at": self.at or calllog._iso(time.time()), "call": self.call,
+                               "function": self.function}
         for f in dataclasses.fields(self):
+            if f.name in _ENVELOPE or not f.metadata.get("json", True):
+                continue
             out[f.name] = self._json(f.name, getattr(self, f.name))
         return out
 
@@ -69,15 +94,43 @@ class Event:
         return value
 
 
+_ENVELOPE = frozenset({"call", "function", "tree", "writer", "seq", "after", "at"})
+
+
 @dataclasses.dataclass(frozen=True)
 class Started(Event):
-    """A call began: its ``inputs``, and the ``parent`` call it runs in."""
+    """A call began: its ``inputs``, and the ``parent`` call it runs in;
+    ``root`` (the outermost call), ``program`` (the call log's program
+    object) and ``saw`` (the earlier calls it is shown) as in the call log."""
     parent: Optional[str]
     inputs: Dict[str, Any]
+    root: Optional[str] = None
+    program: Optional[Dict[str, Any]] = None
+    content: bool = True
+    saw: Any = ()
     kind = "started"
 
     def _json(self, name, value):
-        return {k: calllog.to_json(v)[0] for k, v in value.items()} if name == "inputs" else value
+        if name == "inputs":
+            return {k: calllog.to_json(v)[0] for k, v in value.items()}
+        if name == "root":
+            return value or self.call
+        if name == "program":
+            return value if value is not None else {"name": self.function, "kind": "ai", "module": "__main__",
+                                                    "version": "sha256:" + "0" * 64,
+                                                    "interface": "sha256:" + "0" * 64, "answer": "result"}
+        if name == "saw":
+            return list(value)
+        return value
+
+
+@dataclasses.dataclass(frozen=True)
+class Request(Event):
+    """The call began a request to a model (its ``request``-th): the text of
+    its fields so far starts again. ``model``: the model asked."""
+    request: int
+    model: Optional[str] = None
+    kind = "request"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -107,7 +160,7 @@ class Thinking(Event):
 @dataclasses.dataclass(frozen=True)
 class ToolCall(Event):
     """The model asked for a tool (shown once the request is complete)."""
-    id: Optional[str]
+    id: str
     name: str
     input: Any
     kind = "tool_call"
@@ -119,7 +172,7 @@ class ToolCall(Event):
 @dataclasses.dataclass(frozen=True)
 class ToolResult(Event):
     """The tool ran; ``output`` is what the model is shown."""
-    id: Optional[str]
+    id: str
     name: str
     output: str
     kind = "tool_result"
@@ -139,12 +192,11 @@ class Done(Event):
     """A call ended: ``value`` is what it returned; ``prediction`` everything
     an AI function's call produced (None for a module)."""
     value: Any
-    prediction: Any = dataclasses.field(default=None, compare=False)
+    prediction: Any = dataclasses.field(default=None, compare=False, metadata={"json": False})
     kind = "done"
 
-    def to_dict(self) -> Dict[str, Any]:
-        return {"kind": self.kind, "call": self.call, "function": self.function,
-                "value": calllog.to_json(self.value)[0]}
+    def _json(self, name, value):
+        return calllog.to_json(value)[0] if name == "value" else value
 
 
 @dataclasses.dataclass(frozen=True)
@@ -157,153 +209,70 @@ class Failed(Event):
         return calllog._error(value, True) if name == "error" else value
 
 
-# ------------------------------------------------------------------ what a stream watches
+_KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed)}
 
 
-class _CallState:
-    __slots__ = ("id", "program", "function", "answer", "parent", "delegate", "fields")
+def make_event(kind: str, **fields: Any) -> Event:
+    """An event of a kind by its name (``eventlog.TreeLog`` numbers them)."""
+    return _KINDS[kind](**fields)
 
-    def __init__(self, call: Any, parent: Optional["_CallState"]):
-        from .core import FunctAIFunc
-        self.id = call.id
-        self.program = call.program
-        self.function = call.program.__name__
-        self.answer = call.program._spec().main if isinstance(call.program, FunctAIFunc) else None
-        self.parent = parent
-        self.delegate = False              # the next child answers for this call (escalate_to=an AI function)
-        self.fields: Dict[str, List[str]] = {}
+
+# ------------------------------------------------------------------ one model request, watched
 
 
 class _Watch:
-    """What the code of a call reports to the stream watching it."""
+    """A stream's hold on the call it started: which call that is, and
+    whether the stream was closed (which cancels it)."""
 
     def __init__(self, stream: "Stream"):
         self.stream = stream
+        self.root: Optional[str] = None
         self.cancelled = threading.Event()
-        self.calls: Dict[str, _CallState] = {}
-        self.lock = threading.Lock()
-
-    # ----- control
 
     def check(self) -> None:
         if self.cancelled.is_set():
             raise Cancelled("the stream was closed")
 
-    def sleep(self, seconds: float) -> None:
-        if self.cancelled.wait(seconds):
-            raise Cancelled("the stream was closed")
 
-    # ----- calls (calllog.run)
-
-    def started(self, call: Any, inputs: Dict[str, Any]) -> None:
-        with self.lock:
-            parent = self.calls.get(call.parent) if call.parent else None
-            state = self.calls[call.id] = _CallState(call, parent)
-            if parent is not None and parent.delegate:
-                parent.delegate = False
-                self.stream._answers_for[call.id] = parent.id
-        self.stream._emit(Started(call.id, state.function, call.parent, dict(inputs)))
-
-    def ended(self, call: Any, *, value: Any = _NOTHING, error: Optional[BaseException] = None) -> None:
-        state = self.calls.get(call.id)
-        name = state.function if state else call.program.__name__
-        if error is not None:
-            self.stream._emit(Failed(call.id, name, error))
-            return
-        pred = call.pred
-        from .data import Prediction
-        if isinstance(value, Prediction):              # a full prediction: the answer is in it
-            pred, value = value, value.get(state.answer) if state and state.answer else value
-        self.stream._emit(Done(call.id, name, value, pred))
-
-    # ----- requests (engine)
-
-    def _state(self) -> Optional[_CallState]:
-        call = calllog.current()
-        return self.calls.get(call.id) if call is not None else None
-
-    def new_request(self) -> None:
-        state = self._state()
-        if state is not None:
-            with self.lock:
-                state.fields = {}
-
-    def retry(self, reason: str, wait: Optional[float] = None) -> None:
-        state = self._state()
-        if state is not None:
-            self.stream._emit(Retry(state.id, state.function, reason, wait))
-
-    def delegate(self) -> None:
-        """The next call started inside this one answers for it (an escalation
-        to an AI function)."""
-        state = self._state()
-        if state is not None:
-            state.delegate = True
-
-    def tool_call(self, call: Any) -> None:
-        state = self._state()
-        if state is not None:
-            self.stream._emit(ToolCall(state.id, state.function, call.id, call.name, call.input))
-
-    def tool_result(self, call: Any, output: str) -> None:
-        state = self._state()
-        if state is not None:
-            self.stream._emit(ToolResult(state.id, state.function, call.id, call.name, output))
-
-    def text(self, field: str, piece: str) -> None:
-        state = self._state()
-        if state is None or not piece:
-            return
-        with self.lock:
-            state.fields.setdefault(field, []).append(piece)
-        self.stream._emit(Text(state.id, state.function, field, field == state.answer, piece))
-
-    def thinking(self, piece: str) -> None:
-        state = self._state()
-        if state is not None and piece:
-            self.stream._emit(Thinking(state.id, state.function, piece))
-
-    # ----- one model request, streamed
-
-    def request(self, router: Any, request: Any, plan: Any) -> tuple:
-        """Send ``request`` streaming, showing its fields as they are written.
-        Returns (the assembled lm15 Response, seconds to its first piece)."""
-        import lm15
-        self.check()
-        self.new_request()
-        show = _Projection(self, plan)
-        opener = getattr(router, "stream", None)
-        if opener is None:                               # a client that cannot stream (a baked model)
-            response = router.complete(request)
-            show.whole(response)
-            return response, None
-        t0 = time.perf_counter()
-        first: Optional[float] = None
+def request(call: Any, router: Any, request_: Any, plan: Any) -> tuple:
+    """Send ``request_`` streaming, showing its fields as they are written
+    (the call is watched: a stream, an observer or a journal sees it).
+    Returns (the assembled lm15 Response, seconds to its first piece)."""
+    import lm15
+    call.check()
+    show = _Projection(call, plan)
+    opener = getattr(router, "stream", None)
+    if opener is None:                               # a client that cannot stream (a baked model)
+        response = router.complete(request_)
+        show.whole(response)
+        return response, None
+    t0 = time.perf_counter()
+    first: Optional[float] = None
+    try:
+        rs = lm15.ResponseStream(opener(request_), request_)
         try:
-            rs = lm15.ResponseStream(opener(request), request)
-            try:
-                for event in rs.events():
-                    self.check()
-                    if event.type == "delta":
-                        if first is None:
-                            first = time.perf_counter() - t0
-                        show.feed(event.delta)
-                response = rs.response
-            finally:
-                rs.close()
-        except lm15.UnsupportedFeatureError:
-            if first is not None:
-                raise
-            response = router.complete(request)          # this model or request cannot stream
-            show.whole(response)
-            return response, None
-        show.finish(response.finish_reason)
-        return response, first
+            for event in rs.events():
+                call.check()
+                if event.type == "delta":
+                    if first is None:
+                        first = time.perf_counter() - t0
+                    show.feed(event.delta)
+            response = rs.response
+        finally:
+            rs.close()
+    except lm15.UnsupportedFeatureError:
+        if first is not None:
+            raise
+        response = router.complete(request_)          # this model or request cannot stream
+        show.whole(response)
+        return response, None
+    show.finish(response.finish_reason)
+    return response, first
 
-    def replay(self, plan: Any, response: Any) -> None:
-        """A reply that arrived whole (the reply cache): shown as one piece per field."""
-        self.new_request()
-        _Projection(self, plan).whole(response)
+
+def replay(call: Any, plan: Any, response: Any) -> None:
+    """A reply that arrived whole (the reply cache): shown as one piece per field."""
+    _Projection(call, plan).whole(response)
 
 
 _thinking_read: "weakref.WeakKeyDictionary[Any, bool]" = weakref.WeakKeyDictionary()
@@ -331,8 +300,9 @@ class _Projection:
     """One request's reply, piece by piece, as each field's text (lmcc's
     streaming reader). It only shows; the whole reply is read afterwards."""
 
-    def __init__(self, watch: _Watch, plan: Any):
-        self.watch = watch
+    def __init__(self, call: Any, plan: Any):
+        self.call = call
+        self.answer = call.answer
         self.shown = {f.name for f in plan.signature.outputs if f.purpose in ("plain", "reasoning")}
         self.thinking_is_field = _reads_thinking(plan)
         try:
@@ -342,8 +312,8 @@ class _Projection:
 
     def _show(self, events: List[Dict[str, Any]]) -> None:
         for e in events:
-            if e.get("kind") == "field_delta" and e.get("field") in self.shown:
-                self.watch.text(e["field"], e.get("text") or "")
+            if e.get("kind") == "field_delta" and e.get("field") in self.shown and e.get("text"):
+                self.call.emit("text", field=e["field"], answer=e["field"] == self.answer, text=e["text"])
 
     def _feed(self, delta: Any) -> None:
         if self.reader is None:
@@ -356,7 +326,8 @@ class _Projection:
     def feed(self, delta: Any) -> None:
         kind = getattr(delta, "type", None)
         if kind == "thinking" and not self.thinking_is_field:
-            self.watch.thinking(delta.text)
+            if delta.text:
+                self.call.emit("thinking", text=delta.text)
             return
         if kind in ("text", "thinking"):
             from lm15.serde import delta_to_dict
@@ -368,7 +339,8 @@ class _Projection:
         for part in message_to_dict(response.message).get("parts", []):
             kind = part.get("type")
             if kind == "thinking" and not self.thinking_is_field:
-                self.watch.thinking(part.get("text") or "")
+                if part.get("text"):
+                    self.call.emit("thinking", text=part["text"])
             elif kind in ("text", "thinking", "data"):
                 self._feed(part)
         self.finish(response.finish_reason)
@@ -620,6 +592,9 @@ class Stream:
         self._async_waiters: List[tuple] = []
         self._root: Optional[str] = None
         self._answers_for: Dict[str, str] = {}
+        self._programs: Dict[str, Any] = {}              # call → its program
+        self._answer_names: Dict[str, Optional[str]] = {}   # call → the name of its answer
+        self._fields: Dict[str, Dict[str, List[str]]] = {}  # call → its fields' pieces in its latest request
         self._value: Any = _NOTHING
         self._prediction: Any = None
         self._error: Optional[BaseException] = None
@@ -658,10 +633,22 @@ class Stream:
             waiters, self._async_waiters = self._async_waiters, []
         self._wake(waiters)
 
-    def _emit(self, event: Event) -> None:
+    def _receive(self, event: Event, call: Any) -> None:
+        """An event of a call this stream sees, in its form (``eventlog.TreeLog``)."""
         with self._cond:
-            if self._root is None and isinstance(event, Started):
-                self._root = event.call
+            if isinstance(event, Started):
+                if self._root is None:
+                    self._root = event.call
+                self._programs[event.call] = call.program
+                self._answer_names[event.call] = call.answer if call.answer is not None else (
+                    call.program._spec().main if hasattr(call.program, "_spec") else None)
+                self._fields[event.call] = {}
+                if call.answers_for is not None:
+                    self._answers_for[event.call] = call.answers_for
+            elif isinstance(event, (Request, Retry)):
+                self._fields[event.call] = {}
+            elif isinstance(event, Text):
+                self._fields.setdefault(event.call, {}).setdefault(event.field, []).append(event.text)
             self._events.append(event)
             self._cond.notify_all()
             waiters, self._async_waiters = self._async_waiters, []
@@ -700,9 +687,11 @@ class Stream:
 
     def events(self) -> "_Cursor":
         """Every event of the call and of the calls inside it, in order:
-        ``Started``, ``Text``, ``Thinking``, ``ToolCall``, ``ToolResult``,
-        ``Retry``, ``Done``, ``Failed`` (``functai.streaming``). Works with
-        ``for`` and ``async for``; each event has ``.kind`` and ``.to_dict()``."""
+        ``Started``, ``Request``, ``Text``, ``Thinking``, ``ToolCall``,
+        ``ToolResult``, ``Retry``, ``Done``, ``Failed`` (``functai.streaming``).
+        Works with ``for`` and ``async for``; each event has ``.kind``,
+        ``.position`` (its place in its tree's log) and ``.to_dict()`` (the
+        contract's JSON, format 2)."""
         return self._cursor(lambda e: e)
 
     def text_of(self, fn: Any) -> "_Cursor":
@@ -717,8 +706,7 @@ class Stream:
         return self._cursor(keep)
 
     def _program_of(self, call: str) -> Any:
-        state = self._watch.calls.get(call)
-        return state.program if state is not None else None
+        return self._programs.get(call)
 
     def _wait(self, timeout: Optional[float] = None) -> None:
         if self._done:
@@ -774,10 +762,10 @@ class Stream:
         (its own, or the AI function it escalated to), in its latest request."""
         if self._root is None:
             return self._answer, {}
-        with self._watch.lock:
-            answering = [c for c in self._watch.calls if self._answers(c, self._root)]
-            state = self._watch.calls[answering[-1]]
-            return state.answer, {k: "".join(v) for k, v in state.fields.items()}
+        with self._cond:
+            answering = [c for c in self._programs if self._answers(c, self._root)]
+            last = answering[-1]
+            return self._answer_names.get(last), {k: "".join(v) for k, v in self._fields.get(last, {}).items()}
 
     @property
     def fields(self) -> Dict[str, str]:
@@ -910,8 +898,7 @@ class Stream:
         try:
             for e in self.events():
                 if isinstance(e, Started):
-                    state = self._watch.calls.get(e.call)
-                    program = state.program if state is not None else None
+                    program = self._programs.get(e.call)
                     labels[e.call] = program is not None and hasattr(program, "_spec") and len(
                         [f for f in program._spec().signature.outputs if f.purpose in ("plain", "reasoning")]) > 1
                     if e.call != self._root and not self._answers(e.call, self._root):
@@ -1014,5 +1001,5 @@ def stream(program: Any, args: tuple, kwargs: Dict[str, Any]) -> Stream:
     return Stream(program, args, kwargs)
 
 
-__all__ = ["Stream", "Cancelled", "Event", "Started", "Text", "Thinking", "ToolCall", "ToolResult", "Retry",
-           "Done", "Failed", "partial_json"]
+__all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "ToolCall", "ToolResult",
+           "Retry", "Done", "Failed", "partial_json"]
