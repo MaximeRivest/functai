@@ -383,7 +383,7 @@ def bind_inputs(interface: Mapping[str, Any], given: Mapping[str, Any], *, progr
             value = given[name]
             if not fits(value, f):
                 ok, _ = json_form(value)
-                shown = repr(value) if len(repr(value)) <= 80 else repr(value)[:77] + "..."
+                shown = _shown(value)
                 why = (f"{shown} has no JSON form, and the input is not opaque" if not ok
                        else f"{shown} does not fit {_canonical(data_shape(f['shape']))}")
                 raise InterfaceError("interface-input", name, f"{where}input {name!r}: {why}")
@@ -397,17 +397,26 @@ def bind_inputs(interface: Mapping[str, Any], given: Mapping[str, Any], *, progr
     return out
 
 
+def _shown(value: Any) -> str:
+    """A value as an error message quotes it: its repr, cut to 80 characters
+    (a repr that raises is described, never raised)."""
+    from .calllog import safe_repr
+    text = safe_repr(value)
+    return text if len(text) <= 80 else text[:77] + "..."
+
+
 def recorded_inputs(interface: Mapping[str, Any], given: Mapping[str, Any]) -> Dict[str, Any]:
-    """The inputs a call's record holds: those given, and for an optional
-    input left out, its shape's default (absent when it has none)."""
+    """The inputs a call's record holds, named as the interface names them:
+    those given, and for an optional input left out, its shape's default
+    (absent when it has none). A value given under a name the interface does
+    not have is refused (``bind_inputs``) and never recorded: the refusal
+    names it, and no log keeps what it held."""
     out: Dict[str, Any] = {}
     for f in interface["inputs"]:
         if f["name"] in given:
             out[f["name"]] = given[f["name"]]
         elif "default" in f["shape"]:
             out[f["name"]] = copy.deepcopy(f["shape"]["default"])
-    for k, v in given.items():
-        out.setdefault(k, v)
     return out
 
 
@@ -450,7 +459,7 @@ def check_outputs(interface: Mapping[str, Any], returned: Any, *, program: str =
         if not fits(values[name], f):
             value = values[name]
             ok, _ = json_form(value)
-            shown = repr(value) if len(repr(value)) <= 80 else repr(value)[:77] + "..."
+            shown = _shown(value)
             why = (f"{shown} has no JSON form, and the output is not opaque" if not ok
                    else f"{shown} does not fit {_canonical(data_shape(f['shape']))}")
             raise InterfaceError("interface-output", name, f"{where}output {name!r}: {why}")
@@ -530,9 +539,33 @@ def _registry() -> Any:
     return REGISTRY
 
 
-def _hints(fn: Any) -> Dict[str, Any]:
-    """The function's annotations, resolved (a name not defined yet raises NameError)."""
-    return typing.get_type_hints(fn, include_extras=True)
+def _hints(fn: Any, localns: Optional[Mapping[str, Any]] = None, *, program: str = "",
+           outputs: Tuple[str, ...] = ("result",)) -> Dict[str, Any]:
+    """The function's annotations, resolved in its module's names and
+    ``localns`` (where it was defined). A name not defined yet refuses
+    ``interface-malformed``, naming the first field whose annotation uses it:
+    an interface is checked when its program is defined, and one that cannot
+    be read then cannot be checked."""
+    try:
+        return typing.get_type_hints(fn, localns=dict(localns) if localns else None, include_extras=True)
+    except NameError:
+        pass
+    where = f"{program}: " if program else ""
+    globalns = getattr(fn, "__globals__", {})
+    for name, ann in list(getattr(fn, "__annotations__", {}).items()):
+        def probe() -> None: ...
+        probe.__annotations__ = {"x": ann}
+        try:
+            typing.get_type_hints(probe, globalns=globalns, localns=dict(localns) if localns else None,
+                                  include_extras=True)
+        except NameError as exc:
+            field = outputs[-1] if name == "return" else name
+            missing = getattr(exc, "name", None) or str(exc)
+            raise InterfaceError("interface-malformed", field,
+                                 f"{where}the annotation of {field!r} names {missing!r}, which is not defined where "
+                                 f"the module is defined: define it first (an interface is checked when its "
+                                 f"program is defined)") from None
+    return typing.get_type_hints(fn, localns=dict(localns) if localns else None, include_extras=True)
 
 
 def _with_default(field: Dict[str, Any], default: Any) -> Dict[str, Any]:
@@ -549,15 +582,19 @@ def _with_default(field: Dict[str, Any], default: Any) -> Dict[str, Any]:
     return field
 
 
-def of_function(fn: Any, *, outputs: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+def of_function(fn: Any, *, outputs: Optional[Mapping[str, Any]] = None,
+                output_fields: Optional[List[Dict[str, Any]]] = None,
+                localns: Optional[Mapping[str, Any]] = None, program: str = "") -> Dict[str, Any]:
     """A module's interface, derived from its Python function (programs.md,
     *How each program has one*): each parameter an input (with a default:
     optional, its default in the shape when it has a JSON form; ``None``
     makes the shape nullable; ``*args`` a list, ``**kwargs`` an object, both
     optional), the return annotation one output named ``result`` (or
-    ``outputs``: several, by name, each a type)."""
+    ``outputs``: several, by name, each a type; or ``output_fields``, the
+    outputs as data). ``localns``: the names where it was defined."""
     from .docments import _harvest_inline_param_and_return_comments
-    hints = _hints(fn)
+    out_names = tuple(outputs) if outputs else tuple(f["name"] for f in output_fields) if output_fields else ("result",)
+    hints = _hints(fn, localns, program=program, outputs=out_names)
     try:
         comments, returns = _harvest_inline_param_and_return_comments(fn)
     except Exception:  # noqa: BLE001 — words only
@@ -585,7 +622,9 @@ def of_function(fn: Any, *, outputs: Optional[Mapping[str, Any]] = None) -> Dict
         if desc and "desc" not in f:
             f["desc"] = desc
         inputs.append(_ordered(f))
-    if outputs is not None:
+    if output_fields is not None:
+        outs = [copy.deepcopy(dict(f)) for f in output_fields]
+    elif outputs is not None:
         outs = [_ordered(field_of(n, t)) for n, t in outputs.items()]
     else:
         ret = hints.get("return", inspect.Parameter.empty)

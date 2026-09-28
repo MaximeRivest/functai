@@ -7,10 +7,13 @@ content/: the harness defines a real AI function with the case's fields
 the call log which fields it keeps, and writes the case's whole record
 through the call log's own restriction."""
 
+import json
+
 import pytest
 
 import functai
 from functai import _ai, ai, calllog
+from conftest import FakeRouter
 from contract_support import assert_valid, case_files, load, validator
 
 CONTENT = case_files("content")
@@ -76,6 +79,77 @@ def test_content_case(path, environment):
     written = calllog.restrict(case["record"], ins, outs, kept)
     assert_valid(CALL, written, path.stem)
     assert written == expect["record"]
+
+
+def _replies(fields, failed):
+    """What a fake model answers a triage_build call with: its outputs (and a
+    tool call first, when it has tools), or twice a reply that cannot be read."""
+    import lm15
+    if failed:
+        return ["no tags at all", "still no tags"]
+    final = ("<reasoning>\nBen says the test is flaky.\n</reasoning>\n<summary>\nA flaky upload test.\n</summary>\n"
+             "<result>\nno\n</result>")
+    if "calls" in fields["added"]:
+        return [[lm15.ToolCallPart(id="call_1", name="ci_log", input={"job": 4412})], final]
+    return [final]
+
+
+def _presence(record):
+    """What a record's retention decided, value by value: which keys it keeps,
+    and which of them hold messages, requests and replies."""
+    exchanges = record.get("exchanges") or []
+    error = record.get("error")
+    return {
+        "content": record.get("content"), "omitted": record.get("omitted"),
+        "inputs": sorted(record["inputs"]) if "inputs" in record else None,
+        "outputs": None if record.get("outputs") is None else sorted(record["outputs"]) if "outputs" in record
+        else "absent",
+        "error": None if error is None else sorted(error),
+        "exchange keys": sorted({k for ex in exchanges for k in ("request", "response", "request_hash") if k in ex}),
+        "exchange error messages": any("message" in (ex.get("error") or {}) for ex in exchanges),
+    }
+
+
+@pytest.mark.parametrize("path", CONTENT, ids=lambda p: p.stem)
+def test_content_case_through_a_real_call(path, environment, tmp_path):
+    """The record the call log itself writes, for a real call (a fake model
+    answers) under the case's layers: it keeps, drops and names the same
+    things the case's written record does. The values differ (the case's are
+    its own); what is kept of them may not."""
+    case = load(path)
+    fields, expect = case["fields"], case["expect"]
+    if "refuses" in expect:
+        return                                              # a refusal at definition: test_content_case
+    environment(case["environment"])
+    layers = {x["where"]: x["log_content"] for x in case["layers"]}
+    failed = case["record"]["error"] is not None
+    fn = triage_build(fields, layers.get("own"))
+    router = FakeRouter(*_replies(fields, failed))
+    functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path,
+                      **({"log_content": layers["configure"]} if "configure" in layers else {}))
+    block = functai.configure(log_content=layers["block"]) if "block" in layers else functai.configure()
+    inputs = case["record"]["inputs"]
+    with block:
+        try:
+            fn(**inputs)
+        except Exception:  # noqa: BLE001 — a failed call: its record says so
+            assert failed
+    [rec] = [json.loads(line) for f in tmp_path.rglob("*.jsonl") for line in f.read_text().splitlines()]
+    assert_valid(CALL, rec, path.stem)
+    want = _presence(expect["record"])
+    got = _presence(rec)
+    if not failed and "calls" not in fields["added"]:
+        want["exchange keys"] = got["exchange keys"] if got["content"] else want["exchange keys"]
+    if not rec["exchanges"] or not any(ex.get("error") for ex in rec["exchanges"]):
+        want["exchange error messages"] = got["exchange error messages"]    # this call's exchanges had no error
+    assert got == want
+    for name in [*fields["inputs"], *fields["outputs"]]:
+        kept = name in (rec.get("inputs") or {}) or name in (rec.get("outputs") or {})
+        if kept:
+            assert str(inputs.get(name, ""))[:12] in json.dumps(rec, ensure_ascii=False)
+    if rec["content"] is False:
+        for name in rec["omitted"]["inputs"]:
+            assert inputs[name] not in json.dumps(rec, ensure_ascii=False)     # a dropped value is nowhere
 
 
 def test_a_block_holds_every_call_inside_it(fake, tmp_path, environment):

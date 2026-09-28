@@ -13,7 +13,8 @@ import pytest
 import functai
 from functai import adapters, calllog, evaluation, models
 from functai.saved import probe_plan, probe_request, request_fingerprint
-from contract_support import CONTRACT, case_files, load, python_function
+from conftest import FakeRouter
+from contract_support import CONTRACT, case_files, load, python_function, validator
 
 
 # ------------------------------------------------------------------ AI functions (functions.md)
@@ -120,13 +121,9 @@ def test_score_case(path):
 
 @pytest.fixture(scope="module")
 def saved_schema():
-    """The manifest's schema, with the interface schema it refers to."""
-    from referencing import Registry, Resource
-    docs = [load(CONTRACT / "schema" / f"{n}.schema.json") for n in ("saved", "interface")]
-    for d in docs:
-        jsonschema.Draft202012Validator.check_schema(d)
-    registry = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in docs])
-    return jsonschema.Draft202012Validator(docs[0], registry=registry)
+    """The manifest's schema, with the interface schema it refers to, its
+    patterns read as ECMA-262 reads them (contract_support)."""
+    return validator("saved")
 
 
 @pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)
@@ -192,17 +189,34 @@ def loaded(case):
 
 
 @pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)
-def test_saved_case_loads(path):
+def test_saved_case_loads(path, monkeypatch, tmp_path):
     case = load(path)
     expect = {k: v for k, v in case["expect"].items() if k not in ("describe", "sends")}
     got, fn = loaded(case)
     assert got == expect
-    for send in case["expect"].get("sends", []):
-        # the loaded function called with an optional input left out sends its default
-        inputs = fn._bind_inputs((), dict(send["inputs"]))
-        spec, settings = fn._spec(), fn._effective()
-        plan, past = probe_plan(fn, spec, settings)
-        assert request_fingerprint(probe_request(fn, spec, plan, past, inputs)) == send["request_hash"]
+    if not case["expect"].get("sends"):
+        return
+    # The loaded function called for real (a fake model answers) under the probe facts (the capabilities and the
+    # provider fingerprints are rendered with): the request its call rendered, as the probe hash names it.
+    import lmcc
+    import lmcc_lm15
+    rendered = []
+    real = lmcc_lm15.request
+
+    def spy(render, **kwargs):
+        rendered.append(render)
+        return real(render, **kwargs)
+
+    monkeypatch.setattr(lmcc_lm15, "request", spy)
+    router = FakeRouter(responder=lambda request: "<result>\nok\n</result>")
+    with functai.configure(client=router, lm="probe:model", capabilities=functai.saved.PROBE_CAPABILITIES,
+                           log_calls=tmp_path):
+        for send in case["expect"]["sends"]:
+            fn(**send["inputs"])                  # an optional input left out: its default is sent
+            assert request_fingerprint(rendered[-1].request("probe")) == send["request_hash"], send
+    records = [json.loads(line) for f in tmp_path.rglob("*.jsonl") for line in f.read_text().splitlines()]
+    hashes = [r["exchanges"][0]["request_hash"] for r in sorted(records, key=lambda r: r["id"])]
+    assert hashes == [lmcc.turn.sha256(r.request()) for r in rendered]      # what the record says was sent
 
 
 @pytest.mark.parametrize("path", case_files("saved"), ids=lambda p: p.stem)

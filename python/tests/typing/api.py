@@ -78,19 +78,29 @@ def routed(topic: str) -> dict:
     return {"team": team(topic), "result": "ok"}
 
 
+def modules() -> None:
+    assert_type(blurb("snow"), str)                                   # a module keeps its types, as @ai does
+    assert_type(routed("x"), dict)
+    blurb(3)                           # pyright: ignore[reportArgumentType]
+    blurb("a", {}, 5)                  # pyright: ignore[reportCallIssue]
+    routed(topik="typo")               # pyright: ignore[reportCallIssue]
+
+
 def interfaces_and_logs() -> None:
     assert_type(team.interface, Dict[str, Any])
     assert_type(blurb.interface, Dict[str, Any])
-    assert_type(routed, functai.FunctAIModule)
     store = functai.MemoryStore()
-    journal = functai.Journal(store, required=True)
+    journal = functai.Journal(store, required=True, timeout=10, backoff=0.1)
     functai.configure(observers=[print], journal=journal, log_content={"*": False, "message": True})
+    assert_type(store.append({}), Literal["kept", "duplicate"])
+    assert isinstance(store, functai.Store)
     reader = functai.Follower()
     for event in store.read("some-tree"):
-        assert_type(reader.receive(event), str)
+        assert_type(reader.receive(event), Literal["kept", "duplicate", "stale", "rewind", "loss", "unknown-format"])
     try:
         team("x")
     except functai.JournalError as err:
         assert_type(err.code, str)
         err.settle()
+    assert_type(functai.flush(), bool)
     functai.describe("saved/")

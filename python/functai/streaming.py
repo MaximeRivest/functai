@@ -28,6 +28,7 @@ from __future__ import annotations
 import asyncio
 import atexit
 import contextvars
+import copy
 import dataclasses
 import threading
 import time
@@ -79,9 +80,14 @@ class Event:
         """The event's name in its tree's log: its writer and seq."""
         return {"writer": self.writer, "seq": self.seq}
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self, *, content: bool = True, keep: Any = None, program: Any = None) -> Dict[str, Any]:
         """The event as JSON data (``contract/schema/event.schema.json``, format
-        2), for sending to a browser or another process."""
+        2), for sending to a browser or another process.
+
+        ``content=False`` (with ``keep``, which fields the call's log keeps,
+        and ``program``, its record's program object) leaves out, without
+        ever writing them, the values its kept form drops: what the kept form
+        does not keep is never serialized."""
         out: Dict[str, Any] = {"functai_event": 2, "kind": self.kind, "tree": self.tree or self.call,
                                "writer": self.writer, "seq": self.seq,
                                "after": dict(self.after) if self.after is not None else None,
@@ -90,10 +96,17 @@ class Event:
         for f in dataclasses.fields(self):
             if f.name in _ENVELOPE or not f.metadata.get("json", True):
                 continue
-            out[f.name] = self._json(f.name, getattr(self, f.name))
+            if not content and self._dropped(f.name, keep or {}, program):
+                continue
+            out[f.name] = self._json(f.name, getattr(self, f.name), None if content else (keep or {}))
         return out
 
-    def _json(self, name: str, value: Any) -> Any:
+    def _dropped(self, name: str, keep: Any, program: Any) -> bool:
+        """Whether the kept form of a call whose content is not whole leaves this key out."""
+        return False
+
+    def _json(self, name: str, value: Any, keep: Any = None) -> Any:
+        """A key's JSON; ``keep``: which fields the call's log keeps, when its content is not whole."""
         return value
 
 
@@ -113,17 +126,16 @@ class Started(Event):
     saw: Any = ()
     kind = "started"
 
-    def _json(self, name, value):
+    def _json(self, name, value, keep=None):
         if name == "inputs":
-            return {k: calllog.to_json(v)[0] for k, v in value.items()}
+            kept = None if keep is None else keep.get("inputs", {})
+            return {k: calllog.to_json(v)[0] for k, v in value.items() if kept is None or kept.get(k, False)}
         if name == "root":
             return value or self.call
         if name == "program":
-            return value if value is not None else {"name": self.function, "kind": "ai", "module": "__main__",
-                                                    "version": "sha256:" + "0" * 64,
-                                                    "interface": "sha256:" + "0" * 64, "answer": "result"}
+            return copy.deepcopy(value)          # the record's own program object; never made up
         if name == "saw":
-            return list(value)
+            return copy.deepcopy(list(value))
         return value
 
 
@@ -168,7 +180,10 @@ class ToolCall(Event):
     input: Any
     kind = "tool_call"
 
-    def _json(self, name, value):
+    def _dropped(self, name, keep, program):
+        return name == "input"
+
+    def _json(self, name, value, keep=None):
         return calllog.to_json(value)[0] if name == "input" else value
 
 
@@ -180,6 +195,9 @@ class ToolResult(Event):
     output: str
     kind = "tool_result"
 
+    def _dropped(self, name, keep, program):
+        return name == "output"
+
 
 @dataclasses.dataclass(frozen=True)
 class Retry(Event):
@@ -188,6 +206,9 @@ class Retry(Event):
     reason: str
     wait: Optional[float] = None
     kind = "retry"
+
+    def _dropped(self, name, keep, program):
+        return name == "reason"
 
 
 @dataclasses.dataclass(frozen=True)
@@ -198,7 +219,11 @@ class Done(Event):
     prediction: Any = dataclasses.field(default=None, compare=False, metadata={"json": False})
     kind = "done"
 
-    def _json(self, name, value):
+    def _dropped(self, name, keep, program):
+        from .eventlog import _done_value_kept
+        return name == "value" and not _done_value_kept(keep, program)
+
+    def _json(self, name, value, keep=None):
         return calllog.to_json(value)[0] if name == "value" else value
 
 
@@ -208,8 +233,8 @@ class Failed(Event):
     error: BaseException
     kind = "failed"
 
-    def _json(self, name, value):
-        return calllog._error(value, True) if name == "error" else value
+    def _json(self, name, value, keep=None):
+        return calllog._error(value, keep is None) if name == "error" else value
 
 
 _KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed)}

@@ -21,14 +21,17 @@ class FunctAIError(Exception):
         self.code = code
 
 
-class InterfaceError(FunctAIError, ValueError):
+class InterfaceError(FunctAIError, TypeError, ValueError):
     """A program's interface refused what it was given or what it gave back.
 
     ``code`` is ``"interface-input"`` (a call given what the interface does
     not take), ``"interface-output"`` (the code returned what the interface
     does not give) or ``"interface-malformed"`` (the interface itself breaks
     the rules, when the program is defined or read from a folder). ``field``
-    names the field at fault, or is None when the fault is no field's."""
+    names the field at fault, or is None when the fault is no field's.
+
+    It is a ``TypeError`` (as Python's own wrong arguments are) and a
+    ``ValueError`` (a value that does not fit)."""
 
     def __init__(self, code: str, field: Optional[str], message: str):
         super().__init__(code, message)

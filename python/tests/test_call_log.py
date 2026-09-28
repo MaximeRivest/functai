@@ -49,11 +49,9 @@ def log(tmp_path):
 
 @pytest.fixture
 def schemas():
-    jsonschema = pytest.importorskip("jsonschema")
-    from referencing import Registry, Resource
-    docs = {name: json.loads((CONTRACT / "schema" / f"{name}.schema.json").read_text()) for name in ("call", "rating")}
-    registry = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in docs.values()])
-    return {name: jsonschema.Draft202012Validator(d, registry=registry) for name, d in docs.items()}
+    """The call and rating schemas, their patterns read as ECMA-262 reads them (contract_support)."""
+    from contract_support import validator
+    return {name: validator(name) for name in ("call", "rating")}
 
 
 def lines(folder):

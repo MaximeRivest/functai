@@ -10,6 +10,7 @@ import pytest
 
 import functai
 from functai import calllog, interface, module
+from conftest import FakeRouter
 from contract_support import as_json, case_files, load, native, python_function, validator, assert_valid, \
     without_type
 
@@ -103,8 +104,14 @@ def test_programs_case(path, tmp_path):
         assert without_type(iface) == case["expect"]["interface"]
         assert interface.signature(iface) == case["expect"]["signature"]
         assert calllog.signature_id(fn.signature) == case["expect"]["signature_id"]
-        for b in case["binds"]:
-            assert fn._bind_inputs((), dict(b["inputs"])) == b["expect"]["inputs"]
+        for i, b in enumerate(case["binds"]):
+            # a real call (a fake model answers): the values it was called with are its record's inputs
+            folder = tmp_path / f"binds-{i}"
+            router = FakeRouter(responder=lambda request: "<result>\nok\n</result>")
+            with functai.configure(client=router, lm="gpt-4.1-mini", log_calls=folder):
+                fn(**native(b["inputs"]))
+            [rec] = [json.loads(line) for f in folder.rglob("*.jsonl") for line in f.read_text().splitlines()]
+            assert rec["inputs"] == b["expect"]["inputs"], b
     elif kind == "module":
         m, got = declared(case["interface"])
         assert interface.signature(m.interface) == case["expect"]["signature"]

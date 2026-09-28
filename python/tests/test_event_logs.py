@@ -71,6 +71,21 @@ class FlakyStore(eventlog.MemoryStore):
             raise TimeoutError("the answer was lost")
         return answer
 
+    def extend(self, events):
+        """A batch meets the same failures: down or refused when any event would be, lost after keeping."""
+        events = list(events)
+        self.sent.extend(e["seq"] for e in events)
+        hows = [self.fails(e) for e in events]
+        if "down" in hows:
+            raise ConnectionError("down")
+        if "refused" in hows:
+            raise EventRefused("event-conflict", "another writer has it",
+                               event=eventlog.position(events[hows.index("refused")]))
+        answer = super().extend(events)
+        if "lost" in hows:
+            raise TimeoutError("the answer was lost")
+        return answer
+
 
 def test_every_request_is_an_event_and_one_numbering_holds_the_tree(fake, tmp_path):
     fake("no tags", XML.format("Snow."))

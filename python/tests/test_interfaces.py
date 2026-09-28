@@ -2,6 +2,7 @@
 derived from the function, checked on every call of a module, written in the
 call log and in a saved folder."""
 
+import dataclasses
 import json
 import re
 import textwrap
@@ -155,18 +156,40 @@ def test_interfaces_every_language_refuses_are_refused_when_defined():
     assert err.value.field == "start"
 
 
-def test_a_name_defined_later_is_looked_up_at_the_first_call():
+def test_a_name_not_defined_when_the_module_is_defined_refuses_there():
+    """programs.md: every interface is checked when its program is defined. An
+    annotation naming a type that does not exist yet cannot be checked, so it
+    refuses at the decorator, naming the field (not a NameError at the first
+    call, and not a module whose log_content map was never checked)."""
+    with pytest.raises(functai.InterfaceError) as err:
+        @module(log_content={"typo": False})
+        def late(order: "NeverDefined") -> str:                             # noqa: F821
+            return "ran"
+    assert err.value.code == "interface-malformed" and err.value.field == "order"
+    assert "NeverDefined" in str(err.value)
+
+    with pytest.raises(functai.InterfaceError) as err:
+        @module
+        def returns_later(order: str) -> "NotYet":                          # noqa: F821
+            return order
+    assert err.value.field == "result"
+
+
+def test_names_defined_before_the_module_resolve_where_it_is_defined():
+    """A type defined in the enclosing function before the decorator runs is
+    found, written as text (as ``from __future__ import annotations`` writes
+    every annotation) or not."""
+    @dataclasses.dataclass
+    class Parcel:
+        where: str
+        late_days: int
+
     @module
-    def later(order: "Late") -> str:                                      # noqa: F821
+    def where(order: "Parcel") -> str:
         return order.where
 
-    global Late
-    Late = Tracking
-    try:
-        assert later(Tracking("Leeds", 1)) == "Leeds"
-        assert later.interface["inputs"][0]["shape"]["required"] == ["where", "late_days"]
-    finally:
-        del Late
+    assert where.interface["inputs"][0]["shape"]["required"] == ["where", "late_days"]
+    assert where(Parcel("Leeds", 1)) == "Leeds"
 
 
 def test_an_ai_function_s_interface_and_its_optional_inputs(fake):

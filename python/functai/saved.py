@@ -417,6 +417,8 @@ def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None
                                        "requires": list(n.requires)}
             if m._declared:
                 entry["module_program"]["declared"] = True      # rebuilt from the interface, not derived again
+            elif m._declares_outputs:
+                entry["module_program"]["outputs"] = True       # its outputs rebuilt from the interface
             own = {k: v for k, v in m._settings.items() if k not in NOT_SAVED}
             if own:
                 entry["module_program"]["settings"] = own
@@ -819,19 +821,29 @@ def _rebuild_module(fn: Any, key: str):
     node = manifest["nodes"][key]
     data = node.get("module_program", {})
     declared = node.get("interface") if data.get("declared") else None
-    m = FunctAIModule(fn, requires=data.get("requires", ()), interface=declared, **(data.get("settings") or {}))
+    outputs = node["interface"]["outputs"] if data.get("outputs") and not declared else None
+    m = FunctAIModule(fn, requires=data.get("requires", ()), interface=declared, _output_fields=outputs,
+                      **(data.get("settings") or {}))
     m._opt_call_defaults = dict(data.get("call_defaults") or {})
     return m
 
 
+def _accepts(interface: Dict[str, Any]) -> Dict[str, Any]:
+    """What an interface says a program accepts and gives: without its words
+    (``description``, ``desc``, ``type``: programs.md)."""
+    return {d: [{k: v for k, v in f.items() if k not in ("desc", "type")} for f in interface[d]]
+            for d in ("inputs", "outputs")}
+
+
 def _verify_loaded(package: str, manifest: Dict[str, Any]) -> List[str]:
-    """Fingerprints recomputed here against the saved ones."""
-    from .interface import signature
+    """What the loaded code does, against what was saved: every program's
+    interface (what it accepts and gives, defaults included), and every AI
+    function's fingerprints, one per probe."""
     problems = []
     for key, node in manifest["nodes"].items():
         if node["kind"] in ("ai", "module") and isinstance(node.get("interface"), dict):
             obj = _node_object(package, manifest, key)
-            if signature(obj.interface) != signature(node["interface"]):
+            if _accepts(obj.interface) != _accepts(node["interface"]):
                 problems.append(f"{key}: it takes or gives other data than its saved interface says")
         if node["kind"] != "ai":
             continue
@@ -872,8 +884,8 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
         Must be True: loading runs the saved code. The hashes catch
         accidents, not someone who edits both the code and ``functai.json``.
     node : str, optional
-        For a folder of another language: the AI function to load, by key
-        (``"module:name"``); the entry by default.
+        The program to load, by key (``"module:name"``); the entry by
+        default. For a folder of another language, an AI function.
     check_env : str
         ``"refuse"`` (default) refuses on version or request differences;
         ``"warn"`` loads anyway, with warnings. Missing packages always
@@ -914,6 +926,14 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
     manifest = _read_manifest(root)
     if manifest.get("language", "python") != "python":
         return from_manifest(manifest, node=node, saved_id="sha256:" + _sha256((root / MANIFEST).read_bytes()))
+    # What any reader checks first (saved.md, step 1, and each program's interface), before any code runs.
+    _check_form(manifest)
+    for key, n in manifest["nodes"].items():
+        if n["kind"] in ("ai", "module"):
+            _checked_interface(key, n)
+    wanted = node
+    if wanted is not None and wanted not in manifest["nodes"]:
+        raise _refuse("saved-malformed", f"functai.json has no node {wanted!r}")
     problems = _check_hashes(root, manifest)
     if problems:
         raise LoadRefused(f"{root} does not match what was saved", problems)
@@ -950,6 +970,8 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
                 if isinstance(esc, dict) and esc.get("node"):
                     _node_object(package, manifest, key)._settings["escalate_to"] = \
                         _node_object(package, manifest, esc["node"])
+            if wanted is not None:
+                obj = _node_object(package, manifest, wanted)
         except BaseException:
             for name in [m for m in sys.modules if m == package or m.startswith(package + ".")]:
                 del sys.modules[name]
@@ -1224,52 +1246,20 @@ def _refuse(code: str, message: str) -> LoadRefused:
 
 def _check_form(manifest: Any) -> Dict[str, Any]:
     """The checks before any node is read (saved.md, step 1): a format this
-    reader knows, then the manifest's form where a loader reads it."""
+    reader knows (``saved-format``), then the whole schema, with every
+    node's interface (``saved-malformed``), then that its entry is a node."""
+    from . import schemas
     if not isinstance(manifest, dict):
         raise _refuse("saved-malformed", "functai.json is not a JSON object")
     if manifest.get("functai_saved") != FORMAT:
         raise _refuse("saved-format", f"functai.json is format {manifest.get('functai_saved')!r}; this reader "
                                       f"reads format {FORMAT}")
-    nodes = manifest.get("nodes")
-    if not isinstance(manifest.get("entry"), str) or not isinstance(nodes, dict):
-        raise _refuse("saved-malformed", "functai.json needs an entry and nodes")
-    if manifest["entry"] not in nodes:
+    why = schemas.problem("saved", manifest)
+    if why is not None:
+        raise _refuse("saved-malformed", f"functai.json does not pass the saved schema: {why}")
+    if manifest["entry"] not in manifest["nodes"]:
         raise _refuse("saved-malformed", f"its entry {manifest['entry']!r} is not one of its nodes")
-    for key, n in nodes.items():
-        if not isinstance(n, dict) or n.get("kind") not in ("ai", "module", "function", "class") \
-                or not isinstance(n.get("name"), str) or not isinstance(n.get("module"), str):
-            raise _refuse("saved-malformed", f"node {key!r} is not a node (kind, module and name)")
-        if "interface" in n and not _interface_form(n["interface"]):
-            raise _refuse("saved-malformed", f"node {key!r}: its interface is not of the interface's form")
-        if n["kind"] == "ai":
-            ai = n.get("ai")
-            if not isinstance(ai, dict) or not isinstance(ai.get("signature"), dict) \
-                    or not isinstance(ai.get("settings", {}), dict):
-                raise _refuse("saved-malformed", f"node {key!r} has no \"ai\" entry with its signature")
     return manifest
-
-
-def _interface_form(iface: Any) -> bool:
-    """What interface.schema.json checks (the rest is programs.md's, interface-malformed)."""
-    from .interface import NAME
-    if not isinstance(iface, dict) or set(iface) - {"description", "inputs", "outputs"}:
-        return False
-    if not isinstance(iface.get("description"), str) or not isinstance(iface.get("inputs"), list) \
-            or not isinstance(iface.get("outputs"), list) or not iface["outputs"]:
-        return False
-    for direction, keys in (("inputs", {"name", "shape", "desc", "type", "opaque", "optional"}),
-                            ("outputs", {"name", "shape", "desc", "type", "opaque"})):
-        for f in iface[direction]:
-            if not isinstance(f, dict) or set(f) - keys or not isinstance(f.get("name"), str) \
-                    or not NAME.fullmatch(f["name"]) or not isinstance(f.get("shape"), dict):
-                return False
-            if any(k in f and f[k] is not True for k in ("opaque", "optional")):
-                return False
-            if f.get("opaque") and f["shape"]:
-                return False
-            if any(k in f and not isinstance(f[k], str) for k in ("desc", "type")):
-                return False
-    return True
 
 
 def _plain_fields(node: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1372,44 +1362,61 @@ def from_manifest(source: Any, *, node: Optional[str] = None, saved_id: Optional
     for k, v in (data.get("settings") or {}).items():
         if isinstance(v, dict) and ("baked" in v or "node" in v):
             raise _refuse("saved-model", f"{key}: its setting {k} is {v}, which this loader cannot reach")
-    fn = _LoadedAI(key, n, saved_id or file_id)
     iface = _checked_interface(key, n)
+    probes, requests = data["probes"], data["fingerprints"]["requests"]
+    if len(requests) != len(probes):
+        raise _refuse("saved-malformed", f"{key}: it saves {len(probes)} probes and {len(requests)} request "
+                                         f"fingerprints; each probe has one, so what it sends can be checked")
+    fn = _LoadedAI(key, n, saved_id or file_id)
     fn._saved_interface = iface
-    requests = (data.get("fingerprints") or {}).get("requests") or []
     spec, settings = fn._spec(), fn._effective()
     plan, past = probe_plan(fn, spec, settings)
-    for i, probe in enumerate(data.get("probes") or []):
+    for i, probe in enumerate(probes):
         try:
             got = request_fingerprint(probe_request(fn, spec, plan, past, probe))
         except lmcc.Refusal as exc:
             got = f"refused:{exc.code}"
-        if i < len(requests) and got != requests[i]:
+        if got != requests[i]:
             raise _refuse("saved-differs", f"{key}: for probe {i} it would send {got}, but {requests[i]} was saved")
     if isinstance(data.get("version"), str) and data["version"] != fn.version:
         raise _refuse("saved-differs", f"{key}: its version here is {fn.version}, but {data['version']} was saved")
     return fn
 
 
-def _loaded_function(name: str, inputs: List[Dict[str, Any]]):
-    """A Python function whose parameters are the inputs (an optional one with
-    its default), for binding a call's arguments; the model writes its body."""
-    import keyword
-    params = []
-    defaults: Dict[str, Any] = {}
+def _loaded_body():
+    """The body of an AI function built from data: the model writes all of it."""
+    def loaded(*args: Any, **kwargs: Any) -> None:
+        return None
+    return loaded
+
+
+def _bind_from_data(name: str, inputs: List[Dict[str, Any]], args: tuple, kwargs: Dict[str, Any]
+                    ) -> Dict[str, Any]:
+    """A call's inputs, bound from the interface as data: positional values in
+    the interface's order, the rest by name (any name the contract allows,
+    ``class`` included: ``fn(**{"class": ...})``), an optional input left out
+    taking its default. Python's own rule (no required parameter after an
+    optional one) does not apply: the interface's order is the contract's."""
+    names = [f["name"] for f in inputs]
+    if len(args) > len(names):
+        raise TypeError(f"{name}() takes {len(names)} inputs, {len(args)} were given by position")
+    bound = dict(zip(names, args))
+    unknown = sorted(k for k in kwargs if k not in names)
+    if unknown:
+        raise TypeError(f"{name}() got an input it does not take: {unknown[0]!r} (inputs: {', '.join(names)})")
+    for k, v in kwargs.items():
+        if k in bound:
+            raise TypeError(f"{name}() got two values for {k!r}")
+        bound[k] = v
+    out: Dict[str, Any] = {}
     for f in inputs:
-        pname = f["name"]
-        if keyword.iskeyword(pname):
-            raise _refuse("saved-malformed", f"input {pname!r} is a Python keyword")
-        if f.get("optional"):
-            defaults[pname] = copy.deepcopy((f.get("shape") or {}).get("default"))
-            params.append(f"{pname}=__defaults__[{pname!r}]")
+        if f["name"] in bound:
+            out[f["name"]] = bound[f["name"]]
+        elif f.get("optional"):
+            out[f["name"]] = copy.deepcopy((f.get("shape") or {}).get("default"))
         else:
-            params.append(pname)
-    ident = name if name.isidentifier() and not keyword.iskeyword(name) else "loaded"
-    source = f"def {ident}({', '.join(params)}):\n    ...\n"
-    namespace: Dict[str, Any] = {"__defaults__": defaults}
-    exec(compile(source, f"<functai loaded {name}>", "exec"), namespace)
-    return namespace[ident]
+            raise TypeError(f"{name}() is missing the input {f['name']!r}")
+    return out
 
 
 def _loaded_class():
@@ -1435,7 +1442,8 @@ def _loaded_class():
                 optional = {f["name"]: f for f in iface.get("inputs") or [] if isinstance(f, dict)
                             and f.get("optional")}
                 ins = [optional.get(f["name"], f) for f in ins]
-            fn = _loaded_function(node["name"], ins)
+            self._data_inputs = ins
+            fn = _loaded_body()
             fn.__module__ = node["module"]
             fn.__qualname__ = fn.__name__ = node["name"]
             settings: Dict[str, Any] = {}
@@ -1459,6 +1467,9 @@ def _loaded_class():
 
         def _check_definition(self) -> None:
             self._check_log_content()      # its interface is checked by from_manifest (saved.md, step 6)
+
+        def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
+            return _bind_from_data(self.__name__, self._data_inputs, tuple(args), dict(kwargs))
 
         def _spec(self, instructions: Optional[str] = None):
             from .signature import Spec

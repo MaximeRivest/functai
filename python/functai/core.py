@@ -399,7 +399,8 @@ class FunctAIFunc(Generic[P, R]):
         self._instr_refined = 0
         self._instr_frozen = False
         self._autoinstructed = False
-        self._history_calls: List[str] = []                   # the call ids of `history`'s turns
+        # which logged call made each turn of `history`, by the turn itself (a turn put there by hand has none)
+        self._history_calls: Dict[int, Tuple[Any, str]] = {}
         self._interface_cache: Optional[Tuple[Any, Dict[str, Any]]] = None
         self._spec()                                          # signature errors surface at definition
         self._check_definition()                              # and interface and log_content ones
@@ -543,7 +544,7 @@ class FunctAIFunc(Generic[P, R]):
         elif checked.get("adapter") is not None:
             clone._template = None
         clone.history = []
-        clone._history_calls = []
+        clone._history_calls = {}
         clone._interface_cache = None
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
@@ -655,22 +656,30 @@ class FunctAIFunc(Generic[P, R]):
     def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
         """(what a call is shown as context, entries of the call log's ``saw``;
         the turns themselves): a stateful function's latest turns, as the ids
-        of the calls they were, each shown with its steps."""
+        of the calls they were, each shown with its steps. A turn is matched
+        to its call by identity, so editing ``history`` never lends a turn
+        another call's id: a turn no logged call made (put there by hand, or
+        changed) is written ``{"unrecorded": true}``, which no reader knows
+        (``unknown-key``). The turns returned are the ones the call is shown,
+        whatever happens to ``history`` meanwhile."""
         s = self._effective()
         if not s.get("stateful"):
             return [], None
         with self._lock:
             history = list(self.history)
-            ids = list(self._history_calls)[-len(history):] if history else []
-        ids = [""] * (len(history) - len(ids)) + ids          # turns put in `history` by hand have no call
-        pairs = list(zip(ids, history))
+            made = dict(self._history_calls)
         window = int(s.get("state_window") or 0)
         if window > 0:
-            pairs = pairs[-window:]
-        # A turn no logged call made is shown too: an entry no reader knows says so (unknown-key).
-        entries = [({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid}) if cid
-                   else {"unrecorded": True} for cid, turn in pairs]
-        return entries, [turn for _cid, turn in pairs]
+            history = history[-window:]
+        entries = []
+        for turn in history:
+            owner = made.get(id(turn))
+            cid = owner[1] if owner is not None and owner[0] is turn else ""
+            if not cid:
+                entries.append({"unrecorded": True})
+            else:
+                entries.append({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid})
+        return entries, history
 
     # ----- signature and plan -----
 
@@ -743,13 +752,14 @@ class FunctAIFunc(Generic[P, R]):
 
     def _past(self, plan: lmcc.Plan, spec: Spec, settings: Dict[str, Any]) -> List[lmcc.Turn]:
         past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos) if t is not None]
-        if settings.get("stateful") and self.history:
+        if settings.get("stateful"):
             call = calllog.current()
             if call is not None and call.program is self and call.context is not None:
-                recent = call.context                      # the turns its record says it saw
+                recent = list(call.context)                # the turns its record says it saw, as captured
             else:
-                window = int(settings.get("state_window") or 0)
-                recent = self.history[-window:] if window > 0 else self.history
+                with self._lock:
+                    window = int(settings.get("state_window") or 0)
+                    recent = list(self.history[-window:] if window > 0 else self.history)
             past += [t for t in (engine.fit_turn(plan, spec, h) for h in recent) if t is not None]
         return past
 
@@ -834,11 +844,14 @@ class FunctAIFunc(Generic[P, R]):
             call = calllog.current()
             with self._lock:
                 self.history.append(pred.turn)
-                self._history_calls.append(call.id if call is not None and call.program is self else "")
+                if call is not None and call.program is self:
+                    self._history_calls[id(pred.turn)] = (pred.turn, call.id)
                 window = int(s.get("state_window") or 0)
                 if window > 0 and len(self.history) > window:
                     del self.history[:-window]
-                    del self._history_calls[:-window]
+                live = {id(t) for t in self.history}
+                for k in [k for k in self._history_calls if k not in live]:
+                    del self._history_calls[k]
         trace = _TRACE.get()
         if trace is not None:
             trace.append((self, pred))

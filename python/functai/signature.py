@@ -500,6 +500,7 @@ def unannotate(ann: Any) -> Tuple[Any, Optional[str]]:
 # Field(ge=..., max_length=..., pattern=...)), as the JSON Schema keyword each is.
 _BOUNDS = {"ge": "minimum", "gt": "exclusiveMinimum", "le": "maximum", "lt": "exclusiveMaximum",
            "multiple_of": "multipleOf", "pattern": "pattern"}
+_CONSTRAINT_PACKAGES = ("annotated_types", "pydantic", "pydantic_core")
 
 
 def _constraints(ann: Any) -> Dict[str, Any]:
@@ -510,6 +511,10 @@ def _constraints(ann: Any) -> Dict[str, Any]:
 
     def read(extra: Any) -> None:
         if isinstance(extra, (str, bytes, int, float, bool, type)) or extra is None:
+            return
+        # Only what the packages that define constraints made: an object that happens to have a
+        # ``pattern`` or ``ge`` attribute (a compiled regular expression, a user's own marker) says nothing.
+        if (getattr(type(extra), "__module__", "") or "").split(".")[0] not in _CONSTRAINT_PACKAGES:
             return
         metadata = getattr(extra, "metadata", None)
         if isinstance(metadata, list):                 # pydantic's FieldInfo: its constraints

@@ -4,12 +4,14 @@ keeps, a writer keeping a log in a journal that fails, and which receivers a
 tree gets from the layers of settings around it."""
 
 
+import json
+
 import pytest
 
 import functai
-from functai import ai, calllog, eventlog
+from functai import ai, calllog, eventlog, module
 from functai.errors import EventRefused, JournalError
-from functai.eventlog import Follower, Journal, JournalWriter, MemoryStore, position
+from functai.eventlog import Follower, Journal, MemoryStore, position
 from contract_support import assert_valid, case_files, load, validator
 
 EVENT = validator("event")
@@ -195,77 +197,143 @@ class ScriptedStore:
         return self.store.claim(tree)
 
 
-def later(at):
-    """The writer's clock, one step (10 ms, as the cases' writer) after ``at``."""
-    import datetime as dt
-    t = dt.datetime.strptime(at, "%Y-%m-%dT%H:%M:%S.%fZ") + dt.timedelta(milliseconds=10)
-    return t.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
-
-
 def without_message(error):
     return {k: v for k, v in error.items() if k != "message"}
 
 
+def scripted(case, ran):
+    """The case's AI function, as a program whose code makes the case's events
+    through the call's own API, in the order the engine makes them (a request,
+    thinking, pieces of text, a tool call and then the barrier before the tool
+    runs, a tool result, a retry), then returns the case's value or raises its
+    error. Everything else is the library's, on its real path: numbering, the
+    kept form, the journal's writer and its thread, the barriers, the failed
+    event of a stopped call, what readers are shown, the JournalError, the
+    call record."""
+    events = case["events"]
+    first, end = events[0], events[-1]
+    iface = {"description": "", "inputs": [{"name": k, "shape": {}} for k in first["inputs"]],
+             "outputs": [{"name": "result", "shape": {}}]}
+
+    def body(**inputs):
+        call = calllog.current()
+        for e in events[1:-1]:
+            kind = e["kind"]
+            if kind == "request":
+                call.request(e["model"])
+            elif kind == "tool_call":
+                made = call.emit("tool_call", id=e["id"], name=e["name"], input=e["input"])
+                calllog.tool_barrier(made.seq if made is not None else None)
+                ran.append(e["id"])                                   # the tool runs here
+            elif kind == "tool_result":
+                call.emit("tool_result", id=e["id"], name=e["name"], output=e["output"])
+            elif kind == "text":
+                call.emit("text", field=e["field"], answer=e["answer"], text=e["text"])
+            elif kind == "thinking":
+                call.emit("thinking", text=e["text"])
+            elif kind == "retry":
+                call.emit("retry", reason=e["reason"], wait=e["wait"])
+            else:
+                raise AssertionError(f"a kind this harness does not script: {kind}")
+        if end["kind"] == "done":
+            return end["value"]
+        raise type(end["error"]["type"], (Exception,), {})(end["error"]["message"])
+
+    body.__name__ = body.__qualname__ = first["function"]
+    return module(interface=iface)(body)
+
+
+def normalized(made, case):
+    """The events the writer made, with what a real run cannot share with the
+    case (ids, the clock, the program's hashes) put back to the case's."""
+    first = case["events"][0]
+    log = case["expect"]["log"]
+    out = []
+    for i, e in enumerate(made):
+        e = dict(e)
+        e["tree"] = e["call"] = first["tree"]
+        if e["kind"] == "started":
+            e["root"] = first["root"]
+            e["program"] = first["program"]
+        if i < len(log):
+            e["at"] = log[i]["at"]
+        out.append(e)
+    return out
+
+
 @pytest.mark.parametrize("path", cases("journal"), ids=lambda p: p.stem)
-def test_journal_case(path):
-    """The writer's side is functai's JournalWriter; the call's side (barriers,
-    what readers are shown, what the caller gets) is what calllog.run does."""
+def test_journal_case(path, tmp_path, monkeypatch):
+    """A real call, streamed, with the case's journal (a MemoryStore reached
+    through the case's script) and the call log on: what the writer made, what
+    it sent and the store answered, what readers were shown, what the store
+    keeps, what the caller got, what the record says and what settling says
+    all come from the library."""
     case = load(path)
-    events, required = case["events"], case["mode"] == "required"
-    tree = events[0]["tree"]
-    store = ScriptedStore(case["script"], events[0]["function"])
-    writer = JournalWriter(Journal(store, required=required, retries=case["retries"]), thread=False)
-    made, shown, outcome = [], [], None
-    for i, e in enumerate(events):
-        if e["call"] == tree and e["kind"] in ("done", "failed"):
-            outcome = e
-            break
-        made.append(e)
-        shown.append(e["seq"])
-        writer.send(e)
-        if required and (i == 0 or e["kind"] == "tool_call") and writer.barrier() != "confirmed":
-            stopped = calllog.barrier_error(e["seq"])
-            outcome = {k: e[k] for k in ("functai_event", "tree", "writer", "call", "function")}
-            outcome.update(kind="failed", seq=e["seq"] + 1, after=position(e),
-                           at=later(e["at"]), error=calllog._error(stopped))
-            outcome = {k: outcome[k] for k in ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call",
-                                               "function", "error")}
-            break
-    made.append(outcome)
-    status = writer.end(outcome)
-    if not required or status == "confirmed":
-        shown.append(outcome["seq"])
+    required = case["mode"] == "required"
+    made = []
+    real_emit = eventlog.TreeLog.emit
+
+    def spy(self, call, kind, **fields):
+        event = real_emit(self, call, kind, **fields)
+        if event is not None:
+            made.append(event.to_dict())
+        return event
+
+    monkeypatch.setattr(eventlog.TreeLog, "emit", spy)
+    store = ScriptedStore(case["script"], case["events"][0]["function"])
+    ran, seen = [], []
+    program = scripted(case, ran)
+    journal = Journal(store, required=required, retries=case["retries"], backoff=0)
+    with functai.configure(journal=journal, observers=[seen], log_calls=tmp_path):
+        s = program.stream(**case["events"][0]["inputs"])
+        try:
+            got = {"returns": s.result}
+        except JournalError as err:
+            raised = err
+            got = None
+        except Exception as err:  # noqa: BLE001 — the call's own error, raised as it is
+            raised = err
+            got = None
+        shown = []
+        try:
+            for e in s.events():
+                shown.append(e.seq)
+        except BaseException:  # noqa: BLE001 — the stream ends with the call's error
+            pass
+    assert functai.flush(10)
     expect = case["expect"]
-    assert made == expect["log"]
+    tree = s.call_id
+    assert normalized(made, case) == expect["log"]
+    for e in made:
+        assert_valid(EVENT, e, path.stem)
     assert store.trace == expect["trace"]
     assert shown == expect["shown"]
+    assert [e["seq"] for e in seen] == expect["shown"]                   # an observer is shown the same
     kept = store.store
     assert {"events": positions(kept.read(tree)) if tree in kept.trees() else [],
             "finished": kept.finished(tree)} == expect["kept"]
-    failed = None if outcome["kind"] == "done" else without_message(outcome["error"])
-    record = {"error": failed}
-    if required and status != "confirmed":
-        journal = "refused" if status == "refused" else "unknown"
-        record["journal"] = journal
-        done = {"done": outcome["value"]} if failed is None else {"failed": failed}
-        caller = {"raises": {"type": "JournalError", "code": "journal-end", "journal": journal,
-                             "event": position(outcome), "outcome": done}}
-        if journal == "unknown":
-            assert eventlog.settle(store, tree, position(outcome)) == expect["settled"]
-    else:
-        caller = {"returns": outcome["value"]} if failed is None else {"raises": failed}
-    assert caller == expect["caller"]
+    if got is None:
+        if isinstance(raised, JournalError) and raised.code == "journal-end":
+            o = raised.outcome
+            outcome = {"failed": without_message(calllog._error(o.error))} if o.failed else {"done": o.value}
+            got = {"raises": {"type": "JournalError", "code": "journal-end", "journal": raised.journal,
+                              "event": raised.event, "outcome": outcome}}
+            if raised.journal == "unknown":
+                assert raised.settle() == expect["settled"]
+        else:
+            got = {"raises": without_message(calllog._error(raised))}
+    assert got == expect["caller"]
+    [rec] = [json.loads(line) for f in tmp_path.rglob("*.jsonl") for line in f.read_text().splitlines()]
+    record = {"error": None if rec["error"] is None else without_message(rec["error"])}
+    if "journal" in rec:
+        record["journal"] = rec["journal"]
     assert record == expect["record"]
+    tool_calls = [e for e in expect["log"] if e["kind"] == "tool_call"]
+    ran_tool = any(e["kind"] == "tool_result" for e in expect["log"])
+    assert bool(ran) == ran_tool and (not ran or len(tool_calls) == len(ran))    # a tool runs only past its barrier
 
 
 # ------------------------------------------------------------------ receivers
-
-
-def named(name):
-    def observer(event):
-        return None
-    observer.__qualname__ = name
-    return observer
 
 
 @pytest.mark.parametrize("path", cases("receivers"), ids=lambda p: p.stem)

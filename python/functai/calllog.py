@@ -183,10 +183,40 @@ def json_value(value: Any) -> Tuple[Any, int, bool]:
         data = lmcc.turn.to_json(value, where="value")
         return data, len(canonical(data)), False
     except Exception:  # noqa: BLE001 — anything else is described, never refused
-        text = repr(value)
-        data = {"$type": type(value).__qualname__,
+        text = safe_repr(value)
+        data = {"$type": _type_name(value),
                 "$repr": text if len(text) <= _REPR_MAX else text[:_REPR_MAX - 1] + "…"}
         return data, len(canonical(data)), True
+
+
+def _type_name(value: Any) -> str:
+    try:
+        return str(type(value).__qualname__)
+    except Exception:  # noqa: BLE001
+        return "object"
+
+
+def safe_repr(value: Any) -> str:
+    """``repr(value)``, or when that raises, a description that says so without
+    quoting the error (its message could hold a value)."""
+    try:
+        text = repr(value)
+        if isinstance(text, str):
+            return text
+    except Exception as exc:  # noqa: BLE001 — a value's repr never breaks a call or its record
+        return f"<{_type_name(value)} object: its repr raised {type(exc).__name__}>"
+    return f"<{_type_name(value)} object>"
+
+
+def safe_str(error: BaseException) -> str:
+    """``str(error)``, or when that raises, a sentence that says so."""
+    try:
+        text = str(error)
+        if isinstance(text, str):
+            return text
+    except Exception as exc:  # noqa: BLE001
+        return f"<its message could not be read: {type(exc).__name__}>"
+    return ""
 
 
 # ------------------------------------------------------------------ settings
@@ -333,36 +363,37 @@ def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept
     """The record as written when some values are not kept (contract/calls.md,
     *What the record keeps*): ``content`` false and ``omitted`` naming them;
     only the kept values; no exchange request, reply or request hash, and of
-    each error only its type and code; ``sizes`` whole."""
-    if all(kept.get(n, True) for n in [*inputs, *outputs]):
+    each error only its type and code; ``sizes`` whole. A name ``kept`` does
+    not list is not kept (fail closed)."""
+    if all(kept.get(n, False) for n in [*inputs, *outputs]):
         return record
     answer = (record.get("program") or {}).get("answer")
     out: Dict[str, Any] = {}
     for key, value in record.items():
         if key == "content":
             out["content"] = False
-            out["omitted"] = {"inputs": [n for n in inputs if not kept.get(n, True)],
-                              "outputs": [n for n in outputs if not kept.get(n, True)]}
+            out["omitted"] = {"inputs": [n for n in inputs if not kept.get(n, False)],
+                              "outputs": [n for n in outputs if not kept.get(n, False)]}
         elif key == "inputs":
-            kept_in = {k: v for k, v in (value or {}).items() if kept.get(k, True)}
+            kept_in = {k: v for k, v in (value or {}).items() if kept.get(k, False)}
             if kept_in:
                 out["inputs"] = kept_in
         elif key == "outputs":
             if value is None:
                 out["outputs"] = None
             else:
-                kept_out = {k: v for k, v in value.items() if kept.get(k, True)}
+                kept_out = {k: v for k, v in value.items() if kept.get(k, False)}
                 if kept_out:
                     out["outputs"] = kept_out
         elif key == "returned":
-            if kept.get(answer, True):
+            if kept.get(answer, False):
                 out["returned"] = value
         elif key == "probabilities":
-            kept_p = {k: v for k, v in value.items() if kept.get(k, True)}
+            kept_p = {k: v for k, v in value.items() if kept.get(k, False)}
             if kept_p:
                 out["probabilities"] = kept_p
         elif key == "described":
-            kept_d = {k: [n for n in v if kept.get(n, True)] for k, v in value.items()}
+            kept_d = {k: [n for n in v if kept.get(n, False)] for k, v in value.items()}
             if any(kept_d.values()):
                 out["described"] = kept_d
         elif key == "error":
@@ -497,7 +528,8 @@ class Call:
         self.log: Any = None                                 # the tree's eventlog.TreeLog
         self.streams: List[Any] = []                         # the streams that see this call
         self.observers: List[Any] = []
-        self.keep: Dict[str, Dict[str, bool]] = {}          # {"inputs": {name: kept}, "outputs": {...}}
+        self.keep: Optional[Dict[str, Dict[str, bool]]] = None   # {"inputs": {name: kept}, "outputs": {...}};
+        #                                                    None until known: nothing is kept (fail closed)
         self.kept: Dict[str, bool] = {}
         self.fields: Tuple[List[str], List[str], List[str]] = ([], [], [])
         self.info: Optional[Dict[str, Any]] = None          # the record's program object
@@ -531,6 +563,10 @@ class Call:
         """Stop here if a stream watching this call was closed."""
         for s in self.streams:
             s._watch.check()
+
+    def cancelled(self) -> bool:
+        """Whether a stream watching this call was closed (the call is to stop)."""
+        return any(s._watch.cancelled.is_set() for s in self.streams)
 
     def sleep(self, seconds: float) -> None:
         """Wait, unless a stream watching this call is closed meanwhile."""
@@ -569,14 +605,16 @@ def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tupl
     got = eventlog.receivers(layers)
     refusal: Optional[BaseException] = None
     if parent is None:
-        call.log = eventlog.TreeLog(call.id, journal=got.journal)
+        call.log = eventlog.TreeLog(call.id, journal=got.journal, at_start=eventlog.LayersAtStart.of(layers))
         refusal = got.refused
     else:
         call.log = parent.log
         call.streams = list(parent.streams)
-        mine = eventlog.closest_journal(layers)       # what the settings around this call ask for
+        # Only a journal set inside the tree (this program's own, a block entered in it, configure changed
+        # since) can ask for what the tree's journal is not: the host's layers the tree started under decided it.
+        mine = eventlog.set_inside(layers, call.log.at_start)
         tree = call.log.journal
-        if mine is not None and mine != tree:
+        if mine is not eventlog._ABSENT and mine is not None and mine != tree:
             if mine.required:
                 refusal = JournalError(
                     "journal-scope", f"{call.function}: a required journal is set only around a call inside a "
@@ -638,28 +676,36 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     if call.target is not None or call.watched:
         try:
             _prepare(call, program, layers, inputs)
-        except Exception as exc:  # noqa: BLE001
-            _warn_once(("prepare", type(exc).__name__), f"a call's record could not be made: "
-                                                        f"{type(exc).__name__}: {exc}")
+        except Exception as exc:  # noqa: BLE001 — fail closed: nothing of this call is kept or written
+            # (its type only: a message could quote a value)
+            _warn_once(("prepare", type(exc).__name__), f"a call of {call.function} could not be prepared for "
+                                                        f"its record and events ({type(exc).__name__}): none is "
+                                                        f"written, and its tree's kept log stops there")
             call.target = None
+            call.keep = None
     token = _CURRENT.set(call)
     value: Any = _NOTHING
     error: Optional[BaseException] = None
     try:
-        call.emit("started", parent=call.parent, root=call.root, program=call.info, inputs=call.inputs or {},
-                  content=True, saw=list(call.saw))
-        if refusal is not None:
-            raise refusal
-        if parent is None and call.log.required and call.log.barrier() != "confirmed":
-            raise barrier_error(1)
-        value = invoke()
-    except BaseException as exc:  # noqa: BLE001 — the outcome, recorded, then raised as it is
-        error = exc
+        try:
+            call.emit("started", parent=call.parent, root=call.root, program=call.info,
+                      inputs=copy.deepcopy(call.inputs or {}), content=True, saw=copy.deepcopy(list(call.saw)))
+            if refusal is not None:
+                raise refusal
+            if parent is None and call.log.required and call.log.barrier(call.cancelled) != "confirmed":
+                call.check()                      # a closed stream: the call is cancelled, not refused
+                raise barrier_error(1)
+            value = invoke()
+        except BaseException as exc:  # noqa: BLE001 — the outcome, recorded, then raised as it is
+            error = exc
+        finally:
+            _CURRENT.reset(token)
+        journal_error = _end(call, value, error)
+        if call.target is not None:
+            _finish(call, returned=value, error=error)
     finally:
-        _CURRENT.reset(token)
-    journal_error = _end(call, value, error)
-    if call.target is not None:
-        _finish(call, returned=value, error=error)
+        if parent is None and call.log is not None:
+            call.log.close()
     if journal_error is not None:
         raise journal_error
     if error is not None:
@@ -669,10 +715,11 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
 
 def _prepare(call: Call, program: Any, layers: List[Tuple[str, Dict[str, Any]]],
              inputs: Callable[[], Mapping[str, Any]]) -> None:
-    """What the record and the events need: the program object, the inputs as
-    JSON, which fields the log keeps, what the call is shown as context."""
-    call.info = program_info(program)
-    call.answer = call.info.get("answer")
+    """What the record and the events need, which fields the log keeps first
+    (so a later failure keeps nothing rather than everything): the fields, what
+    the log keeps of them, the inputs as JSON (only those the interface names:
+    a value given under another name is refused, never recorded), the program
+    object, what the call is shown as context."""
     ins, outs, added = call.fields = _fields_of(program)
     kept = kept_fields(ins, outs, added, [layer.get("log_content") for _w, layer in layers])
     call.kept = kept
@@ -681,10 +728,13 @@ def _prepare(call: Call, program: Any, layers: List[Tuple[str, Dict[str, Any]]],
         bound = inputs()
     except (TypeError, InterfaceError):           # wrong arguments: the call itself says so
         bound = {}
-    values = {k: json_value(v) for k, v in bound.items()}
+    names = set(ins)
+    values = {k: json_value(v) for k, v in bound.items() if k in names}
     call.inputs = {k: v for k, (v, _n, _d) in values.items()}
     call.sizes = {k: n for k, (_v, n, _d) in values.items()}
     call.described = [k for k, (_v, _n, d) in values.items() if d]
+    call.info = program_info(program)
+    call.answer = call.info.get("answer")
     saw = getattr(program, "_saw", None)
     if callable(saw):
         call.saw, call.context = saw()
@@ -736,7 +786,8 @@ def tool_barrier(seq: Optional[int] = None) -> None:
     call = _CURRENT.get()
     if call is None or call.log is None or not call.log.required:
         return
-    if call.log.barrier() != "confirmed":
+    if call.log.barrier(call.cancelled) != "confirmed":
+        call.check()                              # a closed stream: the call is cancelled, not refused
         raise barrier_error(seq if seq is not None else call.log.seq)
 
 
@@ -969,7 +1020,7 @@ def _process_info() -> Dict[str, Any]:
 def _error(exc: BaseException, content: bool = True) -> Dict[str, Any]:
     out: Dict[str, Any] = {"type": type(exc).__name__}
     if content:
-        out["message"] = str(exc)
+        out["message"] = safe_str(exc)
     code = getattr(exc, "code", None)
     if isinstance(exc, (lmcc.Refusal, FunctAIError)) and isinstance(code, str):
         out["code"] = code
@@ -1089,8 +1140,8 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
     rec["caller"] = dict(target.caller) if target is not None else {}
     rec["process"] = _process_info()
     ins, outs, _added = call.fields
-    outs = list(outs) + [k for k in (outputs or {}) if k not in outs]
-    return restrict(rec, list(ins) + [k for k in rec["inputs"] if k not in ins], outs, call.kept)
+    outs = list(outs) + [k for k in (outputs or {}) if k not in outs]       # a name no field has: not kept
+    return restrict(rec, list(ins), outs, call.kept)
 
 
 def _line(rec: Dict[str, Any]) -> bytes:
@@ -1115,9 +1166,10 @@ def _finish(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
         line = _line(_record(call, returned=returned, error=error))
         _writer(call.target.folder).write(line)
     except Exception as exc:  # noqa: BLE001 — logging never stands in the way of a call
+        why = f"{type(exc).__name__}: {exc}" if isinstance(exc, OSError) else type(exc).__name__
         _warn_once((str(call.target.folder), type(exc).__name__),
                    f"could not log a call of {getattr(call.program, '__name__', '?')} to {call.target.folder} "
-                   f"({type(exc).__name__}: {exc}); calls go on, unlogged")
+                   f"({why}); calls go on, unlogged")
 
 
 # ------------------------------------------------------------------ writing

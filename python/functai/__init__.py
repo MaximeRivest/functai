@@ -17,7 +17,8 @@ API:
              rated(fn); fn.version
 - Interfaces: fn.interface, module.interface (checked on every call: InterfaceError); JSON; describe(path)
 - Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s)
-- Event logs: configure(observers=[...], journal=Journal(store, required=True)); MemoryStore; Follower
+- Event logs: configure(observers=[...], journal=Journal(store, required=True)); MemoryStore; Store; Follower;
+             flush() (function observers and best-effort journals catch up)
 - Utils:     phistory(), inspect_history(), clear_cache()
 - Data:      datasets.tickets(), datasets.field_notes()  (small labelled tables to learn with)
 """
@@ -52,7 +53,7 @@ from .core import (
 from .calllog import calls, rate, rated
 from .errors import (EventRefused, FunctAIError, InterfaceError, JournalError, LogContentError, Outcome,
                      SawError)
-from .eventlog import Follower, Journal, MemoryStore
+from .eventlog import Follower, Journal, MemoryStore, Store, flush
 from .interface import JSON
 from .streaming import Cancelled, Stream
 from .data import Prediction
@@ -90,7 +91,7 @@ __all__ = [
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
     "calls", "rate", "rated",
     "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "Outcome",
-    "Stream", "Cancelled", "Journal", "MemoryStore", "Follower",
+    "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "labeled_few_shot", "bootstrap_few_shot", "gepa",
     "Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch", "InstructionSearch", "GEPA",
 ]

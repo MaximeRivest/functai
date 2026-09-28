@@ -1239,7 +1239,8 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
             if p.annotation is inspect.Parameter.empty and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
                 a.problem("untyped-input", entry, f"the input {p.name!r} has no type",
                           f"annotate it, e.g. {p.name}: str")
-        if sig.return_annotation is inspect.Signature.empty:
+        outputs_declared = isinstance(program, FunctAIModule) and program._declares_outputs
+        if sig.return_annotation is inspect.Signature.empty and not outputs_declared:
             a.problem("untyped-output", entry, "the program's result has no type",
                       "annotate the return type, e.g. -> list[str]")
     # requirements: the runtime, every package reached, and what was declared
