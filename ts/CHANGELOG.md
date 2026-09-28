@@ -33,6 +33,61 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   inputs from it and checks it; `describeSaved()`; `save(module)` writes
   the module's node and the AI functions it uses. The manifest is checked
   against the contract's schema.
+- Journals and observers never hold a call up nor reach it:
+  - A journal setting takes `timeout` (ms, default 30,000: the longest an
+    append is waited for, its `signal` aborted then, and the longest a
+    barrier waits) and `backoff` (ms, default 50, doubling up to 2 s
+    between resends). A store that throws (even before returning a
+    promise), never answers, or answers anything but `"kept"`,
+    `"duplicate"` or a refusal is no answer or a refusal: it can no longer
+    spin the process, hang a call or crash it. A barrier waits for its own
+    event (not for other calls' later events), and stops when the call is
+    cancelled (start and tools; the end waits for its timeout). Each
+    append gets fresh copies of its events. A failing journal is warned
+    about once per outage, not once per process.
+  - Observers are called off the call's turn, each with its own copy of
+    every event, from a queue of at most 10,000 events per observer (then
+    it loses events and sees the gap); an object with `postMessage` (a
+    `Worker`, a `MessagePort`) is an observer. `flush()` waits for
+    observers and journals. (Before, observers ran inside the call and
+    could change what the journal and the stream held.)
+  - `JournalError` has no type parameter; `outcome.done` is what the
+    caller would have got: the answer from `fn(x)` and a stream's result,
+    the `Prediction` from `fn.predict(x)` and `stream.prediction`.
+  - `observers` and `journal` settings that could only fail later refuse
+    where they are set (`TypeError`), as `logContent` does; a call's
+    options are checked too, and a loaded function's own `logContent`
+    (`SettingError`, `log-content-field`).
+- Records and events keep only a program's fields: a value given to a
+  module under another name is refused and never kept (not even under a
+  host's `"*": false` allowlist); inputs are recorded as given when the
+  call starts (not a schema's transform, nor what the code later does to
+  them). A module's argument that cannot be bound is a recorded refusal.
+  Interface errors name the field and the kind of value, never the value.
+- An AI function's record holds every output the model gave, `calls`
+  (the tool calls of its last step, `[]` once it answers) included, as
+  Python's does. A re-ask's exchange keeps the `request_hash` of the
+  rendered request it came from, as Python's does.
+- Closing a stream (or aborting its signal) while a module's code runs
+  ends the call `Cancelled`, whatever the code returns after; a finished
+  stream lets go of its caller's signal, and so does a retry's wait.
+- Declarations: a field that is not a shape refuses `interface-malformed`
+  naming it; an output cannot be `optional`, nor an AI function's
+  output opaque. One output, whatever its name, is the value, in the
+  types too (`outputs: { count: t.integer() }` returns a number).
+  `t.string({ default })` (and `integer`, `number`, `boolean`) is typed as
+  an input that may be left out; `t.json`, `t.list`, `t.object` and
+  `t.record` take extra keys as the other builders do (their words were
+  dropped before).
+- Names JavaScript treats specially are data: a JSON member `__proto__`,
+  a required property `toString`, a field named `constructor`; an unknown
+  shape keyword named `constructor` refuses.
+- `replay()` and `Follower.recover()` stop at an event of a format they do
+  not know (`stopped`); `recover()` from a readable source follows again;
+  `Follower.forget(tree)`.
+- Validation started for a call's inputs never leaves a rejection
+  unhandled.
+- `npm test` has a time limit per test.
 - `sawOf` and `keepsSaw` read what a call saw.
 - An object argument is the inputs by name when every key is an input's or
   it holds the one required input's name (else, that input's value); input

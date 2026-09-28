@@ -102,8 +102,13 @@ export const t = {
   number: <const E extends Extra = {}>(extra?: E): Built<E, number> => lmcc.t.number((extra ?? {}) as never) as never,
   /** Yes or no; `t.boolean({ default: false })` may be left out. */
   boolean: <const E extends Extra = {}>(extra?: E): Built<E, boolean> => lmcc.t.boolean((extra ?? {}) as never) as never,
+  /** A list: `t.list(t.string(), { description: "one per line" })`. */
+  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => ({ ...lmcc.t.list(items), ...extra }) as Shape<T[]>,
+  /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
+  object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
+    ({ ...lmcc.t.object(properties), ...extra }) as ReturnType<typeof lmcc.t.object<P>>,
   /** A map from text keys to values: `t.record(t.integer())`. */
-  record: <V>(values: Shape<V>): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values }) as Shape<Record<string, V>>,
+  record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values, ...extra }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */

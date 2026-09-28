@@ -115,7 +115,7 @@ import { module } from "functai";
 
 const reply = module("reply", {
   description: "Answer a ticket, or hand it to a person when it is long work.",
-  input: { ticket: t.string(), minutes: t.withDefault(t.integer(), 60) },
+  input: { ticket: t.string(), minutes: t.integer({ default: 60 }) },
   output: t.string(),
   uses: [triage, support],
 }, async ({ ticket, minutes }, { signal }) =>
@@ -129,9 +129,13 @@ A module is your own code that calls AI functions (Python's `@module`,
 Julia's `@program`). It declares what it takes and gives, as `ai()` does,
 and every call is checked against that at both ends: a wrong input or
 output is an `InterfaceError` (`code`, `field`), recorded like any failed
-call. Its code gets the inputs by name (a left-out input takes its
-default; `{ shape, optional: true }` with none stays out) and the call's
-`signal`. It is logged as one call, with the calls it makes as its
+call (its record and events keep only the fields it declares: a value
+given under another name is refused and never kept). Its code gets the
+inputs by name (a left-out input takes its default; `{ shape, optional:
+true }` with none stays out) and the call's `signal`; closing its stream
+or aborting the signal ends the call `Cancelled`, even if the code returns
+later. One output, whatever its name, is the value it returns; several are
+a record by name. It is logged as one call, with the calls it makes as its
 children, and its version changes when its code, its interface or
 anything it `uses` changes. A field `t.opaque()` takes values with no
 JSON form (a buffer, a class instance), unchecked; `t.json()` any JSON.
@@ -165,21 +169,39 @@ again (`await reader.recover(tree, source)`, from the process or a store).
 
 ```ts
 configure({
-  observers: [(e) => socket.send(JSON.stringify(e))],     // the kept form of every event, as it happens; never slows a call
-  journal: { store, mode: "required" },                   // or a store alone: best effort, the call never waits
+  observers: [(e) => socket.send(JSON.stringify(e)), worker],   // the kept form of every event, each its own copy, off the call's turn
+  journal: { store, mode: "required", timeout: 10_000 },       // or a store alone: best effort, the call never waits
 });
+await flush();                                                 // before the process ends: observers and journals catch up
 ```
+
+An observer gets the kept form of every event in its scope, in order, each
+its own copy: nothing it does to an event reaches the call, the journal or
+another observer. A function is called soon after each event, from a queue
+drained between the call's steps, never inside them; it still runs on
+this thread, so heavy work belongs in a `Worker`: an object with
+`postMessage` (a `Worker`, a `MessagePort`) is posted each event. An
+observer that throws or rejects is warned about once and gets no more
+events; one that falls 10,000 events behind loses events (it sees the gap
+in `after`). Observers add up over every layer; `configure({ observers })`
+replaces `configure`'s own list.
 
 A journal keeps each call tree's kept log in a store while it is written,
 with appends the store answers (`MemoryStore` here; any object with
 `append` and `read`, and `claim` if a later writer may continue a log).
-A required one makes the call wait until its events are kept, before its
-code runs, before each tool and before it returns, and raises
-`JournalError` when they are not: `journal-barrier` (the tool did not
-run), or `journal-end`, which holds the call's outcome (`err.outcome`) and
-the position of its end (`await err.settle()` finds out whether it was
-kept). A program's own settings cannot replace or remove a host's journal
-(`journal-policy`); observers add up over every layer.
+Each append is waited for at most `timeout` ms (default 30,000; its
+`signal` aborts then) and sent again after no answer, backing off
+(`retries`, `backoff`). A store that throws, never answers or answers
+something else than `"kept"`, `"duplicate"` or a refusal never holds the
+call nor reaches the process. A best-effort journal that fails is warned
+about once per outage. A required one makes the call wait until its events
+are kept, before its code runs, before each tool and before it returns (at
+most `timeout` at each; cancelling the call stops the first two), and
+raises `JournalError` when they are not: `journal-barrier` (the code or
+the tool did not run), or `journal-end`, which holds the call's outcome
+(`err.outcome`: what you would have got, or the error) and the position of
+its end (`await err.settle()` finds out whether it was kept). A program's
+own settings cannot replace or remove a host's journal (`journal-policy`).
 
 ## How often is it right?
 

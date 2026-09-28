@@ -497,6 +497,14 @@ test("a malformed declaration refuses interface-malformed, naming its field; an 
   assert.throws(() => ai("f", { input: { q: { shape: undefined as never } } }), malformed("q"));
 });
 
+test("every builder keeps the words given with it (none is silently dropped)", () => {
+  const f = ai("f", { input: {
+    a: t.list(t.string(), { description: "one per line" }), b: t.object({ id: t.integer() }, { description: "an order" }),
+    c: t.json({ description: "each input by name" }), d: t.record(t.integer(), { description: "counts" }), e: t.string({ description: "text" }),
+  } });
+  assert.deepEqual(f.interface.inputs.map((x) => x.desc), ["one per line", "an order", "each input by name", "counts", "text"]);
+});
+
 test("one output, whatever its name, is the value; several are a record", async () => {
   const one = module("one", { input: {}, outputs: { count: t.integer() } }, () => 1);
   assert.equal(await one({}), 1);

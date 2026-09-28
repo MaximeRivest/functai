@@ -477,7 +477,15 @@ export type ClaimAnswer = { readonly writer: number; readonly after: Position } 
  * an append as one step (a compare-and-set) gives no `claim`.
  */
 export interface EventStore extends EventSource {
-  /** Append one log's events, in order, as one step: kept whole or not at all. */
+  /**
+   * Append one log's events, in order, as one step: kept whole or not at
+   * all. Answer `"kept"`, `"duplicate"` or a refusal. Throwing, rejecting
+   * or not answering in time is no answer (the events are sent again); any
+   * other answer is a refusal. The events are the store's own copies. `signal`
+   * aborts when the journal stops waiting for this append (its `timeout`):
+   * stop then if you can; a late answer is not read (the writer sends
+   * again, and a kept event is then a duplicate).
+   */
   append(events: readonly Readonly<Rec>[], opts?: { signal?: AbortSignal }): Promise<AppendAnswer>;
   read(tree: string, after: Position | null): Promise<ReadAnswer>;
   /** A later writer claims an unfinished log: the next writer number, fencing every earlier one. */
