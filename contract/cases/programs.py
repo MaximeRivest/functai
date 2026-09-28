@@ -5,13 +5,16 @@ from the rules in ../programs.md.
 Four kinds of case, told apart by "program":
 
 - "ai": {"definition": a functions.md definition, "expect": {"interface",
-  "signature", "signature_id"}, "binds": [...]}. The interface an AI
-  function has, from its definition; ``signature`` the interface's
-  signature (the call log's ``program.interface``); ``signature_id`` its
-  ``program.signature`` (from functions.py), equal to ``signature`` when
-  the function has neither reasoning nor tools. Each bind gives the
-  function ``inputs`` and expects {"inputs": the values it is called
-  with}: an optional input left out takes its default.
+  "signature", "signature_id"} or {"refuses": "interface-malformed",
+  "field"}, "binds": [...]}. The interface an AI function has, from its
+  definition; ``signature`` the interface's signature (the call log's
+  ``program.interface``); ``signature_id`` its ``program.signature``
+  (from functions.py), equal to ``signature`` when the function has
+  neither reasoning nor tools. ``refuses``: defining the function is
+  refused (its interface, by programs.md's rules, after lmcc accepted
+  its signature). Each bind gives the function ``inputs`` and expects
+  {"inputs": the values it is called with}: an optional input left out
+  takes its default.
 - "module": {"interface": what the module declares, "expect":
   {"signature"}, "checks": [...]}. Each check gives the module ``inputs``
   (as JSON) and expects {"inputs": the inputs its code gets} or {"refuses":
@@ -23,8 +26,9 @@ Four kinds of case, told apart by "program":
 - "definitions": {"interfaces": [{"interface", "ai"?: true, "expect":
   {"signature"} or {"refuses": "interface-malformed", "field": name or
   null}}]}. Defining a module with each interface, or reading it from a
-  saved folder (with ``ai``: an AI node's interface, whose shapes may
-  carry keywords the vocabulary does not list).
+  saved folder (with ``ai``: an AI function's interface, when the
+  function is defined or its node read, whose shapes may carry keywords
+  the vocabulary does not list).
 - "same-data": {"interfaces": [...], "expect": {"signatures": [...]},
   "checks": [{"inputs", "expect": [one result per interface]}]}. The
   signature says what data looks like, not which calls are accepted.
@@ -48,7 +52,7 @@ from common import canonical, sha
 
 S, I, N, B = {"type": "string"}, {"type": "integer"}, {"type": "number"}, {"type": "boolean"}
 NULL = {"type": "null"}
-NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")             # matched whole (fullmatch): nothing after it
 TYPES = ("null", "boolean", "integer", "number", "string", "array", "object")
 ANNOTATIONS = {"title": str, "description": str, "format": str, "$comment": str, "deprecated": bool,
                "readOnly": bool, "writeOnly": bool, "examples": list, "default": object}
@@ -56,7 +60,7 @@ DESCENDS = ("items", "prefixItems", "properties", "additionalProperties")
 ASSERTIONS = {"type", "enum", "const", "anyOf", "items", "prefixItems", "minItems", "maxItems", "uniqueItems",
               "properties", "required", "additionalProperties", "minLength", "maxLength", "minimum", "maximum",
               "exclusiveMinimum", "exclusiveMaximum", "$ref", "$defs"}
-REF = re.compile(r"^#/\$defs/([A-Za-z0-9_.-]+)$")
+REF = re.compile(r"#/\$defs/([A-Za-z0-9_.-]+)")         # matched whole: no escapes, no newline after it
 INPUT_KEYS = {"name", "shape", "desc", "type", "opaque", "optional"}
 OUTPUT_KEYS = {"name", "shape", "desc", "type", "opaque"}
 
@@ -139,7 +143,7 @@ def well_formed(shape, root, *, carry: bool = False) -> bool:
         elif k == "uniqueItems" and not isinstance(v, bool):
             return False
         elif k == "$ref":
-            m = REF.match(v) if isinstance(v, str) else None
+            m = REF.fullmatch(v) if isinstance(v, str) else None
             if not m or m.group(1) not in (root.get("$defs") or {}):
                 return False
     return True
@@ -150,7 +154,7 @@ def same_value_refs(shape: dict) -> set:
     passing into an item or a member."""
     out = set()
     if "$ref" in shape:
-        out.add(REF.match(shape["$ref"]).group(1))
+        out.add(REF.fullmatch(shape["$ref"]).group(1))
     for x in shape.get("anyOf", []):
         out |= same_value_refs(x)
     return out
@@ -185,7 +189,7 @@ def json_type(v) -> str:
 def fits_shape(v, shape: dict, root: dict) -> bool:
     """programs.md, "Checking values": the value (JSON) against a shape of the vocabulary."""
     t = json_type(v)
-    if "$ref" in shape and not fits_shape(v, root["$defs"][REF.match(shape["$ref"]).group(1)], root):
+    if "$ref" in shape and not fits_shape(v, root["$defs"][REF.fullmatch(shape["$ref"]).group(1)], root):
         return False
     if "type" in shape:
         names = shape["type"] if isinstance(shape["type"], list) else [shape["type"]]
@@ -253,9 +257,10 @@ def fits(value, field: dict) -> bool:
 def malformed(interface, *, ai: bool = False):
     """The first reason an interface is refused when it is defined or read, or None. Its form (the keys it
     may have, and their kinds) and its meaning are checked together, field by field: the refusal names the
-    first field at fault, inputs then outputs, in order; null when the fault is not a field's. An AI
-    function's shapes are lmcc's (it checks them: signature-malformed); a module's use programs.md's
-    vocabulary."""
+    first field at fault, inputs then outputs, in order; null when the fault is not a field's. ``ai``: an AI
+    function's interface, when it is defined (after lmcc's own check, signature-malformed, which asks only
+    that each shape is an object) or its node read; its shapes may carry lmcc's other keywords. Only a
+    field's own default must fit; a default inside a shape is a word, never checked."""
     def refuse(field):
         return {"refuses": "interface-malformed", "field": field}
     if not isinstance(interface, dict) or set(interface) - {"description", "inputs", "outputs"} \
@@ -269,7 +274,7 @@ def malformed(interface, *, ai: bool = False):
             at_fault = refuse(name if isinstance(name, str) else None)
             if not isinstance(f, dict) or set(f) - (INPUT_KEYS if direction == "inputs" else OUTPUT_KEYS):
                 return at_fault
-            if not isinstance(name, str) or not NAME.match(name) or name in seen:
+            if not isinstance(name, str) or not NAME.fullmatch(name) or name in seen:
                 return at_fault
             seen.add(name)
             if any(k in f and not isinstance(f[k], str) for k in ("desc", "type")):
@@ -330,6 +335,32 @@ def check_returned(interface: dict, returned) -> dict:
     return {"outputs": {f["name"]: values[f["name"]] for f in outputs}}
 
 
+def rerun(case: dict) -> None:
+    """A case as written (read back from its file), run through the rules above as a harness would."""
+    kind = case["program"]
+    if kind == "ai":
+        iface = of_definition(case["definition"])
+        refused = malformed(iface, ai=True)
+        assert (refused or {"interface": iface, "signature": signature(iface)}) == \
+            {k: v for k, v in case["expect"].items() if k != "signature_id"}, case["description"]
+        for b in case["binds"]:
+            assert check_inputs(iface, b["inputs"]) == b["expect"], case["description"]
+    elif kind == "module":
+        iface = case["interface"]
+        assert malformed(iface) is None and signature(iface) == case["expect"]["signature"]
+        for c in case["checks"]:
+            got = check_inputs(iface, c["inputs"]) if "inputs" in c else check_returned(iface, c["returned"])
+            assert got == c["expect"], (case["description"], c)
+    elif kind == "definitions":
+        for x in case["interfaces"]:
+            refused = malformed(x["interface"], ai=x.get("ai", False))
+            assert (refused or {"signature": signature(x["interface"])}) == x["expect"], x
+    elif kind == "same-data":
+        assert [signature(x) for x in case["interfaces"]] == case["expect"]["signatures"]
+        for c in case["checks"]:
+            assert [check_inputs(x, c["inputs"]) for x in case["interfaces"]] == c["expect"]
+
+
 # ------------------------------------------------------------------ the cases
 
 
@@ -383,6 +414,12 @@ AI_PATTERN = interface("Tag a ticket.", [("code", {"type": "string", "pattern": 
                        [("result", {"oneOf": [S, NULL]}, {})])
 
 
+NESTED = interface("Count an order's parcels.",
+                   [("order", {"type": "object", "properties": {"id": I, "count": {"type": "integer", "default": "none"}},
+                               "required": ["id"]}, {})],
+                   [("result", I, {})])
+
+
 def module_case(description, iface, inputs=(), returned=()):
     assert malformed(iface) is None
     checks = [{"inputs": i, "expect": check_inputs(iface, i)} for i in inputs]
@@ -399,6 +436,15 @@ def ai_case(description, key, binds=()):
             "expect": {"interface": iface, "signature": signature(iface),
                        "signature_id": functions.expect(d)["signature_id"]},
             "binds": [{"inputs": i, "expect": check_inputs(iface, i)} for i in binds]}
+
+
+def ai_refused_case(description, d):
+    """Defining an AI function whose signature lmcc accepts, and whose interface programs.md refuses."""
+    import lmcc
+    lmcc.signature_from_dict({"instructions": functions.instructions(d), "fields": functions.fields(d)})
+    refused = malformed(of_definition(d), ai=True)
+    assert refused is not None
+    return {"description": description, "program": "ai", "definition": d, "expect": refused, "binds": []}
 
 
 def definitions_case(description, interfaces, ai=()):
@@ -522,7 +568,8 @@ def cases() -> dict:
                            "records.",
             "program": "same-data", "interfaces": [required, optional, defaulted, today, tomorrow],
             "expect": {"signatures": [signature(x) for x in (required, optional, defaulted, today, tomorrow)]},
-            "checks": [{"inputs": i, "expect": [check_inputs(x, i) for x in (required, optional, defaulted)]}
+            "checks": [{"inputs": i, "expect": [check_inputs(x, i) for x in (required, optional, defaulted, today,
+                                                                             tomorrow)]}
                        for i in ({}, {"name": None}, {"name": "Ana"})]},
         "13-an-optional-input-of-an-ai-function": ai_case(
             "An AI function's input the language lets a caller leave out is optional, and its default is in its "
@@ -577,6 +624,36 @@ def cases() -> dict:
             [AI_PATTERN, field_with(AI_PATTERN, "inputs", 0, shape={"type": "string", "minLength": "3",
                                                                      "default": "abc"}),
              AI_PATTERN], ai=(0, 1)),
+        "19-an-ai-function-refused-when-defined": ai_refused_case(
+            "An AI function's interface is checked by the rules above when the function is defined, after lmcc "
+            "accepted its signature (lmcc asks only that each shape is an object): an optional input whose "
+            "default does not fit its shape (Python: pydantic's Field(ge=10) with a default of 5, which pydantic "
+            "does not check) is refused then, not later by every language that reads the saved folder. The "
+            "other faults of an AI function's interface (programs/11, 16, 18 with ai) are refused at definition "
+            "too: what one language lets a function be defined and saved with, every language can load.",
+            functions.definition("count", "Count the items worth keeping.",
+                                 [("items", {"type": "array", "items": S}, None),
+                                  ("at_least", {"type": "integer", "minimum": 10, "default": 5}, None,
+                                   {"optional": True})],
+                                 [("result", I, None)])),
+        "20-names-and-references-are-matched-whole": definitions_case(
+            "A field's name and a $ref are matched whole, the same in every language: nothing may follow them, "
+            "not even a newline (a regular expression's $ may match before one). A $ref is #/$defs/ and a name "
+            "of ASCII letters, digits, _, . and - (every name pydantic writes fits), read as it is written: no JSON "
+            "Pointer escape (~1) and no percent-encoding (%20), so a $defs entry whose name has other characters "
+            "cannot be referred to.",
+            [field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Node": S}, "$ref": "#/$defs/Node\n"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Foo/Bar": S}, "$ref": "#/$defs/Foo~1Bar"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Foo Bar": S}, "$ref": "#/$defs/Foo%20Bar"}),
+             field_with(SUPPORT, "inputs", 0, name="message\n"),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"shop.Order-2_v": S}, "$ref": "#/$defs/shop.Order-2_v"}),
+             field_with(SUPPORT, "inputs", 0, shape={"$defs": {"Foo Bar": S}, "type": "string"})]),
+        "21-a-default-inside-a-shape": module_case(
+            "Only a field's own default is the value it takes, and must fit. A default inside its shape (a "
+            "member's, as pydantic writes one for a model's defaulted field) is a word, like title: never "
+            "checked, whatever it holds, and never filled in (the value is checked as given; the program's own "
+            "types may fill it). It stays in the signature: it is part of the shape, as it is of lmcc's signature.",
+            NESTED, inputs=[{"order": {"id": 1}}, {"order": {"id": 1, "count": 2}}, {"order": {"id": 1, "count": "none"}}]),
     }
     same = [out["01-an-ai-function-is-its-definition"], out["02-several-outputs-keep-their-words"],
             out["13-an-optional-input-of-an-ai-function"]]
@@ -585,6 +662,13 @@ def cases() -> dict:
                for c in (out["03-reasoning-is-not-given-back"], out["04-tools-are-not-given"]))
     sigs = out["12-the-signature-is-the-data"]["expect"]["signatures"]
     assert sigs[0] == sigs[1] == sigs[2] and sigs[3] == sigs[4]
+    whole = [x["expect"].get("refuses") for x in out["20-names-and-references-are-matched-whole"]["interfaces"]]
+    assert whole == ["interface-malformed"] * 4 + [None, None], whole
+    nested = out["21-a-default-inside-a-shape"]
+    assert [c["expect"] for c in nested["checks"]][0] == {"inputs": {"order": {"id": 1}}}
+    plain = copy.deepcopy(NESTED)
+    del plain["inputs"][0]["shape"]["properties"]["count"]["default"]
+    assert signature(plain) != nested["expect"]["signature"]
     refused = [x["expect"].get("refuses") for x in out["11-interfaces-that-are-refused"]["interfaces"]]
     assert refused[0] is None and refused[-1] is None and all(refused[1:-1]), refused
     return out

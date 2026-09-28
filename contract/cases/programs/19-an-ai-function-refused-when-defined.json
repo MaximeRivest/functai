@@ -1,0 +1,46 @@
+{
+ "description": "An AI function's interface is checked by the rules above when the function is defined, after lmcc accepted its signature (lmcc asks only that each shape is an object): an optional input whose default does not fit its shape (Python: pydantic's Field(ge=10) with a default of 5, which pydantic does not check) is refused then, not later by every language that reads the saved folder. The other faults of an AI function's interface (programs/11, 16, 18 with ai) are refused at definition too: what one language lets a function be defined and saved with, every language can load.",
+ "program": "ai",
+ "definition": {
+  "name": "count",
+  "description": "Count the items worth keeping.",
+  "inputs": [
+   {
+    "name": "items",
+    "shape": {
+     "type": "array",
+     "items": {
+      "type": "string"
+     }
+    }
+   },
+   {
+    "name": "at_least",
+    "shape": {
+     "type": "integer",
+     "minimum": 10,
+     "default": 5
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "refuses": "interface-malformed",
+  "field": "at_least"
+ },
+ "binds": []
+}

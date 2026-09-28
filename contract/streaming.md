@@ -146,11 +146,25 @@ it: a piece of a field it does not keep, an event a writer numbered but
 never had kept) refuses `event-unknown`; the reader then starts again
 from the beginning, dropping what it has, in a form the source can give
 (*Where each form can be read*). It never waits for a chain the source
-cannot give. A reader that goes on in **another form** (the whole log's
-reader, from a store that keeps the kept form) starts again from the
-beginning, even when the source has its last event: a position names a
-place in the log, not what the reader was shown before it, and the new
-form would never update, nor void, a field only the old one showed.
+cannot give.
+
+A reader resumes in place only when the source can give **every event it
+holds, as it holds it**: a position names a place in the log, not what
+the reader was shown before it, and a source that gives the events before
+that place otherwise would never update, nor void, a field only the
+reader's events showed. The kept form, and a view made from it, are the
+same from every source that has them. Any other form (the whole log, or a
+view made from it that may show values the kept form lacks: a **live
+form**) only the process of a writer gives, and only for the events it
+gave (a writer has earlier writers' events only as kept). So a reader of
+a live form resumes in place only from the process that gave it every
+event it holds. Otherwise it starts again from the beginning at once,
+whatever the writer of its last event and even when the source has that
+event: when it goes to a store, and when it followed across a hand-over
+(it holds events an earlier writer's process gave, and the later
+writer's process gives those only as kept). A reader keeps, with its
+events, which process gave them (a reader that follows one writer's
+process live has them all from it). `follow-15` to `17` pin this.
 
 ## Following a log
 
@@ -171,11 +185,16 @@ order:
   **next** event; it takes it;
 - a later `writer`, and an `after` that names an event it has (or is
   `null`): the log was continued by a later writer from that event
-  (*Continuing a log*). The reader drops what it has after that event
-  (it **rewinds**: the state it had there, or, when it did not keep
-  that, the form read again from the beginning), then takes the event;
-- anything else: events were **lost**. It reads the same form again after
-  its last event (*Resuming*).
+  (*Continuing a log*). The reader **rewinds**: it drops what it has
+  after that event, keeps the rest, and takes the event. Its state is
+  then the replay of what it holds: what it was shown up to that event
+  (values the kept form lacks included: they were shown, and happened),
+  then the later writer's events. So a follower keeps what it needs to
+  rewind (the events it holds, or its state after each). A reader of the
+  kept form, or of a view made from it, may instead read its form again
+  from the beginning: it ends the same. `follow-03` and `14` pin this;
+- anything else: events were **lost**. It reads its form again, after
+  its last event when it may resume in place (*Resuming*).
 
 Every comparison is of positions, writer and `seq` together. A reader
 that compared a `seq` alone would take another writer's event as the
@@ -278,12 +297,15 @@ said they would be). `follow-10` pins it.
 A later writer has the events of the writers before it only as they were
 kept (it read them from the store: *Continuing a log*). So its process
 gives them only in the kept form, and views made from it: every form it
-gives is the kept log up to its claim, then its own events. A reader of
-another form that asks it for the events after an earlier writer's event
-is refused `event-unknown`, and starts again. A reader that follows live
-across the change needs nothing more: the rules of *Following a log*
-keep what it has up to the event the later writer names, all of which
-happened, and drop the rest.
+gives is the kept log up to its claim, then its own events. A reader
+that follows live across the change needs nothing more while it stays
+connected: the rules of *Following a log* keep what it has up to the
+event the later writer names, all of which happened, and drop the rest.
+If it then resumes, it holds events of a live form that no process can
+give again, and starts again (*Resuming*), whatever the writer of its
+last event (`follow-15`). (A later writer's process also refuses
+`event-unknown` a reader of a live form that asks for the events after
+an earlier writer's event.)
 
 ## Keeping a log while it is written
 
@@ -293,20 +315,35 @@ not anyone watches the call. A call made with either is watched, by it;
 its behaviour does not change (laws above; the call log is the same).
 
 How the layers combine is policy, and policy is the host's: a program
-cannot remove what a host set around it.
+cannot remove or replace a receiver a host set around it. The host's
+layers are blocks and `configure`; a program's own setting is the
+closest layer.
 
 - **Observers add up.** A call's observers are those of every layer
   around it: a program's own observer is given events beside the host's,
   never instead of them.
-- **One journal per tree, and a required one holds.** A tree has one
-  journal (its claims and fencing are that store's). The closest layer
-  that sets one (or sets none) decides, as for every setting, except
-  that a **required** journal cannot be replaced, weakened to best
-  effort, or removed by a closer layer (a program's own setting inside a
-  host's block or `configure`): the tree's outermost call is then
-  refused `journal-policy` when it starts, before it runs. A closer layer
-  may name the same required journal, or replace a best-effort one.
-  `cases/events/receivers-01-layers.json` pins both.
+- **One journal per tree, and the host's holds.** A tree has one journal
+  (its claims and fencing are that store's). The closest layer that sets
+  one (or sets none) decides, as for every setting, with two exceptions:
+  - a program's own setting cannot replace or remove a journal a host
+    layer set, best effort or required: it may name the same journal, or
+    make it required, and it may set a journal where no host layer set
+    one (or a host set none);
+  - no closer layer, a host's included, can replace, weaken to best
+    effort, or remove a **required** journal.
+
+  A host layer may replace or remove a best-effort journal a farther
+  host layer set. A program that wants its log somewhere of its own adds
+  an observer.
+
+A tree whose layers break either exception is refused when its
+outermost call starts, before its code runs: the call raises
+`JournalError` with code `journal-policy`. Its log is its `started` and
+its `failed` with that error, given to every layer's observers and to
+the journal the layers farther out than every refused setting give (the
+host's, as if the refused settings were not there), and its record in
+the call log has that error. `cases/events/receivers-01-layers.json`
+pins all of this.
 
 **Observers** receive the kept form of every event of every call in their
 scope, in order, as it happens (their `after` skips what is outside their
@@ -322,8 +359,11 @@ the kept form of the whole log of every tree whose outermost call starts
 in its scope; the journal a tree has is decided when its outermost call
 starts. A call inside a tree does not start another log: a journal set
 only around calls inside a tree (a block in a module's body) keeps
-nothing of it, and the implementation warns once (a required journal
-refuses `journal-scope` when that call starts, before it runs).
+nothing of it, and the implementation warns once. A required journal set
+so refuses: the call inside raises `JournalError` with code
+`journal-scope` when it starts, before its code runs; its `started` and
+`failed` are in the tree's log and its record has that error, as for any
+call that fails, and the code around it gets the error.
 
 A journal is the watching log, under `log_content`. It is not a
 conversation's memory (what later turns are shown: stage 2's
@@ -335,11 +375,12 @@ is not whole, and a kept `thinking` is gone: resuming a model from the
 events alone would be a guess. Each of the three is its own record.
 
 - **Appending.** The writer appends each event in order, alone or in
-  batches (a batch is kept whole or not at all), with the `after` the
-  journal checks (*The rules a store keeps*): an append says where it
-  goes. The journal **answers** an append once it has kept it as surely
-  as it says it keeps things (a store declares that: stage 2). An event
-  is **confirmed** when the journal answers kept or duplicate; **refused**
+  batches (a batch is kept whole or not at all, and answered as *The
+  rules a store keeps* says), with the `after` the journal checks: an
+  append says where it goes. The journal **answers** an append once it
+  has kept it as surely as it says it keeps things (a store declares
+  that: stage 2). An event is **confirmed** when the journal answers kept
+  or duplicate (a batch: kept or duplicate); **refused**
   when it answers anything else; **unanswered** when no answer comes. An
   unanswered append may have been kept: the writer cannot tell. It keeps
   every event not confirmed and sends it again (a resend of a kept event
@@ -351,7 +392,10 @@ events alone would be a guess. Each of the three is its own record.
   sending; if it gives up, the log is kept at least up to its last
   confirmed event, and may hold more (an unanswered append may have been
   kept, the end included: `journal-11`). Every event is shown to readers
-  as it is made.
+  as it is made. A best-effort writer that is fenced (another writer
+  claimed the log) goes on: its caller gets its outcome and its readers
+  see its end, while the kept log says what the later writer did.
+  Claims are meant for logs kept by a required journal.
 - **Required** (the host asks for it): the call waits, until every event
   up to it is confirmed, at three **barriers**: after its outermost
   call's `started` (before any code or request runs); after each
@@ -396,8 +440,13 @@ caller's; when it does not and the log is unfinished, it was not kept
 (yet: the writer may go on sending the end after the call has raised,
 and is answered `duplicate` if it was kept, `event-conflict` if it has
 been fenced). A finished log alone does not say the caller's outcome was
-kept. `cases/events/journal-*.json` pin this, one step at a time
-(`journal-13`: another writer ends the log).
+kept. "Not kept" is final only once the writer can no longer append: a
+caller that must know for good claims the unfinished log first (this
+fences the writer, whose resends are then refused), then reads. The log
+then waits for the one that claimed it (who may end it, and when, is
+stage 2's lease and stage 4's). `cases/events/journal-*.json` pin this,
+one step at a time (`journal-13`: another writer ends the log);
+`store-11` pins the fencing a settling claim relies on.
 
 A log whose outermost call's `done` or `failed` is kept is **finished**.
 Until then it is **unfinished**: its writer may still be running, or may
@@ -460,8 +509,8 @@ finished; otherwise the store gives the next writer number and the
 position of the last kept event (`{"writer": 2, "after": {"writer": 1,
 "seq": 2}}`), as *Continuing a log* says.
 
-**Appending** the events of one log, in order, checking each (a batch is
-kept whole or not at all), in this order:
+**Appending** the events of one log, in order, checking each in this
+order:
 
 | appending an event | result |
 |---|---|
@@ -474,6 +523,15 @@ kept whole or not at all), in this order:
 | `after` not the position of the last kept event, otherwise | refused `event-conflict`: the log went on another way |
 | a first event that is not the log's outermost call's `started` from writer `1` (`call` not the `tree`, another kind, another writer) | refused `event-start` |
 | otherwise | kept |
+
+**A batch** (several events of one log, appended as one step) is checked
+event by event, as if each were appended alone after the ones before it,
+and is kept whole or not at all. It is answered `duplicate` when every
+event in it is one, and kept when every event is kept or a duplicate (a
+writer that sends a batch again after a lost answer, with events added,
+is answered so). Otherwise nothing of it is kept, and the answer is the
+refusal of the first event refused, naming that event by its position
+(`store-12`).
 
 **Reading** a log after an event named by its position gives the kept
 events after it, in order; after `null`, all of them. A store that does

@@ -61,7 +61,7 @@ def check(folder: str, cases: dict) -> None:
                 schemas.check(schemas.SAVED, case["manifest"], f"{where} manifest")
         elif folder == "programs":
             if case["program"] == "ai":
-                ifaces = [case["expect"]["interface"]]
+                ifaces = [case["expect"]["interface"]] if "interface" in case["expect"] else []
             elif case["program"] == "definitions":
                 ifaces = [x["interface"] for x in case["interfaces"] if "signature" in x["expect"]]
             elif case["program"] == "same-data":
@@ -74,8 +74,9 @@ def check(folder: str, cases: dict) -> None:
             kind = case["kind"]
             if kind == "receivers":
                 continue
-            evs = ([x["append"] for x in case["steps"] if "append" in x] if kind == "store" else
-                   case["received"] if kind == "follow" else list(case["events"]))
+            evs = ([e for x in case["steps"] for e in ([x["append"]] if "append" in x else x.get("batch", []))]
+                   if kind == "store" else
+                   list(case["received"]) if kind == "follow" else list(case["events"]))   # a copy: never the case's
             if kind == "kept":
                 evs += case["expect"]["events"]
             if kind == "journal":
@@ -99,7 +100,13 @@ def write(folder: str, cases: dict) -> int:
     for old in out.glob("*.json"):
         old.unlink()
     for name, case in cases.items():
-        (out / f"{name}.json").write_text(json.dumps(case, indent=1, ensure_ascii=False) + "\n")
+        path = out / f"{name}.json"
+        path.write_text(json.dumps(case, indent=1, ensure_ascii=False) + "\n")
+        written = json.loads(path.read_text())          # what a harness reads, run through the rules again
+        if folder == "events":
+            assert events.rerun(written) == events.as_written(written), f"{folder}/{name}: its data gives another result"
+        elif folder == "programs":
+            programs.rerun(written)
     return len(cases)
 
 

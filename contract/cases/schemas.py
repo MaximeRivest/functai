@@ -2,13 +2,34 @@
 manifest and interface it writes into a case (schema/)."""
 
 import json
+import re
 from pathlib import Path
 
 import jsonschema
 from referencing import Registry, Resource
 
 SCHEMA = Path(__file__).resolve().parent.parent / "schema"
-DOCS = {p.stem.removesuffix(".schema"): json.loads(p.read_text()) for p in sorted(SCHEMA.glob("*.schema.json"))}
+TEXT = {p.stem.removesuffix(".schema"): json.loads(p.read_text()) for p in sorted(SCHEMA.glob("*.schema.json"))}
+
+
+def as_ecma(node):
+    """The schemas as ECMA-262 reads their patterns, which JSON Schema follows: a pattern's ``$`` is the end of
+    the text. Python's ``re`` also lets ``$`` match before a final newline, so a checker in Python would accept
+    ``"message\\n"`` as a name where every other language refuses it; ``\\Z`` is ECMA's ``$`` in Python. The
+    schemas use ``$`` only as the last anchor (checked here)."""
+    if isinstance(node, dict):
+        out = {k: as_ecma(v) for k, v in node.items()}
+        if isinstance(node.get("pattern"), str):
+            p = node["pattern"]
+            assert re.fullmatch(r"[^$]*\$\)*", p), f"a pattern with $ other than as its last anchor: {p}"
+            out["pattern"] = re.sub(r"\$(?=\)*$)", r"\\Z", p)
+        return out
+    if isinstance(node, list):
+        return [as_ecma(v) for v in node]
+    return node
+
+
+DOCS = {k: as_ecma(v) for k, v in TEXT.items()}
 REGISTRY = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in DOCS.values()])
 
 
@@ -120,6 +141,15 @@ def refusals() -> None:
     iface = {"description": "", "inputs": [{"name": "q", "shape": {}, "label": "private"}],
              "outputs": [{"name": "result", "shape": {}}]}
     bad.append(("an interface key this contract does not name (refused, not ignored)", INTERFACE, iface))
+    iface = {"description": "", "inputs": [{"name": "q\n", "shape": {}}], "outputs": [{"name": "result", "shape": {}}]}
+    bad.append(("a field name with a newline after it (a pattern is matched whole, as ECMA-262 reads $)", INTERFACE,
+                iface))
+    e = copy.deepcopy(events.a_tool().events[1])
+    e["kind"] = "request\n"
+    bad.append(("an event kind with a newline after it", EVENT, e))
+    r = copy.deepcopy(rec)
+    r["id"] += "\n"
+    bad.append(("a call id with a newline after it", CALL, r))
 
     for why, v, value in bad:
         assert not v.is_valid(value), f"the schema accepts {why}"

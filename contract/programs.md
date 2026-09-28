@@ -32,8 +32,8 @@ A field:
 
 | key | meaning |
 |---|---|
-| `name` | an ASCII identifier, used once among the program's inputs and outputs. |
-| `shape` | JSON Schema (draft 2020-12), as [functions.md](functions.md) *Shapes* says, read by the keywords *Checking values* lists: a module's uses no other; an AI function's may carry others, which are lmcc's. `{}` is any JSON value. A `default` in an input's shape is the value it takes when it is left out, and must fit the shape. |
+| `name` | an ASCII identifier (a letter or `_`, then letters, digits or `_`), matched whole (nothing after it, not even a newline), used once among the program's inputs and outputs. |
+| `shape` | JSON Schema (draft 2020-12), as [functions.md](functions.md) *Shapes* says, read by the keywords *Checking values* lists: a module's uses no other; an AI function's may carry others, which are lmcc's. `{}` is any JSON value. The shape's own `default` (its top-level key, in an input's shape) is the value the input takes when it is left out, and must fit the shape. A `default` inside the shape (a member's, as pydantic writes one for a model's defaulted field) is a word: never checked, never filled in. |
 | `desc` | words about the field. |
 | `type` | the host language's name for the type (`str`, `pd.DataFrame`), for people; never compared across languages. |
 | `opaque` | `true` when the field's values may have no JSON form in the language that declared it (a data frame, a file handle, an unannotated Python argument, Python's `Any`). Its shape is `{}`. Its values are never checked. It says what the field accepts and where it may go, not how a value is written: the log writes each value by what it is (JSON when it has a JSON form, else a description: calls.md, *Values*). A boundary that needs data (serving, a conversation store: stages 2 and 3) cannot carry the field, and says so before any call. |
@@ -68,8 +68,10 @@ signatures match: `rated` and replay leave them out (calls.md).
 
 ## Interfaces that are refused
 
-A module's declared interface, and any interface read from a saved
-folder, is refused `interface-malformed` when:
+Every interface is checked by these rules: a module's when the module is
+defined, an AI function's when the function is defined, and any
+interface read from a saved folder. It is refused `interface-malformed`
+when:
 
 - the interface is not an object with `description` (text), `inputs` (a
   list) and `outputs` (a list of at least one), and no other key (the
@@ -80,18 +82,25 @@ folder, is refused `interface-malformed` when:
   outputs; its shape is not an object, uses a keyword *Checking values*
   lists with a value of the wrong kind, has a reference that comes back
   to itself without passing into a value, or (in a module's interface)
-  uses a keyword *Checking values* does not list; its `default` does not
-  fit its shape; it is `opaque` with a shape other than `{}`; it is an
+  uses a keyword *Checking values* does not list; its shape's own
+  `default` does not fit its shape; it is `opaque` with a shape other
+  than `{}`; it is an
   output marked `optional`; or it is an AI function's optional input with
   no `default`.
 
 Form and meaning are checked together, field by field: the refusal names
 the first field at fault, inputs then outputs, in order, whatever its
-fault. It comes when the module is defined, or the folder read, before
+fault. It comes when the program is defined, or the folder read, before
 any call. A saved folder's manifest is checked against its schema first
 ([saved.md](saved.md)): a fault the schema sees there refuses
-`saved-malformed`. An AI function's shapes are lmcc's, checked by lmcc
-when it is defined (`signature-malformed`).
+`saved-malformed`. An AI function's definition is checked by lmcc first
+(`signature-malformed`, which asks only that each shape is an object),
+then its interface by the rules above (its shapes may carry lmcc's other
+keywords: *Checking values*). So what one language lets an AI function
+be defined and saved with, every language can load and describe: an
+interface no language would read back is refused where it is written,
+not in another process later (`programs/19`; a pydantic `Field(ge=10)`
+with a default of 5, which pydantic does not check, refuses there).
 
 ## How each program has one
 
@@ -158,13 +167,21 @@ Schema validator:
 - For strings: `minLength`, `maxLength`, counted in Unicode code points.
 - For numbers: `minimum`, `maximum`, `exclusiveMinimum`,
   `exclusiveMaximum` (numbers).
-- `$defs` (shapes by name), and `$ref` of the form `#/$defs/<name>`
-  naming one of the shape's own (a record by reference, as pydantic
-  writes one).
+- `$defs` (shapes by name), and `$ref` naming one of the shape's own (a
+  record by reference, as pydantic writes one). A `$ref` is
+  `#/$defs/<name>`, where `<name>` is ASCII letters, digits, `_`, `.` and
+  `-` (every name pydantic writes fits), matched whole and read as written:
+  nothing after it (not even a newline: a regular expression's `$` may
+  match before one, so implementations match the whole text), no JSON
+  Pointer escapes (`~1`) and no percent-encoding (`%20`). A `$defs` entry
+  whose name has other characters cannot be referred to
+  (`programs/20`).
 - Words that are never checked, each of its kind: `title`,
   `description`, `format`, `$comment` (text), `deprecated`, `readOnly`,
-  `writeOnly` (booleans), `examples` (a list), `default` (any value,
-  which must fit).
+  `writeOnly` (booleans), `examples` (a list), `default` (any value;
+  only a field's own must fit, as *The interface* says: one inside the
+  shape is never checked nor filled in, and stays in the signature, as
+  part of the shape, as it stays in lmcc's: `programs/21`).
 
 A count (`minItems`, `maxItems`, `minLength`, `maxLength`) is an integer
 of at least 0, by the rule above: `2.0` is `2`, since some languages

@@ -32,6 +32,12 @@ its docstring; TypeScript: `ai({...})`), it comes down to this data:
 | `settings` | the ones that shape the request: `adapter`, `template`, `module`, `include_fn_name_in_instructions`, `capabilities`, `tools`. |
 | `state` | what improving changes: `instructions` (text that replaces the written instruction, or null) and `demos` (worked examples). |
 
+A definition is refused when lmcc refuses its signature
+(`signature-malformed`), and then when its interface (its inputs and
+outputs) breaks the rules every interface keeps ([programs.md](programs.md),
+*Interfaces that are refused*: `interface-malformed`), so that a function
+one language defines and saves, every language can load.
+
 **Shapes** are JSON Schema as lmcc reads it (kernel §1): `{"type":
 "string"}`, `integer`, `number`, `boolean`; a choice `{"enum": [...],
 "type": "string"}`; a list `{"type": "array", "items": S}`; a map

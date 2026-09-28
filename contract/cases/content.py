@@ -25,7 +25,7 @@ import re
 from common import canonical, sha
 
 OFF = {"0", "false", "no", "off"}
-NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")             # matched whole (fullmatch): nothing after it
 ALWAYS_KEPT = ("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
                "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
 DROPPED_FROM_EXCHANGES = ("request", "response", "request_hash")
@@ -42,7 +42,7 @@ def refusal(fields: dict, layers: list):
         if not isinstance(v, dict):
             continue
         for key in v:
-            if key != "*" and not NAME.match(key):
+            if key != "*" and not NAME.fullmatch(key):
                 return {"refuses": "log-content-field", "field": key}
             if layer["where"] == "own" and key != "*" and key not in names:
                 return {"refuses": "log-content-field", "field": key}

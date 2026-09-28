@@ -1,0 +1,179 @@
+{
+ "description": "A field's name and a $ref are matched whole, the same in every language: nothing may follow them, not even a newline (a regular expression's $ may match before one). A $ref is #/$defs/ and a name of ASCII letters, digits, _, . and - (every name pydantic writes fits), read as it is written: no JSON Pointer escape (~1) and no percent-encoding (%20), so a $defs entry whose name has other characters cannot be referred to.",
+ "program": "definitions",
+ "interfaces": [
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Node": {
+         "type": "string"
+        }
+       },
+       "$ref": "#/$defs/Node\n"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Foo/Bar": {
+         "type": "string"
+        }
+       },
+       "$ref": "#/$defs/Foo~1Bar"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Foo Bar": {
+         "type": "string"
+        }
+       },
+       "$ref": "#/$defs/Foo%20Bar"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message\n",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "message\n"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "shop.Order-2_v": {
+         "type": "string"
+        }
+       },
+       "$ref": "#/$defs/shop.Order-2_v"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:5b13b9a0c1898a47c22ef47a291673cb32155736a787205e7cf4d7184f4c7a14"
+   }
+  },
+  {
+   "interface": {
+    "description": "Answer a customer's message.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "$defs": {
+        "Foo Bar": {
+         "type": "string"
+        }
+       },
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:b51d0f79f37d112faf8437d24383a857742f18132d2e15f27ae55c0a041bd1b8"
+   }
+  }
+ ]
+}

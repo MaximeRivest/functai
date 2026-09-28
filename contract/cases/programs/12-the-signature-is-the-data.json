@@ -150,6 +150,16 @@
      "inputs": {
       "name": "friend"
      }
+    },
+    {
+     "inputs": {
+      "since": "2026-09-28"
+     }
+    },
+    {
+     "inputs": {
+      "since": "2026-09-29"
+     }
     }
    ]
   },
@@ -172,6 +182,14 @@
      "inputs": {
       "name": null
      }
+    },
+    {
+     "refuses": "interface-input",
+     "field": "name"
+    },
+    {
+     "refuses": "interface-input",
+     "field": "name"
     }
    ]
   },
@@ -194,6 +212,14 @@
      "inputs": {
       "name": "Ana"
      }
+    },
+    {
+     "refuses": "interface-input",
+     "field": "name"
+    },
+    {
+     "refuses": "interface-input",
+     "field": "name"
     }
    ]
   }

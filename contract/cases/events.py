@@ -16,7 +16,8 @@ position: the event before it in the form being read.
   reads each the same way. An event of a kind the reader does not know
   changes nothing.
 - "follow": {"received": [events, in the order a reader got them],
-  "recover"?: {"form": "same" | "other", "source": [events]}, "expect":
+  "recover"?: {"reader": "kept" | "live", "from": "store" | a writer
+  number, "source": [events]}, "expect":
   {"results": ["kept" | "duplicate" | "stale" | "rewind" | "loss" |
   "unknown-format", ...], "state": {"calls", "finished"} per tree,
   "recover"?: {"reads": [{"after": position, "expect": ...}], "state"}}}.
@@ -28,24 +29,39 @@ position: the event before it in the form being read.
   drop what it has after that event (rewind) and take it; anything else
   says events were lost. An event of a format it does not know stops it
   (nothing after it is read). ``state``: the replay of what the reader
-  holds at the end. ``recover``: the reader then reads again from a
-  source holding ``source`` ("Resuming"): in the same form, after its
-  last event, and from the beginning when the source does not have it;
-  in another form, from the beginning at once. ``reads`` are its reads
-  in order, ``state`` the replay of what it holds after them.
+  holds at the end (after a rewind: what it held up to the event named,
+  values the kept form lacks included, then the rest). ``recover``: the
+  reader then reads again ("Resuming") from ``from``, a store or the
+  process of that writer, which gives ``source``. ``reader`` is the form
+  the reader follows: "kept" (the kept form, or a view made from it) or
+  "live" (a form that may show values the kept form lacks: the whole
+  log, or a view made from it); a live reader got each event it received
+  from the process of that event's writer. It resumes in place (reads
+  after its last event, then from the beginning when the source does not
+  have it) when the source can give every event it holds as it holds
+  it: always for "kept"; for "live", only from the process of the writer
+  of every event it holds. Otherwise it starts again from the beginning
+  at once. ``reads`` are its reads in order, ``state`` the replay of what
+  it holds after them.
 - "kept": {"events": [whole events], "kept": {call id: {"inputs": {name:
   bool}, "outputs": {name: bool}}}, "expect": {"events": [the kept
   log]}}. The kept form of a whole log ("The kept form"), given which
   fields of each call its log_content keeps (content/'s job).
 - "store": {"steps": [{"append": event, "expect": "kept" | "duplicate" |
   "event-conflict" | "event-gap" | "event-after-end" | "event-start" |
-  "event-malformed"} or {"claim": tree id, "expect": {"writer", "after":
-  position} or {"refuses": "event-after-end" | "event-unknown"}}],
+  "event-malformed"} or {"batch": [events], "expect": "kept" |
+  "duplicate" | {"refuses": code, "event": position}} or {"claim": tree
+  id, "expect": {"writer", "after": position} or {"refuses":
+  "event-after-end" | "event-unknown"}}],
   "reads": [{"tree", "after": position, "expect": {"events": [positions]}
   | {"refuses": "event-unknown"}}], "expect": {"logs": {tree id:
   {"events": [positions], "writer": n, "finished": bool}}}}. Each step in
-  turn against one store (appending an event, or a later writer claiming
-  a log), then the reads ("The rules a store keeps").
+  turn against one store (appending an event, appending a batch, or a
+  later writer claiming a log), then the reads ("The rules a store
+  keeps"). A batch is checked event by event as if appended alone, in
+  order, and kept whole or not at all: "duplicate" when every event is
+  one, "kept" when every event is kept or a duplicate, else nothing of
+  it is kept and the answer names the first event refused.
 - "journal": {"mode": "required" | "best-effort", "retries": n, "events":
   [the call's whole log, as it goes when nothing fails], "script": [what
   each append attempt meets, in order: "ok" | "lost" | "down" |
@@ -72,11 +88,16 @@ position: the event before it in the form being read.
   "configure", "observers"?: [names], "journal"?: {"name", "mode":
   "required" | "best-effort"} or null}, ...] (closest first), "expect":
   {"observers": [names], "journal": {...} or null} or {"refuses":
-  "journal-policy"}}]}. Which observers and which journal a tree gets
-  from the layers around its outermost call ("Keeping a log while it is
-  written"): observers add up, outermost first; the closest journal
-  setting decides, except that no closer layer may replace, weaken or
-  remove a required journal.
+  "journal-policy", "observers", "journal"}}]}. Which observers and
+  which journal a tree gets from the layers around its outermost call
+  ("Keeping a log while it is written"): observers add up, outermost
+  first; the closest journal setting decides, except that a program's
+  own setting ("own") may not replace or remove a journal a host layer
+  ("block", "configure") set (it may name the same one, or make it
+  required), and no closer layer may replace, weaken or remove a
+  required journal. A refused tree's own events go to ``observers`` and
+  ``journal``: every layer's observers, and the journal the layers
+  farther out than every refused setting give.
 
 Every event here passes schema/event.schema.json (make.py checks), except
 those of a format no reader knows and appends refused event-malformed.
@@ -274,7 +295,7 @@ def follow(received: list, recover=None) -> dict:
         t = next(iter(trees.values()))
         source, reads = recover["source"], []
         answer = None
-        if recover["form"] == "same":
+        if in_place(recover, t["held"]):
             answer = resume(source, t["last"])
             reads.append({"after": t["last"], "expect": answer})
         if answer is None or "refuses" in answer:
@@ -287,6 +308,19 @@ def follow(received: list, recover=None) -> dict:
         held = held + [got[canonical(p)] for p in answer["events"]]
         result["recover"] = {"reads": reads, "state": state_of(held)}
     return result
+
+
+def in_place(recover: dict, held: list) -> bool:
+    """Whether a reader may resume after its last event ("Resuming"): the source can give every event it holds
+    as it holds it. The kept form (and a view made from it) is the same from every source. A live form (the
+    whole log, a view made from it) only the process of one writer gives, and only for what that process gave:
+    a live reader got each event from its writer's process, so it resumes in place only from the process of
+    the writer of every event it holds. A reader that followed across a hand-over starts again, whatever the
+    writer of its last event."""
+    if recover["reader"] == "kept":
+        return True
+    assert recover["reader"] == "live", recover
+    return recover["from"] != "store" and all(e["writer"] == recover["from"] for e in held)
 
 
 def relink(events: list, last=None) -> list:
@@ -417,6 +451,18 @@ class Store:
         log.append(copy.deepcopy(e))
         return "kept"
 
+    def batch(self, events: list):
+        """A batch of one log's events: each checked as if appended alone, in order; kept whole or not at all."""
+        trial = copy.deepcopy(self)
+        answers = []
+        for e in events:
+            answer = "event-malformed" if e["tree"] != events[0]["tree"] else trial.append(e)
+            if answer not in ("kept", "duplicate"):
+                return {"refuses": answer, "event": pos(e)}
+            answers.append(answer)
+        self.logs, self.writers = trial.logs, trial.writers
+        return "duplicate" if all(a == "duplicate" for a in answers) else "kept"
+
     def read(self, tree: str, after) -> dict:
         return resume(self.logs.get(tree, []), after)
 
@@ -428,7 +474,8 @@ class Store:
 def store(steps: list, reads=()) -> tuple:
     """Each step appends an event, or claims a log for a later writer."""
     s = Store()
-    results = [s.append(x) if x.get("kind") else s.claim(x["claim"]) for x in steps]
+    results = [s.append(x) if x.get("kind") else s.batch(x["batch"]) if "batch" in x else s.claim(x["claim"])
+               for x in steps]
     return results, s.summary(), [{**r, "expect": s.read(r["tree"], r["after"])} for r in reads]
 
 
@@ -444,13 +491,33 @@ def settle(s: Store, tree: str, end: dict) -> str:
 # ------------------------------------------------------------------ the rules: receivers across layers
 
 
+def refused_settings(layers: list) -> list:
+    """The indexes of the layers whose journal setting the layers farther out refuse (closest first)."""
+    setting = [(i, layer["journal"]) for i, layer in enumerate(layers) if "journal" in layer]
+    out = set()
+    for n, (i, far) in enumerate(setting):
+        for k, near in setting[:n]:
+            if near == far:
+                continue
+            if far is not None and far["mode"] == "required":
+                out.add(k)                          # replaces, weakens or removes a required journal
+            elif far is not None and layers[k]["where"] == "own" and layers[i]["where"] != "own" and not (
+                    near is not None and near["name"] == far["name"] and near["mode"] == "required"):
+                out.add(k)                          # a program replaces or removes a host's journal
+    return sorted(out)
+
+
 def receivers(layers: list) -> dict:
-    """The observers and the journal a tree gets from the layers around its outermost call, closest first."""
+    """The observers and the journal a tree gets from the layers around its outermost call, closest first. A
+    refused tree's own events (its started, its failed) go to every layer's observers and to the journal the
+    layers farther out than every refused setting give."""
     observers = [o for layer in reversed(layers) for o in layer.get("observers", [])]
+    refused = refused_settings(layers)
+    if refused:
+        rest = layers[max(refused) + 1:]
+        assert not refused_settings(rest)
+        return {"refuses": "journal-policy", "observers": observers, "journal": receivers(rest)["journal"]}
     setting = [layer["journal"] for layer in layers if "journal" in layer]
-    for i, j in enumerate(setting):
-        if j is not None and j["mode"] == "required" and any(k != j for k in setting[:i]):
-            return {"refuses": "journal-policy"}
     return {"observers": observers, "journal": setting[0] if setting else None}
 
 
@@ -560,6 +627,42 @@ def journal(events: list, script: list, *, retries: int = 2, required: bool = Tr
     if settled is not None:
         out["settled"] = settled
     return out
+
+
+def rerun(case: dict) -> dict:
+    """A case as written (read back from its file), run through the rules above as a harness would: its
+    ``expect`` must come out. make.py checks every events case so, since a case whose data was changed after
+    its expectation was computed would pass here and fail in every language."""
+    kind = case["kind"]
+    if kind == "replay":
+        return {"expect": replay(case["events"]),
+                "resume": [{"after": r["after"], "expect": resume(case["events"], r["after"])} for r in case["resume"]]}
+    if kind == "follow":
+        return {"expect": follow(case["received"], case.get("recover"))}
+    if kind == "kept":
+        return {"expect": {"events": kept_log(case["events"], case["kept"])}}
+    if kind == "store":
+        steps = [x["append"] if "append" in x else {k: v for k, v in x.items() if k != "expect"} for x in case["steps"]]
+        results, logs, reads = store(steps, [{k: v for k, v in r.items() if k != "expect"} for r in case["reads"]])
+        return {"steps": [r for r in results], "reads": reads, "expect": {"logs": logs}}
+    if kind == "journal":
+        return {"expect": journal(case["events"], case["script"], retries=case["retries"],
+                                  required=case["mode"] == "required")}
+    if kind == "receivers":
+        return {"scenarios": [receivers(x["layers"]) for x in case["scenarios"]]}
+    raise AssertionError(kind)
+
+
+def as_written(case: dict) -> dict:
+    """What ``rerun`` must give for a case: its expectations, in the same shape."""
+    kind = case["kind"]
+    if kind == "replay":
+        return {"expect": case["expect"], "resume": case["resume"]}
+    if kind == "store":
+        return {"steps": [x["expect"] for x in case["steps"]], "reads": case["reads"], "expect": case["expect"]}
+    if kind == "receivers":
+        return {"scenarios": [x["expect"] for x in case["scenarios"]]}
+    return {"expect": case["expect"]}
 
 
 # ------------------------------------------------------------------ scenarios
@@ -792,7 +895,8 @@ def kept_case(description, w: Writer, kept):
 def store_case(description, steps, reads=()):
     results, logs, reads = store(steps, reads)
     return {"description": description, "kind": "store",
-            "steps": [({"append": x} if x.get("kind") else x) | {"expect": r} for x, r in zip(steps, results)],
+            "steps": [({"append": x} if x.get("kind") else copy.deepcopy(x)) | {"expect": r}
+                      for x, r in zip(steps, results)],
             "reads": reads, "expect": {"logs": logs}}
 
 
@@ -878,7 +982,7 @@ def hand_overs() -> dict:
         "and not an event it holds, so events were lost (a seq alone would call it next, and the reader would "
         "end with writer 1's text before writer 2's). It reads its form again after its last event: the store "
         "does not have it (event-unknown), so it starts again from the beginning, and ends where the store "
-        "ends.", a.events + b.events[1:], {"form": "same", "source": stored}, state_of(stored))
+        "ends.", a.events + b.events[1:], {"reader": "kept", "from": "store", "source": stored}, state_of(stored))
 
     first, kept, second = handed_over()
     stored = kept + kept_continued(kept, second.events, {cid(1): io({"request": True}, {"result": False})})
@@ -886,8 +990,8 @@ def hand_overs() -> dict:
         "A reader of the whole log holds writer 1's seqs 1 to 5 (pieces of a field the log does not keep); "
         "writer 2 took over after seq 2, and the reader misses its seqs 3 and 4. Writer 2's done names "
         "writer 2's seq 4: the reader holds writer 1's seq 4, another event, so this is a loss, not a rewind. "
-        "The store gives another form (the kept form): the reader starts again from the beginning in it.",
-        first.events + second.events[2:], {"form": "other", "source": stored}, state_of(stored))
+        "The store gives another form (the kept form): the reader starts again from the beginning in it, at once.",
+        first.events + second.events[2:], {"reader": "live", "from": "store", "source": stored}, state_of(stored))
 
     a = Writer(1)
     a.started(1, "gardener", {"request": "Merge groceries.md into todo.md"})
@@ -914,7 +1018,7 @@ def hand_overs() -> dict:
         "the reader's last seq, but not its last event: a loss. It resumes from the store, which does not "
         "have writer 1's seq 4, and starts again. A later writer number alone never says that what the "
         "reader holds comes before the event (writer 2's events are missing between).",
-        a.events + c.events, {"form": "same", "source": stored}, state_of(stored))
+        a.events + c.events, {"reader": "kept", "from": "store", "source": stored}, state_of(stored))
 
     more = copy.deepcopy(a)
     more.text(1, "result", " MORE")
@@ -923,7 +1027,7 @@ def hand_overs() -> dict:
         "The same, when the reader holds writer 1's seqs 1 to 6: writer 3's failed names writer 2's seq 4, "
         "below the reader's last seq. The reader holds a seq 4, but writer 1's: it does not rewind to it (a "
         "seq alone would, and keep writer 1's text), since the event named is not one it holds. A loss.",
-        more.events + c.events, {"form": "same", "source": stored}, state_of(stored))
+        more.events + c.events, {"reader": "kept", "from": "store", "source": stored}, state_of(stored))
 
     a = Writer(1)
     a.started(1, "gardener", {"request": "Merge groceries.md into todo.md"})
@@ -946,7 +1050,87 @@ def hand_overs() -> dict:
         "Writer 2's seq 5 names writer 2's seq 4, while the reader's last is writer 1's seq 4: a loss (a seq "
         "alone would call it next). The store makes the same view from what it keeps, does not have writer "
         "1's seq 4, and the reader starts again.",
-        mine + theirs[3:], {"form": "same", "source": hide(stored)}, state_of(hide(stored)))
+        mine + theirs[3:], {"reader": "kept", "from": "store", "source": hide(stored)}, state_of(hide(stored)))
+    return out
+
+
+def a_private_child(tail: bool):
+    """A module whose child's answer the log does not keep; the journal kept up to the child's done (1, 5). With
+    ``tail``, writer 1 went on (another child started and asked, never kept) before it stopped. Writer 2 claims
+    the log after (1, 5) and finishes it. Returns writer 1's whole events, writer 2's, the log's kept form, and
+    what writer 2's process gives in every form (the kept log up to its claim, then its own events)."""
+    a = Writer(1)
+    a.started(1, "support", {"message": "Please read my tracking log."}, kind="module")
+    a.started(2, "read_tracking", {"log": "03:12 LEEDS DEPOT ARRIVED"}, parent=1, root=1)
+    a.request(2)
+    a.text(2, "result", '{"where": "Leeds"}')                  # (1, 4): shown live, never kept
+    a.done(2, {"where": "Leeds"})                               # (1, 5): kept, without its value
+    if tail:
+        a.started(3, "reply", {"where": "Leeds"}, parent=1, root=1)
+        a.request(3)
+    keep = {cid(1): io({"message": True}, {"result": True}), cid(2): io({"log": True}, {"result": False}),
+            cid(3): io({"where": True}, {"result": True})}
+    kept = kept_log(a.events[:5], keep)
+    b = Writer(1, first_second=30).continuing(kept, claimed(kept))
+    b.started(3, "reply", {"where": "Leeds"}, parent=1, root=1)
+    b.request(3)
+    b.text(3, "result", "Your parcel is in Leeds.")
+    b.done(3, "Your parcel is in Leeds.")
+    b.done(1, "Your parcel is in Leeds.")
+    return a.events, b.events, kept + kept_continued(kept, b.events, keep), kept + b.events
+
+
+def after_hand_overs() -> dict:
+    """What a reader of a live form holds after a hand-over, and how it resumes (Opus S4, Astra S1, round 4)."""
+    out = {}
+    first, second, stored, theirs = a_private_child(tail=True)
+    case = follow_case(
+        "A reader of the whole log, live: it saw the child's answer, which the log does not keep, then writer 1 "
+        "started another child (never kept) and stopped. Writer 2 took over after the child's done (writer 1, "
+        "seq 5). The reader rewinds there: it drops what it holds after that event and keeps the rest, so its "
+        "state is what it was shown up to that event, the child's answer included (it was shown, and "
+        "happened), then writer 2's events. It ends holding a value no source gives: the store's replay has "
+        "the child's field empty. Every follower keeps what it needs to rewind so.",
+        first + second)
+    got = case["expect"]
+    assert got["results"].count("rewind") == 1 and "loss" not in got["results"]
+    assert got["state"][cid(1)] == state_of(first[:5] + second) != state_of(stored)
+    assert got["state"][cid(1)]["calls"][cid(2)]["fields"] == {"result": '{"where": "Leeds"}'}
+    out["follow-14-a-rewind-keeps-what-was-shown"] = case
+
+    first, second, stored, theirs = a_private_child(tail=False)
+    case = follow_case(
+        "The same reader, when writer 1 stopped at the child's done: writer 2's first event (writer 2, seq 6) "
+        "comes after the reader's last, and it takes it as the next. It then loses its connection and resumes "
+        "from writer 2's process, which gives the kept log up to its claim, then its own events: not the "
+        "child's answer the reader holds. So the reader starts again from the beginning, though its last "
+        "event is writer 2's and the source has it: a reader of a live form resumes in place only from the "
+        "process that gave it every event it holds. It ends where that source's form ends.",
+        first + second[:1], {"reader": "live", "from": 2, "source": theirs})
+    got = case["expect"]
+    assert got["results"][-1] == "kept" and got["recover"]["reads"][0]["after"] is None
+    assert got["recover"]["state"] == state_of(theirs) != got["state"][cid(1)]
+    out["follow-15-resuming-after-a-hand-over"] = case
+
+    case = follow_case(
+        "A reader of the whole log holds writer 1's events up to the child's done (seq 5), which the store "
+        "keeps; it resumes from the store. The store has that event, but gives another form (the kept form, "
+        "without the child's answer): the reader starts again from the beginning, whatever the cursor.",
+        first, {"reader": "live", "from": "store", "source": stored[:4]})
+    got = case["expect"]
+    assert got["recover"]["reads"] == [{"after": None, "expect": {"events": [pos(e) for e in stored[:4]]}}]
+    assert "events" in resume(stored[:4], pos(first[-1]))
+    out["follow-16-the-cursor-is-kept-the-form-is-not"] = case
+
+    case = follow_case(
+        "A reader of the whole log loses its connection after writer 1's request (seq 3) and resumes from "
+        "writer 1's process, which gave it every event it holds: it reads after its last event, in place, and "
+        "gets the child's answer (never kept) with the rest.",
+        first[:3], {"reader": "live", "from": 1, "source": first})
+    got = case["expect"]
+    assert got["recover"]["reads"] == [{"after": at(1, 3), "expect": {"events": [at(1, 4), at(1, 5)]}}]
+    assert got["recover"]["state"] == state_of(first)
+    out["follow-17-resuming-from-the-same-process"] = case
     return out
 
 
@@ -1059,6 +1243,8 @@ def cases() -> dict:
         assert "loss" in case["expect"]["results"] and "rewind" not in case["expect"]["results"], name
         assert case["expect"]["recover"]["state"] == store_state, name
         out[name] = case
+
+    out.update(after_hand_overs())
 
     whole = io({"transcript": True, "question": True}, {"summary": True, "result": True})
     out["kept-01-whole"] = kept_case(
@@ -1212,30 +1398,60 @@ def cases() -> dict:
         "was kept by reading, which is never fenced.",
         upto + [claim(1), copy.deepcopy(tool_call)],
         reads=[{"tree": cid(1), "after": tool_call["after"]}])
+    ev = kept_log(a_tool().events, {cid(1): io({"question": True}, {"result": True})})
+    out["store-12-batches"] = store_case(
+        "A batch is checked event by event as if each were appended alone, in order, and kept whole or not at "
+        "all. A writer that sends again, after a lost answer, a batch holding an event already kept and new "
+        "ones is answered kept; a batch with an event refused keeps nothing of it (not even the events before "
+        "that one) and is answered with that event's refusal and position; a batch of events all kept is "
+        "answered duplicate.",
+        [{"batch": ev[0:3]}, {"batch": ev[2:5]}, {"batch": [ev[5], ev[7]]}, {"batch": ev[3:5]}, {"batch": ev[5:]}],
+        reads=[{"tree": cid(1), "after": at(1, 5)}])
+    got = [x["expect"] for x in out["store-12-batches"]["steps"]]
+    assert got == ["kept", "kept", {"refuses": "event-gap", "event": at(1, 8)}, "duplicate", "kept"], got
     host = {"name": "chattering-store", "mode": "required"}
     folder = {"name": "notes-folder", "mode": "best-effort"}
+    tmp = {"name": "tmp", "mode": "best-effort"}
     scenarios = [
         [{"where": "own", "observers": ["debug-print"]}, {"where": "block", "observers": ["page"]},
          {"where": "configure", "observers": ["telemetry"]}],
-        [{"where": "own", "journal": folder}, {"where": "configure", "journal": {"name": "tmp", "mode": "best-effort"}}],
+        [{"where": "own", "journal": folder}, {"where": "configure", "journal": tmp}],
         [{"where": "own", "journal": None}, {"where": "configure", "journal": folder}],
         [{"where": "own", "journal": folder}, {"where": "configure", "journal": host}],
         [{"where": "own", "journal": None}, {"where": "configure", "journal": host}],
         [{"where": "own", "journal": {**host, "mode": "best-effort"}}, {"where": "configure", "journal": host}],
         [{"where": "own", "journal": host}, {"where": "block", "journal": host}, {"where": "configure"}],
         [{"where": "own", "journal": {**folder, "mode": "required"}}, {"where": "configure", "journal": folder}],
+        [{"where": "own", "journal": folder}, {"where": "configure", "journal": folder}],
+        [{"where": "own", "journal": folder}, {"where": "configure"}],
+        [{"where": "own", "journal": folder}, {"where": "configure", "journal": None}],
+        [{"where": "block", "journal": folder}, {"where": "configure", "journal": tmp}],
+        [{"where": "block", "journal": None}, {"where": "configure", "journal": tmp}],
+        [{"where": "own", "journal": tmp, "observers": ["debug-print"]}, {"where": "block", "journal": folder},
+         {"where": "configure", "journal": tmp, "observers": ["telemetry"]}],
+        [{"where": "block", "journal": folder}, {"where": "configure", "journal": host}],
     ]
     out["receivers-01-layers"] = {
         "description": "Observers add up over every layer (a program's own is given events beside the host's). "
-                       "The closest journal setting decides, null meaning none, except that a closer layer "
-                       "cannot replace, weaken or remove a required journal set farther out: the tree's "
-                       "outermost call is refused journal-policy before it runs. A closer layer may name the "
-                       "same required journal, or make a best-effort one required.",
+                       "The closest journal setting decides, null meaning none, with two exceptions, both refused "
+                       "journal-policy when the tree's outermost call starts, before it runs: a program's own "
+                       "setting cannot replace or remove a journal a host layer (a block, configure) set, "
+                       "best-effort or required (it may name the same one, or make it required); and no closer "
+                       "layer, a host's included, can replace, weaken or remove a required journal. A host layer "
+                       "may replace or remove a best-effort journal a farther one set; a program may set a journal "
+                       "where no host layer set one (or a host set none). A refused tree's own events (its started "
+                       "and its failed JournalError) go to every layer's observers and to the journal the layers "
+                       "farther out than every refused setting give: the host's.",
         "kind": "receivers",
         "scenarios": [{"layers": x, "expect": receivers(x)} for x in scenarios]}
     got = [x["expect"] for x in out["receivers-01-layers"]["scenarios"]]
-    assert got[0]["observers"] == ["telemetry", "page", "debug-print"] and got[2]["journal"] is None
-    assert [g.get("refuses") for g in got[3:6]] == ["journal-policy"] * 3 and got[6]["journal"] == host
+    assert got[0]["observers"] == ["telemetry", "page", "debug-print"]
+    assert [g.get("refuses") for g in got[1:6]] == ["journal-policy"] * 5
+    assert [g["journal"] for g in got[1:6]] == [tmp, folder, host, host, host]
+    assert got[6]["journal"] == host and got[7]["journal"]["mode"] == "required"
+    assert [g["journal"] for g in got[8:13]] == [folder, folder, folder, folder, None]
+    assert got[13] == {"refuses": "journal-policy", "observers": ["telemetry", "debug-print"], "journal": folder}
+    assert got[14] == {"refuses": "journal-policy", "observers": [], "journal": host}
     t = a_tool().events
     out["journal-01-every-event-kept"] = journal_case(
         "A required journal that keeps and acknowledges each event: the call waits at its start, before the "

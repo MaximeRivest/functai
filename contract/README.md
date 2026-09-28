@@ -29,10 +29,18 @@ written: a message kept beside dropped values, a piece's size, …). A
 schema cannot say everything: what it cannot (a name used twice, a
 default that does not fit) the documents say, and the cases pin.
 
+**Reading the cases.** Every case file is one JSON object with a
+`description`; [`cases/README.md`](cases/README.md) says, folder by
+folder, what each key means and what a harness does with it (the words
+of the journal scripts, `recover`, `settled`, the layers of
+`receivers`, …).
+
 **Cases are written from the rules, never from an implementation's
 output.** `cases/make.py` writes all of them (`python/.venv/bin/python
 contract/cases/make.py`); `../check` fails when the committed cases
-differ from what it writes. One step is borrowed: turning a signature, a
+differ from what it writes. `make.py` reads each `events/` and
+`programs/` case back from its file and runs it through the rules
+again, as a harness would. One step is borrowed: turning a signature, a
 layout and values into a request is lmcc's rule, pinned byte for byte by
 lmcc's own corpus, so `cases/functions.py` asks lmcc for that step and
 derives everything FunctAI decides itself. The layouts and the model
@@ -85,7 +93,7 @@ thing it cannot do yet wait for it, and are not failures.
 | `saw/` of kind `shown` | the turn a `saw` entry stands for | every language that replays context (stage 3's conversations, stage 5's `rated` with `earlier`) |
 | `saved/` (`expect.refuses` / `loads`) | loading a saved AI function | every language |
 | `saved/` (`expect.describe`) | describing a saved node without loading it | every language |
-| `programs/` of kind `ai` | an AI function's interface, and binding its optional inputs | every language |
+| `programs/` of kind `ai` | an AI function's interface, binding its optional inputs, and refusing one at definition | every language |
 | `programs/` of kinds `module`, `definitions`, `same-data` | a module's interface, its refusals and its checks | every language with modules |
 | `events/` `replay-*`, `follow-*`, `kept-*` | events as data | every language that streams |
 | `events/` `journal-*` | a writer keeping a log in a journal that fails | every language that streams and has journals |
@@ -110,13 +118,11 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | code | where | when |
 |---|---|---|
 | `interface-input`, `interface-output` | [programs.md](programs.md) | a module's call given, or returning, what its interface does not take or give (`InterfaceError`) |
-| `interface-malformed` | [programs.md](programs.md) | an interface refused when defined or read |
+| `interface-malformed` | [programs.md](programs.md) | an interface refused when its program (a module, or an AI function) is defined, or when it is read from a saved folder |
 | `log-content-field` | [calls.md](calls.md) | a `log_content` key that names no field of the program, or is not a name |
 | `saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`, `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface` | [saved.md](saved.md) | loading or describing a saved folder |
 | `not-recorded`, `missing-call`, `unknown-key`, `saw-cycle`, `not-kept`, `turn-invalid` (lmcc's word) | [calls.md](calls.md), *Saw* | what a call saw cannot be known, or shown again |
-| `journal-scope` | [streaming.md](streaming.md) | a required journal set inside a tree |
-| `journal-policy` | [streaming.md](streaming.md) | a closer layer (a program's own setting) replacing, weakening or removing a required journal set farther out |
-| `journal-barrier`, `journal-end` | [streaming.md](streaming.md) | codes of `JournalError`: a call stopped at a required journal's barrier; a call whose end the journal did not confirm |
+| `journal-policy`, `journal-scope`, `journal-barrier`, `journal-end` | [streaming.md](streaming.md) | the codes of `JournalError`: a tree whose layers break the journal policy (a program's own setting replacing or removing a host's journal; any closer layer replacing, weakening or removing a required one), refused before it runs; a required journal set only inside a tree, refused when the call inside starts; a call stopped at a required journal's barrier; a call whose end the journal did not confirm |
 | `event-malformed`, `event-conflict`, `event-gap`, `event-after-end`, `event-start`, `event-unknown` | [streaming.md](streaming.md) | a store refusing an append, a claim or a read |
 
 Each rule of "Rows with known answers" was broken on purpose in the

@@ -1,5 +1,5 @@
 {
- "description": "A reader of the whole log holds writer 1's seqs 1 to 5 (pieces of a field the log does not keep); writer 2 took over after seq 2, and the reader misses its seqs 3 and 4. Writer 2's done names writer 2's seq 4: the reader holds writer 1's seq 4, another event, so this is a loss, not a rewind. The store gives another form (the kept form): the reader starts again from the beginning in it.",
+ "description": "A reader of the whole log holds writer 1's seqs 1 to 5 (pieces of a field the log does not keep); writer 2 took over after seq 2, and the reader misses its seqs 3 and 4. Writer 2's done names writer 2's seq 4: the reader holds writer 1's seq 4, another event, so this is a loss, not a rewind. The store gives another form (the kept form): the reader starts again from the beginning in it, at once.",
  "kind": "follow",
  "received": [
   {
@@ -110,90 +110,11 @@
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "gardener",
    "value": "Done."
-  },
-  {
-   "functai_event": 2,
-   "kind": "started",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 1,
-   "after": null,
-   "at": "2026-09-28T10:00:00.010000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "parent": null,
-   "root": "01926c00-0001-7000-8000-000000000000",
-   "program": {
-    "name": "gardener",
-    "kind": "ai",
-    "module": "shop",
-    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
-   },
-   "inputs": {
-    "request": "Merge groceries.md into todo.md"
-   },
-   "content": false,
-   "omitted": {
-    "inputs": [],
-    "outputs": [
-     "result"
-    ]
-   },
-   "saw": []
-  },
-  {
-   "functai_event": 2,
-   "kind": "request",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 2,
-   "after": {
-    "writer": 1,
-    "seq": 1
-   },
-   "at": "2026-09-28T10:00:00.020000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "request": 1,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "request",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 3,
-   "after": {
-    "writer": 1,
-    "seq": 2
-   },
-   "at": "2026-09-28T10:00:30.030000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "request": 2,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "done",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 5,
-   "after": {
-    "writer": 2,
-    "seq": 3
-   },
-   "at": "2026-09-28T10:00:30.050000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "content": false
   }
  ],
  "recover": {
-  "form": "other",
+  "reader": "live",
+  "from": "store",
   "source": [
    {
     "functai_event": 2,

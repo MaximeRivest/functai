@@ -1,5 +1,5 @@
 {
- "description": "A view that hides thinking (made from the kept form, every value kept). Writer 2's first event is hidden, so the view first shows writer 2 at its seq 4, after writer 1's seq 2; the reader misses it. Writer 2's seq 5 names writer 2's seq 4, while the reader's last is writer 1's seq 4: a loss (a seq alone would call it next). The store makes the same view from what it keeps, does not have writer 1's seq 4, and the reader starts again.",
+ "description": "A reader of the whole log holds writer 1's events up to the child's done (seq 5), which the store keeps; it resumes from the store. The store has that event, but gives another form (the kept form, without the child's answer): the reader starts again from the beginning, whatever the cursor.",
  "kind": "follow",
  "received": [
   {
@@ -11,11 +11,40 @@
    "after": null,
    "at": "2026-09-28T10:00:00.010000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
+   "function": "support",
    "parent": null,
    "root": "01926c00-0001-7000-8000-000000000000",
    "program": {
-    "name": "gardener",
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Please read my tracking log."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "read_tracking",
     "kind": "ai",
     "module": "shop",
     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
@@ -24,7 +53,7 @@
     "answer": "result"
    },
    "inputs": {
-    "request": "Merge groceries.md into todo.md"
+    "log": "03:12 LEEDS DEPOT ARRIVED"
    },
    "content": true,
    "saw": []
@@ -34,33 +63,16 @@
    "kind": "request",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 2,
-   "after": {
-    "writer": 1,
-    "seq": 1
-   },
-   "at": "2026-09-28T10:00:00.020000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "request": 1,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "text",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
    "seq": 3,
    "after": {
     "writer": 1,
     "seq": 2
    },
    "at": "2026-09-28T10:00:00.030000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "field": "result",
-   "answer": true,
-   "text": "Merging "
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "request": 1,
+   "model": "gpt-4.1-mini"
   },
   {
    "functai_event": 2,
@@ -73,47 +85,32 @@
     "seq": 3
    },
    "at": "2026-09-28T10:00:00.040000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
    "field": "result",
    "answer": true,
-   "text": "the notes"
-  },
-  {
-   "functai_event": 2,
-   "kind": "text",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 5,
-   "after": {
-    "writer": 2,
-    "seq": 4
-   },
-   "at": "2026-09-28T10:00:30.050000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "field": "result",
-   "answer": true,
-   "text": "Merged."
+   "text": "{\"where\": \"Leeds\"}"
   },
   {
    "functai_event": 2,
    "kind": "done",
    "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 6,
+   "writer": 1,
+   "seq": 5,
    "after": {
-    "writer": 2,
-    "seq": 5
+    "writer": 1,
+    "seq": 4
    },
-   "at": "2026-09-28T10:00:30.060000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "value": "Merged."
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "value": {
+    "where": "Leeds"
+   }
   }
  ],
  "recover": {
-  "reader": "kept",
+  "reader": "live",
   "from": "store",
   "source": [
    {
@@ -125,27 +122,26 @@
     "after": null,
     "at": "2026-09-28T10:00:00.010000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
+    "function": "support",
     "parent": null,
     "root": "01926c00-0001-7000-8000-000000000000",
     "program": {
-     "name": "gardener",
-     "kind": "ai",
+     "name": "support",
+     "kind": "module",
      "module": "shop",
      "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
      "answer": "result"
     },
     "inputs": {
-     "request": "Merge groceries.md into todo.md"
+     "message": "Please read my tracking log."
     },
     "content": true,
     "saw": []
    },
    {
     "functai_event": 2,
-    "kind": "request",
+    "kind": "started",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 2,
@@ -154,58 +150,61 @@
      "seq": 1
     },
     "at": "2026-09-28T10:00:00.020000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
-    "request": 1,
-    "model": "gpt-4.1-mini"
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "read_tracking",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "log": "03:12 LEEDS DEPOT ARRIVED"
+    },
+    "content": false,
+    "omitted": {
+     "inputs": [],
+     "outputs": [
+      "result"
+     ]
+    },
+    "saw": []
    },
    {
     "functai_event": 2,
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 2,
-    "seq": 4,
+    "writer": 1,
+    "seq": 3,
     "after": {
      "writer": 1,
      "seq": 2
     },
-    "at": "2026-09-28T10:00:30.040000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
-    "request": 2,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "request": 1,
     "model": "gpt-4.1-mini"
-   },
-   {
-    "functai_event": 2,
-    "kind": "text",
-    "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 2,
-    "seq": 5,
-    "after": {
-     "writer": 2,
-     "seq": 4
-    },
-    "at": "2026-09-28T10:00:30.050000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
-    "field": "result",
-    "answer": true,
-    "text": "Merged."
    },
    {
     "functai_event": 2,
     "kind": "done",
     "tree": "01926c00-0001-7000-8000-000000000000",
-    "writer": 2,
-    "seq": 6,
+    "writer": 1,
+    "seq": 5,
     "after": {
-     "writer": 2,
-     "seq": 5
+     "writer": 1,
+     "seq": 3
     },
-    "at": "2026-09-28T10:00:30.060000Z",
-    "call": "01926c00-0001-7000-8000-000000000000",
-    "function": "gardener",
-    "value": "Merged."
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "content": false
    }
   ]
  },
@@ -215,16 +214,19 @@
    "kept",
    "kept",
    "kept",
-   "loss",
-   "loss"
+   "kept"
   ],
   "state": {
    "01926c00-0001-7000-8000-000000000000": {
     "calls": {
      "01926c00-0001-7000-8000-000000000000": {
       "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
       "fields": {
-       "result": "Merging the notes"
+       "result": "{\"where\": \"Leeds\"}"
       }
      }
     },
@@ -233,15 +235,6 @@
   },
   "recover": {
    "reads": [
-    {
-     "after": {
-      "writer": 1,
-      "seq": 4
-     },
-     "expect": {
-      "refuses": "event-unknown"
-     }
-    },
     {
      "after": null,
      "expect": {
@@ -255,16 +248,12 @@
         "seq": 2
        },
        {
-        "writer": 2,
-        "seq": 4
+        "writer": 1,
+        "seq": 3
        },
        {
-        "writer": 2,
+        "writer": 1,
         "seq": 5
-       },
-       {
-        "writer": 2,
-        "seq": 6
        }
       ]
      }
@@ -273,13 +262,15 @@
    "state": {
     "calls": {
      "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
       "ended": "done",
-      "fields": {
-       "result": "Merged."
-      }
+      "fields": {}
      }
     },
-    "finished": true
+    "finished": false
    }
   }
  }

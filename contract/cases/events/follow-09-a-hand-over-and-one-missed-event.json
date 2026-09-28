@@ -93,101 +93,11 @@
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "gardener",
    "value": "Merged."
-  },
-  {
-   "functai_event": 2,
-   "kind": "started",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 1,
-   "after": null,
-   "at": "2026-09-28T10:00:00.010000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "parent": null,
-   "root": "01926c00-0001-7000-8000-000000000000",
-   "program": {
-    "name": "gardener",
-    "kind": "ai",
-    "module": "shop",
-    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
-    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
-    "answer": "result"
-   },
-   "inputs": {
-    "request": "Merge groceries.md into todo.md"
-   },
-   "content": true,
-   "saw": []
-  },
-  {
-   "functai_event": 2,
-   "kind": "request",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 1,
-   "seq": 2,
-   "after": {
-    "writer": 1,
-    "seq": 1
-   },
-   "at": "2026-09-28T10:00:00.020000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "request": 1,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "request",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 3,
-   "after": {
-    "writer": 1,
-    "seq": 2
-   },
-   "at": "2026-09-28T10:00:30.030000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "request": 2,
-   "model": "gpt-4.1-mini"
-  },
-  {
-   "functai_event": 2,
-   "kind": "text",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 4,
-   "after": {
-    "writer": 2,
-    "seq": 3
-   },
-   "at": "2026-09-28T10:00:30.040000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "field": "result",
-   "answer": true,
-   "text": "Merged."
-  },
-  {
-   "functai_event": 2,
-   "kind": "done",
-   "tree": "01926c00-0001-7000-8000-000000000000",
-   "writer": 2,
-   "seq": 5,
-   "after": {
-    "writer": 2,
-    "seq": 4
-   },
-   "at": "2026-09-28T10:00:30.050000Z",
-   "call": "01926c00-0001-7000-8000-000000000000",
-   "function": "gardener",
-   "value": "Merged."
   }
  ],
  "recover": {
-  "form": "same",
+  "reader": "kept",
+  "from": "store",
   "source": [
    {
     "functai_event": 2,
