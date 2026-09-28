@@ -22,6 +22,12 @@ This document is the contract. The Python implementation is
 - **Version**: a fingerprint of everything that decides what a program
   sends besides its inputs. Two calls with the same version were made by
   the same program.
+- **Interface**: a program's inputs and outputs, typed
+  ([programs.md](programs.md)). Every program has one; a module declares
+  it.
+- **Saw**: the earlier calls a call was given as context: shown to the
+  model as earlier turns, or handed to a module's code as the conversation
+  so far.
 
 ## The folder
 
@@ -53,11 +59,13 @@ the environment names, else the default folder), or `False` (never,
 whatever the environment says). Unset, the environment variable
 `FUNCTAI_LOG_CALLS` decides: empty, `0`, `false`, `no` or `off` is off;
 `1`, `true`, `yes` or `on` is the default folder; anything else is a
-folder. `log_content` (setting, or `FUNCTAI_LOG_CONTENT=0`) set to false
-records sizes, times and tokens but no values or messages: for programs
-that see passwords (a clipboard helper). Settings on a function beat
-`configure`, which beats the environment, as for every setting; a saved
-program keeps its `log_content` and never its folder or caller. The
+folder. `log_content` says which values are written (see *Content*): set
+to false, the log records sizes, times and tokens but no values or
+messages, for programs that see passwords (a clipboard helper); set to
+`{"transcript": false}`, everything but that input. Settings on a
+function beat `configure`, which beats the environment, as for every
+setting; a saved program keeps its `log_content` and never its folder or
+caller. The
 default folder is `$XDG_DATA_HOME/functai/calls`
 (`~/.local/share/functai/calls` on Linux,
 `~/Library/Application Support/functai/calls` on macOS,
@@ -96,6 +104,7 @@ loses its exchanges' messages, then its values (`truncated: true`).
                 "usage": {"input_tokens": 212, "output_tokens": 6, "total_tokens": 218},
                 "request": {"…": "lm15 canonical request"},
                 "response": {"…": "lm15 canonical response"}}],
+ "saw": [],
  "caller": {"kind": "notebook", "notebook": "/home/maxime/triage.md"},
  "process": {"host": "lambda", "pid": 48213, "user": "maxime",
              "language": "python", "runtime": "3.13.1", "functai": "1.1.0"}}
@@ -110,23 +119,25 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `program.name`, `.module` | what was called: the function's name and the code module it was defined in (`__main__` for a notebook or script; for a program loaded from a saved folder, the module it was saved from). |
 | `program.kind` | `"ai"` or `"module"`. |
 | `program.version` | see *Versions*. |
-| `program.signature` | AI functions: lmcc's signature fingerprint (kernel §3a: its fields' directions, names, purposes, shapes and type names, in order; not the prose) computed with every type name empty (`"type": ""`). The JSON shapes decide, not how one language spells a type (`str`, `string`, `character`), so the same function in two languages has one signature. Calls with the same signature can share data even when the instruction changed. |
-| `program.answer` | the name of the output that is the answer (`result` unless the function names it; `result` for a module). A rating of right or wrong is about this output. |
+| `program.signature` | Modules: the id of its interface ([programs.md](programs.md)). AI functions: lmcc's signature fingerprint (kernel §3a: its fields' directions, names, purposes, shapes and type names, in order; not the prose) computed with every type name empty (`"type": ""`). The JSON shapes decide, not how one language spells a type (`str`, `string`, `character`), so the same function in two languages has one signature. Calls with the same signature can share data even when the instruction changed. |
+| `program.answer` | the name of the output that is the answer: the last output of the program's interface (`result` unless the program names it). A rating of right or wrong is about this output. |
 | `program.saved` | present when the program was loaded from a saved folder: `sha256:` of that folder's `functai.json`. |
 | `program.file`, `.line` | where the code is, when known. |
 | `started`, `seconds` | UTC start and wall-clock duration. Every time in the log is RFC 3339 UTC with exactly six fraction digits (`2026-09-26T23:12:03.123456Z`), so times sort as text. |
-| `content` | whether values were recorded (the `log_content` setting). |
-| `inputs` | each argument, as JSON (see *Values*). Absent when `content` is false. |
-| `outputs` | each output the model gave, as JSON; `null` when the call failed before an answer. For a module, `{"result": <what it returned>}`. Absent when `content` is false. |
-| `returned` | an AI function whose code changed the answer before returning it (`return round(answer, 2)`): what it returned. Absent otherwise, and when `content` is false. |
+| `content` | `true` when every value was recorded; `false` when some or all were not (the `log_content` setting: see *Content*). |
+| `omitted` | present only when `content` is false and some values were recorded: `{"inputs": [...], "outputs": [...]}`, the names of the inputs and outputs recorded as their size only, in the interface's order. Absent when `content` is false and no value was recorded (the form every writer used before 2026-09-28). |
+| `inputs` | each input, named as the program's interface names it, as JSON (see *Values*); a module's too (never positional names such as `arg0`). When `content` is false: only the inputs recorded, and absent when there are none. |
+| `outputs` | each output the model gave, as JSON; `null` when the call failed before an answer. For a module, its outputs by name (`{"result": <what it returned>}` for a module with one output named `result`). When `content` is false: only the outputs recorded (absent when there are none, `null` when the call failed before an answer). |
+| `returned` | an AI function whose code changed the answer before returning it (`return round(answer, 2)`): what it returned. Absent otherwise, and when the answer is not recorded. |
 | `sizes` | always: for each input and output, the length in Unicode code points of its canonical JSON (see *Canonical JSON*). |
-| `error` | `null`, or `{"type", "message", "code"?}`: `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, …), `code` lmcc's refusal code when there is one. `message` is absent when `content` is false (it can quote the reply). A call cancelled by closing its stream has `type` `Cancelled`. A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
+| `error` | `null`, or `{"type", "message", "code"?}`: `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, …), `code` lmcc's refusal code when there is one. `message` is absent when `content` is false (it can quote the reply, or an input). A call cancelled by closing its stream has `type` `Cancelled`. A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
 | `model` | the model asked for the answer (the last exchange that got a reply), or `null` when no model was called. |
 | `usage` | token counts summed over this call's own exchanges (integers only). A module's usage is in its children; sum a tree for its cost. |
 | `confidence` | the probability the model gave its own answer (the lowest over the outputs it measured), or `null`. Only baked models and providers that return probabilities measure it. |
-| `probabilities` | `{output: {answer: probability}}` when measured. Absent when `content` is false. |
+| `probabilities` | `{output: {answer: probability}}` when measured, for the outputs recorded. Absent when none is. |
 | `escalated` | `true` when a first model was unsure and another answered; absent otherwise. |
-| `exchanges` | each model request of this call, in order, including failed attempts (`error`) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there; `request` and `response` (lm15's canonical JSON) only when `content` is true. A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
+| `exchanges` | each model request of this call, in order, including failed attempts (`error`) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there; `request` and `response` (lm15's canonical JSON) only when `content` is true (a request holds every input, a response every output). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
+| `saw` | the calls this call was given as context, beyond its inputs and its program's state (see *Saw*). `[]` when none. Every writer since 2026-09-28 writes it; absent means not recorded (an older writer), never "none". |
 | `caller` | who called, as the environment and the program said (see *Caller*). `{}` when nothing did. |
 | `process` | the writing process: `host`, `pid`, `user` (the operating system's), `language`, `runtime` (the language's version), `functai` (the library's version). |
 | `truncated` | `true` when the record was cut to fit 8 MiB. |
@@ -135,6 +146,96 @@ loses its exchanges' messages, then its values (`truncated: true`).
 `to_json`): a dataclass or pydantic model is an object, an enum its
 value, a tuple a list. A value with no JSON form is
 `{"$type": "<type name>", "$repr": "<text, at most 2,000 characters>"}`.
+
+## Content
+
+`log_content` decides, for each input and output of a program, whether
+its value is written or only its size. It is:
+
+- `true`: every value (the default);
+- `false`: no value (sizes, times and tokens only);
+- a map from field names to `true` or `false` (Python
+  `log_content={"transcript": False}`, TypeScript `logContent: {
+  transcript: false }`, R `log_content = list(transcript = FALSE)`, Julia
+  `log_content = (transcript = false,)`): the fields it names as it says,
+  the others as the next layer says.
+
+**Which layer decides.** For each field of the call's interface, the
+layers are read from the closest: the function's own setting, then each
+enclosing block from the innermost, then `configure`, then the
+environment (`FUNCTAI_LOG_CONTENT`: `0`, `false`, `no` or `off`, in any
+case and with white space around, is `false`; anything else, empty or
+unset is no answer), then the default `true`.
+The first layer that is `true` or `false`, or a map naming the field,
+decides that field. So a block's `{"transcript": false}` keeps every
+other value of every call inside it, and a function's own `true` keeps
+all of its own.
+
+A map in a program's own settings that names a field the program does
+not have refuses `log-content-field` when the program is defined (or
+loaded), naming the field: a misspelt name would otherwise write the very
+value it was meant to keep out. A map in a block or in `configure` applies
+to every call inside it that has the field, and to no other.
+
+**What the record keeps.** When every field is recorded, `content` is
+true and the record is whole. Otherwise `content` is false and the record
+keeps only the values of the fields recorded: `inputs` and `outputs`
+restricted to them, `returned` only when the answer is recorded,
+`probabilities` only for recorded outputs. It keeps no exchange `request`
+or `response` and no `error.message`, because each can hold any value of
+the call (a request holds every input; a reply, a model's thinking or an
+error can quote them). When some values are recorded, `omitted` names the
+fields that are not; when none is, `omitted` is absent. `sizes` always
+holds every field. A value the model or a tool wrote into a recorded
+output (an answer quoting the transcript) is that output's value: it is
+recorded with it.
+
+Old readers stay right: they read `content: false` as "no values" and
+leave such a call out where values are needed, which is what a record of
+some values needs too when the values it lacks are inputs.
+`cases/content/*.json` pin the layers and the record.
+
+## Saw
+
+`saw` lists, in the order they were given, the earlier calls whose
+content this call was given as context, beyond its own inputs and its
+program's state:
+
+- for an AI function, the calls whose turns were placed in its requests
+  as earlier turns (lmcc's turn slots): a stateful function's history, a
+  conversation's earlier turns, a helper's own earlier calls;
+- for a module, the calls its code was given as the conversation so far.
+
+Worked examples are not in it (they are the program's state, part of its
+version), nor are values passed as inputs (they are recorded as inputs),
+nor the call's own children.
+
+Each entry is an object:
+
+| key | meaning |
+|---|---|
+| `call` | the id of a call that was shown. |
+| `steps` | `true` when the call was shown with its steps (its model replies, tool calls and results), not only its inputs and outputs. Absent: inputs and outputs only. |
+| `without` | the names of that call's inputs or outputs that were left out when it was shown (a bulky input, a photo after its first answer, a reasoning the next model is not shown). Absent: none. |
+
+or, as the **first** entry only, `{"saw_of": <id>}`: everything the call
+with that id saw, entry for entry, in its order. A conversation's turn
+that sees every earlier turn writes `[{"saw_of": <previous turn>},
+{"call": <previous turn>}]`, so its record does not grow with the
+conversation (lmcc F7: copying what each turn saw grows with the square
+of its length). A writer uses `saw_of` only when the entries it stands
+for are exactly those this call was given.
+
+**Reading it.** The calls a call saw are its entries with `saw_of`
+replaced, recursively, by the entries of the call it names. They are not
+known, and a reader that needs them (to ask a call again as it was asked)
+must say so rather than guess, when: the call's own record has no `saw`
+(`not-recorded`); a `saw_of` names a call whose record the reader does
+not have, or that has no `saw` (`missing-call`); an entry has a key the
+reader does not know (`unknown-key`: a later writer showed that call in
+a way this reader cannot reproduce); or following `saw_of` comes back to
+a call already followed (`saw-cycle`). `saw` holds ids only, so it is
+kept when `content` is false. `cases/saw/*.json` pin these rules.
 
 ## Caller
 
@@ -201,14 +302,15 @@ The reader is given the program's `name`, and when it knows them its
 3. A rated call is left out, and counted under the first of these that
    applies: a signature is given and
    the call's `program.signature` differs (`other_signature`: its inputs
-   or outputs have changed since); it was logged with `content: false`
-   (`no_content`: no inputs to learn from); or no counting rating gives a
-   value (`no_answer`).
+   or outputs have changed since); not all its inputs were recorded
+   (`no_content`: `content` false, with no `omitted` or with
+   `omitted.inputs` not empty); or no counting rating gives a value
+   (`no_answer`).
 4. What a rating gives: `"right"` gives the call's own
    `outputs[program.answer]` (nothing when the call has no answer: it
-   failed); `"wrong"` gives its `answer` under `program.answer` and its
-   `outputs`, and nothing when it has neither: it says what the answer
-   is not, not what it is.
+   failed; nothing when the answer was not recorded); `"wrong"` gives its
+   `answer` under `program.answer` and its `outputs`, and nothing when it
+   has neither: it says what the answer is not, not what it is.
 5. One row per remaining call: the inputs; then the values of the latest
    rating that gives any (the answer under `program.answer`, then the
    other outputs in the rating's order); then `call`, `version` (the
@@ -270,12 +372,17 @@ version, and its ratings pool.
 The model and its sampling settings are not part of a version: they are
 where a version runs, and the record says which (`model`, exchanges).
 
-**A module:** `{"code": {key: C}, "ai": {key: version}}` over every piece
-of code the module reaches (the same graph `functai.check` and
-`functai.save` follow): each plain function's, class's and the module's
-own source hash under its `module:name` key, and each AI function's
-version under its key. Optimizing an AI function inside a module is a new
-version of the module.
+**A module:** `{"code": {key: C}, "ai": {key: version}, "interface": I}`
+over every piece of code the module reaches (the same graph
+`functai.check` and `functai.save` follow): each plain function's,
+class's and the module's own source hash under its `module:name` key,
+each AI function's version under its key, and the module's interface `I`
+as data ([programs.md](programs.md)). Optimizing an AI function inside a
+module is a new version of the module; so is changing what it declares it
+takes or gives, even where the declaration is not in the code the version
+hashes (a TypeScript module's `input` and `output`). Versions computed
+before 2026-09-28 have no `"interface"`: every module's version changed
+once then.
 
 ## Canonical JSON
 
@@ -294,6 +401,8 @@ host's JSON writer spells.
   Never let logging raise into the call.
 - Make the id when the call starts, and make it available on what the
   call returns (Python: `prediction.call_id`) so a caller can rate it.
+- Know what a call saw before its first request, and write it (`saw`,
+  and the `started` event's) even when it is `[]`.
 - Propagate the current call to anything that runs inside it
   (Python: a `ContextVar`, which `evaluate`'s threads copy). A call made
   from a thread that did not copy the context has no parent.

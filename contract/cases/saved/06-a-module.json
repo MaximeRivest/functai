@@ -97,6 +97,9 @@
  },
  "node": null,
  "expect": {
-  "refuses": "saved-not-ai"
+  "refuses": "saved-not-ai",
+  "describe": {
+   "refuses": "saved-no-interface"
+  }
  }
 }

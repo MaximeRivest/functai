@@ -1,0 +1,86 @@
+{
+ "description": "A stream's first event is its watched call's started: another call's started, or another kind, is refused. A stream may watch a call made inside another (its started has a parent).",
+ "kind": "store",
+ "appends": [
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "topic",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210? It's a week late."
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "event-start"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "text",
+    "stream": "01926c00-0009-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "field": "result",
+    "answer": true,
+    "request": 1,
+    "text": "ship"
+   },
+   "expect": "event-start"
+  },
+  {
+   "event": {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0002-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "topic",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210? It's a week late."
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "kept"
+  }
+ ],
+ "expect": {
+  "streams": {
+   "01926c00-0002-7000-8000-000000000000": {
+    "seqs": [
+     1
+    ],
+    "finished": false
+   }
+  }
+ }
+}

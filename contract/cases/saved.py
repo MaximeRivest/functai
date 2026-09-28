@@ -4,7 +4,11 @@ fingerprints are the requests functions.py derives (the same rules).
 
 A case file: {"description", "manifest", "node": key or null (the
 entry), "expect": {"refuses": code} or {"loads": {"name", "module",
-"version", "signature_id", "requests"}}}.
+"version", "signature_id", "requests"}}, and "describe": {"interface"}
+or {"refuses": code}}. ``describe`` is what describing the node without
+loading it gives (saved.md, "Describing without loading";
+../programs.md): a module node's interface, or an AI node's, read from
+its signature.
 """
 
 import copy
@@ -61,6 +65,26 @@ MOOD = functions.DEFINITIONS["01-an-answer-from-a-list"][1]
 EXAMPLES = functions.DEFINITIONS["04-worked-examples"][1]
 IMPROVED = functions.DEFINITIONS["08-an-improved-instruction"][1]
 JSON = functions.DEFINITIONS["06-one-json-object"][1]
+
+
+def describe(m: dict, key) -> dict:
+    """What describing a node without loading it gives (saved.md, programs.md)."""
+    if m.get("functai_saved") != 1:
+        return {"refuses": "saved-format"}
+    n = m["nodes"][key or m["entry"]]
+    if n["kind"] == "module":
+        return {"interface": n["interface"]} if "interface" in n else {"refuses": "saved-no-interface"}
+    if n["kind"] != "ai":
+        return {"refuses": "saved-not-ai"}
+    sig = n["ai"]["signature"]
+
+    def field(f):
+        return {"name": f["name"], "shape": f["shape"], **({"desc": f["desc"]} if f.get("desc") else {}),
+                **({"type": f["type"]} if isinstance(f.get("type"), str) else {})}
+    plain = [f for f in sig["fields"] if (f.get("purpose") or "plain") == "plain"]
+    return {"interface": {"description": sig["instructions"],
+                          "inputs": [field(f) for f in plain if f["direction"] == "input"],
+                          "outputs": [field(f) for f in plain if f["direction"] == "output"]}}
 
 
 def loads(key: str, m: dict) -> dict:
@@ -138,4 +162,20 @@ def cases() -> dict:
     out["11-another-version"] = {
         "description": "The saved version is not the one its request gives: it refuses.",
         "manifest": m, "node": None, "expect": {"refuses": "saved-differs"}}
+
+    support = {"description": "Answer a customer's message.",
+               "inputs": [{"name": "message", "shape": {"type": "string"}, "type": "str"},
+                          {"name": "tone", "shape": {"type": "string", "default": "kind"}, "type": "str",
+                           "optional": True}],
+               "outputs": [{"name": "result", "shape": {"type": "string"}, "type": "str"}]}
+    m = manifest({"shop:mood": node("mood", MOOD),
+                  "shop:support": {"kind": "module", "module": "shop", "name": "support", "interface": support,
+                                   "module_program": {"call_defaults": {}, "requires": []}}}, "shop:support")
+    out["12-a-module-and-its-interface"] = {
+        "description": "A module node written since 2026-09-28 has its interface: another language still "
+                       "refuses to load it (it is code), but describes it without running anything.",
+        "manifest": m, "node": None, "expect": {"refuses": "saved-not-ai"}}
+
+    for case in out.values():
+        case["expect"]["describe"] = describe(case["manifest"], case["node"])
     return out

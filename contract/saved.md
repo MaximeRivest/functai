@@ -41,7 +41,11 @@ Only `functai.json` is read by every language.
 
 A node is `{"kind", "module", "name", ...}`. `kind` is `"ai"` (an AI
 function), `"module"` (code that calls AI functions), `"function"` or
-`"class"` (plain code). An `"ai"` node has `ai`:
+`"class"` (plain code). A `"module"` node has `interface`: the inputs
+and outputs it declares ([programs.md](programs.md)). Absent in folders
+written before 2026-09-28: the module's interface is not known, and a
+loader that needs it (to describe, serve or converse with the program)
+refuses `saved-no-interface`. An `"ai"` node has `ai`:
 
 | key | what it is |
 |---|---|
@@ -87,3 +91,12 @@ and ratings pool with the saving language's.
 
 A loader in the folder's own language runs the saved code (Python:
 `functai.load(path, trust=True)`), as that language documents.
+
+## Describing without loading
+
+Every program node can be described in every language without running
+anything: a module node by its `interface`, an AI node by the interface
+its `signature` gives (the fields whose `purpose` is `plain`;
+[programs.md](programs.md)). So `check`, a server or a page can say what
+the entry takes and gives before deciding to load it, whatever language
+wrote it.

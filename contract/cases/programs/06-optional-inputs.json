@@ -1,0 +1,108 @@
+{
+ "description": "An optional input left out takes its shape's default, or null without one; a given value is kept even when it is the default; desc and optional are not part of the id.",
+ "program": "module",
+ "interface": {
+  "description": "Answer a customer's message, in a tone.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "what the customer wrote"
+   },
+   {
+    "name": "tone",
+    "shape": {
+     "type": "string",
+     "default": "kind"
+    },
+    "optional": true
+   },
+   {
+    "name": "order",
+    "shape": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "id": "sha256:926d06303159d73ccf14b63b60ab57db3fe135a64820ba986b2d9ef9669c89bc"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "message": "Hi"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind",
+     "order": null
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "tone": "brief"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "brief",
+     "order": null
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "order": "B-2210"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind",
+     "order": "B-2210"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "tone": null
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "tone"
+   }
+  },
+  {
+   "inputs": {
+    "tone": "brief"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message"
+   }
+  }
+ ]
+}

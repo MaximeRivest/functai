@@ -1,0 +1,232 @@
+{
+ "description": "A block's map applies to the calls that have the field and to no other: a name this function lacks changes nothing.",
+ "interface": {
+  "inputs": [
+   "transcript",
+   "question"
+  ],
+  "outputs": [
+   "summary",
+   "result"
+  ]
+ },
+ "layers": [
+  {
+   "where": "block",
+   "log_content": {
+    "notes": false
+   }
+  }
+ ],
+ "environment": null,
+ "record": {
+  "functai_call": 1,
+  "id": "01926a8e-0001-7000-8000-000000000000",
+  "parent": null,
+  "root": "01926a8e-0001-7000-8000-000000000000",
+  "program": {
+   "name": "triage_build",
+   "kind": "ai",
+   "module": "ci",
+   "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+   "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+   "answer": "result"
+  },
+  "started": "2026-09-28T10:00:00.000000Z",
+  "seconds": 0.8,
+  "content": true,
+  "inputs": {
+   "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n",
+   "question": "Is the build broken for a real reason?"
+  },
+  "outputs": {
+   "summary": "A flaky upload test fails the build.",
+   "result": "no"
+  },
+  "returned": "No",
+  "probabilities": {
+   "summary": {
+    "A flaky upload test fails the build.": 0.61
+   },
+   "result": {
+    "no": 0.93,
+    "yes": 0.07
+   }
+  },
+  "sizes": {
+   "inputs": {
+    "transcript": 197,
+    "question": 40
+   },
+   "outputs": {
+    "summary": 38,
+    "result": 4
+   }
+  },
+  "error": null,
+  "model": "gpt-4.1-mini",
+  "usage": {
+   "input_tokens": 120,
+   "output_tokens": 14,
+   "total_tokens": 134
+  },
+  "confidence": 0.61,
+  "exchanges": [
+   {
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "started": "2026-09-28T10:00:00.001000Z",
+    "seconds": 0.79,
+    "cached": false,
+    "finish": "stop",
+    "usage": {
+     "input_tokens": 120,
+     "output_tokens": 14,
+     "total_tokens": 134
+    },
+    "request": {
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<transcript>\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n\n</transcript>"
+        }
+       ]
+      }
+     ]
+    },
+    "response": {
+     "message": {
+      "role": "assistant",
+      "parts": [
+       {
+        "type": "text",
+        "text": "<summary>\nA flaky upload test fails the build.\n</summary>"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "saw": [],
+  "caller": {
+   "kind": "script"
+  },
+  "process": {
+   "host": "lambda",
+   "pid": 1,
+   "user": "maxime",
+   "language": "python",
+   "runtime": "3.13.1",
+   "functai": "1.2.0"
+  }
+ },
+ "expect": {
+  "record": {
+   "functai_call": 1,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "triage_build",
+    "kind": "ai",
+    "module": "ci",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-28T10:00:00.000000Z",
+   "seconds": 0.8,
+   "content": true,
+   "inputs": {
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n",
+    "question": "Is the build broken for a real reason?"
+   },
+   "outputs": {
+    "summary": "A flaky upload test fails the build.",
+    "result": "no"
+   },
+   "returned": "No",
+   "probabilities": {
+    "summary": {
+     "A flaky upload test fails the build.": 0.61
+    },
+    "result": {
+     "no": 0.93,
+     "yes": 0.07
+    }
+   },
+   "sizes": {
+    "inputs": {
+     "transcript": 197,
+     "question": 40
+    },
+    "outputs": {
+     "summary": 38,
+     "result": 4
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 120,
+    "output_tokens": 14,
+    "total_tokens": 134
+   },
+   "confidence": 0.61,
+   "exchanges": [
+    {
+     "model": "gpt-4.1-mini",
+     "provider": "openai",
+     "started": "2026-09-28T10:00:00.001000Z",
+     "seconds": 0.79,
+     "cached": false,
+     "finish": "stop",
+     "usage": {
+      "input_tokens": 120,
+      "output_tokens": 14,
+      "total_tokens": 134
+     },
+     "request": {
+      "messages": [
+       {
+        "role": "user",
+        "parts": [
+         {
+          "type": "text",
+          "text": "<transcript>\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n\n</transcript>"
+         }
+        ]
+       }
+      ]
+     },
+     "response": {
+      "message": {
+       "role": "assistant",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<summary>\nA flaky upload test fails the build.\n</summary>"
+        }
+       ]
+      }
+     }
+    }
+   ],
+   "saw": [],
+   "caller": {
+    "kind": "script"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   }
+  }
+ }
+}

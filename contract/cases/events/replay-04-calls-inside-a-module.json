@@ -1,0 +1,349 @@
+{
+ "description": "Calls inside a module are followed each on its own: one call's retry voids its own text only; seq numbers the one order the stream received.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210? It's a week late."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "topic",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210? It's a week late."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "mood",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "mood",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210? It's a week late."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "ship"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "mood",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "unhappy"
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 6,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "reason": "Your reply could not be read: <result> must be one of billing, shipping, product.",
+   "wait": 0.5
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 7,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "mood",
+   "value": "unhappy"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 8,
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "field": "result",
+   "answer": true,
+   "request": 2,
+   "text": "shipping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 9,
+   "at": "2026-09-28T10:00:00.090000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "topic",
+   "value": "shipping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 10,
+   "at": "2026-09-28T10:00:00.100000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "value": "A person will write to you today."
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "ship"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "ship"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "shipping"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "unhappy"
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": [
+  {
+   "after": 5,
+   "seqs": [
+    6,
+    7,
+    8,
+    9,
+    10
+   ]
+  },
+  {
+   "after": 10,
+   "seqs": []
+  }
+ ]
+}

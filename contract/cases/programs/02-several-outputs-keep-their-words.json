@@ -1,0 +1,68 @@
+{
+ "description": "Outputs keep their desc in the interface (they are not in the signature's fields); the id leaves descriptions out, so it is still the signature's.",
+ "program": "ai",
+ "definition": {
+  "name": "triage",
+  "description": "Read the ticket.",
+  "inputs": [
+   {
+    "name": "ticket",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "summary",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "one sentence, no names"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    },
+    "desc": "minutes to fix"
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "interface": {
+   "description": "Read the ticket.",
+   "inputs": [
+    {
+     "name": "ticket",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "summary",
+     "shape": {
+      "type": "string"
+     },
+     "desc": "one sentence, no names"
+    },
+    {
+     "name": "result",
+     "shape": {
+      "type": "integer"
+     },
+     "desc": "minutes to fix"
+    }
+   ]
+  },
+  "id": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6",
+  "signature_id": "sha256:c4006e2d2a70e2408820086fb0b4f8ff1bf09e639468c0f806ef36e3ebf31ce6"
+ }
+}

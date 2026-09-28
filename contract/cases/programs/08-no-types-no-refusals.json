@@ -1,0 +1,103 @@
+{
+ "description": "A shape of {} (no JSON type the language knows) accepts every value: such a module is never refused, and only its names are checked.",
+ "program": "module",
+ "interface": {
+  "description": "A pipeline over a data frame.",
+  "inputs": [
+   {
+    "name": "frame",
+    "shape": {},
+    "type": "pd.DataFrame"
+   },
+   {
+    "name": "args",
+    "shape": {
+     "type": "array",
+     "default": []
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {}
+   }
+  ]
+ },
+ "expect": {
+  "id": "sha256:1b8d8f61e4271650dddd886ac647df730e974dc878359f87cc7c949d4ef24f1b"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "frame": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    }
+   },
+   "expect": {
+    "inputs": {
+     "frame": {
+      "$type": "DataFrame",
+      "$repr": "   a\n0  1"
+     },
+     "args": []
+    }
+   }
+  },
+  {
+   "inputs": {
+    "frame": [
+     1,
+     2
+    ],
+    "args": [
+     3
+    ]
+   },
+   "expect": {
+    "inputs": {
+     "frame": [
+      1,
+      2
+     ],
+     "args": [
+      3
+     ]
+    }
+   }
+  },
+  {
+   "inputs": {
+    "args": []
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "frame"
+   }
+  },
+  {
+   "returned": {
+    "$type": "DataFrame",
+    "$repr": "   a\n0  1"
+   },
+   "expect": {
+    "outputs": {
+     "result": {
+      "$type": "DataFrame",
+      "$repr": "   a\n0  1"
+     }
+    }
+   }
+  },
+  {
+   "returned": null,
+   "expect": {
+    "outputs": {
+     "result": null
+    }
+   }
+  }
+ ]
+}

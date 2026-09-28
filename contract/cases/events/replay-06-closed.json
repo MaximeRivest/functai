@@ -1,0 +1,89 @@
+{
+ "description": "A stream closed early ends with its call's failed Cancelled: it is finished.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "summarize",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "summarize",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "text": "A long article."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "summarize",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "The article"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "summarize",
+   "error": {
+    "type": "Cancelled"
+   }
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "The article"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "failed",
+      "fields": {
+       "result": "The article"
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": []
+}

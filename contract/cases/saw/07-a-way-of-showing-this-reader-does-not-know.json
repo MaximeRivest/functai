@@ -1,0 +1,114 @@
+{
+ "description": "An entry with a key this reader does not know was shown in a way it cannot reproduce (a later writer's): not known.",
+ "records": [
+  {
+   "functai_call": 1,
+   "id": "01926b00-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926b00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "tutor",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-28T10:01:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 1"
+   },
+   "outputs": {
+    "result": "reply 1"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 1,
+   "id": "01926b00-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926b00-0002-7000-8000-000000000000",
+   "program": {
+    "name": "tutor",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-28T10:02:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 2"
+   },
+   "outputs": {
+    "result": "reply 2"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": [
+    {
+     "call": "01926b00-0001-7000-8000-000000000000",
+     "summarized": true
+    }
+   ]
+  }
+ ],
+ "queries": [
+  {
+   "call": "01926b00-0002-7000-8000-000000000000",
+   "expect": {
+    "unknown": "unknown-key"
+   }
+  }
+ ]
+}

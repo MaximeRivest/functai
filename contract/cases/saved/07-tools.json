@@ -90,6 +90,32 @@
  },
  "node": null,
  "expect": {
-  "refuses": "saved-tools"
+  "refuses": "saved-tools",
+  "describe": {
+   "interface": {
+    "description": "Function: mood\n\nHow does the customer feel about what they bought?",
+    "inputs": [
+     {
+      "name": "review",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "enum": [
+        "happy",
+        "unhappy",
+        "mixed"
+       ],
+       "type": "string"
+      }
+     }
+    ]
+   }
+  }
  }
 }

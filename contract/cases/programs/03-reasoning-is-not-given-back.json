@@ -1,0 +1,54 @@
+{
+ "description": "module cot adds a reasoning output to the signature, not to the interface: the ids differ.",
+ "program": "ai",
+ "definition": {
+  "name": "solve",
+  "description": "Solve the word problem.",
+  "inputs": [
+   {
+    "name": "problem",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "number"
+    }
+   }
+  ],
+  "settings": {
+   "module": "cot"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "interface": {
+   "description": "Solve the word problem.",
+   "inputs": [
+    {
+     "name": "problem",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "number"
+     }
+    }
+   ]
+  },
+  "id": "sha256:2ae513093ddf60ec7d6032090c6a703fce52afccbba1347c80f89c38794817e8",
+  "signature_id": "sha256:a1f9f6c4bf9f3db7c39edb91d5e63301086d42ec22ee4f3991dbf1ac24769d57"
+ }
+}

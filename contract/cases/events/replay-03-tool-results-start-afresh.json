@@ -1,0 +1,196 @@
+{
+ "description": "A tool result empties the call's fields: the request after it writes them afresh, without a retry. Thinking is not voided.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "helper",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "question": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "thinking",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 1,
+   "text": "Look the order up first."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "Let me check."
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "input": {
+    "order": "B-2210"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "output": "In the Leeds depot, 7 days late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 6,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "request": 2,
+   "text": "It is in Leeds, "
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 7,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "request": 2,
+   "text": "a week late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 8,
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "value": "It is in Leeds, a week late."
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Let me check."
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Let me check."
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "It is in Leeds, "
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "It is in Leeds, a week late."
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "It is in Leeds, a week late."
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": []
+}

@@ -175,7 +175,11 @@ layout's `turns` directive is:
   host writes it.
 
 A stateful function's earlier turns follow the demos (the last
-`state_window`, default 5); they are never part of a version.
+`state_window`, default 5); they are never part of a version, and the
+calls they were are the call's `saw` ([calls.md](calls.md), *Saw*).
+
+A function's interface (what a caller gives and gets) is its
+definition's inputs and outputs ([programs.md](programs.md)).
 
 ## The request
 

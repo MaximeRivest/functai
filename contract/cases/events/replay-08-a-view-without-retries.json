@@ -1,0 +1,141 @@
+{
+ "description": "A view that hides retries, tool events and thinking skips seq numbers; a piece of a higher request still starts the call's fields afresh, so it shows what the whole stream shows once the new request writes.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "I was charged twice."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "bill"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "ing?"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "request": 2,
+   "text": "billing"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 6,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "value": "billing"
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "bill"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "billing?"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "billing"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "billing"
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": [
+  {
+   "after": 3,
+   "seqs": [
+    5,
+    6
+   ]
+  }
+ ]
+}

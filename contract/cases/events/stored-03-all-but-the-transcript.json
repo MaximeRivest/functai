@@ -1,0 +1,216 @@
+{
+ "description": "The transcript kept as its size only: started lists it in omitted; the outputs' pieces and the answer stay; thinking and the retry's reason go (they can quote the transcript).",
+ "kind": "stored",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "triage_build",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.",
+    "question": "Is it broken for a real reason?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "thinking",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "request": 1,
+   "text": "Ben says the upload test is flaky."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "field": "summary",
+   "answer": false,
+   "request": 1,
+   "text": "A flaky test."
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "reason": "Your reply could not be read: <result> must be yes or no.",
+   "wait": null
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "field": "summary",
+   "answer": false,
+   "request": 2,
+   "text": "A flaky upload test."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 6,
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "field": "result",
+   "answer": true,
+   "request": 2,
+   "text": "no"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 7,
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "value": "no"
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "transcript": false,
+   "question": true,
+   "summary": true,
+   "result": true
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "triage_build",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "content": false,
+    "saw": [],
+    "inputs": {
+     "question": "Is it broken for a real reason?"
+    },
+    "omitted": {
+     "inputs": [
+      "transcript"
+     ],
+     "outputs": []
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "thinking",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 2,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "request": 1,
+    "size": 34,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 3,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "summary",
+    "answer": false,
+    "request": 1,
+    "text": "A flaky test."
+   },
+   {
+    "functai_event": 2,
+    "kind": "retry",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 4,
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "wait": null,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 5,
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "summary",
+    "answer": false,
+    "request": 2,
+    "text": "A flaky upload test."
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 6,
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "result",
+    "answer": true,
+    "request": 2,
+    "text": "no"
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 7,
+    "at": "2026-09-28T10:00:00.070000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "value": "no"
+   }
+  ]
+ }
+}

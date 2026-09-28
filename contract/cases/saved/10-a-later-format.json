@@ -88,6 +88,9 @@
  },
  "node": null,
  "expect": {
-  "refuses": "saved-format"
+  "refuses": "saved-format",
+  "describe": {
+   "refuses": "saved-format"
+  }
  }
 }

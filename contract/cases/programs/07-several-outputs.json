@@ -1,0 +1,167 @@
+{
+ "description": "A module with several outputs returns one record with each by name; the last is the answer; each output must be there and fit.",
+ "program": "module",
+ "interface": {
+  "description": "Sort a ticket and say how urgent it is.",
+  "inputs": [
+   {
+    "name": "ticket",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "team",
+    "shape": {
+     "enum": [
+      "billing",
+      "shipping",
+      "product"
+     ],
+     "type": "string"
+    }
+   },
+   {
+    "name": "minutes",
+    "shape": {
+     "type": "integer"
+    },
+    "desc": "to fix"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "reply": {
+       "type": "string"
+      },
+      "escalate": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "reply",
+      "escalate"
+     ]
+    }
+   }
+  ]
+ },
+ "expect": {
+  "id": "sha256:66bc637df09e8de507eabf8ecd1d172f98d94ec7f14a4542d614bf996cefe3c5"
+ },
+ "checks": [
+  {
+   "returned": {
+    "team": "billing",
+    "minutes": 5,
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    }
+   },
+   "expect": {
+    "outputs": {
+     "team": "billing",
+     "minutes": 5,
+     "result": {
+      "reply": "Refunded.",
+      "escalate": false
+     }
+    }
+   }
+  },
+  {
+   "returned": {
+    "team": "billing",
+    "minutes": 5,
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    },
+    "note": "extra keys are not outputs"
+   },
+   "expect": {
+    "outputs": {
+     "team": "billing",
+     "minutes": 5,
+     "result": {
+      "reply": "Refunded.",
+      "escalate": false
+     }
+    }
+   }
+  },
+  {
+   "returned": {
+    "team": "legal",
+    "minutes": 5,
+    "result": {
+     "reply": "?",
+     "escalate": true
+    }
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "team"
+   }
+  },
+  {
+   "returned": {
+    "team": "billing",
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    }
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "minutes"
+   }
+  },
+  {
+   "returned": {
+    "team": "billing",
+    "minutes": 5.5,
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    }
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "minutes"
+   }
+  },
+  {
+   "returned": {
+    "team": "billing",
+    "minutes": 5.0,
+    "result": {
+     "reply": "Refunded.",
+     "escalate": false
+    }
+   },
+   "expect": {
+    "outputs": {
+     "team": "billing",
+     "minutes": 5.0,
+     "result": {
+      "reply": "Refunded.",
+      "escalate": false
+     }
+    }
+   }
+  },
+  {
+   "returned": "billing",
+   "expect": {
+    "refuses": "interface-output",
+    "field": "team"
+   }
+  }
+ ]
+}

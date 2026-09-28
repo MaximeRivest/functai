@@ -10,24 +10,16 @@
     "id": {"$ref": "#/$defs/uuid"},
     "parent": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
     "root": {"$ref": "#/$defs/uuid"},
-    "program": {
-      "type": "object",
-      "required": ["name", "kind", "module", "version", "answer"],
-      "properties": {
-        "name": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["ai", "module"]},
-        "module": {"type": "string"},
-        "version": {"$ref": "#/$defs/sha256"},
-        "signature": {"$ref": "#/$defs/sha256"},
-        "answer": {"type": "string", "minLength": 1},
-        "saved": {"$ref": "#/$defs/sha256"},
-        "file": {"type": "string"},
-        "line": {"type": "integer", "minimum": 0}
-      }
-    },
+    "program": {"$ref": "#/$defs/program"},
     "started": {"$ref": "#/$defs/time"},
     "seconds": {"type": "number", "minimum": 0},
     "content": {"type": "boolean"},
+    "omitted": {
+      "type": "object",
+      "required": ["inputs", "outputs"],
+      "properties": {"inputs": {"$ref": "#/$defs/names"}, "outputs": {"$ref": "#/$defs/names"}},
+      "additionalProperties": false
+    },
     "inputs": {"type": "object"},
     "outputs": {"oneOf": [{"type": "object"}, {"type": "null"}]},
     "returned": {},
@@ -50,6 +42,7 @@
     },
     "escalated": {"const": true},
     "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
+    "saw": {"$ref": "#/$defs/saw"},
     "caller": {"type": "object"},
     "process": {
       "type": "object",
@@ -66,17 +59,57 @@
     "truncated": {"const": true}
   },
   "allOf": [
-    {"if": {"properties": {"content": {"const": false}}},
+    {"if": {"properties": {"content": {"const": false}}, "not": {"required": ["omitted"]}},
      "then": {"not": {"anyOf": [{"required": ["inputs"]}, {"required": ["outputs"]}, {"required": ["returned"]},
-                                {"required": ["probabilities"]}]},
-              "properties": {"error": {"oneOf": [{"type": "null"},
+                                {"required": ["probabilities"]}]}}},
+    {"if": {"properties": {"content": {"const": false}}},
+     "then": {"properties": {"error": {"oneOf": [{"type": "null"},
                                                  {"type": "object", "not": {"required": ["message"]}}]},
                              "exchanges": {"items": {"not": {"anyOf": [{"required": ["request"]},
                                                                         {"required": ["response"]}]}}}}}},
+    {"if": {"required": ["omitted"]}, "then": {"properties": {"content": {"const": false}}}},
     {"if": {"properties": {"content": {"const": true}}, "not": {"required": ["truncated"]}},
      "then": {"required": ["inputs", "outputs"]}}
   ],
   "$defs": {
+    "program": {
+      "type": "object",
+      "required": ["name", "kind", "module", "version", "answer"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["ai", "module"]},
+        "module": {"type": "string"},
+        "version": {"$ref": "#/$defs/sha256"},
+        "signature": {"$ref": "#/$defs/sha256"},
+        "answer": {"type": "string", "minLength": 1},
+        "saved": {"$ref": "#/$defs/sha256"},
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      }
+    },
+    "names": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "saw": {
+      "description": "calls.md, Saw: {saw_of} only as the first entry. A call entry may hold keys a later writer added; a reader that does not know one cannot reproduce what was shown.",
+      "type": "array",
+      "prefixItems": [{"anyOf": [{"$ref": "#/$defs/saw_call"}, {"$ref": "#/$defs/saw_of"}]}],
+      "items": {"$ref": "#/$defs/saw_call"}
+    },
+    "saw_call": {
+      "type": "object",
+      "required": ["call"],
+      "not": {"required": ["saw_of"]},
+      "properties": {
+        "call": {"$ref": "#/$defs/uuid"},
+        "steps": {"const": true},
+        "without": {"$ref": "#/$defs/names", "minItems": 1}
+      }
+    },
+    "saw_of": {
+      "type": "object",
+      "required": ["saw_of"],
+      "properties": {"saw_of": {"$ref": "#/$defs/uuid"}},
+      "additionalProperties": false
+    },
     "uuid": {"type": "string",
              "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"},
     "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},

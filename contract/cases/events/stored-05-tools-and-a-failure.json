@@ -1,0 +1,150 @@
+{
+ "description": "Tool calls and results, and an error's message, go when the call's content is not whole; the error keeps its type.",
+ "kind": "stored",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "triage_build",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.",
+    "question": "Is it broken for a real reason?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "id": "call_1",
+   "name": "ci_log",
+   "input": {
+    "job": 4412
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "id": "call_1",
+   "name": "ci_log",
+   "output": "upload_test: timeout after 30 s"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "error": {
+    "type": "StepLimit",
+    "message": "8 requests and still asking for tools"
+   }
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "transcript": false,
+   "question": true,
+   "summary": true,
+   "result": true
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "triage_build",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "content": false,
+    "saw": [],
+    "inputs": {
+     "question": "Is it broken for a real reason?"
+    },
+    "omitted": {
+     "inputs": [
+      "transcript"
+     ],
+     "outputs": []
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 2,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "id": "call_1",
+    "name": "ci_log",
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_result",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 3,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "id": "call_1",
+    "name": "ci_log",
+    "size": 31,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 4,
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "error": {
+     "type": "StepLimit"
+    },
+    "content": false
+   }
+  ]
+ }
+}

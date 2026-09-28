@@ -96,6 +96,32 @@
    "requests": [
     "sha256:50a00f3333e4ca8a02a003b50797ae0d0006ecb5b017cb34de7d98ef92e459a5"
    ]
+  },
+  "describe": {
+   "interface": {
+    "description": "Function: mood\n\nHow does the customer feel about what they bought?",
+    "inputs": [
+     {
+      "name": "review",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "enum": [
+        "happy",
+        "unhappy",
+        "mixed"
+       ],
+       "type": "string"
+      }
+     }
+    ]
+   }
   }
  }
 }

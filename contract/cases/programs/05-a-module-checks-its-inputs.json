@@ -1,0 +1,95 @@
+{
+ "description": "A module's inputs are checked before its code runs: every one given, none it does not have, each fitting its shape.",
+ "program": "module",
+ "interface": {
+  "description": "Answer a customer's message.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "id": "sha256:fe7368110315350b0ace26b1495a05d87ed7e45f4e220918efe2ab97f184e20f"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "message": "Where is my parcel?"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Where is my parcel?"
+    }
+   }
+  },
+  {
+   "inputs": {},
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message"
+   }
+  },
+  {
+   "inputs": {
+    "message": 3
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message"
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "urgent": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "urgent"
+   }
+  },
+  {
+   "inputs": {
+    "message": null
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message"
+   }
+  },
+  {
+   "returned": "It left the depot today.",
+   "expect": {
+    "outputs": {
+     "result": "It left the depot today."
+    }
+   }
+  },
+  {
+   "returned": 42,
+   "expect": {
+    "refuses": "interface-output",
+    "field": "result"
+   }
+  },
+  {
+   "returned": null,
+   "expect": {
+    "refuses": "interface-output",
+    "field": "result"
+   }
+  }
+ ]
+}

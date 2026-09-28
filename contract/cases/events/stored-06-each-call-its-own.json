@@ -1,0 +1,189 @@
+{
+ "description": "Each call follows its own log_content: a module whose values are kept, calling a helper whose input is not.",
+ "kind": "stored",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Please read my tracking log."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "read_tracking",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "log": "03:12 LEEDS DEPOT ARRIVED ..."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "{\"where\": \"Leeds\"}"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "value": {
+    "where": "Leeds"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 5,
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "value": "Your parcel is in Leeds."
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "message": true,
+   "result": true
+  },
+  "01926c00-0002-7000-8000-000000000000": {
+   "log": false,
+   "result": true
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 1,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "support",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "support",
+     "kind": "module",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Please read my tracking log."
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 2,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "read_tracking",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "content": false,
+    "saw": [],
+    "omitted": {
+     "inputs": [
+      "log"
+     ],
+     "outputs": []
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 3,
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "field": "result",
+    "answer": true,
+    "request": 1,
+    "text": "{\"where\": \"Leeds\"}"
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 4,
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "value": {
+     "where": "Leeds"
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "stream": "01926c00-0001-7000-8000-000000000000",
+    "seq": 5,
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "support",
+    "value": "Your parcel is in Leeds."
+   }
+  ]
+ }
+}

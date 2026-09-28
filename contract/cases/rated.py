@@ -33,12 +33,22 @@ def at(minute, second=0):
 
 
 def call(n, minute, inputs, outputs, *, name="team", module="support", version=V1, signature=SIG,
-         answer="result", content=True, error=None):
+         answer="result", content=True, error=None, omitted=None):
+    """``omitted``: {"inputs": [...], "outputs": [...]}, the fields written as their size only
+    (calls.md, "Content"); the record then keeps the other values, with content false."""
     rec = {"functai_call": 1, "id": cid(n), "parent": None, "root": cid(n),
            "program": {"name": name, "kind": "ai", "module": module, "version": version, "signature": signature,
                        "answer": answer},
-           "started": at(minute), "seconds": 0.4, "content": content}
-    if content:
+           "started": at(minute), "seconds": 0.4, "content": content if omitted is None else False}
+    if omitted is not None:
+        rec["omitted"] = omitted
+        kept_in = {k: v for k, v in inputs.items() if k not in omitted["inputs"]}
+        kept_out = None if outputs is None else {k: v for k, v in outputs.items() if k not in omitted["outputs"]}
+        if kept_in:
+            rec["inputs"] = kept_in
+        if kept_out is None or kept_out:
+            rec["outputs"] = kept_out
+    elif content:
         rec["inputs"], rec["outputs"] = inputs, outputs
     rec["sizes"] = {"inputs": {k: len(json.dumps(v, ensure_ascii=False, separators=(",", ":")))
                                for k, v in inputs.items()},
@@ -177,4 +187,28 @@ CASES = {
                           "_call": cid(1), "__version": V1, "rating": "right", "rated_by": "maxime",
                           "origin": "review", "sample": None, "disputed": False}],
                 "left_out": LEFT}),
+    "12-some-inputs-not-written": dict(
+        description="A call whose record kept some values but not every input (content false, omitted.inputs "
+                    "not empty) has no inputs to ask again: left out, no_content, as a call with no values.",
+        records=[call(1, 1, {**M1, "transcript": "…"}, {"result": "billing"},
+                      omitted={"inputs": ["transcript"], "outputs": []}),
+                 rating(1, 1, 5, "maxime", "right")],
+        rated=TEAM,
+        expect={"rows": [], "left_out": {**LEFT, "no_content": 1}}),
+    "13-every-input-written-an-output-not": dict(
+        description="A call whose record kept every input but not an output makes rows: a correction gives "
+                    "the answer; a right verdict gives nothing when the answer itself was not written "
+                    "(no_answer), and the call's other outputs when they were.",
+        records=[call(1, 1, M1, {"summary": "Charged twice.", "result": "billing"}, answer="result",
+                      omitted={"inputs": [], "outputs": ["result"]}),
+                 call(2, 2, M2, {"summary": "Lost parcel.", "result": "shipping"}, answer="result",
+                      omitted={"inputs": [], "outputs": ["result"]}),
+                 call(3, 3, M3, {"summary": "Broken kettle.", "result": "product"}, answer="result",
+                      omitted={"inputs": [], "outputs": ["summary"]}),
+                 rating(1, 1, 5, "maxime", "wrong", answer="shipping"), rating(2, 2, 5, "maxime", "right"),
+                 rating(3, 3, 5, "maxime", "right")],
+        rated=TEAM,
+        expect={"rows": [row(M1, {"result": "shipping"}, 1, rating_="wrong", by="maxime"),
+                         row(M3, {"result": "product"}, 3, rating_="right", by="maxime")],
+                "left_out": {**LEFT, "no_answer": 1}}),
 }

@@ -1,0 +1,131 @@
+{
+ "description": "One call: its answer's pieces add up; the stream is finished when the watched call is done. A reader that has events up to N gets those after N.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 1,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "My parcel never came."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 2,
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "ship"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 3,
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "request": 1,
+   "text": "ping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "stream": "01926c00-0001-7000-8000-000000000000",
+   "seq": 4,
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "value": "shipping"
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "ship"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": [
+  {
+   "after": 0,
+   "seqs": [
+    1,
+    2,
+    3,
+    4
+   ]
+  },
+  {
+   "after": 2,
+   "seqs": [
+    3,
+    4
+   ]
+  },
+  {
+   "after": 4,
+   "seqs": []
+  }
+ ]
+}
