@@ -49,12 +49,18 @@ include("contract.jl")
 include("text.jl")
 include("values.jl")
 include("settings.jl")
+include("interface.jl")
+include("content.jl")
+include("events.jl")
+include("journal.jl")
 include("models.jl")
 include("layouts.jl")
 include("definition.jl")
 include("calllog.jl")
+include("saw.jl")
 include("tools.jl")
 include("engine.jl")
+include("run.jl")
 include("fn.jl")
 include("macro.jl")
 include("program.jl")
@@ -77,6 +83,7 @@ export labeled_few_shot, bootstrap_few_shot, random_search, instruction_search, 
 export AIModel, AIModelFit, fit
 export rate, calls, rated
 export tool, AITool, Event, AIStream, StepLimit, Cancelled, LoadRefused
+export InterfaceError, LogContentError, JournalError
 export model_capabilities, casefold, normalize_text
 
 end

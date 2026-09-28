@@ -35,12 +35,13 @@ struct AIFunction <: Function
     code::Union{Nothing,String} # the hash of the body's code, when it has code of its own
     returns::Any                # the declared return type, or nothing
     source::Any                 # the definition's expression (code of its own is saved from it)
+    declared::Union{Nothing,JObj}   # the interface a saved node declared (its words), else derived from the definition
     cache::Dict{Any,Any}
     lock::ReentrantLock
 end
 
 const PARTS = (:definition, :own, :tools, :module_name, :file, :line, :saved, :instructions, :demos,
-               :binder, :from_row, :body, :code, :returns, :source)
+               :binder, :from_row, :body, :code, :returns, :source, :declared)
 
 "A copy of `f` with some parts replaced (and a fresh cache)."
 function remake(f::AIFunction; kw...)
@@ -61,14 +62,26 @@ cached(g, f::AIFunction, key) = lock(() -> get!(g, f.cache, key), f.lock)
 entries(x::Union{NamedTuple,AbstractDict}) = pairs(x)
 entries(x::Union{AbstractVector,Tuple}) = (all(e -> e isa Pair, x) ? x : throw(ArgumentError("expected name => type pairs, not $(repr(x))")))
 
-"A field written as `T`, `T => \"words\"`, `OneOf(...)` or a JSON Schema Dict."
-function field_def(name, spec, where)
+"""
+A field written as `T`, `T => \"words\"`, `OneOf(...)` or a JSON Schema Dict;
+`default`, when given (`Some(value)`), makes it an input a caller may leave out.
+"""
+function field_def(name, spec, where; default=nothing)
     desc = nothing
     if spec isa Pair && last(spec) isa AbstractString
         spec, desc = first(spec), last(spec)
     end
     spec isa Union{Type,OneOf,AbstractDict} || throw(ArgumentError("$where: a type, OneOf(...), a JSON Schema Dict, or T => \"words\"; not $(repr(spec))"))
-    FieldDef(String(name), spec, shape_of(spec; where), desc)
+    shape = shape_of(spec; where)
+    desc = desc === nothing || isempty(desc) ? nothing : String(desc)
+    default === nothing && return FieldDef(String(name), spec, shape, desc)
+    native = something(default)
+    data = json_form(native)
+    data === NOJSON && throw(InterfaceError("interface-malformed", String(name),
+        "$where: its default is sent to the model when it is left out, so it needs a JSON form; a $(typeof(native)) has none"))
+    haskey(shape, "default") && !same_json(shape["default"], data) &&
+        throw(ArgumentError("$where: its shape's default $(LMCC.json_text(shape["default"])) is not its default $(LMCC.json_text(data))"))
+    FieldDef(String(name), spec, data_shape(shape), desc, true, data, native)
 end
 shape_of(spec::Union{OneOf,AbstractDict}; where="") = shape_of(spec)
 
@@ -85,16 +98,28 @@ mood = AIFunction("mood", "How does the customer feel about what they bought?";
 
 `inputs` and `outputs` are `NamedTuple`s (or pairs) of types, `T => "words"`,
 `OneOf(...)` or JSON Schema Dicts; `outputs` names several (the last is
-the answer). Other keywords: `tools`, `demos`, `instructions`,
-`module_name`, and any setting (see [`configure!`](@ref)).
+the answer). `defaults` gives the inputs a caller may leave out their
+values (`defaults = (tone = "kind",)`): each is written in the function's
+[`interface`](@ref) and sent when the input is left out. Other keywords:
+`tools`, `demos`, `instructions`, `module_name`, and any setting (see
+[`configure!`](@ref)).
+
+The definition is checked here: lmcc's signature first, then the
+interface (contract/programs.md; `InterfaceError` `interface-malformed`,
+say for a default that does not fit its type), then an own `log_content`
+map (`LogContentError` for a name that is not a field).
 """
 function AIFunction(name::AbstractString, description::AbstractString=""; inputs=(;), output=nothing, outputs=nothing,
-                    tools=(), demos=(), instructions=nothing, module_name::AbstractString="__main__",
+                    defaults=(;), tools=(), demos=(), instructions=nothing, module_name::AbstractString="__main__",
                     file=nothing, line=nothing, binder=nothing, from_row=nothing, body=nothing, code=nothing,
-                    returns=nothing, source=nothing, settings...)
-    occursin(r"^[A-Za-z_][A-Za-z0-9_]*$", name) || throw(ArgumentError("an AI function's name is an identifier, not $(repr(name))"))
+                    returns=nothing, source=nothing, declared=nothing, settings...)
+    is_name(name) || throw(ArgumentError("an AI function's name is an identifier, not $(repr(name))"))
     output !== nothing && outputs !== nothing && throw(ArgumentError("$name: give output (one answer) or outputs (several), not both"))
-    ins = FieldDef[field_def(k, v, "$name.$k") for (k, v) in entries(inputs)]
+    given_defaults = Dict{String,Any}(String(k) => v for (k, v) in entries(defaults))
+    ins = FieldDef[field_def(k, v, "$name.$k"; default=haskey(given_defaults, String(k)) ? Some(given_defaults[String(k)]) : nothing)
+                   for (k, v) in entries(inputs)]
+    unknown = setdiff(keys(given_defaults), [x.name for x in ins])
+    isempty(unknown) || throw(ArgumentError("$name: defaults names $(join(sort!(collect(unknown)), ", ")), which is not an input"))
     outs = outputs === nothing ? FieldDef[field_def("result", something(output, String), "$name.result")] :
            FieldDef[field_def(k, v, "$name.$k") for (k, v) in entries(outputs)]
     isempty(outs) && throw(ArgumentError("$name: outputs is empty"))
@@ -106,10 +131,62 @@ function AIFunction(name::AbstractString, description::AbstractString=""; inputs
     definition = Definition(String(name), String(description), ins, outs, nothing)
     f = AIFunction(definition, settings_dict(settings), AITool[tool(t) for t in tools], String(module_name),
                    file === nothing ? nothing : String(file), line, nothing, nothing, Any[], binder, from_row, body, code,
-                   returns, source, Dict{Any,Any}(), ReentrantLock())
+                   returns, source, declared, Dict{Any,Any}(), ReentrantLock())
     f = instructions === nothing ? f : remake(f; instructions=String(instructions))
+    check_definition(f)
     isempty(demos) ? f : with_demos(f, demos)
 end
+
+"""
+Check a definition as the contract orders it (functions.md, "A definition"):
+lmcc's signature (`signature-malformed`), then the interface every program
+keeps (programs.md: `InterfaceError` `interface-malformed`), then an own
+`log_content` map (calls.md, "Content": `log-content-field`).
+"""
+function check_definition(f::AIFunction)
+    signature_of(f.definition, f.instructions, true, false, !isempty(f.tools))
+    check_interface(interface(f); ai=true, what=f.definition.name)
+    check_own_content(f.own, program_fields(f; reasoning=get(f.own, :reasoning, false) === true), f.definition.name)
+    f
+end
+
+"""
+The fields of a program's calls (calls.md, "Words"): its interface's inputs
+and outputs, and for an AI function the outputs FunctAI adds (`reasoning`
+with reasoning on, unless a field has that name; `calls` with tools).
+`added` are among `outputs`, in the signature's order.
+"""
+function program_fields(f::AIFunction; reasoning::Bool)
+    ins, outs = input_names(f), output_names(f)
+    added = String[]
+    reasoning && !("reasoning" in ins || "reasoning" in outs) && push!(added, "reasoning")
+    isempty(f.tools) || push!(added, "calls")
+    (inputs=ins, outputs=vcat(added, outs), added=added)
+end
+program_fields(f::AIFunction, s::AbstractDict{Symbol}) = program_fields(f; reasoning=s[:reasoning] === true)
+
+"""
+    interface(f)
+
+A program's interface as data (contract/programs.md): its description, its
+inputs (an input a caller may leave out is `optional`, its default in its
+shape) and its outputs, without the fields FunctAI adds to an AI function.
+The same JSON in every language.
+
+```julia
+FunctAI.interface(mood)["inputs"]       # [{"name": "review", "shape": {"type": "string"}, "type": "String"}]
+```
+"""
+interface(f::AIFunction) = f.declared === nothing ? interface_of(f.definition) : f.declared
+
+"""
+    interface_signature(f)
+
+The call log's `program.interface`: the signature of `f`'s interface (what
+its recorded data looks like). Equal to [`signature_id`](@ref) for an AI
+function with neither reasoning nor tools.
+"""
+interface_signature(f::AIFunction) = cached(() -> interface_signature(interface(f)), f, :interface_signature)
 
 # ------------------------------------------------------------------ state
 
@@ -303,7 +380,7 @@ end
 "The call log's `program` of this function."
 function program_of(f::AIFunction)
     p = LMCC.jobj("name" => f.definition.name, "kind" => "ai", "module" => f.module_name, "version" => version(f),
-                  "signature" => signature_id(f), "answer" => answer_name(f))
+                  "signature" => signature_id(f), "interface" => interface_signature(f), "answer" => answer_name(f))
     f.saved === nothing || (p["saved"] = f.saved)
     f.file === nothing || (p["file"] = f.file)
     f.line === nothing || (p["line"] = f.line)
@@ -312,36 +389,55 @@ end
 
 # ------------------------------------------------------------------ calling
 
-"The inputs of a call: positional and keyword arguments by the function's binder, else by position."
+"""
+The inputs of a call: positional and keyword arguments by the function's
+binder, else by position; an optional input left out takes its default
+(programs.md: a model is sent every input), in the definition's order.
+"""
 function bind_inputs(f::AIFunction, args, kw)
-    if f.binder !== nothing
+    given = if f.binder !== nothing
         try
-            return f.binder(args...; kw...)
+            f.binder(args...; kw...)
         catch err
             err isa MethodError && err.f === f.binder || rethrow()
             throw(ArgumentError("$(f.definition.name) takes ($(join(input_names(f), ", "))); it was given $(length(args)) " *
                                 "argument(s)$(isempty(kw) ? "" : " and $(join(keys(kw), ", "))")"))
         end
+    else
+        names = input_names(f)
+        length(args) <= length(names) || throw(ArgumentError("$(f.definition.name) takes $(length(names)) input(s) ($(join(names, ", "))), not $(length(args))"))
+        out = OrderedDict{String,Any}(names[i] => a for (i, a) in enumerate(args))
+        for (k, v) in kw
+            String(k) in names || throw(ArgumentError("$(f.definition.name) has no input $(k); its inputs: $(join(names, ", "))"))
+            out[String(k)] = v
+        end
+        out
     end
-    names = input_names(f)
-    length(args) <= length(names) || throw(ArgumentError("$(f.definition.name) takes $(length(names)) input(s) ($(join(names, ", "))), not $(length(args))"))
-    out = OrderedDict{String,Any}(names[i] => a for (i, a) in enumerate(args))
-    for (k, v) in kw
-        String(k) in names || throw(ArgumentError("$(f.definition.name) has no input $(k); its inputs: $(join(names, ", "))"))
-        out[String(k)] = v
+    with_defaults(f, given)
+end
+
+"The given inputs, with each optional one left out taking its default; a required one left out is an error."
+function with_defaults(f::AIFunction, given::AbstractDict)
+    out = OrderedDict{String,Any}()
+    for x in f.definition.inputs
+        if haskey(given, x.name)
+            out[x.name] = given[x.name]
+        elseif x.optional
+            out[x.name] = x.native
+        end
     end
-    missing_names = [n for n in names if !haskey(out, n)]
+    missing_names = [x.name for x in f.definition.inputs if !haskey(out, x.name)]
     isempty(missing_names) || throw(ArgumentError("$(f.definition.name): no value for $(join(missing_names, ", "))"))
     out
 end
 
 "The inputs of a table row: its columns named like the inputs (defaults for absent ones)."
 function row_inputs(f::AIFunction, row::AbstractDict)
-    f.from_row === nothing || return f.from_row(row)
+    f.from_row === nothing || return with_defaults(f, f.from_row(row))
     names = input_names(f)
-    absent = [n for n in names if !haskey(row, n)]
+    absent = [x.name for x in f.definition.inputs if !haskey(row, x.name) && !x.optional]
     isempty(absent) || throw(ArgumentError("the row has no column $(join(absent, ", ")) for $(f.definition.name)'s input(s)"))
-    OrderedDict{String,Any}(n => row[n] for n in names)
+    with_defaults(f, OrderedDict{String,Any}(n => row[n] for n in names if haskey(row, n)))
 end
 
 has_missing(inputs) = any(v -> v === missing, values(inputs))
@@ -372,10 +468,6 @@ function value_of(f::AIFunction, inputs, outputs::NamedTuple)
     length(declared) == 1 ? outputs[only(declared)] : NamedTuple{declared}(Tuple(outputs[n] for n in declared))
 end
 
-"Observers a stream sets: the call started, and ended."
-watch_started(::Nothing, call, inputs) = nothing
-watch_ended(::Nothing, call, value, err=nothing) = nothing
-
 """
     predict(f, args...; kw...) -> Prediction
 
@@ -384,37 +476,31 @@ id (to rate it), the turn and the replies. `missing` in, `missing` out.
 """
 StatsAPI.predict(f::AIFunction, args...; kw...) = predict_inputs(f, bind_inputs(f, args, kw))
 
-function predict_inputs(f::AIFunction, inputs::AbstractDict; watch=nothing)
+function predict_inputs(f::AIFunction, inputs::AbstractDict)
     has_missing(inputs) && return missing
-    watch = watch === nothing ? WATCHING[] : watch
-    watch_check(watch)
     s = effective(f.own)
-    call = start_call(() -> program_of(f), s, inputs)
-    with(CURRENT_CALL => call, WATCHING => watch) do
-        watch_started(watch, call, inputs)
-        try
-            r = plan_for(f, s)
-            call.provider = r.provider
-            job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
-                      f.tools, call, watch, values -> typed_outputs(f, values))
-            outputs, turn, responses, reading = run_job(job)
-            call.outputs = outputs
-            probs = reading.probabilities
-            if !isempty(probs)
-                chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
-                chosen = filter(!isnothing, chosen)
-                isempty(chosen) || (call.confidence = minimum(chosen))
-            end
-            value = value_of(f, inputs, outputs)
-            finish_call(call; returned=f.body === nothing ? outputs[Symbol(answer_name(f))] : value, has_returned=true)
-            watch_ended(watch, call, value)
-            Prediction(value, outputs, answer_name(f), call.id, turn, responses, reading.repairs, probs)
-        catch err
-            finish_call(call; error=err)
-            watch_ended(watch, call, nothing, err)
-            rethrow()
+    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, program_fields(f, s))
+    prediction = Ref{Any}(nothing)
+    run_call(call) do call
+        r = plan_for(f, s)
+        call.provider = r.provider
+        job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
+                  f.tools, call, values -> typed_outputs(f, values))
+        outputs, turn, responses, reading = run_job(job)
+        call.outputs = outputs
+        probs = reading.probabilities
+        if !isempty(probs)
+            chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
+            chosen = filter(!isnothing, chosen)
+            isempty(chosen) || (call.confidence = minimum(chosen))
         end
+        value = value_of(f, inputs, outputs)
+        call.returned = f.body === nothing ? outputs[Symbol(answer_name(f))] : value
+        call.has_returned = true
+        prediction[] = Prediction(value, outputs, answer_name(f), call.id, turn, responses, reading.repairs, probs)
+        value
     end
+    prediction[]
 end
 
 (f::AIFunction)(args...; kw...) = (inputs = bind_inputs(f, args, kw); has_missing(inputs) ? missing : predict_inputs(f, inputs).value)
@@ -446,7 +532,9 @@ function configure(f::AIFunction; kw...)
     for (k, v) in settings_dict(kw)
         v === nothing ? delete!(own, k) : (own[k] = v)
     end
-    remake(f; own)
+    g = remake(f; own)
+    check_own_content(g.own, program_fields(g; reasoning=get(g.own, :reasoning, false) === true), g.definition.name)
+    g
 end
 
 """

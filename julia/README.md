@@ -167,6 +167,7 @@ answer, not a probability for each class.
 
 ```julia
 FunctAI.configure!(log_calls = true)        # every call is a line of JSON in a folder
+FunctAI.configure!(log_content = (transcript = false,))   # every value but that one; layers only remove
 p = predict(mood, "Arrived broken, but support was great.")
 rate(p, :right)
 rate(p; answer = mixed, note = "broken item, good help")   # a correction
@@ -190,9 +191,19 @@ for piece in stream(haiku, "the first snow")
 end
 
 s = stream(support, "Where is order A-1042?")
-foreach(println, eachevent(s))  # started, text, tool_call, tool_result, retry, done
+foreach(println, eachevent(s))  # started, request, text, tool_call, tool_result, retry, done
 fetch(s)                        # the typed answer, the same as calling
 close(s)                        # cancels the call
+```
+
+Events are the call tree's log (contract format 2: `tree`, `writer`, `seq`,
+`after`, `at`), one numbering for a tree, which another process can replay
+and follow (`FunctAI.replay`, `FunctAI.Follower`). Receivers keep it while it
+is written, whether or not anyone streams the call:
+
+```julia
+with_settings(observers = [e -> println(FunctAI.event_json(e))]) do … end   # watching, best effort
+FunctAI.configure!(journal = FunctAI.Journal(store; required = true))      # keeping: waits at start, tools, end
 ```
 
 ## Tools and programs
@@ -205,14 +216,21 @@ lookup_order(order::String) = …
     "Answer the customer, looking up their order."
 end
 
-@program function reply(ticket::String)             # code that calls AI functions:
-    triage(ticket).minutes > 60 ? escalate(ticket) : support(ticket)
+@program function reply(ticket::String; tone::String = "kind")::String   # code that calls AI functions
+    "Answer a support ticket."
+    triage(ticket).minutes > 60 ? escalate(ticket) : support(ticket; tone)
 end
+
+FunctAI.interface(reply)     # what it takes and gives, as JSON every language reads
 ```
 
 A tool is a Julia function: its arguments' types and its docstring tell the
 model how to call it. A program is one call in the log, with the AI calls
-it made as its children.
+it made as its children. Every program has an interface, read from its
+declaration (an untyped or `Any` argument is opaque; `outputs = (a = T, …)`
+declares several outputs) and checked on every call (`InterfaceError`). An
+AI function's input with a default may be left out: the default is in its
+interface and is sent.
 
 ## Saving
 
@@ -221,7 +239,9 @@ FunctAI.save("saved/mood", better)                     # functai.json: any langu
 mood = FunctAI.load("saved/mood"; types = (result = Mood,))
 ```
 
-A saved folder holds shapes, not Julia types; `types` gives them back. A
+A saved folder holds shapes, not Julia types; `types` gives them back.
+`FunctAI.describe("saved/mood")` says what a saved program (a module too,
+from any language) takes and gives, without loading it. A
 function saved in Python, TypeScript or R loads here when it has no code of
 its own; what it cannot run is refused with a reason (`LoadRefused`).
 TypeScript and R load what Julia saves; Python does not yet.
@@ -233,6 +253,12 @@ TypeScript and R load what Julia saves; Python does not yet.
 - **`reasoning = true`** is Python's `module = "cot"` (`module` is a Julia keyword).
 - **A column keeps the answers it paid for**: a failed row is `missing`
   with a warning, where plain Julia would stop at the first error.
+- **An AI function's default is evaluated once**, when it is defined, not on
+  each call as Julia does: it is written in the function's interface and
+  sent when the input is left out (`since::String = string(today())` is the
+  day it was defined). A `@program`'s literal default is data too; any other
+  default of a program stays Julia code, run on each call, and the input is
+  optional with no default in its interface.
 - **Code of your own is versioned by its parsed form**, not its text:
   reformatting or editing comments does not make a new version. A Julia
   function with code of its own never shares a version with another

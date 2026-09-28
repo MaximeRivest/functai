@@ -72,13 +72,16 @@ Rows with known answers from people's ratings of `f`'s calls
 (contract/calls.md, "Rows with known answers"): the inputs, the right answer
 under the output's name (typed), then `call`, `version`, `rating`,
 `rated_by`, `origin`, `sample` and `disputed`. Ready for [`evaluate`](@ref)
-and the optimizers. Calls rated under another signature, logged without
-content, or rated wrong with no correction are left out (and counted in an
-`@info`).
+and the optimizers. Calls of format 1 and 2 are read; a call is used when
+its interface is `f`'s (or its signature, for records written before
+interfaces), so turning reasoning on still pools its ratings. Calls rated
+under another interface, whose inputs were not all logged, or rated wrong
+with no correction are left out (and counted in an `@info`).
 """
 function rated(f::AIFunction; by=nothing, folder=nothing, since=nothing)
     recs, ratings = read_log(log_root(folder); since)
-    rows, left = rated_rows(recs, ratings; name=f.definition.name, module_name=f.module_name, signature=signature_id(f), by)
+    rows, left = rated_rows(recs, ratings; name=f.definition.name, module_name=f.module_name, signature=signature_id(f),
+                            interface=interface_signature(f), by)
     total = sum(values(left))
     total > 0 && @info "rated($(f.definition.name)): $total rated call(s) left out: " *
                        join(("$v $(replace(k, "_" => " "))" for (k, v) in left if v > 0), ", ")

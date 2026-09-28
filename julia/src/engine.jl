@@ -89,19 +89,16 @@ end
 
 # ------------------------------------------------------------------ watching
 
-"What watches a call as it is made (a stream); the engine tells it what happens."
-abstract type Watch end
-const WATCHING = ScopedValue{Union{Nothing,Watch}}(nothing)
-watch_closed(::Nothing) = false
-watch_check(::Nothing) = nothing
-on_text(::Nothing, call, field, text) = nothing
-on_thinking(::Nothing, call, text) = nothing
-on_tool_call(::Nothing, call, id, name, input) = nothing
-on_tool_result(::Nothing, call, id, name, output) = nothing
-on_retry(::Nothing, call, reason, wait) = nothing
-
 "Whether calls through `router` can be streamed: a method of `LM15.stream(router, request)`."
 can_stream(router) = hasmethod(LM15.stream, Tuple{typeof(router),LM15.Request})
+
+"A piece of an output's text (never empty: a piece holds text)."
+function emit_text(call::Call, field::AbstractString, text::AbstractString)
+    isempty(text) && return nothing
+    emit!(call, :text, LMCC.jobj("field" => String(field), "answer" => field == call.program["answer"], "text" => String(text)))
+end
+emit_thinking(call::Call, text) = isempty(text) ? nothing : emit!(call, :thinking, LMCC.jobj("text" => String(text)))
+emit_retry(call::Call, reason, wait) = emit!(call, :retry, LMCC.jobj("reason" => String(reason), "wait" => wait))
 
 # ------------------------------------------------------------------ a job
 
@@ -115,15 +112,14 @@ struct Job
     model::String
     tools::Vector{Any}
     call::Call
-    watch::Union{Nothing,Watch}
     typed::Function                  # the reply's values (JSON) → typed, or a parse-value refusal
 end
 
-"Sleep `seconds`, waking to stop when the watching stream closes."
-function cancellable_sleep(watch, seconds)
+"Sleep `seconds`, waking to stop when a stream watching the call closes."
+function cancellable_sleep(call, seconds)
     deadline = time() + seconds
     while time() < deadline
-        watch_closed(watch) && throw(Cancelled())
+        check_cancelled(call)
         sleep(min(0.1, max(0.0, deadline - time())))
     end
 end
@@ -131,7 +127,7 @@ end
 "Only the fields a stream shows: an output's text (tool calls are shown whole)."
 function show_events(job::Job, batch)
     for ev in batch
-        get(ev, "kind", nothing) == "field_delta" && ev["field"] != "calls" && on_text(job.watch, job.call, ev["field"], ev["text"])
+        get(ev, "kind", nothing) == "field_delta" && ev["field"] != "calls" && emit_text(job.call, ev["field"], ev["text"])
     end
 end
 
@@ -152,7 +148,7 @@ function replay(job::Job, response)
         get(e, "kind", nothing) == "field_delta" && e["field"] != "calls" && (texts[e["field"]] = get(texts, e["field"], "") * e["text"])
     end
     for (field, text) in texts
-        on_text(job.watch, job.call, field, text)
+        emit_text(job.call, field, text)
     end
 end
 
@@ -167,14 +163,20 @@ function backoff(err, attempt)
     min(30.0, 2.0^attempt) * (0.5 + rand())
 end
 
-"One request: through the router, re-sent after transient errors; streamed when watched."
-function send(job::Job, request)
-    call, watch = job.call, job.watch
+"""
+One request: through the router, re-sent after transient errors; streamed
+when the call is watched. Each attempt is a `request` event and an exchange
+(law 8); `request_hash` is lmcc's hash of the request as it renders it.
+"""
+function send(job::Job, request, request_hash)
+    call = job.call
     retries = max(0, job.settings[:api_retries])
-    streams = watch !== nothing && can_stream(job.router)
+    streams = watched(call) && can_stream(job.router)
     attempt = 0
     while true
-        watch_check(watch)
+        check_cancelled(call)
+        call.requests += 1
+        emit!(call, :request, LMCC.jobj("request" => call.requests, "model" => job.model))
         started = time()
         t0 = time_ns()
         elapsed() = (time_ns() - t0) / 1e9
@@ -188,12 +190,12 @@ function send(job::Job, request)
                 source = LM15.stream(job.router, request)
                 try
                     for e in source
-                        watch_closed(watch) && throw(Cancelled())
+                        cancelled(call) && throw(Cancelled())
                         push!(events, e)
                         e isa LM15.StreamDeltaEvent || continue
                         first_delta === nothing && (first_delta = elapsed())
                         d = e.delta
-                        d isa LM15.ThinkingDelta && !thinking_read && !isempty(d.text) && on_thinking(watch, call, d.text)
+                        d isa LM15.ThinkingDelta && !thinking_read && emit_thinking(call, d.text)
                         if viewing
                             # the view (lmcc's stream reader) never decides the call: a piece it
                             # cannot read stops the view, and the whole reply is read below
@@ -217,18 +219,18 @@ function send(job::Job, request)
                 LM15.materialize_response(events, request)
             else
                 r = LM15.complete(job.router, request)
-                watch === nothing || replay(job, r)
+                watched(call) && replay(job, r)
                 r
             end
-            exchange!(call, job.model, request, response, started, elapsed(); streamed=streams, first_delta)
+            exchange!(call, job.model, request, response, started, elapsed(); streamed=streams, first_delta, request_hash)
             return response
         catch err
-            exchange!(call, job.model, request, nothing, started, elapsed(); error=err, streamed=streams)
-            watch_closed(watch) && throw(Cancelled())
+            exchange!(call, job.model, request, nothing, started, elapsed(); error=err, streamed=streams, request_hash)
+            cancelled(call) && throw(Cancelled())
             (LM15.retryable(err) && attempt < retries) || rethrow()
             wait = backoff(err, attempt)
-            on_retry(watch, call, "the provider failed ($(error_type(err))); sending again in $(round(wait; digits=1)) s", wait)
-            cancellable_sleep(watch, wait)
+            emit_retry(call, "the provider failed ($(error_type(err))); sending again in $(round(wait; digits=1)) s", wait)
+            cancellable_sleep(call, wait)
             attempt += 1
         end
     end
@@ -243,11 +245,13 @@ unreadable(r::LMCC.Refusal) = startswith(r.code, "parse-") || r.code == "format-
 function complete_once(job::Job, rendered, responses)
     s = job.settings
     request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s))
+    rendered_request = LMCC.request(rendered)
+    request_hash = LMCC.sha256_of(rendered_request)
     budget = nothing
     retries = max(0, s[:retries])
     attempt = 0
     while true
-        response = send(job, request)
+        response = send(job, request, request_hash)
         push!(responses, response)
         try
             reading = LMCC.read(job.plan, response)
@@ -267,10 +271,16 @@ function complete_once(job::Job, rendered, responses)
                 budget = 2 * something(budget, setting(s, :max_tokens), 1024)
                 request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))
             else
-                again = LM15.user("Your reply could not be read: $(refusal.hint). Reply again, in exactly the form the instructions give.")
+                words = "Your reply could not be read: $(refusal.hint). Reply again, in exactly the form the instructions give."
+                again = LM15.user(words)
                 request = LM15.Request(request; messages=(request.messages..., response.message, again))
+                # the request as lmcc writes it, the reply and the re-ask after its messages: what this exchange sent
+                rendered_request = LMCC.deepcopy_json(rendered_request)
+                rendered_request["messages"] = Any[rendered_request["messages"]..., LM15.to_dict(response.message),
+                                                   LMCC.jobj("role" => "user", "parts" => Any[LMCC.textpart(words)])]
+                request_hash = LMCC.sha256_of(rendered_request)
             end
-            on_retry(job.watch, job.call, asked_again(refusal), nothing)
+            emit_retry(job.call, asked_again(refusal), nothing)
             attempt += 1
         end
     end
@@ -313,9 +323,10 @@ function run_job(job::Job)
         end
         for c in calls
             id, name = string(c["id"]), string(c["name"])
-            on_tool_call(job.watch, job.call, id, name, something(get(c, "input", nothing), JObj()))
+            asked = emit!(job.call, :tool_call, LMCC.jobj("id" => id, "name" => name, "input" => something(get(c, "input", nothing), JObj())))
+            tool_barrier(job.call, asked)
             output = run_tool(job.tools, c, Symbol(job.settings[:tool_errors]))
-            on_tool_result(job.watch, job.call, id, name, output)
+            emit!(job.call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output))
             turn = LMCC.tool(turn, id, output)
         end
     end

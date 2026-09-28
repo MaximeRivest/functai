@@ -230,20 +230,26 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
                             "drop the return type ::$(ret), or add code that returns what it says"))
     end
 
-    # the inputs, positional then keyword, as Julia binds them
-    params = Any[x.has_default ? Expr(:kw, x.name, x.default) : x.name for x in inputs if !x.keyword]
-    kwparams = Any[x.has_default ? Expr(:kw, x.name, x.default) : x.name for x in inputs if x.keyword]
-    dict = :($OrderedDict{String,Any}($((:($(String(x.name)) => $(x.name)) for x in inputs)...)))
+    # the inputs, positional then keyword, as Julia binds them. An input with a
+    # default may be left out: the binder leaves it out, and the call takes the
+    # default from the interface (evaluated once, here: it is data, written in
+    # the interface and sent to the model; contract/programs.md)
+    given = NOTHING_GIVEN
+    params = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if !x.keyword]
+    kwparams = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if x.keyword]
+    dict = :($(given_inputs)($((:($(String(x.name)) => $(x.name)) for x in inputs)...)))
     binder = isempty(kwparams) ? Expr(:->, Expr(:tuple, params...), dict) :
              Expr(:->, Expr(:tuple, Expr(:parameters, kwparams...), params...), dict)
     row = gensym(:row)
     assigns = Any[]
     for x in inputs
         col = String(x.name)
-        absent = x.has_default ? x.default : :(throw(ArgumentError($("the row has no column $col for $name's input"))))
+        absent = x.has_default ? given : :(throw(ArgumentError($("the row has no column $col for $name's input"))))
         push!(assigns, :($(x.name) = haskey($row, $col) ? $row[$col] : $absent))
     end
     from_row = Expr(:->, row, Expr(:block, assigns..., dict))
+    defaults = Expr(:tuple, (Expr(:(=), x.name, :($(default_now)(() -> $(x.default), $(String(name)), $(String(x.name)))))
+                             for x in inputs if x.has_default)...)
 
     body_fn = nothing
     if has_code
@@ -269,7 +275,7 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
     any(o -> o.args[1] === :module_name, options) && (mname = nothing)     # the option says it
     fn = gensym(:fn)
     esc(:($name = let $fn = $(define_function)($(String(name)), $description;
-            inputs=$input_specs, outputs=$output_specs, binder=$binder, from_row=$from_row, body=$body_fn,
+            inputs=$input_specs, outputs=$output_specs, defaults=$defaults, binder=$binder, from_row=$from_row, body=$body_fn,
             code=$code, returns=$(has_code ? ret : nothing), declared_return=$(ret === nothing ? nothing : ret),
             $((mname === nothing ? () : (Expr(:kw, :module_name, mname),))...), file=$(source.file === nothing ? nothing : String(source.file)), line=$(source.line),
             source=$(QuoteNode(Base.remove_linenums!(deepcopy(whole)))), $(settings...))
@@ -279,6 +285,20 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
 end
 
 guidance_spec(type, desc) = desc === nothing || isempty(desc) ? type : :($type => $desc)
+
+"The inputs a call gave, by name (an input left out is not there)."
+given_inputs(pairs::Pair...) = OrderedDict{String,Any}(k => v for (k, v) in pairs if v !== NOTHING_GIVEN)
+
+"An input's default, evaluated when the function is defined (it is data: written in the interface, sent when left out)."
+function default_now(thunk, fname, input)
+    try
+        thunk()
+    catch err
+        err isa UndefVarError || rethrow()
+        throw(ArgumentError("@ai $fname: the default of $input is sent to the model when $input is left out, so it is a " *
+                            "value known when the function is defined; it cannot use $(err.var) (another input?)"))
+    end
+end
 
 "The @ai macro's constructor: checks what only evaluated types can say, then makes the function."
 function define_function(name, description; inputs, outputs, declared_return, code, body, kw...)

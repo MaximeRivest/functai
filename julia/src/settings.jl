@@ -18,7 +18,9 @@ const SETTING_DOCS = (
     max_steps = "model requests per tool loop (default 8)",
     tool_errors = ":report (the model sees a tool's error, default) or :raise",
     log_calls = "the call log: a folder, true (the default folder) or false; unset: the environment variable `FUNCTAI_LOG_CALLS` decides",
-    log_content = "false: log sizes, times and tokens, never values or messages",
+    log_content = "what the call log keeps: false (sizes, times and tokens, never values or messages), or a map of fields: (transcript = false,), Dict(\"*\" => false, \"question\" => true); layers only remove",
+    observers = "functions (or Channels) given the kept form of every event of the calls in scope: [e -> println(e)]; layers add up",
+    journal = "where each call tree's kept log is kept while it is written: a store (best effort), Journal(store; required = true), or false (none)",
     caller = "who is calling, added to the environment variable `FUNCTAI_CALLER`: Dict(\"kind\" => \"notebook\")",
     concurrency = "calls in flight at once over a column (broadcasting, map, evaluate; default 8)",
 )
@@ -30,6 +32,10 @@ const DEFAULTS = Dict{Symbol,Any}(:retries => 1, :api_retries => 3, :max_steps =
 const GLOBAL_SETTINGS = Dict{Symbol,Any}()
 const SETTINGS_LOCK = ReentrantLock()
 const SCOPED_SETTINGS = ScopedValue(Dict{Symbol,Any}())
+# each enclosing with_settings block's own settings, outermost first: the
+# settings that are layered rather than overridden (log_content, observers,
+# journal) read every layer
+const SCOPED_LAYERS = ScopedValue(Dict{Symbol,Any}[])
 
 "The Levenshtein distance between two short words (for suggesting a setting's name)."
 function edit_distance(a::AbstractString, b::AbstractString)
@@ -63,6 +69,9 @@ function check_setting(name::Symbol, value)
     name === :log_calls && !(value isa Union{Bool,AbstractString}) && throw(ArgumentError("log_calls is a folder, true or false, not $(repr(value))"))
     name === :lm && !(value isa AbstractString) && throw(ArgumentError("lm is a model name like \"gpt-4.1-mini\", not $(repr(value))"))
     name === :caller && !(value isa AbstractDict || value isa NamedTuple) && throw(ArgumentError("caller is a Dict, not $(repr(value))"))
+    name === :log_content && content_setting(value)
+    name === :observers && !(value isa Union{AbstractVector,Tuple}) && throw(ArgumentError("observers is a list of functions (or Channels), not $(repr(value))"))
+    name === :journal && journal_setting(value)
     nothing
 end
 
@@ -71,8 +80,12 @@ function settings_dict(kw)
     for (k, v) in pairs(kw)
         name = Symbol(k)
         check_setting(name, v)
-        out[name] = name === :caller && v !== nothing ? Dict{String,Any}(String(a) => b for (a, b) in pairs(v)) :
-                    name === :tool_errors && v !== nothing ? Symbol(v) : v
+        out[name] = v === nothing ? nothing :
+                    name === :caller ? Dict{String,Any}(String(a) => b for (a, b) in pairs(v)) :
+                    name === :tool_errors ? Symbol(v) :
+                    name === :log_content ? content_setting(v) :
+                    name === :observers ? Any[v...] :
+                    name === :journal ? journal_setting(v) : v
     end
     out
 end
@@ -119,7 +132,7 @@ function with_settings(f; kw...)
     if haskey(given, :caller) && haskey(SCOPED_SETTINGS[], :caller) && given[:caller] !== nothing
         merged[:caller] = merge(SCOPED_SETTINGS[][:caller], given[:caller])
     end
-    with(f, SCOPED_SETTINGS => merged)
+    with(f, SCOPED_SETTINGS => merged, SCOPED_LAYERS => push!(copy(SCOPED_LAYERS[]), given))
 end
 
 "The settings a function with `own` settings runs with."

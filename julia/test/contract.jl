@@ -6,6 +6,59 @@ read_json(path) = LMCC.parse_json(read(path, String))
 cases(folder) = [(replace(f, ".json" => ""), read_json(joinpath(CONTRACT, "cases", folder, f)))
                  for f in sort(readdir(joinpath(CONTRACT, "cases", folder))) if endswith(f, ".json")]
 
+refusal_of(f) = try
+    f()
+    nothing
+catch e
+    e
+end
+same(a, b) = LMCC.canonical_json(a) == LMCC.canonical_json(b)
+
+"A value with no JSON form, standing for the case's {\"\$type\", \"\$repr\"} (the harness's own native value)."
+struct Stand
+    desc::Dict{String,Any}
+end
+FunctAI.jsonvalue(::Stand) = throw(FunctAI.NoJSON("a stand-in has no JSON form"))
+is_stand(v) = v isa AbstractDict && Set(keys(v)) == Set(["\$type", "\$repr"])
+native(v) = is_stand(v) ? Stand(Dict{String,Any}(v)) : v
+back(v::Stand) = v.desc
+back(v::AbstractDict) = Dict{String,Any}(String(k) => back(x) for (k, x) in v)
+back(v::NamedTuple) = Dict{String,Any}(String(k) => back(x) for (k, x) in pairs(v))
+back(v::AbstractVector) = Any[back(x) for x in v]
+back(v) = v
+
+"A module from an interface as data; its code keeps what it was given, and returns `returned[]`."
+function capturing(iface)
+    got = Ref{Any}(nothing)
+    returned = Ref{Any}(nothing)
+    p = AIProgram("m", (; kw...) -> (got[] = Dict{String,Any}(String(k) => v for (k, v) in kw); returned[]); interface=iface)
+    (p, got, returned)
+end
+
+"What calling a module with `inputs` gives: the inputs its code got, or its refusal."
+function module_inputs(p, got, inputs)
+    got[] = nothing
+    err = refusal_of(() -> p(; (Symbol(k) => native(v) for (k, v) in inputs)...))
+    # the code ran (what it returned is another check's)
+    (err === nothing || err isa InterfaceError && err.code == "interface-output") && return Dict("inputs" => back(got[]))
+    @test got[] === nothing                            # the code did not run
+    err isa InterfaceError ? Dict("refuses" => err.code, "field" => err.field) : err
+end
+
+"Valid inputs for a module, to call it for what it returns."
+valid_inputs(iface) = Dict{String,Any}(f["name"] => get(f, "opaque", false) === true ? Stand(Dict{String,Any}("\$type" => "X", "\$repr" => "x")) :
+                                       FunctAI.sample_value(f["shape"]) for f in iface["inputs"] if get(f, "optional", false) !== true)
+
+"A function with the case's fields: its inputs, its outputs, reasoning and tools when FunctAI adds those fields."
+function content_function(fields; own...)
+    added = fields["added"]
+    tools = "calls" in added ? [tool(x -> ""; name="ci_log", description="The CI log.", parameters=Dict("type" => "object"))] : []
+    AIFunction("triage_build", "Is the build broken?"; inputs=[Symbol(n) => String for n in fields["inputs"]],
+               outputs=[Symbol(n) => String for n in fields["outputs"] if !(n in added)],
+               reasoning="reasoning" in added, tools, own...)
+end
+
+
 @testset "the contract" begin
 
 @testset "the contract's data in data/contract is the contract's" begin
@@ -37,7 +90,7 @@ end
     @test model_capabilities("typesafe", "x") == (native_structured_output = true,)
 end
 
-"A contract definition, written the way a Julia user writes it without the macro."
+"A contract definition, written the way a Julia user writes it without the macro (an optional input: `defaults`)."
 function julia_function(d)
     field(f) = get(f, "desc", nothing) === nothing ? f["shape"] : f["shape"] => f["desc"]
     settings = Dict{Symbol,Any}()
@@ -48,6 +101,7 @@ function julia_function(d)
     f = AIFunction(d["name"], d["description"];
                    inputs=[Symbol(x["name"]) => field(x) for x in d["inputs"]],
                    outputs=[Symbol(x["name"]) => field(x) for x in d["outputs"]],
+                   defaults=[Symbol(x["name"]) => x["shape"]["default"] for x in d["inputs"] if get(x, "optional", false) === true],
                    tools, instructions=d["state"]["instructions"], settings...)
     isempty(d["state"]["demos"]) ? f : with_demos(f, d["state"]["demos"])
 end
@@ -91,7 +145,8 @@ end
     ratings = [r for r in c["records"] if haskey(r, "functai_rating")]
     q = c["rated"]
     rows, left = FunctAI.rated_rows(recs, ratings; name=q["name"], module_name=get(q, "module", nothing),
-                                    signature=get(q, "signature", nothing), by=get(q, "by", nothing))
+                                    signature=get(q, "signature", nothing), interface=get(q, "interface", nothing),
+                                    by=get(q, "by", nothing))
     @test LMCC.json_text(rows) == LMCC.json_text(c["expect"]["rows"])
     @test LMCC.canonical_json(left) == LMCC.canonical_json(c["expect"]["left_out"])
 end
@@ -99,12 +154,7 @@ end
 @testset "saved case $name" for (name, c) in cases("saved")
     node = get(c, "node", nothing)
     if haskey(c["expect"], "refuses")
-        err = try
-            FunctAI.from_manifest(c["manifest"]; node)
-            nothing
-        catch e
-            e
-        end
+        err = refusal_of(() -> FunctAI.from_manifest(c["manifest"]; node))
         @test err isa LoadRefused && err.code == c["expect"]["refuses"]
     else
         f = FunctAI.from_manifest(c["manifest"]; node)
@@ -113,6 +163,135 @@ end
         @test f.module_name == want["module"]
         @test version(f) == want["version"]
         @test signature_id(f) == want["signature_id"]
+        # called with an optional input left out, it sends its default (saved.md, step 5)
+        for s in get(c["expect"], "sends", Any[])
+            bound = FunctAI.bind_inputs(f, (), pairs((; (Symbol(k) => v for (k, v) in s["inputs"])...)))
+            @test FunctAI.request_hash(f, bound) == s["request_hash"]
+        end
+    end
+    # described without loading
+    want = c["expect"]["describe"]
+    if haskey(want, "refuses")
+        err = refusal_of(() -> FunctAI.describe(c["manifest"]; node))
+        @test err isa LoadRefused && err.code == want["refuses"]
+    else
+        @test same(FunctAI.describe(c["manifest"]; node), want["interface"])
+    end
+end
+
+# ------------------------------------------------------------------ programs/: interfaces
+
+@testset "programs case $name" for (name, c) in cases("programs")
+    kind = c["program"]
+    if kind == "ai"
+        if haskey(c["expect"], "refuses")
+            err = refusal_of(() -> julia_function(c["definition"]))
+            @test err isa InterfaceError && err.code == c["expect"]["refuses"] && err.field == c["expect"]["field"]
+        else
+            f = julia_function(c["definition"])
+            @test same(FunctAI.interface(f), c["expect"]["interface"])
+            @test FunctAI.interface_signature(f) == c["expect"]["signature"]
+            @test signature_id(f) == c["expect"]["signature_id"]
+            for b in c["binds"]
+                bound = FunctAI.bind_inputs(f, (), pairs((; (Symbol(k) => v for (k, v) in b["inputs"])...)))
+                @test same(Dict("inputs" => bound), b["expect"])
+            end
+        end
+    elseif kind == "module"
+        p, got, returned = capturing(c["interface"])
+        @test FunctAI.interface_signature(p) == c["expect"]["signature"]
+        for check in c["checks"]
+            if haskey(check, "inputs")
+                @test same(module_inputs(p, got, check["inputs"]), check["expect"])
+            else
+                returned[] = native(check["returned"]) isa Stand ? native(check["returned"]) :
+                             check["returned"] isa AbstractDict ? Dict{String,Any}(k => native(v) for (k, v) in check["returned"]) : check["returned"]
+                err = refusal_of(() -> p(; (Symbol(k) => v for (k, v) in valid_inputs(c["interface"]))...))
+                outputs = c["interface"]["outputs"]
+                result = err === nothing ? Dict("outputs" => length(outputs) == 1 ? Dict(outputs[1]["name"] => back(returned[])) : back(returned[])) :
+                         err isa InterfaceError ? Dict("refuses" => err.code, "field" => err.field) : err
+                @test same(result, check["expect"])
+            end
+        end
+    elseif kind == "definitions"
+        for x in c["interfaces"]
+            ai = get(x, "ai", false) === true
+            fault = FunctAI.interface_fault(x["interface"]; ai)
+            got = fault === nothing ? Dict("signature" => FunctAI.interface_signature(x["interface"])) :
+                  Dict("refuses" => fault.code, "field" => fault.field)
+            @test same(got, x["expect"])
+            if !ai              # a module defined with it is refused, or defined, the same way
+                err = refusal_of(() -> AIProgram("m", (; kw...) -> nothing; interface=x["interface"]))
+                @test haskey(x["expect"], "refuses") ? err isa InterfaceError && err.field == x["expect"]["field"] : err === nothing
+            end
+        end
+    elseif kind == "same-data"
+        @test [FunctAI.interface_signature(x) for x in c["interfaces"]] == c["expect"]["signatures"]
+        modules = [capturing(x) for x in c["interfaces"]]
+        for check in c["checks"]
+            @test same([module_inputs(p, got, check["inputs"]) for (p, got, _) in modules], check["expect"])
+        end
+    end
+end
+
+# ------------------------------------------------------------------ content/: what the log keeps
+
+@testset "content case $name" for (name, c) in cases("content")
+    layers = Dict(l["where"] => l["log_content"] for l in c["layers"])
+    fields = c["fields"]
+    refused = nothing
+    f = nothing
+    try
+        f = content_function(fields; (haskey(layers, "own") ? (log_content=layers["own"],) : (;))...)   # a program's own: when it is defined
+        block = haskey(layers, "block") ? (log_content=layers["block"],) : (;)
+        configured = haskey(layers, "configure") ? layers["configure"] : nothing
+        configured === nothing || FunctAI.configure!(log_content=configured)                 # configure's: when it is set
+        try
+            env = c["environment"] === nothing ? ("FUNCTAI_LOG_CONTENT" => nothing) : ("FUNCTAI_LOG_CONTENT" => c["environment"])
+            withenv(env) do
+                with_settings(; block...) do                                                  # a block's: when it is set
+                    s = FunctAI.effective(f.own)
+                    fs = FunctAI.program_fields(f, s)
+                    @test fs.inputs == fields["inputs"] && fs.outputs == fields["outputs"] && fs.added == fields["added"]
+                    keep = FunctAI.content_keep(fs, FunctAI.content_layers(f.own), FunctAI.environment_content())
+                    written = FunctAI.written_record(c["record"], FunctAI.Keep(fs, keep))
+                    @test same(Dict("record" => written), c["expect"])
+                end
+            end
+        finally
+            FunctAI.configure!(log_content=nothing)
+        end
+    catch e
+        e isa LogContentError || rethrow()
+        refused = e
+    end
+    if haskey(c["expect"], "refuses")
+        @test refused isa LogContentError && refused.code == c["expect"]["refuses"] && refused.field == c["expect"]["field"]
+    else
+        @test refused === nothing
+    end
+end
+
+# ------------------------------------------------------------------ saw/: what a call saw
+
+@testset "saw case $name" for (name, c) in cases("saw")
+    c["kind"] == "read" || continue            # "shown" is for languages that show context again (stage 3, 5)
+    for q in c["queries"]
+        known = try
+            Dict("saw" => FunctAI.saw(c["records"], q["call"]))
+        catch e
+            e isa FunctAI.SawUnknown || rethrow()
+            Dict("unknown" => e.code, "call" => e.call)
+        end
+        @test same(known, q["expect"])
+        keeps = try
+            FunctAI.keeps_saw(c["records"], q["call"])
+            Dict("ok" => true)
+        catch e
+            e isa FunctAI.SawUnknown || rethrow()
+            Dict("refuses" => e.code, "call" => e.call)
+        end
+        @test same(keeps, q["keeps"])
     end
 end
 
