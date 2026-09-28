@@ -8,6 +8,7 @@
 import * as calllog from "./calllog.ts";
 import { Call, errorJson, type Program } from "./calllog.ts";
 import { keptFields, type CallFields } from "./content.ts";
+import { Cancelled } from "./engine.ts";
 import { receivers, type ReceiverLayer } from "./events.ts";
 import { env } from "./host.ts";
 import { journalOf, JournalError, TreeLog, type Node, type Observer, type ResolvedJournal, type Watcher } from "./log.ts";
@@ -20,7 +21,7 @@ type Rec = Record<string, unknown>;
 export interface Ended<R> {
   readonly value: R;
   readonly outputs: Rec;
-  /** The `done` event's value (default: `value`). */
+  /** The call's value as its program gives it (an AI function's answer): the `done` event's, and `JournalError`'s outcome (default: `value`). */
   readonly shown?: unknown;
   /** AI functions: what the code returned, when it is not the answer as the model gave it. */
   readonly returned?: unknown;
@@ -119,6 +120,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   try {
     if (refusal) throw refusal;
     if (!parent) await log.barrier(started);
+    if (call.signal?.aborted) throw new Cancelled();
     ended = await calllog.current.run(call, () => spec.body(call));
     call.outputs = ended.outputs;
   } catch (err) {
@@ -141,7 +143,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
       `the journal ${unconfirmed.journal === "refused" ? "refused" : "did not answer for"} the end of ${program.name}'s call (event ${unconfirmed.event.writer}:${unconfirmed.event.seq}); its outcome is in err.outcome`,
       {
         journal: unconfirmed.journal, event: unconfirmed.event, tree: log.tree, store: log.journal!.store,
-        outcome: error === undefined ? { done: ended!.value } : { failed: error },
+        outcome: error === undefined ? { done: ended!.shown !== undefined ? ended!.shown : ended!.value } : { failed: error },
       });
   }
   if (error !== undefined) throw error;

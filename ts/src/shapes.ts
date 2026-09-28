@@ -69,6 +69,7 @@ export type IsOptional<S> =
   S extends { readonly optional: false } ? false :
   S extends { readonly shape: infer X } ? IsOptional<X> :
   S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? (undefined extends T ? true : false) :
+  S extends { readonly default: unknown } ? true :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? false : null extends T ? true : false) : false;
 
 /** The value type of a field spec. */
@@ -92,6 +93,8 @@ export const t = {
   record: <V>(values: Shape<V>): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
+  /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
+  withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => ({ ...shape, default: value }) as Shape<T> & { readonly default: T },
   /** Any JSON value (shape `{}`). */
   json: (): Shape<Json> => ({}) as Shape<Json>,
   /**
