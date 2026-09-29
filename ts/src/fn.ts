@@ -15,18 +15,22 @@
  */
 
 import * as lmcc from "lmcc";
-import * as bridge from "lmcc/lm15";
 import type { Request } from "@lm15/lm15";
-import * as calllog from "./calllog.ts";
-import { Cancelled, run as runEngine, Prediction, watching, type Router, type Tool, type Watch } from "./engine.ts";
+import type * as calllog from "./calllog.ts";
+import type { CallFields } from "./content.ts";
+import { Cancelled, lm15Request, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
+import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
+import { checkInterface, interfaceSignature, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
-import { allowsNull, readField, standardOf, type FieldSpec, type InputValueOf, type IsOptional, type StandardResult,
-  type StandardSchemaLike, type ValueOf } from "./shapes.ts";
-import { configOf, effective, type Settings } from "./settings.ts";
+import { recordInputs, runCall } from "./program.ts";
+import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
+import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
+import { JournalError } from "./log.ts";
+import { copyData, entriesOf, recordOf, setOwn, writeData } from "./values.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
-import { Stream } from "./stream.ts";
+import { PredictionStream } from "./stream.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -137,10 +141,14 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   readonly version: string;
   /** The call log's `program.signature`: the fields' names and shapes. */
   readonly signatureId: string;
+  /** What it takes and gives, as data (contract/programs.md): its inputs (optional ones with their default) and outputs. */
+  readonly interface: Interface;
+  /** The interface's signature: the call log's `program.interface`. Calls with the same one record the same data. */
+  readonly interfaceId: string;
   /** The call, with every output, the turn and the replies. */
   predict(...args: CallArgs<I>): Promise<Prediction<O, A>>;
-  /** Call it and watch the answer being written. */
-  stream(...args: CallArgs<I>): Stream<A>;
+  /** Call it and watch it being made: its answer's text as it is written, and every event of its log. */
+  stream(...args: CallArgs<I>): PredictionStream<A, Prediction<O, A>>;
   /** Each item's answer, in order, `concurrency` calls at once. Rejects with the first failure, and stops starting new calls. */
   map(inputs: Iterable<Input<I>>, options?: MapOptions): Promise<A[]>;
   /** The exact request a call would send, without sending it. */
@@ -235,36 +243,36 @@ function filePath(where: string): string {
   }
 }
 
+const isRecordedTurn = (item: unknown): boolean =>
+  typeof item === "object" && item !== null && Object.hasOwn(item, "signature") && Object.hasOwn(item, "steps");
+
 function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string): Demo {
-  if (typeof item === "object" && item !== null && "signature" in item && "steps" in item) return item as unknown as Demo;   // a recorded turn
-  if (typeof item === "object" && item !== null && "inputs" in item && "outputs" in item
+  if (isRecordedTurn(item)) return item as unknown as Demo;   // a recorded turn
+  // copies member by member: `__proto__` stays a member, and the order stays the value's
+  const copy = (r: unknown): Rec => recordOf(entriesOf(r as Rec));
+  if (typeof item === "object" && item !== null && Object.hasOwn(item, "inputs") && Object.hasOwn(item, "outputs")
     && typeof item["inputs"] === "object" && !inputNames.includes("inputs")) {
-    return { inputs: { ...(item["inputs"] as Rec) }, outputs: { ...(item["outputs"] as Rec) } };
+    return { inputs: copy(item["inputs"]), outputs: copy(item["outputs"]) };
   }
   if (Array.isArray(item) && item.length === 2) {
     const [i, o] = item as unknown as [unknown, unknown];
     return {
-      inputs: typeof i === "object" && i !== null && !Array.isArray(i) ? { ...(i as Rec) } : { [inputNames[0]!]: i },
-      outputs: typeof o === "object" && o !== null && !Array.isArray(o) ? { ...(o as Rec) } : { [answer]: o },
+      inputs: typeof i === "object" && i !== null && !Array.isArray(i) ? copy(i) : recordOf([[inputNames[0]!, i]]),
+      outputs: typeof o === "object" && o !== null && !Array.isArray(o) ? copy(o) : recordOf([[answer, o]]),
     };
   }
   const inputs: Rec = {};
   const outputs: Rec = {};
-  for (const [k, v] of Object.entries(item)) (inputNames.includes(k) ? inputs : outputs)[k] = v;
+  for (const [k, v] of entriesOf(item as Rec)) setOwn(inputNames.includes(k) ? inputs : outputs, k, v);
   return { inputs, outputs };
-}
-
-/** What a call does with one input: fill it when left out (`fill`), and check a given value with its schema. */
-interface InputRule {
-  optional: boolean;
-  fill: unknown;
-  schema: StandardSchemaLike | null;
 }
 
 interface Core {
   definition: sig.Definition;
-  /** By input name; a loaded function has none, and its rules come from its shapes. */
-  rules?: Record<string, InputRule>;
+  /** What it takes and gives, as data; its inputs' rules follow it unless `rules` says more (a schema). */
+  interface: Interface;
+  /** By input name; a loaded function has none, and its rules come from its interface. */
+  rules?: InputRules;
   own: Settings;
   tools: readonly Tool[];
   module: string;
@@ -276,7 +284,17 @@ interface Core {
 
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
-  "cacheReplies"]);
+  "cacheReplies", "observers", "journal"]);
+
+/** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
+export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
+  const outputs = signature.fields.filter((f) => f.direction === "output");
+  return {
+    inputs: iface.inputs.map((f) => f.name),
+    outputs: outputs.map((f) => f.name),
+    added: outputs.filter((f) => (f.purpose ?? "plain") !== "plain").map((f) => f.name),
+  };
+}
 
 /**
  * An AI function: its name, what it does, its input and output fields; a
@@ -289,53 +307,45 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   if (typeof name !== "string" || !name) throw new TypeError('ai(name, { input, output }): the name comes first: ai("mood", { ... })');
   if (!def || typeof def !== "object" || !def.input || typeof def.input !== "object") throw new TypeError(`ai("${name}", { input: { ... } }): the inputs are required`);
   if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${name}: give output (one answer) or outputs (several), not both`);
-  const rules: Record<string, InputRule> = {};
+  const rules = new Map<string, InputRule>();
   const inputs = Object.entries(def.input).map(([field, spec]) => {
-    const read = readField(spec, `${name}.input.${field}`);
-    const rule = ruleOf(spec, read.shape);
-    rules[field] = rule;
-    // left out, it is sent as null (as Python's `x: T | None = None`): the shape says so
-    const shape = rule.optional && rule.fill === null && !allowsNull(read.shape) ? { anyOf: [read.shape, { type: "null" }] } : read.shape;
-    return { name: field, ...read, shape };
+    const { field: declared, rule } = declareInput(field, spec, `${name}.input.${field}`, "ai");
+    rules.set(field, rule);
+    return { name: field, shape: declared.shape, desc: declared.desc ?? null, ...(rule.optional ? { optional: true } : {}) };
   });
   const outputSpecs: [string, FieldSpec][] = def.outputs
     ? Object.entries(def.outputs)
     : [["result", (def.output ?? { type: "string" }) as FieldSpec]];
   if (!outputSpecs.length) throw new TypeError(`${name}: outputs is empty`);
-  const outputs = outputSpecs.map(([field, spec]) => ({ name: field, ...readField(spec, `${name}.outputs.${field}`) }));
+  const outputs = outputSpecs.map(([field, spec]) => {
+    const declared = declareOutput(field, spec, `${name}.outputs.${field}`, "ai");
+    return { name: field, shape: declared.shape, desc: declared.desc ?? null };
+  });
   const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
   const moduleName = def.definedIn ?? where.module ?? "main";
   const definition: sig.Definition = {
     name, description: def.description ?? "", inputs, outputs,
-    cot: false, tools: Boolean(def.tools?.length), includeName: true,
+    cot: own.module === "cot", tools: Boolean(def.tools?.length), includeName: own.includeFnName !== false,
   };
+  // lmcc checks the signature first (signature-malformed), then the interface is checked by the contract's rules
+  const signature = sig.signature(definition, def.instructions ?? null);
+  const iface = checkInterface(interfaceOf(definition), { ai: true, where: `ai("${name}")` });
+  checkSettings(own, `ai("${name}")`, fieldsOf(iface, signature));
   const core: Core = {
-    definition, rules, own, tools: [...(def.tools ?? [])], module: moduleName, file: where.file, line: where.line,
-    state: { instructions: def.instructions ?? null, demos: [] },
+    definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],
+    module: moduleName, file: where.file, line: where.line, state: { instructions: def.instructions ?? null, demos: [] },
   };
   const fn = make(core) as unknown as AIFunction<Inputs<I>, Outputs<O, A>, Answer<O, A>>;
   if (def.demos) fn.demos = def.demos as Demo[];
   return fn;
 }
 
-/**
- * How a call treats an input it was not given. A Standard Schema decides
- * itself: asked to validate `undefined`, zod's `.optional()` accepts it (sent
- * as null), `.default(x)` gives `x`, and `.nullable()` refuses it (the input
- * must be given, null or not). A plain shape: optional when it allows null.
- */
-function ruleOf(spec: FieldSpec, shape: Rec): InputRule {
-  const schema = standardOf(spec);
-  if (!schema) return { optional: allowsNull(shape), fill: null, schema: null };
-  const probe = schema["~standard"].validate(undefined);
-  if (probe instanceof Promise) {                          // an async schema cannot say at definition time
-    probe.catch(() => undefined);
-    return { optional: false, fill: null, schema };
-  }
-  if (probe.issues) return { optional: false, fill: null, schema };
-  return { optional: true, fill: probe.value === undefined ? null : probe.value, schema };
+/** An AI function's interface: its definition's description, inputs (optional ones with their default) and outputs. */
+export function interfaceOf(d: sig.Definition): Interface {
+  const field = (f: sig.FieldDef) => ({ name: f.name, shape: f.shape, ...(f.desc ? { desc: f.desc } : {}), ...(f.optional ? { optional: true as const } : {}) });
+  return { description: d.description, inputs: d.inputs.map(field), outputs: d.outputs.map(field) };
 }
 
 const ids = new WeakMap<object, number>();
@@ -377,57 +387,13 @@ export function make(core: Core): AIFunction {
     return JSON.stringify([adapter, s.template ?? null]);
   };
 
-  const plainObject = (x: unknown): x is Rec => typeof x === "object" && x !== null && !Array.isArray(x)
-    && Object.getPrototypeOf(x) === Object.prototype;
-  const rules: Record<string, InputRule> = core.rules ?? Object.fromEntries(core.definition.inputs.map((f) =>
-    [f.name, { optional: allowsNull(f.shape as Rec), fill: null, schema: null }]));
-  const required = names.filter((n) => !rules[n]!.optional);
-  /**
-   * A call's argument as inputs by name: the record, or (exactly one required
-   * input) that input's value alone. Inputs left out get their fill.
-   */
-  const bindInputs = (arg: unknown): Rec => bindFilled(arg)[0];
-  /** The inputs by name, and the names that were left out (and filled). */
-  const bindFilled = (arg: unknown): [Rec, Set<string>] => {
-    const keyed = arg === undefined
-      || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) && required[0]! in arg));
-    if (!keyed) {
-      if (required.length === 1) return bindFilled({ [required[0]!]: arg });
-      throw new TypeError(`${core.definition.name} takes its inputs by name: ${core.definition.name}({ ${names.join(", ")} })`);
-    }
-    const given = (arg ?? {}) as Rec;
-    const unknown = Object.keys(given).filter((k) => !names.includes(k));
-    if (unknown.length) throw new TypeError(`${core.definition.name} has no input ${unknown.join(", ")} (its inputs: ${names.join(", ")})`);
-    const missing = required.filter((k) => given[k] === undefined);
-    if (missing.length) throw new TypeError(`${core.definition.name} needs ${missing.join(", ")}`);
-    const out: Rec = {};
-    const filled = new Set<string>();
-    for (const n of names) {
-      if (given[n] === undefined) { out[n] = structuredClone(rules[n]!.fill); filled.add(n); } else out[n] = given[n];
-    }
-    return [out, filled];
-  };
-  /** Given values checked by their schemas, and parsed (defaults, transforms), before any call. */
-  const checked = (bound: Rec, filled: Set<string>, result: (n: string, r: StandardResult) => void): (Promise<void> | void)[] =>
-    names.filter((n) => rules[n]!.schema && !filled.has(n))           // a fill is already the schema's own value
-      .map((n) => {
-        const r = rules[n]!.schema!["~standard"].validate(bound[n]);
-        return r instanceof Promise ? r.then((x) => result(n, x)) : result(n, r);
-      });
-  const accept = (bound: Rec) => (n: string, r: StandardResult) => {
-    if (r.issues) throw new TypeError(`${core.definition.name}: input ${n}: ${r.issues.map((i) => i.message).join("; ")}`);
-    bound[n] = r.value;
-  };
-  const parseInputs = async (arg: unknown): Promise<Rec> => {
-    const [bound, filled] = bindFilled(arg);
-    await Promise.all(checked(bound, filled, accept(bound)));
-    return bound;
-  };
+  const rules: InputRules = core.rules ?? rulesOf(core.interface.inputs);
+  const binder = new Binder(core.definition.name, names, rules);
+  /** A call's argument as inputs by name; inputs left out get their default. */
+  const bindInputs = (arg: unknown): Rec => binder.bind(arg)[0];
   const parseInputsNow = (arg: unknown): Rec => {
-    const [bound, filled] = bindFilled(arg);
-    if (checked(bound, filled, accept(bound)).some((x) => x instanceof Promise)) {
-      throw new TypeError(`${core.definition.name}: an input's schema validates asynchronously; render cannot wait for it (predict can)`);
-    }
+    const [bound, filled] = binder.bind(arg);
+    binder.parse(bound, filled, true);
     return bound;
   };
 
@@ -437,24 +403,28 @@ export function make(core: Core): AIFunction {
     const kept = new Set(plan.signature.fields.filter((f) => f.direction === "output" && (f.purpose === "plain" || f.purpose === "reasoning")).map((f) => f.name));
     const out: lmcc.Turn[] = [];
     for (const d of core.state.demos) {
-      if ("signature" in d && "steps" in d) {
+      if (isRecordedTurn(d)) {
         const recorded = d as unknown as { signature: string };
         if (recorded.signature === plan.fingerprint) {
+          let t: lmcc.Turn | null = null;
           try {
-            out.push(plan.loadTurn(d));
-            continue;
+            t = plan.loadTurn(d);
           } catch {
             // read as its inputs and outputs below
           }
+          if (t) {
+            out.push(t);
+            continue;
+          }
         }
       }
-      const ins = sig.prepareInputs(plan.signature, Object.fromEntries(Object.entries(d.inputs ?? {}).filter(([k]) => plain.has(k))));
-      const outs = Object.fromEntries(Object.entries(d.outputs ?? {}).filter(([k]) => kept.has(k)));
+      const ins = sig.prepareInputs(plan.signature, recordOf(entriesOf(d.inputs ?? {}).filter(([k]) => plain.has(k))));
+      const outs = recordOf(entriesOf(d.outputs ?? {}).filter(([k]) => kept.has(k)));
       if (!Object.keys(outs).length) continue;
       try {
         out.push(plan.example(ins, outs));
       } catch (err) {
-        if (!lmcc.isRefusal(err)) throw err;
+        if (!lmcc.isRefusal(err)) throw err;              // a demo lmcc refuses to make an example of is skipped
       }
     }
     return out;
@@ -465,14 +435,15 @@ export function make(core: Core): AIFunction {
   const probeRequest = (inputs?: Rec): Rec => {
     const s = settingsNow();
     const plan = probePlan(s);
-    const values = sig.prepareInputs(plan.signature, inputs ?? sig.sampleInputs(plan.signature));
-    if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
+    const given = inputs ? binder.bind(inputs, { check: false })[0] : sig.sampleInputs(plan.signature);
+    const values = sig.prepareInputs(plan.signature, given);
+    if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
     return plan.render(plan.turn(values), { turns: pastTurns(plan) }).request("probe");
   };
 
   const version = (): string => {
     const s = settingsNow();
-    const key = JSON.stringify(["version", layoutKey(s), s.module ?? null, s.includeFnName ?? null, core.state]);
+    const key = writeData(["version", layoutKey(s), s.module ?? null, s.includeFnName ?? null, core.state]);   // members in order: a demo in another order is sent otherwise
     let v = cache.get(key) as string | undefined;
     if (!v) {
       let r: string;
@@ -511,49 +482,54 @@ export function make(core: Core): AIFunction {
     return { plan, ...r, settings: s };
   };
 
-  const program = (): calllog.Program => ({
+  const interfaceId = interfaceSignature(core.interface);
+  const program = (s: Settings = settingsNow()): calllog.Program => ({
     name: core.definition.name, kind: "ai", module: core.module, version: version(),
-    signature: sig.signatureId(signatureNow()), answer,
+    signature: sig.signatureId(signatureNow(s)), interface: interfaceId, answer,
     ...(core.saved ? { saved: core.saved } : {}),
     ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
   });
 
-  /** Split call options into this call's settings and its signal. */
-  const callOptions = (options: CallOptions = {}) => {
-    const { signal, ...settings } = options;
-    return { signal, settings: settings as Settings };
+  /** Every output the model gave, the fields FunctAI added included (`reasoning`, `calls`: the last step's), in the signature's order: the record's. */
+  const recordOutputs = (pred: Prediction, signature: lmcc.Signature): Rec => {
+    const all = (pred.turn.outputs ?? {}) as Rec;
+    const mine = pred.outputs as Rec;
+    const out: Rec = {};
+    for (const f of signature.fields) {
+      if (f.direction !== "output") continue;
+      if (Object.hasOwn(mine, f.name)) setOwn(out, f.name, mine[f.name]);
+      else if (Object.hasOwn(all, f.name)) setOwn(out, f.name, all[f.name]);
+    }
+    return out;
   };
 
-  const predict = async (arg: unknown, options: CallOptions = {}, given: Watch | null = null): Promise<Prediction> => {
-    const watch = given ?? watching.get() ?? null;       // a stream watches the calls made inside its call too
-    watch?.check();
-    const { signal: own, settings: extra } = callOptions(options);
-    const signal = own && watch ? AbortSignal.any([own, watch.signal]) : own ?? watch?.signal;
-    if (signal?.aborted) throw new Cancelled();
-    const bound = await parseInputs(arg);
+  const predict = async (arg: unknown, options: CallOptions = {}, stream?: PredictionStream): Promise<Prediction> => {
+    const { signal, ...extra } = options;
+    if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
+    const [bound, filled] = binder.bind(arg);
+    // the record's: the values as given (defaults filled), as JSON before a schema's parsing runs (it may change them in place)
+    const given = recordInputs(names, bound);
+    await binder.parse(bound, filled);
     const s = settingsNow(extra);
-    const call = calllog.start(program, s, bound);
-    const inside = <R>(f: () => R): R => (watch ? watching.run(watch, f) : f());
-    return calllog.current.run(call, () => inside(async () => {
-      (watch as Stream | null)?.started(call, bound);
-      try {
+    const signature = signatureNow(s);
+    return runCall<Prediction>({
+      program: () => program(s), fields: fieldsOf(core.interface, signature), own: core.own, options: extra as Settings,
+      settings: s, stream, signal, inputs: given,
+      body: async (call) => {
         const { plan, model, router, provider, settings } = planFor(s);
         call.provider = provider;
         const pred = await runEngine({
           function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings, router, model,
-          tools: core.tools, call, watch, answer, signal,
+          tools: core.tools, call, answer,
         });
-        call.outputs = pred.outputs as Rec;
-        calllog.finish(call, { returned: pred.answer, hasReturned: true });
-        (watch as Stream | null)?.ended(call, pred.answer);
-        return pred;
-      } catch (err) {
-        calllog.finish(call, { error: err });
-        (watch as Stream | null)?.ended(call, undefined, err);
-        throw err;
-      }
-    }));
+        return { value: pred, outputs: recordOutputs(pred, signature), shown: pred.answer, returned: pred.answer };
+      },
+    });
   };
+  /** What `fn(x)` gives: the answer; a journal that did not keep the end holds the answer too. */
+  const answerOf = (p: Promise<Prediction>): Promise<unknown> => p.then((pred) => pred.answer, (err: unknown) => {
+    throw err instanceof JournalError ? err.withDone((v) => (v as Prediction).answer) : err;
+  });
 
   const map = async (items: Iterable<unknown>, options: MapOptions = {}): Promise<unknown[]> => {
     const { concurrency = 8, ...call } = options;
@@ -565,7 +541,7 @@ export function make(core: Core): AIFunction {
     const worker = async () => {
       while (next < list.length && !signal.aborted) {
         const i = next++;
-        out[i] = (await predict(list[i], { ...call, signal })).answer;
+        out[i] = await answerOf(predict(list[i], { ...call, signal }));
       }
     };
     try {
@@ -578,7 +554,7 @@ export function make(core: Core): AIFunction {
     return out;
   };
 
-  const fn = (async (input: unknown, options?: CallOptions) => (await predict(input, options)).answer) as unknown as AIFunction;
+  const fn = ((input: unknown, options?: CallOptions) => answerOf(predict(input, options))) as unknown as AIFunction;
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },
     module: { get: () => core.module },
@@ -589,11 +565,13 @@ export function make(core: Core): AIFunction {
       set: (text: string | null) => { core.state = { ...core.state, instructions: text }; },
     },
     demos: {
-      get: () => core.state.demos.map((d) => structuredClone(d)),
+      get: () => core.state.demos.map((d) => copyData(d)),
       set: (items: Array<Demo | Rec>) => { core.state = { ...core.state, demos: (items ?? []).map((d) => demoOf(d, names, answer)) }; },
     },
     version: { get: version },
     signatureId: { get: () => sig.signatureId(signatureNow()) },
+    interface: { get: () => copyData(core.interface) },
+    interfaceId: { value: interfaceId },
     settings: { get: () => ({ ...core.own }) },
     definition: { get: () => core.definition },
     tools: { get: () => core.tools },
@@ -604,18 +582,22 @@ export function make(core: Core): AIFunction {
     predict: (input: unknown, options?: CallOptions) => predict(input, options),
     stream: (input: unknown, options: CallOptions = {}) => {
       bindInputs(input);                                 // wrong arguments fail here, not in the stream
-      return new Stream((watch) => predict(input, options, watch), options.signal);
+      return new PredictionStream<unknown, Prediction>((s) => predict(input, options, s as PredictionStream), (p) => p.answer, options.signal);
     },
     map,
     render: (input: unknown, options: Settings = {}): Request => {
       const s = settingsNow(options);
       const { plan, model, settings } = planFor(s);
       const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
-      if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
+      if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
+      return lm15Request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), model, configOf(settings));
     },
-    using: (settings: Settings) => make({ ...core, own: { ...core.own, ...settings }, state: structuredClone(core.state) }),
-    state: (): State => structuredClone(core.state),
+    using: (settings: Settings) => {
+      const own = { ...core.own, ...settings };
+      checkSettings(own, `${core.definition.name}.using`, fieldsOf(core.interface, sig.signature(definitionNow(own), core.state.instructions)));
+      return make({ ...core, own, state: copyData(core.state) });
+    },
+    state: (): State => copyData(core.state),
     loadState: (state: Partial<State>) => {
       core.state = {
         instructions: state.instructions !== undefined ? state.instructions : core.state.instructions,
@@ -625,7 +607,6 @@ export function make(core: Core): AIFunction {
     },
     probeRequest,
     _core: core,
-    _predictWith: (inputs: Rec, watch: Watch | null) => predict(inputs, {}, watch),
   });
   return fn;
 }

@@ -45,8 +45,8 @@ export function answerColumns(fn: AIFunction, expected: unknown): Record<string,
 }
 
 function labeled(fn: AIFunction, row: Rec, columns: Record<string, string>): Demo | null {
-  const inputs = Object.fromEntries(fn.definition.inputs.filter((f) => f.name in row).map((f) => [f.name, row[f.name]]));
-  const outputs = Object.fromEntries(Object.entries(columns).filter(([, col]) => col in row).map(([out, col]) => [out, row[col]]));
+  const inputs = Object.fromEntries(fn.definition.inputs.filter((f) => Object.hasOwn(row, f.name)).map((f) => [f.name, row[f.name]]));
+  const outputs = Object.fromEntries(Object.entries(columns).filter(([, col]) => Object.hasOwn(row, col)).map(([out, col]) => [out, row[col]]));
   return Object.keys(outputs).length ? { inputs, outputs } : null;
 }
 
@@ -98,8 +98,8 @@ export async function bootstrapFewShot<F extends AIFunction, R extends Row<F>>(f
   const runner = opts.teacher ? fn.using({ lm: opts.teacher }) : fn;
   const columns = answerColumns(fn, opts.expected);
   const metric: Metric<R> = opts.metric ?? ((row, pred) => {
-    const answers = Object.fromEntries(Object.entries(columns).filter(([, col]) => col in row).map(([out, col]) => [out, row[col]]));
-    return exactMatch(answers, Object.fromEntries(Object.keys(answers).map((k) => [k, pred[k]])))["exact_match"]!;
+    const answers = Object.fromEntries(Object.entries(columns).filter(([, col]) => Object.hasOwn(row, col)).map(([out, col]) => [out, row[col]]));
+    return exactMatch(answers, Object.fromEntries(Object.keys(answers).map((k) => [k, Object.hasOwn(pred, k) ? pred[k] : undefined])))["exact_match"]!;
   });
   const passes = (score: number) => (opts.threshold !== undefined ? score >= opts.threshold : score > 0);
   const boot: Rec[] = [];
@@ -111,7 +111,7 @@ export async function bootstrapFewShot<F extends AIFunction, R extends Row<F>>(f
       const i = next++;
       if (i >= rows.length) return;
       const row = rows[i]!;
-      const inputs = Object.fromEntries(fn.definition.inputs.filter((f) => f.name in row).map((f) => [f.name, row[f.name]]));
+      const inputs = Object.fromEntries(fn.definition.inputs.filter((f) => Object.hasOwn(row, f.name)).map((f) => [f.name, row[f.name]]));
       try {
         const pred = await withSettings({ caller: { optimization: id } }, () => runner.predict(inputs));
         if (passes(Number(await metric(row, pred.outputs as Rec))) && boot.length < maxBoot) {

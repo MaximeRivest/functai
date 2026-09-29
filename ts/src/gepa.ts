@@ -12,6 +12,7 @@ import { newId } from "./calllog.ts";
 import { withSettings, type Settings } from "./settings.ts";
 import { t } from "./shapes.ts";
 import { normalize, trimWhite } from "./text.ts";
+import { getOwn, recordOf, writeData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -128,7 +129,7 @@ export async function gepa<F extends AIFunction, R extends Row<F>>(fn: F, rows: 
   const outputs = fn.definition.outputs.map((f) => f.name);
   const inputs = fn.definition.inputs.map((f) => f.name);
   const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
-    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
+    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => Object.hasOwn(r, n))).map((n) => [n, n]));
   if (!opts.metric && !Object.keys(mapping).length) {
     throw new Error(`gepa needs the right answers: a column named like an output (${outputs.join(", ")}), or expected`);
   }
@@ -338,15 +339,15 @@ export function bestPair(scores: readonly (readonly number[])[], front: Map<numb
 }
 
 function answerText(v: unknown): string {
-  return typeof v === "string" ? v : JSON.stringify(v);
+  return typeof v === "string" ? v : writeData(v);       // members in the value's order
 }
 
 function defaultFeedback(mapping: Record<string, string>, single: boolean): Feedback {
   return (row, pred, error) => {
     if (error !== null || pred === null) return `the call failed: ${error}`;
-    const wrong = Object.keys(mapping).filter((k) => exactMatch({ [k]: row[mapping[k]!] }, { [k]: pred[k] })["exact_match"] !== 1);
+    const wrong = Object.keys(mapping).filter((k) => exactMatch(recordOf([[k, getOwn(row, mapping[k]!)]]), recordOf([[k, getOwn(pred, k)]]))["exact_match"] !== 1);
     if (!wrong.length) return "right";
-    return "wrong: " + wrong.map((k) => `the right ${single || k === "result" ? "answer" : k} is ${answerText(row[mapping[k]!])}`).join("; ");
+    return "wrong: " + wrong.map((k) => `the right ${single || k === "result" ? "answer" : k} is ${answerText(getOwn(row, mapping[k]!))}`).join("; ");
   };
 }
 
@@ -357,9 +358,9 @@ function casesText(rows: readonly Rec[], batch: readonly number[], results: read
     const row = rows[i]!;
     const r = results[n]!;
     lines.push(`Case ${n + 1}`);
-    for (const k of inputs) if (k in row) lines.push(`  ${k}: ${answerText(row[k])}`);
+    for (const k of inputs) if (Object.hasOwn(row, k)) lines.push(`  ${k}: ${answerText(row[k])}`);
     if (r.pred === null) lines.push("  answer given: (none)");
-    else for (const k of outputs) lines.push(`  answer given${k === "result" ? "" : ` ${k}`}: ${answerText(r.pred[k])}`);
+    else for (const k of outputs) lines.push(`  answer given${k === "result" ? "" : ` ${k}`}: ${answerText(getOwn(r.pred, k))}`);
     lines.push(`  score: ${r.score}`, `  feedback: ${feedback(row, r.pred, r.error)}`);
   });
   return lines.join("\n");

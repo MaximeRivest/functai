@@ -82,9 +82,15 @@ test("an input may be left out when its schema allows it: sent as null, or as th
   assert.match(lastText(router), /<max>\nnull\n<\/max>/);
   await assert.rejects(f({ text: "hi" } as never), /needs lang/);          // nullable is not optional: give it, null or not
   await assert.rejects(f({ text: "hi", lang: null, max: "ten" } as never), /input max: .*expected number/i);   // checked by its schema
+  // the definition's (and the interface's) shape holds the default an input left out is sent with; the signature does not (functions.md)
   const shape = (n: string) => f.definition.inputs.find((x) => x.name === n)!.shape;
-  assert.deepEqual(shape("max"), { anyOf: [{ type: "number" }, { type: "null" }] });   // left out is null, and the shape says so
+  const sent = (n: string) => f.signature.fields.find((x) => x.name === n)!.shape;
+  assert.deepEqual(shape("max"), { anyOf: [{ type: "number" }, { type: "null" }], default: null });   // left out is null, and the shape says so
+  assert.deepEqual(sent("max"), { anyOf: [{ type: "number" }, { type: "null" }] });
   assert.deepEqual(shape("tone"), { type: "string", default: "plain" });
+  assert.deepEqual(sent("tone"), { type: "string" });
+  assert.deepEqual(f.interface.inputs.map((x) => [x.name, x.optional ?? false]),
+    [["text", false], ["note", true], ["tone", true], ["max", true], ["lang", false]]);
 });
 
 test("with one required input, its value alone is the call; the optional ones may be left out", async () => {

@@ -143,7 +143,10 @@ test("every call is a line in the log; ratings make rows with known answers", as
   const p1 = await mood.predict("I was charged twice");
   const p2 = await withSettings({ caller: { kind: "test", user: "ana" } }, () => mood.predict("Lovely"));
   const [c1, c2] = logged(folder);
-  assert.equal(c1!.functai_call, 1);
+  assert.equal(c1!.functai_call, 2);
+  assert.equal(c1!.program.interface, mood.interfaceId);
+  assert.deepEqual(c1!.saw, []);
+  assert.match(c1!.exchanges[0].request_hash, /^sha256:[0-9a-f]{64}$/);
   assert.equal(c1!.id, p1.callId);
   assert.deepEqual(c1!.program.name, "mood");
   assert.equal(c1!.program.module, "shop");
@@ -174,7 +177,9 @@ test("logContent: false keeps sizes and tokens, never values; a failed call reco
   await assert.rejects(mood("secret"));
   const [c] = logged(folder);
   assert.equal(c!.content, false);
-  assert.ok(!("inputs" in c!) && !("outputs" in c!));
+  assert.ok(!("inputs" in c!));
+  assert.equal(c!.outputs, null);                              // failed before an answer (format 2 says so even without content)
+  assert.deepEqual(c!.omitted, { inputs: ["review"], outputs: ["result"] });
   assert.equal(c!.sizes.inputs.review, 8);                     // the canonical JSON "secret", quotes included
   assert.equal(c!.error.type, "Refusal");
   assert.ok(!("message" in c!.error));
@@ -185,8 +190,9 @@ test("logContent: false keeps sizes and tokens, never values; a failed call reco
 test("a module's calls are its children", async () => {
   const folder = mkdtempSync(join(tmpdir(), "functai-log-"));
   const mood = ai("mood", { ...moodDef, router: new FakeRouter([], () => "<result>\nhappy\n</result>"), logCalls: folder });
-  const both = module("both", async (a: string, b: string) => [await mood(a), await mood(b)], { uses: [mood], settings: { logCalls: folder } });
-  assert.deepEqual(await both("x", "y"), ["happy", "happy"]);
+  const both = module("both", { input: { a: t.string(), b: t.string() }, output: t.list(t.string()), uses: [mood], logCalls: folder },
+    async ({ a, b }) => [await mood(a), await mood(b)]);
+  assert.deepEqual(await both({ a: "x", b: "y" }), ["happy", "happy"]);
   const recs = logged(folder);
   const parent = recs.find((r) => r.program.kind === "module")!;
   const children = recs.filter((r) => r.program.kind === "ai");
@@ -210,8 +216,9 @@ test("a stream shows the answer as it is written, and ends with the same value",
   const kinds: string[] = [];
   for await (const e of s.events()) kinds.push(e.kind);
   assert.equal(kinds[0], "started");
+  assert.equal(kinds[1], "request");                            // a request empties the fields (format 2)
   assert.equal(kinds.at(-1), "done");
-  assert.ok(kinds.slice(1, -1).every((k) => k === "text"));
+  assert.ok(kinds.slice(2, -1).every((k) => k === "text"));
 });
 
 test("a reply that arrives whole is one text piece per field", async () => {

@@ -4,20 +4,19 @@
  */
 
 import assert from "node:assert/strict";
-import { readdirSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as lmcc from "lmcc";
-import { ai, exactMatch, fromManifest, interval, LoadRefused, type Tool } from "../src/index.ts";
+import { describeSaved, exactMatch, fromManifest, interval, LoadRefused } from "../src/index.ts";
 import { ratedRows } from "../src/calllog.ts";
-import { adjustSettings, capabilities, refusedSettings } from "../src/models.ts";
+import { adjustSettings, capabilities, PROBE, refusedSettings } from "../src/models.ts";
+import { Request, stringifyJson } from "@lm15/lm15";
+import { FakeRouter } from "./fake.ts";
 import { REGISTRY, resolveAdapter } from "../src/layouts.ts";
 import { generate, OUT, CONTRACT } from "../tools/generate.ts";
 
-type Rec = Record<string, any>;
-const cases = (folder: string): [string, Rec][] =>
-  readdirSync(join(CONTRACT, "cases", folder)).filter((f) => f.endsWith(".json")).sort()
-    .map((f) => [f.replace(/\.json$/, ""), JSON.parse(readFileSync(join(CONTRACT, "cases", folder, f), "utf8"))]);
+import { cases, tsFunction, type Rec } from "./cases.ts";
 const read = (p: string) => JSON.parse(readFileSync(join(CONTRACT, p), "utf8"));
 
 test("the contract's data in src/generated is up to date", () => {
@@ -50,24 +49,6 @@ test("capabilities follow the contract's table", () => {
 });
 
 // ------------------------------------------------------------------ functions
-
-/** A contract definition written the way a TypeScript user writes it. */
-function tsFunction(d: Rec) {
-  const field = (f: Rec) => (f.desc ? { shape: f.shape, desc: f.desc } : f.shape);
-  const tools: Tool[] = (d.tools ?? []).map((t: Rec) => ({ ...t, run: () => "" }));
-  const settings: Rec = {};
-  if (d.settings.adapter) settings.adapter = d.settings.adapter;
-  if (d.settings.module) settings.module = d.settings.module;
-  if (d.settings.include_fn_name_in_instructions === false) settings.includeFnName = false;
-  const fn = ai(d.name, {
-    description: d.description,
-    input: Object.fromEntries(d.inputs.map((f: Rec) => [f.name, field(f)])),
-    outputs: Object.fromEntries(d.outputs.map((f: Rec) => [f.name, field(f)])),
-    ...(tools.length ? { tools } : {}), ...settings,
-  } as never);
-  fn.loadState(d.state);
-  return fn;
-}
 
 function withoutType(signature: lmcc.Signature): Rec {
   const data = lmcc.signatureToDict(signature) as Rec;
@@ -130,18 +111,33 @@ for (const [name, c] of cases("rated")) {
 // ------------------------------------------------------------------ saved
 
 for (const [name, c] of cases("saved")) {
-  test(`saved case ${name}`, () => {
+  test(`saved case ${name}`, async () => {
+    const node = c.node ?? undefined;
+    if (c.expect.describe.refuses) {
+      assert.throws(() => describeSaved(c.manifest, { node }), (err: unknown) => err instanceof LoadRefused && err.code === c.expect.describe.refuses);
+    } else {
+      assert.deepEqual(describeSaved(c.manifest, { node }), c.expect.describe.interface);
+    }
     if (c.expect.refuses) {
-      assert.throws(() => fromManifest(c.manifest, { node: c.node ?? undefined }),
+      assert.throws(() => fromManifest(c.manifest, { node }),
         (err: unknown) => err instanceof LoadRefused && err.code === c.expect.refuses);
       return;
     }
-    const fn = fromManifest(c.manifest, { node: c.node ?? undefined });
+    const fn = fromManifest(c.manifest, { node });
     const want = c.expect.loads;
     assert.equal(fn.name, want.name);
     assert.equal(fn.module, want.module);
     assert.equal(fn.version, want.version);
     assert.equal(fn.signatureId, want.signature_id);
+    const saved = c.manifest.nodes[c.node ?? c.manifest.entry].ai;
+    assert.deepEqual(saved.probes.map((p: Rec) => lmcc.sha256(fn.probeRequest(p))), want.requests, "requests");
+    for (const send of c.expect.sends ?? []) {
+      // a real call of the loaded function, under the probe facts (no sampling: where a version runs is not what it sends)
+      const router = new FakeRouter([], () => "<result>\nok\n</result>", "probe");
+      await fn.using({ lm: "probe", router: router as never, capabilities: PROBE, temperature: null, maxTokens: null, topP: null, seed: null, logCalls: false })(send.inputs);
+      const sent = JSON.parse(stringifyJson(Request.toJSON(router.requests[0]!)));
+      assert.equal(lmcc.sha256(sent), send.request_hash, JSON.stringify(send.inputs));
+    }
   });
 }
 

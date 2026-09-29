@@ -8,6 +8,7 @@ import { newId } from "./calllog.ts";
 import type { AnyAIFunction as AIFunction, Expected, Row } from "./fn.ts";
 import { withSettings } from "./settings.ts";
 import { normalize } from "./text.ts";
+import { getOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -61,7 +62,7 @@ function same(a: unknown, b: unknown): boolean {
  * space), else 0. With several, each also gets `<name>_match`.
  */
 export function exactMatch(answers: Rec, prediction: Rec): Record<string, number> {
-  const keys = Object.keys(prediction).filter((k) => k in answers);
+  const keys = Object.keys(prediction).filter((k) => Object.hasOwn(answers, k));
   if (!keys.length) throw new Error(`exact_match: the data has no column for any output (${Object.keys(prediction).join(", ")})`);
   const each = Object.fromEntries(keys.map((k) => [k, same(answers[k], prediction[k]) ? 1 : 0]));
   const out: Record<string, number> = { exact_match: Object.values(each).every((v) => v === 1) ? 1 : 0 };
@@ -150,7 +151,7 @@ export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, ro
   const inputNames = fn.definition.inputs.map((f) => f.name);
   const outputNames = fn.definition.outputs.map((f) => f.name);
   const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
-    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputNames.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
+    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputNames.filter((n) => rows.some((r) => Object.hasOwn(r, n))).map((n) => [n, n]));
   const custom = typeof opts.metric === "function" ? { [opts.metric.name || "metric"]: opts.metric } : opts.metric;
   if (!custom && !Object.keys(mapping).length) {
     throw new Error(`evaluate: the rows have no column for any output (${outputNames.join(", ")}); pass expected or a metric`);
@@ -162,7 +163,7 @@ export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, ro
       const i = next++;
       if (i >= rows.length) return;
       const row = rows[i]!;
-      const inputs = Object.fromEntries(inputNames.filter((n) => n in row).map((n) => [n, row[n]]));
+      const inputs = Object.fromEntries(inputNames.filter((n) => Object.hasOwn(row, n)).map((n) => [n, row[n]]));
       try {
         const pred = await withSettings({ caller: { evaluation: run } }, () => fn.predict(inputs));
         const outputs = pred.outputs as Rec;
@@ -171,12 +172,14 @@ export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, ro
           scores = {};
           for (const [name, m] of Object.entries(custom)) scores[name] = Number(await m(row, outputs));
         } else {
-          const answers = Object.fromEntries(Object.entries(mapping).map(([out, col]) => [out, row[col]]));
-          scores = exactMatch(answers, Object.fromEntries(Object.keys(mapping).map((k) => [k, outputs[k]])));
+          const answers = Object.fromEntries(Object.entries(mapping).map(([out, col]) => [out, getOwn(row, col)]));
+          scores = exactMatch(answers, Object.fromEntries(Object.keys(mapping).map((k) => [k, getOwn(outputs, k)])));
         }
         results[i] = { row, outputs, scores, error: null, callId: pred.callId };
       } catch (err) {
-        results[i] = { row, outputs: null, scores: {}, error: `${(err as Error).name}: ${(err as Error).message}`, callId: null };
+        const e = err as { name?: unknown; message?: unknown } | null | undefined;     // a call may fail with anything, undefined included
+        const said = `${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
+        results[i] = { row, outputs: null, scores: {}, error: said, callId: null };
       }
     }
   };
