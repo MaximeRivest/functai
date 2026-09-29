@@ -358,17 +358,11 @@ is the plan.
 
 ## Developing
 
-functai follows lmcc's development closely (lmcc is on npm, but this
-package can need what is not released yet), so `package.json` links a
-checkout of lmcc beside this repository. It needs lmcc's decision D-58
-(names are data, members keep their order): commit `3492090` or later
-(lmcc 0.8.4 as published on npm lacks it, and functai refuses to start
-on it). From `functai/ts`:
+lmcc and lm15 come from npm (`lmcc` 0.8.5 or later, which keeps member
+order: functai refuses to start on an older one). From `functai/ts`:
 
 ```bash
-git clone https://github.com/MaximeRivest/lmcc ../../lmcc   # lmcc beside functai
-(cd ../../lmcc/ts && npm install)
-npm install
+npm ci
 npm run check        # types
 npm test             # offline tests, and every case of ../contract
 npm run build        # dist/, what npm would ship
@@ -378,3 +372,8 @@ npm run docs         # the API reference, into docs-api/ (TypeDoc)
 `../check` (from the repository) runs every language, then each against
 the others. `node tools/generate.ts` refreshes the contract's data
 in `src/generated/`; `tools/live.ts` calls real models (costs cents).
+
+To try an lmcc change before it is released, install its checkout in
+place of the published package, without changing `package.json`:
+`(cd ../../lmcc/ts && npm run build) && npm install --no-save ../../lmcc/ts`.
+`npm ci` puts the published one back.

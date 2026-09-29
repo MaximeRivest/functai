@@ -13,7 +13,7 @@
     "noEmit": true,
     "skipLibCheck": true,
     "types": ["node"],
-    "customConditions": ["functai-source", "lmcc-source"]
+    "customConditions": ["functai-source"]
   },
   "include": ["src", "tests", "tools"]
 }

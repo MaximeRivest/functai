@@ -33,13 +33,13 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
-    "test": "node --conditions=functai-source --conditions=lmcc-source --test --test-timeout=60000 tests/*.test.ts",
+    "test": "node --conditions=functai-source --test --test-timeout=60000 tests/*.test.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
     "docs": "typedoc"
   },
   "dependencies": {
     "@lm15/lm15": "1.0.0-rc.3",
-    "lmcc": "file:../../lmcc/ts"
+    "lmcc": "^0.8.5"
   },
   "devDependencies": {
     "@types/node": "^22",

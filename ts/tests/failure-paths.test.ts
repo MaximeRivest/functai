@@ -131,7 +131,7 @@ async function heal(...stores: Scripted[]): Promise<void> {
 // ------------------------------------------------------------------ journals: liveness
 
 test("a store that throws before returning a promise never spins the process: the call settles and timers fire (own process, time-limited)", () => {
-  const run = spawnSync(process.execPath, ["--conditions=functai-source", "--conditions=lmcc-source", join(here, "fixtures", "sync-throwing-store.ts")],
+  const run = spawnSync(process.execPath, ["--conditions=functai-source", join(here, "fixtures", "sync-throwing-store.ts")],
     { encoding: "utf8", timeout: 20_000 });
   assert.equal(run.signal, null, `killed after 20 s: the process hung (${run.stderr})`);
   assert.equal(run.status, 0, run.stderr);
