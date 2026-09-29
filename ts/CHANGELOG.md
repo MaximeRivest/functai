@@ -109,9 +109,9 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   folder, written and read (`save`, `load`). Values are copied, read and
   written with lmcc's helpers, never `structuredClone`, `JSON.parse` or
   `JSON.stringify`. JSON lm15 writes (a `response_format` schema, a
-  tool's parameters, a `config`) keeps the order too with an lm15 that
-  keeps member order (after 1.0.0-rc.2); with 1.0.0-rc.2 it is
-  JavaScript's order.
+  tool's parameters, a `config`) keeps the order too: FunctAI requires
+  `@lm15/lm15` 1.0.0-rc.3 and lmcc 0.8.5, which keep it, so a request
+  goes out with the same bytes as Python's.
 - FunctAI hands lm15 what lmcc built or parsed through lmcc's bridge
   (`lmcc/lm15`, D-59): a request and its `Config` with `request()`, a
   saved `config` and a cached reply with `toLm15`. lmcc's record of

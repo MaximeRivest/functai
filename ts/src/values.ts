@@ -107,12 +107,12 @@ export function toJson(value: unknown): [lmcc.Json, number, boolean] {
  * in its order, as Python's do (tests/order.test.ts).
  */
 
-// An lmcc without these (0.8.4 as published) reads a missing output named `toString` as `""`, drops a `__proto__`
+// An lmcc without these (0.8.4 and earlier) reads a missing output named `toString` as `""`, drops a `__proto__`
 // member, and reorders members: functai would send and keep other data than it was given. It refuses to run instead.
 const HELPERS = ["setMember", "ownValue", "memberNames", "orderedObject", "copyObject", "parseJson", "jsonText"] as const;
 const missing = HELPERS.filter((h) => typeof (lmcc as unknown as Record<string, unknown>)[h] !== "function");
 if (missing.length) {
-  throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc commit 3492090 or later): this lmcc has no ${missing.join(", ")}`);
+  throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc 0.8.5 or later): this lmcc has no ${missing.join(", ")}`);
 }
 
 /** Set a member as data: `__proto__` is an own member, and a new name comes after the others (lmcc's `setMember`). */

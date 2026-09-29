@@ -90,11 +90,9 @@ p.answer;       // 15
   record of the order (`lmcc.memberNames`), and so does what lm15 writes
   (the `json` adapter's `response_format` schema, a tool's parameters, a
   `config`'s maps) and reads (a tool call's input), since lmcc's record
-  is lm15's. That needs an lm15 that keeps member order (after
-  1.0.0-rc.2); with 1.0.0-rc.2, what lm15 writes reaches the provider in
-  JavaScript's order, `"10"` before `"b"`, where Python sends `"b"`
-  first. Text in the messages (the `xml` adapter's schema) keeps the
-  order with either.
+  is lm15's (lm15 1.0.0-rc.3, lmcc 0.8.5): a request goes out with the
+  same bytes as Python's. With an older lm15 installed anyway, what lm15
+  writes reaches the provider in JavaScript's order, `"10"` before `"b"`.
 - **JSON FunctAI writes** (a text input given an object, the call log, a
   saved folder) is what `JSON.stringify` writes, members aside: a hole in
   an array is `null`, `new Number(42)` is `42`, and a value that holds
