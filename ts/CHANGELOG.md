@@ -81,7 +81,41 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   dropped before).
 - Names JavaScript treats specially are data: a JSON member `__proto__`,
   a required property `toString`, a field named `constructor`; an unknown
-  shape keyword named `constructor` refuses.
+  shape keyword named `constructor` refuses. This now holds for AI
+  functions too: binding, preparing and sampling their inputs, reading
+  rows and worked examples, and checking a model's object answers look at
+  own properties only. Before, a required input named `toString` or
+  `constructor` that was left out was sent to the model as JavaScript
+  function text, and one named `__proto__` lost its value. A Standard
+  Schema's JSON Schema keeps a property named `__proto__`. An AI function
+  cannot have a field named `__proto__` for now (`TypeError`; loading one
+  refuses `saved-differs`): lmcc's TypeScript renderer would still lose its
+  value. A module can.
+- A call whose code rejects with no reason (`Promise.reject()`, `throw
+  undefined`) fails as any other: its `failed` event is kept and shown, and
+  its record says it failed. Before, it made no terminal event and no
+  record, and its caller got an unrelated `TypeError`. A tool that throws
+  `undefined` is reported to the model as an error.
+- An AI function records its inputs as given even when a schema changes
+  them in place (a nested object edited by a transform): they are written
+  as JSON before the schema runs.
+- A schema whose validation returns another realm's promise (a `vm`
+  context, an iframe) is awaited.
+- Observers each have their own queue and share of the delivery time: a
+  slow observer falls behind and loses events alone, never the others.
+- A journal writer whose round of resends gave up tries again later on
+  its own (1, 2, 4, 8, 16 s) and at the next event, then gives up on what
+  it holds for that log (warned once per outage); `flush()` sends what is
+  not confirmed once more, and returns `false` while a journal still holds
+  events it did not confirm or gives up on some (before, it said `true`,
+  and a tree's end could be lost for good).
+- A journal's `timeout` and `backoff` above 2,147,483,647 ms (a timer's
+  limit) refuse where they are set; `timeout: Infinity` still waits for
+  ever. `JournalError.settle({ signal })` can be stopped.
+- A builder's extra keys never replace what it makes (`t.list(x, { items
+  })` is a `TypeError`), and a builder's `default` is typed as its value.
+  `ModuleResult` of outputs built at run time (`Record<string, …>`) is a
+  record, not one value.
 - `replay()` and `Follower.recover()` stop at an event of a format they do
   not know (`stopped`); `recover()` from a readable source follows again;
   `Follower.forget(tree)`.

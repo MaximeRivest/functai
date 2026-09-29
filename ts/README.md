@@ -68,6 +68,14 @@ p.answer;       // 15
   Schema (zod 4, valibot, arktype, ...), read as the JSON Schema Python
   writes for the same type. A `description` on a field (or
   `describe(shape, text)`, or zod's `.describe`) is guidance the model reads.
+  A builder's extra keys add to its shape (`t.list(t.string(), {
+  description, minItems: 1 })`) and never replace what it makes (`type`,
+  `items`, `properties`, …: a `TypeError`); a default is a value of its
+  type (`t.string({ default: "kind" })`).
+- **Field names** are data: `toString` or `constructor` is a field like
+  any other. One exception, for now: an AI function cannot have a field
+  named `__proto__` (a `TypeError`; loading one refuses `saved-differs`),
+  because lmcc's TypeScript renderer would lose its value. A module can.
 - **A call** takes its options second: `await mood(input, { lm:
   "gpt-6-luna", signal })`: settings for that call only, and an
   `AbortSignal` that cancels it (`Cancelled`).
@@ -183,8 +191,10 @@ this thread, so heavy work belongs in a `Worker`: an object with
 `postMessage` (a `Worker`, a `MessagePort`) is posted each event. An
 observer that throws or rejects is warned about once and gets no more
 events; one that falls 10,000 events behind loses events (it sees the gap
-in `after`). Observers add up over every layer; `configure({ observers })`
-replaces `configure`'s own list.
+in `after`). Each observer has its own queue and its own share of the time
+given to observers, so one that is slow falls behind (and loses events)
+alone; the others beside it get every event. Observers add up over every
+layer; `configure({ observers })` replaces `configure`'s own list.
 
 A journal keeps each call tree's kept log in a store while it is written,
 with appends the store answers (`MemoryStore` here; any object with
@@ -194,13 +204,23 @@ Each append is waited for at most `timeout` ms (default 30,000; its
 (`retries`, `backoff`). A store that throws, never answers or answers
 something else than `"kept"`, `"duplicate"` or a refusal never holds the
 call nor reaches the process. A best-effort journal that fails is warned
-about once per outage. A required one makes the call wait until its events
+about once per outage. When a round of resends gives up, the writer tries
+again on its own later (after 1, 2, 4, 8 and 16 s) and at the next event:
+a tree's last events have no next event to carry them. When those tries
+fail too, it gives up on what it holds for that log (warned once; the log
+is kept at least up to the events it confirmed), so a store that stays
+down costs a bounded amount of memory. `await flush()` sends what is still
+not confirmed once more, and says `true` only when every journal confirmed
+every event it was sent (or refused one: it is sent nothing more), none
+gave up on events while it waited, and every observer has its events. A required one makes the call wait until its events
 are kept, before its code runs, before each tool and before it returns (at
 most `timeout` at each; cancelling the call stops the first two), and
 raises `JournalError` when they are not: `journal-barrier` (the code or
 the tool did not run), or `journal-end`, which holds the call's outcome
 (`err.outcome`: what you would have got, or the error) and the position of
-its end (`await err.settle()` finds out whether it was kept). A program's
+its end (`await err.settle({ signal: AbortSignal.timeout(5000) })` finds
+out whether it was kept; the signal stops waiting for a store that does
+not answer). A program's
 own settings cannot replace or remove a host's journal (`journal-policy`).
 
 ## How often is it right?
