@@ -108,6 +108,34 @@
   once a row: about 3.7 times faster than the first repair on a column of
   scalars.
 
+#### After the third review
+
+* Another language's closed record is a tibble only when a tibble keeps
+  whether each member is there: a member it may leave out must be one
+  value that takes no null (`NA` is "left out" then, and nothing else).
+  A record whose optional member is a list, an object or a record is a
+  list column: before, a left-out list came back `NULL` and was sent back
+  as `null` (refused), and a left-out record was a row of `NA`s, the same
+  tibble as the record with its members null. R's own saved `tibble(...)`
+  type is not believed either where it would lose that.
+* `optional(record(...))` tells a null record from a record of nulls. When
+  the record requires a member that is one value and never null, null is
+  a row of `NA` (vctrs's missing row) and is sent back as null (before, a
+  null answer given back was sent as `{"name":null}` and refused); when
+  every member may be null, the field is a list column (before, a null
+  answer and a record of nulls were the same row of `NA`).
+* A default is kept, shown and sent with its members in the order they
+  were written, before and after `read_ai()`: `ai_interface()` sorted
+  them, so a loaded function sent `{"age":1,"name":"Z"}` where the
+  function it was saved from sent `{"name":"Z","age":1}`. A default is held
+  as the JSON the interface holds (a number read back as JSON reads it).
+* A column named with a backslash (`a\b`) is written in the saved `type`
+  as R writes the symbol, so R reads the tibble type back; before, the
+  field came back a list column. Types are matched to fields by name.
+* `?ai` and `?record` say that every column of a tibble given for a record
+  is sent, and to select the record's columns first when the others are
+  not for the model.
+
 ### Before stage 1
 
 The first R implementation of FunctAI, held to the same contract as the

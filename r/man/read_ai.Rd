@@ -33,7 +33,10 @@ with, for each field, the R type that holds every value its shape admits
 exactly: text, numbers, yes or no, a factor for a choice, a \code{list_of}
 for a list, a tibble for a record only when the record is closed
 (\code{additionalProperties: false}, so no member can come back that a column
-does not hold); any other object, a Python dataclass's among them, is a
-list column of named lists (\code{tidyr::unnest_wider()} spreads it). What a
+does not hold) and each member it may leave out is one value that takes
+no null (\code{NA} then means "left out", and nothing else); any other object,
+a Python dataclass's among them, is a list column of named lists
+(\code{tidyr::unnest_wider()} spreads it), which keeps every member, and
+whether it is there, as it came. What a
 call sends never depends on these types: a value is sent as it is given.
 }

@@ -25,8 +25,11 @@ json_type <- function(v) {
 }
 
 # A value as JSON data, whatever R built it from (a named list is an object,
-# an unnamed one an array): what every check below reads.
-json_normal <- function(x) lmcc::parse_json(lmcc::canonical_json(x))
+# an unnamed one an array), its members in the order they were written: what
+# every check below reads, what an interface holds and what a default is
+# sent as. Order is the author's (a model reads an object in its members'
+# order); only a comparison or a hash canonicalises.
+json_normal <- function(x) lmcc::parse_json(lmcc::json_text(x))
 
 has_key <- function(x, k) is.list(x) && k %in% names(x)
 
@@ -358,7 +361,7 @@ defaults_to <- function(value, type = NULL) {
   f <- if (is.null(type) || sentence) type_of_value(value) else as_field(type)
   if (sentence) f <- described(f, type)
   f$shape <- f$shape[names(f$shape) != "default"]
-  f$shape["default"] <- list(default_json(f, value))
+  f$shape["default"] <- list(json_normal(default_json(f, value)))   # as the interface holds it, and sends it
   f$optional <- TRUE
   f
 }
@@ -456,9 +459,9 @@ print.functai_interface <- function(x, ...) {
   fields <- c(x$inputs, x$outputs)
   w <- max(nchar(vapply(fields, function(f) f$name, "")))
   line <- function(f) {
-    shape <- lmcc::canonical_json(data_shape(f$shape))
+    shape <- lmcc::json_text(data_shape(f$shape))
     # optional with no default of its own (a module's): its code's default applies, which may be no JSON value
-    extra <- c(if (isTRUE(f$optional)) (if (has_key(f$shape, "default")) paste0("optional, default ", lmcc::canonical_json(f$shape[["default"]])) else "optional"),
+    extra <- c(if (isTRUE(f$optional)) (if (has_key(f$shape, "default")) paste0("optional, default ", lmcc::json_text(f$shape[["default"]])) else "optional"),
                if (isTRUE(f$opaque)) "opaque")
     cat(sprintf("    %s  %s%s%s\n", formatC(f$name, width = -w), shape, if (length(extra)) paste0("  (", paste(extra, collapse = ", "), ")") else "",
                 if (is.null(f$desc)) "" else paste0("  # ", gsub("\\s*\n\\s*", " ", f$desc))))

@@ -13,7 +13,11 @@ optional(x)
 A field.
 }
 \description{
-The model may answer \code{null} for it; it comes back as \code{NA}.
+The model may answer \code{null} for it; it comes back as \code{NA}. A record comes
+back as a row of \code{NA} (vctrs's missing row) when it requires a member
+that is one value and is never null, so that no record is a row of \code{NA}
+too; any other optional record is a list column, where \code{NULL} is null
+and a record of nulls is a named list of them.
 }
 \examples{
 optional(integer())

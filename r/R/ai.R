@@ -44,6 +44,9 @@
 #' interface holds it. A value is sent as it is given, and checked so: a
 #' record or object keeps every member it has (a tibble's extra columns
 #' too), and one its type requires but it lacks is refused, not filled in.
+#' So the model sees every column of a tibble given for a [record()]:
+#' select the record's columns first (`dplyr::select()`, `dplyr::pick()`)
+#' when the others are not for it (an id, an e-mail address).
 #'
 #' **Missing values.** `NA` (or `NULL`) is JSON's null, never "left out": an
 #' input whose type takes null (an [optional()] type, a [json_shape()] that
@@ -55,7 +58,9 @@
 #' tibble column, or a named list), `NA` is null too, except for a member
 #' the record does not require and whose type takes no null: a tibble cannot
 #' leave a member out, so `NA` there leaves it out, as an answer that leaves
-#' it out comes back `NA`.
+#' it out comes back `NA`. Nor can a tibble hold a null record: a row of `NA`
+#' given for an [optional()] record that requires a member never null is
+#' null, as a null answer comes back (vctrs's missing row).
 #'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
@@ -557,7 +562,7 @@ print.functai_fn <- function(x, ...) {
   w <- max(nchar(names(fields)))
   for (k in names(fields)) {
     f <- fields[[k]]
-    default <- if (isTRUE(f$optional)) paste0(" = ", lmcc::canonical_json(f$shape[["default"]])) else ""
+    default <- if (isTRUE(f$optional)) paste0(" = ", lmcc::json_text(f$shape[["default"]])) else ""
     cat(sprintf("  %s  %s%s%s\n", formatC(k, width = -w), type_label(f), default, if (is.null(f$desc)) "" else paste0("  # ", gsub("\\s*\n\\s*", " ", f$desc))))
     if (length(f$meanings)) {
       lw <- max(nchar(names(f$meanings)))

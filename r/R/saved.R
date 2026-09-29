@@ -22,9 +22,11 @@ SNAKE <- c(retries = "retries", api_retries = "api_retries", max_steps = "max_st
 # type is one that holds every value the shape admits exactly: a column of
 # text, numbers, yes/no, a factor for a choice of texts, a list_of() for a
 # list, a tibble for a record only when it is closed (a tibble has no place
-# for a member its columns do not name) and none of its members may be
-# both left out and null (a tibble has one NA for both); JSON (a list
-# column) for anything else. `root` holds the shape's `$defs`.
+# for a member its columns do not name) and a member it may leave out is
+# one value that takes no null (NA, then, can only mean left out: a list,
+# an object or a record left out would read back as a value that is also
+# valid, or as a null the shape refuses); JSON (a list column) for
+# anything else. `root` holds the shape's `$defs`.
 field_from_shape <- function(shape, desc = NULL, type = NULL, root = shape) {
   nullable <- FALSE
   inner <- shape
@@ -34,7 +36,9 @@ field_from_shape <- function(shape, desc = NULL, type = NULL, root = shape) {
       inner <- opts[[1L]]; nullable <- TRUE
     }
   }
-  f <- (if (!is.null(type)) declared_field(inner, type, root)) %||% exact_field(inner, nullable, root)
+  declared <- if (!is.null(type)) declared_field(inner, type, root)
+  if (nullable && identical(declared$kind, "record") && !null_told(inner, declared$fields, root)) declared <- NULL
+  f <- declared %||% exact_field(inner, nullable, root)
   f$shape <- shape
   f$nullable <- nullable
   f$desc <- desc
@@ -47,8 +51,7 @@ is_text_choice <- function(s) is_arr(s$enum) && length(s$enum) > 0L && all(vappl
 exact_field <- function(inner, nullable, root) {
   t <- inner$type
   if (is_text_choice(inner)) new_field(inner, "enum", levels = unlist(inner$enum))
-  else if (!nullable && is_closed_record(inner, root))
-    new_field(inner, "record", fields = lapply(inner$properties, field_from_shape, root = root))
+  else if (!nullable && !is.null(closed <- closed_record(inner, root))) closed
   else if (identical(t, "array") && is_obj(inner$items) && is.null(inner$prefixItems))
     new_field(inner, "list", item = field_from_shape(inner$items, root = root))
   else if (is_str(t) && t %in% c("string", "integer", "number", "boolean") && is.null(inner$enum) && is.null(inner[["const"]]))
@@ -56,16 +59,49 @@ exact_field <- function(inner, nullable, root) {
   else new_field(inner, "json")
 }
 
-# A record a tibble holds exactly: an object that allows no other member,
-# names every required member, and whose members are each required (NA is
-# null) or take no null (NA is left out). A null record would be a row of
-# NAs, which a record of nulls also is: a nullable one stays JSON.
-is_closed_record <- function(shape, root) {
+# A record a tibble holds exactly, as a record field; NULL when there is
+# none: an object that allows no other member, names every required member,
+# and keeps every member's presence (presence_kept()), all the way down (a
+# member's own field is chosen by the same rules). A null record would be a
+# row of NAs, which a record of nulls also is: a nullable one stays JSON.
+closed_record <- function(shape, root) {
   props <- shape$properties
+  if (!identical(shape$type, "object") || !is_obj(props) || !length(props) || !isFALSE(shape$additionalProperties) ||
+      !all(unlist(shape$required) %in% names(props))) return(NULL)
+  fields <- lapply(props, field_from_shape, root = root)
+  if (!presence_kept(shape, fields, root)) return(NULL)
+  new_field(shape, "record", fields = fields)
+}
+
+# Whether a tibble of these member fields tells a member left out from every
+# value it may have: each member is required, or is one value (text, a
+# number, yes/no, a choice) that takes no null, so that NA is "left out"
+# and nothing else (to_json() leaves it out; an answer that leaves it out
+# reads back as NA). A list or an object left out would be a NULL in a list
+# column, which is JSON's null, and a record left out a row of NAs, which a
+# record of nulls also is: the record is not a tibble then.
+presence_kept <- function(shape, fields, root) {
   required <- unlist(shape$required)
-  identical(shape$type, "object") && is_obj(props) && length(props) > 0L && isFALSE(shape$additionalProperties) &&
-    all(required %in% names(props)) &&
-    all(vapply(names(props), function(n) n %in% required || !fits_shape(NULL, props[[n]], root), NA))
+  all(vapply(names(fields), function(n) n %in% required || never_na(n, shape, fields, root, FALSE), NA))
+}
+
+# Whether a tibble tells a null record from every record: it requires a
+# member that is one value and takes no null, so a record always has a
+# value in that column, and a row of NA (vctrs's missing row) is null and
+# nothing else (to_json() writes such a row as null, and a null answer
+# reads back as one). A nullable record without one is a list column.
+null_told <- function(shape, fields, root) {
+  any(vapply(names(fields), never_na, NA, shape = shape, fields = fields, root = root, required = TRUE))
+}
+
+SCALAR_KINDS <- c("string", "integer", "number", "boolean", "enum")
+
+# A member whose column holds NA only when it is not there: one value
+# (never NA as a value, JSON has no NaN) that takes no null; `required`:
+# and one the record requires.
+never_na <- function(n, shape, fields, root, required) {
+  (!required || n %in% unlist(shape$required)) && fields[[n]]$kind %in% SCALAR_KINDS &&
+    !fits_shape(NULL, shape$properties[[n]], root)
 }
 
 # A field as the R type R saved it as, when that type fits the shape; NULL
@@ -90,6 +126,7 @@ declared_field <- function(inner, type, root) {
       if (!identical(inner$type, "object") || !is_obj(props) || !identical(names(args), names(props))) return(NULL)
       fields <- Map(function(s, a) field_from_shape(s, type = a, root = root), props, args)
       if (!all(vapply(Map(function(s, a) declared_field_of(s, a, root), props, args), isTRUE, NA))) return(NULL)
+      if (!presence_kept(inner, fields, root)) return(NULL)
       new_field(inner, "record", fields = fields)
     },
     list_of = {
@@ -118,18 +155,24 @@ r_type_of <- function(f) {
   switch(f$kind,
     string = "character", integer = "integer", number = "double", boolean = "logical", enum = "factor", json = "list",
     list = sprintf("list_of(%s)", r_type_of(f$item)),
-    record = sprintf("tibble(%s)", paste(sprintf("%s = %s", vapply(names(f$fields), function(n) if (make.names(n) == n) n else sprintf("`%s`", gsub("`", "\\\\`", n)), ""),
+    record = sprintf("tibble(%s)", paste(sprintf("%s = %s", vapply(names(f$fields), r_name, ""),
                                                  vapply(f$fields, r_type_of, "")), collapse = ", ")),
     "list")
 }
+
+# A column's name as R code: quoted with backticks, and escaped, as R
+# deparses a symbol (a backslash or a backtick in it read back as itself).
+# The empty name has no symbol: "``", which read_r_type() does not read.
+r_name <- function(n) if (!nzchar(n)) "``" else paste(deparse(as.name(n), backtick = TRUE), collapse = "")
 
 # An interface whose fields' `type` is R's for them: what an R folder says
 # (a function loaded from another language's folder keeps its fields' R
 # types, not the names that language gave them).
 r_typed <- function(iface, core) {
   d <- core$definition
-  for (i in seq_along(iface$inputs)) iface$inputs[[i]]$type <- r_type_of(d$inputs[[i]])
-  for (i in seq_along(iface$outputs)) iface$outputs[[i]]$type <- r_type_of(d$outputs[[i]])
+  typed <- function(fields, defined) lapply(fields, function(f) { f$type <- r_type_of(defined[[f$name]]); f })
+  iface$inputs <- typed(iface$inputs, d$inputs)
+  iface$outputs <- typed(iface$outputs, d$outputs)
   iface
 }
 
@@ -158,8 +201,11 @@ read_r_type <- function(type) {
 #' exactly: text, numbers, yes or no, a factor for a choice, a `list_of`
 #' for a list, a tibble for a record only when the record is closed
 #' (`additionalProperties: false`, so no member can come back that a column
-#' does not hold); any other object, a Python dataclass's among them, is a
-#' list column of named lists (`tidyr::unnest_wider()` spreads it). What a
+#' does not hold) and each member it may leave out is one value that takes
+#' no null (`NA` then means "left out", and nothing else); any other object,
+#' a Python dataclass's among them, is a list column of named lists
+#' (`tidyr::unnest_wider()` spreads it), which keeps every member, and
+#' whether it is there, as it came. What a
 #' call sends never depends on these types: a value is sent as it is given.
 #' @param path The folder, or its `functai.json`.
 #' @param node Which function, by key (`"module:name"`); default the entry.

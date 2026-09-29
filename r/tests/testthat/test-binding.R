@@ -187,7 +187,9 @@ test_that("a reply whose value does not fit its type is unreadable: the model is
 test_that("a default is of its type, as vctrs casts: nothing is lost on the way", {
   expect_error(defaults_to(2.5, integer()), "is not whole number")
   expect_error(defaults_to(TRUE, character()), "is not text")
-  expect_identical(defaults_to(2L, double())$shape$default, 2)
+  two <- defaults_to(2L, double())
+  expect_identical(lmcc::json_text(two$shape$default), "2")          # held as the interface holds it: JSON's number 2
+  expect_identical(default_value(two), 2)                            # the R argument's default: a double
   n <- defaults_to(3L, "how many suggestions to give")               # a sentence describes the value's own type
   expect_identical(n$kind, "integer")
   expect_identical(n$desc, "how many suggestions to give")

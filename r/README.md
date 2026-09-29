@@ -145,7 +145,9 @@ a language model reads all its inputs together, as they are.
 A row with a missing input (`NA`) whose type takes no null is `NA`
 without a call, whether the input is required or has a default: `NA` is a
 value given, never "left out" (`predict()`'s `.error` says so). A value is
-sent as it is given (a record keeps every member it has) and checked so: a
+sent as it is given (a record keeps every member it has: every column of a
+tibble, so select a record's columns first when the others are not for the
+model) and checked so: a
 value that does not fit its field's type (`2.5` for a whole number, a
 number below a `minimum`, a record without a member it requires) fails its
 row before any request. When some calls fail
@@ -279,7 +281,9 @@ A function R saved comes back with its R types. Another language's comes
 back with types that hold its answers exactly: a record the saving language
 left open (a Python dataclass, whose shape allows members it does not
 name) is a list column of named lists, which `tidyr::unnest_wider()`
-spreads into columns; a closed one is a tibble column.
+spreads into columns; a closed one is a tibble column when a tibble keeps
+whether each member is there (a member it may leave out is one value, never
+null), and a list column otherwise.
 
 ## Settings
 

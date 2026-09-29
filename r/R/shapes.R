@@ -86,7 +86,11 @@ prototype_of <- function(x) {
 
 #' An input or output that may be missing
 #'
-#' The model may answer `null` for it; it comes back as `NA`.
+#' The model may answer `null` for it; it comes back as `NA`. A record comes
+#' back as a row of `NA` (vctrs's missing row) when it requires a member
+#' that is one value and is never null, so that no record is a row of `NA`
+#' too; any other optional record is a list column, where `NULL` is null
+#' and a record of nulls is a named list of them.
 #' @param x A type, or a sentence (text, described by it).
 #' @return A field.
 #' @examples
@@ -96,8 +100,10 @@ prototype_of <- function(x) {
 optional <- function(x) {
   f <- as_field(x)
   default <- if ("default" %in% names(f$shape)) f$shape["default"]      # an input's own default stays its own
-  f$shape <- c(list(anyOf = list(data_shape(f$shape), list(type = "null"))), default)
+  inner <- data_shape(f$shape)
+  f$shape <- c(list(anyOf = list(inner, list(type = "null"))), default)
   f$nullable <- TRUE
+  if (identical(f$kind, "record") && !null_told(inner, f$fields, inner)) { f$kind <- "json"; f$fields <- NULL }   # a row of NA would be a record too
   f
 }
 
@@ -105,7 +111,10 @@ optional <- function(x) {
 #'
 #' Several named fields that belong together, each a type or a sentence
 #' (text, described), as in [ai()]. Records come back as tibble columns
-#' (`tidyr::unpack()` spreads them).
+#' (`tidyr::unpack()` spreads them). A tibble given for a record is sent
+#' with every column it has, those the record does not name too (a record
+#' is an object that may have other members): the model sees them, so
+#' select the record's columns first when the others are not for it.
 #' @param ... Fields, as `name = type`.
 #' @return A field.
 #' @examples
@@ -226,7 +235,10 @@ json_writer <- function(f) {
 # whole double for an integer is written as one. One thing R cannot say is
 # a member left out of a row of a tibble: there, and in any record, `NA`
 # for a member the shape does not require and whose type takes no null is
-# left out, as an answer that leaves it out reads back.
+# left out, as an answer that leaves it out reads back. Nor a null record:
+# a record every member of which is missing (NA, NULL, or a record of
+# them), where the shape takes null and requires a member that takes none,
+# is null, as a null answer reads back (vctrs's missing row).
 json_of <- function(v, shape, root) {
   if (is_missing(v)) return(NULL)
   s <- value_guide(shape, root)
@@ -235,7 +247,7 @@ json_of <- function(v, shape, root) {
       as.integer(v) else plain_json(v),
     number = if (is.numeric(v) && length(v) == 1L && !inherits(v, "lmcc_int")) as.double(v) else plain_json(v),  # lmcc's big integers keep their digits
     array = array_json(v, s, root),
-    object = object_json(v, s, root),
+    object = if (null_record(v, shape, s, root)) NULL else object_json(v, s, root),
     plain_json(v))
 }
 
@@ -247,6 +259,22 @@ array_json <- function(v, s, root) {
   if (is.list(v) || is.atomic(v)) return(lapply(seq_along(v), function(i) json_of(element(unname(v), i), item(i), root)))
   plain_json(v)
 }
+
+# Whether a value is a null record (json_of()): a row of NA, given where the
+# shape takes null and requires a member that does not (so the row, as a
+# record, could not be one).
+null_record <- function(v, shape, s, root) {
+  if (is.data.frame(v)) { if (nrow(v) != 1L) return(FALSE); v <- element(v, 1L) }
+  if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
+  if (!all_missing(v)) return(FALSE)
+  props <- if (is_obj(s$properties)) s$properties else list()
+  fits_shape(NULL, shape, root) &&
+    any(vapply(unlist(s$required), function(n) !is.null(props[[n]]) && !fits_shape(NULL, props[[n]], root), NA))
+}
+
+# A named list every member of which is missing: NA, NULL, or such a list.
+all_missing <- function(v) is.list(v) && length(v) > 0L && !is.null(names(v)) &&
+  all(vapply(v, function(m) is_missing(m) || all_missing(m), NA))
 
 object_json <- function(v, s, root) {
   if (is.data.frame(v)) { if (nrow(v) != 1L) return(plain_json(v)); v <- element(v, 1L) }
