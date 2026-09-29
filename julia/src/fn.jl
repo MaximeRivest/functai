@@ -75,24 +75,36 @@ function field_def(name, spec, where; default=nothing)
     shape = shape_of(spec; where)
     desc = desc === nothing || isempty(desc) ? nothing : String(desc)
     default === nothing && return FieldDef(String(name), spec, shape, desc)
-    given = something(default)
+    given = as_declared(spec, something(default))
     data = json_form(given)
     data === NOJSON && throw(InterfaceError("interface-malformed", String(name),
         "$where: its default is sent to the model when it is left out, so it needs a JSON form; a $(typeof(given)) has none"))
     data = LMCC.deepcopy_json(data)          # a snapshot: the value given may change later; the default does not
     haskey(shape, "default") && !same_json(shape["default"], data) &&
         throw(ArgumentError("$where: its shape's default $(LMCC.json_text(shape["default"])) is not its default $(LMCC.json_text(data))"))
-    # the value calls get is made from that snapshot, as loading makes it, never the value given
-    native = try
-        default_native(spec, data, where)
-    catch err
-        err isa LMCC.Refusal || rethrow()
-        throw(InterfaceError("interface-malformed", String(name),
-            "$where: its default does not fit its type (a default is kept as JSON and read back as the type: $(err.hint))"))
-    end
-    FieldDef(String(name), spec, data_shape(shape), desc, true, data, native)
+    # what is sent is that JSON, never made again from a value; the function's code gets a copy of the value
+    # given (a copy calls no constructor), taken now: whether it fits is the interface's check, on the JSON
+    FieldDef(String(name), spec, data_shape(shape), desc, true, data, deepcopy(given))
 end
 shape_of(spec::Union{OneOf,AbstractDict}; where="") = shape_of(spec)
+
+"""
+A default as its input's declared type: the value given when it is one,
+else as Julia's `convert` makes it one when Julia can (`1` for a `Float64`
+is `1.0`, `1.0` for an `Int` is `1`), else the value given (a `NamedTuple`
+for a struct: its JSON is checked against the shape all the same). Never
+built again from its JSON, so no constructor runs again on a value already
+of its type.
+"""
+function as_declared(spec, given)
+    (spec isa Type && !(given isa spec)) || return given
+    try
+        convert(spec, given)
+    catch err
+        err isa InterruptException && rethrow()
+        given                                    # Julia does not convert it: the interface checks its JSON
+    end
+end
 
 """
     AIFunction(name, description = ""; inputs, output = String, outputs, settings...)
@@ -432,7 +444,7 @@ function with_defaults(f::AIFunction, given::AbstractDict)
         if haskey(given, x.name)
             out[x.name] = given[x.name]
         elseif x.optional
-            out[x.name] = deepcopy(x.native)          # each call its own: code that changes it changes no other call
+            out[x.name] = LeftOut(x)          # sent as its JSON; the code gets a copy of its own (`code_inputs`)
         end
     end
     missing_names = [x.name for x in f.definition.inputs if !haskey(out, x.name)]
@@ -470,7 +482,7 @@ end
 "What calling returns: the code's value; else the answer, or every output when there are several."
 function value_of(f::AIFunction, inputs, outputs::NamedTuple)
     if f.body !== nothing
-        v = f.body(inputs, outputs)
+        v = f.body(code_inputs(inputs), outputs)
         return f.returns === nothing ? v : convert(f.returns, v)
     end
     declared = Tuple(Symbol(x.name) for x in f.definition.outputs)

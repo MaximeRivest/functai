@@ -183,7 +183,10 @@ The observers whose code is running here, and those whose code gave them the
 event they are handling: an observer that calls an AI function (a host's
 exporter that summarises each call, say) is not given the calls it makes,
 nor the calls another observer makes on seeing those, so observers never
-feed themselves without end. Every other observer sees them.
+feed themselves without end. Every other observer sees them. A Channel is
+given its events by `put!`, and the task that reads them is the user's,
+which this cannot recognise: a reader that calls an AI function on each
+event feeds itself (the guides say so: use an observer function).
 """
 const OBSERVING = ScopedValue{Vector{Any}}(Any[])     # never changed in place: a new vector per observer added
 # (a Vector{Any}, not a tuple: one concrete type whatever the observers, so a new observer compiles nothing here)
@@ -249,8 +252,9 @@ function run_feed(f::Feed)
             if o isa Channel
                 put!(o, e)
             else
+                # in the newest world: this task may have been started by one older than the observer's code
                 with(OBSERVING => Any[made_by..., o]) do
-                    o(e)
+                    Base.invokelatest(o, e)
                 end
             end
         catch err
@@ -373,7 +377,7 @@ function send_once(w::LogWriter, e::Event)
         store = w.journal.store
         spawn_apart() do
             answer = try
-                keep!(store, e)
+                Base.invokelatest(keep!, store, e)          # in the newest world, as the observers
             catch err
                 EXITING[] && return
                 unwrap(err)
@@ -385,10 +389,10 @@ function send_once(w::LogWriter, e::Event)
         end
     end
     t = w.journal.timeout
-    deadline = t === nothing ? Inf : time() + t
-    timer = t === nothing ? nothing : Timer(_ -> lock(() -> notify(s.cond), s.cond), t)
+    expired = Ref(false)            # set by the timer (a monotonic clock), never by reading the wall clock
+    timer = t === nothing ? nothing : Timer(_ -> lock(() -> (expired[] = true; notify(s.cond)), s.cond), t)
     answered, answer = lock(s.cond) do
-        while !s.done && time() < deadline
+        while !s.done && !expired[]
             wait(s.cond)
         end
         s.done ? (true, s.answer) : (false, NoAnswer("no answer in $(t) s"))

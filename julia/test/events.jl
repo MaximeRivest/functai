@@ -184,7 +184,8 @@ function run_receivers_scenario(scenario)
     journal(x) = x === nothing ? false :
                  FunctAI.Journal(get!(() -> FunctAI.MemoryStore(x["name"]), stores, x["name"]); required=x["mode"] == "required")
     seen = Dict{String,Vector{Event}}()
-    observer(name) = e -> push!(get!(() -> Event[], seen, name), e)
+    seen_lock = ReentrantLock()              # each observer runs on a task of its own, on any thread: one Dict, one lock
+    observer(name) = e -> lock(() -> push!(get!(() -> Event[], seen, name), e), seen_lock)
     names = IdDict{Any,String}()
     settings(layer) = begin
         out = Dict{Symbol,Any}()

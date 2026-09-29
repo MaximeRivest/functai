@@ -89,7 +89,7 @@ mood = AIFunction("mood", "How does the customer feel about what they bought?";
 
 ## `missing`
 
-A `missing` input is not sent: the call returns `missing`, for free. That makes a column with holes safe to broadcast over. An answer the model may leave empty is a different thing: declare it `Union{T,Missing}`.
+A `missing` input is not sent: the call returns `missing`, for free. A default is always sent: an input left out takes its default, and a `missing` default is sent as `null`. That makes a column with holes safe to broadcast over. An answer the model may leave empty is a different thing: declare it `Union{T,Missing}`.
 
 ## Help
 

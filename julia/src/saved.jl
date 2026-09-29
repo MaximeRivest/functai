@@ -165,9 +165,9 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         end
         desc = f.direction == "input" ? f.desc : nothing
         f.direction == "input" && haskey(optional, f.name) || return FieldDef(f.name, spec, JObj(f.shape), desc)
+        # the default is the JSON the folder keeps, sent as it is: never read as a type (a loaded function runs no code)
         default = optional[f.name]
-        native = default_native(spec, default, f.name)
-        FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), native)
+        FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), LMCC.deepcopy_json(default))
     end
     inputs, outputs = FieldDef[], FieldDef[]
     reasoning = false

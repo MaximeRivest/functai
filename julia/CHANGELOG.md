@@ -23,10 +23,18 @@
   its default is in its interface, sent when the input is left out, and left
   out of the lmcc signature (`functions/12`). The interface is checked at
   definition, after lmcc's check (`InterfaceError` `interface-malformed`).
-  `AIFunction(…; defaults)` keeps a snapshot of each default, taken when
-  the function is defined: changing the value given later changes nothing,
-  and a saved and loaded function sends the same request as the one saved,
-  left-out inputs included. **Breaking**: an `@ai` default is data, known
+  `AIFunction(…; defaults)` keeps a snapshot of each default's JSON, taken
+  when the function is defined: it is what a call leaving the input out
+  sends and logs, never made again from a value (no constructor runs again,
+  a `Set` keeps its order), so changing the value given later changes
+  nothing, and a saved and loaded function sends the same request as the
+  one saved, left-out inputs included. A default not of its input's type
+  is first converted as Julia's `convert` does (`1` for a `Float64` is
+  `1.0`, `1.0` for an `Int` is `1`), when Julia can. The function's own
+  code gets a copy of the value it was defined with. A field typed `Missing` (a record's,
+  say) reads `null` as `missing`. A `missing` default (top-level or
+  inside a record) is sent as `null`: `missing` in, `missing` out is for
+  inputs given. **Breaking**: an `@ai` default is data, known
   when the function is defined: a literal (`"kind"`, `3`, `String[]`,
   `(a = 1,)`) or a constant whose value cannot change (`const TONE =
   "kind"`, an `@enum` value). A default that uses another input, is
@@ -105,7 +113,12 @@
   is given; one that fails is warned about once and given nothing more. An
   observer is not given the calls its own code makes (an exporter that
   summarises each call with an AI function does not feed itself), nor those
-  another observer makes on seeing them.
+  another observer makes on seeing them. A Channel's reader is the user's
+  task and is not recognised: a reader that calls an AI function on each
+  event feeds itself (use an observer function for that). Observer
+  functions and stores run in Julia's newest world, whichever task started
+  their feed: one defined after a long-running task began works for its
+  calls too. A send's timeout is kept by a timer, never by the wall clock.
   `FunctAI.drain()` waits for observers and journal writers (Julia drains
   for 2 seconds at exit). A writer appends the kept form in order on a task
   of its own, sends again what is not confirmed, and for a required journal
@@ -125,7 +138,8 @@
   nothing its callers do can change. Observers and stores run on Julia
   tasks: one that holds its thread without yielding holds the calls on that
   thread too, which with one default thread is every spawned call
-  (`?FunctAI.drain`).
+  (`?FunctAI.drain`): "a slow observer does not slow the call" holds for
+  one that yields.
 - **The call record** holds the tool calls FunctAI adds (`outputs.calls`:
   the model's last step's, with its size); marks a value written as a
   description by how it was written (a dictionary holding an object with no

@@ -49,7 +49,8 @@ FunctAI.events_after(s::FailingStore, tree, after) = FunctAI.events_after(s.stor
     # the data constructor: defaults
     g = AIFunction("reply", "Answer."; inputs=(message=String, tone=String), defaults=(tone="kind",), output=String)
     @test FunctAI.interface(g)["inputs"][2]["optional"] == true
-    @test FunctAI.bind_inputs(g, ("Hi",), ()) == Dict("message" => "Hi", "tone" => "kind")
+    bound = FunctAI.bind_inputs(g, ("Hi",), ())          # a default left out is sent as its JSON
+    @test Dict(k => FunctAI.jsonvalue(v) for (k, v) in bound) == Dict("message" => "Hi", "tone" => "kind")
 end
 
 @testset "@program declares its interface, and every call is checked against it" begin

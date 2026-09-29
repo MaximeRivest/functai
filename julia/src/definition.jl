@@ -7,7 +7,9 @@
 One input or output: its name, its Julia type (or `OneOf`, or a shape when
 loaded), its shape (without a default), words about it, and, for an input a
 caller may leave out, its default: `default` the value sent (as JSON, in the
-interface's shape) and `native` the value the function's code gets.
+interface's shape) and `native` the value the function's code gets (a copy
+of the value it was defined with; a loaded function runs no code of its own,
+and its is the JSON).
 """
 struct FieldDef
     name::String
@@ -21,13 +23,22 @@ end
 FieldDef(name, spec, shape, desc) = FieldDef(String(name), spec, shape, desc, false, nothing, nothing)
 
 """
-An optional input's default as its code gets it, made from its JSON form
-(`data`, which the interface writes and a saved folder keeps), the same way
-whether the function is defined or loaded: it shares nothing with the value
-it was defined with, so a call left without it is sent the same request
-before and after saving and loading, whatever happens to that value later.
+An optional input a call left out: its default. Its JSON (`data`, the
+interface's `default`, which a saved folder keeps) is what the call sends,
+logs and shows, never made again from the value: so a function sends the
+same request before and after saving and loading, whatever the value's type
+does when it is built or iterated. The function's own code gets `native`, a
+copy of the value the function was defined with, anew for each call.
 """
-default_native(spec, data, where) = spec isa AbstractDict ? LMCC.deepcopy_json(data) : fromjson(spec, LMCC.deepcopy_json(data), where)
+struct LeftOut
+    data::Any
+    native::Any
+end
+LeftOut(x::FieldDef) = LeftOut(x.default, x.native)
+jsonvalue(x::LeftOut) = LMCC.deepcopy_json(x.data)
+
+"The inputs as the function's own code gets them: a default left out is a copy of its value, its own."
+code_inputs(inputs::AbstractDict) = OrderedDict{String,Any}(k => v isa LeftOut ? deepcopy(v.native) : v for (k, v) in inputs)
 FieldDef(name, spec; desc=nothing) = FieldDef(String(name), spec, shape_of(spec), desc === nothing || isempty(desc) ? nothing : String(desc))
 
 "The field's lmcc shape: its shape without its own `default` (functions.md, \"The signature\")."

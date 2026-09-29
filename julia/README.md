@@ -263,7 +263,13 @@ TypeScript and R load what Julia saves; Python does not yet.
 - **An AI function's default is data**, not code run on each call as Julia
   runs it: it is written in the function's interface and sent when the
   input is left out, so it is a literal or a constant whose value cannot
-  change, and each call gets a copy. A computed default (`since::String =
+  change, and each call gets a copy. What is sent is the default's JSON
+  as the interface writes it, taken when the function is defined and never
+  made again from the value (a `Set` in the order it had, a struct as its
+  fields were; a value not of its input's type as Julia's `convert` makes
+  it one, when it can: `1.0` for an `Int` is `1`); the function's own code
+  gets a copy of that value. A `missing` default is sent as `null` (a `missing` given
+  is still `missing` out, with no call). A computed default (`since::String =
   string(today())`), one that uses another input, or a constant `Vector`
   is refused when the function is defined, rather than frozen at that
   moment; give such a value at each call. A `@program`'s default that is
@@ -279,7 +285,12 @@ TypeScript and R load what Julia saves; Python does not yet.
   observer collected right after a call first calls `FunctAI.drain()`. An
   observer or a store that holds its thread without yielding (a blocking C
   call, `Libc.systemsleep`) holds the calls on that thread too: with one
-  default thread, start Julia with `--threads=auto`, or make it yield.
+  default thread, start Julia with `--threads=auto`, or make it yield. So
+  "a slow observer does not slow the call" holds here for an observer that
+  yields, not for every observer. An observer function is not given the
+  calls its own code makes; a Channel's reader is your task, which FunctAI
+  cannot tell apart, so a reader that calls an AI function on each event
+  feeds itself: call AI functions from an observer function.
 - **Code of your own is versioned by its parsed form**, not its text:
   reformatting or editing comments does not make a new version. A Julia
   function with code of its own never shares a version with another

@@ -223,6 +223,7 @@ function fromjson(o::OneOf{T}, v, where) where {T}
 end
 function fromjson(::Type{T}, v, where) where {T}
     T === Nothing && (v === nothing ? (return nothing) : throw(misfit_refusal(where, "expected null, got $(repr(v))")))
+    T === Missing && (v === nothing ? (return missing) : throw(misfit_refusal(where, "expected null, got $(repr(v))")))
     if T isa Union
         v === nothing && (Nothing <: T ? (return nothing) : Missing <: T ? (return missing) :
                           throw(misfit_refusal(where, "expected a value, got null")))

@@ -53,6 +53,15 @@ struct Shelf
     books::Vector{String}
 end
 
+"A struct whose constructor changes what it is given: building it again from its JSON would change it."
+struct Incremented
+    n::Int
+    Incremented(n) = new(n + 1)
+end
+
+"A record whose field is `missing`: its JSON is `{\"n\": null}`."
+const MissingRecord = NamedTuple{(:n,),Tuple{Missing}}
+
 "A store whose first append meets a passing condition that throws a `KeyError` (a cache miss, say)."
 mutable struct MissOnce <: FunctAI.EventStore
     store::FunctAI.MemoryStore
@@ -588,6 +597,100 @@ end
     path = mktempdir()
     FunctAI.save(path, shelved)
     @test LMCC.json_equal(sent_request(shelved, "q"), sent_request(FunctAI.load(path), "q"))
+end
+
+@testset "a default's JSON is what is sent, never made again from its value: the same bytes before and after saving and loading" begin
+    # a set whose order is its layout's (building it again would change its order), a constructor that changes what it
+    # is given, and structured, nested, numeric and ordered defaults, with and without `types` when loaded
+    s = Set(1:1000)
+    foreach(i -> delete!(s, i), 11:1000)
+    cases = Any[
+        ("set", Set{Int}, s),
+        ("constructor", Incremented, Incremented(1)),
+        ("struct", Shelf, Shelf("kept", ["Emma", "Ulysses"])),
+        ("nested", Dict{String,Vector{NamedTuple{(:a, :b),Tuple{Int,Float64}}}}, Dict("z" => [(a=1, b=2.5)], "a" => [(a=3, b=-1.0)], "m" => [])),
+        ("ordered", NamedTuple{(:z, :a, :m),Tuple{Int,String,Vector{Symbol}}}, (z=1, a="b", m=[:y, :x])),
+        ("numbers", Vector{Float64}, [1, 2.5, 1e300, -3]),
+        ("int as float", Float64, 3),
+        ("whole float as int", Int, 1.0),
+        ("ints as floats", Vector{Float64}, [1, 2]),
+        ("big", BigInt, big(2)^80),
+        ("missing inside", MissingRecord, (n=missing,)),
+        ("missing", Union{Missing,String}, missing),
+    ]
+    for (label, T, v) in cases
+        f = AIFunction("defaulted", "Use it."; inputs=(q=String, x=T), output=String, defaults=(x=v,))
+        data = FunctAI.interface(f)["inputs"][2]["shape"]["default"]
+        # the value's JSON as it was, of its declared type (Julia's convert, when it is not one)
+        @test LMCC.json_text(data) == LMCC.json_text(FunctAI.jsonvalue(v isa T ? v : convert(T, v)))
+        sent = LMCC.json_text(sent_request(f, "q"))
+        path = mktempdir()
+        FunctAI.save(path, f)
+        for g in (FunctAI.load(path), FunctAI.load(path; types=(x=T,)))
+            @test LMCC.json_text(FunctAI.interface(g)["inputs"][2]["shape"]["default"]) == LMCC.json_text(data)
+            same = LMCC.json_text(sent_request(g, "q")) == sent
+            same || @info "the requests differ" label
+            @test same                                                    # byte for byte
+        end
+        @test LMCC.json_text(sent_request(f, "q")) == sent                # and the same on every call
+    end
+    # what is sent is the JSON; the set's own order, when it was defined, is the one sent
+    f = AIFunction("set_default"; inputs=(x=Set{Int},), output=String, defaults=(x=s,))
+    @test occursin(FunctAI.json_indented(FunctAI.jsonvalue(s)), only(only(sent_request(f)["messages"])["parts"])["text"])
+    # the function's own code gets a copy of the value it was defined with: no constructor runs again, each call its own
+    own = AIFunction("own_code"; inputs=(x=Incremented, s=Shelf), output=String,
+                     defaults=(x=Incremented(1), s=Shelf("kept", ["Emma"])),
+                     body=(ins, outs) -> (push!(ins["s"].books, "CHANGED"); (ins["x"].n, length(ins["s"].books))))
+    r = FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok"))
+    @test using_fake(() -> [own(), own()], r; retries=0) == [(2, 2), (2, 2)]
+    typed = AIFunction("typed"; inputs=(x=Int, y=Vector{Float64}), output=String, defaults=(x=1.0, y=[1, 2]),
+                       body=(ins, outs) -> (ins["x"], ins["y"]))
+    got = using_fake(() -> typed(), FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok")); retries=0)
+    @test got[1] === 1 && got[2] isa Vector{Float64} && got[2] == [1.0, 2.0]
+    @test !occursin("CHANGED", LMCC.json_text(LM15.to_dict(r.requests[2])))
+    # a missing default is sent as null; a missing given is still missing out, with no call
+    m = AIFunction("maybe"; inputs=(x=Union{Missing,String},), output=String, defaults=(x=missing,))
+    r = FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok"))
+    @test using_fake(() -> m(), r; retries=0) == "ok" && length(r.requests) == 1
+    @test using_fake(() -> m(missing), r; retries=0) === missing && length(r.requests) == 1
+    # a record's field typed Missing reads null, as its shape says
+    @test FunctAI.fromjson(MissingRecord, Dict{String,Any}("n" => nothing)) === (n=missing,)
+end
+
+@testset "observers and stores defined after a task began run for that task's calls" begin
+    # a worker started first (its world is older than what is defined after it), as a queue worker at a REPL
+    f = AIFunction("late", "Answer."; inputs=(x=String,), output=String)
+    router = FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok"))
+    run_one(job) = try
+        using_fake(() -> f(job.x), router; retries=0, job.settings...)
+    catch err
+        err
+    end
+    jobs, results = Channel{Any}(4), Channel{Any}(4)
+    worker = Threads.@spawn for job in jobs
+        put!(results, run_one(job))
+    end
+    seen = Threads.Atomic{Int}(0)
+    obs = @eval late_observer(e) = Threads.atomic_add!($seen, 1)
+    @eval struct LateStore <: FunctAI.EventStore
+        store::FunctAI.MemoryStore
+    end
+    @eval FunctAI.keep!(s::LateStore, e::FunctAI.Event) = FunctAI.keep!(s.store, e)
+    store = @eval LateStore(FunctAI.MemoryStore())
+    for settings in ((observers=[obs],), (journal=FunctAI.Journal(store; required=true),))
+        put!(jobs, (x="a", settings=settings))
+        @test timedwait(() -> isready(results), 60.0) === :ok
+        @test take!(results) == "ok"
+    end
+    @test FunctAI.drain(10)
+    @test seen[] > 0                                                      # the observer was given the worker's call
+    @test FunctAI.finished(store.store, only(FunctAI.trees(store.store))) # and the store kept its tree
+    # and it still works from here
+    before = seen[]
+    @test using_fake(() -> f("b"), router; retries=0, observers=[obs]) == "ok"
+    @test FunctAI.drain(10) && seen[] > before
+    close(jobs)
+    @test timedwait(() -> istaskdone(worker), 30.0) === :ok
 end
 
 @testset "a value with no JSON form is said to be one, however it is held" begin

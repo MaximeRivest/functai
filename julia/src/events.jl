@@ -491,7 +491,7 @@ subtype with three methods:
   vector of them, one step): returns `:kept` or `:duplicate`, or throws a
   [`StoreRefusal`](@ref) with the contract's code. Any other exception is
   "no answer" (the append may have been kept: the writer sends it again),
-  except a fault of the store's own code (`MethodError`, `ArgumentError`, …),
+  except a store that cannot be called (`MethodError`, `UndefVarError`, …),
   which stops the journal writer, with its cause.
 - `FunctAI.claim!(store, tree)` gives a later writer a [`Claim`](@ref).
 - `FunctAI.events_after(store, tree, after)` reads the kept events after a
