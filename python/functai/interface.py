@@ -635,6 +635,95 @@ def of_function(fn: Any, *, outputs: Optional[Mapping[str, Any]] = None,
     return {"description": inspect.cleandoc(fn.__doc__ or ""), "inputs": inputs, "outputs": outs}
 
 
+_JSON_TYPES: Dict[str, Any] = {"string": str, "integer": int, "number": float, "boolean": bool,
+                                "null": type(None)}
+
+
+def python_type(shape: Any, root: Optional[Mapping[str, Any]] = None, _seen: Tuple[str, ...] = ()) -> Any:
+    """The Python type of the values a shape admits, as they come from data
+    (a record is a ``dict``, a list a ``list``): ``str``, ``int``, ``float``,
+    ``bool``, ``None``, ``Literal[...]`` for an ``enum`` or ``const`` of text,
+    whole numbers, booleans or null, ``list[T]``, ``dict[str, T]``, a
+    ``Union`` for ``anyOf`` or several types; ``Any`` for anything else (an
+    opaque ``{}``, a reference that loops). For introspection: a function
+    loaded from data states its inputs and answer with these."""
+    if not isinstance(shape, Mapping):
+        return Any
+    root = shape if root is None else root
+    ref = shape.get("$ref")
+    if isinstance(ref, str):
+        m = REF.fullmatch(ref)
+        target = (root.get("$defs") or {}).get(m.group(1)) if m else None
+        if target is None or ref in _seen:
+            return Any
+        return python_type(target, root, (*_seen, ref))
+    scalar = (str, int, bool, type(None))
+    if "const" in shape:
+        c = shape["const"]
+        return typing.Literal[c] if isinstance(c, scalar) and not isinstance(c, float) else Any
+    if isinstance(shape.get("enum"), list) and shape["enum"] and all(
+            isinstance(v, scalar) and not isinstance(v, float) for v in shape["enum"]):
+        return typing.Literal[tuple(shape["enum"])]
+    if isinstance(shape.get("anyOf"), list) and shape["anyOf"]:
+        return _union([python_type(s, root, _seen) for s in shape["anyOf"]])
+    kind = shape.get("type")
+    if isinstance(kind, list) and kind:
+        return _union([python_type({**shape, "type": k}, root, _seen) for k in kind])
+    if kind == "array":
+        return List[python_type(shape.get("items", {}), root, _seen)]  # type: ignore[misc]
+    if kind == "object":
+        extra = shape.get("additionalProperties")
+        return Dict[str, python_type(extra, root, _seen) if isinstance(extra, Mapping) else Any]  # type: ignore[misc]
+    return _JSON_TYPES.get(kind, Any) if isinstance(kind, str) else Any
+
+
+def _union(types: List[Any]) -> Any:
+    if any(t is Any for t in types):
+        return Any
+    distinct = list(dict.fromkeys(types))
+    return distinct[0] if len(distinct) == 1 else typing.Union[tuple(distinct)]
+
+
+def python_signature(interface: Mapping[str, Any]) -> Tuple[inspect.Signature, bool]:
+    """``(signature, exact)``: an interface's inputs and answer as a Python
+    signature, each input annotated with ``python_type`` of its shape and an
+    optional one with its default.
+
+    ``exact`` when the signature binds exactly as the interface does (every
+    name a Python parameter name, no required input after an optional one).
+    Otherwise Python cannot write it, and the signature is the closest it
+    can: the inputs from the first one out of Python's order on are
+    keyword-only (a call may still give them by position, in the
+    interface's order), and names Python reserves (``class``) are given
+    through ``**`` (``fn(**{"class": ...})``)."""
+    import keyword
+    params: List[inspect.Parameter] = []
+    reserved: List[str] = []
+    names = [f["name"] for f in interface.get("inputs") or []]
+    positional, seen_optional = True, False
+    for f in interface.get("inputs") or []:
+        name, shape = f["name"], f.get("shape") or {}
+        if not name.isidentifier() or keyword.iskeyword(name):
+            reserved.append(name)
+            positional = False
+            continue
+        optional = bool(f.get("optional"))
+        if positional and seen_optional and not optional:
+            positional = False
+        seen_optional = seen_optional or optional
+        kind = inspect.Parameter.POSITIONAL_OR_KEYWORD if positional else inspect.Parameter.KEYWORD_ONLY
+        default = copy.deepcopy(shape["default"]) if optional and "default" in shape else inspect.Parameter.empty
+        params.append(inspect.Parameter(name, kind, default=default,
+                                        annotation=python_type(shape)))
+    if reserved:
+        rest = next(n for n in ("inputs", "fields", "values", "named") if n not in names)
+        params.append(inspect.Parameter(rest, inspect.Parameter.VAR_KEYWORD))
+    outputs = interface.get("outputs") or []
+    answer = python_type(outputs[-1].get("shape") or {}) if outputs else Any
+    exact = positional and not reserved
+    return inspect.Signature(params, return_annotation=answer), exact
+
+
 _ORDER = ("name", "shape", "desc", "type", "opaque", "optional")
 
 
@@ -679,4 +768,4 @@ def of_ai(fn: Any) -> Dict[str, Any]:
 
 
 __all__ = ["JSON", "check", "signature", "fits", "bind_inputs", "check_outputs", "of_function", "of_ai",
-           "InterfaceError"]
+           "python_type", "python_signature", "InterfaceError"]

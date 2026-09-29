@@ -266,8 +266,7 @@ def refit(m, key="shop:reply"):
     """Fingerprints and version recomputed for a node changed by hand (what
     another language would have saved for it)."""
     node = m["nodes"][key]
-    fn = saved._LoadedAI(key, node, None)
-    fn._saved_interface = node.get("interface")
+    fn = saved._LoadedAI(key, node, None, node.get("interface"))
     node["ai"]["fingerprints"] = saved._fingerprints(fn, node["ai"]["probes"])
     node["ai"]["version"] = fn.version
     return m
@@ -920,3 +919,370 @@ def test_a_turn_made_for_another_plan_is_recorded_as_shown(tmp_path):
     third = max(records(tmp_path), key=lambda r: r["id"])
     assert third["saw"] == [{"call": first.call_id}, {"call": second["id"]}]  # shown as values, not as steps
     assert "FIRST-MESSAGE" in str(router.requests[-1])
+
+
+# ------------------------------------------------------------------ round two: what the second reviews found
+
+
+REPLY = '''
+    from functai import ai
+
+    @ai
+    def reply(message: str, tone: str = "kind") -> str:
+        """Answer the customer."""
+        ...
+    '''
+
+
+@pytest.mark.parametrize("hashes", ["none", "fewer", "more"])
+def test_a_python_folder_s_probes_each_have_their_fingerprint_before_its_code_runs(hashes, tmp_path, monkeypatch):
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "replyprobe.py").write_text(textwrap.dedent(REPLY))
+    monkeypatch.syspath_prepend(str(src))
+    import replyprobe
+    folder = tmp_path / "saved"
+    functai.save(replyprobe.reply, folder, examples=[{"message": "a"}, {"message": "b", "tone": "c"}])
+    path = folder / "functai.json"
+    m = json.loads(path.read_text())
+    data = m["nodes"][m["entry"]]["ai"]
+    assert len(data["probes"]) >= 2
+    requests = data["fingerprints"]["requests"]
+    data["fingerprints"]["requests"] = {"none": [], "fewer": requests[:1], "more": requests * 3}[hashes]
+    # a demo no fingerprint vouches for
+    data["state"]["demos"] = [{"inputs": {"message": "UNVERIFIED", "tone": "kind"}, "outputs": {"result": "x"}}]
+    path.write_text(json.dumps(m))
+    before = set(sys.modules)
+    with pytest.raises(functai.LoadRefused) as err:
+        functai.load(folder, trust=True)
+    assert err.value.code == "saved-malformed"
+    assert not any(name.startswith("_functai_saved_") for name in set(sys.modules) - before)   # nothing ran
+    with pytest.raises(functai.LoadRefused) as err:
+        saved.from_manifest(m)
+    assert err.value.code == "saved-malformed"
+
+
+def _chat_with_a_turn(tmp_path):
+    router = FakeRouter(responder=lambda request: XML.format("ok"))
+    functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path)
+
+    @ai(stateful=True)
+    def chat(message: str) -> str:
+        """Answer."""
+
+    first = chat.predict("ORIGINAL")
+    return router, chat, first
+
+
+@pytest.mark.parametrize("edit", ["input", "output", "step"])
+def test_a_turn_changed_in_place_is_no_longer_its_call_s(edit, tmp_path):
+    router, chat, first = _chat_with_a_turn(tmp_path)
+    turn = chat.history[0]
+    if edit == "input":
+        turn.inputs["message"] = "ALTERED"
+    elif edit == "output":
+        turn.outputs["result"] = "ALTERED"
+    else:
+        turn.steps[0].outputs["result"] = "ALTERED"
+    chat("second")
+    last = max(records(tmp_path), key=lambda r: r["id"])
+    assert last["saw"] == [{"unrecorded": True}]                   # the turn is not what the first call made
+    if edit != "output":                                           # (a turn with steps is shown by its steps)
+        assert "ALTERED" in str(router.requests[-1])
+    assert next(r for r in records(tmp_path) if r["id"] == first.call_id)["inputs"] == {"message": "ORIGINAL"}
+
+
+def test_what_a_call_is_shown_is_copied_when_it_is_prepared(tmp_path):
+    router, chat, first = _chat_with_a_turn(tmp_path)
+
+    class Gate(functai.MemoryStore):
+        def __init__(self):
+            super().__init__()
+            self.arrived, self.allow = threading.Event(), threading.Event()
+
+        def append(self, e):
+            if e["kind"] == "started":
+                self.arrived.set()
+                assert self.allow.wait(5)
+            return super().append(e)
+
+    gate = Gate()
+    with functai.configure(journal=functai.Journal(gate, required=True)):
+        s = chat.stream("SECOND")
+        assert gate.arrived.wait(5)
+        chat.history[0].inputs["message"] = "ALTERED-AFTER-START"      # after the call was prepared
+        gate.allow.set()
+        assert s.result == "ok"
+    sent = str(router.requests[-1])
+    assert "ORIGINAL" in sent and "ALTERED-AFTER-START" not in sent
+    started = gate.read(gate.trees()[0])[0]
+    assert started["saw"] == [{"call": first.call_id, "steps": True}]
+    last = max(records(tmp_path), key=lambda r: r["id"])
+    assert last["saw"] == [{"call": first.call_id, "steps": True}]
+
+
+def test_a_call_made_in_a_process_forked_inside_a_call_starts_its_own_tree(tmp_path):
+    """Forked while an outer call runs (its observer busy on a thread), the
+    child's calls start a tree of their own there, seen by the outer call's
+    observers and kept in its required journal; the outer call's tree is the
+    parent's, and the child writes nothing of it, even when the outer call
+    ends in the child too."""
+    if not hasattr(__import__("os"), "fork"):
+        pytest.skip("no fork here")
+    script = tmp_path / "fork_inside.py"
+    script.write_text(textwrap.dedent(f'''
+        import json, os, sys, threading, warnings
+        sys.path.insert(0, {str(HERE)!r})
+        from conftest import FakeRouter
+        import functai
+        from functai import ai, module, calllog
+
+        functai.configure(lm="gpt-4.1-mini", client=FakeRouter(responder=lambda req: "<result>\\nok\\n</result>"))
+        store = functai.MemoryStore()
+        seen, busy, go = [], threading.Event(), threading.Event()
+
+        def observer(e):
+            if e["kind"] == "started" and e["function"] == "outer":
+                busy.set()
+                go.wait(5)
+            seen.append((e["kind"], e["function"]))
+
+        @ai
+        def inner(x: str) -> str:
+            """Echo."""
+
+        @module(observers=[observer], journal=functai.Journal(store, required=True, timeout=5))
+        def outer() -> str:
+            assert busy.wait(5)                       # the observer's thread is mid-event
+            read, write = os.pipe()
+            pid = os.fork()
+            if pid == 0:
+                os.close(read)
+                n = len(seen)
+                value = inner("child")
+                ok = functai.flush(5)
+                mine = calllog.current().log.tree
+                trees = [t for t in store.trees() if t != mine]
+                report = {{"value": value, "flush": ok, "seen": seen[n:],
+                          "trees": [[e["kind"] for e in store.read(t)] for t in trees],
+                          "finished": [store.finished(t) for t in trees]}}
+                os.write(write, json.dumps(report).encode())
+                os.close(write)
+                return "child"                          # the outer call ends in the child too
+            os.close(write)
+            data = b""
+            while True:
+                chunk = os.read(read, 65536)
+                if not chunk:
+                    break
+                data += chunk
+            os.waitpid(pid, 0)
+            go.set()
+            print("CHILD", data.decode(), flush=True)
+            return "parent"
+
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            got = outer()
+        if got == "child":
+            outer_tree = [t for t in store.trees() if store.read(t)[0]["function"] == "outer"]
+            print("CHILD-END", json.dumps({{"warned": any("ends in a process forked" in str(w.message)
+                                                          for w in caught),
+                                           "outer_events": [[e["kind"] for e in store.read(t)]
+                                                            for t in outer_tree]}}), flush=True)
+            os._exit(0)
+        functai.flush(5)
+        [tree] = store.trees()
+        print("PARENT", json.dumps({{"events": [e["kind"] for e in store.read(tree)],
+                                    "finished": store.finished(tree)}}), flush=True)
+        '''))
+    out = subprocess.run([sys.executable, "-W", "ignore", str(script)], capture_output=True, text=True, timeout=120)
+    lines = {line.split(" ", 1)[0]: json.loads(line.split(" ", 1)[1]) for line in out.stdout.splitlines()
+             if line.split(" ", 1)[0] in ("CHILD", "CHILD-END", "PARENT")}
+    assert set(lines) == {"CHILD", "CHILD-END", "PARENT"}, out.stdout + out.stderr
+    child = lines["CHILD"]
+    assert child["value"] == "ok" and child["flush"] is True
+    assert child["seen"][0] == ["started", "inner"] and child["seen"][-1] == ["done", "inner"]
+    assert child["trees"] and child["trees"][0][0] == "started" and child["trees"][0][-1] == "done"
+    assert child["finished"] == [True]
+    assert lines["CHILD-END"] == {"warned": True, "outer_events": [["started"]]}   # the child ended nothing of it
+    assert lines["PARENT"] == {"events": ["started", "done"], "finished": True}
+
+
+def test_a_broken_observer_is_let_go_whatever_its_kind(fake):
+    import operator
+    fake(responder=lambda request: XML.format("ok"))
+
+    @ai
+    def echo(secret: str) -> str:
+        """Repeat."""
+
+    @dataclasses.dataclass
+    class Recorder:                                      # callable, weakly referable, and unhashable
+        events: list = dataclasses.field(default_factory=list)
+
+        def __call__(self, event):
+            self.events.append(event)
+            raise RuntimeError("broken")
+
+    class Refusing(list):                                # a list subclass: fed from a thread, by its append
+        def append(self, event):
+            raise RuntimeError("broken")
+
+    refs = []
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        for make in (Recorder, Refusing) * 3:
+            observer = make()
+            refs.append(weakref.ref(observer))
+            echo.using(observers=[observer])("x")
+            assert functai.flush(5)
+            del observer
+        # one that cannot be weakly referred to: broken while its feed lives, then held by nothing
+        getter = operator.itemgetter("no such key")
+        echo.using(observers=[getter])("x")
+        assert functai.flush(5)
+    gc.collect()
+    assert all(r() is None for r in refs)
+    assert eventlog._broken == {} and eventlog._feeds == {}
+    assert sys.getrefcount(getter) == 2                  # this name, and getrefcount's argument
+
+
+def test_a_store_that_overrides_only_append_is_sent_every_event_through_it(fake):
+    fake(responder=lambda request: XML.format("word " * 40))
+
+    class Durable(functai.MemoryStore):
+        def __init__(self):
+            super().__init__()
+            self.durable = []
+
+        def append(self, e):
+            time.sleep(0.005)
+            self.durable.append(e["seq"])
+            return super().append(e)
+
+    @ai
+    def say(x: str) -> str:
+        """Say something long."""
+
+    store = Durable()
+    with functai.configure(journal=functai.Journal(store, required=True)):
+        say.stream("hi").result
+    [tree] = store.trees()
+    assert [e["seq"] for e in store.read(tree)] == store.durable
+
+    class Both(functai.MemoryStore):
+        def append(self, e):
+            return super().append(e)
+
+        def extend(self, events):
+            return super().extend(events)
+
+    class Listish(list):
+        def append(self, e):
+            return "kept"
+
+        def read(self, tree, after=None):
+            return []
+
+    class Says(Durable):
+        batches = True
+
+    assert eventlog.takes_batches(functai.MemoryStore()) and eventlog.takes_batches(Both())
+    assert not eventlog.takes_batches(Durable()) and not eventlog.takes_batches(Listish())
+    assert eventlog.takes_batches(Says())
+    off = functai.MemoryStore()
+    off.batches = False
+    assert not eventlog.takes_batches(off)
+
+
+def test_a_tool_whose_call_an_append_only_store_does_not_keep_does_not_run(fake):
+    """streaming.md, journal-08: through a store whose own append is down for
+    the tool call, the tool does not run."""
+    ran = []
+
+    def lookup_order(order: str) -> str:
+        """Where an order is."""
+        ran.append(order)
+        return "Leeds"
+
+    @ai(tools=[lookup_order])
+    def helper(question: str) -> str:
+        """Help."""
+
+    class Down(functai.MemoryStore):
+        def append(self, e):
+            if e["kind"] == "tool_call":
+                raise ConnectionError("down")
+            return super().append(e)
+
+    fake([lm15.TextPart("Let me check."), lm15.ToolCallPart(id="c1", name="lookup_order", input={"order": "B-2210"})],
+         XML.format("It is in Leeds."))
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        with functai.configure(journal=functai.Journal(Down(), required=True, backoff=0, timeout=5)):
+            with pytest.raises(functai.JournalError) as err:
+                helper.stream("Where is B-2210?").result
+    assert ran == []
+    assert err.value.code == "journal-end" and err.value.outcome.error.code == "journal-barrier"
+
+
+def test_a_call_after_its_tree_ended_is_given_to_no_receiver(fake):
+    import contextvars
+    fake(responder=lambda request: XML.format("ok"))
+    seen_list, seen_fn = [], []
+    store = functai.MemoryStore()
+
+    @module
+    def inner(x: str) -> str:
+        return x
+
+    done = threading.Event()
+
+    @module(observers=[seen_list, lambda e: seen_fn.append(e["function"])], journal=store)
+    def outer(x: str) -> str:
+        ctx = contextvars.copy_context()
+
+        def later():
+            time.sleep(0.2)
+            ctx.run(inner, x)
+            done.set()
+
+        threading.Thread(target=later).start()
+        return x
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert outer("a") == "a"
+        assert done.wait(5) and functai.flush(5)
+    assert [e["function"] for e in seen_list] == ["outer", "outer"] and seen_fn == ["outer", "outer"]
+    assert [e["function"] for e in store.read(store.trees()[0])] == ["outer", "outer"]
+    assert any("after its call tree ended" in str(w.message) for w in caught)
+
+
+def test_a_positional_only_input_is_refused_where_it_is_defined():
+    with pytest.raises(TypeError, match="positional-only"):
+        @module
+        def po(x: str, /) -> str:
+            return x
+
+    with pytest.raises(TypeError, match="positional-only"):
+        @ai
+        def po_ai(x: str, /) -> str:
+            """Echo."""
+
+
+def test_a_program_naming_its_host_s_journal_again_waits_as_the_host_says(fake):
+    fake(responder=lambda request: XML.format("ok"))
+    store = functai.MemoryStore()
+    host = functai.Journal(store, required=True, timeout=0.5, retries=0)
+    mine = functai.Journal(store, required=True, timeout=None, retries=5)
+    layers = [("own", {"journal": mine}), ("configure", {"journal": host})]
+    assert eventlog.receivers(layers).journal is host
+    functai.configure(journal=host)
+
+    @module(journal=mine)
+    def effect() -> float:
+        return calllog.current().log.journal.timeout
+
+    assert effect() == 0.5

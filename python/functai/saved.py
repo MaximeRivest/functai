@@ -31,6 +31,7 @@ import dataclasses
 import datetime as _dt
 import hashlib
 import importlib
+import inspect
 import itertools
 import json
 import os
@@ -521,6 +522,10 @@ def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
     return {"settings": _global_settings(), "routes": routes, "recordings": recorded}
 
 
+# problems no ``allow`` accepts: the folder could not be loaded at all
+_NEVER_ALLOWED = frozenset({"loaded-from-data"})
+
+
 def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str] = (),
          requires: Iterable[str] = (), allow: Iterable[str] = (), examples: Iterable[Dict[str, Any]] = (),
          record: Iterable[Dict[str, Any]] = (), overwrite: bool = False, weights: str = "copy"):
@@ -587,7 +592,7 @@ def save(program: Any, path: "str | os.PathLike[str]", *, include: Iterable[str]
     '''
     from .graph import Refused, check, lock
     report = check(program, include=include, requires=requires)
-    allow = set(allow)
+    allow = set(allow) - _NEVER_ALLOWED
     blocking = [p for p in report.errors if p.code not in allow]
     if blocking:
         raise Refused(report)
@@ -853,7 +858,7 @@ def _verify_loaded(package: str, manifest: Dict[str, Any]) -> List[str]:
         was = data["fingerprints"]
         if now["signature"] != was["signature"]:
             problems.append(f"{key}: its signature differs from the saved one")
-        for i, (a, b) in enumerate(zip(now["requests"], was["requests"])):
+        for i, (a, b) in enumerate(zip(now["requests"], was["requests"], strict=True)):   # counts checked first
             if a != b:
                 problems.append(f"{key}: probe {i} renders a different request than when saved "
                                 f"(the prompt changed: {b} → {a})")
@@ -931,6 +936,8 @@ def load(path: "str | os.PathLike[str]", *, trust: bool = False, check_env: str 
     for key, n in manifest["nodes"].items():
         if n["kind"] in ("ai", "module"):
             _checked_interface(key, n)
+        if n["kind"] == "ai":
+            _check_probes(key, n)
     wanted = node
     if wanted is not None and wanted not in manifest["nodes"]:
         raise _refuse("saved-malformed", f"functai.json has no node {wanted!r}")
@@ -1266,6 +1273,16 @@ def _plain_fields(node: Dict[str, Any]) -> List[Dict[str, Any]]:
     return [f for f in node["ai"]["signature"].get("fields") or [] if (f.get("purpose") or "plain") == "plain"]
 
 
+def _check_probes(key: str, node: Dict[str, Any]) -> None:
+    """Every probe of an AI node has its request fingerprint, so what it sends
+    can be checked (``saved-malformed`` otherwise), whichever loader reads it."""
+    data = node["ai"]
+    probes, requests = data["probes"], data["fingerprints"]["requests"]
+    if len(requests) != len(probes):
+        raise _refuse("saved-malformed", f"{key}: it saves {len(probes)} probes and {len(requests)} request "
+                                         f"fingerprints; each probe has one, so what it sends can be checked")
+
+
 def _checked_interface(key: str, node: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     """A node's interface, refused as programs.md refuses it, and for an AI
     node, refused ``saved-differs`` when it does not describe the data its
@@ -1339,9 +1356,15 @@ def from_manifest(source: Any, *, node: Optional[str] = None, saved_id: Optional
     (``saved-code``), tools (``saved-tools``), a baked model or another
     program as a setting (``saved-model``); and a function that would not
     send what was saved (``saved-differs``) or whose interface is refused.
-    Its optional inputs, and the defaults they are sent with, come from the
-    node's interface. Values come back as JSON (dicts, lists), not the saving
-    language's types."""
+
+    The node's interface is the one source of its inputs' names, order,
+    requiredness and defaults: for calls (positional values in the
+    interface's order, any name by keyword: ``fn(**{"class": ...})``),
+    ``using`` copies, row demos, ``map``, ``evaluate`` and optimizers; and
+    ``inspect.signature`` shows it as Python can write it. Its signature is
+    the saved one (another ``module``, or tools, are refused), and it has no
+    Python source to ``save``. Values come back as JSON (dicts, lists), not
+    the saving language's types."""
     manifest, file_id = _manifest_data(source)
     m = _check_form(manifest)
     language = m.get("language", "python")
@@ -1363,12 +1386,9 @@ def from_manifest(source: Any, *, node: Optional[str] = None, saved_id: Optional
         if isinstance(v, dict) and ("baked" in v or "node" in v):
             raise _refuse("saved-model", f"{key}: its setting {k} is {v}, which this loader cannot reach")
     iface = _checked_interface(key, n)
+    _check_probes(key, n)
     probes, requests = data["probes"], data["fingerprints"]["requests"]
-    if len(requests) != len(probes):
-        raise _refuse("saved-malformed", f"{key}: it saves {len(probes)} probes and {len(requests)} request "
-                                         f"fingerprints; each probe has one, so what it sends can be checked")
-    fn = _LoadedAI(key, n, saved_id or file_id)
-    fn._saved_interface = iface
+    fn = _LoadedAI(key, n, saved_id or file_id, iface)
     spec, settings = fn._spec(), fn._effective()
     plan, past = probe_plan(fn, spec, settings)
     for i, probe in enumerate(probes):
@@ -1383,10 +1403,37 @@ def from_manifest(source: Any, *, node: Optional[str] = None, saved_id: Optional
     return fn
 
 
-def _loaded_body():
-    """The body of an AI function built from data: the model writes all of it."""
-    def loaded(*args: Any, **kwargs: Any) -> None:
+def _loaded_inputs(node: Dict[str, Any], interface: Optional[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """A loaded function's inputs, in order, as its interface gives them (name,
+    shape with the default an optional one is sent with, ``optional``); a node
+    with no interface: its signature's plain inputs, every one required
+    (contract/saved.md, *Loading an AI function in another language*, step 5)."""
+    if interface is not None:
+        return copy.deepcopy(list(interface["inputs"]))
+    return [{"name": f["name"], "shape": copy.deepcopy(f.get("shape") or {})} for f in _plain_fields(node)
+            if f.get("direction") == "input"]
+
+
+def _loaded_body(node: Dict[str, Any], interface: Dict[str, Any]):
+    """The body of an AI function built from data: the model writes all of it.
+    Its ``__signature__`` and annotations are the interface's, as Python can
+    write them (``interface.python_signature``), so ``inspect.signature``,
+    ``help`` and whatever reads a function's annotations see the inputs and
+    the answer; binding a call never uses them (``_bind_from_data`` does)."""
+    from . import interface as _interface
+
+    def loaded(*args: Any, **kwargs: Any) -> Any:
         return None
+
+    signature, _exact = _interface.python_signature(interface)
+    loaded.__signature__ = signature  # type: ignore[attr-defined]
+    annotations = {p.name: p.annotation for p in signature.parameters.values()
+                   if p.annotation is not inspect.Parameter.empty}
+    annotations["return"] = signature.return_annotation
+    loaded.__annotations__ = annotations
+    loaded.__doc__ = interface.get("description") or None
+    loaded.__module__ = node["module"]
+    loaded.__qualname__ = loaded.__name__ = node["name"]
     return loaded
 
 
@@ -1428,24 +1475,20 @@ def _loaded_class():
 
         _loaded = True
 
-        def __init__(self, key: str, node: Dict[str, Any], saved_id: Optional[str]):
+        def __init__(self, key: str, node: Dict[str, Any], saved_id: Optional[str],
+                     interface: Optional[Dict[str, Any]]):
             from .config import CONFIG_FIELDS
             data = node["ai"]
             self._saved_core = lmcc.signature_from_dict(data["signature"])
             self._saved_node = node
-            self._saved_interface = None
+            self._saved_interface = copy.deepcopy(interface) if interface is not None else None
             self._saved_id = saved_id
-            iface = node.get("interface")
-            plain = [f for f in self._saved_core.fields if (f.purpose or "plain") == "plain"]
-            ins = [{"name": f.name, "shape": f.shape} for f in plain if f.direction == "input"]
-            if isinstance(iface, dict):
-                optional = {f["name"]: f for f in iface.get("inputs") or [] if isinstance(f, dict)
-                            and f.get("optional")}
-                ins = [optional.get(f["name"], f) for f in ins]
-            self._data_inputs = ins
-            fn = _loaded_body()
-            fn.__module__ = node["module"]
-            fn.__qualname__ = fn.__name__ = node["name"]
+            self._data_inputs = _loaded_inputs(node, interface)
+            shown = self._saved_interface or {
+                "description": self._saved_core.instructions, "inputs": self._data_inputs,
+                "outputs": [{"name": f["name"], "shape": f.get("shape") or {}} for f in _plain_fields(node)
+                            if f.get("direction") == "output"]}
+            fn = _loaded_body(node, shown)
             settings: Dict[str, Any] = {}
             for k, v in (data.get("settings") or {}).items():
                 if v is None or k in NOT_SAVED:
@@ -1461,15 +1504,63 @@ def _loaded_class():
                         settings[f.name] = v
             if any(f.purpose == "reasoning" for f in self._saved_core.fields):
                 settings["module"] = "cot"
+            from .core import _module_name
+            # the module it was saved with (settings, or reasoning in its signature): its signature is that one's
+            self._saved_module = _module_name(settings.get("module"))
             super().__init__(fn, template=data.get("template"), **settings)
             from .core import ProgramState
             self.load_state(ProgramState.from_dict(data.get("state") or {}))
 
         def _check_definition(self) -> None:
             self._check_log_content()      # its interface is checked by from_manifest (saved.md, step 6)
+            # Its signature is the saved one: a setting that would change it cannot be honoured, so it refuses
+            # (rather than send what the setting does not say).
+            if self._tools:
+                raise TypeError(f"{self.__name__} was loaded from data: its signature is the saved one, and "
+                                f"tools cannot be added to it")
+            saved_module = self._saved_module
+            wanted = self._settings.get("module")
+            if wanted is not None and wanted != saved_module:
+                raise TypeError(f"{self.__name__} was loaded from data: its signature is the saved one "
+                                f"(module {saved_module!r}), and module={wanted!r} would change it")
+
+        @property
+        def tools(self):
+            return list(self._tools)
+
+        @tools.setter
+        def tools(self, seq):
+            if seq:
+                raise TypeError(f"{self.__name__} was loaded from data: its signature is the saved one, and "
+                                f"tools cannot be added to it")
+
+        @property
+        def module(self):
+            return self._effective().get("module")
+
+        @module.setter
+        def module(self, v):
+            from .core import _module_name
+            wanted = _module_name(v)
+            saved_module = self._saved_module
+            if wanted != saved_module:
+                raise TypeError(f"{self.__name__} was loaded from data: its signature is the saved one "
+                                f"(module {saved_module!r}), and module={wanted!r} would change it")
+            self._set("module", wanted)
 
         def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
             return _bind_from_data(self.__name__, self._data_inputs, tuple(args), dict(kwargs))
+
+        def _named_inputs(self) -> List[Tuple[str, bool]]:
+            return [(f["name"], not f.get("optional")) for f in self._data_inputs]
+
+        def _variant_spec(self, *, reasoning: bool, tools: bool):
+            spec = self._spec()
+            if reasoning or not spec.reasoning:
+                return spec
+            core = lmcc.SignatureCore(spec.signature.instructions,
+                                      [f for f in spec.signature.fields if f.purpose != "reasoning"])
+            return dataclasses.replace(spec, signature=core, reasoning=False)
 
         def _spec(self, instructions: Optional[str] = None):
             from .signature import Spec
@@ -1503,10 +1594,13 @@ def _loaded_class():
 _LOADED_CLASS: List[Any] = []
 
 
-def _LoadedAI(key: str, node: Dict[str, Any], saved_id: Optional[str]):
+def _LoadedAI(key: str, node: Dict[str, Any], saved_id: Optional[str], interface: Optional[Dict[str, Any]]):
+    """An AI function built from a node's data; ``interface``: the node's, as
+    checked (``_checked_interface``), the one source of its inputs' names,
+    order, requiredness and defaults."""
     if not _LOADED_CLASS:
         _LOADED_CLASS.append(_loaded_class())
-    return _LOADED_CLASS[0](key, node, saved_id)
+    return _LOADED_CLASS[0](key, node, saved_id, interface)
 
 
 __all__ = ["save", "load", "verify", "file", "describe", "from_manifest", "LoadRefused", "Verification"]

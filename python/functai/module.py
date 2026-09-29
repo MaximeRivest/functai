@@ -118,6 +118,7 @@ class FunctAIModule(Generic[P, R]):
             _interface.check(self._interface, program=self.__name__)
             self._check_code_takes(self._interface)
         else:
+            _refuse_positional_only(self._signature, f"@module on {self.__name__}")
             self._derive()
         content = self._settings.get("log_content")
         if isinstance(content, dict):
@@ -383,6 +384,15 @@ class FunctAIModule(Generic[P, R]):
         self.history.append({"args": args, "kwargs": kwargs, "output": out})
         del self.history[:-100]
         return out
+
+
+def _refuse_positional_only(signature: inspect.Signature, where: str) -> None:
+    """A program's inputs are given by name (a row of data, a call from another
+    language, a saved call): a parameter that cannot be (``/``) refuses."""
+    for p in signature.parameters.values():
+        if p.kind is inspect.Parameter.POSITIONAL_ONLY:
+            raise TypeError(f"{where}: its input {p.name!r} is positional-only (before `/`), but a program's inputs "
+                            f"are given by name (a row of data, another language); remove the `/`")
 
 
 @overload

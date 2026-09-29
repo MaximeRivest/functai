@@ -369,6 +369,24 @@ def _shown_as(plan: Any, spec: Spec, turns: List[Any], ids: List[str]) -> Tuple[
     return entries, shown
 
 
+def _turn_print(turn: Any) -> Optional[str]:
+    """What a turn holds, as canonical JSON (None when it has no JSON form:
+    such a turn cannot be shown to be unchanged, so no call is credited with it)."""
+    try:
+        return calllog.canonical(turn.to_dict())
+    except Exception:  # noqa: BLE001 — a value with no JSON form
+        return None
+
+
+def _frozen(turn: Any) -> Any:
+    """A copy of a turn that later edits of the original cannot reach (the
+    turn itself when it cannot be copied)."""
+    try:
+        return copy.deepcopy(turn)
+    except Exception:  # noqa: BLE001 — a value that cannot be copied is shown as it is
+        return turn
+
+
 class FunctAIFunc(Generic[P, R]):
     """A typed Python function whose body is a model call. Build with ``@ai``.
 
@@ -424,8 +442,9 @@ class FunctAIFunc(Generic[P, R]):
         self._instr_refined = 0
         self._instr_frozen = False
         self._autoinstructed = False
-        # which logged call made each turn of `history`, by the turn itself (a turn put there by hand has none)
-        self._history_calls: Dict[int, Tuple[Any, str]] = {}
+        # which logged call made each turn of `history`: by the turn itself, and what it held then (a turn put
+        # there by hand, or changed since, has none)
+        self._history_calls: Dict[int, Tuple[Any, str, Optional[str]]] = {}
         self._interface_cache: Optional[Tuple[Any, Dict[str, Any]]] = None
         self._spec()                                          # signature errors surface at definition
         self._check_definition()                              # and interface and log_content ones
@@ -438,6 +457,8 @@ class FunctAIFunc(Generic[P, R]):
         rules (an optional input whose default does not fit its shape, one with
         no JSON default...), and a ``log_content`` map naming a field it lacks."""
         from . import interface as _interface
+        from .module import _refuse_positional_only
+        _refuse_positional_only(self._sig, f"@ai on {self.__name__}")
         _interface.check(self.interface, ai=True, program=self.__name__)
         self._check_log_content()
 
@@ -553,7 +574,7 @@ class FunctAIFunc(Generic[P, R]):
         checked = check(settings, "using")
         if template is not _KEEP and checked.get("adapter") is not None and template is not None:
             raise TypeError("give adapter=... or template=[...], not both: a template is an adapter")
-        clone = object.__new__(FunctAIFunc)
+        clone = object.__new__(type(self))          # a function loaded from data stays one: same inputs, same request
         clone.__dict__.update(self.__dict__)
         merged = dict(self._settings)
         for k, v in checked.items():
@@ -619,7 +640,7 @@ class FunctAIFunc(Generic[P, R]):
             return item
         if isinstance(item, dict) and "signature" in item and "inputs" in item:
             return item                                       # a saved Turn
-        names = list(self._sig.parameters)
+        names = self._fields()[0]                            # the inputs a turn holds, as the interface names them
         if isinstance(item, dict) and set(item) == {"inputs", "outputs"} and isinstance(item["inputs"], dict) \
                 and "inputs" not in names:
             return {"inputs": dict(item["inputs"]), "outputs": dict(item["outputs"])}
@@ -686,11 +707,13 @@ class FunctAIFunc(Generic[P, R]):
         (``without`` the fields the plan no longer has) when it was made for
         another; not at all when none of its outputs is left.
 
-        A turn is matched to its call by identity, so editing ``history``
-        never lends a turn another call's id: a turn no logged call made (put
-        there by hand, or changed) is written ``{"unrecorded": true}``, which
-        no reader knows (``unknown-key``). The turns returned are the ones the
-        call is shown, whatever happens to ``history`` meanwhile."""
+        A turn is matched to its call by identity and by what it holds (its
+        JSON form when the call made it), so editing ``history`` never lends a
+        turn another call's id: a turn no logged call made (put there by hand,
+        or changed since, even inside its values) is written ``{"unrecorded":
+        true}``, which no reader knows (``unknown-key``). The turns returned
+        are copies taken now, the ones the call is shown, whatever happens to
+        ``history`` or to the turns in it meanwhile."""
         s = self._effective()
         if not s.get("stateful"):
             return [], None
@@ -708,7 +731,9 @@ class FunctAIFunc(Generic[P, R]):
         ids = []
         for turn in history:
             owner = made.get(id(turn))
-            ids.append(owner[1] if owner is not None and owner[0] is turn else "")
+            same = owner is not None and owner[0] is turn and owner[2] is not None and _turn_print(turn) == owner[2]
+            ids.append(owner[1] if same else "")
+        history = [_frozen(t) for t in history]         # what the call is shown: this, whatever changes meanwhile
         entries, shown = _shown_as(plan, spec, history, ids)
         return entries, {"plan": getattr(plan, "fingerprint", None), "turns": history, "ids": ids,
                          "entries": entries, "shown": shown}
@@ -864,9 +889,26 @@ class FunctAIFunc(Generic[P, R]):
     # ----- calling -----
 
     def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
+        """A call's inputs by name, each left-out optional one with its default."""
         bound = self._sig.bind(*args, **kwargs)
         bound.apply_defaults()
         return dict(bound.arguments)
+
+    def _named_inputs(self) -> List[Tuple[str, bool]]:
+        """``(name, required)`` of each input a call can be given by name, in
+        order: what a row of data gives (``evaluate``, ``map``, optimizers,
+        ``bake``). A function loaded from data answers from its interface."""
+        kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        return [(n, p.default is inspect.Parameter.empty) for n, p in self._sig.parameters.items()
+                if p.kind not in kinds]
+
+    def _variant_spec(self, *, reasoning: bool, tools: bool) -> Spec:
+        """This function's spec with or without reasoning and tool fields, for
+        what trains on it (``bake``)."""
+        s = self._effective()
+        return build_spec(self._fn, instructions=self._current_state().instructions,
+                          include_fn_name=bool(s.get("include_fn_name_in_instructions")), reasoning=reasoning,
+                          tools=tools)
 
     def _run(self, inputs: Dict[str, Any], spec: Spec) -> Prediction:
         """One call for these inputs (the model, the tool loop, and escalation when
@@ -884,7 +926,7 @@ class FunctAIFunc(Generic[P, R]):
             with self._lock:
                 self.history.append(pred.turn)
                 if call is not None and call.program is self:
-                    self._history_calls[id(pred.turn)] = (pred.turn, call.id)
+                    self._history_calls[id(pred.turn)] = (pred.turn, call.id, _turn_print(pred.turn))
                 window = int(s.get("state_window") or 0)
                 if window > 0 and len(self.history) > window:
                     del self.history[:-window]

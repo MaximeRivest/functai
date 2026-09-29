@@ -613,6 +613,11 @@ class Analysis:
         node = Node(key, kind, module, name, obj)
         self.nodes[key] = node
         self._by_id[id(obj)] = key
+        if getattr(obj, "_loaded", False):
+            self.problem("loaded-from-data", key, f"{name!r} was built from a saved folder's data "
+                                                   f"(functai.from_manifest): it has no Python source to save",
+                         "save the program where its source is, or keep the folder it was loaded from")
+            return key
         try:
             source = textwrap.dedent(_class_source(fn) if inspect.isclass(fn) else inspect.getsource(fn))
         except (OSError, TypeError):

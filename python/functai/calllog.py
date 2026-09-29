@@ -507,7 +507,7 @@ class Call:
     __slots__ = ("id", "parent", "parent_call", "root", "program", "function", "started", "t0", "target",
                  "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
-                 "journal_status", "context", "__weakref__")
+                 "journal_status", "context", "pid", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"]):
         self.id = new_id()
@@ -540,6 +540,7 @@ class Call:
         self.delegating = False
         self.journal_status: Optional[str] = None
         self.context: Any = None                             # what the program shows as earlier turns (stateful)
+        self.pid = os.getpid()                               # the process whose tree it is in
 
     # ----- what sees it
 
@@ -596,16 +597,23 @@ def _layers(program: Any) -> List[Tuple[str, Dict[str, Any]]]:
     return layers(getattr(program, "_settings", None) or {})
 
 
-def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tuple[str, Dict[str, Any]]]
-               ) -> Optional[BaseException]:
+def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tuple[str, Dict[str, Any]]],
+               forked_from: Optional[Call] = None) -> Optional[BaseException]:
     """Which streams, observers and journal see ``call``; the JournalError the
     call raises before its code runs (a tree refused by its journal policy, or
-    a required journal set only inside a tree), or None."""
+    a required journal set only inside a tree), or None. ``forked_from``: the
+    call of another process this one is made in (a process forked inside
+    it): this call starts a tree of its own, seen by that call's observers
+    too, and kept in that tree's journal when its own layers set none."""
     from . import eventlog
     got = eventlog.receivers(layers)
     refusal: Optional[BaseException] = None
     if parent is None:
-        call.log = eventlog.TreeLog(call.id, journal=got.journal, at_start=eventlog.LayersAtStart.of(layers))
+        journal = got.journal
+        if forked_from is not None and eventlog.closest_journal(layers) is eventlog._ABSENT \
+                and forked_from.log is not None:
+            journal = forked_from.log.journal
+        call.log = eventlog.TreeLog(call.id, journal=journal, at_start=eventlog.LayersAtStart.of(layers))
         refusal = got.refused
     else:
         call.log = parent.log
@@ -623,7 +631,8 @@ def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tupl
                 _warn_once(("journal-scope", id(mine.store)),
                            f"a journal set around {call.function}, a call inside a call tree, keeps nothing: a "
                            f"journal keeps whole trees (set it around the outermost call)")
-    observers = list(parent.observers) if parent is not None else []
+    observers = list(parent.observers) if parent is not None else \
+        list(forked_from.observers) if forked_from is not None else []
     for o in got.observers:
         if not any(o is x for x in observers):
             observers.append(o)
@@ -652,6 +661,13 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     the record holds them; asked only then)."""
     parent = _CURRENT.get()
     watch = WATCH.get()
+    forked_from: Optional[Call] = None
+    pid = os.getpid()
+    if parent is not None and parent.pid != pid:
+        # made in a process forked inside a call: that call's tree is written by the process that started it
+        forked_from, parent = parent, None
+    if watch is not None and watch.pid != pid:
+        watch = None                              # nor is a parent process's stream watching here
     if watch is not None:
         watch.check()                             # a closed stream starts no new call
     if parent is not None:
@@ -665,7 +681,7 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
         call.target = None
     layers = _layers(program)
     try:
-        refusal = _receivers(call, parent, watch, layers)
+        refusal = _receivers(call, parent, watch, layers, forked_from)
     except Exception as exc:  # noqa: BLE001 — a receiver that cannot be set up never stops a call
         from . import eventlog
         _warn_once(("receivers", type(exc).__name__), f"call events are not kept: {type(exc).__name__}: {exc}")
@@ -700,11 +716,17 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
             error = exc
         finally:
             _CURRENT.reset(token)
-        journal_error = _end(call, value, error)
-        if call.target is not None:
-            _finish(call, returned=value, error=error)
+        journal_error = None
+        if call.pid == os.getpid():
+            journal_error = _end(call, value, error)
+            if call.target is not None:
+                _finish(call, returned=value, error=error)
+        else:
+            _warn_once(("forked-end", call.function), f"{call.function} was called in process {call.pid} and ends in a "
+                                                f"process forked inside it ({os.getpid()}): its end, events and "
+                                                f"record are that process's, and are not written here")
     finally:
-        if parent is None and call.log is not None:
+        if parent is None and call.log is not None and call.pid == os.getpid():
             call.log.close()
     if journal_error is not None:
         raise journal_error

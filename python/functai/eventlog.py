@@ -435,8 +435,10 @@ class Store(Protocol):
     after None), or raises ``EventRefused("event-unknown")``.
 
     A store may also have ``extend(events)`` (a batch of one log, kept whole
-    or not at all: the writer then sends what waits as one batch) and
-    ``claim(tree)`` (a later writer's claim, which fences earlier writers;
+    or not at all), and the writer then sends what waits as one batch when
+    ``extend`` is defined where ``append`` is or further down (a subclass
+    that changes only ``append`` is sent every event alone, through it);
+    ``batches = True`` or ``False`` says so outright. And ``claim(tree)`` (a later writer's claim, which fences earlier writers;
     ``JournalError.settle(claim=True)`` needs it). A store times out its own
     I/O; a journal also stops waiting at its barriers after its ``timeout``."""
 
@@ -456,6 +458,31 @@ def _is_event(e: Any) -> bool:
     return isinstance(e, Mapping) and e.get("functai_event") == FORMAT and schemas.valid("event", e)
 
 
+def takes_batches(store: Any) -> bool:
+    """Whether a journal's writer sends ``store`` what waits as one batch: its
+    ``batches`` attribute when it is True or False; else whether it has an
+    ``extend`` defined where its ``append`` is or further down (an ``extend``
+    inherited from above an overriding ``append`` would bypass it, and an
+    ``extend`` of another trade, a list's, is no batch append)."""
+    flag = getattr(store, "batches", None)
+    if isinstance(flag, bool):
+        return flag
+    if not callable(getattr(store, "extend", None)):
+        return False
+    own = vars(store) if hasattr(store, "__dict__") else {}
+    if "append" in own or "extend" in own:
+        return "append" in own and "extend" in own
+    mro = type(store).__mro__
+
+    def owner(name: str) -> int:
+        return next((i for i, k in enumerate(mro) if name in vars(k)), len(mro))
+
+    return owner("extend") <= owner("append")
+
+
+_memory_stores: "weakref.WeakSet[MemoryStore]" = weakref.WeakSet()
+
+
 class MemoryStore:
     """A store kept in this process's memory, by the rules every store keeps
     (streaming.md, *The rules a store keeps*): each claim and each append is
@@ -468,10 +495,10 @@ class MemoryStore:
     ``claim(tree)`` gives a later writer its number and the last kept event's
     position; ``read(tree, after)`` gives the kept events after a position.
 
-    A journal's writer sends what waits as one batch (``extend``) when it can,
-    so a subclass that changes how appends go (a transport, failures for a
-    test) overrides ``extend`` as well as ``append`` (or sets ``extend =
-    None``: then every event is sent alone)."""
+    A journal's writer sends what waits as one batch (``extend``), except to
+    a subclass that overrides ``append`` and not ``extend`` (a transport,
+    failures for a test): that one is sent every event alone, through its
+    ``append``. ``batches = False`` also sends every event alone."""
 
     #: None: this is a store, not the process of a writer (``Follower.resume``).
     writer = None
@@ -480,6 +507,7 @@ class MemoryStore:
         self._logs: Dict[str, List[Dict[str, Any]]] = {}
         self._writers: Dict[str, int] = {}
         self._lock = threading.Lock()
+        _memory_stores.add(self)
 
     # ----- the rules
 
@@ -623,7 +651,8 @@ class Journal:
     I/O. See ``Store`` for what a store answers.
 
     A bare store is a best-effort journal: ``configure(journal=store)``.
-    Two journals are the same when their store and mode are."""
+    Two journals are the same when their store and mode are; when a program
+    names its host's journal again, the host's timing applies."""
 
     __slots__ = ("store", "required", "retries", "backoff", "timeout")
 
@@ -704,8 +733,8 @@ class JournalWriter:
     anything else (nothing more is sent); unanswered when it raises another
     exception (it may have been kept): it is sent again, up to ``1 +
     retries`` times in a row with a growing pause, then the writer tries
-    again when the next event comes. A store with ``extend`` is sent what
-    waits as one batch. ``barrier()`` waits (at most the journal's
+    again when the next event comes. A store that takes batches
+    (``takes_batches``) is sent what waits as one batch. ``barrier()`` waits (at most the journal's
     ``timeout``) until every event given so far has had its turn and says
     ``"confirmed"``, ``"refused"`` or ``"unanswered"``.
 
@@ -858,7 +887,7 @@ class JournalWriter:
         return False
 
     def _round(self) -> None:
-        batches = callable(getattr(self.store, "extend", None))
+        batches = takes_batches(self.store)
         while self.pending and self.refused is None and self.faulted is None:
             group = list(self.pending)[:_BATCH] if batches and len(self.pending) > 1 else [self.pending[0]]
             answered = False
@@ -912,22 +941,30 @@ def _is_list(observer: Any) -> bool:
     return type(observer) is list or type(observer) is collections.deque
 
 
-_broken_refs: "weakref.WeakSet[Any]" = weakref.WeakSet()
-_broken_ids: Dict[int, Any] = {}             # observers that cannot be weakly referred to
+# Observers that failed, by identity, each held weakly (an entry goes with its observer; an observer need not
+# be hashable). One that cannot be weakly referred to is marked on its feed instead, while the feed lives.
+_broken: Dict[int, "weakref.ref[Any]"] = {}
 
 
 def _is_broken(observer: Any) -> bool:
-    try:
-        return observer in _broken_refs
-    except TypeError:
-        return _broken_ids.get(id(observer)) is observer
+    ref = _broken.get(id(observer))
+    return ref is not None and ref() is observer
 
 
-def _mark_broken(observer: Any) -> None:
+def _mark_broken(observer: Any) -> bool:
+    """Remember that ``observer`` failed, for as long as it lives; False when it
+    cannot be weakly referred to (its feed remembers it instead)."""
+    key = id(observer)
+
+    def gone(ref: "weakref.ref[Any]", key: int = key) -> None:
+        if _broken.get(key) is ref:
+            _broken.pop(key, None)
+
     try:
-        _broken_refs.add(observer)
+        _broken[key] = weakref.ref(observer, gone)
     except TypeError:
-        _broken_ids[id(observer)] = observer
+        return False
+    return True
 
 
 class _Feed:
@@ -948,10 +985,11 @@ class _Feed:
         self.running = False
         self.users = 0
         self.dropped = False
+        self.broken = False                  # it failed (an observer that cannot be weakly referred to)
 
     def put(self, event: Dict[str, Any]) -> None:
         with self.cond:
-            if _is_broken(self.observer):
+            if self.broken or _is_broken(self.observer):
                 return
             if len(self.queue) >= self.MAX:
                 if not self.dropped:
@@ -973,10 +1011,11 @@ class _Feed:
                     break
                 item = self.queue.popleft()
             try:
-                if not _is_broken(self.observer):
+                if not (self.broken or _is_broken(self.observer)):
                     self.give(item)
             except Exception as exc:  # noqa: BLE001 — an observer never gets in the way
-                _mark_broken(self.observer)
+                if not _mark_broken(self.observer):
+                    self.broken = True
                 with self.cond:
                     self.queue.clear()
                 warnings.warn(f"[functai] an observer ({_name(self.observer)}) failed and is given no more events: "
@@ -1068,6 +1107,8 @@ def _after_fork() -> None:
     _feeds_lock = threading.Lock()
     _feeds.clear()
     _writers.clear()
+    for store in list(_memory_stores):     # a lock a parent's thread held stays held in the child
+        store._lock = threading.Lock()
 
 
 if hasattr(os, "register_at_fork"):
@@ -1133,7 +1174,9 @@ def receivers(layers: List[Tuple[str, Mapping[str, Any]]]) -> Receivers:
     required), and no closer layer can replace, weaken or remove a required
     one. A tree whose layers break that is refused ``journal-policy``: its log
     goes to every observer and to the journal of the layers farther out than
-    every refused setting."""
+    every refused setting. A closer layer that names a farther layer's
+    journal again (the same store and mode) keeps the farther one's
+    ``timeout``, ``retries`` and ``backoff``."""
     observers: List[Any] = []
     for _w, layer in reversed(layers):
         for o in layer.get("observers") or ():
@@ -1150,6 +1193,11 @@ def receivers(layers: List[Tuple[str, Mapping[str, Any]]]) -> Receivers:
                                                f"{host.journal!r}); use an observer to keep a copy of your own")
         return Receivers(observers, host.journal, error)
     j = closest_journal(layers)
+    if isinstance(j, Journal):
+        # a closer layer naming the host's journal again (same store, same mode) does not change how it is
+        # waited for: the farthest layer's timeout, retries and backoff apply (hosts own policy)
+        j = next((far for _w, layer in reversed(layers)
+                  if isinstance(far := _journal_setting(layer), Journal) and far == j), j)
     return Receivers(observers, None if j is _ABSENT else j)
 
 
@@ -1207,11 +1255,17 @@ class TreeLog:
     If an event cannot be put in its kept form (a fault of this process),
     the kept form stops there: the journal gets nothing more (a required one
     says ``"refused"`` at its next barrier) and observers get nothing more of
-    this tree, as when a writer stops. Nothing is skipped or invented."""
+    this tree, as when a writer stops. Nothing is skipped or invented.
+
+    A tree log is its process's: in a process forked while it ran, it takes
+    no event (the child's calls start trees of their own), and a barrier of
+    its required journal says ``"refused"`` there (nothing of it can be kept
+    from the child)."""
 
     def __init__(self, tree: str, *, journal: Optional[Journal] = None, writer: int = 1,
                  at_start: Optional[LayersAtStart] = None):
         self.tree = tree
+        self.pid = os.getpid()
         self.writer = writer
         self.seq = 0
         self.last: Optional[Dict[str, int]] = None
@@ -1223,6 +1277,7 @@ class TreeLog:
         self.links: Dict[int, Optional[Dict[str, int]]] = {}      # each sink's last position in its form
         self.feeds: Dict[int, _Feed] = {}                         # the observers' feeds this tree holds
         self.kept_stopped: Optional[str] = None
+        self.ended = False                                        # the outermost call's last event was made
         self.closed = False
         if journal is not None:
             self.sender = JournalWriter(journal, name=tree[:8], on_problem=self._journal_problem)
@@ -1239,7 +1294,18 @@ class TreeLog:
         """Number an event of ``call`` and hand it on (when anything sees the
         call). ``hold``: give it to the journal only; ``release`` gives it to
         readers once the journal confirmed it (a required journal's last event)."""
+        if self.foreign:
+            return None
         with self.lock:
+            if self.ended:
+                # a call still running after its tree's last event (a detached thread): the log is finished,
+                # so no receiver gets it (a store would refuse it: event-after-end)
+                _warn_once(("after-end", call.function), f"{call.function} made an event after its call tree ended "
+                                                     f"(it runs on after the outermost call returned): no stream, "
+                                                     f"observer or journal gets it")
+                return None
+            if call.id == self.tree and kind in ("done", "failed"):
+                self.ended = True
             self.seq += 1
             pos = {"writer": self.writer, "seq": self.seq}
             after, self.last = self.last, pos
@@ -1315,20 +1381,31 @@ class TreeLog:
                     feed = self.feeds[key] = _acquire(o)
                 feed.put(mine)
 
+    @property
+    def foreign(self) -> bool:
+        """Whether this is a process forked while the tree ran (not the tree's)."""
+        return os.getpid() != self.pid
+
     def release(self, call: Any, event: Any) -> None:
         """Give readers an event held back until the journal confirmed it."""
-        if event is not None:
+        if event is not None and not self.foreign:
             with self.lock:
                 self._deliver(call, event, readers_only=True)
 
     def barrier(self, cancelled: Optional[Callable[[], bool]] = None) -> Status:
-        return self.sender.barrier(cancelled=cancelled) if self.sender is not None else "confirmed"
+        if self.sender is None:
+            return "confirmed"
+        if self.foreign:
+            return "refused"
+        return self.sender.barrier(cancelled=cancelled)
 
     def end(self) -> Status:
         """After the outermost call's last event: wait for a required journal
         (a best-effort one is left to finish on its own)."""
         if self.sender is None:
             return "confirmed"
+        if self.foreign:
+            return "refused" if self.required else "confirmed"
         if self.required:
             status = self.sender.barrier()
             self.sender.stop()
@@ -1338,6 +1415,8 @@ class TreeLog:
 
     def close(self) -> None:
         """The tree is over in this process: let go of the observers' feeds."""
+        if self.foreign:
+            return                                # its feeds were the parent process's
         with self.lock:
             if self.closed:
                 return

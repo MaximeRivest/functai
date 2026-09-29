@@ -30,6 +30,7 @@ import atexit
 import contextvars
 import copy
 import dataclasses
+import os
 import threading
 import time
 import warnings
@@ -256,6 +257,7 @@ class _Watch:
         self.stream = stream
         self.root: Optional[str] = None
         self.cancelled = threading.Event()
+        self.pid = os.getpid()                       # a forked child's calls are not this stream's
 
     def check(self) -> None:
         if self.cancelled.is_set():
