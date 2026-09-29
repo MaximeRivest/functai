@@ -72,21 +72,22 @@ p.answer;       // 15
   description, minItems: 1 })`) and never replace what it makes (`type`,
   `items`, `properties`, …: a `TypeError`); a default is a value of its
   type (`t.string({ default: "kind" })`).
-- **Field names** are data: `toString`, `constructor` or `__proto__` is a
-  field like any other, and a worked example that leaves one out is sent
-  without it. Three limits of lmcc's TypeScript kernel remain, for now:
-  - an AI function cannot have an *output* named `__proto__` (a
-    `TypeError`; loading one refuses `saved-differs`): lmcc's reader would
-    lose the answer. An input can, and a module can have either;
-  - a JSON input whose value holds a member named `__proto__` (`{
-    "__proto__": 1 }`, at any depth) is refused before anything is sent
-    (`format-write-error`): lmcc's json format would drop it. A text input
-    given such an object keeps it, written as JSON text;
-  - with the `json` adapter, a reply holding an output named like an
-    Object member (`toString`, `valueOf`, …) is refused as if the member
-    came twice (`parse-ambiguous`); and with any adapter, a reply that
-    leaves such an output out gives `""` for it instead of being asked
-    again. Name outputs otherwise, or use `xml` and check them.
+- **Names are data**: `toString`, `constructor` or `__proto__` is a field
+  (an input or an output) like any other, and so is a member of a JSON
+  value; a worked example that leaves one out is sent without it, and a
+  reply that leaves such an output out is asked again, as any other. Give
+  a `__proto__` member in an object as data (`JSON.parse`,
+  `lmcc.parseJson`, `{ ["__proto__"]: v }`): the literal `{ __proto__: v }`
+  sets the object's prototype instead.
+- **Members keep their order**, as in Python: what a call sends, its
+  record, its events, the worked examples a bootstrap records and a saved
+  folder hold a value's members in the value's order, even names like
+  `"10"` that JavaScript lists first. JavaScript's own tools lose that
+  order before FunctAI sees it: an object literal and `JSON.parse` list
+  `"10"` first, and so do `JSON.stringify` and `structuredClone`. Read
+  JSON with `lmcc.parseJson` and write it with `lmcc.jsonText`; what
+  FunctAI gives you (answers, predictions, events, rows) carries lmcc's
+  record of the order (`lmcc.memberNames`).
 - **A call** takes its options second: `await mood(input, { lm:
   "gpt-6-luna", signal })`: settings for that call only, and an
   `AbortSignal` that cancels it (`Cancelled`).
@@ -227,7 +228,10 @@ together hold more than 100,000 events not confirmed, the one holding the
 oldest gives up on its log (warned once per outage; the log is kept at
 least up to the events it confirmed, and nothing more is sent to it),
 then the next, so a store that stays down costs a bounded amount of
-memory.
+memory. A writer that gives up lets go at once: the append under way is
+aborted (its `signal`) and no longer waited for, and no resend follows.
+The copies that append gave the store are the store's: one that ignores
+the abort and never answers keeps them.
 
 `await flush()` sends what is still not confirmed once more, and says
 `true` only when every journal confirmed every event it was sent (or
@@ -346,7 +350,10 @@ is the plan.
 
 functai follows lmcc's development closely (lmcc is on npm, but this
 package can need what is not released yet), so `package.json` links a
-checkout of lmcc beside this repository. From `functai/ts`:
+checkout of lmcc beside this repository. It needs lmcc's decision D-58
+(names are data, members keep their order): commit `3492090` or later
+(lmcc 0.8.4 as published on npm lacks it, and functai refuses to start
+on it). From `functai/ts`:
 
 ```bash
 git clone https://github.com/MaximeRivest/lmcc ../../lmcc   # lmcc beside functai

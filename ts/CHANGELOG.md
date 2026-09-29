@@ -87,18 +87,39 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   own properties only. Before, a required input named `toString` or
   `constructor` that was left out was sent to the model as JavaScript
   function text, and one named `__proto__` lost its value. A Standard
-  Schema's JSON Schema keeps a property named `__proto__`. lmcc is given
-  a call's and a worked example's values as records with no prototype, so
-  an AI function's input may be named `__proto__` (the same request as
-  Python's, saved and loaded both ways), and a worked example that leaves
-  out an input or output named like an Object member is sent without it
-  (before, the call failed). An AI function cannot have an output named
-  `__proto__` (`TypeError`; loading one refuses `saved-differs`): lmcc's
-  TypeScript reader would lose the answer. A JSON input whose value holds
-  a member named `__proto__` is refused before anything is sent
-  (`format-write-error`; before, the member was dropped and the rest sent,
-  unlike Python): lmcc's json format cannot write it yet. A module takes
-  every name.
+  Schema's JSON Schema keeps a property named `__proto__`. With lmcc's
+  D-58 (below), every name works as in Python, and the same requests are
+  sent, saved and loaded both ways: an input or an output named
+  `__proto__`; a JSON input whose value holds a member named `__proto__`
+  (before, the member was dropped); a worked example that leaves out an
+  input or output named like an Object member (before, the call failed);
+  and a reply that leaves out an output named like an Object member
+  (`toString`, `valueOf`, …) is asked again and refused
+  `parse-missing-fields`, by every adapter (before, it was read as `""`,
+  and the `json` adapter refused a correct reply `parse-ambiguous`).
+  `bootstrapFewShot` keeps an input named `__proto__`, and a `__proto__`
+  member of an output, in the worked examples it records (before, both
+  were lost, in the saved folder too). `gepa`'s default feedback reads
+  rows by own members.
+- **Members keep their order**, as in Python: a value's members, even
+  names like `"10"` that JavaScript lists first, keep the value's order in
+  what a call sends (a text input given an object included), its record
+  and its events (observers, journals, `MemoryStore`), the rows `rated`
+  reads back, the worked examples labeled and bootstrapped, and a saved
+  folder, written and read (`save`, `load`). Values are copied, read and
+  written with lmcc's helpers, never `structuredClone`, `JSON.parse` or
+  `JSON.stringify`. The reply cache and the requests lm15 serializes
+  follow lm15.
+- **functai needs lmcc with decision D-58** (commit `3492090` or later):
+  it refuses to start on an lmcc without its helpers (lmcc 0.8.4 as
+  published on npm). The workarounds for the older kernel are gone: values
+  are ordinary objects again, and nothing is refused for its names.
+- A function loaded from a saved folder keeps its fields' type names as
+  saved (`dict`, `str`): its signature's fingerprint is the saved one, so
+  a worked example recorded by another language (a Python bootstrap) is
+  replayed as the model wrote it. Before, it was written again from its
+  values, another request than the saving language's, and a folder whose
+  recorded reply was spelled otherwise refused `saved-differs`.
 - A call whose code rejects with no reason (`Promise.reject()`, `throw
   undefined`) fails as any other: its `failed` event is kept and shown, and
   its record says it failed. Before, it made no terminal event and no
@@ -115,7 +136,9 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   its own (1, 2, 4, … 60 s apart, for as long as the process lives) and at
   the next event. It gives up on a log only for memory: when all writers
   hold more than 100,000 unconfirmed events, the one holding the oldest
-  gives up its log (warned once per outage). `flush()` sends what is not
+  gives up its log (warned once per outage), and lets go at once: its
+  append under way is aborted and no longer waited for (even with
+  `timeout: Infinity`), and no resend follows. `flush()` sends what is not
   confirmed once more (again after a round that was under way when it
   began), and returns `false` while a journal still holds events it did
   not confirm, or once after a writer gave up on events. (Before, it said
