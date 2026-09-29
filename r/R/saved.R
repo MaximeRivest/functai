@@ -21,12 +21,13 @@ SNAKE <- c(retries = "retries", api_retries = "api_retries", max_steps = "max_st
 # so a function R saved is read back with the types it had. Otherwise the
 # type is one that holds every value the shape admits exactly: a column of
 # text, numbers, yes/no, a factor for a choice of texts, a list_of() for a
-# list, a tibble for a record only when it is closed (a tibble has no place
-# for a member its columns do not name) and a member it may leave out is
-# one value that takes no null (NA, then, can only mean left out: a list,
-# an object or a record left out would read back as a value that is also
-# valid, or as a null the shape refuses); JSON (a list column) for
-# anything else. `root` holds the shape's `$defs`.
+# list, a tibble for a record (closed: it has no member its columns do not
+# name) when a member it may leave out is one value that takes no null
+# (NA, then, can only mean left out: a list, an object or a record left
+# out would read back as a value that is also valid, or as a null the
+# shape refuses) and, when the record may be null, it requires such a
+# member (null_told()); JSON (a list column) for anything else. `root`
+# holds the shape's `$defs`.
 field_from_shape <- function(shape, desc = NULL, type = NULL, root = shape) {
   nullable <- FALSE
   inner <- shape
@@ -51,7 +52,7 @@ is_text_choice <- function(s) is_arr(s$enum) && length(s$enum) > 0L && all(vappl
 exact_field <- function(inner, nullable, root) {
   t <- inner$type
   if (is_text_choice(inner)) new_field(inner, "enum", levels = unlist(inner$enum))
-  else if (!nullable && !is.null(closed <- closed_record(inner, root))) closed
+  else if (!is.null(closed <- closed_record(inner, root)) && (!nullable || null_told(inner, closed$fields, root))) closed
   else if (identical(t, "array") && is_obj(inner$items) && is.null(inner$prefixItems))
     new_field(inner, "list", item = field_from_shape(inner$items, root = root))
   else if (is_str(t) && t %in% c("string", "integer", "number", "boolean") && is.null(inner$enum) && is.null(inner[["const"]]))
@@ -60,13 +61,15 @@ exact_field <- function(inner, nullable, root) {
 }
 
 # A record a tibble holds exactly, as a record field; NULL when there is
-# none: an object that allows no other member, names every required member,
-# and keeps every member's presence (presence_kept()), all the way down (a
-# member's own field is chosen by the same rules). A null record would be a
-# row of NAs, which a record of nulls also is: a nullable one stays JSON.
+# none: a record (an object that names its members; closed, as every
+# record is, unless it says `additionalProperties` is a shape or true),
+# that names every required member and keeps every member's presence
+# (presence_kept()), all the way down (a member's own field is chosen by
+# the same rules). A nullable one needs a member that tells null apart
+# too (null_told(), in exact_field()).
 closed_record <- function(shape, root) {
   props <- shape$properties
-  if (!identical(shape$type, "object") || !is_obj(props) || !length(props) || !isFALSE(shape$additionalProperties) ||
+  if (!identical(shape$type, "object") || !is_obj(props) || !length(props) || !is_closed(shape) ||
       !all(unlist(shape$required) %in% names(props))) return(NULL)
   fields <- lapply(props, field_from_shape, root = root)
   if (!presence_kept(shape, fields, root)) return(NULL)
@@ -199,11 +202,14 @@ read_r_type <- function(type) {
 #' them in the interface's `type`. Another language's function comes back
 #' with, for each field, the R type that holds every value its shape admits
 #' exactly: text, numbers, yes or no, a factor for a choice, a `list_of`
-#' for a list, a tibble for a record only when the record is closed
-#' (`additionalProperties: false`, so no member can come back that a column
-#' does not hold) and each member it may leave out is one value that takes
-#' no null (`NA` then means "left out", and nothing else); any other object,
-#' a Python dataclass's among them, is a list column of named lists
+#' for a list, and a tibble for a record (a Python dataclass, a TypeScript
+#' object type, a Julia `NamedTuple`: records are closed, so no member can
+#' come back that a column does not hold) when each member it may leave out
+#' is one value that takes no null (`NA` then means "left out", and nothing
+#' else) and, when the record may be null, it requires a member that is one
+#' value and never null (a row of `NA` is then null, and nothing else). Any
+#' other object (an open one, a map, a record with an optional list, object
+#' or record in it) is a list column of named lists
 #' (`tidyr::unnest_wider()` spreads it), which keeps every member, and
 #' whether it is there, as it came. What a
 #' call sends never depends on these types: a value is sent as it is given.

@@ -132,6 +132,34 @@
   is sent, and to select the record's columns first when the others are
   not for the model.
 
+### After the fourth review
+
+* A record whose leaves are all null (`{"child":{"x":null}}`) is sent as
+  that record, never as `null`, as given and as an answer given back, in a
+  list or inside another record too. Before, any record every leaf of which
+  was missing was sent as `null` where the record could be null. Now a row
+  is read as the null record (vctrs's missing row) only when a member the
+  record requires, one value that is never null, is `NA`: no record is
+  such a row, so nothing the record admits is changed.
+* Records are closed: a record holds only the members it names. A value
+  with another member (a tibble's `id` or `email` column given for a
+  `record()`) is refused before any request (`interface-input`), and so is
+  a default with one (`interface-malformed`) and an answer with one (the
+  model is asked again). Before, a tibble's extra columns were sent to the
+  model. An object shape that says `additionalProperties` is a shape or
+  `true`, a map, and `json_shape(list(type = "object"))` stay open.
+* Another language's record (a Python dataclass, a TypeScript object type)
+  is a tibble column where a tibble holds it exactly, as R's own
+  `record()` is; before, it was a list column unless it said
+  `additionalProperties: false`. A record that may be null is a tibble too
+  when it requires a member that is one value and never null.
+* An `optional(record(...))` held as a list column (every member may be
+  null) prints as `optional record of name (list column)`, not
+  `optional JSON`, and takes a one-row tibble for its default, as it does
+  for a value.
+* `?ai` says the row-of-`NA` rule holds for any record that may be null,
+  a `json_shape()` one too.
+
 ## Before stage 1
 
 The first R implementation of FunctAI, held to the same contract as the

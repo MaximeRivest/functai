@@ -90,7 +90,8 @@ prototype_of <- function(x) {
 #' back as a row of `NA` (vctrs's missing row) when it requires a member
 #' that is one value and is never null, so that no record is a row of `NA`
 #' too; any other optional record is a list column, where `NULL` is null
-#' and a record of nulls is a named list of them.
+#' and a record of nulls is a named list of them (a one-row tibble is still
+#' a value, or a default, for it).
 #' @param x A type, or a sentence (text, described by it).
 #' @return A field.
 #' @examples
@@ -111,10 +112,9 @@ optional <- function(x) {
 #'
 #' Several named fields that belong together, each a type or a sentence
 #' (text, described), as in [ai()]. Records come back as tibble columns
-#' (`tidyr::unpack()` spreads them). A tibble given for a record is sent
-#' with every column it has, those the record does not name too (a record
-#' is an object that may have other members): the model sees them, so
-#' select the record's columns first when the others are not for it.
+#' (`tidyr::unpack()` spreads them). A record holds only the members it
+#' names: a tibble given for one with another column is refused, never
+#' sent, so select the record's columns first (`dplyr::select()`).
 #' @param ... Fields, as `name = type`.
 #' @return A field.
 #' @examples
@@ -236,9 +236,12 @@ json_writer <- function(f) {
 # a member left out of a row of a tibble: there, and in any record, `NA`
 # for a member the shape does not require and whose type takes no null is
 # left out, as an answer that leaves it out reads back. Nor a null record:
-# a record every member of which is missing (NA, NULL, or a record of
-# them), where the shape takes null and requires a member that takes none,
-# is null, as a null answer reads back (vctrs's missing row).
+# a record whose members are all missing (NA, NULL, or a record of them)
+# is null where the shape takes null and the row could be no record, since
+# a member the record requires that is one value and takes no null is NA;
+# that is a null answer read back (vctrs's missing row). Any other value
+# is sent as it is, so no record the shape admits (`{"child":{"x":null}}`)
+# is ever sent as null.
 json_of <- function(v, shape, root) {
   if (is_missing(v)) return(NULL)
   s <- value_guide(shape, root)
@@ -261,15 +264,33 @@ array_json <- function(v, s, root) {
 }
 
 # Whether a value is a null record (json_of()): a row of NA, given where the
-# shape takes null and requires a member that does not (so the row, as a
-# record, could not be one).
+# shape takes null, whose members are all missing, and in which a member
+# the record requires that is one value and takes no null (a witness) is
+# NA, R's missing value. A record always has a value for its witness, so no
+# record the shape admits is such a row, and the row reads as null alone:
+# the reason a tibble holds a nullable record only when it has a witness
+# (null_told()). A row that could be a record (every required member may
+# be null, or is a list or an object) is never null, whatever its leaves;
+# nor is a JSON null (NULL) for the witness, which is sent as given.
 null_record <- function(v, shape, s, root) {
   if (is.data.frame(v)) { if (nrow(v) != 1L) return(FALSE); v <- element(v, 1L) }
   if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
   if (!all_missing(v)) return(FALSE)
   props <- if (is_obj(s$properties)) s$properties else list()
   fits_shape(NULL, shape, root) &&
-    any(vapply(unlist(s$required), function(n) !is.null(props[[n]]) && !fits_shape(NULL, props[[n]], root), NA))
+    any(vapply(unlist(s$required), function(n) {
+      m <- v[[n]]
+      is.atomic(m) && length(m) == 1L && is.na(m) && !is.null(props[[n]]) && is_witness(props[[n]], root)
+    }, NA))
+}
+
+# A member shape that is one value (text, a number, yes/no, a choice of
+# texts) and takes no null: a column of it is NA only where a row has no
+# value.
+is_witness <- function(member, root) {
+  g <- value_guide(member, root)
+  !is.null(g) && (is_text_choice(g) || isTRUE(guide_type(g) %in% c("string", "integer", "number", "boolean"))) &&
+    !fits_shape(NULL, member, root)
 }
 
 # A named list every member of which is missing: NA, NULL, or such a list.

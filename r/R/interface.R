@@ -126,6 +126,9 @@ in_enum <- function(v, enum) {
 # or loaded, an input when a call binds it, an output when a reply is read.
 fits_shape <- function(v, shape, root) is.null(shape_fault(v, shape, root))
 
+# Whether an object shape allows no member it does not name (shape_fault()).
+is_closed <- function(shape) if (has_key(shape, "additionalProperties")) isFALSE(shape$additionalProperties) else has_key(shape, "properties")
+
 # A value as a short text for a message (a value can be long).
 short_json <- function(v) {
   s <- tryCatch(lmcc::json_text(v), error = function(e) "a value with no JSON form")
@@ -135,7 +138,12 @@ short_json <- function(v) {
 # Why a JSON value does not fit a shape (the first place it does not, as
 # `where`: `n`, `options.b`, `items[2]`), or NULL when it fits. Only the
 # keywords programs.md lists are read; an AI function's other keywords
-# (`pattern`, `oneOf`, ...) are lmcc's, and never checked here.
+# (`pattern`, `oneOf`, ...) are lmcc's, and never checked here. A record
+# (an object shape with `properties`) is closed: it allows no member it
+# does not name unless its `additionalProperties` is a shape or true
+# (is_closed(); draft 2020-12 alone would leave it open). A map
+# (`additionalProperties` and no `properties`) and `{"type": "object"}`
+# stay open.
 shape_fault <- function(v, shape, root, where = "value") {
   t <- json_type(v)
   kw <- ASSERTIONS %in% names(shape)                  # which keywords it has, looked up once
@@ -189,6 +197,8 @@ shape_fault <- function(v, shape, root, where = "value") {
         extra <- shape$additionalProperties
         if (isFALSE(extra)) return(sprintf("%s: no member %s is allowed", where, k))
         if (is_obj(extra)) { p <- shape_fault(v[[k]], extra, root, inner); if (!is.null(p)) return(p) }
+      } else if (kw[["properties"]]) {
+        return(sprintf("%s: no member %s is allowed (a record has only the members it names)", where, k))
       }
     }
   }
@@ -384,7 +394,7 @@ type_of_value <- function(value) {
 default_json <- function(f, value) {
   if (is.null(value)) return(NULL)
   if (is.data.frame(value)) {
-    if (f$kind != "record") cli::cli_abort("a one-row tibble is the default of a record, not of {type_label(f)}", call = NULL)
+    if (!is_record_field(f)) cli::cli_abort("a one-row tibble is the default of a record, not of {type_label(f)}", call = NULL)
     if (nrow(value) != 1L) cli::cli_abort("a record's default is a one-row tibble, not {nrow(value)} rows", call = NULL)
     return(to_json(f, element(value, 1L)))
   }
@@ -399,6 +409,18 @@ default_json <- function(f, value) {
   }
   if (f$kind == "list" && !is.list(value)) value <- as.list(value)
   to_json(f, value)
+}
+
+# Whether a field's values are records (objects that name their members):
+# a record() (a tibble column), or one R holds as a list column (an
+# optional record every member of which may be null, another language's
+# record a tibble cannot hold exactly, a json_shape() of one). A one-row
+# tibble is a value of any of them.
+is_record_field <- function(f) {
+  if (f$kind == "record") return(TRUE)
+  shape <- data_shape(f$shape)
+  g <- value_guide(shape, shape)
+  f$kind == "json" && identical(guide_type(g), "object") && is_obj(g$properties) && is_closed(g)
 }
 
 # An input's default as one row of its column: what the R function's

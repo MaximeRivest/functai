@@ -41,12 +41,14 @@
 #' record says so; a reply whose value does not fit is unreadable, and the
 #' model is asked again. A value given to a text input that is not text is
 #' sent as text. An input left out is sent with its default exactly as the
-#' interface holds it. A value is sent as it is given, and checked so: a
-#' record or object keeps every member it has (a tibble's extra columns
-#' too), and one its type requires but it lacks is refused, not filled in.
-#' So the model sees every column of a tibble given for a [record()]:
-#' select the record's columns first (`dplyr::select()`, `dplyr::pick()`)
-#' when the others are not for it (an id, an e-mail address).
+#' interface holds it. A value is sent as it is given, and checked so:
+#' nothing is dropped or filled in. A record holds only the members it
+#' names, so a tibble given for a [record()] with a column the record does
+#' not name (an id, an e-mail address) is refused, never sent: select the
+#' record's columns first (`dplyr::select()`, `dplyr::pick()`). A member
+#' the record requires but the value lacks is refused too. An open object
+#' (`json_shape(list(type = "object"))`, or one whose
+#' `additionalProperties` is a shape or `TRUE`) keeps every member given.
 #'
 #' **Missing values.** `NA` (or `NULL`) is JSON's null, never "left out": an
 #' input whose type takes null (an [optional()] type, a [json_shape()] that
@@ -59,8 +61,12 @@
 #' the record does not require and whose type takes no null: a tibble cannot
 #' leave a member out, so `NA` there leaves it out, as an answer that leaves
 #' it out comes back `NA`. Nor can a tibble hold a null record: a row of `NA`
-#' given for an [optional()] record that requires a member never null is
-#' null, as a null answer comes back (vctrs's missing row).
+#' given for a record that may be null ([optional()], or a [json_shape()]
+#' that allows null) is null, as a null answer comes back (vctrs's missing
+#' row), when the record requires a member that is one value and never null
+#' and that member is `NA`, so the row could be no record. Any other row is
+#' sent as it is: a record of nulls (`list(child = list(x = NULL))`) stays
+#' one.
 #'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
@@ -580,8 +586,12 @@ type_label <- function(f) {
   base <- switch(f$kind,
     enum = if (length(f$meanings)) "one of:" else sprintf("one of %s", paste(f$levels, collapse = ", ")),
     record = sprintf("record of %s", paste(names(f$fields), collapse = ", ")),
+    json = if (is_record_field(f)) {
+      shape <- data_shape(f$shape)
+      sprintf("record of %s (list column)", paste(names(value_guide(shape, shape)$properties), collapse = ", "))
+    } else "JSON",
     list = sprintf("list of %s", type_label(f$item)),
-    string = "text", integer = "whole number", number = "number", boolean = "yes or no", json = "JSON", f$kind)
+    string = "text", integer = "whole number", number = "number", boolean = "yes or no", f$kind)
   if (isTRUE(f$nullable)) paste("optional", base) else base
 }
 

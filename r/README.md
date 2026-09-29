@@ -145,11 +145,11 @@ a language model reads all its inputs together, as they are.
 A row with a missing input (`NA`) whose type takes no null is `NA`
 without a call, whether the input is required or has a default: `NA` is a
 value given, never "left out" (`predict()`'s `.error` says so). A value is
-sent as it is given (a record keeps every member it has: every column of a
-tibble, so select a record's columns first when the others are not for the
-model) and checked so: a
+sent as it is given, nothing dropped or filled in, and checked so: a
 value that does not fit its field's type (`2.5` for a whole number, a
-number below a `minimum`, a record without a member it requires) fails its
+number below a `minimum`, a record without a member it requires, or with
+one it does not name, such as a tibble's extra `id` column: select the
+record's columns first) fails its
 row before any request. When some calls fail
 (after the re-asks and the provider retries), their rows are `NA` and one
 warning says how many; `ai_problems()` lists them. A single call that fails
@@ -278,12 +278,13 @@ tools, a baked model. `ai_interface("team/")` describes a saved program
 without loading or running it, a Python module included.
 
 A function R saved comes back with its R types. Another language's comes
-back with types that hold its answers exactly: a record the saving language
-left open (a Python dataclass, whose shape allows members it does not
-name) is a list column of named lists, which `tidyr::unnest_wider()`
-spreads into columns; a closed one is a tibble column when a tibble keeps
-whether each member is there (a member it may leave out is one value, never
-null), and a list column otherwise.
+back with types that hold its answers exactly. A record (a Python
+dataclass, a TypeScript object type, a Julia `NamedTuple`) is closed, so it
+is a tibble column when a tibble also keeps whether each member is there (a
+member it may leave out is one value, never null) and, for a record that
+may be null, tells null from a record of nulls (it requires a member that is
+one value, never null). Otherwise it is a list column of named lists,
+which `tidyr::unnest_wider()` spreads into columns.
 
 ## Settings
 

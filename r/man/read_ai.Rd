@@ -31,11 +31,14 @@ each is sent with then, come from the folder's interface of it
 them in the interface's \code{type}. Another language's function comes back
 with, for each field, the R type that holds every value its shape admits
 exactly: text, numbers, yes or no, a factor for a choice, a \code{list_of}
-for a list, a tibble for a record only when the record is closed
-(\code{additionalProperties: false}, so no member can come back that a column
-does not hold) and each member it may leave out is one value that takes
-no null (\code{NA} then means "left out", and nothing else); any other object,
-a Python dataclass's among them, is a list column of named lists
+for a list, and a tibble for a record (a Python dataclass, a TypeScript
+object type, a Julia \code{NamedTuple}: records are closed, so no member can
+come back that a column does not hold) when each member it may leave out
+is one value that takes no null (\code{NA} then means "left out", and nothing
+else) and, when the record may be null, it requires a member that is one
+value and never null (a row of \code{NA} is then null, and nothing else). Any
+other object (an open one, a map, a record with an optional list, object
+or record in it) is a list column of named lists
 (\code{tidyr::unnest_wider()} spreads it), which keeps every member, and
 whether it is there, as it came. What a
 call sends never depends on these types: a value is sent as it is given.

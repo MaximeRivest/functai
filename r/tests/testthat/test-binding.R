@@ -21,17 +21,22 @@ test_that("an input left out is sent with its default exactly as the interface h
   expect_identical(core_of(g)$definition$inputs$options$kind, "json")
 })
 
-test_that("defaults of every kind are sent as they are: extra members, arrays, nulls, records, choices", {
+test_that("defaults of every kind are sent as they are: an open object's extra members, arrays, nulls, records, choices", {
   cases <- list(
-    list(field = defaults_to(list(a = "x", extra = 1L), json_shape(list(type = "object", properties = list(a = list(type = "string")), required = list("a")))),
+    list(field = defaults_to(list(a = "x", extra = 1L), json_shape(list(type = "object", properties = list(a = list(type = "string")), required = list("a"),
+                                                                         additionalProperties = TRUE))),
          json = '{"a":"x","extra":1}'),
     list(field = defaults_to(list(1L, 2L), json_shape(list(type = "array", items = list(type = "integer")))), json = "[1,2]"),
     list(field = defaults_to(list("a", "b"), vctrs::list_of(.ptype = character())), json = '["a","b"]'),
     list(field = defaults_to(NA, optional(integer())), json = "null"),
     list(field = defaults_to(tibble::tibble(a = "x", b = 1L)), json = '{"a":"x","b":1}'),
-    list(field = defaults_to(tibble::tibble(a = "x", more = 1L), record(a = character())), json = '{"a":"x","more":1}'),   # a record's tibble holds `a` alone
     list(field = defaults_to("brief", choice("kind", "brief")), json = '"brief"'),
     list(field = defaults_to(2.5), json = "2.5"))
+  # a record holds only the members it names: a default with another is refused, not cut down
+  err <- tryCatch(ai(answer ~ message + extra, "x", extra = defaults_to(tibble::tibble(a = "x", more = 1L), record(a = character())), .lm = "gpt-4.1-mini"),
+                  functai_refusal = function(e) e)
+  expect_identical(err$code, "interface-malformed")
+  expect_match(conditionMessage(err), "no member more is allowed", fixed = TRUE)
   for (x in cases) {
     f <- ai(answer ~ message + extra, "x", extra = x$field, .lm = "gpt-4.1-mini")
     dir <- withr::local_tempdir()

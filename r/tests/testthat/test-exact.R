@@ -42,7 +42,10 @@ refused_input <- function(x) {
   expect_length(x$requests, 0L)
 }
 
-open_obj <- list(type = "object", properties = list(a = list(type = "string")), required = list("a"))
+# A record: the members it names and no other (records are closed).
+rec_obj <- list(type = "object", properties = list(a = list(type = "string")), required = list("a"))
+# An object that names a member and allows others.
+open_obj <- c(rec_obj, list(additionalProperties = TRUE))
 
 test_that("a member an open object shape does not name is sent as given, before and after loading", {
   fns <- three_ways(ai(answer ~ options, "x", options = json_shape(open_obj), .lm = "gpt-4.1-mini"))
@@ -61,20 +64,37 @@ test_that("a required member left out is refused, before and after loading, even
   expect_identical(plain(x$record$inputs$options), '{"a":null}')
 })
 
-test_that("a member a closed shape does not allow is refused, before and after loading", {
-  shape <- c(open_obj, list(additionalProperties = FALSE))
-  fns <- three_ways(ai(answer ~ options, "x", options = json_shape(shape), .lm = "gpt-4.1-mini"))
-  expect_identical(core_of(fns$foreign)$definition$inputs$options$kind, "record")      # a closed record: a tibble
-  refused_input(sends_alike(fns, list(options = list(list(a = "x", extra = "BAD")))))
-  refused_input(sends_alike(fns, list(options = tibble::tibble(a = "x", extra = "BAD"))))
-  x <- sends_alike(fns, list(options = tibble::tibble(a = "x")))
-  expect_identical(plain(x$record$inputs$options), '{"a":"x"}')
+test_that("a member a record does not name is refused, before and after loading, whether it says so or not", {
+  for (shape in list(rec_obj, c(rec_obj, list(additionalProperties = FALSE)))) {
+    fns <- three_ways(ai(answer ~ options, "x", options = json_shape(shape), .lm = "gpt-4.1-mini"))
+    expect_identical(core_of(fns$foreign)$definition$inputs$options$kind, "record")      # a record: a tibble
+    refused_input(sends_alike(fns, list(options = list(list(a = "x", extra = "BAD")))))
+    refused_input(sends_alike(fns, list(options = tibble::tibble(a = "x", extra = "BAD"))))
+    x <- sends_alike(fns, list(options = tibble::tibble(a = "x")))
+    expect_identical(plain(x$record$inputs$options), '{"a":"x"}')
+  }
 })
 
-test_that("a record()'s tibble is sent as it is: extra columns kept, a missing column refused", {
+test_that("a record()'s tibble is sent as it is, and refused with a column the record does not name or without one it does", {
   fns <- three_ways(ai(answer ~ person, "x", person = record(name = character(), age = integer()), .lm = "gpt-4.1-mini"))
-  x <- sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 3, id = 7L)))
-  expect_identical(plain(x$record$inputs$person), '{"age":3,"id":7,"name":"Ann"}')
+  x <- sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 3)))
+  expect_identical(plain(x$record$inputs$person), '{"age":3,"name":"Ann"}')
+  x <- sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 3, email = "ann@example.com")))
+  refused_input(x)
+  expect_match(x$record$error$message, "no member email is allowed", fixed = TRUE)
+  router <- fake_router()
+  e <- tryCatch(update(fns$defined, router = router, log_calls = FALSE)(person = tibble::tibble(name = "Ann", age = 3, email = "ann@example.com")),
+                functai_interface_input = function(e) e)
+  expect_identical(e$field, "person")
+  expect_length(router$env$requests, 0L)
+  # inside a list, and inside a record in a list
+  fns <- three_ways(ai(answer ~ people, "x", people = vctrs::list_of(.ptype = tibble::tibble(name = character(), pet = tibble::tibble(kind = character()))),
+                       .lm = "gpt-4.1-mini"))
+  ok <- tibble::tibble(name = "Ann", pet = tibble::tibble(kind = "cat"))
+  expect_length(sends_alike(fns, list(people = list(ok)))$requests, 1L)
+  refused_input(sends_alike(fns, list(people = list(tibble::tibble(name = "Ann", pet = tibble::tibble(kind = "cat", chip = 1L))))))
+  # a member it requires but lacks
+  fns <- three_ways(ai(answer ~ person, "x", person = record(name = character(), age = integer()), .lm = "gpt-4.1-mini"))
   refused_input(sends_alike(fns, list(person = tibble::tibble(name = "Ann"))))
   refused_input(sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = NA_integer_))))   # null is not a whole number
   refused_input(sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 2.5))))
@@ -86,7 +106,7 @@ test_that("objects inside lists are sent as given, and checked where they are", 
   x <- sends_alike(fns, list(items = list(list(list(a = "x", more = 1L), list(a = "y")))))
   expect_identical(plain(x$record$inputs$items), '[{"a":"x","more":1},{"a":"y"}]')
   refused_input(sends_alike(fns, list(items = list(list(list(a = "x"), list(b = "y"))))))
-  closed <- list(type = "array", items = c(open_obj, list(additionalProperties = FALSE)))
+  closed <- list(type = "array", items = rec_obj)
   fns <- three_ways(ai(answer ~ items, "x", items = json_shape(closed), .lm = "gpt-4.1-mini"))
   refused_input(sends_alike(fns, list(items = list(list(list(a = "x", more = 1L))))))
   # one item, from a vector, is still a list
@@ -115,17 +135,20 @@ test_that("an answer comes back whole: an open object keeps every member, before
   }
 })
 
-test_that("a record()'s answer is a tibble before and after R loads it; another language's open record is JSON", {
+test_that("a record's answer is a tibble, three ways; an answer with a member it does not name is re-asked", {
   reply <- '<result>{"name":"Ann","age":3}</result>'
   fns <- three_ways(ai(person ~ text, "x", person = record(name = character(), age = integer()), .lm = "gpt-4.1-mini"))
-  call <- function(fn) update(fn, router = fake_router(list(reply)), log_calls = FALSE)("hi")
-  expect_identical(call(fns$defined), call(fns$loaded))
-  expect_s3_class(call(fns$loaded), "tbl_df")
-  expect_identical(core_of(fns$loaded)$definition$outputs$result$kind, "record")
-  # no R type to go by: an open record may have members a tibble has no column for
-  foreign <- call(fns$foreign)
-  expect_type(foreign, "list")
-  expect_identical(plain(foreign[[1L]]), '{"age":3,"name":"Ann"}')
+  call <- function(fn, replies = list(reply)) update(fn, router = fake_router(replies), log_calls = FALSE)("hi")
+  for (w in names(fns)) {
+    expect_identical(core_of(fns[[w]])$definition$outputs$result$kind, "record", info = w)
+    expect_identical(call(fns[[w]]), call(fns$defined), info = w)
+    expect_s3_class(call(fns[[w]]), "tbl_df")
+    # a member the record does not name is not dropped: the reply is unreadable, and the model asked again
+    expect_identical(call(fns[[w]], list('<result>{"name":"Ann","age":3,"id":7}</result>', reply)), call(fns$defined), info = w)
+  }
+  # an open object with the same members stays JSON: a tibble has no column for another member
+  fns <- three_ways(ai(answer ~ text, "x", answer = json_shape(open_obj), .lm = "gpt-4.1-mini"))
+  expect_identical(core_of(fns$foreign)$definition$outputs$result$kind, "json")
 })
 
 test_that("a closed record's answer is a tibble that gives back the JSON it came from", {
@@ -152,8 +175,8 @@ test_that("R reads back the R types it saved, and another language's names are i
   kinds <- function(fn) vapply(core_of(fn)$definition$outputs, r_type_of, "")
   expect_identical(kinds(fns$loaded), kinds(fns$defined))
   expect_identical(unname(kinds(fns$defined)), c("tibble(p = factor, q = list_of(integer))", "list", "double", "list_of(tibble(k = logical))"))
-  # a record() is open: from another language's folder it is JSON; the rest is as the shape says
-  expect_identical(unname(kinds(fns$foreign)), c("list", "character", "double", "list_of(list)"))
+  # from another language's folder, the types the shapes hold exactly: records are closed, so tibbles
+  expect_identical(unname(kinds(fns$foreign)), c("tibble(p = factor, q = list_of(integer))", "character", "double", "list_of(tibble(k = logical))"))
   # a type that does not fit the shape is not believed
   expect_null(declared_field(list(type = "string"), quote(integer), list()))
   expect_identical(field_from_shape(list(type = "string"), type = quote(tibble(a = character)))$kind, "string")
@@ -243,6 +266,10 @@ test_that("R reads back a tibble's type whatever its column names: backslashes a
     fns <- three_ways(ai(answer ~ text, "x", answer = proto, .lm = "gpt-4.1-mini"))
     expect_identical(r_type_of(core_of(fns$loaded)$definition$outputs$result), r_type_of(core_of(fns$defined)$definition$outputs$result), info = name)
     expect_identical(core_of(fns$loaded)$definition$outputs$result$kind, "record", info = name)
+    # the saved type itself reads back (a closed record would be a tibble from its shape alone too)
+    saved <- to_manifest(fns$defined)$nodes[[1L]]$interface$outputs[[1L]]
+    expect_identical(names(as.list(read_r_type(saved$type))[-1L]), name, info = name)
+    expect_false(is.null(declared_field(saved$shape, read_r_type(saved$type), saved$shape)), info = name)
     reply <- paste0("<result>", lmcc::json_text(stats::setNames(list("value"), name)), "</result>")
     call <- function(fn) update(fn, router = fake_router(list(reply)), log_calls = FALSE)("x")
     expect_identical(call(fns$loaded), call(fns$defined), info = name)
@@ -284,4 +311,100 @@ test_that("an optional record() tells null from a record of nulls, and an answer
   # R's saved type is not believed for a nullable record whose row of NA would be a record too
   shape <- list(anyOf = list(list(type = "object", properties = list(y = list(anyOf = list(list(type = "integer"), list(type = "null")))), required = list("y")), list(type = "null")))
   expect_identical(field_from_shape(shape, type = quote(tibble(y = integer)))$kind, "json")
+})
+
+# The request a consumer sends for a JSON value, rendered from that JSON
+# itself: not through the writer that turns R values into JSON, so a writer
+# that changed the value would not change what it is compared against.
+intended_request <- function(fn, value_json) {
+  core <- core_of(update(fn, lm = "probe-model", capabilities = probe_capabilities()))
+  request_json(lmcc::lm15_request(probe_render(core, list(value = lmcc::parse_json(value_json))), "probe-model", config_of(effective(core$own))))
+}
+
+test_that("a record whose leaves are all null is sent as that record, never as null: given, and as an answer given back", {
+  closed <- function(props) list(type = "object", properties = props, required = as.list(names(props)), additionalProperties = FALSE)
+  nullable <- function(s) list(anyOf = list(s, list(type = "null")))
+  s <- nullable(closed(list(child = closed(list(x = nullable(list(type = "string")))))))
+  cases <- list(
+    `a nullable record of a record` = list(field = json_shape(s), json = '{"child":{"x":null}}', null = 'null'),
+    `an optional record() of a record()` = list(field = optional(record(child = record(x = optional(character())))), json = '{"child":{"x":null}}', null = 'null'),
+    `a record without additionalProperties` = list(field = json_shape(nullable(list(type = "object", properties = list(child = list(type = "object", properties = list(x = nullable(list(type = "string"))), required = list("x"))), required = list("child")))),
+                                                   json = '{"child":{"x":null}}', null = 'null'),
+    `inside a required record` = list(field = json_shape(closed(list(tag = list(type = "string"), obj = s))), json = '{"tag":"t","obj":{"child":{"x":null}}}', null = '{"tag":"t","obj":null}'),
+    `inside a list` = list(field = json_shape(list(type = "array", items = s)), json = '[{"child":{"x":null}},null]', null = '[null,null]'))
+  for (name in names(cases)) {
+    case <- cases[[name]]
+    producers <- three_ways(ai(answer ~ text, "x", answer = case$field, .lm = "gpt-4.1-mini"))
+    consumers <- three_ways(ai(answer ~ value, "x", value = case$field, .lm = "gpt-4.1-mini"))
+    want <- intended_request(consumers$defined, case$json)
+    expect_false(identical(want, intended_request(consumers$defined, case$null)), info = name)
+    for (p in names(producers)) {
+      answer <- update(producers[[p]], router = fake_router(list(paste0("<result>", case$json, "</result>"))), log_calls = FALSE)("hi")
+      for (c in names(consumers)) {
+        info <- paste(name, p, c)
+        for (given in list(answer, list(lmcc::parse_json(case$json)))) {
+          got <- probe_call(consumers[[c]], list(value = given))
+          expect_length(got$requests, 1L)
+          if (length(got$requests)) expect_identical(request_json(got$requests[[1L]]), want, info = info)
+          expect_identical(plain(got$record$inputs$value), plain(lmcc::parse_json(case$json)), info = info)
+        }
+      }
+    }
+  }
+  # a structured member given NA is null there, not a sign that the whole record is missing
+  consumer <- ai(answer ~ value, "x", value = json_shape(s), .lm = "gpt-4.1-mini")
+  refused_input(probe_call(consumer, list(value = list(list(child = NA)))))
+  # R's own values for it: a record of NA, where no member is a witness, is a record of nulls
+  consumer <- ai(answer ~ value, "x", value = optional(record(child = record(x = optional(character())))), .lm = "gpt-4.1-mini")
+  for (given in list(list(list(child = list(x = NA))), list(list(child = list(x = NULL))), tibble::tibble(child = tibble::tibble(x = NA_character_)))) {
+    got <- probe_call(consumer, list(value = given))
+    expect_identical(request_json(got$requests[[1L]]), intended_request(consumer, '{"child":{"x":null}}'))
+  }
+})
+
+test_that("a row of NA is null only where a member the record requires is one value, never null, and NA", {
+  field <- optional(record(name = character(), pet = record(x = optional(character()))))
+  expect_identical(field$kind, "record")
+  fns <- three_ways(ai(answer ~ value, "x", value = field, .lm = "gpt-4.1-mini"))
+  null_row <- tibble::tibble(name = NA_character_, pet = tibble::tibble(x = NA_character_))
+  x <- sends_alike(fns, list(value = null_row))
+  expect_identical(plain(x$record$inputs$value), "null")
+  expect_identical(request_json(x$requests[[1L]]), intended_request(fns$defined, "null"))
+  # a row with a value in it is a record, sent as it is (and refused: name is not null)
+  refused_input(sends_alike(fns, list(value = tibble::tibble(name = NA_character_, pet = tibble::tibble(x = "a")))))
+  # JSON's null for the witness is JSON, sent as given (and refused), not read as R's missing row
+  refused_input(sends_alike(fns, list(value = list(lmcc::parse_json('{"name":null,"pet":{"x":null}}')))))
+  # a json_shape() says the same, so it is read the same: null
+  fns <- three_ways(ai(answer ~ value, "x", value = json_shape(field$shape), .lm = "gpt-4.1-mini"))
+  expect_identical(plain(sends_alike(fns, list(value = null_row))$record$inputs$value), "null")
+})
+
+test_that("a record as Python writes a dataclass is a tibble from its folder, and gives back what it came as", {
+  # Person(name: str, age: int, nick: Optional[str] = None, tags: list[str]): every member required
+  text <- list(type = "string")
+  person <- list(type = "object", properties = list(name = text, age = list(type = "integer"),
+                                                    nick = list(anyOf = list(text, list(type = "null")), default = NULL),
+                                                    tags = list(type = "array", items = text)),
+                 required = list("name", "age", "nick", "tags"))
+  fns <- three_ways(ai(answer ~ text, "x", answer = json_shape(person), .lm = "gpt-4.1-mini"))
+  expect_identical(core_of(fns$defined)$definition$outputs$result$kind, "json")         # json_shape(): a list column, as written
+  expect_identical(r_type_of(core_of(fns$foreign)$definition$outputs$result), "tibble(name = character, age = integer, nick = character, tags = list_of(character))")
+  answers_round_trip(fns, json_shape(person), c('{"name":"A","age":1,"nick":null,"tags":[]}', '{"name":"A","age":1,"nick":"a","tags":["x"]}'), "a dataclass")
+  # an optional one, which requires a member that is one value and never null: a row of NA is null
+  fns <- three_ways(ai(answer ~ text, "x", answer = json_shape(list(anyOf = list(person, list(type = "null")))), .lm = "gpt-4.1-mini"))
+  expect_identical(core_of(fns$foreign)$definition$outputs$result$kind, "record")
+  answers_round_trip(fns, json_shape(list(anyOf = list(person, list(type = "null")))), c('null', '{"name":"A","age":1,"nick":null,"tags":[]}'), "an optional dataclass")
+})
+
+test_that("an optional record held as a list column takes a one-row tibble for its default, and says it is a record", {
+  field <- optional(record(name = optional(character())))
+  expect_identical(field$kind, "json")
+  expect_identical(type_label(field), "optional record of name (list column)")
+  f <- ai(answer ~ q + value, "x", q = character(), value = defaults_to(tibble::tibble(name = "a"), field), .lm = "gpt-4.1-mini")
+  expect_identical(lmcc::json_text(ai_interface(f)$inputs[[2L]]$shape$default), '{"name":"a"}')
+  fns <- three_ways(f)
+  x <- sends_alike(fns, list(q = "hi"))
+  expect_identical(plain(x$record$inputs$value), '{"name":"a"}')
+  # a one-row tibble is not the default of a value that is not a record
+  expect_error(defaults_to(tibble::tibble(name = "a"), json_shape(list(type = "object"))), "default of a record")
 })
