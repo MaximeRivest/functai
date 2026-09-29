@@ -17,7 +17,8 @@ import { passes } from "./schema.ts";
 import { checkSettings, type Settings } from "./settings.ts";
 import * as sig from "./signature.ts";
 import { VERSION } from "./calllog.ts";
-import { copyData, lm15Data, parseData, setOwn, writeData } from "./values.ts";
+import { copyData, parseData, setOwn, writeData } from "./values.ts";
+import * as bridge from "lmcc/lm15";
 
 type Rec = Record<string, unknown>;
 
@@ -155,7 +156,7 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
   if (settingsIn["adapter"] !== undefined && settingsIn["adapter"] !== null) own.adapter = settingsIn["adapter"];
   for (const [snake, camel] of Object.entries(SNAKE)) if (settingsIn[snake] !== undefined && settingsIn[snake] !== null) (own as Rec)[camel] = settingsIn[snake];
   if (Array.isArray(data["template"])) own.template = data["template"] as Rec[];
-  const config = data["config"] && Object.keys(data["config"] as Rec).length ? Config.fromJSON(lm15Data(data["config"]) as never) : undefined;
+  const config = data["config"] && Object.keys(data["config"] as Rec).length ? Config.fromJSON(bridge.toLm15(data["config"]) as never) : undefined;
   if (config) {
     const { temperature, maxTokens, topP, stop, seed, ...rest } = config as Rec;
     if (temperature !== undefined) own.temperature = temperature as number;

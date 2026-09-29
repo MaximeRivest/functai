@@ -109,14 +109,21 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   folder, written and read (`save`, `load`). Values are copied, read and
   written with lmcc's helpers, never `structuredClone`, `JSON.parse` or
   `JSON.stringify`. JSON lm15 writes (a `response_format` schema, a
-  tool's parameters, a `config`) follows lm15: JavaScript's order.
-- FunctAI gives lm15 plain data: a request, its `Config`, a saved
-  `config` and a cached reply carry no record of member order (lm15
-  refuses an object with a symbol key). Before, a `json`-adapter function
-  whose output shape had an integer-like property after another (from
-  `lmcc.parseJson`, or a saved folder, Python's included), or a tool with
-  such parameters, threw a `TypeError` at every render and call; a cached
-  reply read back that way was skipped with a warning.
+  tool's parameters, a `config`) keeps the order too with an lm15 that
+  keeps member order (after 1.0.0-rc.2); with 1.0.0-rc.2 it is
+  JavaScript's order.
+- FunctAI hands lm15 what lmcc built or parsed through lmcc's bridge
+  (`lmcc/lm15`, D-59): a request and its `Config` with `request()`, a
+  saved `config` and a cached reply with `toLm15`. lmcc's record of
+  member order is lm15's, so it reaches the provider; an lm15 without it
+  is given plain copies; an integer past 2^53 goes as lm15's own number.
+  Before, a `json`-adapter function whose output shape had an
+  integer-like property after another (from `lmcc.parseJson`, or a saved
+  folder, Python's included), or a tool with such parameters, threw a
+  `TypeError` at every render and call; a cached reply read back that way
+  was skipped with a warning. A cached reply a store keeps as text is read
+  with lm15's `parseJson` (was `JSON.parse`, which lost the order of a
+  tool call's input and the digits of a big integer).
 - The JSON FunctAI writes (a text input given an object, call log lines,
   saved folders) visits every array index again, a hole written `null`:
   before, `[, "B"]` was written `[,"B"]` (a call log line and a saved
