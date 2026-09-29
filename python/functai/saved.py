@@ -1554,6 +1554,14 @@ def _loaded_class():
         def _named_inputs(self) -> List[Tuple[str, bool]]:
             return [(f["name"], not f.get("optional")) for f in self._data_inputs]
 
+        def _tool_parameters(self) -> Dict[str, Any]:
+            """Its parameters as a tool's JSON Schema (``engine.tool_spec``):
+            the interface's shapes, each with the default an optional input
+            is sent with, as the original's annotations lower them."""
+            return {"type": "object",
+                    "properties": {f["name"]: copy.deepcopy(f.get("shape") or {}) for f in self._data_inputs},
+                    "required": [f["name"] for f in self._data_inputs if not f.get("optional")]}
+
         def _variant_spec(self, *, reasoning: bool, tools: bool):
             spec = self._spec()
             if reasoning or not spec.reasoning:

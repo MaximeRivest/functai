@@ -59,9 +59,9 @@ language keeps and reads alike, and programs that say what they take.
   `journal-end` holding the outcome, with `err.settle()`); closing a
   stream ends its wait. A store answers `"kept"` or `"duplicate"`; any
   other answer is a refusal (`functai.Store` says the protocol); a store
-  with `extend` is sent what waits as one batch, except a subclass that
-  overrides `append` and not `extend`, which is sent every event through
-  its `append` (`batches = True` or `False` says so outright). A program
+  with `extend` is sent every event through it, what waits as one batch,
+  except a subclass that overrides `append` and not `extend`, which is
+  sent every event through its `append` (`batches = True` or `False` says so outright). A program
   cannot replace a host's journal (`journal-policy`), and when it names
   the host's journal again, the host's `timeout`, `retries` and `backoff`
   apply. An event made after its tree's last one (a call running on in a
@@ -93,19 +93,24 @@ language keeps and reads alike, and programs that say what they take.
   interface is the one source of its inputs' names, order, requiredness
   and defaults, for calls, `using` copies, row demos, `map`, `evaluate`,
   optimizers, `bake` and `vectorize`, so each sends what the original
-  sends. `inspect.signature` and `help` show its interface as Python can
-  write it (inputs out of Python's order are keyword-only there, and a
-  name such as `class` is given through `**`). Its signature is the saved
-  one: `module=` other than its own, and tools, are refused. It has no
-  Python source, so `save` and `check` refuse it (`loaded-from-data`):
-  keep the folder it came from.
+  sends; used as another function's tool, its tool schema is its
+  interface's shapes, records whole. `inspect.signature` and `help` show
+  its interface as Python can write it (inputs out of Python's order are
+  keyword-only there, and a name such as `class` is given through `**`,
+  named `inputs`, or `inputs_1`, ... when an input has that name). Its
+  signature is the saved one: `module=` other than its own, and tools,
+  are refused. It has no Python source, so `save` and `check` refuse it
+  (`loaded-from-data`): keep the folder it came from.
 - **What a call saw** is what it was shown: the turns captured when the
   call starts, as its plan shows them (a turn made for another signature
   is shown, and recorded, as its values alone), each known by the turn
   itself and by what it held when its call made it (a turn put in
   `history` by hand, or changed since, even inside its values, is
   `{"unrecorded": true}`). The turns shown are copied when the call is
-  prepared, so changing `history` meanwhile changes nothing it is shown.
+  prepared (a turn holding a value that cannot be copied, from its JSON
+  form), so changing `history` meanwhile changes nothing it is shown.
+- **A tool's answer that is a record** (a pydantic model, a dataclass)
+  is sent to the model as its JSON, no longer as its Python `str()`.
 
 Breaking (see *Upgrading* in the documentation): the API says what it
 does, and a type checker follows it.

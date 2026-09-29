@@ -435,10 +435,12 @@ class Store(Protocol):
     after None), or raises ``EventRefused("event-unknown")``.
 
     A store may also have ``extend(events)`` (a batch of one log, kept whole
-    or not at all), and the writer then sends what waits as one batch when
-    ``extend`` is defined where ``append`` is or further down (a subclass
-    that changes only ``append`` is sent every event alone, through it);
-    ``batches = True`` or ``False`` says so outright. And ``claim(tree)`` (a later writer's claim, which fences earlier writers;
+    or not at all), and the writer then sends every event through it, what
+    waits as one batch, when ``extend`` is defined where ``append`` is or
+    further down (a subclass that changes only ``append`` is sent every
+    event alone, through it; one that changes only ``extend``, every event
+    through it, a lone one as a batch of one); ``batches = True`` or
+    ``False`` says so outright. And ``claim(tree)`` (a later writer's claim, which fences earlier writers;
     ``JournalError.settle(claim=True)`` needs it). A store times out its own
     I/O; a journal also stops waiting at its barriers after its ``timeout``."""
 
@@ -459,7 +461,8 @@ def _is_event(e: Any) -> bool:
 
 
 def takes_batches(store: Any) -> bool:
-    """Whether a journal's writer sends ``store`` what waits as one batch: its
+    """Whether a journal's writer sends ``store`` what waits as one batch,
+    every event through ``extend`` (a lone one as a batch of one): its
     ``batches`` attribute when it is True or False; else whether it has an
     ``extend`` defined where its ``append`` is or further down (an ``extend``
     inherited from above an overriding ``append`` would bypass it, and an
@@ -480,7 +483,19 @@ def takes_batches(store: Any) -> bool:
     return owner("extend") <= owner("append")
 
 
-_memory_stores: "weakref.WeakSet[MemoryStore]" = weakref.WeakSet()
+# The memory stores of this process, by identity, each held weakly (an entry goes with its store; a store
+# need not be hashable, and two equal stores are two stores): a forked child gives each fresh locks.
+_memory_stores: Dict[int, "weakref.ref[MemoryStore]"] = {}
+
+
+def _register_memory_store(store: "MemoryStore") -> None:
+    key = id(store)
+
+    def gone(ref: "weakref.ref[MemoryStore]", key: int = key) -> None:
+        if _memory_stores.get(key) is ref:
+            _memory_stores.pop(key, None)
+
+    _memory_stores[key] = weakref.ref(store, gone)
 
 
 class MemoryStore:
@@ -495,10 +510,11 @@ class MemoryStore:
     ``claim(tree)`` gives a later writer its number and the last kept event's
     position; ``read(tree, after)`` gives the kept events after a position.
 
-    A journal's writer sends what waits as one batch (``extend``), except to
-    a subclass that overrides ``append`` and not ``extend`` (a transport,
-    failures for a test): that one is sent every event alone, through its
-    ``append``. ``batches = False`` also sends every event alone."""
+    A journal's writer sends what waits as one batch, every event through
+    ``extend`` (a lone one as a batch of one), except to a subclass that
+    overrides ``append`` and not ``extend`` (a transport, failures for a
+    test): that one is sent every event alone, through its ``append``.
+    ``batches = False`` also sends every event alone."""
 
     #: None: this is a store, not the process of a writer (``Follower.resume``).
     writer = None
@@ -507,7 +523,7 @@ class MemoryStore:
         self._logs: Dict[str, List[Dict[str, Any]]] = {}
         self._writers: Dict[str, int] = {}
         self._lock = threading.Lock()
-        _memory_stores.add(self)
+        _register_memory_store(self)
 
     # ----- the rules
 
@@ -734,7 +750,8 @@ class JournalWriter:
     exception (it may have been kept): it is sent again, up to ``1 +
     retries`` times in a row with a growing pause, then the writer tries
     again when the next event comes. A store that takes batches
-    (``takes_batches``) is sent what waits as one batch. ``barrier()`` waits (at most the journal's
+    (``takes_batches``) is sent what waits as one batch, every event
+    through ``extend``. ``barrier()`` waits (at most the journal's
     ``timeout``) until every event given so far has had its turn and says
     ``"confirmed"``, ``"refused"`` or ``"unanswered"``.
 
@@ -897,7 +914,7 @@ class JournalWriter:
                     time.sleep(pause)
                     pause = min(pause * 2, 2.0)
                 try:
-                    if len(group) == 1:
+                    if not batches:
                         got = self.store.append(copy.deepcopy(group[0]))
                     else:
                         got = self.store.extend(copy.deepcopy(group))
@@ -1107,8 +1124,10 @@ def _after_fork() -> None:
     _feeds_lock = threading.Lock()
     _feeds.clear()
     _writers.clear()
-    for store in list(_memory_stores):     # a lock a parent's thread held stays held in the child
-        store._lock = threading.Lock()
+    for ref in list(_memory_stores.values()):   # a lock a parent's thread held stays held in the child
+        store = ref()
+        if store is not None:
+            store._lock = threading.Lock()
 
 
 if hasattr(os, "register_at_fork"):

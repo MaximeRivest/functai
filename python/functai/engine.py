@@ -356,9 +356,16 @@ def config_of(settings: Dict[str, Any], overrides: Optional[Dict[str, Any]] = No
 def tool_spec(fn: Callable) -> Tool:
     """A Python function as a tool: its name, its docstring, and a JSON Schema of
     its parameters (lowered like a signature's inputs); a parameter without a
-    default is required."""
+    default is required. A function that holds its inputs' shapes as data (an
+    AI function loaded from a manifest: ``_tool_parameters``) gives them
+    itself, as its interface states them: they are what the original's
+    annotations lower to, which the Python types written for its signature
+    are not."""
     if isinstance(fn, Tool):
         return fn
+    own = getattr(fn, "_tool_parameters", None)
+    if callable(own):
+        return Tool(fn.__name__, inspect.cleandoc(fn.__doc__ or ""), own())
     try:
         hints = __import__("typing").get_type_hints(fn)
     except Exception:
@@ -395,7 +402,11 @@ def run_tool(tools: Dict[str, Callable], call: ToolCall, *, errors: str) -> str:
         if errors == "raise":
             raise
         return f"error: {type(exc).__name__}: {exc}"
-    return out if isinstance(out, str) else json.dumps(out, default=str, ensure_ascii=False)
+    if isinstance(out, str):
+        return out
+    from .interface import json_form
+    ok, data = json_form(out)          # a record as its JSON (a pydantic model, a dataclass), not its str()
+    return json.dumps(data if ok else out, default=str, ensure_ascii=False)
 
 
 # ------------------------------------------------------------------ the call

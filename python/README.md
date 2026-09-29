@@ -94,9 +94,9 @@ A store answers each append `"kept"` or `"duplicate"`, or raises
 `functai.EventRefused`; any other answer is a refusal, and any other
 exception means no answer came (the event is sent again, with a growing
 pause). A barrier waits at most the journal's `timeout`; a store should
-time out its own I/O too. A store with `extend(events)` is sent what
-waits as one batch; a subclass that overrides only `append` is sent
-every event through its `append`. At exit, FunctAI waits at most two
+time out its own I/O too. A store with `extend(events)` is sent every
+event through it, what waits as one batch; a subclass that overrides
+only `append` is sent every event through its `append`. At exit, FunctAI waits at most two
 seconds for observers and journals to catch up. In a process forked
 inside a call, calls start a tree of their own.
 

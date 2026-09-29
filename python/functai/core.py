@@ -379,12 +379,23 @@ def _turn_print(turn: Any) -> Optional[str]:
 
 
 def _frozen(turn: Any) -> Any:
-    """A copy of a turn that later edits of the original cannot reach (the
-    turn itself when it cannot be copied)."""
+    """A copy of a turn that later edits of the original cannot reach: a deep
+    copy, or, when a value in it cannot be copied (a host object holding a
+    lock), the turn rebuilt from its JSON form, the values a request shows of
+    it. A turn with neither cannot be fixed as the call's context: TypeError
+    (the call's record and events are then not written, never written with a
+    context the call was not shown)."""
     try:
         return copy.deepcopy(turn)
-    except Exception:  # noqa: BLE001 — a value that cannot be copied is shown as it is
-        return turn
+    except Exception:  # noqa: BLE001 — a value that cannot be copied: its JSON form is
+        pass
+    try:
+        if isinstance(turn, lmcc.Turn):
+            return lmcc.Turn.from_dict(json.loads(calllog.canonical(turn.to_dict())))
+        return json.loads(calllog.canonical(turn))
+    except Exception:  # noqa: BLE001 — no JSON form either
+        raise TypeError("a turn in history can be neither copied nor written as JSON, so what a call is "
+                        "shown of it cannot be fixed") from None
 
 
 class FunctAIFunc(Generic[P, R]):
@@ -728,12 +739,18 @@ class FunctAIFunc(Generic[P, R]):
             plan = self._plan_for(spec, s)[0]
         except Exception:  # noqa: BLE001 — no model to plan for: the call fails there, and says why
             plan = None
-        ids = []
+        ids, frozen = [], []
         for turn in history:
+            # what the call is shown: a copy taken now, whatever changes meanwhile; the copy, not the live
+            # turn, is compared with what the call that made it recorded (an edit between the two is not lent
+            # that call's id)
+            copied = _frozen(turn)
             owner = made.get(id(turn))
-            same = owner is not None and owner[0] is turn and owner[2] is not None and _turn_print(turn) == owner[2]
+            same = owner is not None and owner[0] is turn and owner[2] is not None \
+                and _turn_print(copied) == owner[2]
             ids.append(owner[1] if same else "")
-        history = [_frozen(t) for t in history]         # what the call is shown: this, whatever changes meanwhile
+            frozen.append(copied)
+        history = frozen
         entries, shown = _shown_as(plan, spec, history, ids)
         return entries, {"plan": getattr(plan, "fingerprint", None), "turns": history, "ids": ids,
                          "entries": entries, "shown": shown}

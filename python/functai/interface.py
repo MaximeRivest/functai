@@ -26,6 +26,7 @@ from __future__ import annotations
 import copy
 import dataclasses
 import inspect
+import itertools
 import math
 import re
 import typing
@@ -695,7 +696,9 @@ def python_signature(interface: Mapping[str, Any]) -> Tuple[inspect.Signature, b
     can: the inputs from the first one out of Python's order on are
     keyword-only (a call may still give them by position, in the
     interface's order), and names Python reserves (``class``) are given
-    through ``**`` (``fn(**{"class": ...})``)."""
+    through ``**`` (``fn(**{"class": ...})``), named ``inputs`` or, when an
+    input has that name, the first of ``inputs_1``, ``inputs_2``, ... none has
+    (only a name for display: the interface binds the call)."""
     import keyword
     params: List[inspect.Parameter] = []
     reserved: List[str] = []
@@ -716,7 +719,9 @@ def python_signature(interface: Mapping[str, Any]) -> Tuple[inspect.Signature, b
         params.append(inspect.Parameter(name, kind, default=default,
                                         annotation=python_type(shape)))
     if reserved:
-        rest = next(n for n in ("inputs", "fields", "values", "named") if n not in names)
+        taken = set(names)
+        rest = next(n for n in itertools.chain(["inputs"], (f"inputs_{i}" for i in itertools.count(1)))
+                    if n not in taken)
         params.append(inspect.Parameter(rest, inspect.Parameter.VAR_KEYWORD))
     outputs = interface.get("outputs") or []
     answer = python_type(outputs[-1].get("shape") or {}) if outputs else Any

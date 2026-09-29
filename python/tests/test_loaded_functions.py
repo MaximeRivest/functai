@@ -275,6 +275,119 @@ def test_an_interface_as_a_python_signature(interface, text, exact):
     assert str(signature).replace("typing.", "") == text and is_exact is exact
 
 
+# inputs with every name the ``**`` of a Python signature has had; two are renamed, as another language
+# could name them, to names Python reserves (``class``, ``for``)
+EVERY_NAME = '''
+from functai import ai
+
+
+@ai
+def reply(message: str, tone: str, inputs: str, fields: str, values: str, named: str, inputs_1: str) -> str:
+    """Answer the customer."""
+    ...
+'''
+
+
+def test_a_loaded_function_takes_any_names_its_interface_gives(tmp_path, monkeypatch):
+    three = Three(EVERY_NAME, tmp_path, monkeypatch)
+    manifest = json.loads((tmp_path / "saved" / "functai.json").read_text())
+    for old, new in (("message", "class"), ("tone", "for")):
+        manifest = _renamed(manifest, old, new, manifest["entry"])
+    data = saved.from_manifest(manifest)
+    assert [f["name"] for f in data.interface["inputs"]] == \
+        ["class", "for", "inputs", "fields", "values", "named", "inputs_1"]
+    assert str(inspect.signature(data)) == \
+        "(*, inputs: str, fields: str, values: str, named: str, inputs_1: str, **inputs_2) -> str"
+    given = {"message": "HELLO", "tone": "warm", "inputs": "i", "fields": "f", "values": "v", "named": "n",
+             "inputs_1": "i1"}
+    renamed = {{"message": "class", "tone": "for"}.get(k, k): v for k, v in given.items()}
+
+    def expected(requests):
+        text = json.dumps(requests)
+        for old, new in (("message", "class"), ("tone", "for")):
+            text = text.replace(f"<{old}>", f"<{new}>").replace(f"</{old}>", f"</{new}>")
+        return json.loads(text)
+
+    for what, operation in {"a call": lambda fn, v: fn(**v),
+                            "using()": lambda fn, v: fn.using()(**v),
+                            "using(the same model)": lambda fn, v: fn.using(lm="gpt-4.1-mini")(**v)}.items():
+        original = sends(three.original, lambda fn: operation(fn, given))
+        assert original, what
+        assert sends(data, lambda fn: operation(fn, renamed)) == expected(original), what
+    # the interface binds a call: the name its ``**`` has for Python is no input
+    with pytest.raises(TypeError, match="inputs_2"):
+        data(**{**renamed, "inputs_2": "x"})
+
+
+RECORDS = '''
+from typing import Literal, Optional
+
+from pydantic import BaseModel
+
+from functai import ai
+
+
+class Item(BaseModel):
+    name: str
+    qty: int
+
+
+class Box(BaseModel):
+    label: str
+    item: Item
+
+
+@ai
+def reply(items: list[Item], box: Box, mood: Literal["a", "b"] = "a", note: Optional[str] = None,
+          one: Optional[Item] = None) -> Item:
+    """Pick one."""
+    ...
+'''
+
+
+def test_a_loaded_function_used_as_a_tool_is_the_original_s_tool(tmp_path, monkeypatch):
+    """Its tool's JSON Schema is its interface's shapes, records whole, as the
+    original's annotations give them; a model's call of it, and what it
+    answers, are sent as the original's are."""
+    from functai import engine
+    three = Three(RECORDS, tmp_path, monkeypatch)
+    original = engine.tool_spec(three.original)
+    assert original.parameters["properties"]["items"]["items"]["required"] == ["name", "qty"]
+    assert "$defs" in original.parameters["properties"]["box"]           # a record in a record
+    assert engine.tool_spec(three.native) == original
+    assert engine.tool_spec(three.data) == original
+
+    def reply(request):
+        if not request.tools:                                      # the tool: the function itself
+            return XML.format(json.dumps({"name": "a", "qty": 1}))
+        if request.messages[-1].role == "tool":
+            return XML.format("Done")
+        return [lm15.ToolCallPart(id="c1", name="reply", input={
+            "items": [{"name": "a", "qty": 1}], "mood": "b",
+            "box": {"label": "L", "item": {"name": "b", "qty": 2}}})]
+
+    def agent_of(fn):
+        @functai.ai(tools=[fn])
+        def agent(question: str) -> str:
+            """Use the tool."""
+            ...
+        return agent
+
+    requests = {}
+    for which in ("original", "native", "data"):
+        agent = agent_of(getattr(three, which))
+        router = FakeRouter(responder=reply)
+        with functai.configure(client=router, lm="gpt-4.1-mini"):
+            assert agent("x") == "Done"
+        requests[which] = [lm15.serde.request_to_dict(r) for r in router.requests]
+    assert len(requests["original"]) == 3                          # the agent, the tool, the agent again
+    assert requests["original"][0]["tools"][0]["parameters"] == original.parameters
+    [answered] = requests["original"][2]["messages"][-1]["parts"]
+    assert answered["content"] == [{"type": "text", "text": '{"name": "a", "qty": 1}'}]      # its answer, as JSON
+    assert requests["native"] == requests["original"]
+    assert requests["data"] == requests["original"]
+
+
 COT = '''
 from functai import ai
 

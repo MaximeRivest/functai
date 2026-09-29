@@ -1021,6 +1021,143 @@ def test_what_a_call_is_shown_is_copied_when_it_is_prepared(tmp_path):
     assert last["saw"] == [{"call": first.call_id, "steps": True}]
 
 
+class _Text(str):
+    """Text as JSON, holding a host value that cannot be copied."""
+
+    def __new__(cls, value):
+        text = super().__new__(cls, value)
+        text.lock = threading.Lock()
+        return text
+
+
+def test_a_turn_that_cannot_be_copied_is_shown_as_its_json_form(tmp_path):
+    router, chat, first = _chat_with_a_turn(tmp_path)
+    chat.history[0].inputs["message"] = _Text("ORIGINAL")        # the same JSON as the first call recorded
+    with pytest.raises(TypeError):
+        copy.deepcopy(chat.history[0])
+
+    class Gate(functai.MemoryStore):
+        def __init__(self):
+            super().__init__()
+            self.arrived, self.allow = threading.Event(), threading.Event()
+
+        def append(self, e):
+            if e["kind"] == "started":
+                self.arrived.set()
+                assert self.allow.wait(5)
+            return super().append(e)
+
+    gate = Gate()
+    with functai.configure(journal=functai.Journal(gate, required=True)):
+        s = chat.stream("SECOND")
+        assert gate.arrived.wait(5)
+        chat.history[0].inputs["message"] = "ALTERED-AFTER-START"      # after the call was prepared
+        gate.allow.set()
+        assert s.result == "ok"
+    sent = str(router.requests[-1])
+    assert "ORIGINAL" in sent and "ALTERED-AFTER-START" not in sent
+    assert gate.read(gate.trees()[0])[0]["saw"] == [{"call": first.call_id, "steps": True}]
+
+
+def test_a_turn_edited_while_it_is_copied_is_not_its_call_s(tmp_path, monkeypatch):
+    """What is compared with the recorded turn is the copy the call is shown,
+    not the live turn read a moment before or after."""
+    from functai import core
+    router, chat, first = _chat_with_a_turn(tmp_path)
+    frozen = core._frozen
+
+    def edited_meanwhile(turn):
+        turn.inputs["message"] = "ALTERED"                           # another thread, just before the copy
+        return frozen(turn)
+
+    monkeypatch.setattr(core, "_frozen", edited_meanwhile)
+    chat("second")
+    last = max(records(tmp_path), key=lambda r: r["id"])
+    assert last["saw"] == [{"unrecorded": True}]
+    assert "ALTERED" in str(router.requests[-1])
+
+
+def test_memory_stores_are_known_by_identity(fake, tmp_path):
+    """A subclass need not be hashable; two equal stores are two stores, each
+    given fresh locks in a forked child; a store let go leaves nothing behind."""
+    fake(responder=lambda request: XML.format("ok"))
+
+    @dataclasses.dataclass
+    class Transport(functai.MemoryStore):                # unhashable: a mutable dataclass
+        label: str = "test"
+
+        def __post_init__(self):
+            super().__init__()
+
+    @module
+    def echo(x: str) -> str:
+        return x
+
+    store = Transport()
+    with functai.configure(journal=functai.Journal(store, required=True)):
+        assert echo("ok") == "ok"
+    [tree] = store.trees()
+    assert [e["kind"] for e in store.read(tree)] == ["started", "done"]
+    ref = weakref.ref(store)
+    del store
+    assert functai.flush(5)
+    deadline = time.monotonic() + 5                    # its writer's thread lets go as it ends
+    while ref() is not None and time.monotonic() < deadline:
+        time.sleep(0.02)
+        gc.collect()
+    assert ref() is None and all(r() is not None for r in eventlog._memory_stores.values())
+
+    if not hasattr(__import__("os"), "fork"):
+        return
+    script = tmp_path / "fork_stores.py"
+    script.write_text(textwrap.dedent(f'''
+        import os, sys
+        sys.path.insert(0, {str(HERE)!r})
+        import functai
+
+        class Same(functai.MemoryStore):                 # every one equal to every other, one hash
+            def __eq__(self, other):
+                return isinstance(other, Same)
+
+            def __hash__(self):
+                return 1
+
+        a, b = Same(), Same()
+        a._lock.acquire(); b._lock.acquire()             # held by the parent when it forks
+        pid = os.fork()
+        if pid == 0:
+            os._exit(0 if not a._lock.locked() and not b._lock.locked() else 1)
+        _, status = os.waitpid(pid, 0)
+        print("CHILD", os.waitstatus_to_exitcode(status))
+        '''))
+    out = subprocess.run([sys.executable, "-W", "ignore", str(script)], capture_output=True, text=True, timeout=60)
+    assert "CHILD 0" in out.stdout, out.stdout + out.stderr
+
+
+def test_a_store_that_overrides_only_extend_is_sent_every_event_through_it(fake):
+    fake(responder=lambda request: XML.format("word " * 40))
+
+    class Durable(functai.MemoryStore):
+        def __init__(self):
+            super().__init__()
+            self.durable = []
+
+        def extend(self, events):
+            time.sleep(0.005)
+            self.durable.extend(e["seq"] for e in events)
+            return super().extend(events)
+
+    @ai
+    def say(x: str) -> str:
+        """Say something long."""
+
+    store = Durable()
+    with functai.configure(journal=functai.Journal(store, required=True)):
+        say.stream("hi").result
+    [tree] = store.trees()
+    assert [e["seq"] for e in store.read(tree)] == store.durable
+
+
 def test_a_call_made_in_a_process_forked_inside_a_call_starts_its_own_tree(tmp_path):
     """Forked while an outer call runs (its observer busy on a thread), the
     child's calls start a tree of their own there, seen by the outer call's
