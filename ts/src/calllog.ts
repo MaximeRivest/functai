@@ -14,7 +14,7 @@ import { writtenRecord, type CallFields } from "./content.ts";
 import type { Node } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
-import { setOwn, toJson } from "./values.ts";
+import { getOwn, setOwn, toJson } from "./values.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -238,7 +238,7 @@ export function errorJson(err: unknown, content = true): Rec {
 function usageOf(response: Response): Record<string, number> {
   const u = (Response.toJSON(response)["usage"] ?? {}) as Rec;
   const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(u)) if (typeof v === "number" && Number.isInteger(v)) out[k] = v;
+  for (const [k, v] of Object.entries(u)) if (typeof v === "number" && Number.isInteger(v)) setOwn(out, k, v);
   return out;
 }
 
@@ -282,7 +282,10 @@ function processJson(): Rec {
  * The call's record (contract/calls.md, "A call record"), format 2: the
  * whole record, then what `logContent` lets it keep.
  */
-export function record(call: Call, opts: { returned?: unknown; error?: unknown; hasReturned?: boolean } = {}): Rec {
+/** How a call ended, for its record: what it returned, or what it threw (anything, `undefined` included). */
+export type Ending = { readonly failed: false; readonly returned: unknown } | { readonly failed: true; readonly error: unknown };
+
+export function record(call: Call, ending: Ending): Rec {
   const program = call.program();
   const described: { inputs: string[]; outputs: string[] } = { inputs: [], outputs: [] };
   const written = (from: Record<string, readonly [unknown, number, boolean]>, which: "inputs" | "outputs"): [Rec, Record<string, number>] => {
@@ -298,23 +301,23 @@ export function record(call: Call, opts: { returned?: unknown; error?: unknown; 
   const values = (from: Rec, which: "inputs" | "outputs") =>
     written(Object.fromEntries(Object.entries(from).map(([k, v]) => [k, toJson(v)])), which);
   const [inputs, inSizes] = written(call.inputsJson, "inputs");
-  const failed = opts.error !== undefined;
+  const failed = ending.failed;
   const [outputs, outSizes] = call.outputs && !failed ? values(call.outputs, "outputs") : [null, {}];
   const answered = call.exchanges.filter((e) => e.response !== null);
   const usage: Record<string, number> = {};
-  for (const e of answered) for (const [k, v] of Object.entries(usageOf(e.response!))) usage[k] = (usage[k] ?? 0) + v;
+  for (const e of answered) for (const [k, v] of Object.entries(usageOf(e.response!))) setOwn(usage, k, (getOwn(usage, k) ?? 0) + v);
   const rec: Rec = {
     functai_call: FORMAT, id: call.id, parent: call.parent, root: call.root, program,
     started: iso(call.started), seconds: round6((now() - call.started) / 1000), content: true,
     inputs, outputs,
   };
-  if (program.kind === "ai" && opts.hasReturned && !failed) {
-    const [shown] = toJson(opts.returned);
-    if (outputs === null || !lmcc.jsonEqual((outputs as Rec)[program.answer] as lmcc.Json, shown)) rec["returned"] = shown;
+  if (program.kind === "ai" && !ending.failed) {
+    const [shown] = toJson(ending.returned);
+    if (outputs === null || !Object.hasOwn(outputs, program.answer) || !lmcc.jsonEqual(getOwn(outputs as Rec, program.answer) as lmcc.Json, shown)) rec["returned"] = shown;
   }
   rec["sizes"] = { inputs: inSizes, outputs: outSizes };
   if (described.inputs.length || described.outputs.length) rec["described"] = described;
-  rec["error"] = failed ? errorJson(opts.error, true) : null;
+  rec["error"] = ending.failed ? errorJson(ending.error, true) : null;
   rec["model"] = answered.length ? answered[answered.length - 1]!.model : null;
   rec["usage"] = usage;
   rec["confidence"] = call.confidence;
@@ -364,10 +367,10 @@ export function append(folder: string, rec: Rec): void {
 }
 
 /** End a call: write its line when logging is on. Never throws into the call. */
-export function write(call: Call, opts: { returned?: unknown; error?: unknown; hasReturned?: boolean }): void {
+export function write(call: Call, ending: Ending): void {
   if (!call.folder) return;
   try {
-    append(call.folder, record(call, opts));
+    append(call.folder, record(call, ending));
   } catch (err) {
     warnOnce(`${call.folder}:${(err as Error).name}`,
       `could not log a call of ${call.program().name} to ${call.folder} (${(err as Error).message}); calls go on, unlogged`);
@@ -458,18 +461,18 @@ function says(rating: Rec, call: Rec): Rec | null {
   if (rating["verdict"] === "right") {
     const outputs = (call["outputs"] ?? null) as Rec | null;
     const described = (((call["described"] ?? {}) as Rec)["outputs"] ?? []) as string[];
-    return outputs && answer in outputs && !described.includes(answer) ? { [answer]: outputs[answer] } : null;
+    return outputs && Object.hasOwn(outputs, answer) && !described.includes(answer) ? { [answer]: outputs[answer] } : null;
   }
   const values: Rec = {};
-  if ("answer" in rating) values[answer] = rating["answer"];
-  for (const [k, v] of Object.entries((rating["outputs"] ?? {}) as Rec)) if (!(k in values)) values[k] = v;
+  if (Object.hasOwn(rating, "answer")) setOwn(values, answer, rating["answer"]);
+  for (const [k, v] of Object.entries((rating["outputs"] ?? {}) as Rec)) if (!Object.hasOwn(values, k)) setOwn(values, k, v);
   return Object.keys(values).length ? values : null;
 }
 
 function addMeta(row: Rec, meta: Rec): void {
   for (let [key, value] of Object.entries(meta)) {
-    while (key in row) key = "_" + key;
-    row[key] = value;
+    while (Object.hasOwn(row, key)) key = "_" + key;
+    setOwn(row, key, value);
   }
 }
 
@@ -515,8 +518,8 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
     const disputed = verdicts.size > 1 || spelled.size > 1;
     const answer = (program["answer"] as string) || "result";
     const row: Rec = { ...((call["inputs"] ?? {}) as Rec) };
-    if (answer in values) row[answer] = values[answer];
-    for (const [k, v] of Object.entries(values)) if (k !== answer) row[k] = v;
+    if (Object.hasOwn(values, answer)) setOwn(row, answer, values[answer]);
+    for (const [k, v] of Object.entries(values)) if (k !== answer) setOwn(row, k, v);
     addMeta(row, {
       call: call["id"], version: program["version"], rating: rating["verdict"], rated_by: rating["by"],
       origin: rating["origin"] ?? "review", sample: rating["sample"] ?? null, disputed,

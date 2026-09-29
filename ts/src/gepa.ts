@@ -12,6 +12,7 @@ import { newId } from "./calllog.ts";
 import { withSettings, type Settings } from "./settings.ts";
 import { t } from "./shapes.ts";
 import { normalize, trimWhite } from "./text.ts";
+import { getOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -357,9 +358,9 @@ function casesText(rows: readonly Rec[], batch: readonly number[], results: read
     const row = rows[i]!;
     const r = results[n]!;
     lines.push(`Case ${n + 1}`);
-    for (const k of inputs) if (k in row) lines.push(`  ${k}: ${answerText(row[k])}`);
+    for (const k of inputs) if (Object.hasOwn(row, k)) lines.push(`  ${k}: ${answerText(row[k])}`);
     if (r.pred === null) lines.push("  answer given: (none)");
-    else for (const k of outputs) lines.push(`  answer given${k === "result" ? "" : ` ${k}`}: ${answerText(r.pred[k])}`);
+    else for (const k of outputs) lines.push(`  answer given${k === "result" ? "" : ` ${k}`}: ${answerText(getOwn(r.pred, k))}`);
     lines.push(`  score: ${r.score}`, `  feedback: ${feedback(row, r.pred, r.error)}`);
   });
   return lines.join("\n");

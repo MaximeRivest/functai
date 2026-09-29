@@ -14,6 +14,7 @@ import type { AnyModule } from "./module.ts";
 import type { Prediction, Tool } from "./engine.ts";
 import { effective, type Settings } from "./settings.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
+import { setOwn } from "./values.ts";
 
 export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column, type Definition, type Demo, type Expected, type Input,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
@@ -60,7 +61,7 @@ export function tool<I extends Record<string, FieldSpec>>(
   const properties: Rec = {};
   for (const [field, f] of Object.entries(spec.input)) {
     const { shape, desc } = readField(f, `${name}.${field}`);
-    properties[field] = desc ? { ...shape, description: desc } : shape;
+    setOwn(properties, field, desc ? { ...shape, description: desc } : shape);
   }
   // no additionalProperties: Gemini refuses the keyword in function declarations
   return { name, description: spec.description ?? "", parameters: { type: "object", properties, required: Object.keys(spec.input) }, run: run as Tool["run"] };

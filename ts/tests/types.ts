@@ -138,6 +138,15 @@ export async function modules() {
   // @ts-expect-error: tone is text
   await polite({ message: "x", tone: 3 });
   t.json({ description: "each input by name" });                    // words about any JSON
+  // @ts-expect-error: a default is a value of the builder's type
+  t.string({ default: 5 });
+  // @ts-expect-error: a default is a value of the builder's type
+  t.integer({ default: "3" });
+
+  // outputs built at run time may be several: a record of each by name, not one value
+  const built: Record<string, ReturnType<typeof t.string>> = { a: t.string(), b: t.string() };
+  const many = module("many", { input: {}, outputs: built }, () => ({ a: "x", b: "y" }));
+  is<Equal<Awaited<ReturnType<typeof many>>, { [k: string]: string }>>(true);
 }
 
 export async function journalErrors() {

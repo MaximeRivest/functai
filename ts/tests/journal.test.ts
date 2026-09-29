@@ -16,7 +16,7 @@ import {
   type ReadAnswer, type Settings, type StreamEvent,
 } from "../src/index.ts";
 import { errorJson } from "../src/calllog.ts";
-import { runCall } from "../src/program.ts";
+import { recordInputs, runCall } from "../src/program.ts";
 import { effective } from "../src/settings.ts";
 import type { Node, TreeLog } from "../src/log.ts";
 import { cases, pos, type Rec } from "./cases.ts";
@@ -113,7 +113,7 @@ for (const [name, c] of cases("events", "journal-")) for (const batch of [1, und
     try {
       const value = await runCall({
         program: () => started["program"], fields: { inputs: Object.keys(started["inputs"]), outputs: ["result"], added: [] },
-        own, options: {}, settings: effective(own), stream: watcher, inputs: started["inputs"],
+        own, options: {}, settings: effective(own), stream: watcher, inputs: recordInputs(Object.keys(started["inputs"]), started["inputs"]),
         body: async (call) => {
           const log = call.node.log;
           for (const e of rest) {

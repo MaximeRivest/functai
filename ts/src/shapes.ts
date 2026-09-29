@@ -7,6 +7,7 @@
 
 import * as lmcc from "lmcc";
 import { InterfaceError } from "./interface.ts";
+import { setOwn } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -91,24 +92,47 @@ type Extra = Record<string, unknown>;
 /** A shape of values `T`; with a `default`, one a caller may leave out (its type says so). */
 type Built<E, T> = E extends { readonly default: unknown } ? Shape<T> & { readonly default: T } : Shape<T>;
 
-/** Builders for shapes (lmcc's, plus a map, `optional`, `json` and `opaque`). Each takes extra JSON Schema keys. */
+/**
+ * A builder's extra keys, checked: they add to the shape (words, bounds, a
+ * default) and never replace what the builder makes (`type`, `items`,
+ * `properties`, …), which its value type describes.
+ */
+function extraOf<E>(extra: E | undefined, builder: string, structural: readonly string[]): E {
+  const got = (extra ?? {}) as E & object;
+  if (typeof got !== "object" || got === null || Array.isArray(got)) throw new TypeError(`t.${builder}(…, extra): extra is an object of JSON Schema keys`);
+  const bad = structural.filter((k) => Object.hasOwn(got, k));
+  if (bad.length) throw new TypeError(`t.${builder}: ${bad.join(", ")} is what t.${builder} makes; extra keys add to it (description, bounds, default), never replace it`);
+  return got;
+}
+
+const SCALAR = ["type"];
+const LIST = ["type", "items"];
+const OBJECT = ["type", "properties", "required", "additionalProperties"];
+const RECORD = ["type", "properties", "additionalProperties"];
+
+/** Builders for shapes (lmcc's, plus a map, `optional`, `json` and `opaque`). Each takes extra JSON Schema keys, which add to the shape it makes. */
 export const t = {
   ...lmcc.t,
   /** Text: `t.string()`; `t.string({ default: "kind" })` may be left out (and is typed so). */
-  string: <const E extends Extra = {}>(extra?: E): Built<E, string> => lmcc.t.string((extra ?? {}) as never) as never,
+  string: <const E extends Extra & { readonly default?: string } = {}>(extra?: E): Built<E, string> =>
+    lmcc.t.string(extraOf(extra, "string", SCALAR) as never) as never,
   /** An integer; `t.integer({ default: 3 })` may be left out. */
-  integer: <const E extends Extra = {}>(extra?: E): Built<E, number> => lmcc.t.integer((extra ?? {}) as never) as never,
+  integer: <const E extends Extra & { readonly default?: number } = {}>(extra?: E): Built<E, number> =>
+    lmcc.t.integer(extraOf(extra, "integer", SCALAR) as never) as never,
   /** A number; `t.number({ default: 0.5 })` may be left out. */
-  number: <const E extends Extra = {}>(extra?: E): Built<E, number> => lmcc.t.number((extra ?? {}) as never) as never,
+  number: <const E extends Extra & { readonly default?: number } = {}>(extra?: E): Built<E, number> =>
+    lmcc.t.number(extraOf(extra, "number", SCALAR) as never) as never,
   /** Yes or no; `t.boolean({ default: false })` may be left out. */
-  boolean: <const E extends Extra = {}>(extra?: E): Built<E, boolean> => lmcc.t.boolean((extra ?? {}) as never) as never,
+  boolean: <const E extends Extra & { readonly default?: boolean } = {}>(extra?: E): Built<E, boolean> =>
+    lmcc.t.boolean(extraOf(extra, "boolean", SCALAR) as never) as never,
   /** A list: `t.list(t.string(), { description: "one per line" })`. */
-  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => ({ ...lmcc.t.list(items), ...extra }) as Shape<T[]>,
+  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => ({ ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
   /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
   object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
-    ({ ...lmcc.t.object(properties), ...extra }) as ReturnType<typeof lmcc.t.object<P>>,
+    ({ ...lmcc.t.object(properties), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
   /** A map from text keys to values: `t.record(t.integer())`. */
-  record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values, ...extra }) as Shape<Record<string, V>>,
+  record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> =>
+    ({ type: "object", additionalProperties: values, ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
@@ -178,17 +202,17 @@ function fromZod(schema: JsonObject): JsonObject {
     const o: JsonObject = {};
     for (const [k, v] of Object.entries(s)) {
       if (k === "$schema") continue;
-      o[k] = walk(v);
+      setOwn(o, k, walk(v));                          // a property may be named __proto__: data, not the prototype
     }
     if (o["type"] === "integer" && o["minimum"] === -SAFE && o["maximum"] === SAFE) {
       delete o["minimum"];
       delete o["maximum"];
     }
-    if (o["type"] === "object" && "additionalProperties" in o && typeof o["additionalProperties"] === "object"
+    if (o["type"] === "object" && Object.hasOwn(o, "additionalProperties") && typeof o["additionalProperties"] === "object"
       && JSON.stringify(o["propertyNames"]) === '{"type":"string"}') {
       delete o["propertyNames"];
     }
-    if ("const" in o && !("enum" in o)) {
+    if (Object.hasOwn(o, "const") && !Object.hasOwn(o, "enum")) {
       o["enum"] = [o["const"]];
       delete o["const"];
     }
@@ -278,10 +302,10 @@ export function misfit(shape: JsonObject, value: unknown, where: string): string
     const obj = value as JsonObject;
     const props = (shape["properties"] ?? {}) as Record<string, JsonObject>;
     for (const name of (shape["required"] ?? []) as string[]) {
-      if (!(name in obj)) return `${where}: missing ${name}`;
+      if (!Object.hasOwn(obj, name)) return `${where}: missing ${name}`;
     }
     for (const [k, v] of Object.entries(obj)) {
-      if (k in props) {
+      if (Object.hasOwn(props, k)) {
         const p = misfit(props[k]!, v, `${where}.${k}`);
         if (p) return p;
       } else if (shape["additionalProperties"] === false) {

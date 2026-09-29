@@ -14,12 +14,13 @@ import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { MessageChannel } from "node:worker_threads";
 import { test } from "node:test";
 import { RateLimitError, responseToEvents, streamDelta, type Request, type StreamEvent as LmEvent } from "@lm15/lm15";
 import * as z from "zod";
 import {
-  ai, Cancelled, checkInterface, configure, flush, Follower, fromManifest, InterfaceError, JournalError, MemoryStore, module, Prediction, replay,
+  ai, Cancelled, checkInterface, configure, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, LoadRefused, MemoryStore, module, Prediction, replay,
   SettingError, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
 } from "../src/index.ts";
 import { passes } from "../src/schema.ts";
@@ -99,7 +100,10 @@ class Scripted implements EventStore {
   constructor(answer: (n: number, events: readonly Rec[], inner: MemoryStore) => unknown) {
     this.answer = answer;
   }
+  /** Set: the store is well again, and keeps what it is sent. */
+  healed = false;
   append(events: readonly Rec[], opts?: { signal?: AbortSignal }): Promise<AppendAnswer> {
+    if (this.healed) return Promise.resolve(this.inner.appendNow(events));
     this.sends++;
     this.at.push(performance.now());
     this.sizes.push(events.length);
@@ -111,6 +115,16 @@ class Scripted implements EventStore {
   }
 }
 const never = () => new Promise<never>(() => undefined);
+/**
+ * Stores that were down are well again: `flush()` sends each writer's
+ * events that were not confirmed (the tree's end among them), and says it
+ * is all kept. It also leaves no writer holding events for the tests after.
+ */
+async function heal(...stores: Scripted[]): Promise<void> {
+  for (const s of stores) s.healed = true;
+  assert.ok(await flush(), "flush sends again what was not confirmed");
+  for (const s of stores) for (const tree of s.inner.trees()) assert.ok(s.inner.finished(tree), "the tree's end is kept after all");
+}
 
 // ------------------------------------------------------------------ journals: liveness
 
@@ -142,6 +156,7 @@ test("a required journal that never answers: the start barrier gives up at its t
     assert.equal(ran, false);
     assert.ok(ms < 1000, `${ms} ms`);                                    // start: 100 ms, end: 100 ms
     assert.ok(store.signals[0]!.aborted, "the append that did not answer in time is told so");
+    await heal(store);
   });
 });
 
@@ -175,6 +190,7 @@ test("cancelling a call waiting at the start barrier stops the wait: Cancelled w
     assert.ok("failed" in err.outcome! && err.outcome.failed instanceof Cancelled);
     assert.ok(performance.now() - t0 < 1000);
     assert.equal(ran, false);
+    await heal(dead);
   });
 });
 
@@ -196,6 +212,7 @@ test("a required journal that stops answering before a tool: the tool never runs
     const closed = await s.result.then(() => null, (e: unknown) => e);
     assert.deepEqual(ran, []);
     assert.ok(closed instanceof JournalError && "failed" in closed.outcome! && closed.outcome.failed instanceof Cancelled, String(closed));
+    await heal(store, other);
   });
 });
 
@@ -208,6 +225,8 @@ test("a required journal that never answers the end: journal-end unknown within 
     assert.ok(err instanceof JournalError && err.code === "journal-end" && err.journal === "unknown");
     assert.deepEqual(err.outcome, { done: "happy" });
     assert.equal(await err.settle(), "not-kept");
+    await heal(store);
+    assert.equal(await err.settle(), "kept");                           // the writer went on sending the end after the call raised
   });
 });
 
@@ -242,6 +261,7 @@ test("resends back off: the second waits backoff, the third twice as long", asyn
     const [a, b, c] = store.at;
     assert.ok(b! - a! >= 38, `${b! - a!}`);
     assert.ok(c! - b! >= 78, `${c! - b!}`);
+    await heal(store);
   });
 });
 
@@ -617,6 +637,310 @@ test("names JavaScript treats specially are data: __proto__ in JSON, required to
   await assert.rejects(odd({ constructor: "c", __proto__x: "p" } as never), (e: unknown) => e instanceof InterfaceError);
 });
 
+// Object's own members are names like any other. Before, an AI function bound and prepared its inputs by prototype
+// lookups: a missing required toString or constructor was sent to the model as JavaScript function text.
+const MEMBERS = ["toString", "constructor", "hasOwnProperty", "valueOf", "isPrototypeOf", "propertyIsEnumerable", "toLocaleString", "__defineGetter__"];
+const sent = (r: unknown) => JSON.stringify(r);
+const ok = () => new FakeRouter([], () => "<result>\nok\n</result>");
+
+test("an AI function's input named like an Object member is sent as given, by name or alone, and render and a loaded copy send the same", async () => {
+  for (const name of MEMBERS) {
+    const router = ok();
+    const f = ai("odd", { input: { [name]: t.string() }, output: t.string(), router: router as never });
+    const given = { [name]: `VALUE-${name}` };
+    assert.equal(await f(given as never), "ok");
+    assert.equal(await f(`VALUE-${name}` as never), "ok");                  // its one input: the value alone
+    const [byName, alone] = router.requests;
+    assert.ok(sent(byName).includes(`<${name}>\\nVALUE-${name}\\n</${name}>`), sent(byName));
+    assert.deepEqual(alone, byName);
+    assert.deepEqual(f.render(given as never), byName);                     // what render shows is what is sent
+    const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: router as never });
+    assert.equal(loaded.version, f.version);
+    assert.equal(await loaded(given as never), "ok");
+    assert.deepEqual(router.requests[2], byName);                           // saved and loaded: the very request
+    assert.ok(!router.requests.some((r) => sent(r).includes("native code")));
+  }
+});
+
+test("an AI function's required input named like an Object member, left out, is refused before anything is sent: by a call, render, a stream and a loaded copy", async () => {
+  for (const name of MEMBERS) {
+    const router = ok();
+    const f = ai("odd", { input: { [name]: t.string() }, output: t.string(), router: router as never });
+    const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: router as never });
+    const refused = (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && e.field === name;
+    for (const g of [f, loaded]) {
+      await assert.rejects(g({} as never), refused, name);
+      await assert.rejects(g.predict({} as never), refused, name);
+      assert.throws(() => g.render({} as never), refused, name);
+      assert.throws(() => g.stream({} as never), refused, name);
+      await assert.rejects(g.map([{}] as never), refused, name);
+    }
+    assert.equal(router.requests.length, 0, `nothing is sent (${name})`);
+  }
+});
+
+test("an optional input named toString or constructor, left out, is sent with its default or null, never with an Object member", async () => {
+  const router = ok();
+  const f = ai("odd", { input: { q: t.string(), toString: t.string({ default: "kind" }), constructor: t.optional(t.string()) } as never, output: t.string(), router: router as never });
+  assert.deepEqual(f.interface.inputs.map((i) => [i.name, i.optional ?? false, i.shape["default"]]), [["q", false, undefined], ["toString", true, "kind"], ["constructor", true, null]]);
+  await f({ q: "x" } as never);
+  await f("x" as never);
+  const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: router as never });
+  await loaded({ q: "x" } as never);
+  const [a, b, c] = router.requests;
+  assert.ok(sent(a).includes("<toString>\\nkind\\n</toString>"), sent(a));
+  assert.ok(!sent(a).includes("native code") && !sent(a).includes("function Object"), sent(a));
+  assert.deepEqual(b, a);
+  assert.deepEqual(c, a);
+  assert.deepEqual(f.render({ q: "x" } as never), a);
+});
+
+test("worked examples and rows named like Object members: a demo's value is sent, and a row or demo without the column is never given Object's", async () => {
+  const router = ok();
+  const f = ai("odd", { input: { toString: t.string() }, output: t.string(), router: router as never, demos: [{ toString: "an example", result: "its answer" }] } as never);
+  await f("x" as never);
+  assert.ok(sent(router.requests[0]).includes("<toString>\\nan example\\n</toString>"), sent(router.requests[0]));
+  const ev = await evaluate(f, [{ result: "ok" }, { toString: "y", result: "ok" }] as never);
+  assert.match(ev.rows[0]!.error!, /InterfaceError: odd needs toString/);             // the row has no toString column
+  assert.equal(ev.rows[1]!.error, null);
+  const g = ai("odd", { input: { toString: t.string() }, output: t.string(), router: router as never, demos: [{ result: "only an answer" }] } as never);
+  // lmcc's TypeScript renderer reads a demo's missing input by prototype lookup; it refuses what it finds, and nothing is sent that way
+  await g("x" as never).catch(() => undefined);
+  assert.ok(!router.requests.some((r) => sent(r).includes("native code")));
+});
+
+test("an AI function cannot have a field named __proto__ here (lmcc's TypeScript renderer would drop or replace its value): refused at definition and on load; a module takes it", async () => {
+  for (const spec of [{ input: { ["__proto__"]: t.string() } }, { input: { q: t.string() }, outputs: { ["__proto__"]: t.string() } }]) {
+    assert.throws(() => ai("proto", { ...spec, router: ok() as never } as never), (e: unknown) => e instanceof TypeError && /__proto__.*lmcc/.test(e.message));
+  }
+  const manifest = JSON.parse(JSON.stringify(toManifest(ai("proto", { input: { zzq: t.string() }, output: t.string() }))).replaceAll('"zzq"', '"__proto__"'));
+  assert.throws(() => fromManifest(manifest), (e: unknown) => e instanceof LoadRefused && e.code === "saved-differs" && /__proto__/.test(e.message));
+  const m = module("proto", { input: { ["__proto__"]: t.string() } as never, output: t.string() }, (i: Rec) => `got ${i["__proto__"]}`);
+  assert.equal(await m(JSON.parse('{"__proto__":"it"}')), "got it");
+  assert.equal(await m("alone" as never), "got alone");
+});
+
+test("a Standard Schema's JSON Schema keeps a property named __proto__ (normalizing it set the prototype instead)", async () => {
+  const payload = z.object({ ["__proto__"]: z.string(), a: z.string() } as never);
+  const m = module("m", { input: { payload }, output: t.string() }, () => "ok");
+  const shape = m.interface.inputs[0]!.shape as Rec;
+  assert.ok(Object.hasOwn(shape["properties"], "__proto__"), JSON.stringify(shape));
+  assert.deepEqual(shape["required"], ["__proto__", "a"]);
+  await assert.rejects(m({ payload: { a: "y" } } as never), (e: unknown) => e instanceof InterfaceError && e.field === "payload");
+  assert.equal(await m({ payload: JSON.parse('{"__proto__":"x","a":"y"}') } as never), "ok");
+});
+
+test("a model's object answer missing a property named toString is not taken as fitting its shape", async () => {
+  const router = new FakeRouter(['{"result": {}}', '{"result": {"toString": "fine"}}']);
+  const f = ai("obj", { input: { q: t.string() }, output: t.object({ toString: t.string() }), adapter: "json", router: router as never } as never);
+  assert.deepEqual(await f("x" as never), { toString: "fine" });
+  assert.equal(router.requests.length, 2, "the first answer was asked again");
+});
+
+// ------------------------------------------------------------------ outcomes that are not errors
+
+test("a call whose code rejects with no reason (Promise.reject(), throw undefined) fails as any other: failed kept and shown, a failed record, the same rejection", async () => {
+  for (const reject of [() => Promise.reject(), () => { throw undefined; }, () => Promise.reject(null)]) {
+    const where = folder();
+    const store = new MemoryStore();
+    const seen: StreamEvent[] = [];
+    const f = module("nothing", { input: {}, output: t.string(), logCalls: where, journal: { store, mode: "required" }, observers: [(e) => { seen.push(e); }] },
+      reject as never);
+    const s = f.stream({});
+    const events = await all(s.events());
+    const why = await s.result.then(() => "resolved", (e: unknown) => e);
+    const expected = reject.toString().includes("null") ? null : undefined;
+    assert.equal(why, expected);
+    assert.deepEqual(events.map((e) => e.kind), ["started", "failed"]);
+    assert.ok(await flush());
+    assert.deepEqual(seen.map((e) => e.kind), ["started", "failed"]);
+    const tree = store.trees()[0]!;
+    assert.deepEqual(store.events(tree).map((e) => e["kind"]), ["started", "failed"]);
+    assert.ok(store.finished(tree));
+    const [record] = logged(where);
+    assert.equal(record!.outputs, null);
+    assert.equal(record!.error.type, "Error");
+    assert.equal(record!.error.message, String(expected));
+    // inside a module: the parent's code gets the same rejection
+    const inner = module("inner", { input: {}, output: t.string() }, reject as never);
+    const outer = module("outer", { input: {}, output: t.string(), logCalls: where }, async () => {
+      try {
+        await inner({});
+        return "resolved";
+      } catch (e) {
+        return `caught ${String(e)}`;
+      }
+    });
+    assert.equal(await outer({}), `caught ${String(expected)}`);
+  }
+});
+
+test("a tool that throws undefined is told to the model as an error; with toolErrors: raise, the call fails with it and is recorded", async () => {
+  const lookup = tool("lookup", { description: "x", input: { q: t.string() } }, () => { throw undefined; });
+  const replies = () => new FakeRouter([{ text: "", calls: [{ id: "c1", name: "lookup", input: { q: "1" } }] }, "<result>\ndone\n</result>"]);
+  const router = replies();
+  assert.equal(await ai("t", { input: { q: t.string() }, tools: [lookup], router: router as never })("x"), "done");
+  assert.ok(sent(router.requests[1]).includes("error: Error: undefined"), sent(router.requests[1]));
+  const where = folder();
+  const raising = ai("t", { input: { q: t.string() }, tools: [lookup], router: replies() as never, toolErrors: "raise", logCalls: where });
+  assert.equal(await raising("x").then(() => "resolved", (e: unknown) => e), undefined);
+  assert.equal(logged(where)[0]!.error.message, "undefined");
+});
+
+// ------------------------------------------------------------------ inputs as given
+
+/** A valid Standard Schema that changes its value in place, and returns that same object (allowed: nothing promises immutability). */
+const inPlace = (async = false): StandardSchemaLike => ({
+  "~standard": {
+    version: 1, vendor: "probe", jsonSchema: { input: () => ({ type: "object", properties: { x: { type: "string" } } }) },
+    validate(v: unknown) {
+      if (v === undefined) return { issues: [{ message: "required" }] };
+      (v as Rec)["x"] = "TRANSFORMED";
+      return async ? Promise.resolve({ value: v }) : { value: v };
+    },
+  },
+}) as never;
+
+test("an AI function records its inputs as given, even when a schema changes them in place: started, record, observers and journal; the model gets the parsed value", async () => {
+  for (const async of [false, true]) {
+    const where = folder();
+    const store = new MemoryStore();
+    const seen: StreamEvent[] = [];
+    const router = ok();
+    const f = ai("mutates", { input: { payload: inPlace(async) }, output: t.string(), logCalls: where, router: router as never, journal: store, observers: [(e) => { seen.push(e); }] });
+    const s = f.stream({ payload: { x: "ORIGINAL" } } as never);
+    const events = await all(s.events());
+    assert.equal(await s, "ok");
+    assert.ok(await flush());
+    const original = { payload: { x: "ORIGINAL" } };
+    assert.deepEqual((events[0] as Rec)["inputs"], original);
+    assert.deepEqual((seen[0] as Rec)["inputs"], original);
+    assert.deepEqual(store.events(store.trees()[0]!)[0]!["inputs"], original);
+    assert.deepEqual(logged(where)[0]!.inputs, original);
+    assert.ok(sent(router.requests[0]).includes("TRANSFORMED"), "the model is sent what the schema parsed");
+  }
+});
+
+test("a schema whose validation is a promise of another realm (a vm context, an iframe) is awaited, not taken as a result", async () => {
+  const foreign = runInNewContext("(v) => Promise.resolve(v === undefined ? { issues: [{ message: 'required' }] } : { value: String(v).toUpperCase() })") as (v: unknown) => unknown;
+  assert.equal(foreign("a") instanceof Promise, false, "the probe needs a promise this realm does not know");
+  const schema = { "~standard": { version: 1, vendor: "probe", validate: foreign, jsonSchema: { input: () => ({ type: "string" }) } } } as never;
+  const m = module("m", { input: { word: schema }, output: t.string() }, (i: Rec) => `got ${i["word"]}`);
+  assert.equal(await m("hi" as never), "got HI");
+  const router = ok();
+  const f = ai("f", { input: { word: schema }, output: t.string(), router: router as never });
+  assert.equal(await f("hi" as never), "ok");
+  assert.ok(sent(router.requests[0]).includes("HI"));
+  await assert.rejects(m({} as never), InterfaceError);
+});
+
+// ------------------------------------------------------------------ observers beside each other
+
+test("a slow observer loses events alone: a fast one beside it gets every event", async () => {
+  await quietly(async (warned) => {
+    let slowGot = 0;
+    let fastGot = 0;
+    let running = true;
+    const slow = function slowObserver() {
+      slowGot++;
+      const until = performance.now() + (running ? 1 : 0);          // slow while the call runs; its backlog then goes quickly
+      while (performance.now() < until) { /* a synchronous exporter */ }
+    };
+    const fast = function fastObserver() { fastGot++; };
+    const leaf = module("leaf", { input: {}, output: t.string() }, async () => "x");
+    const outer = module("outer", { input: {}, output: t.string(), observers: [slow, fast] }, async () => {
+      for (let i = 0; i < 350; i++) {
+        await Promise.all(Array.from({ length: 25 }, () => leaf({})));
+        await new Promise((r) => setImmediate(r));
+      }
+      return "ok";
+    });
+    await outer({});
+    running = false;
+    assert.ok(await flush({ timeout: 60_000 }));
+    const made = 2 + 350 * 25 * 2;
+    assert.equal(fastGot, made);
+    assert.ok(slowGot < made, `the slow one got ${slowGot} of ${made}: this test needs it to fall behind`);
+    assert.ok(warned.some((w) => w.includes("slowObserver") && w.includes("behind")));
+    assert.ok(!warned.some((w) => w.includes("fastObserver")), warned.join("\n"));
+  });
+});
+
+// ------------------------------------------------------------------ a best-effort journal's last events
+
+test("a best-effort journal down for a moment still gets the tree's end: flush sends it again and says so; while it is down flush says false", async () => {
+  await quietly(async () => {
+    let down = true;
+    const store = new Scripted((_n, events, inner) => (down ? Promise.reject(new Error("down")) : Promise.resolve(inner.appendNow(events))));
+    const m = module("m", { input: {}, output: t.string(), journal: { store, backoff: 5 } }, () => "ok");
+    assert.equal(await m({}), "ok");
+    assert.equal(await flush({ timeout: 2000 }), false, "the journal holds events it did not confirm");
+    down = false;
+    assert.equal(await flush({ timeout: 2000 }), true);
+    const tree = store.inner.trees()[0]!;
+    assert.deepEqual(store.inner.events(tree).map((e) => e["kind"]), ["started", "done"]);
+
+    // without flush: the writer tries again on its own a second later
+    down = true;
+    const g = module("g", { input: {}, output: t.string(), journal: { store, backoff: 5, retries: 0 } }, () => "ok");
+    assert.equal(await g({}), "ok");
+    await delay(50);
+    down = false;
+    await delay(1200);
+    const trees = store.inner.trees();
+    assert.equal(trees.length, 2);
+    assert.ok(store.inner.finished(trees[1]!), "the end was sent again later, with no next event to carry it");
+  });
+});
+
+test("a journal that stays down: the writer tries five more times on its own (1, 2, 4, 8, 16 s), then gives up on what it holds, says so once, and holds nothing", async (ctx) => {
+  ctx.mock.timers.enable({ apis: ["setTimeout"] });
+  await quietly(async (warned) => {
+    const store = new Scripted(() => Promise.reject(new Error("down")));
+    const m = module("m", { input: {}, output: t.string(), journal: { store, retries: 0, backoff: 0 } }, () => "ok");
+    assert.equal(await m({}), "ok");
+    const settle = () => new Promise((r) => setImmediate(r));
+    for (let i = 0; i < 5; i++) await settle();
+    const first = store.sends;                                    // its started, and its done (each tried once, as it came)
+    const at: number[] = [];
+    for (let second = 1; second <= 40; second++) {
+      ctx.mock.timers.tick(1000);
+      for (let i = 0; i < 5; i++) await settle();
+      while (at.length < store.sends - first) at.push(second);
+    }
+    assert.deepEqual(at, [1, 3, 7, 15, 31], "a later round after 1 s, then 2, 4, 8 and 16 s");
+    assert.equal(warned.filter((w) => w.includes("given up")).length, 1, warned.join("\n"));
+    store.healed = true;
+    assert.ok(await flush());                                     // it holds nothing: what it gave up on was warned about then
+    assert.deepEqual(store.inner.trees(), [], "nothing more is sent to that log");
+  });
+});
+
+test("journal timeouts and backoffs past a timer's limit refuse where they are set (setTimeout would fire at once); settle can be stopped", async () => {
+  const store = new MemoryStore();
+  for (const bad of [{ timeout: 3_000_000_000 }, { backoff: 3_000_000_000 }, { timeout: 0 }, { backoff: -1 }]) {
+    assert.throws(() => module("m", { input: {}, output: t.string(), journal: { store, ...bad } }, () => ""), TypeError, JSON.stringify(bad));
+  }
+  module("m", { input: {}, output: t.string(), journal: { store, timeout: Infinity, backoff: 2_147_483_647 } }, () => "");
+  await quietly(async () => {
+    const dead = new Scripted((_n, events, inner) => events.some((e) => e["kind"] === "done") ? never() : Promise.resolve(inner.appendNow(events)));
+    const hung: EventStore = { append: (es, o) => dead.append(es as Rec[], o), read: () => never() };
+    const f = module("m", { input: {}, output: t.string(), journal: { store: hung, mode: "required", timeout: 50 } }, () => "ok");
+    const err = await f({}).then(() => null, (e: unknown) => e) as JournalError;
+    assert.equal(err.code, "journal-end");
+    await assert.rejects(err.settle({ signal: AbortSignal.timeout(50) }), (e: unknown) => (e as Error).name === "TimeoutError");
+    await heal(dead);
+  });
+});
+
+test("a builder's extra keys add to its shape and never replace it", () => {
+  assert.throws(() => t.list(t.string(), { items: { type: "integer" } }), TypeError);
+  assert.throws(() => t.string({ type: "integer" } as never), TypeError);
+  assert.throws(() => t.object({ a: t.string() }, { required: [] }), TypeError);
+  assert.throws(() => t.record(t.integer(), { additionalProperties: false }), TypeError);
+  assert.deepEqual(t.list(t.string(), { description: "one per line", minItems: 1 }), { type: "array", items: { type: "string" }, description: "one per line", minItems: 1 });
+});
+
 // ------------------------------------------------------------------ formats
 
 test("replaying or recovering stops at an event of a format this reader does not know", async () => {
@@ -640,8 +964,12 @@ test("replaying or recovering stops at an event of a format this reader does not
 
 test("a journal-end error holds what that caller would have got: the answer for fn(x) and a stream, the Prediction for predict", async () => {
   await quietly(async () => {
-    const endless = () => new Scripted((_n, events, inner) =>
-      events.some((e) => e["kind"] === "done") ? never() : Promise.resolve(inner.appendNow(events)));
+    const made: Scripted[] = [];
+    const endless = () => {
+      const s = new Scripted((_n, events, inner) => events.some((e) => e["kind"] === "done") ? never() : Promise.resolve(inner.appendNow(events)));
+      made.push(s);
+      return s;
+    };
     const f = (store: EventStore) => ai("triage", { input: { q: t.string() }, outputs: { summary: t.string(), result: t.string() },
       router: new FakeRouter([], () => "<summary>\nshort\n</summary>\n<result>\nno\n</result>") as never, journal: { store, mode: "required", timeout: 50 } });
     const plain = await f(endless())("x").then(() => null, (e: unknown) => e) as JournalError;
@@ -654,6 +982,7 @@ test("a journal-end error holds what that caller would have got: the answer for 
     const [answer, prediction] = await Promise.all([s.result.then(() => null, (e: unknown) => e), s.prediction.then(() => null, (e: unknown) => e)]) as JournalError[];
     assert.deepEqual(answer!.outcome, { done: "no" });
     assert.ok((prediction!.outcome as { done: unknown }).done instanceof Prediction);
+    await heal(...made);
   });
 });
 

@@ -8,7 +8,7 @@
  * Nothing here waits without a bound, and nothing a receiver does reaches
  * the call: every append has a deadline and its resends back off; a barrier
  * stops at its deadline or when the call is cancelled; observers are given
- * events later, from a bounded queue, each its own copy.
+ * events later, each from its own bounded queue, each its own copy.
  */
 
 import { iso } from "./calllog.ts";
@@ -24,10 +24,11 @@ type Rec = Record<string, unknown>;
  * own turn (from a queue drained between the call's steps; an observer that
  * returns a promise is not awaited); an object with `postMessage` (a
  * `Worker`, a `MessagePort`, a `BroadcastChannel`) is posted each event, so
- * it handles them on another thread. Each observer gets its own copy. One
- * that throws or rejects is warned about once and given no more events; one
- * that falls more than 10,000 events behind loses events (it then sees a
- * gap in `after`).
+ * it handles them on another thread. Each observer gets its own copy, from
+ * its own queue, with its share of the time given to observers: one that is
+ * slow falls behind alone. One that throws or rejects is warned about once
+ * and given no more events; one that falls more than 10,000 events behind
+ * loses events (it then sees a gap in `after`).
  */
 export type Observer = ((event: StreamEvent) => void | PromiseLike<void>) | { postMessage(event: StreamEvent): void };
 
@@ -93,8 +94,10 @@ export function journalOf(j: Journal | null, where = "journal"): ResolvedJournal
   if (mode !== "required" && mode !== "best-effort") throw new TypeError(`${where}: mode is "required" or "best-effort", not ${JSON.stringify(mode)}`);
   if (s.retries !== undefined && !count(s.retries, 0)) throw new TypeError(`${where}: retries is a whole number of at least 0`);
   if (s.batch !== undefined && !count(s.batch, 1)) throw new TypeError(`${where}: batch is a whole number of at least 1`);
-  if (s.timeout !== undefined && !(millis(s.timeout, 1))) throw new TypeError(`${where}: timeout is milliseconds, at least 1 (Infinity: wait for ever)`);
-  if (s.backoff !== undefined && !(millis(s.backoff, 0) && Number.isFinite(s.backoff))) throw new TypeError(`${where}: backoff is milliseconds, at least 0`);
+  if (s.timeout !== undefined && !(millis(s.timeout, 1) && (s.timeout <= MAX_DELAY || s.timeout === Infinity))) {
+    throw new TypeError(`${where}: timeout is milliseconds, from 1 to ${MAX_DELAY} (about 24.8 days), or Infinity to wait for ever`);
+  }
+  if (s.backoff !== undefined && !(millis(s.backoff, 0) && s.backoff <= MAX_DELAY)) throw new TypeError(`${where}: backoff is milliseconds, from 0 to ${MAX_DELAY}`);
   return {
     store: s.store, mode, retries: s.retries ?? defaults.retries, batch: s.batch ?? defaults.batch,
     timeout: s.timeout ?? defaults.timeout, backoff: s.backoff ?? defaults.backoff,
@@ -170,11 +173,13 @@ export class JournalError extends Error {
   /**
    * For `journal-end`: read the journal and say what became of the call's
    * end: `"kept"`, `"not-kept"` (the log is unfinished; final only once you
-   * have claimed it) or `"another-end"` (another writer ended the log).
+   * have claimed it) or `"another-end"` (another writer ended the log). The
+   * store did not answer the end, and may not answer this read: `signal`
+   * (`AbortSignal.timeout(5000)`) stops waiting, rejecting with its reason.
    */
-  async settle(): Promise<"kept" | "not-kept" | "another-end"> {
+  async settle(opts: { signal?: AbortSignal } = {}): Promise<"kept" | "not-kept" | "another-end"> {
     if (!this.store || !this.tree || !this.event) throw new Error("only a journal-end error can be settled");
-    return settle(this.store, this.tree, this.event);
+    return settle(this.store, this.tree, this.event, opts);
   }
 }
 
@@ -182,9 +187,9 @@ export class JournalError extends Error {
 
 type Timer = ReturnType<typeof setTimeout>;
 
-/** A timer; `hold: false` lets the process end while it waits (a best-effort journal's resends). */
+/** A timer; `hold: false` lets the process end while it waits (a best-effort journal's resends). Longer than `MAX_DELAY`: none (for ever). */
 function timer(ms: number, fn: () => void, hold: boolean): Timer | null {
-  if (!Number.isFinite(ms)) return null;
+  if (!Number.isFinite(ms) || ms > MAX_DELAY) return null;
   const t = setTimeout(fn, ms);
   if (!hold) (t as { unref?: () => void }).unref?.();
   return t;
@@ -211,6 +216,17 @@ interface Waiter {
 
 /** The writers sending now (for `flush`). */
 const busy = new Set<JournalWriter>();
+/** The writers holding events not confirmed after a round gave up (for `flush`: it sends them again). */
+const holding = new Set<JournalWriter>();
+
+/** The longest a timer can wait (setTimeout's limit, about 24.8 days); a longer wait is for ever. */
+export const MAX_DELAY = 2_147_483_647;
+/** Rounds a writer tries again on its own, after one gave up, before it gives up on what it holds for good. */
+const LATER_ROUNDS = 5;
+/** Events writers gave up on for good (for `flush`: it says false when some were, while it waited). */
+let lostEvents = 0;
+
+type Trouble = { fail(what: string): void; lost(what: string): void; ok(): void };
 
 /**
  * Sends a tree's kept events to its journal, in order, each append naming
@@ -218,22 +234,34 @@ const busy = new Set<JournalWriter>();
  * again (after `backoff`, doubling); after a refusal it sends nothing more.
  * Each append is given fresh copies, and waited for at most `timeout`: a
  * store that throws, never answers, or answers something else than kept or
- * duplicate never holds the writer, nor reaches the call.
+ * duplicate never holds the writer, nor reaches the call. When a round gives
+ * up, it tries again on its own later (after 1 s, then 2, 4, 8 and 16 s: a
+ * tree's last events have no next event to carry them), at the next event,
+ * and when `flush()` asks; those later rounds never keep the process alive.
+ * When the last of them gives up too, with no event since, it gives up on
+ * what it holds for good (warned about; the log is kept at least up to the
+ * events it confirmed) and sends nothing more to that log: what a writer
+ * holds for a store that stays down is bounded.
  */
 export class JournalWriter {
   private pending: { e: Rec; n: number }[] = [];
   private added = 0;
   private confirmedN = 0;
   private running = false;
+  /** A later round, scheduled after one gave up; and how many came since the writer last had an answer. */
+  private retryTimer: Timer | null = null;
+  private laterRounds = 0;
   private readonly waiters = new Set<Waiter>();
   private idlers: Array<() => void> = [];
   refused = false;
   readonly journal: ResolvedJournal;
-  private readonly trouble: { fail(what: string): void; ok(): void };
+  private readonly trouble: Trouble;
+  /** Set once it gave up on what it held for good: it sends nothing more to this log. */
+  private abandoned = false;
   /** Appends made (a batch is one), for tests and hosts measuring a store. */
   appends = 0;
 
-  constructor(journal: ResolvedJournal, trouble: { fail(what: string): void; ok(): void } = { fail: () => undefined, ok: () => undefined }) {
+  constructor(journal: ResolvedJournal, trouble: Trouble = { fail: () => undefined, lost: () => undefined, ok: () => undefined }) {
     this.journal = journal;
     this.trouble = trouble;
   }
@@ -241,14 +269,20 @@ export class JournalWriter {
   /** Queue an event (in the kept form; a copy is taken); returns its number in this writer, for `confirm`. */
   add(e: Rec): number {
     const n = ++this.added;
-    if (this.refused) return n;
+    if (this.refused || this.abandoned) return n;
     this.pending.push({ e: structuredClone(e), n });
+    this.laterRounds = 0;                            // a new event: the writer tries again, and later again, from the start
     this.start();
     return n;
   }
 
-  private start(): void {
-    if (this.running) return;
+  /** Send what waits now (an event came, or `flush` asks), unless it is sending already. */
+  start(): void {
+    if (this.running || this.refused || this.abandoned || !this.pending.length) return;
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
     this.running = true;                             // set before any store code runs: a store that throws at once cannot leave it stale
     busy.add(this);
     queueMicrotask(() => { void this.pump(); });
@@ -263,12 +297,13 @@ export class JournalWriter {
         const answer = await this.round(sending);
         if (answer === "unanswered") {
           gaveUp = true;
-          this.trouble.fail("the journal did not answer (the log is kept at least up to the events it confirmed; sending again with the next event)");
+          this.trouble.fail("the journal did not answer (the log is kept at least up to the events it confirmed; the rest is sent again later)");
           break;
         }
         if (answer === "refused") break;
         this.pending.splice(0, sending.length);
         this.confirmedN = sending[sending.length - 1]!.n;
+        this.laterRounds = 0;
         this.trouble.ok();
         for (const w of this.waiters) if (w.n <= this.confirmedN) w.done("confirmed");
       }
@@ -277,6 +312,10 @@ export class JournalWriter {
     } finally {
       this.running = false;
       busy.delete(this);
+      if (this.pending.length && !this.refused && !this.abandoned) {
+        holding.add(this);
+        this.later();
+      } else holding.delete(this);
       const status: Status = this.refused ? "refused" : gaveUp ? "unanswered" : "confirmed";
       for (const w of this.waiters) w.done(w.n <= this.confirmedN ? "confirmed" : status);
       const idlers = this.idlers;
@@ -284,6 +323,35 @@ export class JournalWriter {
       for (const f of idlers) f();
       settled();
     }
+  }
+
+  /** After a round gave up: another, later, on its own (never holding the process), a few times; then it gives up for good. */
+  private later(): void {
+    if (this.retryTimer !== null) return;
+    if (this.laterRounds >= LATER_ROUNDS) {
+      this.abandon();
+      return;
+    }
+    const wait = 1000 * 2 ** this.laterRounds++;
+    this.retryTimer = timer(wait, () => {
+      this.retryTimer = null;
+      this.start();
+    }, false);
+  }
+
+  /** Give up on what it holds for good: the journal did not answer for it through every later round. */
+  private abandon(): void {
+    const n = this.pending.length;
+    this.pending = [];
+    this.abandoned = true;
+    holding.delete(this);
+    lostEvents += n;
+    this.trouble.lost(`the journal did not answer for ${n} event${n === 1 ? "" : "s"} of a log through five more tries: they are given up (the log is kept at least up to the events it confirmed), and nothing more is sent to it for that log`);
+  }
+
+  /** Whether it holds events the journal has not confirmed, and may still send them (not refused, not given up). */
+  get unconfirmed(): boolean {
+    return this.pending.length > 0 && !this.refused && !this.abandoned;
   }
 
   /** One append of `sending`, sent again after no answer (backing off): its answer. */
@@ -392,28 +460,48 @@ function describe(v: unknown): string {
   }
 }
 
-/** A journal's trouble, warned about once per outage of its store (again after it has answered well). */
+/**
+ * A journal's trouble, warned about once per outage of its store (again after
+ * it has answered well); and, apart, once per outage, that a writer gave up
+ * on events for good.
+ */
 const troubled = new WeakSet<EventStore>();
-function journalTrouble(store: EventStore, tree: string): { fail(what: string): void; ok(): void } {
+const lostWarned = new WeakSet<EventStore>();
+function journalTrouble(store: EventStore, tree: string): Trouble {
   return {
     fail(what) {
       if (troubled.has(store)) return;
       troubled.add(store);
       console.warn(`functai: ${what} (log ${tree}); calls go on. Further trouble with this journal is not reported until it answers again.`);
     },
+    lost(what) {
+      if (lostWarned.has(store)) return;
+      lostWarned.add(store);
+      console.warn(`functai: ${what} (log ${tree}). Further events given up on with this journal are not reported until it answers again.`);
+    },
     ok() {
       troubled.delete(store);
+      lostWarned.delete(store);
     },
   };
 }
 
 // ------------------------------------------------------------------ observers
 
-/** Events waiting for their observers, in the order they were made. */
-let queue: ({ o: Observer; e: StreamEvent } | undefined)[] = [];
-let head = 0;
+/**
+ * Each observer's events waiting for it, in the order they were made: one
+ * lane per observer, so one that is slow falls behind (and past the bound
+ * loses events) alone, never the others beside it.
+ */
+interface Lane {
+  readonly o: Observer;
+  items: (StreamEvent | undefined)[];
+  head: number;
+}
+const lanes = new Map<Observer, Lane>();
 let draining = false;
-const behind = new Map<Observer, number>();
+/** Where the next turn starts, so no lane always goes first. */
+let turn = 0;
 const broken = new WeakSet<object>();
 const warnedObservers = new WeakSet<object>();
 /** The most events one observer may have waiting; past it, its events are dropped (it sees a gap). */
@@ -423,6 +511,7 @@ const SLICE = 8;
 
 const clock = () => (globalThis.performance ? globalThis.performance.now() : Date.now());
 const observerName = (o: Observer) => (typeof o === "function" && o.name ? `observer ${o.name}` : "an observer");
+const waiting = (l: Lane) => l.items.length - l.head;
 
 function warnObserver(o: Observer, message: string): void {
   if (warnedObservers.has(o)) return;
@@ -432,43 +521,59 @@ function warnObserver(o: Observer, message: string): void {
 
 function fail(o: Observer, err: unknown): void {
   broken.add(o);
+  lanes.delete(o);
   warnObserver(o, `failed (${(err as Error)?.message ?? String(err)}); it gets no more events`);
 }
 
 /** Queue an event (its own copy) for an observer. */
 function deliver(o: Observer, e: StreamEvent): void {
   if (broken.has(o)) return;
-  const n = behind.get(o) ?? 0;
-  if (n >= OBSERVER_QUEUE) {
+  let lane = lanes.get(o);
+  if (!lane) lanes.set(o, lane = { o, items: [], head: 0 });
+  if (waiting(lane) >= OBSERVER_QUEUE) {
     warnObserver(o, `is ${OBSERVER_QUEUE} events behind: events are dropped (it sees a gap in after)`);
     return;
   }
-  behind.set(o, n + 1);
-  queue.push({ o, e });
+  lane.items.push(e);
   if (!draining) {
     draining = true;
     later(drain);
   }
 }
 
-/** Give observers what waits for them, for one slice of time, then let the process go on. */
+/**
+ * Give observers what waits for them, for one slice of time, then let the
+ * process go on. Each observer with events waiting gets its share of the
+ * slice (what one leaves unused goes to the next), and at least one event
+ * each turn: a fast observer empties its lane every turn, whatever a slow
+ * one beside it does.
+ */
 function drain(): void {
-  const until = clock() + SLICE;
-  while (head < queue.length) {
-    const item = queue[head]!;
-    queue[head++] = undefined;
-    const left = (behind.get(item.o) ?? 1) - 1;
-    if (left > 0) behind.set(item.o, left);
-    else behind.delete(item.o);
-    if (!broken.has(item.o)) give(item.o, item.e);
-    if (clock() >= until) break;
+  const start = clock();
+  const all = [...lanes.values()];
+  const n = all.length;
+  const first = n ? turn++ % n : 0;
+  for (let i = 0; i < n; i++) {
+    const lane = all[(first + i) % n]!;
+    const until = clock() + Math.max(0, start + SLICE - clock()) / (n - i);
+    do {
+      const e = lane.items[lane.head]!;
+      lane.items[lane.head++] = undefined;
+      give(lane.o, e);
+      if (broken.has(lane.o)) break;
+    } while (waiting(lane) > 0 && clock() < until);
+    if (broken.has(lane.o)) continue;
+    if (!waiting(lane)) lanes.delete(lane.o);
+    else if (lane.head > 1024 && lane.head * 2 > lane.items.length) {
+      lane.items = lane.items.slice(lane.head);             // a long backlog: let go of what was given
+      lane.head = 0;
+    }
   }
-  if (head < queue.length) {
+  if (lanes.size) {
     later(drain);
     return;
   }
-  queue = [];
-  head = 0;
+  turn = 0;
   draining = false;
   settled();
 }
@@ -498,15 +603,42 @@ function settled(): void {
   for (const f of w) f();
 }
 
+/** Whether every journal writer has had every event it was given confirmed (or was refused: it sends nothing more). */
+const allKept = () => ![...holding].some((w) => w.unconfirmed);
+
 /**
  * Wait until every observer has been given the events made so far, and
- * every journal has tried to keep them (at most `timeout` milliseconds;
- * default 5,000). True when all of it was done in time. For a process that
- * is about to end, and for tests.
+ * every journal has tried to keep them: a writer still holding events a
+ * journal did not confirm sends them again now (at most `timeout`
+ * milliseconds in all; default 5,000). True when all of it was done in
+ * time and every journal confirmed every event it was sent (a journal that
+ * refused one, which it is sent nothing more, counts as done); false when
+ * time ran out, a journal still holds events it did not confirm, or one gave
+ * up on some for good while it waited. (Events given up on before, which
+ * was warned about then, are not counted again.) For a process that is
+ * about to end, and for tests.
  */
 export async function flush(opts: { timeout?: number } = {}): Promise<boolean> {
-  if (idleNow()) return true;
   const timeout = opts.timeout ?? 5000;
+  const deadline = clock() + timeout;
+  const lostBefore = lostEvents;
+  const asked = new Set<JournalWriter>();
+  for (;;) {
+    // each writer holding what was not confirmed sends it once more: those holding now, and those whose round gives up meanwhile
+    for (const w of [...holding]) {
+      if (asked.has(w) || !w.unconfirmed) continue;
+      asked.add(w);
+      w.start();
+    }
+    if (!await idleWithin(deadline - clock())) return false;
+    if (![...holding].some((w) => w.unconfirmed && !asked.has(w))) return allKept() && lostEvents === lostBefore;
+  }
+}
+
+/** Resolves true once observers and journals are idle, or false after `ms`. */
+function idleWithin(ms: number): Promise<boolean> {
+  if (idleNow()) return Promise.resolve(true);
+  if (ms <= 0) return Promise.resolve(false);
   return new Promise<boolean>((resolve) => {
     let t: Timer | null = null;
     const done = () => {
@@ -514,7 +646,7 @@ export async function flush(opts: { timeout?: number } = {}): Promise<boolean> {
       resolve(true);
     };
     waitingForIdle.push(done);
-    t = timer(timeout, () => {
+    t = timer(ms, () => {
       waitingForIdle = waitingForIdle.filter((f) => f !== done);
       resolve(idleNow());
     }, true);

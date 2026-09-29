@@ -13,7 +13,7 @@ import { receivers, type ReceiverLayer } from "./events.ts";
 import { env } from "./host.ts";
 import { journalOf, JournalError, TreeLog, type Node, type Observer, type ResolvedJournal, type Watcher } from "./log.ts";
 import { checkSettings, layersOf, type Settings } from "./settings.ts";
-import { getOwn, toJson } from "./values.ts";
+import { getOwn, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -41,9 +41,10 @@ export interface CallSpec<R> {
   /**
    * The inputs by their interface's names, as the `started` event and the
    * record hold them (only the fields' names: a value given under another
-   * name is refused, never kept). Written as JSON when the call starts.
+   * name is refused, never kept): `recordInputs`, taken by the caller before
+   * anything (a schema's parsing, the code) can change them.
    */
-  readonly inputs: Rec;
+  readonly inputs: RecordedInputs;
   /** The call is refused before its code runs (an input its interface does not take): this error is its outcome. */
   readonly refused?: unknown;
   readonly body: (call: Call) => Promise<Ended<R>>;
@@ -61,6 +62,26 @@ function journalAt(s: Settings): ResolvedJournal | null | undefined {
 
 const unique = <T>(xs: readonly T[]) => [...new Set(xs)];
 
+/** Each recorded input: its JSON (or description), its size, whether it is a description. */
+export type RecordedInputs = Readonly<Record<string, readonly [unknown, number, boolean]>>;
+
+/**
+ * The inputs a call records, by its interface's names, as JSON now: what a
+ * schema's parsing or the code later does to the values (even in place,
+ * inside a nested object) changes nothing here. An input left out is absent.
+ */
+export function recordInputs(names: readonly string[], inputs: Readonly<Rec>): RecordedInputs {
+  const out: Record<string, readonly [unknown, number, boolean]> = {};
+  for (const n of names) {
+    const value = getOwn(inputs, n);
+    if (value !== undefined) setOwn(out, n, toJson(value));
+  }
+  return out;
+}
+
+/** How a call's body ended: with a value, or with what it threw (which may be anything, `undefined` included). */
+type Outcome<R> = { readonly ok: true; readonly ended: Ended<R> } | { readonly ok: false; readonly error: unknown };
+
 /** Run one call of a program: its events, its journal's barriers, its record. */
 export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   checkSettings(spec.options, "a call's options");               // a block around one call: what every block may set
@@ -77,9 +98,12 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
     env()["FUNCTAI_LOG_CONTENT"] ?? null);
   const signal = combine(spec.signal, spec.stream?.signal, parent?.signal);
   const call = new Call(spec.program, parent, folder, spec.fields, keep, calllog.callerOf(spec.settings), signal);
-  // what the record and the started event hold: the fields' values, as JSON, now (what the code does with them later changes nothing)
-  const recorded = Object.fromEntries(spec.fields.inputs.filter((n) => Object.hasOwn(spec.inputs, n) && getOwn(spec.inputs, n) !== undefined)
-    .map((n) => [n, toJson(spec.inputs[n])] as const));
+  // what the record and the started event hold: the fields' values, as JSON, taken before anything could change them
+  const recorded: Record<string, readonly [unknown, number, boolean]> = {};
+  for (const n of spec.fields.inputs) {
+    const got = getOwn(spec.inputs, n);
+    if (got !== undefined) setOwn(recorded, n, got);
+  }
   call.inputsJson = recorded;
 
   // Receivers: observers add up (and a call's are its parent's too); the tree's journal is decided when its outermost call starts.
@@ -111,8 +135,8 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   const node: Node = {
     id: call.id, name: program.name, parent: parent?.node ?? null, log,
     keep: {
-      inputs: Object.fromEntries(spec.fields.inputs.map((n) => [n, keep[n]!])),
-      outputs: Object.fromEntries(spec.fields.outputs.map((n) => [n, keep[n]!])),
+      inputs: Object.fromEntries(spec.fields.inputs.map((n) => [n, getOwn(keep, n)!])),
+      outputs: Object.fromEntries(spec.fields.outputs.map((n) => [n, getOwn(keep, n)!])),
     },
     program: { kind: program.kind, answer: program.answer },
     observers: unique([...(parent?.node.observers ?? []), ...got.observers]),
@@ -125,41 +149,41 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
     inputs: Object.fromEntries(Object.entries(recorded).map(([k, [json]]) => [k, structuredClone(json)])), content: true, saw: [],
   });
 
-  let ended: Ended<R> | null = null;
-  let error: unknown = undefined;
+  // whether the body ended well is said by `ok`, never by the error's value: code may throw undefined (Promise.reject())
+  let outcome: Outcome<R>;
   try {
     if (refusal) throw refusal;
     if (spec.refused !== undefined) throw spec.refused;
     if (!parent && await log.barrier(started, call.signal) === "cancelled") throw new Cancelled();
     if (call.signal?.aborted) throw new Cancelled();
-    ended = await calllog.current.run(call, () => spec.body(call));
+    const ended = await calllog.current.run(call, () => spec.body(call));
     // closed before it ended: the call is cancelled, whatever its code did after (streaming.md, "Closing")
     if (call.signal?.aborted) throw new Cancelled();
     call.outputs = ended.outputs;
+    outcome = { ok: true, ended };
   } catch (err) {
-    error = err;
-    ended = null;
+    outcome = { ok: false, error: err };
   }
 
-  const kind = error === undefined ? "done" : "failed";
-  const fields = error === undefined
-    ? { value: toJson(ended!.shown !== undefined ? ended!.shown : ended!.value)[0] }
-    : { error: errorJson(error) };
+  const kind = outcome.ok ? "done" : "failed";
+  const fields = outcome.ok
+    ? { value: toJson(outcome.ended.shown !== undefined ? outcome.ended.shown : outcome.ended.value)[0] }
+    : { error: errorJson(outcome.error) };
   let unconfirmed: Awaited<ReturnType<TreeLog["end"]>> = null;
   if (!parent) unconfirmed = await log.end(node, kind, fields);
   else log.emit(node, kind, fields);
   if (unconfirmed) call.journal = unconfirmed.journal;
-  calllog.write(call, error === undefined
-    ? { returned: ended!.returned !== undefined ? ended!.returned : ended!.value, hasReturned: true }
-    : { error });
+  calllog.write(call, outcome.ok
+    ? { failed: false, returned: outcome.ended.returned !== undefined ? outcome.ended.returned : outcome.ended.value }
+    : { failed: true, error: outcome.error });
   if (unconfirmed) {
     throw new JournalError("journal-end",
       `the journal ${unconfirmed.journal === "refused" ? "refused" : "did not answer for"} the end of ${program.name}'s call (event ${unconfirmed.event.writer}:${unconfirmed.event.seq}); its outcome is in err.outcome`,
       {
         journal: unconfirmed.journal, event: unconfirmed.event, tree: log.tree, store: log.journal!.store,
-        outcome: error === undefined ? { done: ended!.value } : { failed: error },
+        outcome: outcome.ok ? { done: outcome.ended.value } : { failed: outcome.error },
       });
   }
-  if (error !== undefined) throw error;
-  return ended!.value;
+  if (!outcome.ok) throw outcome.error;
+  return outcome.ended.value;
 }

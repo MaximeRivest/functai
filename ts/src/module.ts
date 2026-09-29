@@ -22,9 +22,9 @@ import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { Cancelled } from "./engine.ts";
 import { definedAt, type AnyAIFunction, type CallArgs, type CallOptions } from "./fn.ts";
-import { Binder, declareInput, declareOutput, type InputRule } from "./inputs.ts";
+import { Binder, declareInput, declareOutput, type InputRule, type InputRules } from "./inputs.ts";
 import { checkInputs, checkInterface, checkReturned, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
-import { runCall } from "./program.ts";
+import { recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
@@ -59,8 +59,8 @@ type RequiredFields<I> = { [K in keyof I]: IsOptional<I[K]> extends true ? never
 export type ModuleArgs<I> = Simplify<
   { [K in RequiredFields<I>]: InputValueOf<I[K]> } & { [K in Exclude<keyof I, RequiredFields<I>>]?: InputValueOf<I[K]> }>;
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
-/** Whether an object type has exactly one key. */
-type OneKey<O> = [keyof O] extends [never] ? false : true extends IsUnion<keyof O> ? false : true;
+/** Whether an object type has exactly one key (a record type built at run time, `Record<string, …>`, may have several: no). */
+type OneKey<O> = [keyof O] extends [never] ? false : string extends keyof O ? false : true extends IsUnion<keyof O> ? false : true;
 /**
  * What a module returns: its one output's value (`output`, or `outputs`
  * naming one), or its several outputs by name (programs.md, "Checking
@@ -112,7 +112,7 @@ interface ModuleCore {
   file?: string;
   line?: number;
   iface: Interface;
-  rules: Record<string, InputRule>;
+  rules: InputRules;
   run: (inputs: Rec, context: ModuleContext) => unknown;
   uses: readonly (AnyAIFunction | AnyModule)[];
   own: Settings;
@@ -159,7 +159,7 @@ function makeModule(core: ModuleCore): AnyModule {
       given = binder.bind(arg, { fill: false, check: false })[0];
       inputs = checkInputs(iface, given, name);
       for (const f of iface.inputs) {                     // a left-out input takes its default as the program declared it (a zod default's own value)
-        const fill = core.rules[f.name]?.fill;
+        const fill = core.rules.get(f.name)?.fill;
         if (getOwn(given, f.name) === undefined && fill && Object.hasOwn(inputs, f.name)) {
           let value: unknown;
           try {
@@ -175,7 +175,7 @@ function makeModule(core: ModuleCore): AnyModule {
       inputs = recordedInputs(iface, given);
     }
     return runCall<unknown>({
-      program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs,
+      program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs: recordInputs(names, inputs),
       ...(refused !== undefined ? { refused } : {}),
       body: async (c) => {
         const values: Rec = { ...inputs };                 // the code's own: what it does with them never reaches the record
@@ -235,10 +235,10 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
   if (spec.output === undefined && spec.outputs === undefined) {
     throw new TypeError(`module("${name}", { input, output }, run): declare what it returns: output (one) or outputs (several); t.json() for any JSON, t.opaque() for anything`);
   }
-  const rules: Record<string, InputRule> = {};
+  const rules = new Map<string, InputRule>();
   const inputs: InterfaceField[] = Object.entries(spec.input).map(([field, s]) => {
     const declared = declareInput(field, s, `${name}.input.${field}`, "module");
-    rules[field] = declared.rule;
+    rules.set(field, declared.rule);
     return declared.field;
   });
   const outputSpecs: [string, FieldSpec][] = spec.outputs ? Object.entries(spec.outputs) : [["result", spec.output as FieldSpec]];

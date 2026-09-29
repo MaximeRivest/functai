@@ -589,8 +589,27 @@ export class MemoryStore implements EventStore {
  * ended the log), or `"not-kept"` (it does not, and the log is unfinished:
  * final only once the caller has claimed the log).
  */
-export async function settle(store: EventSource, tree: string, event: Position): Promise<"kept" | "not-kept" | "another-end"> {
-  const answer = await store.read(tree, null);
+export async function settle(store: EventSource, tree: string, event: Position,
+  opts: { signal?: AbortSignal } = {}): Promise<"kept" | "not-kept" | "another-end"> {
+  const { signal } = opts;
+  signal?.throwIfAborted();
+  const reading = Promise.resolve(store.read(tree, null));
+  let answer: ReadAnswer;
+  if (!signal) answer = await reading;
+  else {
+    // a store that is likely unwell (it did not answer the end) may not answer this read either: the signal stops the wait
+    let onAbort!: () => void;
+    const aborted = new Promise<never>((_, reject) => {
+      onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+    });
+    reading.catch(() => undefined);
+    try {
+      answer = await Promise.race([reading, aborted]);
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+    }
+  }
   const log = "events" in answer ? answer.events : [];
   if (log.some((e) => samePosition(positionOf(e), event))) return "kept";
   return finishedLog(log, tree) ? "another-end" : "not-kept";

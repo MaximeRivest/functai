@@ -10,6 +10,14 @@ import { byCodePoint, getOwn, jsonForm, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
+/**
+ * Whether a validation's result is to be awaited: any thenable, not only
+ * this realm's `Promise` (a schema from a `vm` context, an iframe or a
+ * polyfill returns its own).
+ */
+const isThenable = (r: unknown): r is PromiseLike<StandardResult> =>
+  (typeof r === "object" || typeof r === "function") && r !== null && typeof (r as { then?: unknown }).then === "function";
+
 /** What a call does with one input. */
 export interface InputRule {
   readonly optional: boolean;
@@ -46,15 +54,15 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
   let fill: { value: unknown } | undefined;
   if (said !== undefined) {
     optional = said;
-    if (said && "default" in read) fill = { value: structuredClone(read["default"]) };
+    if (said && Object.hasOwn(read, "default")) fill = { value: structuredClone(read["default"]) };
   } else if (schema) {
     const probe = schema["~standard"].validate(undefined);
-    if (probe instanceof Promise) probe.catch(() => undefined);     // an async schema cannot say at definition time: required
+    if (isThenable(probe)) Promise.resolve(probe).catch(() => undefined);     // an async schema cannot say at definition time: required
     else if (!probe.issues) {
       optional = true;
       if (probe.value !== undefined) fill = { value: probe.value };
     }
-  } else if ("default" in read) {
+  } else if (Object.hasOwn(read, "default")) {
     optional = true;
     fill = { value: structuredClone(read["default"]) };
   } else if (!opaque && allowsNull(read)) {
@@ -67,7 +75,7 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
     const { default: d, ...rest } = shape;
     shape = { anyOf: [rest, { type: "null" }], ...(d !== undefined ? { default: d } : {}) };
   }
-  if (fill && !("default" in shape)) {
+  if (fill && !Object.hasOwn(shape, "default")) {
     const json = jsonForm(fill.value);
     if (json === undefined) {
       throw new InterfaceError("interface-malformed", name, `${where}: its default has no JSON form, so no other language can call it with the input left out`);
@@ -97,11 +105,18 @@ export function declareOutput(name: string, spec: FieldSpec, where: string, prog
   return { name, shape, ...(desc ? { desc } : {}), ...(opaque ? { opaque: true as const } : {}) };
 }
 
+/**
+ * Each input's rule, by name. A `Map`, never an object: a field name is data
+ * (`__proto__`, `toString` and `constructor` are ASCII identifiers too), and
+ * an object's lookup would find its prototype's members.
+ */
+export type InputRules = ReadonlyMap<string, InputRule>;
+
 /** The rules of inputs read from an interface (a loaded program): optional as it says, filled with its default. */
-export function rulesOf(fields: readonly InterfaceField[]): Record<string, InputRule> {
-  return Object.fromEntries(fields.map((f) => [f.name, {
+export function rulesOf(fields: readonly InterfaceField[]): InputRules {
+  return new Map(fields.map((f) => [f.name, {
     optional: f.optional === true,
-    ...("default" in f.shape ? { fill: { value: f.shape["default"] } } : {}),
+    ...(Object.hasOwn(f.shape, "default") ? { fill: { value: f.shape["default"] } } : {}),
     schema: null,
   }]));
 }
@@ -109,18 +124,28 @@ export function rulesOf(fields: readonly InterfaceField[]): Record<string, Input
 const plainObject = (x: unknown): x is Rec => typeof x === "object" && x !== null && !Array.isArray(x)
   && (Object.getPrototypeOf(x) === Object.prototype || Object.getPrototypeOf(x) === null);
 
-/** Binds a call's argument to inputs by name: the record, or (exactly one required input) that input's value alone. */
+/**
+ * Binds a call's argument to inputs by name: the record, or (exactly one
+ * required input) that input's value alone. Only the argument's own
+ * properties are its inputs: an inherited member (`toString`,
+ * `constructor`) is never a value, and an own `__proto__` is one.
+ */
 export class Binder {
   private readonly required: string[];
   private readonly name: string;
   private readonly names: readonly string[];
-  private readonly rules: Record<string, InputRule>;
+  private readonly rules: InputRules;
 
-  constructor(name: string, names: readonly string[], rules: Record<string, InputRule>) {
+  constructor(name: string, names: readonly string[], rules: InputRules) {
     this.name = name;
     this.names = names;
     this.rules = rules;
-    this.required = names.filter((n) => !rules[n]!.optional);
+    for (const n of names) if (!rules.has(n)) throw new Error(`${name}: input ${n} has no rule`);
+    this.required = names.filter((n) => !this.rule(n).optional);
+  }
+
+  private rule(n: string): InputRule {
+    return this.rules.get(n)!;
   }
 
   /** The inputs given by name (`undefined` is left out), and whether each left-out one takes a value. */
@@ -130,23 +155,27 @@ export class Binder {
     const keyed = arg === undefined
       || (plainObject(arg) && (required.length !== 1 || Object.keys(arg).every((k) => names.includes(k)) || Object.hasOwn(arg, required[0]!)));
     if (!keyed) {
-      if (required.length === 1) return this.bind({ [required[0]!]: arg }, opts);
+      if (required.length === 1) {
+        const one: Rec = {};
+        setOwn(one, required[0]!, arg);
+        return this.bind(one, opts);
+      }
       throw new InterfaceError("interface-input", null, `${name} takes its inputs by name: ${name}({ ${names.join(", ")} })`);
     }
     const given = (arg ?? {}) as Rec;
     const out: Rec = {};
     const filled = new Set<string>();
     if (opts.check !== false) {
-      const unknown = Object.keys(given).filter((k) => given[k] !== undefined && !names.includes(k)).sort(byCodePoint);
+      const unknown = Object.keys(given).filter((k) => getOwn(given, k) !== undefined && !names.includes(k)).sort(byCodePoint);
       if (unknown.length) throw new InterfaceError("interface-input", unknown[0]!, `${name} has no input ${unknown.join(", ")} (its inputs: ${names.join(", ") || "none"})`);
-      const missing = required.filter((k) => given[k] === undefined);
+      const missing = required.filter((k) => getOwn(given, k) === undefined);
       if (missing.length) throw new InterfaceError("interface-input", missing[0]!, `${name} needs ${missing.join(", ")}`);
     }
     for (const n of names) {
       const value = getOwn(given, n);
       if (value !== undefined) setOwn(out, n, value);
-      else if (opts.fill !== false && this.rules[n]!.fill) {
-        setOwn(out, n, structuredClone(this.rules[n]!.fill!.value));
+      else if (opts.fill !== false && this.rule(n).fill) {
+        setOwn(out, n, structuredClone(this.rule(n).fill!.value));
         filled.add(n);
       }
     }
@@ -163,12 +192,18 @@ export class Binder {
    */
   parse(bound: Rec, skip: Set<string>, sync = false): Promise<void> | void {
     const outcomes: Array<{ n: string; r: StandardResult | Promise<StandardResult> } | { n: string; error: unknown }> = [];
+    const pending = new Set<string>();
     for (const n of this.names) {
-      if (!this.rules[n]!.schema || skip.has(n) || !Object.hasOwn(bound, n)) continue;
+      const schema = this.rule(n).schema;
+      if (!schema || skip.has(n) || !Object.hasOwn(bound, n)) continue;
       try {
-        const r = this.rules[n]!.schema!["~standard"].validate(bound[n]);
-        if (r instanceof Promise) r.catch(() => undefined);            // observed now: whichever way this call goes
-        outcomes.push({ n, r });
+        const got: unknown = schema["~standard"].validate(getOwn(bound, n));
+        if (isThenable(got)) {
+          const r = Promise.resolve(got);                            // this realm's promise, whatever realm the schema's is from
+          r.catch(() => undefined);                                  // observed now: whichever way this call goes
+          pending.add(n);
+          outcomes.push({ n, r });
+        } else outcomes.push({ n, r: got as StandardResult });
       } catch (error) {
         outcomes.push({ n, error });
       }
@@ -177,7 +212,7 @@ export class Binder {
       if (r.issues) throw new InterfaceError("interface-input", n, `${this.name}: input ${n}: ${r.issues.map((i) => i.message).join("; ")}`);
       setOwn(bound, n, r.value);
     };
-    const later = outcomes.some((o) => "r" in o && o.r instanceof Promise);
+    const later = pending.size > 0;
     if (later && sync) throw new TypeError(`${this.name}: an input's schema validates asynchronously; render cannot wait for it (predict can)`);
     if (!later) {
       for (const o of outcomes) {

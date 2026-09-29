@@ -7,6 +7,7 @@
 
 import * as lmcc from "lmcc";
 import { trimWhite } from "./text.ts";
+import { getOwn, setOwn } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -90,6 +91,8 @@ export function signature(d: Definition, improved: string | null | undefined): l
   return new lmcc.Signature(instructions(d, improved), fields(d));
 }
 
+const BY_TYPE: Readonly<Record<string, unknown>> = { string: "example text", integer: 3, number: 2.5, boolean: true, array: [], object: {}, null: null };
+
 /** A value for a shape, for the sample input. */
 export function sample(shape: JsonObject): unknown {
   if (Array.isArray(shape["enum"])) return shape["enum"][0];
@@ -97,15 +100,14 @@ export function sample(shape: JsonObject): unknown {
     const options = (shape["anyOf"] as JsonObject[]).filter((s) => s["type"] !== "null");
     return options.length ? sample(options[0]!) : null;
   }
-  const byType: Record<string, unknown> = { string: "example text", integer: 3, number: 2.5, boolean: true, array: [], object: {}, null: null };
   const t = shape["type"];
-  return typeof t === "string" && t in byType ? structuredClone(byType[t]) : "example text";
+  return typeof t === "string" && Object.hasOwn(BY_TYPE, t) ? structuredClone(BY_TYPE[t]) : "example text";
 }
 
-/** The sample input: a value for each plain input. */
+/** The sample input: a value for each plain input (by own properties: `__proto__` is a field name like any other). */
 export function sampleInputs(sig: lmcc.Signature): Record<string, unknown> {
   const out: Record<string, unknown> = {};
-  for (const f of sig.fields) if (f.direction === "input" && f.purpose === "plain") out[f.name] = sample(f.shape as JsonObject);
+  for (const f of sig.fields) if (f.direction === "input" && f.purpose === "plain") setOwn(out, f.name, sample(f.shape as JsonObject));
   return out;
 }
 
@@ -117,17 +119,21 @@ export function signatureId(sig: lmcc.Signature): string {
   return lmcc.sha256(sig.fields.map((f) => ({ direction: f.direction, name: f.name, purpose: f.purpose || "plain", shape: f.shape, type: "" })));
 }
 
-/** Values as their fields expect them: a non-text value given to a text input is written as text. */
+/**
+ * Values as their fields expect them: a non-text value given to a text input
+ * is written as text. Only own properties are values: an inherited member
+ * (`toString`) is never sent as an input.
+ */
 export function prepareInputs(sig: lmcc.Signature, values: Record<string, unknown>): Record<string, unknown> {
   const out: Record<string, unknown> = {};
   for (const f of sig.fields) {
-    if (f.direction !== "input" || !(f.name in values)) continue;
-    let v = values[f.name];
+    if (f.direction !== "input" || !Object.hasOwn(values, f.name)) continue;
+    let v = getOwn(values, f.name);
     const shape = f.shape as JsonObject;
-    if (shape["type"] === "string" && !("enum" in shape) && v !== null && v !== undefined && typeof v !== "string") {
+    if (shape["type"] === "string" && !Object.hasOwn(shape, "enum") && v !== null && v !== undefined && typeof v !== "string") {
       v = typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
     }
-    out[f.name] = v;
+    setOwn(out, f.name, v);
   }
   return out;
 }

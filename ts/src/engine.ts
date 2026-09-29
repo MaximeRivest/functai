@@ -230,7 +230,7 @@ function replay(job: Job, response: Response): void {
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
   for (const f of plan.signature.fields) {
-    if (f.direction !== "output" || f.purpose !== "plain" || !(f.name in values)) continue;
+    if (f.direction !== "output" || f.purpose !== "plain" || !Object.hasOwn(values, f.name)) continue;
     const problem = misfit(f.shape as Rec, values[f.name], f.name);
     if (problem) throw new lmcc.Refusal("parse-value", problem);
   }
@@ -294,7 +294,8 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
     out = await tool.run(call.input ?? {});
   } catch (err) {
     if (errors === "raise") throw err;
-    return `error: ${(err as Error).name ?? "Error"}: ${(err as Error).message ?? String(err)}`;
+    const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
+    return `error: ${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
   }
   return typeof out === "string" ? out : JSON.stringify(out);
 }

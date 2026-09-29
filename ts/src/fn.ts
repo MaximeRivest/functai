@@ -20,11 +20,11 @@ import type { Request } from "@lm15/lm15";
 import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { Cancelled, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
-import { Binder, declareInput, declareOutput, rulesOf, type InputRule } from "./inputs.ts";
+import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
 import { checkInterface, interfaceSignature, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
-import { runCall } from "./program.ts";
+import { recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
 import { JournalError } from "./log.ts";
@@ -244,9 +244,12 @@ function filePath(where: string): string {
   }
 }
 
+const isRecordedTurn = (item: unknown): boolean =>
+  typeof item === "object" && item !== null && Object.hasOwn(item, "signature") && Object.hasOwn(item, "steps");
+
 function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string): Demo {
-  if (typeof item === "object" && item !== null && "signature" in item && "steps" in item) return item as unknown as Demo;   // a recorded turn
-  if (typeof item === "object" && item !== null && "inputs" in item && "outputs" in item
+  if (isRecordedTurn(item)) return item as unknown as Demo;   // a recorded turn
+  if (typeof item === "object" && item !== null && Object.hasOwn(item, "inputs") && Object.hasOwn(item, "outputs")
     && typeof item["inputs"] === "object" && !inputNames.includes("inputs")) {
     return { inputs: { ...(item["inputs"] as Rec) }, outputs: { ...(item["outputs"] as Rec) } };
   }
@@ -259,7 +262,7 @@ function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string)
   }
   const inputs: Rec = {};
   const outputs: Rec = {};
-  for (const [k, v] of Object.entries(item)) (inputNames.includes(k) ? inputs : outputs)[k] = v;
+  for (const [k, v] of Object.entries(item)) setOwn(inputNames.includes(k) ? inputs : outputs, k, v);
   return { inputs, outputs };
 }
 
@@ -268,7 +271,7 @@ interface Core {
   /** What it takes and gives, as data; its inputs' rules follow it unless `rules` says more (a schema). */
   interface: Interface;
   /** By input name; a loaded function has none, and its rules come from its interface. */
-  rules?: Record<string, InputRule>;
+  rules?: InputRules;
   own: Settings;
   tools: readonly Tool[];
   module: string;
@@ -281,6 +284,25 @@ interface Core {
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal"]);
+
+/**
+ * The field names an AI function cannot have here, though the contract
+ * allows them: lmcc's TypeScript renderer writes a turn's values with
+ * `values[name] = value` (its `Plan.turn`, `Plan.example` and reader), and
+ * for `__proto__` that sets the object's prototype instead. A text value is
+ * then lost, a JSON value is sent as `{}`, and an answer is read as `{}`.
+ * Refused, rather than sending other data than the caller gave, until lmcc
+ * carries the name. A module is not rendered by lmcc, and takes it.
+ */
+export const LMCC_CANNOT_CARRY: readonly string[] = ["__proto__"];
+
+/** Why an AI function with these fields cannot be sent faithfully, or null. */
+export function uncarried(names: readonly string[]): string | null {
+  const bad = names.filter((n) => LMCC_CANNOT_CARRY.includes(n));
+  return bad.length
+    ? `a field named ${bad.join(", ")} cannot be sent through lmcc's TypeScript renderer yet (it would set an object's prototype instead of holding the value): rename the field`
+    : null;
+}
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -303,10 +325,10 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   if (typeof name !== "string" || !name) throw new TypeError('ai(name, { input, output }): the name comes first: ai("mood", { ... })');
   if (!def || typeof def !== "object" || !def.input || typeof def.input !== "object") throw new TypeError(`ai("${name}", { input: { ... } }): the inputs are required`);
   if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${name}: give output (one answer) or outputs (several), not both`);
-  const rules: Record<string, InputRule> = {};
+  const rules = new Map<string, InputRule>();
   const inputs = Object.entries(def.input).map(([field, spec]) => {
     const { field: declared, rule } = declareInput(field, spec, `${name}.input.${field}`, "ai");
-    rules[field] = rule;
+    rules.set(field, rule);
     return { name: field, shape: declared.shape, desc: declared.desc ?? null, ...(rule.optional ? { optional: true } : {}) };
   });
   const outputSpecs: [string, FieldSpec][] = def.outputs
@@ -317,6 +339,8 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     const declared = declareOutput(field, spec, `${name}.outputs.${field}`, "ai");
     return { name: field, shape: declared.shape, desc: declared.desc ?? null };
   });
+  const cannot = uncarried([...inputs, ...outputs].map((f) => f.name));
+  if (cannot) throw new TypeError(`ai("${name}"): ${cannot}`);
   const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
@@ -383,7 +407,7 @@ export function make(core: Core): AIFunction {
     return JSON.stringify([adapter, s.template ?? null]);
   };
 
-  const rules: Record<string, InputRule> = core.rules ?? rulesOf(core.interface.inputs);
+  const rules: InputRules = core.rules ?? rulesOf(core.interface.inputs);
   const binder = new Binder(core.definition.name, names, rules);
   /** A call's argument as inputs by name; inputs left out get their default. */
   const bindInputs = (arg: unknown): Rec => binder.bind(arg)[0];
@@ -399,7 +423,7 @@ export function make(core: Core): AIFunction {
     const kept = new Set(plan.signature.fields.filter((f) => f.direction === "output" && (f.purpose === "plain" || f.purpose === "reasoning")).map((f) => f.name));
     const out: lmcc.Turn[] = [];
     for (const d of core.state.demos) {
-      if ("signature" in d && "steps" in d) {
+      if (isRecordedTurn(d)) {
         const recorded = d as unknown as { signature: string };
         if (recorded.signature === plan.fingerprint) {
           try {
@@ -499,7 +523,8 @@ export function make(core: Core): AIFunction {
     const { signal, ...extra } = options;
     if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
     const [bound, filled] = binder.bind(arg);
-    const given = { ...bound };                          // the record's: the values as given (defaults filled), before a schema's own parsing
+    // the record's: the values as given (defaults filled), as JSON before a schema's parsing runs (it may change them in place)
+    const given = recordInputs(names, bound);
     await binder.parse(bound, filled);
     const s = settingsNow(extra);
     const signature = signatureNow(s);

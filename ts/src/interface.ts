@@ -266,9 +266,9 @@ export function malformed(iface: unknown, opts: { ai?: boolean } = {}): { field:
           : "its shape uses a keyword the vocabulary does not list, or one with a value of another kind");
       }
       if (loops(shape)) return fault("its shape has a $defs entry that comes back to itself by $ref and anyOf alone");
-      if (ai && f["optional"] && !("default" in shape)) return fault("an AI function's optional input has a default (a model is sent every input)");
+      if (ai && f["optional"] && !Object.hasOwn(shape, "default")) return fault("an AI function's optional input has a default (a model is sent every input)");
       if (f["opaque"] && Object.keys(shape).length) return fault("an opaque field's shape is {}");
-      if ("default" in shape) {
+      if (Object.hasOwn(shape, "default")) {
         const ds = dataShape(shape);
         if (!fitsShape(shape["default"], ds, ds)) return fault(`its default ${JSON.stringify(shape["default"])} does not fit its shape`);
       }

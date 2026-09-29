@@ -9,7 +9,7 @@
 import * as lmcc from "lmcc";
 import { Config, stringifyJson } from "@lm15/lm15";
 import { builtin } from "./host.ts";
-import { fieldsOf, make, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { fieldsOf, make, uncarried, type AnyAIFunction as AIFunction } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
 import { interfaceSignature, malformed, type Interface, type InterfaceField } from "./interface.ts";
 import { REGISTRY } from "./layouts.ts";
@@ -141,6 +141,8 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
     else if (f.purpose === "reasoning") cot = true;
     else refuse("saved-tools", `${key}: field ${f.name} (${f.purpose}) needs tools`);
   }
+  const cannot = uncarried([...inputs, ...outputs].map((f) => f.name));
+  if (cannot) refuse("saved-differs", `${key}: it would not send what was saved: ${cannot}`);
   const own: Settings = {};
   if (typeof settingsIn["lm"] === "string") own.lm = settingsIn["lm"] as string;
   if (settingsIn["module"] === "cot" || cot) own.module = "cot";
@@ -163,7 +165,7 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
   const declared = "interface" in node ? node["interface"] as Interface : null;
   const withDefaults = inputs.map((f) => {
     const d = declared?.inputs.find((x) => x.name === f.name);
-    return d?.optional ? { ...f, shape: { ...f.shape, ...("default" in d.shape ? { default: d.shape["default"] } : {}) }, optional: true } : f;
+    return d?.optional ? { ...f, shape: { ...f.shape, ...(Object.hasOwn(d.shape, "default") ? { default: d.shape["default"] } : {}) }, optional: true } : f;
   });
   const definition: sig.Definition & { written: string } = {
     name: node!["name"] as string, description: "", inputs: withDefaults, outputs, cot, tools: false,

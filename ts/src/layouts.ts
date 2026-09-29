@@ -46,7 +46,7 @@ export function resolveAdapter(adapter: unknown): lmcc.Adapter {
   if (adapter === null || adapter === undefined) return resolveAdapter("xml");
   if (typeof adapter === "string") {
     const key = adapter.toLowerCase().replaceAll("-", "").replaceAll(" ", "").replaceAll("_", "");
-    const name = NAMED[key];
+    const name = Object.hasOwn(NAMED, key) ? NAMED[key] : undefined;
     if (!name) throw new Error(`unknown adapter ${JSON.stringify(adapter)}; use "xml", "chat", "json", an lmcc adapter, or template: [...]`);
     let a = loaded.get(name);
     if (!a) {
