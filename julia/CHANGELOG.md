@@ -2,6 +2,157 @@
 
 ## 0.1.0 (unreleased)
 
+### Stage 1 foundations (contract at c1e5063, design/08)
+
+- **The call log is format 2**, and both formats are read. Records carry
+  `program.interface`, `saw` (`[]`: Julia shows no earlier call yet),
+  `request_hash` on exchanges, `described` for values with no JSON form, and
+  `journal` when a required journal did not confirm the end. `rated` reads
+  `omitted` and `described`, and pools calls by interface (`rated(f)` passes
+  `f`'s), so turning reasoning on no longer splits a function's ratings.
+- **`log_content` per field**: `(transcript = false,)`, `Dict("*" => false,
+  "question" => true)`. A value is written only when no layer drops it (a
+  function's own setting, each `with_settings` block, `configure!`,
+  `FUNCTAI_LOG_CONTENT=0`); dropping any field drops the reasoning and tool
+  calls FunctAI adds and every request, reply and error message. A
+  function's own map naming a field it lacks, or a key that is not a name
+  anywhere, is refused (`LogContentError`).
+- **Interfaces** (contract/programs.md): `FunctAI.interface(f)` for AI
+  functions and programs, `FunctAI.interface_signature(f)` (the log's
+  `program.interface`). An AI function's input with a default is optional:
+  its default is in its interface, sent when the input is left out, and left
+  out of the lmcc signature (`functions/12`). The interface is checked at
+  definition, after lmcc's check (`InterfaceError` `interface-malformed`).
+  `AIFunction(…; defaults)` keeps a snapshot of each default's JSON, taken
+  when the function is defined: it is what a call leaving the input out
+  sends and logs, never made again from a value (no constructor runs again,
+  a `Set` keeps its order), so changing the value given later changes
+  nothing, and a saved and loaded function sends the same request as the
+  one saved, left-out inputs included. A default not of its input's type
+  is first converted as Julia's `convert` does (`1` for a `Float64` is
+  `1.0`, `1.0` for an `Int` is `1`), when Julia can. The function's own
+  code gets a copy of the value it was defined with. A field typed `Missing` (a record's,
+  say) reads `null` as `missing`. A `missing` default (top-level or
+  inside a record) is sent as `null`: `missing` in, `missing` out is for
+  inputs given. **Breaking**: an `@ai` default is data, known
+  when the function is defined: a literal (`"kind"`, `3`, `String[]`,
+  `(a = 1,)`) or a constant whose value cannot change (`const TONE =
+  "kind"`, an `@enum` value). A default that uses another input, is
+  computed (`time()`), or is a constant that can change (`const TAGS =
+  ["a"]`) is refused when the function is defined, instead of being taken
+  once and shared by every call; each call gets its own copy of the
+  default.
+- **`@program` declares its interface** from its typed arguments and return
+  type (untyped or `Any`: opaque; `outputs = (a = T, …)` for several; a
+  default that is data, a literal or a constant whose value cannot change,
+  in the interface), checked
+  on every call, inputs before the code runs and outputs when it returns
+  (`InterfaceError` `interface-input` / `interface-output`, naming the
+  field). Every input may be given by name. A call the interface refuses (an
+  input missing, unknown, given twice, or too many arguments) is a call: it
+  has its `started` and `failed` events and its record, and its code does
+  not run. The code makes its own defaults anew on each call, as Julia does
+  (a literal `[1]` is a new vector every time), and the record holds the
+  value the code got; a default that is Julia code (computed, using another
+  argument, or a constant that can change, such as a `Vector`) is recorded
+  as left out, as the contract says of a module's own default. What the code returns is
+  converted to the declared types (an output `Int` given `5.0` is `5`), and
+  several outputs may hold an opaque value. Error messages say what a value
+  is (its kind and size), never the value. A program's version includes its
+  interface. `AIProgram(name, code; interface)` builds one from an interface
+  as data. **Breaking**: a `@program` call given a value that does not fit
+  its declared type, or an argument it does not take, now throws
+  `InterfaceError` instead of Julia's `MethodError`, and a typed argument is
+  converted to its type (`5.0` to an `Int` argument is `5`).
+- **Saved folders**: every node written has its `interface`; loading an AI
+  function takes its optional inputs and their defaults from it, and checks
+  it against the signature (`saved-differs`, `interface-malformed`);
+  `FunctAI.describe(path)` describes any node without loading it
+  (`saved-no-interface` for a module saved before interfaces). An AI node
+  written before interfaces is described, and loaded, by the interface its
+  signature gives, checked as every interface is. The manifest is checked
+  against the contract's JSON Schemas themselves (`saved-malformed`).
+- **The contract's JSON Schemas** (`data/contract/schema`, copied by
+  `julia/check`) are read and applied as JSON Schema: a store checks every
+  event against the event schema, a loader every manifest against the
+  saved schema, and the tests every event and record Julia writes. A
+  keyword the package does not read refuses the schema when it loads.
+- **Events are format 2**: one log per call tree, numbered once (`tree`,
+  `writer`, `seq`, `after` a `FunctAI.Position`, `at`), with a `request`
+  event per model request; a stream opened on a call inside a program shows
+  the tree's numbers from that call (law 7). An `Event` is a value: it holds
+  its JSON form and nothing else, and reading its keys gives copies. Events
+  as data: `FunctAI.Event(json)`, `replay`, `resume`, `Follower` with
+  `receive!` and `recover!` (stale, duplicate, next, rewind, loss, unknown
+  format, and `:malformed` for an object that is not an event of format 2;
+  resuming in place only from a source that holds what the reader was
+  shown), and the kept form (`kept_event`, `kept_log`). A `done` event's
+  value is kept only when every output it holds is: an AI function with
+  several outputs returns them all, so it holds them all.
+- **A call ends after the calls made inside it**, at every depth. Each call
+  waits, before its end, for the calls made inside it that are still
+  running (a task it started and did not wait for), with one warning, and
+  numbers its end in the same hold of its tree's lock: no call joins it in
+  between. A tree's last event is its outermost call's end, and a stream on
+  any call has every event it will get once it has that call's end.
+  `FunctAI.detached(f)` starts work meant to outlive the call as trees of
+  their own. A call that starts inside a call that has ended runs as a tree
+  of its own.
+- **Closing a stream** cancels the calls inside it at every boundary FunctAI
+  holds: no call starts inside it after, no tool runs, and a body that
+  returns after the stream closed, or a call closed while it waits for the
+  calls inside it, ends `Cancelled`, not with its value.
+- **Observers and journals** as settings (`observers = [f]`, `journal =
+  store`, `FunctAI.Journal(store; required = true)`, `journal = false`):
+  observers add up over the layers and get the kept form; one journal per
+  tree, with the host's holding (`JournalError` `journal-policy`, and
+  `journal-scope` for a required one set inside a tree). Each observer gets
+  its events in order on a task of its own, never from two places at once,
+  so a slow, blocked or failing one never slows a call; one that falls
+  10,000 events behind loses the rest, and sees the loss in the positions it
+  is given; one that fails is warned about once and given nothing more. An
+  observer is not given the calls its own code makes (an exporter that
+  summarises each call with an AI function does not feed itself), nor those
+  another observer makes on seeing them. A Channel's reader is the user's
+  task and is not recognised: a reader that calls an AI function on each
+  event feeds itself (use an observer function for that). Observer
+  functions and stores run in Julia's newest world, whichever task started
+  their feed: one defined after a long-running task began works for its
+  calls too. A send's timeout is kept by a timer, never by the wall clock.
+  `FunctAI.drain()` waits for observers and journal writers (Julia drains
+  for 2 seconds at exit). A writer appends the kept form in order on a task
+  of its own, sends again what is not confirmed, and for a required journal
+  waits at the start, before each tool and at the end, each barrier for its
+  own event (`journal-barrier`: the tool does not run; `journal-end` holding
+  the outcome, its event, tree, store and cause; `FunctAI.settle(err)`).
+  `Journal(store; timeout = 30)`: a send not answered in time is no answer.
+  A store that cannot be called (`MethodError`, `UndefVarError`) stops the
+  writer, with its cause, instead of being sent again; any other exception
+  is no answer, and the event is sent again. A send the store has not
+  answered is waited for again, never started again beside itself. A
+  position's whole numbers may be JSON numbers (`1.0`), as the schema
+  reads them. A store is a
+  `FunctAI.EventStore` (`keep!`, `claim!`, `events_after`);
+  `FunctAI.MemoryStore` keeps logs by the store rules, checks every event
+  against the schema whatever form it comes in, and keeps copies that
+  nothing its callers do can change. Observers and stores run on Julia
+  tasks: one that holds its thread without yielding holds the calls on that
+  thread too, which with one default thread is every spawned call
+  (`?FunctAI.drain`): "a slow observer does not slow the call" holds for
+  one that yields.
+- **The call record** holds the tool calls FunctAI adds (`outputs.calls`:
+  the model's last step's, with its size); marks a value written as a
+  description by how it was written (a dictionary holding an object with no
+  JSON form is one); and a re-ask after a cut-off reply records the hash of
+  the request it sent (the first one's, sent again with a larger budget).
+- **What a call saw**: `FunctAI.saw(records, id)` and `keeps_saw` read any
+  language's records (`not-recorded`, `missing-call`, `unknown-key`,
+  `saw-cycle`, `not-kept`, `turn-invalid`).
+- Harnesses for every stage-1 case the contract assigns to Julia:
+  `functions/`, `rated/`, `saved/` (with `describe` and `sends`),
+  `programs/`, `content/`, `saw/` (`read`), `events/` (`replay`, `follow`,
+  `kept`, `store`, `journal`, `receivers`).
+
 The first Julia implementation of FunctAI, held to the same contract as the
 Python, TypeScript and R packages (`../contract`): every function, score,
 rating and saved-folder case, and a check against the other three languages
@@ -14,7 +165,8 @@ Anthropic and Gemini (`tools/live.jl`, 2026-09-27: 21 of 21).
   answers. Types are Julia's (`@enum`, `OneOf(...)`, structs, `NamedTuple`s,
   `Vector`, `Dict`, `Union{T,Nothing}`), and answers come back as them; an
   answer that does not fit is asked again. Several outputs return a
-  `NamedTuple`. Keyword inputs and defaults work as in any function.
+  `NamedTuple`. Keyword inputs work as in any function; a default is data
+  (a literal or a constant: see stage 1 above).
   `?name` documents it; `FunctAI.prompt(f, …)` shows the exact request.
 - `AIFunction(name, description; inputs, output(s), settings...)`: the same
   function, as data.

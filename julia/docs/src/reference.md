@@ -21,6 +21,9 @@ tool
 AITool
 @program
 AIProgram
+FunctAI.interface
+FunctAI.interface_signature
+InterfaceError
 ```
 
 ## Calling, and what a call returns
@@ -66,6 +69,7 @@ AIStream
 eachevent
 Event
 FunctAI.event_json
+FunctAI.Position
 FunctAI.text(::AIStream)
 Cancelled
 ```
@@ -110,6 +114,11 @@ predict(::AIModelFit, ::Any)
 rate
 calls
 rated
+LogContentError
+FunctAI.written_record
+FunctAI.saw
+FunctAI.keeps_saw
+FunctAI.SawUnknown
 ```
 
 ## Saving and loading
@@ -119,6 +128,7 @@ FunctAI.save
 FunctAI.load
 FunctAI.to_manifest
 FunctAI.from_manifest
+FunctAI.describe
 LoadRefused
 ```
 

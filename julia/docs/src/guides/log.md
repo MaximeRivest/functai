@@ -9,7 +9,9 @@ FunctAI.configure!(log_calls = true)          # the default folder
 FunctAI.configure!(log_calls = "~/calls")     # a folder
 ```
 
-or `FUNCTAI_LOG_CALLS=1` (or a folder) in the environment. The default folder is `$XDG_DATA_HOME/functai/calls` (`~/.local/share/functai/calls` on Linux), the same one FunctAI uses in Python, TypeScript and R. `log_calls = false` on a function wins over everything. `log_content = false` records sizes, times and tokens, never values or messages: for functions that see private data.
+or `FUNCTAI_LOG_CALLS=1` (or a folder) in the environment. The default folder is `$XDG_DATA_HOME/functai/calls` (`~/.local/share/functai/calls` on Linux), the same one FunctAI uses in Python, TypeScript and R. `log_calls = false` on a function wins over everything. `log_content = false` records sizes, times and tokens, never values or messages: for functions that see private data. It can name fields: `log_content = (transcript = false,)` keeps every value but the transcript; `Dict("*" => false, "question" => true)` keeps only the question (a host's list of what may be kept, which a misspelling can only narrow). The layers (a function's own setting, each `with_settings` block, `configure!`, and `FUNCTAI_LOG_CONTENT=0` in the environment) only ever remove: a value is written only when none of them drops it. Dropping any field drops the reasoning and tool calls FunctAI adds, and every request, reply and error message of the call (each could quote it). A function's own map that names a field it does not have is refused when it is defined ([`LogContentError`](@ref)).
+
+Records are format 2 (contract/calls.md): `omitted` names the fields not kept, `program.interface` is the interface's signature, `saw` the earlier calls a call was shown (`[]` in Julia, which has no conversation memory yet), `described` the values written as descriptions (no JSON form). Julia reads formats 1 and 2, from any language.
 
 Every call is one line of JSON, written when it ends, in a file of this process and day. A folder that can't be written warns once; the call goes on.
 
