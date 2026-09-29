@@ -32,7 +32,7 @@ LMCC = {path = "../../lmcc/julia"}
 CategoricalArrays = "0.10, 1"
 Dates = "1"
 LM15 = "1"
-LMCC = "0.8.4"
+LMCC = "0.8.5"
 MLJModelInterface = "1.9"
 OrderedCollections = "1.6"
 PrecompileTools = "1.2"
