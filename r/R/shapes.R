@@ -237,11 +237,12 @@ json_writer <- function(f) {
 # for a member the shape does not require and whose type takes no null is
 # left out, as an answer that leaves it out reads back. Nor a null record:
 # a record whose members are all missing (NA, NULL, or a record of them)
-# is null where the shape takes null and the row could be no record, since
-# a member the record requires that is one value and takes no null is NA;
-# that is a null answer read back (vctrs's missing row). Any other value
-# is sent as it is, so no record the shape admits (`{"child":{"x":null}}`)
-# is ever sent as null.
+# and all named by the record, at any depth, is null where the shape takes
+# null and the row could be no record, since a member the record requires
+# that is one value and takes no null is NA; that is a null answer read
+# back (vctrs's missing row). Any other value is sent as it is, so no
+# record the shape admits (`{"child":{"x":null}}`) is ever sent as null,
+# and a row with a member the record does not name is refused as given.
 json_of <- function(v, shape, root) {
   if (is_missing(v)) return(NULL)
   s <- value_guide(shape, root)
@@ -264,18 +265,21 @@ array_json <- function(v, s, root) {
 }
 
 # Whether a value is a null record (json_of()): a row of NA, given where the
-# shape takes null, whose members are all missing, and in which a member
-# the record requires that is one value and takes no null (a witness) is
-# NA, R's missing value. A record always has a value for its witness, so no
+# shape takes null, whose members are all missing and all members the
+# record names (at any depth: undeclared()), and in which a member the
+# record requires that is one value and takes no null (a witness) is NA,
+# R's missing value. A record always has a value for its witness, so no
 # record the shape admits is such a row, and the row reads as null alone:
 # the reason a tibble holds a nullable record only when it has a witness
 # (null_told()). A row that could be a record (every required member may
 # be null, or is a list or an object) is never null, whatever its leaves;
-# nor is a JSON null (NULL) for the witness, which is sent as given.
+# nor is a JSON null (NULL) for the witness, which is sent as given; nor a
+# row with a member the record does not name, which is no value of it
+# (records are closed) and is sent as given, to be refused.
 null_record <- function(v, shape, s, root) {
   if (is.data.frame(v)) { if (nrow(v) != 1L) return(FALSE); v <- element(v, 1L) }
   if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
-  if (!all_missing(v)) return(FALSE)
+  if (!all_missing(v) || !is.null(undeclared(v, s, root))) return(FALSE)
   props <- if (is_obj(s$properties)) s$properties else list()
   fits_shape(NULL, shape, root) &&
     any(vapply(unlist(s$required), function(n) {

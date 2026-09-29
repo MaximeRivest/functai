@@ -63,10 +63,12 @@
 #' it out comes back `NA`. Nor can a tibble hold a null record: a row of `NA`
 #' given for a record that may be null ([optional()], or a [json_shape()]
 #' that allows null) is null, as a null answer comes back (vctrs's missing
-#' row), when the record requires a member that is one value and never null
-#' and that member is `NA`, so the row could be no record. Any other row is
-#' sent as it is: a record of nulls (`list(child = list(x = NULL))`) stays
-#' one.
+#' row), when it names only members of the record and a member the record
+#' requires, one value and never null, is `NA`, so the row could be no
+#' record. Any other row is sent as it is: a record of nulls
+#' (`list(child = list(x = NULL))`) stays one, and a row with a column the
+#' record does not name, `NA` or not, is refused before any request, the
+#' message naming that column.
 #'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it

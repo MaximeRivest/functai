@@ -161,8 +161,12 @@ shape_fault <- function(v, shape, root, where = "value") {
     return(sprintf("%s: %s is not one of %s", where, short_json(v), short_json(shape$enum)))
   if (kw[["const"]] && !same_json(shape[["const"]], v))
     return(sprintf("%s: %s is not %s", where, short_json(v), short_json(shape[["const"]])))
-  if (kw[["anyOf"]] && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA)))
+  if (kw[["anyOf"]] && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA))) {
+    # a value that may be null and is not: why it is not the one other option
+    opts <- Filter(function(o) !(is_obj(o) && identical(o$type, "null")), shape$anyOf)
+    if (length(opts) == 1L && length(opts) < length(shape$anyOf) && !is.null(v)) return(shape_fault(v, opts[[1L]], root, where))
     return(sprintf("%s: %s fits none of its options", where, short_json(v)))
+  }
   if (t == "string") {
     n <- nchar(v, type = "chars")
     if (kw[["minLength"]] && n < num(shape$minLength)) return(sprintf("%s: shorter than %s characters", where, num(shape$minLength)))
@@ -188,19 +192,52 @@ shape_fault <- function(v, shape, root, where = "value") {
   if (t == "object") {
     props <- shape[["properties"]] %||% list()
     for (k in unlist(shape[["required"]])) if (!k %in% names(v)) return(sprintf("%s: no %s", where, k))
+    p <- undeclared(v, shape, root, where)             # a member no record names, before what members hold
+    if (!is.null(p)) return(p)
+    extra <- shape$additionalProperties
     for (k in names(v)) {
-      inner <- paste0(where, ".", k)
-      if (k %in% names(props)) {
-        p <- shape_fault(v[[k]], props[[k]], root, inner)
-        if (!is.null(p)) return(p)
-      } else if (kw[["additionalProperties"]]) {
-        extra <- shape$additionalProperties
-        if (isFALSE(extra)) return(sprintf("%s: no member %s is allowed", where, k))
-        if (is_obj(extra)) { p <- shape_fault(v[[k]], extra, root, inner); if (!is.null(p)) return(p) }
-      } else if (kw[["properties"]]) {
-        return(sprintf("%s: no member %s is allowed (a record has only the members it names)", where, k))
-      }
+      member <- if (k %in% names(props)) props[[k]] else if (is_obj(extra)) extra
+      if (!is.null(member)) { p <- shape_fault(v[[k]], member, root, paste0(where, ".", k)); if (!is.null(p)) return(p) }
     }
+  }
+  NULL
+}
+
+# The first member a value has that its record does not name (records are
+# closed; shape_fault() says which are), at any depth its shape leads to
+# with no choice to make (its own members, else value_guide()), as a fault;
+# or NULL. The value is JSON, or an R row (a one-row tibble, a named list
+# or vector). The one check of that rule: shape_fault() reads it before
+# what a record's members hold, so a refusal names the member the record
+# does not have, and null_record() reads it, so a row of NA with such a
+# member is never taken for null.
+undeclared <- function(v, shape, root, where = "value") {
+  s <- if (is_obj(shape) && (has_key(shape, "properties") || has_key(shape, "additionalProperties"))) shape else value_guide(shape, root)
+  if (is.null(s)) return(NULL)
+  if (is.data.frame(v)) { if (nrow(v) != 1L) return(NULL); v <- element(v, 1L) }
+  if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
+  if (!is.list(v) || !length(v)) return(NULL)
+  if (is.null(names(v))) {                                       # an array
+    prefix <- if (is_arr(s$prefixItems)) s$prefixItems else list()
+    for (i in seq_along(v)) {
+      item <- if (i <= length(prefix)) prefix[[i]] else if (is_obj(s$items)) s$items
+      p <- undeclared(v[[i]], item, root, sprintf("%s[%d]", where, i - 1L))
+      if (!is.null(p)) return(p)
+    }
+    return(NULL)
+  }
+  if (!has_key(s, "properties") && !has_key(s, "additionalProperties")) return(NULL)   # no member named: nothing to check
+  props <- if (is_obj(s$properties)) s$properties else list()
+  extra <- s$additionalProperties
+  for (k in names(v)) {
+    member <- if (k %in% names(props)) props[[k]] else if (is_obj(extra)) extra
+    if (is.null(member)) {
+      if (isFALSE(extra)) return(sprintf("%s: no member %s is allowed", where, k))
+      if (is_closed(s)) return(sprintf("%s: no member %s is allowed (a record has only the members it names)", where, k))
+      next
+    }
+    p <- undeclared(v[[k]], member, root, paste0(where, ".", k))
+    if (!is.null(p)) return(p)
   }
   NULL
 }

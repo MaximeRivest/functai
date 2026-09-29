@@ -160,6 +160,23 @@
 * `?ai` says the row-of-`NA` rule holds for any record that may be null,
   a `json_shape()` one too.
 
+### After the fifth review
+
+* A row of `NA` with a column the record does not name
+  (`tibble(name = NA, email = NA)` for `optional(record(name =
+  character()))`), at any depth, is refused before any request, as a row
+  with a value in that column is, and so is a default like it; before, it
+  was sent as `null`. A row of `NA` is null only when it names only the
+  record's members and the member that tells null apart is `NA`.
+* A refusal names the member at fault for a record that may be null too:
+  `value: no member email is allowed`, not `… fits none of its options`;
+  a member a record does not name is named before what the members hold.
+* A `json_shape()` that may be null by a list of types
+  (`type = list("object", "null")`) is saved; before, `write_ai()` failed
+  making its sample input. Its sample value is `"example text"`, as
+  TypeScript and Julia make it (the contract lists no value for a list of
+  types).
+
 ## Before stage 1
 
 The first R implementation of FunctAI, held to the same contract as the

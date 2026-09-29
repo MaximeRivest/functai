@@ -51,7 +51,11 @@ sample_value <- function(shape) {
     opts <- Filter(function(s) !identical(s$type, "null"), shape$anyOf)
     return(if (length(opts)) sample_value(opts[[1L]]) else NULL)
   }
-  switch(shape$type %||% "string", string = "example text", integer = 3L, number = 2.5, boolean = TRUE,
+  # a type that is not one name (a list of them: ["object", "null"]) is no
+  # type calls.md lists: the text, as TypeScript and Julia give
+  t <- shape$type
+  if (!(is.character(t) && length(t) == 1L)) t <- "string"
+  switch(t, string = "example text", integer = 3L, number = 2.5, boolean = TRUE,
          array = list(), object = lmcc::jobj(), null = NULL, "example text")
 }
 
