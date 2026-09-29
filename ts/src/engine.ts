@@ -13,9 +13,9 @@ import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
-import { setOwn } from "./values.ts";
+import { entriesOf, setOwn, writeData } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
-import { currentTurn, prepareInputs } from "./signature.ts";
+import { prepareInputs } from "./signature.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -297,15 +297,15 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
     const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
     return `error: ${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
   }
-  return typeof out === "string" ? out : JSON.stringify(out);
+  return typeof out === "string" ? out : writeData(out);     // members in the value's order
 }
 
 /** Call the model (and run tools until it answers). */
 export async function run(job: Job): Promise<Prediction> {
   const { plan } = job;
   const values = prepareInputs(plan.signature, job.inputs);
-  if (job.tools.length) values["tools"] = job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-  let turn = currentTurn(plan, values);
+  if (job.tools.length) setOwn(values, "tools", job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
+  let turn = plan.turn(values);
   const responses: Response[] = [];
   const steps = Math.max(1, job.settings.maxSteps);
   for (let i = 0; i < steps; i++) {
@@ -316,7 +316,7 @@ export async function run(job: Job): Promise<Prediction> {
     if (!calls.length) {
       turn = turn.finish();
       const outputs: Rec = {};
-      for (const [k, v] of Object.entries(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
+      for (const [k, v] of entriesOf(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
       return new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
     }
     for (const c of calls) {

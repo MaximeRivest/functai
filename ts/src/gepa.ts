@@ -12,7 +12,7 @@ import { newId } from "./calllog.ts";
 import { withSettings, type Settings } from "./settings.ts";
 import { t } from "./shapes.ts";
 import { normalize, trimWhite } from "./text.ts";
-import { getOwn } from "./values.ts";
+import { getOwn, recordOf, writeData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -129,7 +129,7 @@ export async function gepa<F extends AIFunction, R extends Row<F>>(fn: F, rows: 
   const outputs = fn.definition.outputs.map((f) => f.name);
   const inputs = fn.definition.inputs.map((f) => f.name);
   const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
-    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => n in r)).map((n) => [n, n]));
+    : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputs.filter((n) => rows.some((r) => Object.hasOwn(r, n))).map((n) => [n, n]));
   if (!opts.metric && !Object.keys(mapping).length) {
     throw new Error(`gepa needs the right answers: a column named like an output (${outputs.join(", ")}), or expected`);
   }
@@ -339,15 +339,15 @@ export function bestPair(scores: readonly (readonly number[])[], front: Map<numb
 }
 
 function answerText(v: unknown): string {
-  return typeof v === "string" ? v : JSON.stringify(v);
+  return typeof v === "string" ? v : writeData(v);       // members in the value's order
 }
 
 function defaultFeedback(mapping: Record<string, string>, single: boolean): Feedback {
   return (row, pred, error) => {
     if (error !== null || pred === null) return `the call failed: ${error}`;
-    const wrong = Object.keys(mapping).filter((k) => exactMatch({ [k]: row[mapping[k]!] }, { [k]: pred[k] })["exact_match"] !== 1);
+    const wrong = Object.keys(mapping).filter((k) => exactMatch(recordOf([[k, getOwn(row, mapping[k]!)]]), recordOf([[k, getOwn(pred, k)]]))["exact_match"] !== 1);
     if (!wrong.length) return "right";
-    return "wrong: " + wrong.map((k) => `the right ${single || k === "result" ? "answer" : k} is ${answerText(row[mapping[k]!])}`).join("; ");
+    return "wrong: " + wrong.map((k) => `the right ${single || k === "result" ? "answer" : k} is ${answerText(getOwn(row, mapping[k]!))}`).join("; ");
   };
 }
 

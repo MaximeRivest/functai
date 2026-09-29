@@ -7,7 +7,7 @@
  * can ask for less, never for more.
  */
 
-import { getOwn, setOwn } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -99,16 +99,16 @@ const errorKept = (e: Rec) => Object.fromEntries(Object.entries(e).filter(([k]) 
  * error only its type and code.
  */
 export function writtenRecord(record: Rec, fields: CallFields, keep: Record<string, boolean>): Rec {
-  if (Object.values(keep).every(Boolean)) return structuredClone(record);
+  if (Object.values(keep).every(Boolean)) return copyData(record);
   const out: Rec = {};
   for (const [k, v] of Object.entries(record)) {
-    if (ALWAYS_KEPT.has(k)) out[k] = structuredClone(v);
+    if (ALWAYS_KEPT.has(k)) out[k] = copyData(v);
     if (k === "content") {
       out["content"] = false;
       out["omitted"] = { inputs: fields.inputs.filter((n) => getOwn(keep, n) !== true), outputs: fields.outputs.filter((n) => getOwn(keep, n) !== true) };
     }
   }
-  const only = (values: Rec) => Object.fromEntries(Object.entries(values).filter(([k]) => getOwn(keep, k) === true));
+  const only = (values: Rec) => recordOf(entriesOf(values).filter(([k]) => getOwn(keep, k) === true));
   const answer = (record["program"] as Rec)["answer"] as string;
   const inputs = only((record["inputs"] ?? {}) as Rec);
   if (Object.keys(inputs).length) out["inputs"] = inputs;
@@ -130,7 +130,7 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
   out["error"] = record["error"] ? errorKept(record["error"] as Rec) : null;
   out["exchanges"] = ((record["exchanges"] ?? []) as Rec[]).map((ex) => {
     const kept: Rec = {};
-    for (const [k, v] of Object.entries(ex)) if (!["request", "response", "request_hash"].includes(k)) kept[k] = structuredClone(v);
+    for (const [k, v] of Object.entries(ex)) if (!["request", "response", "request_hash"].includes(k)) kept[k] = copyData(v);
     if (kept["error"]) kept["error"] = errorKept(kept["error"] as Rec);
     return kept;
   });

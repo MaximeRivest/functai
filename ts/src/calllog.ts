@@ -9,12 +9,12 @@
  */
 
 import * as lmcc from "lmcc";
-import { Request, Response, stringifyJson } from "@lm15/lm15";
+import { Request, Response } from "@lm15/lm15";
 import { writtenRecord, type CallFields } from "./content.ts";
 import type { Node } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
-import { getOwn, setOwn, toJson } from "./values.ts";
+import { entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -110,14 +110,14 @@ export function callerOf(settings: Settings): Rec {
   let base: Rec = {};
   if (raw) {
     try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) base = parsed;
+      const parsed = parseData(raw);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) base = parsed as Rec;
       else throw new Error("not a JSON object");
     } catch (err) {
       warnOnce(`caller:${raw}`, `$FUNCTAI_CALLER is not a JSON object (${(err as Error).message}); ignored`);
     }
   }
-  return { ...base, ...(settings.caller ?? {}) };
+  return lmcc.copyObject(base, settings.caller ?? {});             // members in order, as Python's {**env, **setting}
 }
 
 // ------------------------------------------------------------------ a call
@@ -291,7 +291,7 @@ export function record(call: Call, ending: Ending): Rec {
   const written = (from: Record<string, readonly [unknown, number, boolean]>, which: "inputs" | "outputs"): [Rec, Record<string, number>] => {
     const data: Rec = {};
     const sizes: Record<string, number> = {};
-    for (const [k, [json, n, isDescription]] of Object.entries(from)) {
+    for (const [k, [json, n, isDescription]] of entriesOf(from)) {
       setOwn(data, k, json);
       setOwn(sizes, k, n);
       if (isDescription) described[which].push(k);
@@ -299,7 +299,7 @@ export function record(call: Call, ending: Ending): Rec {
     return [data, sizes];
   };
   const values = (from: Rec, which: "inputs" | "outputs") =>
-    written(Object.fromEntries(Object.entries(from).map(([k, v]) => [k, toJson(v)])), which);
+    written(recordOf(entriesOf(from).map(([k, v]) => [k, toJson(v)] as const)), which);
   const [inputs, inSizes] = written(call.inputsJson, "inputs");
   const failed = ending.failed;
   const [outputs, outSizes] = call.outputs && !failed ? values(call.outputs, "outputs") : [null, {}];
@@ -324,14 +324,14 @@ export function record(call: Call, ending: Ending): Rec {
   rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, true));
   rec["saw"] = [];
   if (call.journal) rec["journal"] = call.journal;
-  rec["caller"] = { ...call.caller };
+  rec["caller"] = lmcc.copyObject(call.caller);
   rec["process"] = processJson();
   return writtenRecord(rec, call.fields, call.keep);
 }
 
 function line(rec: Rec): string {
-  // lm15 writes its numbers as they came (a temperature of 0.0 stays 0.0), as Python does
-  const dump = (r: Rec) => stringifyJson(r) + "\n";
+  // numbers as they came (a temperature of 0.0 stays 0.0) and every value's members in its order, as Python writes them
+  const dump = (r: Rec) => writeData(r) + "\n";
   let text = dump(rec);
   if (new TextEncoder().encode(text).length <= MAX_LINE) return text;
   rec = { ...rec, truncated: true, exchanges: (rec["exchanges"] as Rec[]).map(({ request: _q, response: _r, ...rest }) => rest) };
@@ -405,7 +405,7 @@ export function read(folder?: string | null, opts: { since?: Date | null } = {})
         if (!raw.trim()) continue;
         let rec: unknown;
         try {
-          rec = JSON.parse(raw);
+          rec = parseData(raw);
         } catch {
           continue;
         }
@@ -461,11 +461,11 @@ function says(rating: Rec, call: Rec): Rec | null {
   if (rating["verdict"] === "right") {
     const outputs = (call["outputs"] ?? null) as Rec | null;
     const described = (((call["described"] ?? {}) as Rec)["outputs"] ?? []) as string[];
-    return outputs && Object.hasOwn(outputs, answer) && !described.includes(answer) ? { [answer]: outputs[answer] } : null;
+    return outputs && Object.hasOwn(outputs, answer) && !described.includes(answer) ? recordOf([[answer, outputs[answer]]]) : null;
   }
   const values: Rec = {};
   if (Object.hasOwn(rating, "answer")) setOwn(values, answer, rating["answer"]);
-  for (const [k, v] of Object.entries((rating["outputs"] ?? {}) as Rec)) if (!Object.hasOwn(values, k)) setOwn(values, k, v);
+  for (const [k, v] of entriesOf((rating["outputs"] ?? {}) as Rec)) if (!Object.hasOwn(values, k)) setOwn(values, k, v);
   return Object.keys(values).length ? values : null;
 }
 
@@ -517,9 +517,9 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
     const spelled = new Set(usable.map(([, v]) => lmcc.canonicalJson(v as lmcc.Json)));
     const disputed = verdicts.size > 1 || spelled.size > 1;
     const answer = (program["answer"] as string) || "result";
-    const row: Rec = { ...((call["inputs"] ?? {}) as Rec) };
+    const row: Rec = lmcc.copyObject((call["inputs"] ?? {}) as Rec);
     if (Object.hasOwn(values, answer)) setOwn(row, answer, values[answer]);
-    for (const [k, v] of Object.entries(values)) if (k !== answer) setOwn(row, k, v);
+    for (const [k, v] of entriesOf(values)) if (k !== answer) setOwn(row, k, v);
     addMeta(row, {
       call: call["id"], version: program["version"], rating: rating["verdict"], rated_by: rating["by"],
       origin: rating["origin"] ?? "review", sample: rating["sample"] ?? null, disputed,
@@ -559,7 +559,7 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
   const who = opts.by ?? (callerOf(settings)["user"] as string | undefined) ?? (processJson()["user"] as string | null) ?? "someone";
   const rec: Rec = { functai_rating: RATING_FORMAT, id: newId(), call: callId, at: iso(Date.now()), by: who, verdict: v };
   if ("answer" in opts) rec["answer"] = toJson(opts.answer)[0];
-  if (opts.outputs) rec["outputs"] = Object.fromEntries(Object.entries(opts.outputs).map(([k, x]) => [k, toJson(x)[0]]));
+  if (opts.outputs) rec["outputs"] = recordOf(entriesOf(opts.outputs).map(([k, x]) => [k, toJson(x)[0]] as const));
   if (opts.reasons?.length) rec["reasons"] = [...opts.reasons];
   if (opts.note) rec["note"] = opts.note;
   rec["origin"] = opts.origin ?? "review";

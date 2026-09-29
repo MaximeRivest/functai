@@ -13,7 +13,7 @@ import { receivers, type ReceiverLayer } from "./events.ts";
 import { env } from "./host.ts";
 import { journalOf, JournalError, TreeLog, type Node, type Observer, type ResolvedJournal, type Watcher } from "./log.ts";
 import { checkSettings, layersOf, type Settings } from "./settings.ts";
-import { getOwn, setOwn, toJson } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -146,7 +146,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
 
   const started = log.emit(node, "started", {
     parent: call.parent, root: call.root, program,
-    inputs: Object.fromEntries(Object.entries(recorded).map(([k, [json]]) => [k, structuredClone(json)])), content: true, saw: [],
+    inputs: recordOf(entriesOf(recorded).map(([k, [json]]) => [k, copyData(json)])), content: true, saw: [],
   });
 
   // whether the body ended well is said by `ok`, never by the error's value: code may throw undefined (Promise.reject())

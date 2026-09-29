@@ -5,6 +5,7 @@
  */
 
 import * as lmcc from "lmcc";
+import { RawNumber } from "@lm15/lm15";
 
 type Rec = Record<string, unknown>;
 
@@ -33,7 +34,10 @@ function plain(v: unknown): lmcc.Json {
     const proto = Object.getPrototypeOf(v);
     if (proto !== Object.prototype && proto !== null) throw new TypeError("not plain data");
     const out: Record<string, lmcc.Json> = {};
-    for (const [k, x] of Object.entries(v as Rec)) if (x !== undefined) setOwn(out, k, plain(x));
+    for (const k of lmcc.memberNames(v)) {
+      const x = (v as Rec)[k];
+      if (x !== undefined) lmcc.setMember(out, k, plain(x));
+    }
     return out;
   }
   throw new TypeError(typeof v);
@@ -60,17 +64,148 @@ export function toJson(value: unknown): [lmcc.Json, number, boolean] {
 }
 
 /**
- * Set an own property, whatever its name: `obj["__proto__"] = v` would set
- * the object's prototype instead (a JSON member named `__proto__` is data).
+ * Records keyed by names (field names, JSON members) are data: any name is an
+ * own member or absent, never one `Object.prototype` has (`toString`,
+ * `__proto__`), and members keep the order the value holds, integer-like
+ * names (`"10"`) included, which JavaScript would list first. lmcc carries
+ * that order on the objects it builds (its `memberNames`, `setMember`); these
+ * are the ways FunctAI reads, writes, copies, parses and writes out such
+ * records, so every record, request and saved file holds a value's members
+ * in its order, as Python's do (tests/order.test.ts).
  */
-export function setOwn(obj: object, key: string, value: unknown): void {
-  if (key === "__proto__") Object.defineProperty(obj, key, { value, enumerable: true, writable: true, configurable: true });
-  else (obj as Record<string, unknown>)[key] = value;
+
+// An lmcc without these (0.8.4 as published) reads a missing output named `toString` as `""`, drops a `__proto__`
+// member, and reorders members: functai would send and keep other data than it was given. It refuses to run instead.
+const HELPERS = ["setMember", "ownValue", "memberNames", "orderedObject", "copyObject", "parseJson", "jsonText"] as const;
+const missing = HELPERS.filter((h) => typeof (lmcc as unknown as Record<string, unknown>)[h] !== "function");
+if (missing.length) {
+  throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc commit 3492090 or later): this lmcc has no ${missing.join(", ")}`);
 }
 
-/** An own property's value (never an inherited one: `toString`, `constructor`), or undefined. */
+/** Set a member as data: `__proto__` is an own member, and a new name comes after the others (lmcc's `setMember`). */
+export function setOwn(obj: object, key: string, value: unknown): void {
+  lmcc.setMember(obj as Record<string, unknown>, key, value);
+}
+
+/** An own member's value (never an inherited one: `toString`, `constructor`), or undefined. */
 export function getOwn<T>(obj: Readonly<Record<string, T>> | null | undefined, key: string): T | undefined {
-  return obj !== null && obj !== undefined && Object.hasOwn(obj, key) ? obj[key] : undefined;
+  return obj !== null && obj !== undefined ? lmcc.ownValue(obj, key) as T | undefined : undefined;
+}
+
+/** A record's names in the value's order (lmcc's `memberNames`). */
+export const namesOf = (obj: object): string[] => lmcc.memberNames(obj);
+
+/** A record's (name, value) pairs in the value's order. */
+export function entriesOf<T = unknown>(obj: Readonly<Record<string, T>>): [string, T][] {
+  return lmcc.memberNames(obj).map((k) => [k, obj[k] as T]);
+}
+
+/** A record of these (name, value) pairs, in their order, any name a member. */
+export function recordOf<T = unknown>(entries: Iterable<readonly [string, T]>): Record<string, T> {
+  return lmcc.orderedObject(entries);
+}
+
+const isPlain = (v: object): boolean => {
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
+/**
+ * A deep copy, as `structuredClone` makes one, that keeps each object's
+ * members in the value's order (a structured clone loses lmcc's record of
+ * it): plain objects and arrays are copied member by member, anything else
+ * by `structuredClone` (which refuses a function, as it does).
+ */
+export function copyData<T>(value: T): T {
+  const seen = new Map<object, unknown>();
+  const walk = (v: unknown): unknown => {
+    if (typeof v === "function" || typeof v === "symbol") return structuredClone(v);
+    if (v === null || typeof v !== "object") return v;
+    if (seen.has(v)) return seen.get(v);
+    if (v instanceof RawNumber) return new RawNumber(v.raw);   // a number lm15 keeps as written (a structured clone would make it an object)
+    if (Array.isArray(v)) {
+      const out: unknown[] = new Array(v.length);
+      seen.set(v, out);
+      for (let i = 0; i < v.length; i++) if (i in v) out[i] = walk(v[i]);
+      return out;
+    }
+    if (!isPlain(v)) {
+      const out = structuredClone(v);
+      seen.set(v, out);
+      return out;
+    }
+    const out: Rec = {};
+    seen.set(v, out);
+    for (const k of lmcc.memberNames(v)) lmcc.setMember(out, k, walk((v as Rec)[k]));
+    return out;
+  };
+  return walk(value) as T;
+}
+
+/** JSON text as a record's reader expects it: lmcc's parser, which keeps members in the order written (JSON.parse does not). */
+export function parseData(text: string): unknown {
+  return lmcc.parseJson(text);
+}
+
+/**
+ * JSON text of a value, members in the value's order (`JSON.stringify` lists
+ * integer-like names first): what `JSON.stringify(value, null, indent)`
+ * writes otherwise (a `toJSON` is used; an `undefined`, a function or a
+ * symbol member is left out, and is `null` in an array; a number that is not
+ * finite is `null`), except that a `bigint` is written as its digits and an
+ * lm15 `RawNumber` as it came (a temperature of `0.0` stays `0.0`).
+ */
+export function writeData(value: unknown, indent = 0): string {
+  const out: string[] = [];
+  const skip = (v: unknown) => v === undefined || typeof v === "function" || typeof v === "symbol";
+  const lowered = (v: unknown, key: string): unknown =>
+    v !== null && typeof v === "object" && !(v instanceof RawNumber) && typeof (v as { toJSON?: unknown }).toJSON === "function"
+      ? (v as { toJSON(k: string): unknown }).toJSON(key) : v;
+  const write = (v: unknown, depth: number): void => {
+    if (v === null || skip(v)) {
+      out.push("null");
+      return;
+    }
+    if (typeof v === "bigint") {
+      out.push(v.toString());
+      return;
+    }
+    if (v instanceof RawNumber) {
+      out.push(v.raw);
+      return;
+    }
+    if (typeof v !== "object") {
+      out.push(JSON.stringify(v) ?? "null");
+      return;
+    }
+    const nl = indent > 0 ? "\n" + " ".repeat(indent * (depth + 1)) : "";
+    const close = indent > 0 ? "\n" + " ".repeat(indent * depth) : "";
+    if (Array.isArray(v)) {
+      if (!v.length) {
+        out.push("[]");
+        return;
+      }
+      out.push("[");
+      v.forEach((x, i) => {
+        out.push(i ? "," + nl : nl);
+        write(lowered(x, String(i)), depth + 1);
+      });
+      out.push(close, "]");
+      return;
+    }
+    let first = true;
+    out.push("{");
+    for (const k of lmcc.memberNames(v)) {
+      const x = lowered((v as Rec)[k], k);
+      if (skip(x)) continue;
+      out.push(first ? nl : "," + nl, JSON.stringify(k), indent > 0 ? ": " : ":");
+      first = false;
+      write(x, depth + 1);
+    }
+    out.push(first ? "}" : close + "}");
+  };
+  write(lowered(value, ""), 0);
+  return out.join("");
 }
 
 /** Code-point order of two strings (JavaScript's `<` compares UTF-16 code units). */

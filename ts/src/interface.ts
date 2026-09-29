@@ -7,7 +7,7 @@
  */
 
 import * as lmcc from "lmcc";
-import { byCodePoint, getOwn, jsonForm, setOwn } from "./values.ts";
+import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -212,7 +212,7 @@ export function fitsShape(v: unknown, shape: Rec, root: Rec): boolean {
     const o = v as Rec;
     const props = (shape["properties"] ?? {}) as Record<string, Rec>;
     if (((shape["required"] ?? []) as string[]).some((k) => !Object.hasOwn(o, k))) return false;
-    for (const [k, x] of Object.entries(o)) {
+    for (const [k, x] of entriesOf(o)) {
       if (Object.hasOwn(props, k)) {
         if (!fitsShape(x, props[k]!, root)) return false;
       } else if (has("additionalProperties")) {
@@ -332,7 +332,7 @@ export function checkInputs(iface: Interface, given: Readonly<Rec>, where: strin
     } else if (!f.optional) {
       throw new InterfaceError("interface-input", f.name, `${where} needs ${f.name}`);
     } else if (Object.hasOwn(f.shape, "default")) {
-      setOwn(out, f.name, structuredClone(f.shape["default"]));
+      setOwn(out, f.name, copyData(f.shape["default"]));
     }
   }
   return out;
@@ -350,7 +350,7 @@ export function recordedInputs(iface: Interface, given: Readonly<Rec>): Rec {
   for (const f of iface.inputs) {
     const value = getOwn(given, f.name);
     if (value !== undefined) setOwn(out, f.name, value);
-    else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, structuredClone(f.shape["default"]));
+    else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, copyData(f.shape["default"]));
   }
   return out;
 }

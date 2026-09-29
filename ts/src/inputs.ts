@@ -6,7 +6,7 @@
 
 import { InterfaceError, type InterfaceField } from "./interface.ts";
 import { allowsNull, isOpaque, readField, saysOptional, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
-import { byCodePoint, getOwn, jsonForm, setOwn } from "./values.ts";
+import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -54,7 +54,7 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
   let fill: { value: unknown } | undefined;
   if (said !== undefined) {
     optional = said;
-    if (said && Object.hasOwn(read, "default")) fill = { value: structuredClone(read["default"]) };
+    if (said && Object.hasOwn(read, "default")) fill = { value: copyData(read["default"]) };
   } else if (schema) {
     const probe = schema["~standard"].validate(undefined);
     if (isThenable(probe)) Promise.resolve(probe).catch(() => undefined);     // an async schema cannot say at definition time: required
@@ -64,7 +64,7 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
     }
   } else if (Object.hasOwn(read, "default")) {
     optional = true;
-    fill = { value: structuredClone(read["default"]) };
+    fill = { value: copyData(read["default"]) };
   } else if (!opaque && allowsNull(read)) {
     optional = true;
     fill = { value: null };
@@ -175,11 +175,11 @@ export class Binder {
       const value = getOwn(given, n);
       if (value !== undefined) setOwn(out, n, value);
       else if (opts.fill !== false && this.rule(n).fill) {
-        setOwn(out, n, structuredClone(this.rule(n).fill!.value));
+        setOwn(out, n, copyData(this.rule(n).fill!.value));
         filled.add(n);
       }
     }
-    if (opts.check === false) for (const [k, v] of Object.entries(given)) if (!names.includes(k) && v !== undefined) setOwn(out, k, v);
+    if (opts.check === false) for (const [k, v] of entriesOf(given)) if (!names.includes(k) && v !== undefined) setOwn(out, k, v);
     return [out, filled];
   }
 

@@ -28,7 +28,7 @@ import { recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
-import { getOwn, setOwn } from "./values.ts";
+import { copyData, getOwn, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 type Fields = Record<string, FieldSpec>;
@@ -163,7 +163,7 @@ function makeModule(core: ModuleCore): AnyModule {
         if (getOwn(given, f.name) === undefined && fill && Object.hasOwn(inputs, f.name)) {
           let value: unknown;
           try {
-            value = structuredClone(fill.value);
+            value = copyData(fill.value);
           } catch {
             value = fill.value;
           }
@@ -194,7 +194,7 @@ function makeModule(core: ModuleCore): AnyModule {
   Object.defineProperties(fn, {
     name: { value: name },
     module: { value: core.where },
-    interface: { get: () => structuredClone(iface) },
+    interface: { get: () => copyData(iface) },
     interfaceId: { value: interfaceId },
     version: { get: version },
     uses: { value: core.uses },

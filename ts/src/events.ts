@@ -13,7 +13,7 @@
 
 import * as lmcc from "lmcc";
 import { passes } from "./schema.ts";
-import { getOwn, setOwn } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, setOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -174,7 +174,7 @@ export class Replay {
   }
 
   get state(): LogState {
-    return { calls: structuredClone(this.calls), finished: this.finished };
+    return { calls: copyData(this.calls), finished: this.finished };
   }
 }
 
@@ -364,7 +364,7 @@ const SAW_KEYS = new Set(["call", "steps", "without", "slot", "saw_of"]);
 export function known(e: EventLike): Rec {
   const keys = KEYS[e.kind as string] ?? [];
   const out: Rec = {};
-  for (const [k, v] of Object.entries(e)) if (ENVELOPE.includes(k) || keys.includes(k)) out[k] = structuredClone(v);
+  for (const [k, v] of Object.entries(e)) if (ENVELOPE.includes(k) || keys.includes(k)) out[k] = copyData(v);
   const pick = (o: unknown, allowed: Set<string>) =>
     Object.fromEntries(Object.entries(o as Rec).filter(([k]) => allowed.has(k)));
   if (out["error"] && typeof out["error"] === "object") out["error"] = pick(out["error"], ERROR_KEYS);
@@ -390,7 +390,7 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
   switch (kind) {
     case "started": {
       const given = (out["inputs"] ?? {}) as Rec;               // the copy: nothing a receiver does reaches the call's own event
-      const inputs = Object.fromEntries(Object.entries(given).filter(([k]) => getOwn(keep.inputs, k) === true));
+      const inputs = recordOf(entriesOf(given).filter(([k]) => getOwn(keep.inputs, k) === true));
       const shaped: Rec = {};
       for (const [k, v] of Object.entries(out)) {
         if (k === "inputs") continue;
@@ -508,7 +508,7 @@ export class MemoryStore implements EventStore {
 
   /** The events kept of a tree, in order. */
   events(tree: string): Rec[] {
-    return structuredClone(this.logs.get(tree) ?? []);
+    return copyData(this.logs.get(tree) ?? []);
   }
 
   /** The trees it holds. */
@@ -547,7 +547,7 @@ export class MemoryStore implements EventStore {
     const last = log.length ? positionOf(log[log.length - 1]!) : null;
     if (!samePosition(after, last)) return (after?.seq ?? 0) > (last?.seq ?? 0) ? "event-gap" : "event-conflict";
     if (!log.length && (e.kind !== "started" || e["call"] !== tree || e["writer"] !== 1)) return "event-start";
-    log.push(structuredClone(e));
+    log.push(copyData(e));
     return "kept";
   }
 
@@ -578,7 +578,7 @@ export class MemoryStore implements EventStore {
   }
 
   async read(tree: string, after: Position | null): Promise<ReadAnswer> {
-    return structuredClone(this.readNow(tree, after));
+    return copyData(this.readNow(tree, after));
   }
 }
 

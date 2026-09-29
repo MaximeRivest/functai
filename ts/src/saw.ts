@@ -11,6 +11,7 @@
  */
 
 import type { SawEntry } from "./events.ts";
+import { copyData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -49,7 +50,7 @@ function expand(records: ReadonlyMap<string, Rec>, call: string, following: read
       if (typeof entry !== "object" || entry === null || !("call" in entry) || Object.keys(entry).some((k) => !ENTRY_KEYS.has(k))) {
         throw new SawUnknown("unknown-key", call);
       }
-      out.push(structuredClone(entry) as SawEntry);
+      out.push(copyData(entry) as SawEntry);
     }
   });
   return out;

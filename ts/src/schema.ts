@@ -35,8 +35,8 @@ function typeFits(v: unknown, t: string): boolean {
   switch (t) {
     case "null": return v === null;
     case "boolean": return typeof v === "boolean";
-    case "integer": return typeof v === "number" && Number.isInteger(v);
-    case "number": return typeof v === "number" && Number.isFinite(v);
+    case "integer": return (typeof v === "number" && Number.isInteger(v)) || typeof v === "bigint";   // lmcc reads an integer past 2^53 as a bigint
+    case "number": return (typeof v === "number" && Number.isFinite(v)) || typeof v === "bigint";
     case "string": return typeof v === "string";
     case "array": return Array.isArray(v);
     case "object": return isObject(v);

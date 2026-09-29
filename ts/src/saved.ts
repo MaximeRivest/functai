@@ -9,7 +9,7 @@
 import * as lmcc from "lmcc";
 import { Config, stringifyJson } from "@lm15/lm15";
 import { builtin } from "./host.ts";
-import { fieldsOf, make, unreadable, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { fieldsOf, make, type AnyAIFunction as AIFunction } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
 import { interfaceSignature, malformed, type Interface, type InterfaceField } from "./interface.ts";
 import { REGISTRY } from "./layouts.ts";
@@ -17,6 +17,7 @@ import { passes } from "./schema.ts";
 import { checkSettings, type Settings } from "./settings.ts";
 import * as sig from "./signature.ts";
 import { VERSION } from "./calllog.ts";
+import { copyData, parseData, setOwn, writeData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -100,14 +101,17 @@ export function describeSaved(from: string | Rec, opts: { node?: string } = {}):
   const node = nodeOf(m, key);
   if (node["kind"] !== "ai" && node["kind"] !== "module") refuse("saved-not-ai", `${key} is a ${node["kind"]}: plain code has no interface`);
   const iface = checkedInterface(key, node);
-  if (iface) return structuredClone(iface);
+  if (iface) return copyData(iface);
   if (node["kind"] === "module") refuse("saved-no-interface", `${key} is a module saved before nodes had an interface: what it takes and gives is not known`);
   return signatureInterface(node["ai"] as Rec);
 }
 
 /**
  * An AI function from a saved manifest (the parsed `functai.json`). `node`
- * names one by key (`module:name`); the default is the entry.
+ * names one by key (`module:name`); the default is the entry. Parse it with
+ * `lmcc.parseJson`, which keeps each object's members in the order written:
+ * `JSON.parse` lists integer-like names (`"10"`) first, so a value holding
+ * one would be sent in another order than was saved.
  */
 export function fromManifest(manifest: unknown, opts: { node?: string; savedId?: string } = {}): AIFunction {
   const m = checkForm(manifest);
@@ -135,14 +139,15 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
   const inputs: sig.FieldDef[] = [];
   const outputs: sig.FieldDef[] = [];
   let cot = false;
+  // each field's type as saved: the signature's fingerprint names it, and a recorded turn is replayed only under its own signature
+  const types: Record<string, string> = {};
   for (const f of signature.fields) {
+    if (f.type) setOwn(types, f.name, f.type);
     if (f.direction === "input" && f.purpose === "plain") inputs.push({ name: f.name, shape: f.shape as Rec, desc: f.desc ?? null });
     else if (f.direction === "output" && f.purpose === "plain") outputs.push({ name: f.name, shape: f.shape as Rec });
     else if (f.purpose === "reasoning") cot = true;
     else refuse("saved-tools", `${key}: field ${f.name} (${f.purpose}) needs tools`);
   }
-  const cannot = unreadable(outputs.map((f) => f.name));
-  if (cannot) refuse("saved-differs", `${key}: it would not read what the model answers: ${cannot}`);
   const own: Settings = {};
   if (typeof settingsIn["lm"] === "string") own.lm = settingsIn["lm"] as string;
   if (settingsIn["module"] === "cot" || cot) own.module = "cot";
@@ -169,7 +174,7 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
   });
   const definition: sig.Definition & { written: string } = {
     name: node!["name"] as string, description: "", inputs: withDefaults, outputs, cot, tools: false,
-    includeName: own.includeFnName !== false, written: signature.instructions,
+    includeName: own.includeFnName !== false, written: signature.instructions, types,
   };
   const fallback = signatureInterface(data);
   const iface: Interface = declared && !malformed(declared, { ai: true }) ? declared : fallback;
@@ -210,7 +215,7 @@ function readManifest(path: string): [unknown, string] {
   const file = fs.statSync(path).isDirectory() ? p.join(path, "functai.json") : path;
   const text = fs.readFileSync(file, "utf8");
   try {
-    return [JSON.parse(text), text];
+    return [parseData(text), text];              // members in the order written (JSON.parse lists integer-like names first)
   } catch (err) {
     return refuse("saved-malformed", `${file}: ${(err as Error).message}`);
   }
@@ -293,6 +298,6 @@ export function save(fn: AIFunction | AnyModule, folder: string): string {
   if (!fs || !p) throw new Error("save needs a file system; use toManifest and write it yourself");
   fs.mkdirSync(folder, { recursive: true });
   const file = p.join(folder, "functai.json");
-  fs.writeFileSync(file, JSON.stringify(toManifest(fn), null, 1) + "\n");
+  fs.writeFileSync(file, writeData(toManifest(fn), 1) + "\n");     // every value's members in its order, as Python writes them
   return file;
 }

@@ -12,6 +12,7 @@
  */
 
 import { iso } from "./calllog.ts";
+import { copyData } from "./values.ts";
 import {
   keptEvent, positionOf, Relink, settle, type EventStore, type KeptFields, type Position, type StreamEvent,
 } from "./events.ts";
@@ -195,9 +196,19 @@ function timer(ms: number, fn: () => void, hold: boolean): Timer | null {
   return t;
 }
 
-const pause = (ms: number, hold: boolean) => new Promise<void>((resolve) => {
-  if (ms <= 0) resolve();
-  else timer(ms, resolve, hold);
+/** Wait `ms` (for ever when longer than a timer can), or until `signal` aborts. */
+const pause = (ms: number, hold: boolean, signal: AbortSignal) => new Promise<void>((resolve) => {
+  if (ms <= 0 || signal.aborted) {
+    resolve();
+    return;
+  }
+  const done = () => {
+    if (t !== null) clearTimeout(t);
+    signal.removeEventListener("abort", done);
+    resolve();
+  };
+  const t = timer(ms, done, hold);
+  signal.addEventListener("abort", done, { once: true });
 });
 
 /** Later, after the current turn and the promise jobs it queued: a macrotask. */
@@ -227,7 +238,10 @@ const LATER_MAX = 60_000;
  * The most events all journal writers of the process may hold unconfirmed
  * together. Past it, the writer holding the oldest gives up on its log for
  * good, then the next, until they hold no more: what writers hold for a
- * store that stays down is bounded by this, not by time.
+ * store that stays down is bounded by this, not by time. A writer that
+ * gives up lets go of everything it holds at once: its round ends, and the
+ * append under way is aborted (the copies that append gave the store are the
+ * store's: one that ignores the abort and never answers keeps them).
  */
 let heldLimit = 100_000;
 /** Events all writers hold unconfirmed now, and the writers holding some, the one holding the oldest first. */
@@ -277,6 +291,8 @@ export class JournalWriter {
   private readonly trouble: Trouble;
   /** Set once it gave up on what it held for good: it sends nothing more to this log. */
   private abandoned = false;
+  /** Stops the round under way (its wait for an append, its pause before the next): aborted when the writer gives up. */
+  private halt: AbortController | null = null;
   /** Appends made (a batch is one), for tests and hosts measuring a store. */
   appends = 0;
 
@@ -290,7 +306,7 @@ export class JournalWriter {
     const n = ++this.added;
     if (this.refused || this.abandoned) return n;
     if (!this.pending.length) holders.add(this);
-    this.pending.push({ e: structuredClone(e), n });
+    this.pending.push({ e: copyData(e), n });
     held++;
     this.laterRounds = 0;                            // a new event: the writer tries again, and later again, from the start
     // past the limit, the writers holding the oldest events give up on their logs (this one, if it holds the oldest)
@@ -326,10 +342,12 @@ export class JournalWriter {
   /** Send what waits, in order, batch by batch, until it is all confirmed, one is refused, or a round gives up. */
   private async pump(): Promise<void> {
     let gaveUp = false;
+    const halt = this.halt = new AbortController();
     try {
-      while (this.pending.length && !this.refused) {
+      while (this.pending.length && !this.refused && !this.abandoned) {
         const sending = this.pending.slice(0, this.journal.batch);
-        const answer = await this.round(sending);
+        const answer = await this.round(sending, halt.signal);
+        if (answer === "abandoned" || this.abandoned) break;          // it gave up on the log meanwhile: nothing more is sent
         if (answer === "unanswered") {
           gaveUp = true;
           this.trouble.fail("the journal did not answer (the log is kept at least up to the events it confirmed; the rest is sent again later)");
@@ -345,6 +363,7 @@ export class JournalWriter {
     } catch {
       gaveUp = true;                                 // the writer's own fault: nothing is known of what was kept
     } finally {
+      this.halt = null;
       this.running = false;
       busy.delete(this);
       if (this.pending.length && !this.refused && !this.abandoned) {
@@ -370,11 +389,17 @@ export class JournalWriter {
     }, false);
   }
 
-  /** Give up on what it holds for good (all writers hold more than the limit, and it holds the oldest): it sends nothing more to this log. */
+  /**
+   * Give up on what it holds for good (all writers hold more than the limit,
+   * and it holds the oldest): it sends nothing more to this log. The round
+   * under way ends now: its wait for an append stops, the append's signal
+   * aborts, and no pause or resend follows.
+   */
   private abandon(): void {
     const n = this.pending.length;
     this.release();
     this.abandoned = true;
+    this.halt?.abort();
     holding.delete(this);
     if (this.retryTimer !== null) {
       clearTimeout(this.retryTimer);
@@ -382,7 +407,7 @@ export class JournalWriter {
     }
     for (const w of this.waiters) if (w.n > this.confirmedN) w.done("unanswered");
     lostEvents += n;
-    this.trouble.lost(`${n} event${n === 1 ? "" : "s"} of a log the journal has not confirmed are given up: journal writers held more than ${heldLimit.toLocaleString("en-US")} unconfirmed events, and this log's were the oldest (the log is kept at least up to the events it confirmed; nothing more is sent to it)`);
+    this.trouble.lost(`${n} event${n === 1 ? "" : "s"} of a log the journal has not confirmed are given up: journal writers held more than ${heldLimit.toLocaleString("en-US")} unconfirmed events, and this log's were the oldest (the log is kept at least up to the events it confirmed; an append under way is aborted, and nothing more is sent to it)`);
   }
 
   /** Whether it holds events the journal has not confirmed, and may still send them (not refused, not given up). */
@@ -390,16 +415,18 @@ export class JournalWriter {
     return this.pending.length > 0 && !this.refused && !this.abandoned;
   }
 
-  /** One append of `sending`, sent again after no answer (backing off): its answer. */
-  private async round(sending: readonly { e: Rec; n: number }[]): Promise<Status> {
+  /** One append of `sending`, sent again after no answer (backing off): its answer; `"abandoned"` when the writer gave up on the log meanwhile (`halt`). */
+  private async round(sending: readonly { e: Rec; n: number }[], halt: AbortSignal): Promise<Status | "abandoned"> {
     const { retries, backoff } = this.journal;
     let wait = backoff;
     for (let attempt = 0; attempt <= retries; attempt++) {
       if (attempt) {
-        await pause(wait, this.journal.mode === "required");
+        await pause(wait, this.journal.mode === "required", halt);
         wait = Math.min(wait * 2, 2000);
       }
-      const answer = await this.attempt(sending.map((p) => structuredClone(p.e)));
+      if (halt.aborted) return "abandoned";
+      const answer = await this.attempt(sending.map((p) => copyData(p.e)), halt);
+      if (answer === GAVE_UP) return "abandoned";
       if (answer === NO_ANSWER) continue;
       if (answer === "kept" || answer === "duplicate") return "confirmed";
       this.refuse(answer, sending[0]!.e);
@@ -408,8 +435,12 @@ export class JournalWriter {
     return "unanswered";
   }
 
-  /** One append, waited for at most `timeout`: its answer, or NO_ANSWER (it threw, rejected, or did not answer in time). */
-  private attempt(events: Rec[]): Promise<unknown> {
+  /**
+   * One append, waited for at most `timeout`: its answer, NO_ANSWER (it
+   * threw, rejected, or did not answer in time), or GAVE_UP (`halt` aborted:
+   * the writer gave up on the log; the append's signal aborts).
+   */
+  private attempt(events: Rec[], halt: AbortSignal): Promise<unknown> {
     const { store, timeout, mode } = this.journal;
     this.appends++;
     return new Promise((resolve) => {
@@ -419,12 +450,18 @@ export class JournalWriter {
         if (over) return;
         over = true;
         if (t !== null) clearTimeout(t);
+        halt.removeEventListener("abort", stop);
         resolve(v);
       };
       const t = timer(timeout, () => {
         finish(NO_ANSWER);
         controller.abort(new Error(`the journal did not answer within ${timeout} ms`));
       }, mode === "required");
+      const stop = () => {
+        finish(GAVE_UP);
+        controller.abort(new Error("the journal writer gave up on this log: journal writers held too many unconfirmed events"));
+      };
+      halt.addEventListener("abort", stop, { once: true });
       let answered: Promise<unknown>;
       try {
         answered = Promise.resolve(store.append(events, { signal: controller.signal }));
@@ -486,6 +523,7 @@ export class JournalWriter {
 }
 
 const NO_ANSWER = Symbol("no answer");
+const GAVE_UP = Symbol("gave up");
 
 function describe(v: unknown): string {
   try {
@@ -780,7 +818,7 @@ export class TreeLog {
       if (broken.has(o)) continue;
       let link = this.observed.get(o);
       if (!link) this.observed.set(o, link = new Relink());
-      deliver(o, link.take(structuredClone(made.kept)) as unknown as StreamEvent);
+      deliver(o, link.take(copyData(made.kept)) as unknown as StreamEvent);
     }
   }
 

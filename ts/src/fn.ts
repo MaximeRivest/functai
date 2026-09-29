@@ -28,7 +28,7 @@ import { recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
 import { JournalError } from "./log.ts";
-import { setOwn } from "./values.ts";
+import { copyData, entriesOf, recordOf, setOwn, writeData } from "./values.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
@@ -249,20 +249,22 @@ const isRecordedTurn = (item: unknown): boolean =>
 
 function demoOf(item: Demo | Rec, inputNames: readonly string[], answer: string): Demo {
   if (isRecordedTurn(item)) return item as unknown as Demo;   // a recorded turn
+  // copies member by member: `__proto__` stays a member, and the order stays the value's
+  const copy = (r: unknown): Rec => recordOf(entriesOf(r as Rec));
   if (typeof item === "object" && item !== null && Object.hasOwn(item, "inputs") && Object.hasOwn(item, "outputs")
     && typeof item["inputs"] === "object" && !inputNames.includes("inputs")) {
-    return { inputs: { ...(item["inputs"] as Rec) }, outputs: { ...(item["outputs"] as Rec) } };
+    return { inputs: copy(item["inputs"]), outputs: copy(item["outputs"]) };
   }
   if (Array.isArray(item) && item.length === 2) {
     const [i, o] = item as unknown as [unknown, unknown];
     return {
-      inputs: typeof i === "object" && i !== null && !Array.isArray(i) ? { ...(i as Rec) } : { [inputNames[0]!]: i },
-      outputs: typeof o === "object" && o !== null && !Array.isArray(o) ? { ...(o as Rec) } : { [answer]: o },
+      inputs: typeof i === "object" && i !== null && !Array.isArray(i) ? copy(i) : recordOf([[inputNames[0]!, i]]),
+      outputs: typeof o === "object" && o !== null && !Array.isArray(o) ? copy(o) : recordOf([[answer, o]]),
     };
   }
   const inputs: Rec = {};
   const outputs: Rec = {};
-  for (const [k, v] of Object.entries(item)) setOwn(inputNames.includes(k) ? inputs : outputs, k, v);
+  for (const [k, v] of entriesOf(item as Rec)) setOwn(inputNames.includes(k) ? inputs : outputs, k, v);
   return { inputs, outputs };
 }
 
@@ -284,25 +286,6 @@ interface Core {
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal"]);
-
-/**
- * The output names an AI function cannot have here, though the contract
- * allows them: lmcc's TypeScript reader writes the values it reads from a
- * reply with `values[name] = value` (its `Plan.parseWithCaptures`), and for
- * `__proto__` that sets the object's prototype instead: the answer would be
- * lost. Refused, rather than reading other data than the model gave, until
- * lmcc carries the name. Inputs may have it: FunctAI gives lmcc its values
- * as records with no prototype. A module is not read by lmcc, and takes it.
- */
-export const LMCC_CANNOT_READ: readonly string[] = ["__proto__"];
-
-/** Why an AI function with these outputs cannot be read faithfully, or null. */
-export function unreadable(outputs: readonly string[]): string | null {
-  const bad = outputs.filter((n) => LMCC_CANNOT_READ.includes(n));
-  return bad.length
-    ? `an output named ${bad.join(", ")} cannot be read through lmcc's TypeScript reader yet (it would set an object's prototype instead of holding the answer): rename the output`
-    : null;
-}
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -339,8 +322,6 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     const declared = declareOutput(field, spec, `${name}.outputs.${field}`, "ai");
     return { name: field, shape: declared.shape, desc: declared.desc ?? null };
   });
-  const cannot = unreadable(outputs.map((f) => f.name));
-  if (cannot) throw new TypeError(`ai("${name}"): ${cannot}`);
   const where = definedAt(ai);
   const own: Settings = {};
   for (const [k, v] of Object.entries(def)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
@@ -428,31 +409,24 @@ export function make(core: Core): AIFunction {
         if (recorded.signature === plan.fingerprint) {
           let t: lmcc.Turn | null = null;
           try {
-            t = sig.ownTurn(plan.loadTurn(d));
+            t = plan.loadTurn(d);
           } catch {
             // read as its inputs and outputs below
           }
           if (t) {
-            sig.checkCarried(plan.signature, t.inputs, "input");
-            for (const s of t.steps) if (s instanceof lmcc.ModelStep) sig.checkCarried(plan.signature, s.outputs, "output");
-            if (t.outputs) sig.checkCarried(plan.signature, t.outputs, "output");
             out.push(t);
             continue;
           }
         }
       }
-      const ins = sig.prepareInputs(plan.signature, Object.fromEntries(Object.entries(d.inputs ?? {}).filter(([k]) => plain.has(k))));
-      const outs = Object.fromEntries(Object.entries(d.outputs ?? {}).filter(([k]) => kept.has(k)));
+      const ins = sig.prepareInputs(plan.signature, recordOf(entriesOf(d.inputs ?? {}).filter(([k]) => plain.has(k))));
+      const outs = recordOf(entriesOf(d.outputs ?? {}).filter(([k]) => kept.has(k)));
       if (!Object.keys(outs).length) continue;
       try {
-        plan.example(ins, outs);                           // a demo lmcc refuses to make an example of is skipped
+        out.push(plan.example(ins, outs));
       } catch (err) {
-        if (!lmcc.isRefusal(err)) throw err;
-        continue;
+        if (!lmcc.isRefusal(err)) throw err;              // a demo lmcc refuses to make an example of is skipped
       }
-      sig.checkCarried(plan.signature, ins, "input");
-      sig.checkCarried(plan.signature, outs, "output");
-      out.push(sig.turnOf(plan, ins, outs));
     }
     return out;
   };
@@ -464,13 +438,13 @@ export function make(core: Core): AIFunction {
     const plan = probePlan(s);
     const given = inputs ? binder.bind(inputs, { check: false })[0] : sig.sampleInputs(plan.signature);
     const values = sig.prepareInputs(plan.signature, given);
-    if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-    return plan.render(sig.currentTurn(plan, values), { turns: pastTurns(plan) }).request("probe");
+    if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
+    return plan.render(plan.turn(values), { turns: pastTurns(plan) }).request("probe");
   };
 
   const version = (): string => {
     const s = settingsNow();
-    const key = JSON.stringify(["version", layoutKey(s), s.module ?? null, s.includeFnName ?? null, core.state]);
+    const key = writeData(["version", layoutKey(s), s.module ?? null, s.includeFnName ?? null, core.state]);   // members in order: a demo in another order is sent otherwise
     let v = cache.get(key) as string | undefined;
     if (!v) {
       let r: string;
@@ -592,12 +566,12 @@ export function make(core: Core): AIFunction {
       set: (text: string | null) => { core.state = { ...core.state, instructions: text }; },
     },
     demos: {
-      get: () => core.state.demos.map((d) => structuredClone(d)),
+      get: () => core.state.demos.map((d) => copyData(d)),
       set: (items: Array<Demo | Rec>) => { core.state = { ...core.state, demos: (items ?? []).map((d) => demoOf(d, names, answer)) }; },
     },
     version: { get: version },
     signatureId: { get: () => sig.signatureId(signatureNow()) },
-    interface: { get: () => structuredClone(core.interface) },
+    interface: { get: () => copyData(core.interface) },
     interfaceId: { value: interfaceId },
     settings: { get: () => ({ ...core.own }) },
     definition: { get: () => core.definition },
@@ -616,15 +590,15 @@ export function make(core: Core): AIFunction {
       const s = settingsNow(options);
       const { plan, model, settings } = planFor(s);
       const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
-      if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-      return bridge.request(plan.render(sig.currentTurn(plan, values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
+      if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
+      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
       checkSettings(own, `${core.definition.name}.using`, fieldsOf(core.interface, sig.signature(definitionNow(own), core.state.instructions)));
-      return make({ ...core, own, state: structuredClone(core.state) });
+      return make({ ...core, own, state: copyData(core.state) });
     },
-    state: (): State => structuredClone(core.state),
+    state: (): State => copyData(core.state),
     loadState: (state: Partial<State>) => {
       core.state = {
         instructions: state.instructions !== undefined ? state.instructions : core.state.instructions,

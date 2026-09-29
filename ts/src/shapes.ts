@@ -7,7 +7,7 @@
 
 import * as lmcc from "lmcc";
 import { InterfaceError } from "./interface.ts";
-import { setOwn } from "./values.ts";
+import { copyData, entriesOf, setOwn } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -200,7 +200,7 @@ function fromZod(schema: JsonObject): JsonObject {
     if (Array.isArray(s)) return s.map(walk);
     if (typeof s !== "object" || s === null) return s;
     const o: JsonObject = {};
-    for (const [k, v] of Object.entries(s)) {
+    for (const [k, v] of entriesOf(s as JsonObject)) {
       if (k === "$schema") continue;
       setOwn(o, k, walk(v));                          // a property may be named __proto__: data, not the prototype
     }
@@ -251,7 +251,7 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
   else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
   else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
     try {
-      shape = structuredClone(raw) as JsonObject;
+      shape = copyData(raw) as JsonObject;
     } catch {
       return refuse("a shape is JSON Schema: plain data");
     }
@@ -304,7 +304,7 @@ export function misfit(shape: JsonObject, value: unknown, where: string): string
     for (const name of (shape["required"] ?? []) as string[]) {
       if (!Object.hasOwn(obj, name)) return `${where}: missing ${name}`;
     }
-    for (const [k, v] of Object.entries(obj)) {
+    for (const [k, v] of entriesOf(obj)) {
       if (Object.hasOwn(props, k)) {
         const p = misfit(props[k]!, v, `${where}.${k}`);
         if (p) return p;
