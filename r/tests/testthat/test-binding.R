@@ -29,6 +29,7 @@ test_that("defaults of every kind are sent as they are: extra members, arrays, n
     list(field = defaults_to(list("a", "b"), vctrs::list_of(.ptype = character())), json = '["a","b"]'),
     list(field = defaults_to(NA, optional(integer())), json = "null"),
     list(field = defaults_to(tibble::tibble(a = "x", b = 1L)), json = '{"a":"x","b":1}'),
+    list(field = defaults_to(tibble::tibble(a = "x", more = 1L), record(a = character())), json = '{"a":"x","more":1}'),   # a record's tibble holds `a` alone
     list(field = defaults_to("brief", choice("kind", "brief")), json = '"brief"'),
     list(field = defaults_to(2.5), json = "2.5"))
   for (x in cases) {
@@ -62,10 +63,37 @@ test_that("a default of null is sent, left out or given, and never skips the cal
 
 test_that("a missing value (NA) in an input whose type takes no null makes no call, required or optional", {
   r <- ok_router()
-  f <- ai(answer ~ message + tone, "x", tone = defaults_to("kind"), .router = r, .lm = "gpt-4.1-mini", .log_calls = FALSE)
-  expect_identical(f(c("a", "b"), tone = c("brief", NA)), c("ok", NA))
-  expect_identical(f(c("a", NA)), c("ok", NA))
+  folder <- withr::local_tempdir()
+  f <- ai(answer ~ message + tone, "x", tone = defaults_to("kind"), .router = r, .lm = "gpt-4.1-mini", .log_calls = folder)
+  expect_no_warning(expect_identical(f(c("a", "b"), tone = c("brief", NA)), c("ok", NA)))
+  expect_no_warning(expect_identical(f(c("a", NA)), c("ok", NA)))
   expect_length(r$env$requests, 2L)
+  expect_length(log_lines(folder), 2L)                                  # no record for a call not made
+  expect_identical(nrow(ai_problems()), 0L)                             # nor a failed call
+  # a table says why a row has no answer
+  p <- predict(f, tibble::tibble(message = c("a", NA, "c"), tone = c("brief", "kind", NA)))
+  expect_identical(p$.pred, c("ok", NA, NA))
+  expect_identical(p$.error, c(NA, "no call: input message is missing (NA), and its type takes no null",
+                               "no call: input tone is missing (NA), and its type takes no null"))
+  expect_length(r$env$requests, 3L)
+  # NULL given for an input is null too, which R callers often mean as "the default": said
+  expect_warning(out <- f("a", tone = NULL), "leave `tone` out to send its default")
+  expect_identical(out, NA_character_)
+  expect_length(r$env$requests, 3L)
+  expect_identical(f("a"), "ok")                                        # left out: its default
+})
+
+test_that("a row refused before any request is refused once, however many samples", {
+  r <- fake_router(responder = function(req, i) "<result>\nyes\n</result>")
+  folder <- withr::local_tempdir()
+  f <- ai(answer ~ n, "x", answer = choice("yes", "no"), n = json_shape(list(type = "integer", minimum = 10)),
+          .router = r, .lm = "gpt-4.1-mini", .log_calls = folder)
+  p <- suppressWarnings(predict(f, tibble::tibble(n = c(5L, 12L)), samples = 3))
+  codes <- vapply(log_lines(folder), function(x) x$error$code %||% "ok", "")
+  expect_identical(sort(codes), c("interface-input", "ok", "ok", "ok"))
+  expect_length(r$env$requests, 3L)
+  expect_match(p$.error[[1L]], "interface-input|minimum|less than")
+  expect_identical(as.character(p$.pred_class), c(NA, "yes"))
 })
 
 test_that("a table's row count decides the calls, even when every input is left out", {
@@ -116,6 +144,7 @@ test_that("values are checked by every keyword of the vocabulary, and a number i
   expect_true(refused(integer(), 5.5))                               # not sent as 5
   expect_false(refused(integer(), 5))                                # 5.0 is an integer
   expect_false(refused(double(), 5L))                                # every integer is a number
+  expect_false(refused(json_shape(list(type = "number", minimum = 0)), 5L))    # the same where the whole shape is read
   expect_true(refused(choice("a", "b"), "c"))
   obj <- list(type = "object", properties = list(a = list(type = "string")), required = list("a"), additionalProperties = FALSE)
   expect_true(refused(json_shape(obj), list(list(a = "x", z = 1L))))  # a member the shape does not allow
@@ -133,7 +162,10 @@ test_that("values are checked by every keyword of the vocabulary, and a number i
   expect_false(refused(json_shape(list(type = "string", pattern = "^[a-z]+$")), "ABC"))
   # a value given to a text input that is not text is sent as text, and fits
   expect_false(refused(character(), 5L))
-  expect_length(r$env$requests, 7L)
+  # a value with no JSON form fits no field: refused before any request, not by the writer
+  expect_true(refused(double(), Inf))
+  expect_true(refused(json_shape(list(type = "object")), list(list(a = -Inf))))
+  expect_length(r$env$requests, 8L)
 })
 
 test_that("a reply whose value does not fit its type is unreadable: the model is asked again", {

@@ -186,7 +186,10 @@ for (name in names(Filter(function(c) identical(c$program, "ai"), cases("program
     }
     expect_s3_class(got, "functai_fn")
     iface <- ai_interface(got)
-    expect_identical(plain(iface), plain(c$expect$interface))
+    # compared leaving out `type`, R's name for each field's type: never
+    # compared across languages (programs.md, *The interface*)
+    expect_identical(plain(without_types(iface)), plain(c$expect$interface))
+    expect_true(all(vapply(c(iface$inputs, iface$outputs), function(f) is_str(f$type), NA)))
     expect_identical(interface_signature(iface), c$expect$signature)
     expect_identical(ai_signature_id(got), c$expect$signature_id)
     expect_identical(program_of(core_of(got))()$interface, c$expect$signature)

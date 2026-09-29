@@ -25,3 +25,15 @@ baked model (\code{saved-model}). Its inputs a caller may leave out, and what
 each is sent with then, come from the folder's interface of it
 (\code{\link[=ai_interface]{ai_interface()}} describes any program in a folder without loading it).
 }
+\details{
+\strong{Types.} A function R saved comes back with the R types it had (a
+\code{\link[=record]{record()}} is a tibble column, a \code{\link[=json_shape]{json_shape()}} a list column): R writes
+them in the interface's \code{type}. Another language's function comes back
+with, for each field, the R type that holds every value its shape admits
+exactly: text, numbers, yes or no, a factor for a choice, a \code{list_of}
+for a list, a tibble for a record only when the record is closed
+(\code{additionalProperties: false}, so no member can come back that a column
+does not hold); any other object, a Python dataclass's among them, is a
+list column of named lists (\code{tidyr::unnest_wider()} spreads it). What a
+call sends never depends on these types: a value is sent as it is given.
+}

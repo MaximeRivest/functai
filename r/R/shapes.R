@@ -199,27 +199,100 @@ element <- function(x, i) {
 
 is_missing <- function(v) is.null(v) || (is.atomic(v) && length(v) == 1L && is.na(v))
 
-# A value as the JSON its field's shape describes (lmcc's R conventions:
-# named list = object, unnamed list = array, NULL = null). Nothing is lost on
-# the way: a value that is not of the field's type stays what it is (2.5
-# given to a whole number stays 2.5, a number given to a choice stays a
-# number), so the check of the value refuses it rather than a conversion
-# hiding it; the log writes a value by what it is (calls.md, *Values*).
-to_json <- function(f, v) {
+# A value given for a field, as JSON (lmcc's R conventions: named list =
+# object, unnamed list = array, NULL = null). The JSON depends on the value
+# and the field's shape alone, never on the R type the field is read as, so
+# the same value is sent the same by a function and by the one loaded from
+# its folder, whatever R type each reads the field as.
+to_json <- function(f, v) json_writer(f)(v)
+
+# to_json() for one field, its shape read once (a column writes every row
+# by it).
+json_writer <- function(f) {
+  shape <- data_shape(f$shape)
+  switch(guide_type(value_guide(shape, shape)) %||% "",
+    string = , boolean = function(v) if (is_missing(v)) NULL else plain_json(v),
+    function(v) json_of(v, shape, shape))
+}
+
+# A value as JSON, guided by a shape (`root` holds its `$defs`). Nothing is
+# lost, made up or changed to fit: a value that is not of the shape's type
+# stays what it is (2.5 given to a whole number stays 2.5), an object keeps
+# every member it has (those its shape does not name too) and has none it
+# does not have, so the check of the value refuses, as given, what does not
+# fit (calls.md, *Values*: the log writes a value by what it is). The shape
+# only says what R leaves open: a vector for an array is a list of its
+# items (even of one), a one-row tibble for an object is that row, and a
+# whole double for an integer is written as one. One thing R cannot say is
+# a member left out of a row of a tibble: there, and in any record, `NA`
+# for a member the shape does not require and whose type takes no null is
+# left out, as an answer that leaves it out reads back.
+json_of <- function(v, shape, root) {
   if (is_missing(v)) return(NULL)
-  switch(f$kind,
-    string = , enum = if (is.factor(v)) as.character(v) else if (is.atomic(v) && length(v) == 1L) unname(v) else plain_json(v),
-    integer = if (is.numeric(v) && length(v) == 1L && v == round(v) && abs(v) <= .Machine$integer.max) as.integer(v) else plain_json(v),
-    number = if (is.numeric(v) && length(v) == 1L) as.double(v) else plain_json(v),
-    boolean = if (is.logical(v) && length(v) == 1L) v else plain_json(v),
-    record = {
-      v <- as.list(v)
-      out <- list()
-      for (n in names(f$fields)) out[n] <- list(to_json(f$fields[[n]], v[[n]]))
-      out
-    },
-    list = unname(lapply(as.list(v), function(x) to_json(f$item, x))),
-    json = plain_json(v))
+  s <- value_guide(shape, root)
+  switch(guide_type(s) %||% "",
+    integer = if (is.numeric(v) && length(v) == 1L && is.finite(v) && v == round(v) && abs(v) <= .Machine$integer.max)
+      as.integer(v) else plain_json(v),
+    number = if (is.numeric(v) && length(v) == 1L && !inherits(v, "lmcc_int")) as.double(v) else plain_json(v),  # lmcc's big integers keep their digits
+    array = array_json(v, s, root),
+    object = object_json(v, s, root),
+    plain_json(v))
+}
+
+array_json <- function(v, s, root) {
+  prefix <- if (is_arr(s$prefixItems)) s$prefixItems else list()
+  item <- function(i) if (i <= length(prefix)) prefix[[i]] else if (is_obj(s$items)) s$items
+  if (is.data.frame(v)) return(lapply(seq_len(nrow(v)), function(i) json_of(element(v, i), item(i), root)))
+  if (is.list(v) && !is.null(names(v)) && length(v)) return(plain_json(v))       # a named list is an object
+  if (is.list(v) || is.atomic(v)) return(lapply(seq_along(v), function(i) json_of(element(unname(v), i), item(i), root)))
+  plain_json(v)
+}
+
+object_json <- function(v, s, root) {
+  if (is.data.frame(v)) { if (nrow(v) != 1L) return(plain_json(v)); v <- element(v, 1L) }
+  if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
+  if (!is.list(v)) return(plain_json(v))
+  if (!length(v)) return(lmcc::jobj())
+  nm <- names(v)
+  if (is.null(nm) || any(!nzchar(nm))) return(plain_json(v))
+  props <- if (is_obj(s$properties)) s$properties else list()
+  required <- unlist(s$required)
+  extra <- if (is_obj(s$additionalProperties)) s$additionalProperties
+  out <- list()
+  for (i in seq_along(v)) {
+    n <- nm[[i]]; m <- v[[i]]
+    member <- if (n %in% names(props)) props[[n]] else extra
+    if (n %in% names(props) && !n %in% required && is.atomic(m) && length(m) == 1L && is.na(m) &&
+        !fits_shape(NULL, member, root)) next                                    # a record's NA: left out
+    out[n] <- list(if (is.null(member)) plain_json(m) else json_of(m, member, root))
+  }
+  if (!length(out)) lmcc::jobj() else out
+}
+
+# The one shape a value's JSON form follows: through `$ref`, and an `anyOf`
+# whose options but one are null; NULL when there is none (several options).
+value_guide <- function(shape, root, seen = character(0)) {
+  if (!is_obj(shape)) return(NULL)
+  if (has_key(shape, "$ref")) {
+    n <- ref_name(shape[["$ref"]])
+    if (is.null(n) || n %in% seen) return(NULL)
+    return(value_guide(root[["$defs"]][[n]], root, c(seen, n)))
+  }
+  if (has_key(shape, "anyOf")) {
+    opts <- Filter(function(o) !(is_obj(o) && identical(o$type, "null")), shape$anyOf)
+    return(if (length(opts) == 1L) value_guide(opts[[1L]], root, seen))
+  }
+  shape
+}
+
+guide_type <- function(s) {
+  if (is.null(s)) return(NULL)
+  t <- s$type
+  if (is_arr(t)) t <- setdiff(unlist(t), "null")
+  if (is.character(t) && length(t) == 1L) return(t)
+  if (is.null(t) && is_obj(s$properties)) return("object")
+  if (is.null(t) && (is_obj(s$items) || is_arr(s$prefixItems))) return("array")
+  NULL
 }
 
 # Any R value as plain JSON (for the call log and for text inputs).

@@ -30,7 +30,9 @@ A tibble.
 One call per row of \code{new_data} (its columns named like the function's
 inputs). Columns follow tidymodels: \code{.pred_class} when the answer is a
 choice (a factor), \code{.pred} for other answers, \verb{.pred_<output>} for several
-outputs; then \code{.call} (the call's id, for \code{\link[=rate]{rate()}}) and \code{.error}.
+outputs; then \code{.call} (the call's id, for \code{\link[=rate]{rate()}}) and \code{.error} (why a
+row has no answer: its call's error, or an input missing where its type
+takes no null, which makes no call).
 \code{augment()} adds them to \code{new_data}, ready for yardstick.
 }
 \details{

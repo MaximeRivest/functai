@@ -16,12 +16,21 @@ for dir in "$LMCC" "$LM15"; do
   [ -f "$dir/DESCRIPTION" ] || { echo "r/ needs $dir (lmcc and lm15 for R are not on CRAN yet)" >&2; exit 1; }
 done
 mkdir -p .lib inst/contract/schema
+# one run at a time in this folder: each installs into .lib and runs from it
+# (a second run would reinstall under the first one's tests); where there is
+# no flock (macOS), runs are not guarded
+if command -v flock >/dev/null 2>&1; then
+  exec 9>.lib/.check.lock
+  flock -n 9 || { echo "r/check: another run is using $PWD/.lib; waiting" >&2; flock 9; }
+fi
+LOG=$(mktemp "${TMPDIR:-/tmp}/functai-r-install.XXXXXX")
+trap 'rm -f "$LOG"' EXIT
 cp ../contract/layouts/*.json inst/contract/layouts/
 cp ../contract/schema/*.json inst/contract/schema/
 cp ../contract/models.json inst/contract/
 cp ../contract/unicode/casefold.json inst/contract/unicode/
 for pkg in "$LMCC" "$LM15" .; do
-  $RUN R CMD INSTALL --no-test-load --library=.lib "$pkg" >/tmp/functai-r-install.log 2>&1 \
-    || { tail -30 /tmp/functai-r-install.log; echo "installing $pkg failed" >&2; exit 1; }
+  $RUN R CMD INSTALL --no-test-load --library=.lib "$pkg" >"$LOG" 2>&1 \
+    || { tail -30 "$LOG"; echo "installing $pkg failed" >&2; exit 1; }
 done
 ( cd tests && NOT_CRAN=true R_LIBS=../.lib $RUN Rscript -e 'library(testthat); library(functai); r <- as.data.frame(test_dir("testthat", reporter = "summary", stop_on_failure = FALSE, package = "functai", load_package = "installed")); cat(sprintf("R: %d expectations, %d failed, %d errors, %d skipped\n", sum(r$nb), sum(r$failed), sum(r$error), sum(r$skipped))); quit(status = if (sum(r$failed) + sum(r$error)) 1 else 0)' )

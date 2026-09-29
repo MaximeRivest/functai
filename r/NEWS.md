@@ -44,8 +44,6 @@
 * An input left out is sent with its default exactly as the interface
   holds it (its JSON), not through an R copy: a record's default that
   leaves out a member no longer gains a `null` for it after `read_ai()`.
-  A saved object shape is a tibble column only when every member is
-  required; otherwise its values stay JSON.
 * A default of `null` is sent; `predict()` makes one call per row of
   `new_data` even when every input is left out, and none for an empty
   table.
@@ -74,6 +72,37 @@
   the environment) drops a field of the function it improves.
 * `calls()` gains `omitted`. Interface refusals name the first field at
   fault, inputs first, and the call they came from.
+
+### After the second review
+
+* Loading a saved function changes no value. A value is written as JSON by
+  its field's shape alone, whatever R type the field is read as, and
+  checked as it is: an object keeps every member it is given (a record's
+  tibble its extra columns too), a member it lacks stays out (a required
+  one is refused, even where it takes null), and a member a closed shape
+  does not allow is refused. Before, a loaded record kept only its
+  declared members and filled missing ones with null, so the same call
+  sent another request after `read_ai()`, or was sent where it should
+  have been refused.
+* `write_ai()` writes each field's R type in the interface's `type`
+  (`tibble(name = character, age = integer)`, `list` for JSON), and
+  `read_ai()` reads a function R saved back with those types. Another
+  language's function gets, per field, the R type that holds its values
+  exactly: a record is a tibble column only when it is closed, since a
+  tibble has no column for a member the record does not name; any other
+  object is a list column. A record a Python dataclass wrote (open) is
+  therefore a list column now, not a tibble.
+* In a record, `NA` for a member the record does not require and whose
+  type takes no null leaves the member out (a tibble cannot); elsewhere
+  `NA` is null, as before.
+* A row that makes no call because an input is missing says so in
+  `predict()`'s `.error`; `input = NULL` in a direct call, for an input
+  whose type takes no null, warns. An infinite number is refused before
+  any request (`interface-input`), not by the log writer. A row refused
+  before any request is refused once, whatever `samples` is.
+* A column's values are checked with each field's shape read once, not
+  once a row: about 3.7 times faster than the first repair on a column of
+  scalars.
 
 ## Before stage 1
 

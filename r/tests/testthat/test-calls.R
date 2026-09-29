@@ -256,7 +256,7 @@ test_that("an input with a default: the R function's default argument, sent when
   iface <- ai_interface(reply)
   expect_s3_class(iface, "functai_interface")
   expect_identical(lmcc::canonical_json(unclass(iface)$inputs[[2L]]),
-    '{"name":"tone","optional":true,"shape":{"default":"kind","enum":["kind","brief","formal"],"type":"string"}}')
+    '{"name":"tone","optional":true,"shape":{"default":"kind","enum":["kind","brief","formal"],"type":"string"},"type":"factor"}')
   expect_output(print(iface), "optional, default \"kind\"")
   expect_output(print(reply), "tone     one of kind, brief, formal = \"kind\"")
   # a default is behaviour, not data: neither the signature nor the version sees it

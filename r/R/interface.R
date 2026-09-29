@@ -108,6 +108,15 @@ loops <- function(root) {
 
 same_json <- function(a, b) identical(lmcc::canonical_json(a), lmcc::canonical_json(b))
 
+# Whether a value is one of an enum's, equal as canonical JSON. Text is
+# equal as canonical JSON only to the same text, so text is compared as it
+# is (a choice checked on every row of a column); other values, written once.
+in_enum <- function(v, enum) {
+  if (is_str(v)) return(any(vapply(enum, function(e) is_str(e) && identical(e, v), NA)))
+  cv <- lmcc::canonical_json(v)
+  any(vapply(enum, function(e) !is_str(e) && identical(lmcc::canonical_json(e), cv), NA))
+}
+
 # Whether a JSON value fits a shape, read by the listed keywords alone
 # (programs.md): lengths in code points, equality as canonical JSON. Every
 # check of a value reads this one rule: a default when a function is defined
@@ -126,29 +135,31 @@ short_json <- function(v) {
 # (`pattern`, `oneOf`, ...) are lmcc's, and never checked here.
 shape_fault <- function(v, shape, root, where = "value") {
   t <- json_type(v)
-  if (has_key(shape, "$ref")) {
+  kw <- ASSERTIONS %in% names(shape)                  # which keywords it has, looked up once
+  names(kw) <- ASSERTIONS
+  if (kw[["$ref"]]) {
     p <- shape_fault(v, root[["$defs"]][[ref_name(shape[["$ref"]])]], root, where)
     if (!is.null(p)) return(p)
   }
-  if (has_key(shape, "type")) {
+  if (kw[["type"]]) {
     names_ <- unlist(if (is_arr(shape$type)) shape$type else list(shape$type))
     if (!(t %in% names_ || (t == "integer" && "number" %in% names_)))
       return(sprintf("%s: %s is not %s", where, short_json(v), paste(names_, collapse = " or ")))
   }
-  if (has_key(shape, "enum") && !any(vapply(shape$enum, same_json, NA, b = v)))
+  if (kw[["enum"]] && !in_enum(v, shape$enum))
     return(sprintf("%s: %s is not one of %s", where, short_json(v), short_json(shape$enum)))
-  if (has_key(shape, "const") && !same_json(shape[["const"]], v))
+  if (kw[["const"]] && !same_json(shape[["const"]], v))
     return(sprintf("%s: %s is not %s", where, short_json(v), short_json(shape[["const"]])))
-  if (has_key(shape, "anyOf") && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA)))
+  if (kw[["anyOf"]] && !any(vapply(shape$anyOf, function(s) fits_shape(v, s, root), NA)))
     return(sprintf("%s: %s fits none of its options", where, short_json(v)))
   if (t == "string") {
     n <- nchar(v, type = "chars")
-    if (has_key(shape, "minLength") && n < num(shape$minLength)) return(sprintf("%s: shorter than %s characters", where, num(shape$minLength)))
-    if (has_key(shape, "maxLength") && n > num(shape$maxLength)) return(sprintf("%s: longer than %s characters", where, num(shape$maxLength)))
+    if (kw[["minLength"]] && n < num(shape$minLength)) return(sprintf("%s: shorter than %s characters", where, num(shape$minLength)))
+    if (kw[["maxLength"]] && n > num(shape$maxLength)) return(sprintf("%s: longer than %s characters", where, num(shape$maxLength)))
   }
   if (t %in% c("integer", "number")) {
     x <- num(v)
-    bound <- function(k, bad, words) if (has_key(shape, k) && bad(x, num(shape[[k]]))) sprintf("%s: %s is %s %s", where, short_json(v), words, short_json(shape[[k]]))
+    bound <- function(k, bad, words) if (kw[[k]] && bad(x, num(shape[[k]]))) sprintf("%s: %s is %s %s", where, short_json(v), words, short_json(shape[[k]]))
     p <- bound("minimum", `<`, "less than") %||% bound("maximum", `>`, "more than") %||%
       bound("exclusiveMinimum", `<=`, "not more than") %||% bound("exclusiveMaximum", `>=`, "not less than")
     if (!is.null(p)) return(p)
@@ -157,10 +168,10 @@ shape_fault <- function(v, shape, root, where = "value") {
     prefix <- shape[["prefixItems"]] %||% list()
     at <- function(i) sprintf("%s[%d]", where, i - 1L)
     for (i in seq_len(min(length(prefix), length(v)))) { p <- shape_fault(v[[i]], prefix[[i]], root, at(i)); if (!is.null(p)) return(p) }
-    if (has_key(shape, "items") && length(v) > length(prefix))
+    if (kw[["items"]] && length(v) > length(prefix))
       for (i in (length(prefix) + 1L):length(v)) { p <- shape_fault(v[[i]], shape$items, root, at(i)); if (!is.null(p)) return(p) }
-    if (has_key(shape, "minItems") && length(v) < num(shape$minItems)) return(sprintf("%s: fewer than %s items", where, num(shape$minItems)))
-    if (has_key(shape, "maxItems") && length(v) > num(shape$maxItems)) return(sprintf("%s: more than %s items", where, num(shape$maxItems)))
+    if (kw[["minItems"]] && length(v) < num(shape$minItems)) return(sprintf("%s: fewer than %s items", where, num(shape$minItems)))
+    if (kw[["maxItems"]] && length(v) > num(shape$maxItems)) return(sprintf("%s: more than %s items", where, num(shape$maxItems)))
     if (isTRUE(shape$uniqueItems) && anyDuplicated(vapply(v, lmcc::canonical_json, ""))) return(sprintf("%s: an item is there twice", where))
   }
   if (t == "object") {
@@ -171,7 +182,7 @@ shape_fault <- function(v, shape, root, where = "value") {
       if (k %in% names(props)) {
         p <- shape_fault(v[[k]], props[[k]], root, inner)
         if (!is.null(p)) return(p)
-      } else if (has_key(shape, "additionalProperties")) {
+      } else if (kw[["additionalProperties"]]) {
         extra <- shape$additionalProperties
         if (isFALSE(extra)) return(sprintf("%s: no member %s is allowed", where, k))
         if (is_obj(extra)) { p <- shape_fault(v[[k]], extra, root, inner); if (!is.null(p)) return(p) }
@@ -241,6 +252,7 @@ interface_of <- function(core) {
     out <- list(name = n, shape = f$shape)
     desc <- field_desc(f)
     if (!is.null(desc) && nzchar(desc)) out$desc <- desc
+    out$type <- r_type_of(f)                          # R's name for it, for people (and read_ai())
     if (isTRUE(f$optional)) out$optional <- TRUE     # on an output: refused, in its turn (programs.md)
     out
   }

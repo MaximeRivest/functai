@@ -87,13 +87,21 @@ number) fails that row before any request (\code{interface-input}, a
 record says so; a reply whose value does not fit is unreadable, and the
 model is asked again. A value given to a text input that is not text is
 sent as text. An input left out is sent with its default exactly as the
-interface holds it.
+interface holds it. A value is sent as it is given, and checked so: a
+record or object keeps every member it has (a tibble's extra columns
+too), and one its type requires but it lacks is refused, not filled in.
 
 \strong{Missing values.} \code{NA} (or \code{NULL}) is JSON's null, never "left out": an
 input whose type takes null (an \code{\link[=optional]{optional()}} type, a \code{\link[=json_shape]{json_shape()}} that
 allows null) is sent null; in an input whose type takes no null, required
 or optional, the row has nothing to send and makes no call: its answer is
-\code{NA}, as with a missing value anywhere in R.
+\code{NA}, as with a missing value anywhere in R, and \code{predict()}'s \code{.error}
+says why. \code{input = NULL} in a call warns, since R code often means "the
+default" by it: leave the input out for that. Inside a record (a row of a
+tibble column, or a named list), \code{NA} is null too, except for a member
+the record does not require and whose type takes no null: a tibble cannot
+leave a member out, so \code{NA} there leaves it out, as an answer that leaves
+it out comes back \code{NA}.
 
 \strong{What the call log keeps} is \code{.log_content} (see \code{\link[=ai_config]{ai_config()}}):
 \code{TRUE}, \code{FALSE}, \code{c(transcript = FALSE)}, or the names of the fields it

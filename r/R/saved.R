@@ -14,35 +14,129 @@ load_refused <- function(code, message, field = NULL) {
 SNAKE <- c(retries = "retries", api_retries = "api_retries", max_steps = "max_steps", tool_errors = "tool_errors",
            capabilities = "capabilities", log_content = "log_content")
 
-# A field from a saved signature field: its kind from its shape.
-field_from_shape <- function(shape, desc = NULL) {
+# A field of a saved function, from its shape: the R type its values are
+# read as. What is sent never depends on it (to_json() reads the shape
+# alone); what a caller gets back does. `type`: the R type R saved the field
+# as (r_type_of(), read back by read_r_type()), used when it fits the shape,
+# so a function R saved is read back with the types it had. Otherwise the
+# type is one that holds every value the shape admits exactly: a column of
+# text, numbers, yes/no, a factor for a choice of texts, a list_of() for a
+# list, a tibble for a record only when it is closed (a tibble has no place
+# for a member its columns do not name) and none of its members may be
+# both left out and null (a tibble has one NA for both); JSON (a list
+# column) for anything else. `root` holds the shape's `$defs`.
+field_from_shape <- function(shape, desc = NULL, type = NULL, root = shape) {
   nullable <- FALSE
   inner <- shape
-  if (!is.null(shape$anyOf)) {
-    opts <- Filter(function(s) !identical(s$type, "null"), shape$anyOf)
-    if (length(opts) == 1L && length(shape$anyOf) == 2L) { inner <- opts[[1L]]; nullable <- TRUE }
+  if (is_arr(shape$anyOf)) {
+    opts <- Filter(function(s) !(is_obj(s) && identical(s$type, "null")), shape$anyOf)
+    if (length(opts) == 1L && length(shape$anyOf) == 2L && length(setdiff(names(shape), c("anyOf", "default", "description", "title"))) == 0L) {
+      inner <- opts[[1L]]; nullable <- TRUE
+    }
   }
-  f <- if (!is.null(inner$enum) && all(vapply(inner$enum, is.character, NA))) new_field(inner, "enum", levels = unlist(inner$enum))
-    else if (is_whole_record(inner)) {
-      fields <- lapply(inner$properties, field_from_shape)
-      new_field(inner, "record", fields = fields)
-    } else if (identical(inner$type, "array") && is.list(inner$items)) new_field(inner, "list", item = field_from_shape(inner$items))
-    else if (is.character(inner$type) && length(inner$type) == 1L && inner$type %in% c("string", "integer", "number", "boolean")) new_field(inner, inner$type)
-    else new_field(inner, "json")
+  f <- (if (!is.null(type)) declared_field(inner, type, root)) %||% exact_field(inner, nullable, root)
   f$shape <- shape
   f$nullable <- nullable
   f$desc <- desc
   f
 }
 
-# A shape R reads as a record (a tibble column): an object whose every
-# member is required. Any other object shape (a member it may leave out)
-# stays JSON, so what a caller gives, or a default, is sent as it is: a
-# tibble would have to fill an absent member with a null.
-is_whole_record <- function(shape) {
+is_text_choice <- function(s) is_arr(s$enum) && length(s$enum) > 0L && all(vapply(s$enum, is_str, NA)) &&
+  (is.null(s$type) || identical(s$type, "string"))
+
+exact_field <- function(inner, nullable, root) {
+  t <- inner$type
+  if (is_text_choice(inner)) new_field(inner, "enum", levels = unlist(inner$enum))
+  else if (!nullable && is_closed_record(inner, root))
+    new_field(inner, "record", fields = lapply(inner$properties, field_from_shape, root = root))
+  else if (identical(t, "array") && is_obj(inner$items) && is.null(inner$prefixItems))
+    new_field(inner, "list", item = field_from_shape(inner$items, root = root))
+  else if (is_str(t) && t %in% c("string", "integer", "number", "boolean") && is.null(inner$enum) && is.null(inner[["const"]]))
+    new_field(inner, t)
+  else new_field(inner, "json")
+}
+
+# A record a tibble holds exactly: an object that allows no other member,
+# names every required member, and whose members are each required (NA is
+# null) or take no null (NA is left out). A null record would be a row of
+# NAs, which a record of nulls also is: a nullable one stays JSON.
+is_closed_record <- function(shape, root) {
   props <- shape$properties
-  identical(shape$type, "object") && is_obj(props) && length(props) > 0L &&
-    is_arr(shape$required) && setequal(names(props), unlist(shape$required))
+  required <- unlist(shape$required)
+  identical(shape$type, "object") && is_obj(props) && length(props) > 0L && isFALSE(shape$additionalProperties) &&
+    all(required %in% names(props)) &&
+    all(vapply(names(props), function(n) n %in% required || !fits_shape(NULL, props[[n]], root), NA))
+}
+
+# A field as the R type R saved it as, when that type fits the shape; NULL
+# otherwise (the shape decides then).
+declared_field <- function(inner, type, root) {
+  if (is.symbol(type)) {
+    t <- inner$type
+    return(switch(as.character(type),
+      character = if (identical(t, "string")) new_field(inner, "string"),
+      integer = if (identical(t, "integer")) new_field(inner, "integer"),
+      double = if (identical(t, "number")) new_field(inner, "number"),
+      logical = if (identical(t, "boolean")) new_field(inner, "boolean"),
+      factor = if (is_text_choice(inner)) new_field(inner, "enum", levels = unlist(inner$enum)),
+      list = new_field(inner, "json"),
+      NULL))
+  }
+  if (!is.call(type) || !is.symbol(type[[1L]])) return(NULL)
+  args <- as.list(type)[-1L]
+  switch(as.character(type[[1L]]),
+    tibble = {
+      props <- inner$properties
+      if (!identical(inner$type, "object") || !is_obj(props) || !identical(names(args), names(props))) return(NULL)
+      fields <- Map(function(s, a) field_from_shape(s, type = a, root = root), props, args)
+      if (!all(vapply(Map(function(s, a) declared_field_of(s, a, root), props, args), isTRUE, NA))) return(NULL)
+      new_field(inner, "record", fields = fields)
+    },
+    list_of = {
+      if (length(args) != 1L || !identical(inner$type, "array") || !is_obj(inner$items)) return(NULL)
+      if (!isTRUE(declared_field_of(inner$items, args[[1L]], root))) return(NULL)
+      new_field(inner, "list", item = field_from_shape(inner$items, type = args[[1L]], root = root))
+    },
+    NULL)
+}
+
+# Whether a saved R type fits a shape all the way down.
+declared_field_of <- function(shape, type, root) {
+  inner <- shape
+  if (is_arr(shape$anyOf)) {
+    opts <- Filter(function(s) !(is_obj(s) && identical(s$type, "null")), shape$anyOf)
+    if (length(opts) == 1L && length(shape$anyOf) == 2L) inner <- opts[[1L]]
+  }
+  !is.null(declared_field(inner, type, root))
+}
+
+# The R type of a field, as R saves it in the interface's `type` (for
+# people, and for R reading its own folder back): `character`, `integer`,
+# `double`, `logical`, `factor`, `list` (JSON), `list_of(<type>)`,
+# `tibble(<name> = <type>, ...)`.
+r_type_of <- function(f) {
+  switch(f$kind,
+    string = "character", integer = "integer", number = "double", boolean = "logical", enum = "factor", json = "list",
+    list = sprintf("list_of(%s)", r_type_of(f$item)),
+    record = sprintf("tibble(%s)", paste(sprintf("%s = %s", vapply(names(f$fields), function(n) if (make.names(n) == n) n else sprintf("`%s`", gsub("`", "\\\\`", n)), ""),
+                                                 vapply(f$fields, r_type_of, "")), collapse = ", ")),
+    "list")
+}
+
+# An interface whose fields' `type` is R's for them: what an R folder says
+# (a function loaded from another language's folder keeps its fields' R
+# types, not the names that language gave them).
+r_typed <- function(iface, core) {
+  d <- core$definition
+  for (i in seq_along(iface$inputs)) iface$inputs[[i]]$type <- r_type_of(d$inputs[[i]])
+  for (i in seq_along(iface$outputs)) iface$outputs[[i]]$type <- r_type_of(d$outputs[[i]])
+  iface
+}
+
+# A saved `type` as R code to read (never run): NULL when it is not one.
+read_r_type <- function(type) {
+  if (!is_str(type)) return(NULL)
+  tryCatch(str2lang(type), error = function(e) NULL)
 }
 
 #' Run a function saved in any language
@@ -56,6 +150,17 @@ is_whole_record <- function(shape) {
 #' baked model (`saved-model`). Its inputs a caller may leave out, and what
 #' each is sent with then, come from the folder's interface of it
 #' ([ai_interface()] describes any program in a folder without loading it).
+#'
+#' **Types.** A function R saved comes back with the R types it had (a
+#' [record()] is a tibble column, a [json_shape()] a list column): R writes
+#' them in the interface's `type`. Another language's function comes back
+#' with, for each field, the R type that holds every value its shape admits
+#' exactly: text, numbers, yes or no, a factor for a choice, a `list_of`
+#' for a list, a tibble for a record only when the record is closed
+#' (`additionalProperties: false`, so no member can come back that a column
+#' does not hold); any other object, a Python dataclass's among them, is a
+#' list column of named lists (`tidyr::unnest_wider()` spreads it). What a
+#' call sends never depends on these types: a value is sent as it is given.
 #' @param path The folder, or its `functai.json`.
 #' @param node Which function, by key (`"module:name"`); default the entry.
 #' @return An AI function.
@@ -158,6 +263,10 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   for (k in names(settings_in)) if (is.list(settings_in[[k]]) && any(c("baked", "node") %in% names(settings_in[[k]])))
     load_refused("saved-model", sprintf("%s: setting %s is %s, not something this loader can reach", key, k, lmcc::json_text(settings_in[[k]])))
   iface <- node_interface(key, n)
+  # the R types R saved its fields as (the interface's `type`); another
+  # language's names for them are its own
+  r_types <- function(fields) if (identical(language, "r")) stats::setNames(lapply(fields, function(f) read_r_type(f$type)), vapply(fields, function(f) f$name, "")) else list()
+  in_types <- r_types(iface$inputs); out_types <- r_types(iface$outputs)
   optional <- Filter(function(f) isTRUE(f$optional), iface$inputs)
   optional <- stats::setNames(optional, vapply(optional, function(f) f$name, ""))
   sig <- d$signature
@@ -165,14 +274,14 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   for (f in sig$fields) {
     purpose <- f$purpose %||% "plain"
     if (f$direction == "input" && purpose == "plain") {
-      field <- field_from_shape(f$shape, f$desc)
+      field <- field_from_shape(f$shape, f$desc, type = in_types[[f$name]])
       if (!is.null(optional[[f$name]])) {                        # its default, from the node's interface
         field$shape["default"] <- list(optional[[f$name]]$shape[["default"]])
         field$optional <- TRUE
       }
       inputs[[f$name]] <- field
     }
-    else if (f$direction == "output" && purpose == "plain") outputs[[f$name]] <- field_from_shape(f$shape)
+    else if (f$direction == "output" && purpose == "plain") outputs[[f$name]] <- field_from_shape(f$shape, type = out_types[[f$name]])
     else if (purpose == "reasoning") cot <- TRUE
     else load_refused("saved-tools", sprintf("%s: field %s (%s) needs tools", key, f$name, purpose))
   }
@@ -254,7 +363,7 @@ to_manifest <- function(fn) {
              signature = lmcc::signature_to_list(sig), probes = probes,
              fingerprints = list(signature = lmcc::signature_fingerprint(sig), requests = lapply(probes, function(p) request_hash(core, p))),
              body = NULL, version = version_of(core))
-  node <- list(kind = "ai", module = core$module, name = core$definition$name, interface = interface_of(core), ai = ai)
+  node <- list(kind = "ai", module = core$module, name = core$definition$name, interface = r_typed(interface_of(core), core), ai = ai)
   nodes <- list(); nodes[[key]] <- node
   list(functai_saved = 1L, language = "r", entry = key, created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S+00:00", tz = "UTC"),
        functai = as.character(utils::packageVersion("functai")), nodes = nodes)

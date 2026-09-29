@@ -144,9 +144,11 @@ a language model reads all its inputs together, as they are.
 
 A row with a missing input (`NA`) whose type takes no null is `NA`
 without a call, whether the input is required or has a default: `NA` is a
-value given, never "left out". A value that does not fit its field's type
-(`2.5` for a whole number, a number below a `minimum`) fails its row
-before any request. When some calls fail
+value given, never "left out" (`predict()`'s `.error` says so). A value is
+sent as it is given (a record keeps every member it has) and checked so: a
+value that does not fit its field's type (`2.5` for a whole number, a
+number below a `minimum`, a record without a member it requires) fails its
+row before any request. When some calls fail
 (after the re-asks and the provider retries), their rows are `NA` and one
 warning says how many; `ai_problems()` lists them. A single call that fails
 is an error, as is any failure with `.on_error = "stop"`.
@@ -272,6 +274,12 @@ saved, and has its version, before any call. It refuses, with the reason,
 what only the saving language can run: code of its own around the model,
 tools, a baked model. `ai_interface("team/")` describes a saved program
 without loading or running it, a Python module included.
+
+A function R saved comes back with its R types. Another language's comes
+back with types that hold its answers exactly: a record the saving language
+left open (a Python dataclass, whose shape allows members it does not
+name) is a list column of named lists, which `tidyr::unnest_wider()`
+spreads into columns; a closed one is a tibble column.
 
 ## Settings
 

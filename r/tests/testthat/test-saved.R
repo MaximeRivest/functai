@@ -58,11 +58,18 @@ test_that("every probe is checked against its own fingerprint: one missing or on
   expect_identical(refusal_of(read_ai(saved_folder(json_normal(m2))))$code, "saved-differs")
 })
 
-test_that("a saved object shape is a tibble column only when it says every member", {
-  whole <- field_from_shape(list(type = "object", properties = list(a = list(type = "string"), b = list(type = "integer")), required = list("a", "b")))
-  expect_identical(whole$kind, "record")
-  part <- field_from_shape(list(type = "object", properties = list(a = list(type = "string"), b = list(type = "integer")), required = list("a")))
-  expect_identical(part$kind, "json")
+test_that("a saved object shape is a tibble column only when a tibble holds its every value exactly", {
+  kind <- function(...) field_from_shape(list(type = "object", properties = list(a = list(type = "string"), b = list(type = "integer")), ...))$kind
+  expect_identical(kind(required = list("a", "b")), "json")                                    # open: a member it does not name
+  expect_identical(kind(required = list("a", "b"), additionalProperties = FALSE), "record")
+  expect_identical(kind(required = list("a"), additionalProperties = FALSE), "record")         # b left out: NA, as it takes no null
+  expect_identical(kind(required = list("a"), additionalProperties = TRUE), "json")
+  nullable_b <- list(a = list(type = "string"), b = list(anyOf = list(list(type = "integer"), list(type = "null"))))
+  expect_identical(field_from_shape(list(type = "object", properties = nullable_b, required = list("a"), additionalProperties = FALSE))$kind, "json")
+  expect_identical(field_from_shape(list(type = "object", properties = nullable_b, required = list("a", "b"), additionalProperties = FALSE))$kind, "record")
+  closed <- list(type = "object", properties = list(a = list(type = "string")), required = list("a"), additionalProperties = FALSE)
+  expect_identical(field_from_shape(list(anyOf = list(closed, list(type = "null"))))$kind, "json")   # a null record would be a row of NAs
+  expect_identical(field_from_shape(list(type = "array", items = closed))$item$kind, "record")
 })
 
 test_that("an optional input with no default of its own is described as optional, and no default is made up", {

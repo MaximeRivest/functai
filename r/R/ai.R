@@ -41,13 +41,21 @@
 #' record says so; a reply whose value does not fit is unreadable, and the
 #' model is asked again. A value given to a text input that is not text is
 #' sent as text. An input left out is sent with its default exactly as the
-#' interface holds it.
+#' interface holds it. A value is sent as it is given, and checked so: a
+#' record or object keeps every member it has (a tibble's extra columns
+#' too), and one its type requires but it lacks is refused, not filled in.
 #'
 #' **Missing values.** `NA` (or `NULL`) is JSON's null, never "left out": an
 #' input whose type takes null (an [optional()] type, a [json_shape()] that
 #' allows null) is sent null; in an input whose type takes no null, required
 #' or optional, the row has nothing to send and makes no call: its answer is
-#' `NA`, as with a missing value anywhere in R.
+#' `NA`, as with a missing value anywhere in R, and `predict()`'s `.error`
+#' says why. `input = NULL` in a call warns, since R code often means "the
+#' default" by it: leave the input out for that. Inside a record (a row of a
+#' tibble column, or a named list), `NA` is null too, except for a member
+#' the record does not require and whose type takes no null: a tibble cannot
+#' leave a member out, so `NA` there leaves it out, as an answer that leaves
+#' it out comes back `NA`.
 #'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
@@ -259,15 +267,19 @@ past_turns <- function(core, plan) {
 
 tool_specs <- function(core) lapply(core$tools, function(t) list(name = t$name, description = t$description, parameters = t$parameters))
 
-probe_request <- function(core, inputs = NULL) {
+# The request a function renders for these inputs (default: the sample
+# inputs) under the probe facts (contract/models.json), as lmcc renders it.
+probe_render <- function(core, inputs = NULL) {
   s <- effective(core$own)
   sig <- signature_of(core, s)
   plan <- bind_layout(s$adapter, s$template, sig, probe_capabilities(), "probe")
   values <- prepare_inputs(plan$signature, inputs %||% sample_inputs(plan$signature))
   if (length(core$tools)) values$tools <- tool_specs(core)
   turns <- past_turns(core, plan)
-  lmcc::request_of(lmcc::render(plan, values, if (length(turns)) turns else NULL), "probe")
+  lmcc::render(plan, values, if (length(turns)) turns else NULL)
 }
+
+probe_request <- function(core, inputs = NULL) lmcc::request_of(probe_render(core, inputs), "probe")
 
 request_hash <- function(core, inputs = NULL) {
   tryCatch(lmcc::sha256_of(probe_request(core, inputs)), lmcc_refusal = function(e) paste0("refused:", e$code))
@@ -371,8 +383,10 @@ confidence_of <- function(outputs, probabilities) {
 #   (exact JSON: absent members stay absent, and nothing is made up);
 # - a missing value (`NA`, `NULL`) is JSON's null: where the input's type
 #   does not take null, the row has no value to send and makes no call (NULL:
-#   its answer is `NA`, as a required or an optional input's);
-# - a given value that does not fit its type (programs.md, *Checking
+#   its answer is `NA`, as a required or an optional input's; the rows'
+#   attribute `missing` names the input, by row);
+# - a given value is written as JSON by its shape alone (to_json()), then
+#   checked as it is: one that does not fit its type (programs.md, *Checking
 #   values*) makes a row that fails with `interface-input` before any request
 #   (a `functai_misfit`).
 input_rows <- function(core, inputs, n = NULL) {
@@ -380,24 +394,45 @@ input_rows <- function(core, inputs, n = NULL) {
   given <- inputs[intersect(names(fields), names(inputs))]
   unset <- setdiff(required_inputs(core), names(given))
   if (length(unset)) cli::cli_abort("no value for input{?s} {.field {unset}}", call = NULL)
+  null_given <- names(Filter(is.null, given))
   given <- lapply(given, function(v) if (is.null(v)) NA else v)
   if (length(given)) given <- vctrs::vec_recycle_common(!!!given, .size = n)
   n <- n %||% if (length(given)) vctrs::vec_size_common(!!!given) else 1L
-  lapply(seq_len(n), function(i) {
+  # what each field's check needs, worked out once for all the rows
+  nullable <- vapply(fields[names(given)], takes_null, NA)
+  check <- lapply(fields[names(given)], checker)
+  write <- lapply(fields[names(given)], json_writer)
+  no_null <- setdiff(null_given, names(nullable)[nullable])
+  if (length(no_null))
+    cli::cli_warn(c("{.code {no_null[[1L]]} = NULL} is JSON's null, which the type of {.field {no_null[[1L]]}} does not take: no call is made, and the answer is NA",
+                    i = if (isTRUE(fields[[no_null[[1L]]]]$optional)) "leave {.arg {no_null[[1L]]}} out to send its default"), call = NULL)
+  missing <- rep(NA_character_, n)
+  rows <- lapply(seq_len(n), function(i) {
     row <- list()
     for (k in names(fields)) {
       f <- fields[[k]]
       if (!k %in% names(given)) { row[k] <- list(f$shape[["default"]]); next }
       v <- element(given[[k]], i)
-      if (is_missing(v) && !takes_null(f)) return(NULL)
-      row[k] <- list(to_json(f, v))
+      if (is_missing(v) && !nullable[[k]]) { missing[[i]] <<- k; return(NULL) }
+      row[k] <- list(write[[k]](v))
     }
     for (k in names(given)) {
-      why <- input_fault(fields[[k]], row[[k]], k)
+      why <- check[[k]](row[[k]], k)
       if (!is.null(why)) return(structure(list(inputs = row, field = k, message = why), class = "functai_misfit"))
     }
     if (!length(row)) lmcc::jobj() else row
   })
+  attr(rows, "missing") <- missing
+  rows
+}
+
+# A prediction's `.error`: the call's error, or why a row made no call (an
+# input missing, from input_rows()'s `missing`), else NA.
+error_or_missing <- function(errors, rows) {
+  m <- attr(rows, "missing") %||% rep(NA_character_, length(rows))
+  gap <- is.na(errors) & !is.na(m)
+  errors[gap] <- sprintf("no call: input %s is missing (NA), and its type takes no null", m[gap])
+  errors
 }
 
 # Whether a field's type takes JSON's null (an optional() type; a JSON shape
@@ -407,15 +442,42 @@ takes_null <- function(f) {
   isTRUE(f$nullable) || (well_formed(shape, shape, carry = TRUE) && !loops(shape) && fits_shape(NULL, shape, shape))
 }
 
-# Why a given input's value does not fit its field, or NULL. A value given to
-# a text input that is not text is sent as text (functions.md), so it is
-# checked as the text sent.
-input_fault <- function(f, v, name) {
+# A given input's check: a function of the value's JSON giving why it does
+# not fit its field, or NULL. A value given to a text input that is not text
+# is sent as text (functions.md), so it is checked as the text sent.
+checker <- function(f) {
   shape <- data_shape(f$shape)
-  if (!well_formed(shape, shape, carry = TRUE) || loops(shape)) return(NULL)    # refused at definition; never here
-  if (is_text_shape(shape) && !is.null(v) && !is_str(v)) v <- text_form(v)
-  shape_fault(v, shape, shape, name)
+  if (!well_formed(shape, shape, carry = TRUE) || loops(shape)) return(function(v, name = "value") NULL)   # refused at definition; never here
+  text <- is_text_shape(shape)
+  fits <- quick_fit(shape)
+  function(v, name = "value") {
+    if (has_infinity(v)) return(sprintf("%s: an infinite number has no JSON form", name))      # fits no field of an AI function
+    if (isTRUE(fits(v))) return(NULL)
+    if (text && !is.null(v) && !is_str(v)) v <- text_form(v)
+    shape_fault(v, shape, shape, name)
+  }
 }
+
+# For a shape that checks nothing but a scalar type (and, for text, a set of
+# choices), whether a value fits, worked out without reading the shape again
+# (a column checks the same shape on every row); NA when the shape asks more,
+# and shape_fault() decides. The same answer as shape_fault() gives.
+quick_fit <- function(shape) {
+  asks <- intersect(names(shape), ASSERTIONS)
+  type <- shape$type
+  if (!is_str(type)) return(function(v) NA)
+  if (identical(asks, "type") && type %in% c("string", "boolean", "integer", "number")) {
+    want <- if (type == "number") c("integer", "number") else type
+    return(function(v) if (json_type(v) %in% want) TRUE else NA)
+  }
+  if (setequal(asks, c("type", "enum")) && type == "string" && all(vapply(shape$enum, is_str, NA))) {
+    choices <- unlist(shape$enum)
+    return(function(v) if (is_str(v) && v %in% choices) TRUE else NA)
+  }
+  function(v) NA
+}
+
+has_infinity <- function(v) if (is.list(v)) any(vapply(v, has_infinity, NA)) else is.numeric(v) && any(is.infinite(v))
 
 # A row that did not bind, as the error its call ends with.
 misfit_error <- function(core, row) {
@@ -640,10 +702,13 @@ sampled <- function(core, rows, samples, temperature, memo = NULL, extra = list(
   todo <- which(!is.na(keys) & !vapply(keys, function(k) !is.na(k) && !is.null(memo) && !is.null(memo[[k]]), NA))
   todo <- todo[!duplicated(keys[todo])]
   if (length(todo)) {
-    many <- rep(rows[todo], each = samples)
+    # a row refused before any request is refused once, not once a sample
+    times <- ifelse(vapply(rows[todo], inherits, NA, what = "functai_misfit"), 1L, samples)
+    many <- rep(rows[todo], times = times)
     results <- run_rows(core, many, set_all(extra, list(temperature = temperature)))
+    ends <- cumsum(times)
     for (j in seq_along(todo)) {
-      got <- results[(j - 1L) * samples + seq_len(samples)]
+      got <- results[(ends[[j]] - times[[j]]) + seq_len(times[[j]])]
       answers <- lapply(Filter(function(r) is.null(r$error), got), function(r) r$outputs[[answer_name(core)]])
       value <- list(answers = answers, calls = vapply(got, function(r) r$call %||% NA_character_, ""),
                     error = if (!length(answers)) conditionMessage(got[[1L]]$error) else NA_character_)
@@ -671,7 +736,9 @@ vote_table <- function(core, votes) {
 #' One call per row of `new_data` (its columns named like the function's
 #' inputs). Columns follow tidymodels: `.pred_class` when the answer is a
 #' choice (a factor), `.pred` for other answers, `.pred_<output>` for several
-#' outputs; then `.call` (the call's id, for [rate()]) and `.error`.
+#' outputs; then `.call` (the call's id, for [rate()]) and `.error` (why a
+#' row has no answer: its call's error, or an input missing where its type
+#' takes no null, which makes no call).
 #' `augment()` adds them to `new_data`, ready for yardstick.
 #'
 #' **Probabilities.** Most providers (OpenAI, Anthropic, Gemini) do not
@@ -724,13 +791,13 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
     best <- apply(probs, 1L, function(p) if (all(is.na(p))) NA_character_ else lv[[which.max(p)]])
     return(tibble::tibble(.pred_class = factor(best, levels = lv),
                           .call = vapply(votes, function(v) paste(stats::na.omit(v$calls), collapse = " "), ""),
-                          .error = vapply(votes, function(v) v$error, "")))
+                          .error = error_or_missing(vapply(votes, function(v) v$error, ""), rows)))
   }
   results <- memo_rows(core, rows, settings)
   out <- answers(core, results, pred_names(core))
   if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
-  out$.error <- vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), "")
+  out$.error <- error_or_missing(vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), ""), rows)
   attr(out, "turns") <- lapply(results, function(r) r$turn)
   if (is_choice(core)) attr(out, "probabilities") <- measured_table(core, results)
   out

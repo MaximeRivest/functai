@@ -45,6 +45,14 @@ contract_root <- function() {
   normalizePath(root)
 }
 
+# An interface without its fields' `type` (the host's names for the types,
+# never compared across languages).
+without_types <- function(iface) {
+  iface <- unclass(iface)
+  for (side in c("inputs", "outputs")) iface[[side]] <- lapply(iface[[side]], function(f) f[names(f) != "type"])
+  iface
+}
+
 # A value as canonical JSON, to compare as the contract compares.
 plain <- function(x) lmcc::canonical_json(unclass(x))
 
@@ -79,8 +87,11 @@ probe_call <- function(fn, args) {
               log_content = TRUE, api_retries = 0L, on_error = "stop")
   tryCatch(do.call(g, args), error = function(e) NULL)
   recs <- log_lines(folder)
-  list(record = if (length(recs)) recs[[1L]], requests = router$env$requests)
+  list(record = if (length(recs)) recs[[1L]], requests = router$env$requests, fn = g)
 }
+
+# An lm15 request as canonical JSON: every member of it, to compare whole.
+request_json <- function(request) lmcc::canonical_json(lmcc::lm15_plain(lm15::as_dict(request)))
 
 # The hash of the request the probe renders for these inputs (`model`
 # "probe", as a version's), and the hash lmcc records for the same render as
@@ -91,10 +102,15 @@ probe_hashes <- function(fn, inputs) {
   list(probe = lmcc::sha256_of(p), step = lmcc::sha256_of(step))
 }
 
-# The contract's `sends`/`binds` expectation, checked on a real call: the
-# record holds the inputs the call bound; the request it sent (the hash of
-# its render, which the record keeps) is the probe's render of those inputs;
-# and that render's hash is `request_hash` (when given).
+# The contract's `sends`/`binds` expectation, checked on a real call:
+# - the record holds the inputs the call bound (`bound`, when given);
+# - the request the provider received is, member for member, lm15's request
+#   for the probe's render of those inputs (lmcc::lm15_request(), the
+#   conversion every call uses), with the model the call asked for and the
+#   config the function's settings give: the request is compared whole, not
+#   through a hash the library recorded before sending;
+# - that render's hash is `request_hash` (when given), and the hash the
+#   record keeps is the same render's.
 expect_sends <- function(fn, inputs, bound = NULL, request_hash = NULL) {
   got <- probe_call(fn, inputs)
   testthat::expect_false(is.null(got$record), info = "the call wrote no record")
@@ -102,6 +118,9 @@ expect_sends <- function(fn, inputs, bound = NULL, request_hash = NULL) {
   rec <- got$record
   testthat::expect_length(got$requests, 1L)
   if (!is.null(bound)) testthat::expect_identical(lmcc::canonical_json(rec$inputs), lmcc::canonical_json(bound))
+  rendered <- probe_render(core_of(fn), rec$inputs)
+  expected <- lmcc::lm15_request(rendered, "probe-model", config_of(effective(core_of(got$fn)$own)))
+  if (length(got$requests)) testthat::expect_identical(request_json(got$requests[[1L]]), request_json(expected))
   h <- probe_hashes(fn, rec$inputs)
   testthat::expect_identical(rec$exchanges[[1L]]$request_hash, h$step)
   if (!is.null(request_hash)) testthat::expect_identical(h$probe, request_hash)
