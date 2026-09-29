@@ -15,7 +15,7 @@ import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
 import { setOwn } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
-import { prepareInputs } from "./signature.ts";
+import { currentTurn, prepareInputs } from "./signature.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -305,7 +305,7 @@ export async function run(job: Job): Promise<Prediction> {
   const { plan } = job;
   const values = prepareInputs(plan.signature, job.inputs);
   if (job.tools.length) values["tools"] = job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-  let turn = plan.turn(values);
+  let turn = currentTurn(plan, values);
   const responses: Response[] = [];
   const steps = Math.max(1, job.settings.maxSteps);
   for (let i = 0; i < steps; i++) {

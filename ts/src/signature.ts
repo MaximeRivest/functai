@@ -122,10 +122,11 @@ export function signatureId(sig: lmcc.Signature): string {
 /**
  * Values as their fields expect them: a non-text value given to a text input
  * is written as text. Only own properties are values: an inherited member
- * (`toString`) is never sent as an input.
+ * (`toString`) is never sent as an input. The record has no prototype (see
+ * {@link ownRecord}).
  */
 export function prepareInputs(sig: lmcc.Signature, values: Record<string, unknown>): Record<string, unknown> {
-  const out: Record<string, unknown> = {};
+  const out = Object.create(null) as Record<string, unknown>;
   for (const f of sig.fields) {
     if (f.direction !== "input" || !Object.hasOwn(values, f.name)) continue;
     let v = getOwn(values, f.name);
@@ -136,4 +137,77 @@ export function prepareInputs(sig: lmcc.Signature, values: Record<string, unknow
     setOwn(out, f.name, v);
   }
   return out;
+}
+
+/**
+ * Field values as lmcc is given them: a record with no prototype, holding
+ * the own properties of `values` that are not `undefined`. lmcc's
+ * TypeScript renderer reads a turn's values with `name in values` and
+ * `values[name]`; on an ordinary object both reach Object's members (a
+ * worked example without its `toString` input would be given
+ * `Object.prototype.toString`), and `__proto__` is the prototype, not a
+ * value. On this record both read own properties only, and every name,
+ * `__proto__` included, is a key like any other.
+ */
+export function ownRecord(values: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const out = Object.create(null) as Record<string, unknown>;
+  for (const k of Object.keys(values)) {
+    const v = values[k];                              // an own key: read as own, `__proto__` included
+    if (v !== undefined) out[k] = v;                  // no prototype: `out["__proto__"] = v` makes an own property
+  }
+  return out;
+}
+
+/**
+ * A turn of this plan with these inputs (and, for a worked example, these
+ * outputs), its values held as {@link ownRecord}s. Built with lmcc's `Turn`
+ * rather than `plan.turn`/`plan.example`, which copy the values into
+ * ordinary objects with `out[name] = value`; `render` checks the names as
+ * those do.
+ */
+export function turnOf(plan: lmcc.Plan, inputs: Readonly<Record<string, unknown>>, outputs: Readonly<Record<string, unknown>> | null = null): lmcc.Turn {
+  return new lmcc.Turn(plan.fingerprint, ownRecord(inputs), [], outputs === null ? null : ownRecord(outputs));
+}
+
+/** The turn a call sends, from its prepared values (and tools): refused first when lmcc would not write a value as given ({@link checkCarried}). */
+export function currentTurn(plan: lmcc.Plan, values: Readonly<Record<string, unknown>>): lmcc.Turn {
+  checkCarried(plan.signature, values, "input");
+  return turnOf(plan, values);
+}
+
+/** A recorded turn (a worked example used as it is), its inputs, outputs and model steps' outputs held as {@link ownRecord}s. */
+export function ownTurn(t: lmcc.Turn): lmcc.Turn {
+  const steps = t.steps.map((s) => (s instanceof lmcc.ModelStep ? new lmcc.ModelStep(ownRecord(s.outputs), s.message, s.request, s.callsField) : s));
+  return new lmcc.Turn(t.signature, ownRecord(t.inputs), steps, t.outputs === null ? null : ownRecord(t.outputs), t.score, t.meta);
+}
+
+/** Whether a value holds a member named `__proto__` in any object inside it (through `toJSON`, as lmcc writes it). */
+function holdsProto(v: unknown, seen: Set<object>): boolean {
+  if (v === null || typeof v !== "object" || seen.has(v)) return false;
+  seen.add(v);
+  if (Array.isArray(v)) return v.some((x) => holdsProto(x, seen));
+  if (typeof (v as { toJSON?: unknown }).toJSON === "function") return holdsProto((v as { toJSON(): unknown }).toJSON(), seen);
+  if (Object.hasOwn(v, "__proto__")) return true;
+  return Object.values(v).some((x) => holdsProto(x, seen));
+}
+
+/**
+ * Refuse (`format-write-error`, before anything is sent) a value lmcc would
+ * write as other data than it is: a plain input's (or a worked example's
+ * output's) value holding a member named `__proto__` inside it. lmcc's
+ * TypeScript json format copies an object's members with `out[key] = value`
+ * before writing it (`lower`, lmcc `ts/src/std/formats.ts`): that member
+ * would be dropped, or become the copy's prototype, and the model would be
+ * sent other data than the caller gave (Python sends it). Until lmcc carries
+ * it, the call is refused rather than sent wrong. A text input's value is
+ * text by then, and is not concerned; nor are the tools FunctAI adds, which
+ * lmcc writes whole.
+ */
+export function checkCarried(sig: lmcc.Signature, values: Readonly<Record<string, unknown>>, direction: "input" | "output" = "input"): void {
+  for (const f of sig.fields) {
+    if (f.direction !== direction || f.purpose === "tools" || f.purpose === "tools.calls" || !Object.hasOwn(values, f.name)) continue;
+    if (holdsProto(values[f.name], new Set())) {
+      throw new lmcc.Refusal("format-write-error", `field ${JSON.stringify(f.name)}: its value holds a member named "__proto__", which lmcc's TypeScript json format cannot write yet (it would be dropped): nothing was sent`);
+    }
+  }
 }

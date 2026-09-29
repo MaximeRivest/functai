@@ -221,10 +221,28 @@ const holding = new Set<JournalWriter>();
 
 /** The longest a timer can wait (setTimeout's limit, about 24.8 days); a longer wait is for ever. */
 export const MAX_DELAY = 2_147_483_647;
-/** Rounds a writer tries again on its own, after one gave up, before it gives up on what it holds for good. */
-const LATER_ROUNDS = 5;
-/** Events writers gave up on for good (for `flush`: it says false when some were, while it waited). */
+/** The longest wait between a writer's later rounds, in milliseconds (they start 1 s apart, and double). */
+const LATER_MAX = 60_000;
+/**
+ * The most events all journal writers of the process may hold unconfirmed
+ * together. Past it, the writer holding the oldest gives up on its log for
+ * good, then the next, until they hold no more: what writers hold for a
+ * store that stays down is bounded by this, not by time.
+ */
+let heldLimit = 100_000;
+/** Events all writers hold unconfirmed now, and the writers holding some, the one holding the oldest first. */
+let held = 0;
+const holders = new Set<JournalWriter>();
+/** Events writers gave up on for good, and how many of them a `flush()` has reported (it says false once for those since). */
 let lostEvents = 0;
+let lostReported = 0;
+
+/** @internal For tests: set how many unconfirmed events all writers may hold together; returns the previous limit. */
+export function holdAtMost(n: number): number {
+  const before = heldLimit;
+  heldLimit = n;
+  return before;
+}
 
 type Trouble = { fail(what: string): void; lost(what: string): void; ok(): void };
 
@@ -235,13 +253,14 @@ type Trouble = { fail(what: string): void; lost(what: string): void; ok(): void 
  * Each append is given fresh copies, and waited for at most `timeout`: a
  * store that throws, never answers, or answers something else than kept or
  * duplicate never holds the writer, nor reaches the call. When a round gives
- * up, it tries again on its own later (after 1 s, then 2, 4, 8 and 16 s: a
- * tree's last events have no next event to carry them), at the next event,
- * and when `flush()` asks; those later rounds never keep the process alive.
- * When the last of them gives up too, with no event since, it gives up on
- * what it holds for good (warned about; the log is kept at least up to the
- * events it confirmed) and sends nothing more to that log: what a writer
- * holds for a store that stays down is bounded.
+ * up, it tries again on its own later (after 1 s, then 2, 4, … up to 60 s
+ * apart, for as long as the process lives: a tree's last events have no
+ * next event to carry them), at the next event, and when `flush()` asks;
+ * those later rounds never keep the process alive. Time alone never makes
+ * it give up: only memory does. When all writers together hold more than
+ * the limit (100,000 events), the one holding the oldest gives up on its log
+ * for good (warned about; the log is kept at least up to the events it
+ * confirmed; the next `flush()` says false) and sends nothing more to it.
  */
 export class JournalWriter {
   private pending: { e: Rec; n: number }[] = [];
@@ -270,15 +289,30 @@ export class JournalWriter {
   add(e: Rec): number {
     const n = ++this.added;
     if (this.refused || this.abandoned) return n;
+    if (!this.pending.length) holders.add(this);
     this.pending.push({ e: structuredClone(e), n });
+    held++;
     this.laterRounds = 0;                            // a new event: the writer tries again, and later again, from the start
+    // past the limit, the writers holding the oldest events give up on their logs (this one, if it holds the oldest)
+    for (const w of holders) {
+      if (held <= heldLimit) break;
+      w.abandon();
+    }
     this.start();
     return n;
   }
 
-  /** Send what waits now (an event came, or `flush` asks), unless it is sending already. */
-  start(): void {
-    if (this.running || this.refused || this.abandoned || !this.pending.length) return;
+  /** Let go of the first `k` events it holds (confirmed), or of all of them. */
+  private release(k = this.pending.length): void {
+    const gone = Math.min(k, this.pending.length);
+    this.pending.splice(0, gone);
+    held -= gone;
+    if (!this.pending.length) holders.delete(this);
+  }
+
+  /** Send what waits now (an event came, or `flush` asks), unless it is sending already: whether a round began. */
+  start(): boolean {
+    if (this.running || this.refused || this.abandoned || !this.pending.length) return false;
     if (this.retryTimer !== null) {
       clearTimeout(this.retryTimer);
       this.retryTimer = null;
@@ -286,6 +320,7 @@ export class JournalWriter {
     this.running = true;                             // set before any store code runs: a store that throws at once cannot leave it stale
     busy.add(this);
     queueMicrotask(() => { void this.pump(); });
+    return true;
   }
 
   /** Send what waits, in order, batch by batch, until it is all confirmed, one is refused, or a round gives up. */
@@ -301,7 +336,7 @@ export class JournalWriter {
           break;
         }
         if (answer === "refused") break;
-        this.pending.splice(0, sending.length);
+        this.release(sending.length);
         this.confirmedN = sending[sending.length - 1]!.n;
         this.laterRounds = 0;
         this.trouble.ok();
@@ -316,7 +351,7 @@ export class JournalWriter {
         holding.add(this);
         this.later();
       } else holding.delete(this);
-      const status: Status = this.refused ? "refused" : gaveUp ? "unanswered" : "confirmed";
+      const status: Status = this.refused ? "refused" : gaveUp || this.abandoned ? "unanswered" : "confirmed";
       for (const w of this.waiters) w.done(w.n <= this.confirmedN ? "confirmed" : status);
       const idlers = this.idlers;
       this.idlers = [];
@@ -325,28 +360,29 @@ export class JournalWriter {
     }
   }
 
-  /** After a round gave up: another, later, on its own (never holding the process), a few times; then it gives up for good. */
+  /** After a round gave up: another, later, on its own (never holding the process), 1 s after, then twice as long each time, at most 60 s. */
   private later(): void {
     if (this.retryTimer !== null) return;
-    if (this.laterRounds >= LATER_ROUNDS) {
-      this.abandon();
-      return;
-    }
-    const wait = 1000 * 2 ** this.laterRounds++;
+    const wait = Math.min(1000 * 2 ** Math.min(this.laterRounds++, 16), LATER_MAX);
     this.retryTimer = timer(wait, () => {
       this.retryTimer = null;
       this.start();
     }, false);
   }
 
-  /** Give up on what it holds for good: the journal did not answer for it through every later round. */
+  /** Give up on what it holds for good (all writers hold more than the limit, and it holds the oldest): it sends nothing more to this log. */
   private abandon(): void {
     const n = this.pending.length;
-    this.pending = [];
+    this.release();
     this.abandoned = true;
     holding.delete(this);
+    if (this.retryTimer !== null) {
+      clearTimeout(this.retryTimer);
+      this.retryTimer = null;
+    }
+    for (const w of this.waiters) if (w.n > this.confirmedN) w.done("unanswered");
     lostEvents += n;
-    this.trouble.lost(`the journal did not answer for ${n} event${n === 1 ? "" : "s"} of a log through five more tries: they are given up (the log is kept at least up to the events it confirmed), and nothing more is sent to it for that log`);
+    this.trouble.lost(`${n} event${n === 1 ? "" : "s"} of a log the journal has not confirmed are given up: journal writers held more than ${heldLimit.toLocaleString("en-US")} unconfirmed events, and this log's were the oldest (the log is kept at least up to the events it confirmed; nothing more is sent to it)`);
   }
 
   /** Whether it holds events the journal has not confirmed, and may still send them (not refused, not given up). */
@@ -401,7 +437,7 @@ export class JournalWriter {
 
   private refuse(answer: unknown, first: Rec): void {
     this.refused = true;
-    this.pending = [];
+    this.release();
     const a = answer as { refuses?: unknown; event?: { writer?: unknown; seq?: unknown } } | null;
     const code = typeof a === "object" && a !== null && typeof a.refuses === "string" ? a.refuses : null;
     const at = typeof a === "object" && a !== null && typeof a.event === "object" && a.event !== null
@@ -420,7 +456,7 @@ export class JournalWriter {
   confirm(n: number, signal?: AbortSignal): Promise<Status | "cancelled"> {
     if (this.confirmedN >= n) return Promise.resolve("confirmed");
     if (this.refused) return Promise.resolve("refused");
-    if (!this.running) return Promise.resolve("unanswered");          // the last round gave up on it
+    if (!this.running || this.abandoned) return Promise.resolve("unanswered");          // the last round gave up on it, or the writer on the log
     if (signal?.aborted) return Promise.resolve("cancelled");
     return new Promise((resolve) => {
       let t: Timer | null = null;
@@ -613,25 +649,33 @@ const allKept = () => ![...holding].some((w) => w.unconfirmed);
  * milliseconds in all; default 5,000). True when all of it was done in
  * time and every journal confirmed every event it was sent (a journal that
  * refused one, which it is sent nothing more, counts as done); false when
- * time ran out, a journal still holds events it did not confirm, or one gave
- * up on some for good while it waited. (Events given up on before, which
- * was warned about then, are not counted again.) For a process that is
- * about to end, and for tests.
+ * time ran out, a journal still holds events it did not confirm, or a
+ * writer gave up on events for good since the previous `flush()` returned
+ * (or since the process began): each loss makes one `flush()` say false.
+ * For a process that is about to end, and for tests.
  */
 export async function flush(opts: { timeout?: number } = {}): Promise<boolean> {
   const timeout = opts.timeout ?? 5000;
   const deadline = clock() + timeout;
-  const lostBefore = lostEvents;
   const asked = new Set<JournalWriter>();
+  /** Whether no writer gave up on events since the last flush said so; this flush says it now. */
+  const noneLost = () => {
+    const none = lostEvents === lostReported;
+    lostReported = lostEvents;
+    return none;
+  };
   for (;;) {
-    // each writer holding what was not confirmed sends it once more: those holding now, and those whose round gives up meanwhile
+    // each writer holding what was not confirmed sends it once more: those holding now, and those whose round gives up
+    // meanwhile; one sending already (a round begun before this flush) is asked once that round is over
     for (const w of [...holding]) {
       if (asked.has(w) || !w.unconfirmed) continue;
-      asked.add(w);
-      w.start();
+      if (w.start()) asked.add(w);
     }
-    if (!await idleWithin(deadline - clock())) return false;
-    if (![...holding].some((w) => w.unconfirmed && !asked.has(w))) return allKept() && lostEvents === lostBefore;
+    if (!await idleWithin(deadline - clock())) {
+      noneLost();
+      return false;
+    }
+    if (![...holding].some((w) => w.unconfirmed && !asked.has(w))) return noneLost() && allKept();
   }
 }
 

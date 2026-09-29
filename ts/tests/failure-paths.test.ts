@@ -20,12 +20,14 @@ import { test } from "node:test";
 import { RateLimitError, responseToEvents, streamDelta, type Request, type StreamEvent as LmEvent } from "@lm15/lm15";
 import * as z from "zod";
 import {
-  ai, Cancelled, checkInterface, configure, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, LoadRefused, MemoryStore, module, Prediction, replay,
-  SettingError, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
+  ai, Cancelled, checkInterface, configure, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, LoadRefused, MemoryStore, module, Prediction, replay,
+  save, SettingError, settle as settleLog, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
 } from "../src/index.ts";
+import { holdAtMost } from "../src/log.ts";
 import { passes } from "../src/schema.ts";
 import { jsonForm } from "../src/values.ts";
 import { FakeRouter } from "./fake.ts";
+import * as lmcc from "lmcc";
 
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
 configure({ lm: "gpt-4.1-mini", logCalls: false });
@@ -703,21 +705,108 @@ test("worked examples and rows named like Object members: a demo's value is sent
   const ev = await evaluate(f, [{ result: "ok" }, { toString: "y", result: "ok" }] as never);
   assert.match(ev.rows[0]!.error!, /InterfaceError: odd needs toString/);             // the row has no toString column
   assert.equal(ev.rows[1]!.error, null);
-  const g = ai("odd", { input: { toString: t.string() }, output: t.string(), router: router as never, demos: [{ result: "only an answer" }] } as never);
-  // lmcc's TypeScript renderer reads a demo's missing input by prototype lookup; it refuses what it finds, and nothing is sent that way
-  await g("x" as never).catch(() => undefined);
-  assert.ok(!router.requests.some((r) => sent(r).includes("native code")));
 });
 
-test("an AI function cannot have a field named __proto__ here (lmcc's TypeScript renderer would drop or replace its value): refused at definition and on load; a module takes it", async () => {
-  for (const spec of [{ input: { ["__proto__"]: t.string() } }, { input: { q: t.string() }, outputs: { ["__proto__"]: t.string() } }]) {
-    assert.throws(() => ai("proto", { ...spec, router: ok() as never } as never), (e: unknown) => e instanceof TypeError && /__proto__.*lmcc/.test(e.message));
+// A worked example may give some fields only. lmcc's TypeScript renderer reads a turn's values with `name in values`
+// and `values[name]`; FunctAI gives it records with no prototype, so a missing field is missing, never Object's member.
+test("a worked example without an input or an output named like an Object member (or __proto__) is sent without it: the call succeeds, render and a loaded copy send the same", async () => {
+  const names = [...MEMBERS, "__proto__"];
+  for (const [i, name] of names.entries()) {
+    const out = MEMBERS[(i + 1) % MEMBERS.length]!;                        // an output named like another member, missing from the demos too
+    const f = ai("demo", { input: { [name]: t.string(), q: t.string() }, outputs: { [out]: t.string(), result: t.string() },
+      demos: [{ inputs: {}, outputs: { result: "EXAMPLE" } }, { inputs: { q: "only q" }, outputs: { result: "EXAMPLE2" } }] } as never);
+    const given = { [name]: "ACTUAL", q: "Q" };
+    const answers = new FakeRouter([], () => `<${out}>\na\n</${out}>\n<result>\nok\n</result>`);
+    const g = f.using({ router: answers as never });
+    assert.equal(await g(given as never), "ok", name);
+    const request = answers.requests[0]!;
+    const text = sent(request);
+    assert.ok(text.includes("EXAMPLE") && text.includes("EXAMPLE2") && text.includes("only q"), text);
+    assert.ok(text.includes(`<${name}>\\nACTUAL\\n</${name}>`), text);
+    assert.ok(!text.includes("native code") && !text.includes("[object"), text);
+    assert.equal(text.split(`<${name}>`).length - 1, 1, `only the call gives ${name}: ${text}`);
+    assert.deepEqual(g.render(given as never), request);
+    const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: answers as never });
+    assert.equal(loaded.version, f.version);
+    assert.equal(await loaded(given as never), "ok");
+    assert.deepEqual(answers.requests[1], request);
   }
-  const manifest = JSON.parse(JSON.stringify(toManifest(ai("proto", { input: { zzq: t.string() }, output: t.string() }))).replaceAll('"zzq"', '"__proto__"'));
+  // a recorded turn, used as it is, without its toString input and its valueOf output
+  const answers = new FakeRouter([], () => "<valueOf>\na\n</valueOf>\n<result>\nok\n</result>");
+  const r = ai("demo", { input: { toString: t.string(), q: t.string() }, outputs: { valueOf: t.string(), result: t.string() }, router: answers as never } as never);
+  r.demos = [{ signature: lmcc.signatureFingerprint(r.signature), inputs: { q: "REC" }, steps: [{ kind: "model", outputs: { result: "RECORDED" } }], outputs: { result: "RECORDED" } }] as never;
+  assert.equal(await r({ toString: "ACTUAL", q: "Q" } as never), "ok");
+  const text = sent(answers.requests[0]);
+  assert.ok(text.includes("<q>\\nREC\\n</q>") && text.includes("RECORDED") && !text.includes("native code"), text);
+});
+
+test("__proto__ is an input name like any other: supplied, alone, left out, optional, in a demo, saved and loaded from disk, the very request is sent", async () => {
+  const P = "__proto__";
+  const router = ok();
+  const f = ai("proto", { input: { [P]: t.string() }, output: t.string(), router: router as never, demos: [{ inputs: { [P]: "DEMO" }, outputs: { result: "EXAMPLE" } }] } as never);
+  const given = JSON.parse('{"__proto__":"ACTUAL"}');
+  assert.deepEqual(f.interface.inputs.map((i) => i.name), [P]);
+  assert.equal(await f(given), "ok");
+  assert.equal(await f("ACTUAL" as never), "ok");                           // its one input: the value alone
+  const [byName, alone] = router.requests;
+  assert.ok(sent(byName).includes("<__proto__>\\nACTUAL\\n</__proto__>"), sent(byName));
+  assert.ok(sent(byName).includes("<__proto__>\\nDEMO\\n</__proto__>"), sent(byName));
+  assert.deepEqual(alone, byName);
+  assert.deepEqual(f.render(given), byName);
+  await assert.rejects(f({} as never), (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && e.field === P);
+  const where = mkdtempSync(join(tmpdir(), "functai-proto-"));
+  save(f, where);
+  const loaded = load(where).using({ router: router as never });
+  assert.equal(loaded.version, f.version);
+  assert.equal(await loaded(given), "ok");
+  assert.deepEqual(router.requests.at(-1), byName);
+  assert.equal(router.requests.length, 3, "the call left out sent nothing");
+
+  const opt = ai("proto", { input: { q: t.string(), [P]: t.string({ default: "kind" }) }, output: t.string(), router: router as never } as never);
+  await opt({ q: "x" } as never);
+  assert.ok(sent(router.requests.at(-1)).includes("<__proto__>\\nkind\\n</__proto__>"), sent(router.requests.at(-1)));
+  const json = ai("proto", { input: { [P]: t.json() }, output: t.string(), router: router as never } as never);
+  await json(JSON.parse('{"__proto__":{"a":1}}'));
+  assert.ok(sent(router.requests.at(-1)).includes('<__proto__>\\n{\\n  \\"a\\": 1\\n}\\n</__proto__>'), sent(router.requests.at(-1)));
+});
+
+test("an output named __proto__ is refused at definition and on load (lmcc's TypeScript reader would lose the answer); a module takes the name", async () => {
+  assert.throws(() => ai("proto", { input: { q: t.string() }, outputs: { ["__proto__"]: t.string() }, router: ok() as never } as never),
+    (e: unknown) => e instanceof TypeError && /output named __proto__.*lmcc/.test(e.message));
+  const manifest = JSON.parse(JSON.stringify(toManifest(ai("proto", { input: { q: t.string() }, outputs: { zzq: t.string() } }))).replaceAll('"zzq"', '"__proto__"'));
   assert.throws(() => fromManifest(manifest), (e: unknown) => e instanceof LoadRefused && e.code === "saved-differs" && /__proto__/.test(e.message));
   const m = module("proto", { input: { ["__proto__"]: t.string() } as never, output: t.string() }, (i: Rec) => `got ${i["__proto__"]}`);
   assert.equal(await m(JSON.parse('{"__proto__":"it"}')), "got it");
   assert.equal(await m("alone" as never), "got alone");
+});
+
+// lmcc's TypeScript json format copies an object's members with `out[key] = value` (std/formats.ts `lower`): a member
+// named __proto__ inside a value would be dropped (or become a prototype). Refused before anything is sent, until lmcc
+// carries it; text inputs are written as JSON text by FunctAI, and keep it.
+test("a member named __proto__ inside an input's value is never dropped: a JSON input is refused before anything is sent, a text input keeps it", async () => {
+  const router = ok();
+  const where = folder();
+  const values = [JSON.parse('{"__proto__":"v","a":"x"}'), JSON.parse('{"__proto__":{"admin":true},"a":"x"}'), [JSON.parse('{"a":"x","__proto__":"p"}')]];
+  for (const shape of [t.json(), { type: "object" }, t.list(t.object({ a: t.string() }))]) {
+    for (const adapter of ["xml", "chat", "json"]) {
+      const f = ai("nested", { input: { q: shape }, output: t.string(), adapter, router: router as never, logCalls: where } as never);
+      for (const q of values) {
+        const refused = (e: unknown) => (e as { code?: string }).code === "format-write-error" && /__proto__.*lmcc/.test((e as Error).message);
+        await assert.rejects(f({ q } as never), refused);
+        assert.throws(() => f.render({ q } as never), refused);
+        const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: router as never });
+        await assert.rejects(loaded({ q } as never), refused);
+      }
+      const d = ai("nested", { input: { q: shape }, output: t.string(), adapter, router: router as never, demos: [{ inputs: { q: values[0] }, outputs: { result: "E" } }] } as never);
+      await assert.rejects(d({ q: { a: "y" } } as never), (e: unknown) => (e as { code?: string }).code === "format-write-error");
+    }
+  }
+  assert.equal(router.requests.length, 0, "nothing was sent");
+  const [record] = logged(where);
+  assert.equal(record!.inputs.q["__proto__"], "v", "the record keeps what the caller gave");
+  const text = ai("nested", { input: { q: t.string() }, output: t.string(), router: router as never } as never);
+  await text({ q: values[0] } as never);
+  assert.ok(sent(router.requests[0]).includes('\\"__proto__\\": \\"v\\"'), sent(router.requests[0]));
 });
 
 test("a Standard Schema's JSON Schema keeps a property named __proto__ (normalizing it set the prototype instead)", async () => {
@@ -893,7 +982,7 @@ test("a best-effort journal down for a moment still gets the tree's end: flush s
   });
 });
 
-test("a journal that stays down: the writer tries five more times on its own (1, 2, 4, 8, 16 s), then gives up on what it holds, says so once, and holds nothing", async (ctx) => {
+test("a journal that stays down: the writer tries again on its own for as long as the process lives (1, 2, 4, … 60 s apart), gives nothing up for time, and keeps it all once the store is back", async (ctx) => {
   ctx.mock.timers.enable({ apis: ["setTimeout"] });
   await quietly(async (warned) => {
     const store = new Scripted(() => Promise.reject(new Error("down")));
@@ -903,17 +992,88 @@ test("a journal that stays down: the writer tries five more times on its own (1,
     for (let i = 0; i < 5; i++) await settle();
     const first = store.sends;                                    // its started, and its done (each tried once, as it came)
     const at: number[] = [];
-    for (let second = 1; second <= 40; second++) {
+    for (let second = 1; second <= 400; second++) {
       ctx.mock.timers.tick(1000);
-      for (let i = 0; i < 5; i++) await settle();
+      for (let i = 0; i < 3; i++) await settle();
       while (at.length < store.sends - first) at.push(second);
     }
-    assert.deepEqual(at, [1, 3, 7, 15, 31], "a later round after 1 s, then 2, 4, 8 and 16 s");
-    assert.equal(warned.filter((w) => w.includes("given up")).length, 1, warned.join("\n"));
+    assert.deepEqual(at, [1, 3, 7, 15, 31, 63, 123, 183, 243, 303, 363], "later rounds 1, 2, 4, 8, 16, 32 s apart, then every 60 s");
+    assert.ok(!warned.some((w) => w.includes("given up")), warned.join("\n"));
     store.healed = true;
-    assert.ok(await flush());                                     // it holds nothing: what it gave up on was warned about then
-    assert.deepEqual(store.inner.trees(), [], "nothing more is sent to that log");
+    ctx.mock.timers.tick(60_000);
+    for (let i = 0; i < 5; i++) await settle();
+    const tree = store.inner.trees()[0]!;
+    assert.deepEqual(store.inner.events(tree).map((e) => e["kind"]), ["started", "done"], "the next later round kept it all");
+    assert.ok(await flush());
   });
+});
+
+test("a quiet tree through a store that fails fast for 36 s (one long model call): nothing is given up, its end is kept, and flush says true", async (ctx) => {
+  ctx.mock.timers.enable({ apis: ["setTimeout"] });
+  await quietly(async (warned) => {
+    let down = true;
+    const store = new Scripted((_n, events, inner) => (down ? Promise.reject(new Error("ECONNREFUSED")) : Promise.resolve(inner.appendNow(events))));
+    let answer!: (v: string) => void;
+    const m = module("m", { input: {}, output: t.string(), journal: { store, retries: 0, backoff: 0 } }, () => new Promise<string>((r) => { answer = r; }));
+    const call = m({});
+    const settle = () => new Promise((r) => setImmediate(r));
+    for (let second = 1; second <= 40; second++) {
+      if (second === 36) down = false;
+      ctx.mock.timers.tick(1000);
+      for (let i = 0; i < 3; i++) await settle();
+    }
+    answer("ok");                                                 // the model answers after 40 s
+    assert.equal(await call, "ok");
+    for (let i = 0; i < 5; i++) await settle();
+    const tree = store.inner.trees()[0]!;
+    assert.deepEqual(store.inner.events(tree).map((e) => e["kind"]), ["started", "done"]);
+    assert.ok(!warned.some((w) => w.includes("given up")), warned.join("\n"));
+    assert.ok(await flush());
+  });
+});
+
+test("flush sends again a writer whose round was already under way when flush began, and failed: it says true once all is kept", async () => {
+  await quietly(async () => {
+    let mode: "down" | "slow" | "up" = "down";
+    const store = new Scripted((_n, events, inner) => {
+      if (mode === "down") return Promise.reject(new Error("down"));
+      if (mode === "slow") {
+        mode = "up";
+        return delay(30).then(() => { throw new Error("down"); });
+      }
+      return Promise.resolve(inner.appendNow(events));
+    });
+    let answer!: (v: string) => void;
+    const m = module("m", { input: {}, output: t.string(), journal: { store, retries: 0, backoff: 0 } }, () => new Promise<string>((r) => { answer = r; }));
+    const call = m({});
+    await delay(20);                                              // started: its round failed, and the writer holds it
+    mode = "slow";
+    answer("ok");
+    assert.equal(await call, "ok");                               // done: a round begins now, and fails 30 ms later
+    assert.equal(await flush({ timeout: 2000 }), true);
+    const tree = store.inner.trees()[0]!;
+    assert.deepEqual(store.inner.events(tree).map((e) => e["kind"]), ["started", "done"]);
+  });
+});
+
+test("writers holding more unconfirmed events than the limit give up the oldest log first, warn once, and the next flush says false (once)", async () => {
+  const before = holdAtMost(5);
+  try {
+    await quietly(async (warned) => {
+      const store = new Scripted(() => Promise.reject(new Error("down")));
+      const m = module("m", { input: {}, output: t.string(), journal: { store, retries: 0, backoff: 0 } }, () => "ok");
+      for (let i = 0; i < 3; i++) assert.equal(await m({}), "ok");         // three trees, two events each: six held
+      assert.equal(warned.filter((w) => w.includes("given up")).length, 1, warned.join("\n"));
+      store.healed = true;
+      assert.equal(await flush(), false, "a log was given up since the last flush");
+      assert.equal(await flush(), true, "said once");
+      const trees = store.inner.trees();
+      assert.equal(trees.length, 2, "the oldest tree's log was given up; the two after it are kept");
+      for (const tree of trees) assert.deepEqual(store.inner.events(tree).map((e) => e["kind"]), ["started", "done"]);
+    });
+  } finally {
+    holdAtMost(before);
+  }
 });
 
 test("journal timeouts and backoffs past a timer's limit refuse where they are set (setTimeout would fire at once); settle can be stopped", async () => {
@@ -931,6 +1091,30 @@ test("journal timeouts and backoffs past a timer's limit refuse where they are s
     await assert.rejects(err.settle({ signal: AbortSignal.timeout(50) }), (e: unknown) => (e as Error).name === "TimeoutError");
     await heal(dead);
   });
+});
+
+test("settle stops for an abort the store's read makes itself, at once or later, and leaves no listener behind", async () => {
+  for (const synchronous of [true, false]) {
+    const controller = new AbortController();
+    const reason = new Error("transport closed");
+    const source = {
+      read: () => {
+        if (synchronous) controller.abort(reason);
+        else queueMicrotask(() => controller.abort(reason));
+        return never();
+      },
+    };
+    const outcome = await Promise.race([
+      settleLog(source as never, "tree", { writer: 1, seq: 2 }, { signal: controller.signal }).then(() => "resolved", (e: unknown) => e),
+      delay(500).then(() => "still waiting"),
+    ]);
+    assert.equal(outcome, reason, `synchronous: ${synchronous}`);
+    assert.equal(getEventListeners(controller.signal, "abort").length, 0);
+  }
+  const controller = new AbortController();
+  const throwing = { read: () => { throw new Error("no read"); } };
+  await assert.rejects(settleLog(throwing as never, "tree", { writer: 1, seq: 2 }, { signal: controller.signal }), /no read/);
+  assert.equal(getEventListeners(controller.signal, "abort").length, 0);
 });
 
 test("a builder's extra keys add to its shape and never replace it", () => {

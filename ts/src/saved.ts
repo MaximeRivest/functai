@@ -9,7 +9,7 @@
 import * as lmcc from "lmcc";
 import { Config, stringifyJson } from "@lm15/lm15";
 import { builtin } from "./host.ts";
-import { fieldsOf, make, uncarried, type AnyAIFunction as AIFunction } from "./fn.ts";
+import { fieldsOf, make, unreadable, type AnyAIFunction as AIFunction } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
 import { interfaceSignature, malformed, type Interface, type InterfaceField } from "./interface.ts";
 import { REGISTRY } from "./layouts.ts";
@@ -141,8 +141,8 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
     else if (f.purpose === "reasoning") cot = true;
     else refuse("saved-tools", `${key}: field ${f.name} (${f.purpose}) needs tools`);
   }
-  const cannot = uncarried([...inputs, ...outputs].map((f) => f.name));
-  if (cannot) refuse("saved-differs", `${key}: it would not send what was saved: ${cannot}`);
+  const cannot = unreadable(outputs.map((f) => f.name));
+  if (cannot) refuse("saved-differs", `${key}: it would not read what the model answers: ${cannot}`);
   const own: Settings = {};
   if (typeof settingsIn["lm"] === "string") own.lm = settingsIn["lm"] as string;
   if (settingsIn["module"] === "cot" || cot) own.module = "cot";

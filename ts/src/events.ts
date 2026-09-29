@@ -593,18 +593,20 @@ export async function settle(store: EventSource, tree: string, event: Position,
   opts: { signal?: AbortSignal } = {}): Promise<"kept" | "not-kept" | "another-end"> {
   const { signal } = opts;
   signal?.throwIfAborted();
-  const reading = Promise.resolve(store.read(tree, null));
   let answer: ReadAnswer;
-  if (!signal) answer = await reading;
+  if (!signal) answer = await store.read(tree, null);
   else {
-    // a store that is likely unwell (it did not answer the end) may not answer this read either: the signal stops the wait
+    // a store that is likely unwell (it did not answer the end) may not answer this read either: the signal stops the
+    // wait. It is listened to before the store's code runs, which may abort it at once (a shared controller).
     let onAbort!: () => void;
     const aborted = new Promise<never>((_, reject) => {
       onAbort = () => reject(signal.reason);
-      signal.addEventListener("abort", onAbort, { once: true });
     });
-    reading.catch(() => undefined);
+    aborted.catch(() => undefined);                    // an abort after the answer came is nobody's concern
+    signal.addEventListener("abort", onAbort, { once: true });
     try {
+      const reading = Promise.resolve(store.read(tree, null));
+      reading.catch(() => undefined);
       answer = await Promise.race([reading, aborted]);
     } finally {
       signal.removeEventListener("abort", onAbort);

@@ -286,21 +286,21 @@ const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP"
   "cacheReplies", "observers", "journal"]);
 
 /**
- * The field names an AI function cannot have here, though the contract
- * allows them: lmcc's TypeScript renderer writes a turn's values with
- * `values[name] = value` (its `Plan.turn`, `Plan.example` and reader), and
- * for `__proto__` that sets the object's prototype instead. A text value is
- * then lost, a JSON value is sent as `{}`, and an answer is read as `{}`.
- * Refused, rather than sending other data than the caller gave, until lmcc
- * carries the name. A module is not rendered by lmcc, and takes it.
+ * The output names an AI function cannot have here, though the contract
+ * allows them: lmcc's TypeScript reader writes the values it reads from a
+ * reply with `values[name] = value` (its `Plan.parseWithCaptures`), and for
+ * `__proto__` that sets the object's prototype instead: the answer would be
+ * lost. Refused, rather than reading other data than the model gave, until
+ * lmcc carries the name. Inputs may have it: FunctAI gives lmcc its values
+ * as records with no prototype. A module is not read by lmcc, and takes it.
  */
-export const LMCC_CANNOT_CARRY: readonly string[] = ["__proto__"];
+export const LMCC_CANNOT_READ: readonly string[] = ["__proto__"];
 
-/** Why an AI function with these fields cannot be sent faithfully, or null. */
-export function uncarried(names: readonly string[]): string | null {
-  const bad = names.filter((n) => LMCC_CANNOT_CARRY.includes(n));
+/** Why an AI function with these outputs cannot be read faithfully, or null. */
+export function unreadable(outputs: readonly string[]): string | null {
+  const bad = outputs.filter((n) => LMCC_CANNOT_READ.includes(n));
   return bad.length
-    ? `a field named ${bad.join(", ")} cannot be sent through lmcc's TypeScript renderer yet (it would set an object's prototype instead of holding the value): rename the field`
+    ? `an output named ${bad.join(", ")} cannot be read through lmcc's TypeScript reader yet (it would set an object's prototype instead of holding the answer): rename the output`
     : null;
 }
 
@@ -339,7 +339,7 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     const declared = declareOutput(field, spec, `${name}.outputs.${field}`, "ai");
     return { name: field, shape: declared.shape, desc: declared.desc ?? null };
   });
-  const cannot = uncarried([...inputs, ...outputs].map((f) => f.name));
+  const cannot = unreadable(outputs.map((f) => f.name));
   if (cannot) throw new TypeError(`ai("${name}"): ${cannot}`);
   const where = definedAt(ai);
   const own: Settings = {};
@@ -426,11 +426,18 @@ export function make(core: Core): AIFunction {
       if (isRecordedTurn(d)) {
         const recorded = d as unknown as { signature: string };
         if (recorded.signature === plan.fingerprint) {
+          let t: lmcc.Turn | null = null;
           try {
-            out.push(plan.loadTurn(d));
-            continue;
+            t = sig.ownTurn(plan.loadTurn(d));
           } catch {
             // read as its inputs and outputs below
+          }
+          if (t) {
+            sig.checkCarried(plan.signature, t.inputs, "input");
+            for (const s of t.steps) if (s instanceof lmcc.ModelStep) sig.checkCarried(plan.signature, s.outputs, "output");
+            if (t.outputs) sig.checkCarried(plan.signature, t.outputs, "output");
+            out.push(t);
+            continue;
           }
         }
       }
@@ -438,10 +445,14 @@ export function make(core: Core): AIFunction {
       const outs = Object.fromEntries(Object.entries(d.outputs ?? {}).filter(([k]) => kept.has(k)));
       if (!Object.keys(outs).length) continue;
       try {
-        out.push(plan.example(ins, outs));
+        plan.example(ins, outs);                           // a demo lmcc refuses to make an example of is skipped
       } catch (err) {
         if (!lmcc.isRefusal(err)) throw err;
+        continue;
       }
+      sig.checkCarried(plan.signature, ins, "input");
+      sig.checkCarried(plan.signature, outs, "output");
+      out.push(sig.turnOf(plan, ins, outs));
     }
     return out;
   };
@@ -454,7 +465,7 @@ export function make(core: Core): AIFunction {
     const given = inputs ? binder.bind(inputs, { check: false })[0] : sig.sampleInputs(plan.signature);
     const values = sig.prepareInputs(plan.signature, given);
     if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-    return plan.render(plan.turn(values), { turns: pastTurns(plan) }).request("probe");
+    return plan.render(sig.currentTurn(plan, values), { turns: pastTurns(plan) }).request("probe");
   };
 
   const version = (): string => {
@@ -606,7 +617,7 @@ export function make(core: Core): AIFunction {
       const { plan, model, settings } = planFor(s);
       const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
       if (core.tools.length) values["tools"] = core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
-      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
+      return bridge.request(plan.render(sig.currentTurn(plan, values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
