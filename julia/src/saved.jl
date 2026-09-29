@@ -166,7 +166,7 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         desc = f.direction == "input" ? f.desc : nothing
         f.direction == "input" && haskey(optional, f.name) || return FieldDef(f.name, spec, JObj(f.shape), desc)
         default = optional[f.name]
-        native = spec isa AbstractDict ? LMCC.deepcopy_json(default) : fromjson(spec, default, f.name)
+        native = default_native(spec, default, f.name)
         FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), native)
     end
     inputs, outputs = FieldDef[], FieldDef[]

@@ -138,7 +138,10 @@ mutable struct Call
     value::Any                          # what the call returned (its done event's value)
     confidence::Any
     requests::Int
-    released::Bool                      # its tree no longer waits for it
+    const up::Union{Nothing,Call}       # the call it runs inside (its parent), which ends only once it has
+    open::Int                           # calls made inside it that have started and not ended (on its tree's lock)
+    ended::Bool                         # its end is numbered: no call attaches to it any more (on its tree's lock)
+    released::Bool                      # its parent no longer waits for it
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
@@ -165,8 +168,9 @@ layers give), which of its fields the log keeps, its observers, and its
 inputs as the log writes them. Nothing here throws into the call but a
 closed stream (no call starts inside a cancelled one): a journal policy it
 breaks is kept in `refusal`, raised once it has started. A call made inside
-a tree that has already ended (a task its outermost call did not wait for)
-starts a tree of its own.
+a call that has already ended (on a task that call started and did not wait
+for) starts a tree of its own: its parent's end was numbered after every
+call inside it had ended, and nothing joins a call after its end.
 """
 function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
                     inputs::AbstractDict, fields)
@@ -174,7 +178,7 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
     check_cancelled(parent)
     if parent !== nothing
         attached = lock(parent.tree.lock) do
-            parent.tree.ended ? false : (parent.tree.open += 1; true)
+            parent.ended ? false : (parent.open += 1; true)
         end
         if !attached
             warn_once("after-end:$(program["module"]).$name", "$name was called inside a call that has ended; " *
@@ -186,7 +190,7 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
         new_call(parent, program, name, s, own, inputs, fields)
     catch
         # it never runs: the tree does not wait for it
-        parent === nothing || lock(() -> (parent.tree.open -= 1; notify(parent.tree.cond)), parent.tree.lock)
+        parent === nothing || lock(() -> (parent.open -= 1; notify(parent.tree.cond)), parent.tree.lock)
         rethrow()
     end
 end
@@ -224,7 +228,7 @@ function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{S
     watchers = parent === nothing ? Any[] : copy(parent.watchers)
     call = Call(id, parent === nothing ? nothing : parent.id, parent === nothing ? id : parent.root, time(), program, String(name),
                 folder, caller_of(s), tree, fields, keep, got.observers, watchers, refusal, Exchange[], nothing, JObj(), JObj(),
-                String[], nothing, nothing, false, nothing, nothing, 0, false)
+                String[], nothing, nothing, false, nothing, nothing, 0, parent, 0, false, false)
     for (k, v) in inputs
         data, described = logvalue_described(v)
         call.inputs[String(k)] = data
@@ -252,7 +256,10 @@ check_cancelled(::Nothing) = nothing
 watched(call::Call) = watched(call.tree, call.observers)
 
 "Make one of this call's events and give it to its readers."
-emit!(call::Call, kind::Symbol, data::JObj; kw...) = emit!(call.tree, kind, call.id, call.name, data; kw...)
+function emit!(call::Call, kind::Symbol, data::JObj; kw...)
+    call.ended && error("FunctAI: a $kind event of call $(call.id) after its end (a fault of FunctAI, not of your code)")
+    emit!(call.tree, kind, call.id, call.name, data; kw...)
+end
 
 "An exception as the log writes it: `{type, message?, code?}`."
 function error_json(err, content::Bool)

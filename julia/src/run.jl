@@ -12,7 +12,8 @@ started_data(call::Call) = LMCC.jobj("parent" => call.parent, "root" => call.roo
 Run `body(call)` as the call's code: its value is what the call returns.
 `body` sets what the record keeps (`call.outputs`, `call.returned`); `value`
 (what the call returns) goes in its `done` event. A stream closed while the
-code ran ends the call `Cancelled`, whatever the code returned.
+code ran, or while the call waited for the calls made inside it, ends the
+call `Cancelled`, whatever the code returned.
 """
 function run_call(body::Function, call::Call)
     t = call.tree
@@ -33,7 +34,8 @@ function run_call(body::Function, call::Call)
                 conclude(call, unwrap(err))
                 rethrow()
             end
-            conclude(call, nothing)
+            ended_with = conclude(call, nothing)
+            ended_with === nothing || throw(ended_with)      # closed while it waited for the calls inside it
             value
         end
     finally
@@ -41,49 +43,63 @@ function run_call(body::Function, call::Call)
     end
 end
 
-"A call inside a tree has ended (or never will run): the tree's end no longer waits for it."
+"A call has ended (or never will run): the call it runs inside no longer waits for it."
 function release!(call::Call)
-    call.parent === nothing && return
-    call.released && return
-    call.released = true
+    up = call.up
+    up === nothing && return
     t = call.tree
     lock(t.lock) do
-        t.open -= 1
+        call.released && return
+        call.released = true
+        up.open -= 1
         notify(t.cond)
     end
 end
 
 """
-The outermost call waits, before its end, for the calls made inside it that
-are still running (a task it started and did not wait for): a log's last
-event is its outermost call's end, and every call inside has ended before it.
+Number a call's end (`kind`, `data`) once every call made inside it has
+ended, in the same hold of the tree's lock as the last look: no call can
+join it between the two (one that starts later starts a tree of its own).
+Every call does this, not only the outermost, so a call's end follows the
+ends of all the calls inside it, at every depth, and a stream watching it
+has every event it will ever have once it has the end. A stream closed while
+it waited ends an ordinary return `Cancelled`: `(terminal, err)`, `err` the
+outcome the end says.
 """
-function wait_for_inside(t::TreeLog, call::Call)
-    lock(t.lock) do
-        t.open > 0 && warn_once("inside:$(call.program["module"]).$(call.name)",
+function end_call!(call::Call, err, done_data; withhold::Bool)
+    t = call.tree
+    if lock(() -> call.open > 0, t.lock)
+        warn_once("inside:$(call.program["module"]).$(call.name)",
             "$(call.name) returned while calls made inside it are still running; its call ends once they have " *
             "(to start work that outlives a call, use FunctAI.detached)")
-        while t.open > 0
+    end
+    lock(t.lock) do
+        while call.open > 0
             wait(t.cond)
         end
+        err === nothing && cancelled(call) && (err = Cancelled())
+        kind, data = err === nothing ? (:done, done_data) : (:failed, LMCC.jobj("error" => error_json(err, true)))
+        terminal = emit!(call, kind, data; withhold, last=call.parent === nothing)
+        call.ended = true
+        (terminal, err)
     end
 end
 
 """
 End a call with its outcome (`err`, or its value): its `done` or `failed`,
-its record, and, at a tree's end, the journal's answer. With a required
-journal the end is given to readers only once confirmed; when it is not,
-the caller gets `JournalError` `journal-end` holding the outcome, and the
-record says `journal`.
+once the calls made inside it have ended, its record, and, at a tree's end,
+the journal's answer. With a required journal the end is given to readers
+only once confirmed; when it is not, the caller gets `JournalError`
+`journal-end` holding the outcome, and the record says `journal`. Returns
+the error the call ended with (`Cancelled` for a value its stream was
+closed on while it waited), or `nothing`.
 """
 function conclude(call::Call, err)
     t = call.tree
     outermost = call.parent === nothing
-    kind, data = err === nothing ? (:done, LMCC.jobj("value" => logvalue(call.value))) :
-                                   (:failed, LMCC.jobj("error" => error_json(err, true)))
+    done_data = err === nothing ? LMCC.jobj("value" => logvalue(call.value)) : nothing
     withhold = outermost && required(t)
-    outermost && wait_for_inside(t, call)
-    terminal = emit!(call, kind, data; withhold, last=outermost)
+    terminal, err = end_call!(call, err, done_data; withhold)
     release!(call)
     status = :confirmed
     if outermost && t.writer_task !== nothing
@@ -95,7 +111,7 @@ function conclude(call::Call, err)
     unconfirmed && throw(end_error(status, terminal, err === nothing ? (done=call.value,) : (failed=err,);
                                    cause=journal_cause(t), store=t.journal.store))
     withhold && deliver!(t, terminal)
-    nothing
+    err
 end
 
 """

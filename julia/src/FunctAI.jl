@@ -88,6 +88,6 @@ export InterfaceError, LogContentError, JournalError
 export model_capabilities, casefold, normalize_text
 
 # observers and journal writers work off the calls' tasks: give them a moment when Julia exits
-__init__() = atexit(() -> drain(2.0))
+__init__() = atexit(() -> (drain(2.0); EXITING[] = true; nothing))
 
 end

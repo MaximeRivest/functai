@@ -13,10 +13,18 @@ const SCHEMA_KEYWORDS = Set(["\$schema", "\$id", "\$defs", "\$ref", "title", "de
                              "required", "properties", "additionalProperties", "propertyNames", "maxProperties",
                              "items", "minItems", "uniqueItems", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"])
 
-"A schema's pattern as ECMA-262 reads it: its one `\$`, the last anchor, is the end of the text."
+"""
+A schema's pattern as ECMA-262 reads it: its one `\$`, the last anchor, is
+the end of the text. A pattern that uses a class escape (`\\d`, `\\w`, `\\s`,
+`\\b` and their negations) is refused: Julia's PCRE reads those with Unicode
+properties, ECMA-262 does not (`\\d` is ASCII digits there, `\\s` its own
+list of spaces), so a pattern using one could pass here and fail elsewhere.
+"""
 function ecma_pattern(p::AbstractString)
     occursin(r"\A[^$]*\$\)*\z", p) || occursin(r"\A[^$]*\z", p) ||
         error("a schema pattern with \$ other than as its last anchor: $p")
+    occursin(r"(?<!\\)(?:\\\\)*\\[dDwWsSbB]", p) &&
+        error("a schema pattern with a class escape (\\d \\w \\s \\b), which PCRE and ECMA-262 read differently: $p")
     Regex(replace(p, r"\$(?=\)*\z)" => s"\\z"))
 end
 

@@ -19,6 +19,15 @@ struct FieldDef
     native::Any
 end
 FieldDef(name, spec, shape, desc) = FieldDef(String(name), spec, shape, desc, false, nothing, nothing)
+
+"""
+An optional input's default as its code gets it, made from its JSON form
+(`data`, which the interface writes and a saved folder keeps), the same way
+whether the function is defined or loaded: it shares nothing with the value
+it was defined with, so a call left without it is sent the same request
+before and after saving and loading, whatever happens to that value later.
+"""
+default_native(spec, data, where) = spec isa AbstractDict ? LMCC.deepcopy_json(data) : fromjson(spec, LMCC.deepcopy_json(data), where)
 FieldDef(name, spec; desc=nothing) = FieldDef(String(name), spec, shape_of(spec), desc === nothing || isempty(desc) ? nothing : String(desc))
 
 "The field's lmcc shape: its shape without its own `default` (functions.md, \"The signature\")."

@@ -155,11 +155,13 @@ An input with a default may be left out: `tone::String = "kind"`. The
 default is written in the function's [`interface`](@ref) and sent to the
 model whenever the input is left out, so it is data, the same for every
 call: a literal (`"kind"`, `3`, `String[]`, `(a = 1,)`) or a constant
-(`const TONE = "kind"`, an `@enum` value). A default that uses another
-input, or is computed (`at::Float64 = time()`), is refused when the
-function is defined, rather than computed once then and shared by every
-call (unlike Julia, which runs a default on each call); give such a value
-at each call. Each call gets its own copy of the default.
+whose value can never change (`const TONE = "kind"`, an `@enum` value). A
+default that uses another input, is computed (`at::Float64 = time()`), or
+is a constant that can change (`const TAGS = ["a"]`: a `Vector` can be
+pushed to) is refused when the function is defined, rather than taken once
+then and shared by every call (unlike Julia, which runs a default on each
+call); give such a value at each call. Each call gets its own copy of the
+default, made from its JSON form, as loading a saved function makes it.
 
 With several outputs, calling returns them all as a `NamedTuple`
 (`(; summary, minutes) = triage(ticket)`). With code after the outputs, that
@@ -308,22 +310,45 @@ mentions(x, names) = x isa Symbol ? String(x) in names :
 
 """
 A literal default: a number, text, a Bool, `nothing`, a quoted symbol, and
-lists, tuples, named tuples, typed vectors (`String[]`) and `Dict`s of them.
+lists, tuples, named tuples, typed vectors (`String[]`, `T[…]` where `T`
+names a type in `mod`: `COUNTS[1]` reads a global, and is not one) and
+`Dict`s of them.
 """
-function is_literal(x)
+function is_literal(x, mod::Module)
+    lit(a) = is_literal(a, mod)
     x isa Union{Number,AbstractString} && return true
     x === :nothing && return true
     x isa QuoteNode && return x.value isa Symbol
     x isa Expr || return false
-    named(a) = a isa Expr && a.head === :(=) && a.args[1] isa Symbol && is_literal(a.args[2])
-    x.head === :vect && return all(is_literal, x.args)
-    x.head === :tuple && return all(a -> is_literal(a) || named(a), x.args)
-    x.head === :parameters && return all(a -> named(a) || (a isa Expr && a.head === :kw && is_literal(a.args[2])), x.args)
-    x.head === :ref && return !isempty(x.args) && x.args[1] isa Symbol && all(is_literal, x.args[2:end])
-    pair(a) = a isa Expr && a.head === :call && a.args[1] === :(=>) && length(a.args) == 3 && is_literal(a.args[2]) && is_literal(a.args[3])
+    named(a) = a isa Expr && a.head === :(=) && a.args[1] isa Symbol && lit(a.args[2])
+    x.head === :vect && return all(lit, x.args)
+    x.head === :tuple && return all(a -> lit(a) || named(a), x.args)
+    x.head === :parameters && return all(a -> named(a) || (a isa Expr && a.head === :kw && lit(a.args[2])), x.args)
+    x.head === :ref && return !isempty(x.args) && names_type(mod, x.args[1]) && all(lit, x.args[2:end])
+    pair(a) = a isa Expr && a.head === :call && a.args[1] === :(=>) && length(a.args) == 3 && lit(a.args[2]) && lit(a.args[3])
     x.head === :call && x.args[1] === :Dict && return all(pair, x.args[2:end])
     false
 end
+"""
+Whether `x` names a type in `mod` (a typed vector's element type: `String`
+in `String[]`, `Vector{Int}` in `Vector{Int}[]`, `Base.String`): a constant
+holding a type, or one applied to such names and numbers.
+"""
+function names_type(mod::Module, x)
+    is_name_path(x) && return (v = constant_value(mod, x); v !== NOTHING_GIVEN && v isa Type)
+    x isa Expr && x.head === :curly || return false
+    names_type(mod, x.args[1]) && all(a -> a isa Integer || names_type(mod, a), x.args[2:end])
+end
+
+"""
+Whether a value can never change: numbers, characters, text, symbols,
+`nothing`, `missing`, enum values, and immutable values (tuples, named
+tuples, immutable structs) made only of them. A constant holding one is the
+same value on every call; a constant holding a `Vector` or a `Dict` is not
+(`push!(ITEMS, …)` changes it after the function is defined).
+"""
+frozen(v) = v isa Union{Number,AbstractChar,String,Symbol,Nothing,Missing,Enum} ? true :
+            ismutable(v) ? false : all(i -> !isdefined(v, i) || frozen(getfield(v, i)), 1:nfields(v))
 
 "A name, or a dotted path of names (`TONE`, `Settings.TONE`): what may be a constant."
 is_name_path(x) = x isa Symbol || (x isa Expr && x.head === :. && length(x.args) == 2 && is_name_path(x.args[1]) &&
@@ -343,24 +368,34 @@ end
 
 """
 A `@program` argument's default as the interface writes it, when it is data
-(a literal, or a constant, and no other argument): the expression that
-gives it when the program is defined, else `NOTHING_GIVEN` (it is Julia code,
-run on each call, and the input is optional with no default in its shape).
+(a literal, or a constant whose value can never change, and no other
+argument): the expression that gives it when the program is defined, else
+`NOTHING_GIVEN` (it is Julia code, run on each call as Julia runs it, and the
+input is optional with no default in its shape: a call that leaves it out
+records no value for it). The code evaluates a data default too, on each
+call; its value is the interface's, so the record holds what the code got.
 """
 function default_data(mod::Module, default, arg_names)
     mentions(default, arg_names) && return NOTHING_GIVEN
-    is_literal(default) && return default
-    is_name_path(default) && return :($(constant_value)($mod, $(QuoteNode(default))))
+    is_literal(default, mod) && return default
+    is_name_path(default) && return :($(frozen_constant)($mod, $(QuoteNode(default))))
     NOTHING_GIVEN
+end
+
+"The value of a constant that can never change, named by `x` in `mod`, else `NOTHING_GIVEN`."
+function frozen_constant(mod::Module, x)
+    v = constant_value(mod, x)
+    v !== NOTHING_GIVEN && frozen(v) ? v : NOTHING_GIVEN
 end
 
 """
 An `@ai` input's default, as the expression that gives it when the function
 is defined: it is written in the interface and sent to the model whenever
 the input is left out, so it is data, the same for every call: a literal or
-a constant. Anything else is refused when the function is defined, rather
-than computed once and silently shared (`time()` would be the definition's
-time on every call).
+a constant whose value can never change. Anything else is refused when the
+function is defined, rather than computed once and silently shared (`time()`
+would be the definition's time on every call; a constant `Vector` would be
+its contents then, whatever was pushed to it since).
 """
 function ai_default(mod::Module, default, input_names, fname, input)
     if mentions(default, input_names)
@@ -368,7 +403,7 @@ function ai_default(mod::Module, default, input_names, fname, input)
         return :(throw(ArgumentError($("@ai $fname: the default of $input uses $used, another input. A default is data, " *
                                         "sent to the model whenever $input is left out: write a literal or a constant, or give $input at each call"))))
     end
-    is_literal(default) && return default
+    is_literal(default, mod) && return default
     is_name_path(default) && return :($(ai_constant)($mod, $(QuoteNode(default)), $fname, $input))
     :(throw(ArgumentError($("@ai $fname: the default of $input ($(default)) is computed. A default is data, written in the " *
                             "function's interface and sent to the model whenever $input is left out, the same for every call: " *
@@ -379,6 +414,10 @@ function ai_constant(mod::Module, x, fname, input)
     v = constant_value(mod, x)
     v === NOTHING_GIVEN && throw(ArgumentError("@ai $fname: the default of $input ($x) is not a constant. A default is data, " *
         "sent to the model whenever $input is left out, the same for every call: make it one (const $x = …), or write a literal"))
+    frozen(v) || throw(ArgumentError("@ai $fname: the default of $input ($x) is a constant whose value can change (a " *
+        "$(typeof(v)): what it holds can be changed after the function is defined). A default is data, written in the " *
+        "function's interface when it is defined and sent to the model whenever $input is left out, the same for every " *
+        "call: write it as a literal, or give $input at each call"))
     v
 end
 

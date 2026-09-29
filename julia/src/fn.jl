@@ -75,12 +75,21 @@ function field_def(name, spec, where; default=nothing)
     shape = shape_of(spec; where)
     desc = desc === nothing || isempty(desc) ? nothing : String(desc)
     default === nothing && return FieldDef(String(name), spec, shape, desc)
-    native = something(default)
-    data = json_form(native)
+    given = something(default)
+    data = json_form(given)
     data === NOJSON && throw(InterfaceError("interface-malformed", String(name),
-        "$where: its default is sent to the model when it is left out, so it needs a JSON form; a $(typeof(native)) has none"))
+        "$where: its default is sent to the model when it is left out, so it needs a JSON form; a $(typeof(given)) has none"))
+    data = LMCC.deepcopy_json(data)          # a snapshot: the value given may change later; the default does not
     haskey(shape, "default") && !same_json(shape["default"], data) &&
         throw(ArgumentError("$where: its shape's default $(LMCC.json_text(shape["default"])) is not its default $(LMCC.json_text(data))"))
+    # the value calls get is made from that snapshot, as loading makes it, never the value given
+    native = try
+        default_native(spec, data, where)
+    catch err
+        err isa LMCC.Refusal || rethrow()
+        throw(InterfaceError("interface-malformed", String(name),
+            "$where: its default does not fit its type (a default is kept as JSON and read back as the type: $(err.hint))"))
+    end
     FieldDef(String(name), spec, data_shape(shape), desc, true, data, native)
 end
 shape_of(spec::Union{OneOf,AbstractDict}; where="") = shape_of(spec)

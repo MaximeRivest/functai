@@ -224,10 +224,14 @@ end
 The interface `@program` declares (contract/programs.md, "How each program
 has one"): each argument an input (untyped, `Any`, or a type with no JSON
 form: opaque); an argument with a default is optional, and a default that
-is data (a literal, or a constant: the rule `@ai` keeps) is in its shape;
-any other default is Julia code, and the input stays left out. The code
-always makes its defaults anew on each call, as Julia does. The return type
-is one output, `result`, or `outputs = (name = T, …)` declares several.
+is data (a literal, or a constant whose value can never change: the rule
+`@ai` keeps) is in its shape; any other default (computed, using another
+argument, or a constant that can change, such as a `Vector`) is Julia code,
+and a call that leaves the input out records no value for it. The code
+always makes its defaults anew on each call, as Julia does; a data
+default's value is the interface's, so the record holds what the code got.
+The return type is one output, `result`, or `outputs = (name = T, …)`
+declares several.
 """
 function define_program(name, mod, module_name, code, body, file, line; description, inputs, outputs, returns, positional, run)
     ins = Any[declared_field(n, T; optional=has_default, default=data) for (n, T, has_default, data) in inputs]
@@ -296,8 +300,10 @@ Its [`interface`](@ref) is read from the declaration (contract/programs.md):
 each argument is an input, typed by its Julia type (an untyped argument,
 `Any`, or a type with no JSON form is opaque: never checked); an argument
 with a default may be left out (a default that is data, a literal or a
-constant, is written in the interface; the code makes its defaults anew on
-each call, as Julia does); the return type is its one output, `result`
+constant whose value can never change, is written in the interface; any
+other, a constant `Vector` included, is Julia's: the code runs it on each
+call, as Julia does, and the record has no value for it); the return type
+is its one output, `result`
 (none: opaque), or `outputs = (summary = String, minutes = Int)` declares
 several, returned as a `NamedTuple` or `Dict` and converted to the declared
 types. Arguments are given by position, as declared, or any of them by name.

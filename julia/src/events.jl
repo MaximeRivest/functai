@@ -29,13 +29,20 @@ end
 Base.show(io::IO, p::Position) = print(io, "Position(", p.writer, ", ", p.seq, ")")
 position_json(p::Position) = LMCC.jobj("writer" => p.writer, "seq" => p.seq)
 position_json(::Nothing) = nothing
-is_count(x) = x isa Integer && !(x isa Bool) && x >= 1
+"""
+Whether `x` is a count (a writer or a seq): a whole number of at least 1, as
+JSON Schema's `integer` reads one (`1.0` is one: JSON has one kind of
+number), that fits in an `Int`.
+"""
+is_count(x) = x isa Real && !(x isa Bool) && isfinite(x) && isinteger(x) && 1 <= x <= typemax(Int)
+"A count as an `Int` (`as_count(1.0) == 1`); an `ArgumentError` for anything that is not one."
+as_count(x) = is_count(x) ? Int(x) : throw(ArgumentError("a writer or a seq is a whole number from 1 to $(typemax(Int)), not $(repr(x))"))
 function position_of(x)
     x === nothing && return nothing
     x isa Position && return x
     (x isa AbstractDict && Set(keys(x)) == Set(["writer", "seq"]) && is_count(x["writer"]) && is_count(x["seq"])) ||
-        throw(ArgumentError("a position is {\"writer\", \"seq\"} (integers of at least 1) or null, not $(repr(x))"))
-    Position(Int(x["writer"]), Int(x["seq"]))
+        throw(ArgumentError("a position is {\"writer\", \"seq\"} (whole numbers from 1 to $(typemax(Int))) or null, not $(repr(x))"))
+    Position(as_count(x["writer"]), as_count(x["seq"]))
 end
 
 """
@@ -70,7 +77,7 @@ struct Event
 end
 "An event from its parts; `data` is copied, so the event never changes with it."
 Event(kind::Symbol, tree, writer, seq, after, at, call, fn, data::AbstractDict) =
-    owned_event(kind, tree, Int(writer), Int(seq), position_of(after), at, call, fn, LMCC.deepcopy_json(JObj(data)))
+    owned_event(kind, tree, as_count(writer), as_count(seq), position_of(after), at, call, fn, LMCC.deepcopy_json(JObj(data)))
 
 const EVENT_FIELDS = (:kind, :tree, :writer, :seq, :after, :at, :call)
 function Base.getproperty(e::Event, name::Symbol)
@@ -139,7 +146,7 @@ function Event(d::AbstractDict)
     fault = event_fault(d)
     fault === nothing || throw(ArgumentError("not an event of format $EVENT_FORMAT: $fault"))
     data = JObj(String(k) => LMCC.deepcopy_json(v) for (k, v) in d if !(k in ENVELOPE))
-    owned_event(Symbol(d["kind"]), d["tree"], Int(d["writer"]), Int(d["seq"]), position_of(d["after"]), d["at"], d["call"],
+    owned_event(Symbol(d["kind"]), d["tree"], as_count(d["writer"]), as_count(d["seq"]), position_of(d["after"]), d["at"], d["call"],
                 d["function"], data)
 end
 Event(e::Event) = e
@@ -302,7 +309,13 @@ function receive!(f::Follower, x; from=nothing)
         return :unknown_format
     end
     x isa Event || event_fault(x) === nothing || return :malformed
-    e = Event(x)
+    e = try
+        Event(x)
+    catch err
+        # the schema's integers are unbounded: a count beyond an Int is no position this reader can compare
+        err isa ArgumentError || rethrow()
+        return :malformed
+    end
     t = get!(() -> Followed(Event[], Any[]), f.trees, e.tree)
     last = last_position(t)
     writer = last === nothing ? 0 : last.writer
@@ -556,10 +569,16 @@ function checked_event(x)
     json = x isa Event ? event_json(x) : x
     fault = event_fault(json)
     fault === nothing || throw(StoreRefusal("event-malformed", stated_position(json), "not an event of format $EVENT_FORMAT: $fault"))
-    Event(json)
+    try
+        Event(json)
+    catch err
+        # the schema's integers are unbounded; a count beyond what this store can number is refused the same way
+        err isa ArgumentError || rethrow()
+        throw(StoreRefusal("event-malformed", stated_position(json), "not an event this store can keep: $(err.msg)"))
+    end
 end
 stated_position(x) = x isa AbstractDict && is_count(get(x, "writer", nothing)) && is_count(get(x, "seq", nothing)) ?
-                     Position(Int(x["writer"]), Int(x["seq"])) : nothing
+                     Position(as_count(x["writer"]), as_count(x["seq"])) : nothing
 
 "The answer to one append, on a log and its writer number (checked in the contract's order); the log is changed when kept."
 function append_one!(log::Vector{Event}, writer::Int, x, tree=nothing)

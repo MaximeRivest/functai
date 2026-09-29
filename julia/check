@@ -15,6 +15,8 @@ cp ../contract/layouts/*.json data/contract/layouts/
 cp ../contract/models.json data/contract/
 cp ../contract/unicode/casefold.json data/contract/unicode/
 cp ../contract/schema/*.schema.json data/contract/schema/
-"${JULIA[@]}" --project=. -e 'using Pkg; Pkg.instantiate(; io=devnull); Pkg.test(; julia_args=["--threads=4"])' >/tmp/functai-julia-test.log 2>&1 \
-  || { grep -v "^\s*@ \|^ *\[[0-9]" /tmp/functai-julia-test.log | tail -60; echo "julia tests failed" >&2; exit 1; }
-grep -A1 "^Test Summary" /tmp/functai-julia-test.log | grep -E "^FunctAI" | sed 's/^/julia: /'
+log=$(mktemp "${TMPDIR:-/tmp}/functai-julia-test.XXXXXX.log")   # one per run: runs side by side keep their own
+"${JULIA[@]}" --project=. -e 'using Pkg; Pkg.instantiate(; io=devnull); Pkg.test(; julia_args=["--threads=4"])' >"$log" 2>&1 \
+  || { grep -v "^\s*@ \|^ *\[[0-9]" "$log" | tail -60; echo "julia tests failed (the whole log: $log)" >&2; exit 1; }
+grep -A1 "^Test Summary" "$log" | grep -E "^FunctAI" | sed 's/^/julia: /'
+rm -f "$log"

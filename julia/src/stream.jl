@@ -61,7 +61,9 @@ end
 
 function start_stream(thunk)
     s = AIStream(Event[], Set{String}(), nothing, Threads.Condition(), false, false, nothing, nothing, "", nothing)
-    s.task = @async try
+    # a task of its own on any thread (it inherits the caller's scoped settings and call): not
+    # pinned to the caller's thread, and it does not pin the caller's task to it
+    s.task = Threads.@spawn try
         with(thunk, STREAM_OPENING => s)
     finally
         lock(s.cond) do

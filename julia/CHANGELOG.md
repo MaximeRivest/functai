@@ -23,22 +23,31 @@
   its default is in its interface, sent when the input is left out, and left
   out of the lmcc signature (`functions/12`). The interface is checked at
   definition, after lmcc's check (`InterfaceError` `interface-malformed`).
-  `AIFunction(…; defaults)`. **Breaking**: an `@ai` default is data, known
+  `AIFunction(…; defaults)` keeps a snapshot of each default, taken when
+  the function is defined: changing the value given later changes nothing,
+  and a saved and loaded function sends the same request as the one saved,
+  left-out inputs included. **Breaking**: an `@ai` default is data, known
   when the function is defined: a literal (`"kind"`, `3`, `String[]`,
-  `(a = 1,)`) or a constant (`const TONE = "kind"`, an `@enum` value). A
-  default that uses another input, or is computed (`time()`), is refused
-  when the function is defined, instead of being evaluated once and shared
-  by every call; each call gets its own copy of the default.
+  `(a = 1,)`) or a constant whose value cannot change (`const TONE =
+  "kind"`, an `@enum` value). A default that uses another input, is
+  computed (`time()`), or is a constant that can change (`const TAGS =
+  ["a"]`) is refused when the function is defined, instead of being taken
+  once and shared by every call; each call gets its own copy of the
+  default.
 - **`@program` declares its interface** from its typed arguments and return
   type (untyped or `Any`: opaque; `outputs = (a = T, …)` for several; a
-  default that is data, a literal or a constant, in the interface), checked
+  default that is data, a literal or a constant whose value cannot change,
+  in the interface), checked
   on every call, inputs before the code runs and outputs when it returns
   (`InterfaceError` `interface-input` / `interface-output`, naming the
   field). Every input may be given by name. A call the interface refuses (an
   input missing, unknown, given twice, or too many arguments) is a call: it
   has its `started` and `failed` events and its record, and its code does
   not run. The code makes its own defaults anew on each call, as Julia does
-  (a literal `[1]` is a new vector every time). What the code returns is
+  (a literal `[1]` is a new vector every time), and the record holds the
+  value the code got; a default that is Julia code (computed, using another
+  argument, or a constant that can change, such as a `Vector`) is recorded
+  as left out, as the contract says of a module's own default. What the code returns is
   converted to the declared types (an output `Int` given `5.0` is `5`), and
   several outputs may hold an opaque value. Error messages say what a value
   is (its kind and size), never the value. A program's version includes its
@@ -72,14 +81,19 @@
   shown), and the kept form (`kept_event`, `kept_log`). A `done` event's
   value is kept only when every output it holds is: an AI function with
   several outputs returns them all, so it holds them all.
-- **A tree's end is its last event.** An outermost call waits, before its
-  end, for the calls made inside it that are still running (a task it
-  started and did not wait for), with one warning; `FunctAI.detached(f)`
-  starts work meant to outlive the call as trees of their own. A call that
-  starts once its tree has ended runs as a tree of its own.
+- **A call ends after the calls made inside it**, at every depth. Each call
+  waits, before its end, for the calls made inside it that are still
+  running (a task it started and did not wait for), with one warning, and
+  numbers its end in the same hold of its tree's lock: no call joins it in
+  between. A tree's last event is its outermost call's end, and a stream on
+  any call has every event it will get once it has that call's end.
+  `FunctAI.detached(f)` starts work meant to outlive the call as trees of
+  their own. A call that starts inside a call that has ended runs as a tree
+  of its own.
 - **Closing a stream** cancels the calls inside it at every boundary FunctAI
   holds: no call starts inside it after, no tool runs, and a body that
-  returns after the stream closed ends `Cancelled`, not with its value.
+  returns after the stream closed, or a call closed while it waits for the
+  calls inside it, ends `Cancelled`, not with its value.
 - **Observers and journals** as settings (`observers = [f]`, `journal =
   store`, `FunctAI.Journal(store; required = true)`, `journal = false`):
   observers add up over the layers and get the kept form; one journal per
@@ -88,7 +102,10 @@
   its events in order on a task of its own, never from two places at once,
   so a slow, blocked or failing one never slows a call; one that falls
   10,000 events behind loses the rest, and sees the loss in the positions it
-  is given; one that fails is warned about once and given nothing more.
+  is given; one that fails is warned about once and given nothing more. An
+  observer is not given the calls its own code makes (an exporter that
+  summarises each call with an AI function does not feed itself), nor those
+  another observer makes on seeing them.
   `FunctAI.drain()` waits for observers and journal writers (Julia drains
   for 2 seconds at exit). A writer appends the kept form in order on a task
   of its own, sends again what is not confirmed, and for a required journal
@@ -96,12 +113,19 @@
   own event (`journal-barrier`: the tool does not run; `journal-end` holding
   the outcome, its event, tree, store and cause; `FunctAI.settle(err)`).
   `Journal(store; timeout = 30)`: a send not answered in time is no answer.
-  A store's own fault (`MethodError`, `ArgumentError`, …) stops the writer,
-  with its cause, instead of being sent again. A store is a
+  A store that cannot be called (`MethodError`, `UndefVarError`) stops the
+  writer, with its cause, instead of being sent again; any other exception
+  is no answer, and the event is sent again. A send the store has not
+  answered is waited for again, never started again beside itself. A
+  position's whole numbers may be JSON numbers (`1.0`), as the schema
+  reads them. A store is a
   `FunctAI.EventStore` (`keep!`, `claim!`, `events_after`);
   `FunctAI.MemoryStore` keeps logs by the store rules, checks every event
   against the schema whatever form it comes in, and keeps copies that
-  nothing its callers do can change.
+  nothing its callers do can change. Observers and stores run on Julia
+  tasks: one that holds its thread without yielding holds the calls on that
+  thread too, which with one default thread is every spawned call
+  (`?FunctAI.drain`).
 - **The call record** holds the tool calls FunctAI adds (`outputs.calls`:
   the model's last step's, with its size); marks a value written as a
   description by how it was written (a dictionary holding an object with no

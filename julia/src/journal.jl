@@ -12,9 +12,12 @@
 Where each call tree's kept log is kept while it is written (contract/
 streaming.md, "Keeping a log while it is written"): a store that keeps logs
 by the store rules ([`MemoryStore`](@ref), or any [`EventStore`](@ref)).
-Best effort (the default) never makes a call wait. `required = true`: the
-call waits until its events are confirmed at its start, before each tool
-runs, and at its end, and raises [`JournalError`](@ref) when they are not.
+Best effort (the default) never makes a call wait: the store's code runs on
+a task of its own, as an observer's does (Julia's tasks share threads: see
+[`FunctAI.drain`](@ref) for a store that holds its thread without
+yielding). `required = true`: the call waits until its events are confirmed
+at its start, before each tool runs, and at its end, and raises
+[`JournalError`](@ref) when they are not.
 An event is sent at most `1 + retries` times in a row before the writer
 gives up on it for now; a send the store has not answered after `timeout`
 seconds (`nothing`: no limit) counts as no answer.
@@ -97,7 +100,8 @@ const UNSET = Unset()
 The observers and the journal a tree gets from the layers around its
 outermost call (`layers`, closest first: `(where, observers, journal)` with
 `where` `:own`, `:block` or `:configure`). Observers add up, outermost
-first. The closest journal setting decides, except that a program's own
+first, less those whose own code is making the call (`OBSERVING`). The
+closest journal setting decides, except that a program's own
 setting cannot replace or remove a journal a host layer set (it may name
 the same one, or make it required), and no closer layer can replace, weaken
 or remove a required journal. `refused`: the layers break that
@@ -105,7 +109,9 @@ or remove a required journal. `refused`: the layers break that
 every refused setting give, where the refused tree's log goes.
 """
 function receivers(layers)
-    observers = Any[o for l in Iterators.reverse(layers) for o in l.observers]
+    busy = OBSERVING[]
+    # an observer is not given the calls its own code makes (it would be given them, and make more, without end)
+    observers = Any[o for l in Iterators.reverse(layers) for o in l.observers if !any(x -> x === o, busy)]
     refused = refused_layers(layers)
     if !isempty(refused)
         rest = layers[maximum(refused)+1:end]
@@ -148,6 +154,15 @@ end
 # ------------------------------------------------------------------ work off the call's task
 
 """
+Set once Julia is exiting, after FunctAI's last drain. Julia then closes its
+timers and sockets, which wakes the tasks waiting on them (a store's `keep!`
+asleep in `sleep`, an observer reading a socket) with an error, while it
+tears itself down on the main thread; a task woken then does nothing more,
+and so compiles nothing (compiling beside Julia's exit can crash it).
+"""
+const EXITING = Threads.Atomic{Bool}(false)
+
+"""
 Run `f` on a task of its own, on any thread, outside every call: its FunctAI
 calls start trees of their own, with no enclosing block's settings (an
 observer or a store that calls an AI function is not a step of the call
@@ -164,6 +179,16 @@ end
 # ------------------------------------------------------------------ observers
 
 """
+The observers whose code is running here, and those whose code gave them the
+event they are handling: an observer that calls an AI function (a host's
+exporter that summarises each call, say) is not given the calls it makes,
+nor the calls another observer makes on seeing those, so observers never
+feed themselves without end. Every other observer sees them.
+"""
+const OBSERVING = ScopedValue{Vector{Any}}(Any[])     # never changed in place: a new vector per observer added
+# (a Vector{Any}, not a tuple: one concrete type whatever the observers, so a new observer compiles nothing here)
+
+"""
 The most events an observer may have waiting. A slower one loses the events
 beyond (contract/streaming.md: "may drop them"), and sees a loss: each
 event's `after` names the event before it in its feed, given or not.
@@ -173,7 +198,7 @@ const OBSERVER_BUFFER = 10_000
 "One observer's events, handed to it in order from a task of its own, so a slow observer never slows a call."
 mutable struct Feed
     observer::Any
-    waiting::Vector{Event}
+    waiting::Vector{Tuple{Event,Vector{Any}}}     # each event, and the observers whose code made the call it is about
     running::Bool
 end
 
@@ -188,15 +213,16 @@ never called from two places at once, whatever calls feed it). A failed
 observer gets nothing more; a full feed drops the event, once with a warning.
 """
 function give!(o, e::Event)
+    made_by = OBSERVING[]                  # read on the call's task: the observers whose code made this call
     lock(FEEDS_LOCK) do
         get(BROKEN_OBSERVERS, o, false) && return
-        f = get!(() -> Feed(o, Event[], false), FEEDS, o)
+        f = get!(() -> Feed(o, Tuple{Event,Vector{Any}}[], false), FEEDS, o)
         if length(f.waiting) >= OBSERVER_BUFFER
             warn_once("observer-slow:$(objectid(o))", "an observer ($(observer_name(o))) is too slow: events it has not taken " *
                       "yet are dropped (it sees a loss: an event's after names one it was not given)")
             return
         end
-        push!(f.waiting, e)
+        push!(f.waiting, (e, made_by))
         if !f.running
             f.running = true
             spawn_apart(() -> run_feed(f))
@@ -207,7 +233,7 @@ end
 
 function run_feed(f::Feed)
     while true
-        e = lock(FEEDS_LOCK) do
+        next = lock(FEEDS_LOCK) do
             if isempty(f.waiting) || get(BROKEN_OBSERVERS, f.observer, false)
                 f.running = false
                 get(FEEDS, f.observer, nothing) === f && delete!(FEEDS, f.observer)     # idle: forgotten until its next event
@@ -216,11 +242,19 @@ function run_feed(f::Feed)
                 popfirst!(f.waiting)
             end
         end
-        e === nothing && return
+        next === nothing && return
+        e, made_by = next
         try
             o = f.observer
-            o isa Channel ? put!(o, e) : o(e)
+            if o isa Channel
+                put!(o, e)
+            else
+                with(OBSERVING => Any[made_by..., o]) do
+                    o(e)
+                end
+            end
         catch err
+            EXITING[] && return
             lock(() -> (BROKEN_OBSERVERS[f.observer] = true; empty!(f.waiting)), FEEDS_LOCK)
             warn_once("observer:$(objectid(f.observer))",
                       "an observer ($(observer_name(f.observer))) failed ($(sprint(showerror, unwrap(err)))); it is given no more events")
@@ -239,9 +273,11 @@ Appends one tree's kept events to its journal, in order, as they are made
 `1 + retries` times in a row; an event the journal answers `:kept` or
 `:duplicate` is confirmed; one it refuses stops the writer (it appends
 nothing more); one that gets no answer is kept and sent again with the next
-event. A store whose own code fails (`MethodError`, `ArgumentError`, …: not
+event. A store that cannot be called (`MethodError`, `UndefVarError`: not
 an answer, and sending again would not help) stops it too. Sending runs on a
-task of its own, so a call never waits for a best-effort journal;
+task of its own, at most one send at a time (a send the store has not
+answered is waited for again, never started again beside itself), so a call
+never waits for a best-effort journal;
 [`confirmation`](@ref) waits for an event's own round (a required journal's
 barrier).
 """
@@ -260,9 +296,10 @@ mutable struct LogWriter
     running::Bool
     cond::Threads.Condition
     warned::Bool
+    sending::Any                    # the send the store has not answered yet (a `Send`), or nothing
 end
 LogWriter(journal::Journal, tree::AbstractString) =
-    LogWriter(journal, String(tree), Event[], Event[], 0, 0, 0, false, false, nothing, false, false, Threads.Condition(), false)
+    LogWriter(journal, String(tree), Event[], Event[], 0, 0, 0, false, false, nothing, false, false, Threads.Condition(), false, nothing)
 
 "Send one (kept) event to the journal, after those given before it; its number among them (0 once the writer is closed)."
 function Base.push!(w::LogWriter, e::Event)
@@ -292,10 +329,15 @@ function sender(w::LogWriter)
     end
 end
 
-"The exceptions a store's own code throws (not an answer: sending again would not help)."
-is_fault(err) = err isa Union{MethodError,UndefVarError,UndefKeywordError,TypeError,ArgumentError,AssertionError,
-                             BoundsError,KeyError,DomainError,InexactError,StackOverflowError,OutOfMemoryError,
-                             InterruptException} || (isdefined(Core, :FieldError) && err isa getfield(Core, :FieldError))
+"""
+The exceptions that say a store cannot be called at all (a method or a name
+that does not exist, a keyword it requires: its code is not there, and
+sending again would not help), and an interrupt. Any other exception, a
+`KeyError` or an `ArgumentError` included, may be a passing condition: it is
+no answer, and the event is sent again.
+"""
+is_fault(err) = err isa Union{MethodError,UndefVarError,UndefKeywordError,InterruptException} ||
+                (isdefined(Core, :FieldError) && err isa getfield(Core, :FieldError))
 
 "What the journal met when a send got no answer in time."
 struct NoAnswer
@@ -303,24 +345,56 @@ struct NoAnswer
 end
 Base.string(x::NoAnswer) = x.msg
 
-"One send: the store's answer, or its exception; `NoAnswer` when it takes longer than the journal's timeout."
+"One `keep!` of an event, running on a task of its own, and its answer once it has one."
+mutable struct Send
+    event::Event
+    done::Bool
+    answer::Any
+    cond::Threads.Condition
+end
+
+"""
+One send: the store's answer, or its exception; `NoAnswer` when it takes
+longer than the journal's timeout. A send the store has not answered stays
+the writer's one send: the event is sent again by waiting for it again (its
+answer, when it comes, is the answer), so a store that hangs holds one task
+per writer, never one per attempt.
+"""
 function send_once(w::LogWriter, e::Event)
-    t = w.journal.timeout
-    store = w.journal.store
-    t === nothing && return try
-        keep!(store, e)
-    catch err
-        unwrap(err)
+    s = w.sending
+    if s !== nothing && s.event !== e
+        # never happens (the writer sends the first event not confirmed until it is): no second send beside it
+        lock(() -> s.done, s.cond) || return NoAnswer("the store has not answered the send before")
+        s = nothing
     end
-    result = Channel{Any}(2)
-    spawn_apart(() -> put!(result, try
-        keep!(store, e)
-    catch err
-        unwrap(err)
-    end))
-    timer = Timer(_ -> isopen(result) && put!(result, NoAnswer("no answer in $(t) s")), t)
-    answer = take!(result)
-    close(timer)
+    if s === nothing
+        s = Send(e, false, nothing, Threads.Condition())
+        w.sending = s
+        store = w.journal.store
+        spawn_apart() do
+            answer = try
+                keep!(store, e)
+            catch err
+                EXITING[] && return
+                unwrap(err)
+            end
+            lock(s.cond) do
+                s.done, s.answer = true, answer
+                notify(s.cond)
+            end
+        end
+    end
+    t = w.journal.timeout
+    deadline = t === nothing ? Inf : time() + t
+    timer = t === nothing ? nothing : Timer(_ -> lock(() -> notify(s.cond), s.cond), t)
+    answered, answer = lock(s.cond) do
+        while !s.done && time() < deadline
+            wait(s.cond)
+        end
+        s.done ? (true, s.answer) : (false, NoAnswer("no answer in $(t) s"))
+    end
+    timer === nothing || close(timer)
+    answered && (w.sending = nothing)
     answer
 end
 
@@ -423,6 +497,16 @@ whether they all were. Calls never wait for them (a slow observer or a
 best-effort journal does not slow a call): a script that must see them all
 before it goes on, or before it exits, drains. FunctAI drains for 2 seconds
 when Julia exits.
+
+Observers and stores run on Julia tasks, which share threads and take turns
+when one yields (sleeps, waits, reads or writes). Code that holds its thread
+without yielding (`Libc.systemsleep`, a long computation, a C library's
+blocking call) holds every task on that thread until it is done. With one
+default thread (`julia --threads=1`, and a spawned call under Julia's
+default of one default thread beside the interactive one) calls on that
+thread then wait for it; start Julia with several threads
+(`julia --threads=auto`) to keep such an observer or store off the calls'
+threads, or make it yield.
 """
 function drain(timeout::Real=5.0)
     done() = lock(() -> isempty(FEEDS), FEEDS_LOCK) && all(idle, lock(() -> collect(keys(WRITERS)), WRITERS_LOCK))
@@ -437,9 +521,9 @@ const WRITERS_LOCK = ReentrantLock()
 The whole log of one call tree, in the process running it: numbered here
 (writer 1), given to the streams watching calls in it (the whole form), to
 each call's observers (the kept form) and to the tree's journal (the kept
-form). Nothing follows its outermost call's end: that call waits for the
-calls inside it to end first, and a call that starts once the tree has
-ended starts a tree of its own.
+form). Nothing of a call follows its end, and nothing follows the outermost
+call's end: each call waits for the calls made inside it to end first, and a
+call that starts inside a call that has ended starts a tree of its own.
 """
 mutable struct TreeLog
     tree::String
@@ -458,7 +542,6 @@ mutable struct TreeLog
     writer_task::Union{Nothing,LogWriter}
     journal_last::Union{Nothing,Position}
     given::Dict{Int,Int}                            # a barrier event's seq → its number among the writer's events
-    open::Int                                       # calls inside the tree started and not ended
     ended::Bool                                     # its outermost call's end is numbered: nothing more is
     clock::Any                                      # seq -> seconds since the epoch
     tap::Any                                        # a scripted run's copy of the whole log (see `SCRIPTED`)
@@ -468,7 +551,7 @@ function TreeLog(tree::AbstractString, journal; clock=nothing, tap=nothing)
     w = journal === nothing ? nothing : LogWriter(journal, tree)
     w === nothing || lock(() -> (WRITERS[w] = nothing), WRITERS_LOCK)
     TreeLog(String(tree), 1, 0, nothing, 0.0, lk, Threads.Condition(lk), Any[], Dict{String,Keep}(), Dict{String,JObj}(),
-            Dict{String,Vector{Any}}(), IdDict{Any,Union{Nothing,Position}}(), journal, w, nothing, Dict{Int,Int}(), 0, false,
+            Dict{String,Vector{Any}}(), IdDict{Any,Union{Nothing,Position}}(), journal, w, nothing, Dict{Int,Int}(), false,
             something(clock, _ -> time()), tap)
 end
 
@@ -491,11 +574,12 @@ Make an event and give it to its readers: the streams watching its call, its
 call's observers and the journal. With `withhold` (a required journal's
 last event), the streams and observers get it only once `deliver!` is
 called, when the journal confirmed it. `last`: the outermost call's end,
-after which nothing is numbered. `nothing` once the tree has ended.
+after which nothing is numbered: an event after it is a fault of this
+package (every call inside a tree ends before it), raised, never dropped.
 """
 function emit!(t::TreeLog, kind::Symbol, call_id, fn, data::JObj; withhold::Bool=false, last::Bool=false)
     lock(t.lock) do
-        t.ended && return nothing
+        t.ended && error("FunctAI: a $kind event of call $call_id after its tree $(t.tree) ended (a fault of FunctAI, not of your code)")
         e = number!(t, kind, call_id, fn, data)
         last && (t.ended = true)
         t.tap === nothing || push!(t.tap, e)

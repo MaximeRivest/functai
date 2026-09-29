@@ -6,8 +6,13 @@
 # made anew, a re-ask's request and its hash kept together, old saved
 # folders checked, tool calls recorded, and every event and record passing
 # the contract's schemas. Each was a counterexample in a review of the first
-# implementation (2026-09-28); each drives the library's own path. A fake
-# router; no network.
+# implementation (2026-09-28); each drives the library's own path. The
+# second review's (2026-09-29) follow them: defaults that are snapshots, the
+# same after saving and loading; every call, not only the outermost, ending
+# after the calls inside it, with nothing joining it in between; closing
+# while a call waits for them; observers not fed their own calls; one
+# thread; positions as JSON numbers; store faults and one send at a time;
+# schema patterns. A fake router; no network.
 
 "An object with no JSON form."
 struct Opaque end
@@ -41,6 +46,37 @@ struct Blocking <: FunctAI.EventStore
     store::FunctAI.MemoryStore
 end
 FunctAI.keep!(s::Blocking, e::FunctAI.Event) = (Libc.systemsleep(0.3); FunctAI.keep!(s.store, e))
+
+"A structured default: a struct holding a list."
+struct Shelf
+    name::String
+    books::Vector{String}
+end
+
+"A store whose first append meets a passing condition that throws a `KeyError` (a cache miss, say)."
+mutable struct MissOnce <: FunctAI.EventStore
+    store::FunctAI.MemoryStore
+    missed::Bool
+end
+function FunctAI.keep!(s::MissOnce, e::FunctAI.Event)
+    s.missed || (s.missed = true; throw(KeyError("a cache entry")))
+    FunctAI.keep!(s.store, e)
+end
+FunctAI.events_after(s::MissOnce, tree, after) = FunctAI.events_after(s.store, tree, after)
+
+"A store that never answers, and counts the appends it was given."
+struct CountingHang <: FunctAI.EventStore
+    gate::Channel{Nothing}
+    calls::Threads.Atomic{Int}
+end
+FunctAI.keep!(s::CountingHang, e::FunctAI.Event) = (Threads.atomic_add!(s.calls, 1); take!(s.gate); :kept)
+
+"The request a function sends when called with `args` (the fake router's, as a dict)."
+function sent_request(f, args...)
+    r = FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok"))
+    using_fake(() -> f(args...), r; retries=0)
+    LM15.to_dict(only(r.requests))
+end
 
 @testset "the guarantees" begin
 
@@ -161,7 +197,9 @@ end
     using_fake(() -> f("x"), fake(xml(:result => "billing")))
     store = Blocking(FunctAI.MemoryStore())
     t = @elapsed using_fake(() -> f("x"), fake(xml(:result => "billing")); journal=store)
-    Threads.nthreads() > 1 && @test t < 0.3                      # with one thread, a store that never yields holds everything
+    # a store that never yields holds its thread: with one default thread, calls on it wait (documented at drain;
+    # the one-thread promise, for code that yields, is tested in a process of its own below)
+    Threads.nthreads(:default) > 1 && @test t < 0.3
     @test FunctAI.drain(10) && FunctAI.finished(store.store, only(FunctAI.trees(store.store)))
 end
 
@@ -450,6 +488,40 @@ end
     end
     @test default_vector() == 2 && default_vector() == 2
     @test FunctAI.interface(default_vector)["inputs"][1]["shape"]["default"] == [1]
+    @program function default_seen(x::Vector{Int} = [1])::Int
+        n = length(x)
+        push!(x, 2)
+        n
+    end
+    dir = mktempdir()
+    @test with_settings(() -> [default_seen(), default_seen()]; log_calls=dir) == [1, 1]
+    @test [r["inputs"]["x"] for r in first(FunctAI.read_log(dir))] == [[1], [1]]     # what the code got, each call
+    # a constant that can change (a Vector) is Julia code, as Julia runs it: the record never claims a value
+    # the code did not get (the contract: a module's own default applied, no value recorded)
+    @eval const GROWING_ITEMS = [1]
+    @eval @program function default_const(x::Vector{Int} = GROWING_ITEMS)::Int
+        n = length(x)
+        push!(x, 2)
+        n
+    end
+    dir = mktempdir()
+    @test with_settings(() -> [default_const(), default_const()]; log_calls=dir) == [1, 2]
+    @test all(r -> !haskey(get(r, "inputs", Dict()), "x"), first(FunctAI.read_log(dir)))
+    @test !haskey(FunctAI.interface(default_const)["inputs"][1]["shape"], "default")
+    @test FunctAI.interface(default_const)["inputs"][1]["optional"] == true
+    # an indexed global is read, not written: not a typed vector literal
+    @eval COUNTS = [5]
+    @test FunctAI.is_literal(:(Int[1, 2]), Main) && !FunctAI.is_literal(:(COUNTS[1]), Main)
+    @test FunctAI.is_literal(:(Vector{Int}[]), Main) && FunctAI.is_literal(:(Base.String["a"]), Main)
+    @test !FunctAI.is_literal(:(Vector{COUNTS}[]), Main)
+    @eval @program function counted(n::Int = COUNTS[1])::Int
+        n
+    end
+    @test !haskey(FunctAI.interface(counted)["inputs"][1]["shape"], "default") && counted() == 5
+    err = try @eval(@ai function counted_ai(x::String; n::Int = COUNTS[1])::String
+        "Count."
+    end) catch e e end
+    @test err isa ArgumentError && occursin("is computed", err.msg)
     # a constant is data too, and so is its value in the interface
     @eval const DEFAULT_TONE = "kind"
     @eval @program function toned(m::String; tone::String = DEFAULT_TONE)::String
@@ -483,6 +555,39 @@ end
         "Tone."
     end
     @test FunctAI.interface(const_tone)["inputs"][2]["shape"]["default"] == "kind"
+    # a constant whose value can change is refused for an AI function: it would be sent as it was when defined
+    err = try @eval(@ai function const_items(x::String; items::Vector{Int} = GROWING_ITEMS)::String
+        "Items."
+    end) catch e e end
+    @test err isa ArgumentError && occursin("can change", err.msg)
+    @test FunctAI.frozen((a=1, b="x", c=:s)) && !FunctAI.frozen((a=[1],)) && !FunctAI.frozen(Dict(1 => 2))
+end
+
+@testset "an AI function's default is its own: changing its source later changes nothing, saved or not" begin
+    # mutable and structured defaults, each changed after the function is defined
+    numbers, shelf, index = [1], Shelf("kept", ["Emma"]), Dict("a" => [1])
+    f = AIFunction("defaults", "Use them."; inputs=(x=Vector{Int}, s=Shelf, d=Dict{String,Vector{Int}}, t=NamedTuple{(:n,),Tuple{Int}}),
+                   output=String, defaults=(x=numbers, s=shelf, d=index, t=(n=1,)))
+    before_change = sent_request(f)
+    push!(numbers, 2); push!(shelf.books, "CHANGED"); push!(index["a"], 2); index["b"] = [3]
+    after_change = sent_request(f)
+    @test LMCC.json_equal(before_change, after_change)
+    @test !occursin("CHANGED", LMCC.json_text(after_change))
+    @test FunctAI.interface(f)["inputs"][1]["shape"]["default"] == [1]
+    # saved and loaded: the same request, left out or given, and the loaded one shares nothing with the saved
+    path = mktempdir()
+    FunctAI.save(path, f)
+    g = FunctAI.load(path; types=(s=Shelf,))
+    @test LMCC.json_equal(sent_request(f), sent_request(g))
+    given = ([7], Shelf("given", ["Ulysses"]), Dict("z" => [9]), (n=2,))
+    @test LMCC.json_equal(sent_request(f, given...), sent_request(g, given...))
+    # the @ai macro takes the same path: a literal default is data, the same after loading
+    @ai function shelved(q::String; books::Vector{String} = ["Emma"], opts::NamedTuple{(:n,),Tuple{Int}} = (n = 1,))::String
+        "Answer."
+    end
+    path = mktempdir()
+    FunctAI.save(path, shelved)
+    @test LMCC.json_equal(sent_request(shelved, "q"), sent_request(FunctAI.load(path), "q"))
 end
 
 @testset "a value with no JSON form is said to be one, however it is held" begin
@@ -556,11 +661,13 @@ end
     runs = [(true, f, ("Where is B-2210?", "pw")), (Dict("secret" => false), f, ("Where is B-2210?", "pw")),
             (false, prog, ("hi",)), (Dict("message" => false), g, ("hi",)), (true, g, ("hi",))]
     events, records = Any[], Any[]
+    observed, observed_lock = Any[], ReentrantLock()           # the observer's task pushes beside the reading task
     for ((content, fn, args), rs) in zip(runs, replies)
         dir = mktempdir()
         store = FunctAI.MemoryStore()
         try
-            using_fake(fake(rs...); log_content=content, observers=[e -> push!(events, FunctAI.event_json(e))], log_calls=dir,
+            using_fake(fake(rs...); log_content=content, log_calls=dir,
+                       observers=[e -> lock(() -> push!(observed, FunctAI.event_json(e)), observed_lock)],
                        journal=FunctAI.Journal(store; required=true), api_retries=0) do
                 s = stream(fn, args...)
                 foreach(e -> push!(events, FunctAI.event_json(e)), eachevent(s))
@@ -572,6 +679,8 @@ end
         append!(events, (FunctAI.event_json(e) for t in FunctAI.trees(store) for e in FunctAI.events_after(store, t, nothing)))
         append!(records, first(FunctAI.read_log(dir)))
     end
+    @test FunctAI.drain()
+    append!(events, lock(() -> copy(observed), observed_lock))
     @test length(events) > 50 && length(records) >= 5
     @test all(e -> FunctAI.schema_fault("event", e) === nothing, events)
     @test all(r -> FunctAI.schema_fault("call", r) === nothing, records)
@@ -583,6 +692,249 @@ end
     @test FunctAI.schema_fault("event", e) !== nothing
     r = deepcopy(first(records)); r["id"] = "not-an-id\n"
     @test FunctAI.schema_fault("call", r) !== nothing
+end
+
+
+@testset "every call ends after the calls made inside it: a stream on a call inside a tree is whole once it ends" begin
+    gate, inner = Channel{Nothing}(1), Channel{Any}(1)
+    returned = Threads.Atomic{Bool}(false)
+    leaf_begun, mid_returned = Channel{Nothing}(1), Threads.Atomic{Bool}(false)
+    @program function nest_leaf()::String
+        put!(leaf_begun, nothing)
+        take!(gate)
+        "leaf"
+    end
+    @program function nest_mid()::String
+        Threads.@spawn nest_leaf()                 # the branch's grandchild, never waited for by mid's code
+        take!(leaf_begun)                          # it has begun its call: it is a step of mid
+        mid_returned[] = true
+        "mid"
+    end
+    @program function nest_branch()::String
+        Threads.@spawn nest_mid()                  # never waited for by the branch's code
+        while !mid_returned[]
+            sleep(0.001)
+        end
+        returned[] = true
+        "branch"
+    end
+    @program function nest_root()::String
+        s = stream(nest_branch)                    # a stream on a call inside the tree
+        put!(inner, s)
+        fetch(s)
+        "root"
+    end
+    @test_logs (:warn, r"nest_mid returned") (:warn, r"nest_branch returned") match_mode = :any begin
+        s = stream(nest_root)
+        inside = take!(inner)
+        @test timedwait(() -> returned[], 10) === :ok
+        sleep(0.2)                                 # time enough for an early end to be numbered
+        @test isopen(inside) && !any(e -> e.kind in (:done, :failed), inside.log)
+        put!(gate, nothing)
+        exhausted = [(e.function, e.kind) for e in eachevent(inside)]
+        @test fetch(s) == "root" && fetch(inside) == "branch"
+        @test exhausted == [(e.function, e.kind) for e in inside.log]       # nothing came after it was exhausted
+        at(k) = findfirst(==(k), exhausted)
+        @test exhausted[end] == ("nest_branch", :done)
+        @test at(("nest_leaf", :done)) < at(("nest_mid", :done)) < at(("nest_branch", :done))
+        whole = collect(eachevent(s))
+        @test (whole[end].function, whole[end].kind) == ("nest_root", :done)
+        @test FunctAI.replay(whole).finished && all(c -> c.ended === :done, values(FunctAI.replay(whole).calls))
+    end
+end
+
+@testset "closing a stream while its call waits for the calls inside it ends that call Cancelled" begin
+    gate, entered = Channel{Nothing}(1), Channel{Nothing}(1)
+    waiting = Threads.Atomic{Bool}(false)
+    @program function joined_child()::String
+        put!(entered, nothing)
+        take!(gate)
+        "child"
+    end
+    @program function joined_parent()::String
+        Threads.@spawn joined_child()
+        take!(entered)
+        waiting[] = true
+        "parent"
+    end
+    dir = mktempdir()
+    @test_logs (:warn, r"joined_parent returned") match_mode = :any begin
+        s = with_settings(() -> stream(joined_parent); log_calls=dir)
+        @test timedwait(() -> waiting[], 10) === :ok
+        sleep(0.1)                                 # its code has returned; it waits for its child
+        @test !any(e -> e.function == "joined_parent" && e.kind in (:done, :failed), s.log)
+        close(s)
+        put!(gate, nothing)
+        @test (try fetch(s) catch e e end) isa Cancelled
+        @test [(e.function, e.kind) for e in eachevent(s)] ==
+              [("joined_parent", :started), ("joined_child", :started), ("joined_child", :failed), ("joined_parent", :failed)]
+    end
+    recs = Dict(r["program"]["name"] => r for r in first(FunctAI.read_log(dir)))
+    @test recs["joined_parent"]["error"]["type"] == "Cancelled" && recs["joined_child"]["error"]["type"] == "Cancelled"
+end
+
+@testset "no call joins a call between the end of the calls inside it and its own end" begin
+    # roots that each start a call they never wait for, at every offset around their end, on several threads:
+    # each child is either a step of its root, ended before it, or a tree of its own; nothing is lost or late
+    seen, seen_lock = FunctAI.Event[], ReentrantLock()
+    kids = Task[]
+    @program function race_child(i::Int)::Int
+        i
+    end
+    delay = Ref(0)
+    @program function race_root(i::Int)::Int
+        d, go = delay[], Threads.Atomic{UInt64}(0)
+        push!(kids, Threads.@spawn begin
+            while go[] == 0
+                yield()                            # waits, yielding, for the root to be about to return
+            end
+            race_child(i)
+        end)
+        sleep(0.0005)                              # the task is running
+        go[] = time_ns()
+        while time_ns() < go[] + d                 # the root goes on for d ns (a safepoint, never a bare spin)
+            GC.safepoint()
+        end
+        i
+    end
+    store = FunctAI.MemoryStore()
+    n = 1500
+    Base.CoreLogging.with_logger(Base.CoreLogging.NullLogger()) do     # the warnings about unawaited calls are expected
+        with_settings(observers=[e -> lock(() -> push!(seen, e), seen_lock)], journal=FunctAI.Journal(store; required=true)) do
+            for i in 1:n
+                delay[] = rand(isodd(i) ? (0:20_000) : (0:200_000))     # around the window, and past it
+                race_root(i)
+            end
+        end
+        foreach(wait, kids)
+    end
+    @test !any(istaskfailed, kids) && sort!(fetch.(kids)) == 1:n
+    @test FunctAI.drain(60)
+    trees = Dict{String,Vector{FunctAI.Event}}()
+    foreach(e -> push!(get!(() -> FunctAI.Event[], trees, e.tree), e), seen)
+    children = Dict{String,Tuple{String,Any}}()        # a child's call id => (its tree, its parent)
+    whole = true
+    for (tree, evs) in trees
+        sort!(evs; by=e -> e.seq)
+        whole &= [e.seq for e in evs] == 1:length(evs) && evs[end].call == tree && evs[end].kind === :done
+        whole &= [FunctAI.Position(e) for e in FunctAI.events_after(store, tree, nothing)] == [FunctAI.Position(e) for e in evs]
+        for e in evs
+            e.kind === :started && e.function == "race_child" && (children[e.call] = (tree, e.parent))
+        end
+        ends = Dict(e.call => i for (i, e) in enumerate(evs) if e.kind in (:done, :failed))
+        whole &= all(e -> e.kind !== :started || haskey(ends, e.call), evs)
+    end
+    @test whole                                          # every tree dense, ended by its root, kept as seen
+    @test length(children) == n                          # every child call is in exactly one log
+    @test all(((tree, parent),) -> parent === nothing ? true : parent == tree, values(children))
+    # some were steps of their root (with one thread, a child runs only once its root yields: after its end)
+    Threads.nthreads(:default) > 1 && @test count(((tree, parent),) -> parent !== nothing, values(children)) > 0
+end
+
+@testset "an observer is not given the calls its own code makes" begin
+    f = AIFunction("summarise", "Summarise."; inputs=(message=String,), output=String)
+    router = FakeRouter(Any[]; responder=(r, i) -> xml(:result => "ok"))
+    by_a, by_b = Threads.Atomic{Int}(0), Threads.Atomic{Int}(0)
+    summariser = e -> e.kind === :done && (Threads.atomic_add!(by_a, 1); f("a summary"))
+    echoer = e -> e.kind === :done && (Threads.atomic_add!(by_b, 1); f("an echo"))
+    settle_down() = (FunctAI.drain(10); sleep(0.3); FunctAI.drain(10))
+    configure!(lm="gpt-4.1-mini", router=router, observers=[summariser])
+    try
+        f("x")
+        settle_down()
+        @test by_a[] == 1 && length(router.requests) == 2          # its own call is not given to it: no loop
+        # two such observers: each is given the other's call, and not the call that makes, so both stop
+        by_a[] = 0
+        configure!(observers=[summariser, echoer])
+        f("y")
+        settle_down()
+        @test by_a[] == 2 && by_b[] == 2
+        # an observer that only watches is given every call, the observers' calls included
+        watched = Threads.Atomic{Int}(0)
+        by_a[] = 0
+        configure!(observers=[summariser, e -> e.kind === :done && Threads.atomic_add!(watched, 1)])
+        f("z")
+        settle_down()
+        @test by_a[] == 1 && watched[] == 2
+    finally
+        configure!(lm=nothing, router=nothing, observers=nothing)
+    end
+end
+
+@testset "with one thread, an observer or a store that yields never slows a call" begin
+    script = raw"""
+    using FunctAI
+    struct Sleepy <: FunctAI.EventStore
+        store::FunctAI.MemoryStore
+    end
+    FunctAI.keep!(s::Sleepy, e::FunctAI.Event) = (sleep(0.3); FunctAI.keep!(s.store, e))
+    @program function plain(x::String)::String
+        x
+    end
+    go() = with_settings(() -> plain("x"); observers=[e -> sleep(0.3)], journal=Sleepy(FunctAI.MemoryStore()))
+    go(); FunctAI.drain(10)
+    t = minimum(@elapsed(go()) for _ in 1:3)
+    ok = FunctAI.drain(10)
+    println("threads=", Threads.nthreads(:default), "+", Threads.nthreads(:interactive), " seconds=", t, " drained=", ok)
+    """
+    out = IOBuffer()
+    cmd = addenv(`$(Base.julia_cmd()) --threads=1 --startup-file=no --project=$(Base.active_project()) -e $script`,
+                 "FUNCTAI_LOG_CALLS" => "0")
+    p = run(pipeline(cmd; stdout=out, stderr=out); wait=false)
+    timedwait(() -> process_exited(p), 600.0) === :ok || kill(p, Base.SIGKILL)
+    text = String(take!(out))
+    m = match(r"threads=1\+0 seconds=(\S+) drained=true", text)
+    m === nothing && @info "the one-thread process said" text
+    @test m !== nothing && parse(Float64, m.captures[1]) < 0.25     # waiting for either would take 0.6 s or more
+end
+
+@testset "a position's whole numbers may be written as JSON numbers: 1.0 is 1" begin
+    @program function numbered(x::String)::String
+        x
+    end
+    s = stream(numbered, "ok")
+    fetch(s)
+    e1, e2 = FunctAI.event_json(s.log[1]), FunctAI.event_json(s.log[2])
+    e2["writer"], e2["seq"] = 1.0, 2.0
+    e2["after"] = Dict{String,Any}("writer" => 1.0, "seq" => 1.0)
+    @test FunctAI.event_fault(e2) === nothing
+    store = FunctAI.MemoryStore()
+    @test FunctAI.keep!(store, e1) === :kept && FunctAI.keep!(store, e2) === :kept
+    kept = FunctAI.events_after(store, e1["tree"], Dict("writer" => 1.0, "seq" => 1.0))
+    @test length(kept) == 1 && kept[1].seq === 2 && kept[1].after == FunctAI.Position(1, 1)
+    follower = FunctAI.Follower(:kept)
+    @test FunctAI.receive!(follower, e1) === :kept && FunctAI.receive!(follower, e2) === :kept
+    # a count no Int holds passes the schema (its integers are unbounded): refused as malformed, never a crash
+    huge = deepcopy(e1)
+    huge["seq"] = 2.0^70
+    @test FunctAI.event_fault(huge) === nothing
+    err = try FunctAI.keep!(FunctAI.MemoryStore(), huge) catch e e end
+    @test err isa FunctAI.StoreRefusal && err.code == "event-malformed"
+    @test FunctAI.receive!(FunctAI.Follower(:kept), huge) === :malformed
+end
+
+@testset "a store's passing error is sent again; a store that hangs holds one send, never more" begin
+    f = AIFunction("team", "Which team?"; inputs=(message=String,), output=String)
+    store = MissOnce(FunctAI.MemoryStore(), false)
+    @test using_fake(() -> f("x"), fake(xml(:result => "billing")); journal=FunctAI.Journal(store; required=true)) == "billing"
+    @test FunctAI.finished(store.store, only(FunctAI.trees(store.store)))
+    hang = CountingHang(Channel{Nothing}(Inf), Threads.Atomic{Int}(0))
+    err = try
+        using_fake(() -> f("x"), fake(xml(:result => "billing")); journal=FunctAI.Journal(hang; required=true, retries=3, timeout=0.1))
+    catch e
+        e
+    end
+    @test err isa JournalError && err.cause isa FunctAI.NoAnswer
+    @test hang.calls[] == 1                        # every resend waited for the one send it had, none started beside it
+    foreach(_ -> put!(hang.gate, nothing), 1:16)
+    @test FunctAI.drain(10)
+end
+
+@testset "a schema pattern PCRE and ECMA-262 would read differently is refused" begin
+    @test_throws ErrorException FunctAI.ecma_pattern("^\\d+\$")
+    @test_throws ErrorException FunctAI.ecma_pattern("^\\w\$")
+    @test FunctAI.ecma_pattern("^[0-9]+\$") isa Regex
+    @test FunctAI.ecma_pattern("^a\\\\d\$") isa Regex          # an escaped backslash, then d
 end
 
 end
