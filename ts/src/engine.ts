@@ -9,11 +9,11 @@
 import { cacheOf, forget, keep, lookup, replyKey } from "./cache.ts";
 import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
-import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Request, type Response,
+import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Config, type Request, type Response,
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
-import { entriesOf, setOwn, writeData } from "./values.ts";
+import { entriesOf, lm15Data, setOwn, writeData } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
 
@@ -227,6 +227,20 @@ function replay(job: Job, response: Response): void {
   for (const [field, piece] of texts) if (piece) text(job, field, piece);
 }
 
+/**
+ * The lm15 request for a rendered plan: lmcc's bridge (the plan's request
+ * settings, the caller's Config merged under them), given the plan's request
+ * and the Config as data lm15 takes (values.ts `lm15Data`). The plan holds
+ * lmcc's record of member order wherever an integer-like name follows
+ * another (a `response_format` schema, a tool's parameters, a recorded tool
+ * call's input), and lm15 refuses an object that carries it. The bridge
+ * reads only the rendered plan's `request`; everything else is the plan's.
+ */
+export function lm15Request(rendered: lmcc.RenderResult, model: string, config: Config | undefined): Request {
+  const plain = Object.create(rendered, { request: { value: (m?: string) => lm15Data(rendered.request(m)) } }) as lmcc.RenderResult;
+  return bridge.request(plain, { model, config: config === undefined ? undefined : lm15Data(config) });
+}
+
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
   for (const f of plan.signature.fields) {
@@ -245,7 +259,7 @@ function askedAgain(err: lmcc.Refusal): string {
 /** One model call; after an unreadable reply, up to `retries` follow-ups that send the reader's hint back. */
 async function complete(job: Job, rendered: lmcc.RenderResult, responses: Response[]): Promise<[Response, lmcc.Reading]> {
   const overrides: Rec = {};
-  let request = bridge.request(rendered, { model: job.model, config: configOf(job.settings) });
+  let request = lm15Request(rendered, job.model, configOf(job.settings));
   // lmcc's hash of the rendered request (a model step's `request`, kernel §3a): every exchange made from it has it,
   // a re-ask (the reply and the re-ask sentence appended) and a re-send with a larger token budget included, as in Python
   const requestHash = lmcc.sha256(rendered.request() as lmcc.Json);
@@ -271,7 +285,7 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       if (refusal.code === "parse-truncated") {
         const current = (configOf(job.settings, overrides as never)?.maxTokens) ?? 1024;
         overrides["maxTokens"] = current * 2;
-        request = bridge.request(rendered, { model: job.model, config: configOf(job.settings, overrides as never) });
+        request = lm15Request(rendered, job.model, configOf(job.settings, overrides as never));
       } else {
         request = {
           ...request, messages: [...request.messages, response.message,

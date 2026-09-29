@@ -15,11 +15,10 @@
  */
 
 import * as lmcc from "lmcc";
-import * as bridge from "lmcc/lm15";
 import type { Request } from "@lm15/lm15";
 import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
-import { Cancelled, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
+import { Cancelled, lm15Request, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
 import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
 import { checkInterface, interfaceSignature, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
@@ -591,7 +590,7 @@ export function make(core: Core): AIFunction {
       const { plan, model, settings } = planFor(s);
       const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
       if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
-      return bridge.request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), { model, config: configOf(settings) });
+      return lm15Request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), model, configOf(settings));
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };

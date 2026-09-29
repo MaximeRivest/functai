@@ -7,7 +7,7 @@
 
 import * as lmcc from "lmcc";
 import { trimWhite } from "./text.ts";
-import { copyData, getOwn, setOwn, writeData } from "./values.ts";
+import { copyData, getOwn, setOwn, unboxed, writeData } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -145,7 +145,8 @@ export function prepareInputs(sig: lmcc.Signature, values: Record<string, unknow
     let v = getOwn(values, f.name);
     const shape = f.shape as JsonObject;
     if (shape["type"] === "string" && !Object.hasOwn(shape, "enum") && v !== null && v !== undefined && typeof v !== "string") {
-      v = typeof v === "object" ? writeData(v, 2) : String(v);
+      const held = unboxed(v);                           // a String object is the text it holds
+      v = typeof held === "string" ? held : typeof v === "object" ? writeData(v, 2) : String(v);
     }
     setOwn(out, f.name, v);
   }

@@ -9,6 +9,11 @@ import { RawNumber } from "@lm15/lm15";
 
 type Rec = Record<string, unknown>;
 
+const isPlain = (v: object): boolean => {
+  const proto = Object.getPrototypeOf(v);
+  return proto === Object.prototype || proto === null;
+};
+
 /** A value's JSON form, or `undefined` when it has none (a class instance, a function, a Map, NaN, …). */
 export function jsonForm(value: unknown): lmcc.Json | undefined {
   try {
@@ -19,17 +24,22 @@ export function jsonForm(value: unknown): lmcc.Json | undefined {
 }
 
 function plain(v: unknown): lmcc.Json {
+  v = unboxed(v);
   if (v === null || typeof v === "string" || typeof v === "boolean") return v;
   if (typeof v === "number") {
     if (!Number.isFinite(v)) throw new TypeError("not finite");
     return v;
   }
   if (typeof v === "bigint") {
-    if (v <= BigInt(Number.MAX_SAFE_INTEGER) && v >= BigInt(-Number.MAX_SAFE_INTEGER)) return Number(v);
-    throw new TypeError("bigint");
+    // an integer past 2^53 is data, as Python's int is (lmcc reads one as a bigint, and writes it as its digits)
+    return v <= BigInt(Number.MAX_SAFE_INTEGER) && v >= BigInt(-Number.MAX_SAFE_INTEGER) ? Number(v) : v;
   }
   if (v instanceof Date) return v.toISOString();
-  if (Array.isArray(v)) return v.map(plain);
+  if (Array.isArray(v)) {
+    const out: lmcc.Json[] = [];
+    for (let i = 0; i < v.length; i++) out.push(v[i] === undefined ? null : plain(v[i]));   // a hole is null, as JSON writes it
+    return out;
+  }
   if (typeof v === "object") {
     const proto = Object.getPrototypeOf(v);
     if (proto !== Object.prototype && proto !== null) throw new TypeError("not plain data");
@@ -41,6 +51,29 @@ function plain(v: unknown): lmcc.Json {
     return out;
   }
   throw new TypeError(typeof v);
+}
+
+/** Whether `method` (a primitive wrapper's `valueOf`) accepts `v`: whether `v` holds that primitive (a slot, not a prototype). */
+function holds(method: () => unknown, v: object): boolean {
+  try {
+    method.call(v);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * A boxed primitive (`new Number(42)`, `new String("x")`, `new Boolean(false)`, `Object(1n)`) as the value it holds,
+ * as JSON serialization reads one; anything else as it is. Only these four: no other object's `valueOf` is read.
+ */
+export function unboxed(v: unknown): unknown {
+  if (v === null || typeof v !== "object" || Array.isArray(v) || isPlain(v)) return v;
+  if (holds(Number.prototype.valueOf, v)) return Number(v);
+  if (holds(String.prototype.valueOf, v)) return String(v);
+  if (holds(Boolean.prototype.valueOf, v)) return Boolean.prototype.valueOf.call(v);
+  if (holds(BigInt.prototype.valueOf, v)) return BigInt.prototype.valueOf.call(v);
+  return v;
 }
 
 function typeName(v: unknown): string {
@@ -105,11 +138,6 @@ export function recordOf<T = unknown>(entries: Iterable<readonly [string, T]>): 
   return lmcc.orderedObject(entries);
 }
 
-const isPlain = (v: object): boolean => {
-  const proto = Object.getPrototypeOf(v);
-  return proto === Object.prototype || proto === null;
-};
-
 /**
  * A deep copy, as `structuredClone` makes one, that keeps each object's
  * members in the value's order (a structured clone loses lmcc's record of
@@ -150,17 +178,20 @@ export function parseData(text: string): unknown {
 /**
  * JSON text of a value, members in the value's order (`JSON.stringify` lists
  * integer-like names first): what `JSON.stringify(value, null, indent)`
- * writes otherwise (a `toJSON` is used; an `undefined`, a function or a
- * symbol member is left out, and is `null` in an array; a number that is not
- * finite is `null`), except that a `bigint` is written as its digits and an
- * lm15 `RawNumber` as it came (a temperature of `0.0` stays `0.0`).
+ * writes otherwise (a `toJSON` is used; a boxed primitive is its value; an
+ * `undefined`, a function or a symbol member is left out, and is `null` in
+ * an array, as a hole is; a number that is not finite is `null`; a value
+ * that holds itself is refused with a `TypeError`), except that a `bigint`
+ * is written as its digits and an lm15 `RawNumber` as it came (a
+ * temperature of `0.0` stays `0.0`).
  */
 export function writeData(value: unknown, indent = 0): string {
   const out: string[] = [];
+  const open = new Set<object>();          // the objects and arrays being written, outermost first
   const skip = (v: unknown) => v === undefined || typeof v === "function" || typeof v === "symbol";
   const lowered = (v: unknown, key: string): unknown =>
-    v !== null && typeof v === "object" && !(v instanceof RawNumber) && typeof (v as { toJSON?: unknown }).toJSON === "function"
-      ? (v as { toJSON(k: string): unknown }).toJSON(key) : v;
+    unboxed(v !== null && typeof v === "object" && !(v instanceof RawNumber) && typeof (v as { toJSON?: unknown }).toJSON === "function"
+      ? (v as { toJSON(k: string): unknown }).toJSON(key) : v);
   const write = (v: unknown, depth: number): void => {
     if (v === null || skip(v)) {
       out.push("null");
@@ -178,19 +209,21 @@ export function writeData(value: unknown, indent = 0): string {
       out.push(JSON.stringify(v) ?? "null");
       return;
     }
+    if (open.has(v)) throw new TypeError("Converting circular structure to JSON");
+    open.add(v);
     const nl = indent > 0 ? "\n" + " ".repeat(indent * (depth + 1)) : "";
     const close = indent > 0 ? "\n" + " ".repeat(indent * depth) : "";
     if (Array.isArray(v)) {
-      if (!v.length) {
-        out.push("[]");
-        return;
+      if (!v.length) out.push("[]");
+      else {
+        out.push("[");
+        for (let i = 0; i < v.length; i++) {             // every index: a hole is null, as JSON writes it
+          out.push(i ? "," + nl : nl);
+          write(lowered(v[i], String(i)), depth + 1);
+        }
+        out.push(close, "]");
       }
-      out.push("[");
-      v.forEach((x, i) => {
-        out.push(i ? "," + nl : nl);
-        write(lowered(x, String(i)), depth + 1);
-      });
-      out.push(close, "]");
+      open.delete(v);
       return;
     }
     let first = true;
@@ -203,9 +236,42 @@ export function writeData(value: unknown, indent = 0): string {
       write(x, depth + 1);
     }
     out.push(first ? "}" : close + "}");
+    open.delete(v);
   };
   write(lowered(value, ""), 0);
   return out.join("");
+}
+
+/**
+ * Data as lm15 takes it (a request, a `Config`, a cached reply): each plain
+ * object and array copied, without the record of member order lmcc keeps
+ * under a symbol (lm15 refuses an object with a symbol key: "must contain
+ * only JSON-compatible values"), a `__proto__` member kept as a member;
+ * anything else as it is, for lm15 to judge (a `bigint` is refused: lm15's
+ * form of such an integer is its own `RawNumber` class, and the copy of
+ * lm15 lmcc's bridge checks against may not be this one).
+ *
+ * lm15 takes plain objects and writes their members in JavaScript's order,
+ * integer-like names first: so an object whose order lmcc recorded (`"b"`
+ * before `"10"`) reaches the wire as `{"10": …, "b": …}`. JSON text FunctAI
+ * writes itself (a message's text, the call log, a saved folder) keeps the
+ * value's order; what lm15 writes (a `response_format` schema, a tool's
+ * parameters) cannot.
+ */
+export function lm15Data<T>(value: T): T {
+  const walk = (v: unknown): unknown => {
+    if (v === null || typeof v !== "object") return v;
+    if (Array.isArray(v)) return Array.from(v, walk);
+    if (!isPlain(v)) return v;
+    const out: Rec = {};
+    for (const k of lmcc.memberNames(v)) {
+      const x = walk((v as Rec)[k]);
+      if (k === "__proto__") Object.defineProperty(out, k, { value: x, writable: true, enumerable: true, configurable: true });
+      else out[k] = x;
+    }
+    return out;
+  };
+  return walk(value) as T;
 }
 
 /** Code-point order of two strings (JavaScript's `<` compares UTF-16 code units). */

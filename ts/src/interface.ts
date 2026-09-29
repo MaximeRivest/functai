@@ -74,6 +74,7 @@ function jsonType(v: unknown): string {
   if (v === null) return "null";
   if (typeof v === "boolean") return "boolean";
   if (typeof v === "number") return Number.isInteger(v) ? "integer" : "number";
+  if (typeof v === "bigint") return "integer";          // an integer past 2^53 (a JSON form holds one as a bigint)
   if (typeof v === "string") return "string";
   if (Array.isArray(v)) return "array";
   return "object";
