@@ -482,14 +482,75 @@ except Exception:  # pragma: no cover
 
 
 def unannotate(ann: Any) -> Tuple[Any, Optional[str]]:
-    """``Annotated[T, "a description", ...]`` → ``(T, "a description")``."""
+    """``Annotated[T, "a description", ...]`` → ``(T, "a description")`` (a
+    pydantic ``Field(description=...)`` is a description too)."""
     desc = None
     while typing.get_origin(ann) is typing.Annotated:
         ann, *extras = typing.get_args(ann)
         for extra in extras:
             if isinstance(extra, str) and desc is None:
                 desc = extra
+            elif desc is None and isinstance(getattr(extra, "description", None), str) \
+                    and isinstance(getattr(extra, "metadata", None), list):
+                desc = extra.description
     return ann, desc
+
+
+# Constraints written in Annotated metadata (annotated_types, and pydantic's
+# Field(ge=..., max_length=..., pattern=...)), as the JSON Schema keyword each is.
+_BOUNDS = {"ge": "minimum", "gt": "exclusiveMinimum", "le": "maximum", "lt": "exclusiveMaximum",
+           "multiple_of": "multipleOf", "pattern": "pattern"}
+_CONSTRAINT_PACKAGES = ("annotated_types", "pydantic", "pydantic_core")
+
+
+def _constraints(ann: Any) -> Dict[str, Any]:
+    """The constraints ``Annotated[T, ...]`` puts on its values: ``Field(ge=10)``,
+    ``annotated_types.MaxLen(3)``... (lengths are keyed ``min_length`` and
+    ``max_length``: they become string or array keywords by the shape)."""
+    out: Dict[str, Any] = {}
+
+    def read(extra: Any) -> None:
+        if isinstance(extra, (str, bytes, int, float, bool, type)) or extra is None:
+            return
+        # Only what the packages that define constraints made: an object that happens to have a
+        # ``pattern`` or ``ge`` attribute (a compiled regular expression, a user's own marker) says nothing.
+        if (getattr(type(extra), "__module__", "") or "").split(".")[0] not in _CONSTRAINT_PACKAGES:
+            return
+        metadata = getattr(extra, "metadata", None)
+        if isinstance(metadata, list):                 # pydantic's FieldInfo: its constraints
+            for m in metadata:
+                read(m)
+        for attr, keyword in _BOUNDS.items():
+            v = getattr(extra, attr, None)
+            if v is not None and not callable(v):
+                out[keyword] = v
+        for attr in ("min_length", "max_length"):
+            v = getattr(extra, attr, None)
+            if isinstance(v, int) and not isinstance(v, bool):
+                out[attr] = v
+
+    while typing.get_origin(ann) is typing.Annotated:
+        ann, *extras = typing.get_args(ann)
+        for extra in extras:
+            read(extra)
+    return out
+
+
+def _constrained(shape: dict, constraints: Dict[str, Any]) -> dict:
+    if not constraints:
+        return shape
+    shape = dict(shape)
+    kind = shape.get("type")
+    for k, v in constraints.items():
+        if k in ("min_length", "max_length"):
+            k = {"string": {"min_length": "minLength", "max_length": "maxLength"},
+                 "array": {"min_length": "minItems", "max_length": "maxItems"},
+                 "object": {"min_length": "minProperties", "max_length": "maxProperties"}}.get(
+                     kind if isinstance(kind, str) else "", {}).get(k)
+            if k is None:
+                continue
+        shape[k] = v
+    return shape
 
 
 def _is_pydantic_model(tp: Any) -> bool:
@@ -504,7 +565,12 @@ def shape_of(ann: Any, registry: Any = None, *, where: str = "?") -> dict:
     dataclasses), functai maps ``Any`` (any JSON), tuples, sets, TypedDicts,
     pydantic models, and plain classes with annotations (made dataclasses with
     ``flexiclass``). A type bound with ``lmcc.format`` keeps its bound shape.
-    Anything else refuses by name (lmcc ``unmapped-type``), never a silent ``str()``."""
+    Anything else refuses by name (lmcc ``unmapped-type``), never a silent ``str()``.
+    Constraints in ``Annotated`` metadata (``Annotated[int, Field(ge=10)]``)
+    become their keywords (``minimum``)."""
+    constraints = _constraints(ann) if typing.get_origin(ann) is typing.Annotated else {}
+    if constraints:
+        return _constrained(shape_of(unannotate(ann)[0], registry, where=where), constraints)
     ann, _ = unannotate(ann)
     if ann is typing.Any or ann is object:
         return {}
@@ -669,7 +735,7 @@ def _safe_hints(tp: Any) -> Dict[str, Any]:
 def _field(name: str, direction: str, ann: Any, registry: Any, *, desc: Optional[str] = None,
            purpose: str = "plain", output: bool = False) -> lmcc_core.Field:
     base, adesc = unannotate(ann)
-    return lmcc_core.Field(name, direction, shape_of(base, registry, where=name),
+    return lmcc_core.Field(name, direction, shape_of(ann, registry, where=name),
                            type=lmcc_core.typename(base), purpose=purpose,
                            desc=None if output else ((desc or adesc) or None), annotation=base)
 
@@ -720,6 +786,7 @@ class Spec:
     params: Tuple[str, ...]
     reasoning: bool = False
     tools: bool = False
+    descs: Dict[str, str] = dataclasses.field(default_factory=dict)   # the own outputs' words
 
 
 def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: bool = True,
@@ -739,6 +806,8 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
         ann = hints.get(pname, p.annotation if p.annotation is not inspect._empty else str)
         if not _is_type_hint_like(unannotate(ann)[0]):
             ann = str
+        if p.default is None and not _takes_none(ann):
+            ann = typing.Optional[ann]      # `x: str = None` is Optional[str]: the default must fit
         if p.kind is inspect.Parameter.VAR_POSITIONAL:
             ann = typing.List[ann]  # type: ignore[valid-type]
         elif p.kind is inspect.Parameter.VAR_KEYWORD:
@@ -840,9 +909,19 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
     signature = lmcc_core._validated(lmcc_core.SignatureCore(text, inputs + outputs))
     own = tuple([n for n, _t, _d in extras] + [main_name])
     annotations = {f.name: f.annotation for f in outputs}
+    descs = {n: d for n, _t, d in extras if d}
+    if main_desc:
+        descs[main_name] = main_desc
     return Spec(signature=signature, main=main_name, outputs=own, annotations=annotations,
                 params=tuple(sig.parameters), reasoning=any(f.purpose == "reasoning" for f in outputs),
-                tools=tools)
+                tools=tools, descs=descs)
+
+
+def _takes_none(ann: Any) -> bool:
+    base, _ = unannotate(ann)
+    if base is None or base is type(None) or base is typing.Any or base is object:
+        return True
+    return typing.get_origin(base) in _UNION_TYPES and type(None) in typing.get_args(base)
 
 
 def describe_signature(spec: Spec, name: str) -> str:

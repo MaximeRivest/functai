@@ -127,7 +127,6 @@ def bake(fn, data: Any, *, student: str, teacher: Any = None, labels: str = "aut
     from .baked import Baked, default_home, write_meta
     from ..core import FunctAIFunc
     from ..evaluation import parallel, rows_of
-    from ..signature import build_spec
     from . import _gold_values, _split
     from .examples import row_inputs
     if fn._tools:
@@ -135,8 +134,7 @@ def bake(fn, data: Any, *, student: str, teacher: Any = None, labels: str = "aut
                         f"Reinforcement learning on Prime (functai_verifiers) runs the tool loop")
     s = fn._effective()
     cot = reasoning and s.get("module") == "cot"
-    spec = build_spec(fn._fn, instructions=fn._current_state().instructions,
-                      include_fn_name=bool(s.get("include_fn_name_in_instructions")), reasoning=cot, tools=False)
+    spec = fn._variant_spec(reasoning=cot, tools=False)
     adapter = _layout(fn, layout)
     adapter = lmcc.adapter(name=adapter.name, messages=adapter.template, reader=adapter.reader,
                            transports=adapter.transports, formats=adapter.formats, extensions=adapter.extensions,

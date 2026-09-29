@@ -1,6 +1,9 @@
 """Offline tests: a fake lm15 router stands in for every provider."""
 
 import dataclasses
+import faulthandler
+import os
+import sys
 import threading
 
 import lm15
@@ -89,6 +92,21 @@ class FakeRouter:
 
     def roles(self, i=-1):
         return [m.role for m in self.requests[i].messages]
+
+
+# A test that hangs is a bug to find: past this many seconds, every thread's
+# traceback is written to stderr and the run stops (pytest-timeout is not a
+# dependency; faulthandler is the standard library's).
+TEST_TIMEOUT = float(os.environ.get("FUNCTAI_TEST_TIMEOUT", "240"))
+
+
+@pytest.fixture(autouse=True)
+def watchdog(request):
+    faulthandler.dump_traceback_later(TEST_TIMEOUT, exit=True, file=sys.__stderr__)
+    try:
+        yield
+    finally:
+        faulthandler.cancel_dump_traceback_later()
 
 
 @pytest.fixture(autouse=True)

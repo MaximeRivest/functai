@@ -1,0 +1,279 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/call.schema.json",
+  "title": "One call of an AI function or module (functai call log, format 2; format 1 as written before 2026-09-28)",
+  "type": "object",
+  "required": ["functai_call"],
+  "if": {"properties": {"functai_call": {"const": 1}}},
+  "then": {"$ref": "#/$defs/format1"},
+  "else": {"$ref": "#/$defs/format2"},
+  "$defs": {
+    "format1": {
+      "type": "object",
+      "required": ["functai_call", "id", "parent", "root", "program", "started", "seconds", "content", "sizes",
+                   "error", "model", "usage", "exchanges", "caller", "process"],
+      "properties": {
+        "functai_call": {"const": 1},
+        "id": {"$ref": "#/$defs/uuid"},
+        "parent": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "root": {"$ref": "#/$defs/uuid"},
+        "program": {
+          "type": "object",
+          "required": ["name", "kind", "module", "version", "answer"],
+          "properties": {
+            "name": {"type": "string", "minLength": 1},
+            "kind": {"enum": ["ai", "module"]},
+            "module": {"type": "string"},
+            "version": {"$ref": "#/$defs/sha256"},
+            "signature": {"$ref": "#/$defs/sha256"},
+            "answer": {"type": "string", "minLength": 1},
+            "saved": {"$ref": "#/$defs/sha256"},
+            "file": {"type": "string"},
+            "line": {"type": "integer", "minimum": 0}
+          }
+        },
+        "started": {"$ref": "#/$defs/time"},
+        "seconds": {"type": "number", "minimum": 0},
+        "content": {"type": "boolean"},
+        "inputs": {"type": "object"},
+        "outputs": {"oneOf": [{"type": "object"}, {"type": "null"}]},
+        "returned": {},
+        "sizes": {
+          "type": "object",
+          "required": ["inputs", "outputs"],
+          "properties": {"inputs": {"$ref": "#/$defs/counts"}, "outputs": {"$ref": "#/$defs/counts"}},
+          "additionalProperties": false
+        },
+        "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]},
+        "model": {"type": ["string", "null"]},
+        "usage": {"$ref": "#/$defs/counts"},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "probabilities": {
+          "type": "object",
+          "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}}
+        },
+        "escalated": {"const": true},
+        "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange"}},
+        "caller": {"type": "object"},
+        "process": {
+          "type": "object",
+          "required": ["host", "pid", "language", "runtime", "functai"],
+          "properties": {
+            "host": {"type": "string"},
+            "pid": {"type": "integer"},
+            "user": {"type": ["string", "null"]},
+            "language": {"type": "string"},
+            "runtime": {"type": "string"},
+            "functai": {"type": "string"}
+          }
+        },
+        "truncated": {"const": true}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"content": {"const": false}}},
+          "then": {
+            "not": {
+              "anyOf": [
+                {"required": ["inputs"]},
+                {"required": ["outputs"]},
+                {"required": ["returned"]},
+                {"required": ["probabilities"]}
+              ]
+            },
+            "properties": {
+              "error": {"oneOf": [{"type": "null"}, {"type": "object", "not": {"required": ["message"]}}]},
+              "exchanges": {
+                "items": {"not": {"anyOf": [{"required": ["request"]}, {"required": ["response"]}]}}
+              }
+            }
+          }
+        },
+        {
+          "if": {"properties": {"content": {"const": true}}, "not": {"required": ["truncated"]}},
+          "then": {"required": ["inputs", "outputs"]}
+        }
+      ]
+    },
+    "format2": {
+      "type": "object",
+      "required": ["functai_call", "id", "parent", "root", "program", "started", "seconds", "content", "sizes",
+                   "error", "model", "usage", "exchanges", "saw", "caller", "process"],
+      "properties": {
+        "functai_call": {"const": 2},
+        "id": {"$ref": "#/$defs/uuid"},
+        "parent": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]},
+        "root": {"$ref": "#/$defs/uuid"},
+        "program": {"$ref": "#/$defs/program"},
+        "started": {"$ref": "#/$defs/time"},
+        "seconds": {"type": "number", "minimum": 0},
+        "content": {"type": "boolean"},
+        "omitted": {"$ref": "#/$defs/omitted"},
+        "inputs": {"type": "object"},
+        "outputs": {"oneOf": [{"type": "object"}, {"type": "null"}]},
+        "returned": {},
+        "sizes": {
+          "type": "object",
+          "required": ["inputs", "outputs"],
+          "properties": {"inputs": {"$ref": "#/$defs/counts"}, "outputs": {"$ref": "#/$defs/counts"}},
+          "additionalProperties": false
+        },
+        "error": {"oneOf": [{"type": "null"}, {"$ref": "#/$defs/error"}]},
+        "model": {"type": ["string", "null"]},
+        "usage": {"$ref": "#/$defs/counts"},
+        "confidence": {"type": ["number", "null"], "minimum": 0, "maximum": 1},
+        "probabilities": {
+          "type": "object",
+          "additionalProperties": {"type": "object", "additionalProperties": {"type": "number"}}
+        },
+        "escalated": {"const": true},
+        "exchanges": {"type": "array", "items": {"$ref": "#/$defs/exchange2"}},
+        "saw": {"$ref": "#/$defs/saw"},
+        "described": {
+          "description": "calls.md, Values: the recorded values written as descriptions ($type, $repr), having no JSON form. Absent when there are none.",
+          "$ref": "#/$defs/omitted"
+        },
+        "journal": {
+          "description": "streaming.md, Keeping a log while it is written: a required journal did not confirm the call's last event: it refused it, or did not answer (it may have kept it). Absent otherwise.",
+          "enum": ["refused", "unknown"]
+        },
+        "caller": {"type": "object"},
+        "process": {
+          "type": "object",
+          "required": ["host", "pid", "language", "runtime", "functai"],
+          "properties": {
+            "host": {"type": "string"},
+            "pid": {"type": "integer"},
+            "user": {"type": ["string", "null"]},
+            "language": {"type": "string"},
+            "runtime": {"type": "string"},
+            "functai": {"type": "string"}
+          }
+        },
+        "truncated": {"const": true}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"content": {"const": false}}},
+          "then": {
+            "required": ["omitted"],
+            "properties": {
+              "error": {"oneOf": [{"type": "null"}, {"type": "object", "not": {"required": ["message"]}}]},
+              "exchanges": {
+                "items": {
+                  "not": {
+                    "anyOf": [
+                      {"required": ["request"]},
+                      {"required": ["response"]},
+                      {"required": ["request_hash"]}
+                    ]
+                  },
+                  "properties": {"error": {"not": {"required": ["message"]}}}
+                }
+              }
+            }
+          },
+          "else": {"not": {"required": ["omitted"]}}
+        },
+        {
+          "if": {"properties": {"content": {"const": true}}, "not": {"required": ["truncated"]}},
+          "then": {"required": ["inputs", "outputs"]}
+        }
+      ]
+    },
+    "program": {
+      "type": "object",
+      "required": ["name", "kind", "module", "version", "interface", "answer"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "kind": {"enum": ["ai", "module"]},
+        "module": {"type": "string"},
+        "version": {"$ref": "#/$defs/sha256"},
+        "signature": {"$ref": "#/$defs/sha256"},
+        "interface": {"$ref": "#/$defs/sha256"},
+        "answer": {"type": "string", "minLength": 1},
+        "saved": {"$ref": "#/$defs/sha256"},
+        "file": {"type": "string"},
+        "line": {"type": "integer", "minimum": 0}
+      },
+      "if": {"properties": {"kind": {"const": "ai"}}},
+      "then": {"required": ["signature"]},
+      "else": {"not": {"required": ["signature"]}}
+    },
+    "omitted": {
+      "type": "object",
+      "required": ["inputs", "outputs"],
+      "properties": {"inputs": {"$ref": "#/$defs/names"}, "outputs": {"$ref": "#/$defs/names"}},
+      "additionalProperties": false
+    },
+    "names": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "saw": {
+      "description": "calls.md, Saw. {saw_of} only as the first entry. The schema accepts an entry of any keys (a later writer may add a way of showing a call); a reader that does not know one cannot reproduce what was shown (unknown-key).",
+      "type": "array",
+      "items": {"$ref": "#/$defs/saw_entry"}
+    },
+    "saw_entry": {
+      "type": "object",
+      "properties": {
+        "call": {"$ref": "#/$defs/uuid"},
+        "steps": {"const": true},
+        "without": {"allOf": [{"$ref": "#/$defs/names"}, {"minItems": 1}]},
+        "slot": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+        "saw_of": {"$ref": "#/$defs/uuid"}
+      }
+    },
+    "exchange2": {
+      "type": "object",
+      "required": ["model", "provider", "started", "seconds", "cached"],
+      "properties": {
+        "model": {"type": ["string", "null"]},
+        "provider": {"type": ["string", "null"]},
+        "started": {"$ref": "#/$defs/time"},
+        "seconds": {"type": "number", "minimum": 0},
+        "cached": {"type": "boolean"},
+        "finish": {"type": ["string", "null"]},
+        "usage": {"$ref": "#/$defs/counts"},
+        "error": {"$ref": "#/$defs/error"},
+        "streamed": {"const": true},
+        "first_delta": {"type": ["number", "null"], "minimum": 0},
+        "request": {"type": "object"},
+        "request_hash": {"$ref": "#/$defs/sha256"},
+        "response": {"type": "object"}
+      }
+    },
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+    },
+    "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "time": {"type": "string", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\\.[0-9]{6}Z$"},
+    "counts": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}},
+    "error": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {"type": "string", "minLength": 1},
+        "message": {"type": "string"},
+        "code": {"type": "string"}
+      }
+    },
+    "exchange": {
+      "type": "object",
+      "required": ["model", "provider", "started", "seconds", "cached"],
+      "properties": {
+        "model": {"type": ["string", "null"]},
+        "provider": {"type": ["string", "null"]},
+        "started": {"$ref": "#/$defs/time"},
+        "seconds": {"type": "number", "minimum": 0},
+        "cached": {"type": "boolean"},
+        "finish": {"type": ["string", "null"]},
+        "usage": {"$ref": "#/$defs/counts"},
+        "error": {"$ref": "#/$defs/error"},
+        "streamed": {"const": true},
+        "first_delta": {"type": ["number", "null"], "minimum": 0},
+        "request": {"type": "object"},
+        "response": {"type": "object"}
+      }
+    }
+  }
+}

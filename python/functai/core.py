@@ -16,6 +16,7 @@ call and reads the reply; lm15 talks to the provider (see ``engine``).
 from __future__ import annotations
 
 import asyncio
+import copy
 import dataclasses
 import functools
 import inspect
@@ -343,6 +344,60 @@ class ColumnExpr(Protocol):
     def str_to_lower(self) -> Any: ...
 
 
+def _shown_as(plan: Any, spec: Spec, turns: List[Any], ids: List[str]) -> Tuple[List[Dict[str, Any]], List[Any]]:
+    """How a plan shows earlier turns, and the ``saw`` entries that say so: a
+    turn made for that plan whole, with its steps; one made for another plan
+    as its values alone (``without`` the fields the plan no longer has); one
+    with no output left, not at all. ``ids``: the call each turn was (empty
+    for a turn no logged call made: ``{"unrecorded": true}``)."""
+    entries: List[Dict[str, Any]] = []
+    shown: List[Any] = []
+    for turn, cid in zip(turns, ids):
+        fitted = engine.fit_turn(plan, spec, turn) if plan is not None else turn
+        if fitted is None:
+            continue
+        if not cid:
+            entries.append({"unrecorded": True})
+        elif fitted is turn:
+            entries.append({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid})
+        else:
+            had = set(getattr(turn, "inputs", None) or {}) | set(getattr(turn, "outputs", None) or {})
+            kept = set(getattr(fitted, "inputs", None) or {}) | set(getattr(fitted, "outputs", None) or {})
+            left_out = sorted(had - kept)
+            entries.append({"call": cid, "without": left_out} if left_out else {"call": cid})
+        shown.append(fitted)
+    return entries, shown
+
+
+def _turn_print(turn: Any) -> Optional[str]:
+    """What a turn holds, as canonical JSON (None when it has no JSON form:
+    such a turn cannot be shown to be unchanged, so no call is credited with it)."""
+    try:
+        return calllog.canonical(turn.to_dict())
+    except Exception:  # noqa: BLE001 — a value with no JSON form
+        return None
+
+
+def _frozen(turn: Any) -> Any:
+    """A copy of a turn that later edits of the original cannot reach: a deep
+    copy, or, when a value in it cannot be copied (a host object holding a
+    lock), the turn rebuilt from its JSON form, the values a request shows of
+    it. A turn with neither cannot be fixed as the call's context: TypeError
+    (the call's record and events are then not written, never written with a
+    context the call was not shown)."""
+    try:
+        return copy.deepcopy(turn)
+    except Exception:  # noqa: BLE001 — a value that cannot be copied: its JSON form is
+        pass
+    try:
+        if isinstance(turn, lmcc.Turn):
+            return lmcc.Turn.from_dict(json.loads(calllog.canonical(turn.to_dict())))
+        return json.loads(calllog.canonical(turn))
+    except Exception:  # noqa: BLE001 — no JSON form either
+        raise TypeError("a turn in history can be neither copied nor written as JSON, so what a call is "
+                        "shown of it cannot be fixed") from None
+
+
 class FunctAIFunc(Generic[P, R]):
     """A typed Python function whose body is a model call. Build with ``@ai``.
 
@@ -398,9 +453,31 @@ class FunctAIFunc(Generic[P, R]):
         self._instr_refined = 0
         self._instr_frozen = False
         self._autoinstructed = False
+        # which logged call made each turn of `history`: by the turn itself, and what it held then (a turn put
+        # there by hand, or changed since, has none)
+        self._history_calls: Dict[int, Tuple[Any, str, Optional[str]]] = {}
+        self._interface_cache: Optional[Tuple[Any, Dict[str, Any]]] = None
         self._spec()                                          # signature errors surface at definition
+        self._check_definition()                              # and interface and log_content ones
         if examples:
             self._state = ProgramState(demos=tuple(self._example_demo(e) for e in examples))
+
+    def _check_definition(self) -> None:
+        """What every language refuses when an AI function is defined (after
+        lmcc accepted its signature): an interface that breaks programs.md's
+        rules (an optional input whose default does not fit its shape, one with
+        no JSON default...), and a ``log_content`` map naming a field it lacks."""
+        from . import interface as _interface
+        from .module import _refuse_positional_only
+        _refuse_positional_only(self._sig, f"@ai on {self.__name__}")
+        _interface.check(self.interface, ai=True, program=self.__name__)
+        self._check_log_content()
+
+    def _check_log_content(self) -> None:
+        content = self._settings.get("log_content")
+        if isinstance(content, dict):
+            ins, outs, added = self._fields()
+            calllog.check_log_content(content, [*ins, *outs, *added], program=self.__name__)
 
     # ----- settings -----
 
@@ -508,7 +585,7 @@ class FunctAIFunc(Generic[P, R]):
         checked = check(settings, "using")
         if template is not _KEEP and checked.get("adapter") is not None and template is not None:
             raise TypeError("give adapter=... or template=[...], not both: a template is an adapter")
-        clone = object.__new__(FunctAIFunc)
+        clone = object.__new__(type(self))          # a function loaded from data stays one: same inputs, same request
         clone.__dict__.update(self.__dict__)
         merged = dict(self._settings)
         for k, v in checked.items():
@@ -524,10 +601,14 @@ class FunctAIFunc(Generic[P, R]):
         elif checked.get("adapter") is not None:
             clone._template = None
         clone.history = []
+        clone._history_calls = {}
+        clone._interface_cache = None
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
         clone._opt_runs = list(self._opt_runs)
         clone._vectorized = {}
+        if "log_content" in checked or "module" in checked or "tools" in checked:
+            clone._check_definition()
         return clone
 
     # ----- state (what optimizers change) -----
@@ -570,7 +651,7 @@ class FunctAIFunc(Generic[P, R]):
             return item
         if isinstance(item, dict) and "signature" in item and "inputs" in item:
             return item                                       # a saved Turn
-        names = list(self._sig.parameters)
+        names = self._fields()[0]                            # the inputs a turn holds, as the interface names them
         if isinstance(item, dict) and set(item) == {"inputs", "outputs"} and isinstance(item["inputs"], dict) \
                 and "inputs" not in names:
             return {"inputs": dict(item["inputs"]), "outputs": dict(item["outputs"])}
@@ -598,7 +679,81 @@ class FunctAIFunc(Generic[P, R]):
 
     def reset(self) -> None:
         """Forget the conversation (stateful functions)."""
-        self.history.clear()
+        with self._lock:
+            self.history.clear()
+            self._history_calls.clear()
+
+    # ----- the interface, and what a call records -----
+
+    @property
+    def interface(self) -> Dict[str, Any]:
+        """What a caller gives and gets, as data (contract/programs.md): the
+        docstring as ``description``, the parameters as ``inputs`` (a parameter
+        with a default is ``optional``, its default in the shape), the outputs
+        the body declares and the answer (last) as ``outputs``; not the fields
+        FunctAI adds (reasoning, tools). The call log records its signature as
+        ``program.interface``; ``functai.save`` writes it; another language
+        reads it."""
+        from . import interface as _interface
+        spec = self._spec()
+        cached = self._interface_cache
+        if cached is None or cached[0] is not spec:
+            cached = self._interface_cache = (spec, _interface.of_ai(self))
+        return copy.deepcopy(cached[1])
+
+    def _fields(self) -> Tuple[List[str], List[str], List[str]]:
+        """(inputs, outputs, added) of this function's calls, in the record's
+        order: the interface's, and the outputs FunctAI adds (reasoning, calls)."""
+        spec = self._spec()
+        ins = [f.name for f in spec.signature.inputs if f.purpose == "plain"]
+        outs = [f.name for f in spec.signature.outputs]
+        added = [f.name for f in spec.signature.outputs if f.purpose in ("reasoning", "tools.calls")]
+        return ins, outs, added
+
+    def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
+        """(what a call is shown as context, entries of the call log's ``saw``;
+        the turns themselves): a stateful function's latest turns, as the ids
+        of the calls they were, each as the call's plan shows it: whole, with
+        its steps, when the turn was made for that plan; as its values alone
+        (``without`` the fields the plan no longer has) when it was made for
+        another; not at all when none of its outputs is left.
+
+        A turn is matched to its call by identity and by what it holds (its
+        JSON form when the call made it), so editing ``history`` never lends a
+        turn another call's id: a turn no logged call made (put there by hand,
+        or changed since, even inside its values) is written ``{"unrecorded":
+        true}``, which no reader knows (``unknown-key``). The turns returned
+        are copies taken now, the ones the call is shown, whatever happens to
+        ``history`` or to the turns in it meanwhile."""
+        s = self._effective()
+        if not s.get("stateful"):
+            return [], None
+        with self._lock:
+            history = list(self.history)
+            made = dict(self._history_calls)
+        window = int(s.get("state_window") or 0)
+        if window > 0:
+            history = history[-window:]
+        spec = self._spec()
+        try:
+            plan = self._plan_for(spec, s)[0]
+        except Exception:  # noqa: BLE001 — no model to plan for: the call fails there, and says why
+            plan = None
+        ids, frozen = [], []
+        for turn in history:
+            # what the call is shown: a copy taken now, whatever changes meanwhile; the copy, not the live
+            # turn, is compared with what the call that made it recorded (an edit between the two is not lent
+            # that call's id)
+            copied = _frozen(turn)
+            owner = made.get(id(turn))
+            same = owner is not None and owner[0] is turn and owner[2] is not None \
+                and _turn_print(copied) == owner[2]
+            ids.append(owner[1] if same else "")
+            frozen.append(copied)
+        history = frozen
+        entries, shown = _shown_as(plan, spec, history, ids)
+        return entries, {"plan": getattr(plan, "fingerprint", None), "turns": history, "ids": ids,
+                         "entries": entries, "shown": shown}
 
     # ----- signature and plan -----
 
@@ -671,9 +826,21 @@ class FunctAIFunc(Generic[P, R]):
 
     def _past(self, plan: lmcc.Plan, spec: Spec, settings: Dict[str, Any]) -> List[lmcc.Turn]:
         past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos) if t is not None]
-        if settings.get("stateful") and self.history:
-            window = int(settings.get("state_window") or 0)
-            recent = self.history[-window:] if window > 0 else self.history
+        if settings.get("stateful"):
+            call = calllog.current()
+            if call is not None and call.program is self and call.context is not None:
+                context = call.context                     # what its record says it saw, as captured
+                if context["plan"] == plan.fingerprint:
+                    return past + list(context["shown"])
+                # another plan than the one its saw was worked out for (an escalation to another model):
+                # shown again as this plan shows it, and if that differs, its record says the context changed
+                entries, refit = _shown_as(plan, spec, context["turns"], context["ids"])
+                if entries != context["entries"] and {"context": "changed"} not in call.saw:
+                    call.saw.append({"context": "changed"})
+                return past + refit
+            with self._lock:
+                window = int(settings.get("state_window") or 0)
+                recent = list(self.history[-window:] if window > 0 else self.history)
             past += [t for t in (engine.fit_turn(plan, spec, h) for h in recent) if t is not None]
         return past
 
@@ -739,9 +906,26 @@ class FunctAIFunc(Generic[P, R]):
     # ----- calling -----
 
     def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
+        """A call's inputs by name, each left-out optional one with its default."""
         bound = self._sig.bind(*args, **kwargs)
         bound.apply_defaults()
         return dict(bound.arguments)
+
+    def _named_inputs(self) -> List[Tuple[str, bool]]:
+        """``(name, required)`` of each input a call can be given by name, in
+        order: what a row of data gives (``evaluate``, ``map``, optimizers,
+        ``bake``). A function loaded from data answers from its interface."""
+        kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
+        return [(n, p.default is inspect.Parameter.empty) for n, p in self._sig.parameters.items()
+                if p.kind not in kinds]
+
+    def _variant_spec(self, *, reasoning: bool, tools: bool) -> Spec:
+        """This function's spec with or without reasoning and tool fields, for
+        what trains on it (``bake``)."""
+        s = self._effective()
+        return build_spec(self._fn, instructions=self._current_state().instructions,
+                          include_fn_name=bool(s.get("include_fn_name_in_instructions")), reasoning=reasoning,
+                          tools=tools)
 
     def _run(self, inputs: Dict[str, Any], spec: Spec) -> Prediction:
         """One call for these inputs (the model, the tool loop, and escalation when
@@ -755,11 +939,17 @@ class FunctAIFunc(Generic[P, R]):
         if escalate_to is not None:
             pred, model, plan = self._maybe_escalate(pred, inputs, s, escalate_to, (model, plan))
         if s.get("stateful"):
+            call = calllog.current()
             with self._lock:
                 self.history.append(pred.turn)
+                if call is not None and call.program is self:
+                    self._history_calls[id(pred.turn)] = (pred.turn, call.id, _turn_print(pred.turn))
                 window = int(s.get("state_window") or 0)
                 if window > 0 and len(self.history) > window:
                     del self.history[:-window]
+                live = {id(t) for t in self.history}
+                for k in [k for k in self._history_calls if k not in live]:
+                    del self._history_calls[k]
         trace = _TRACE.get()
         if trace is not None:
             trace.append((self, pred))
@@ -785,13 +975,14 @@ class FunctAIFunc(Generic[P, R]):
         threshold = float(s.get("escalate_below") if s.get("escalate_below") is not None else 0.9)
         if conf >= threshold:
             return pred, first[0], first[1]
-        watch = calllog.WATCH.get()
-        if watch is not None:
+        call = calllog.current()
+        if call is not None:
             target = escalate_to.__name__ if isinstance(escalate_to, FunctAIFunc) else models.model_string(escalate_to) \
                 if not isinstance(escalate_to, str) else escalate_to
-            watch.retry(f"the first model was {conf:.0%} sure (less than {threshold:.0%}); {target} answers instead")
+            call.emit("retry", reason=f"the first model was {conf:.0%} sure (less than {threshold:.0%}); {target} "
+                                      f"answers instead", wait=None)
             if isinstance(escalate_to, FunctAIFunc):
-                watch.delegate()
+                call.delegating = True                   # the next call inside this one answers for it
         if isinstance(escalate_to, FunctAIFunc):
             # the target follows its own escalate_to (a longer chain), never a global one
             from .config import scoped
@@ -1342,9 +1533,21 @@ def ai(_fn: Any = None, /, **cfg: Any) -> Any:
     log_calls : bool or folder, optional
         Keep this function's calls in the call log (see ``functai.calls``);
         ``False`` keeps them out, whatever ``configure`` says.
-    log_content : bool, optional
+    log_content : bool or dict, optional
         ``False``: log only sizes, times and tokens, never the values (for a
-        function that sees secrets).
+        function that sees secrets). ``{"transcript": False}``: every value
+        but that input's; ``{"*": False, "question": True}``: only the
+        question's. It only removes: a host's ``configure`` or block that
+        drops a value wins over the function's own ``True``. A name the
+        function has no field for is an error (``LogContentError``).
+    observers : list, optional
+        Functions (or lists) given each event of this function's calls as
+        they happen, in the form a log keeps (``functai.eventlog``), beside
+        the host's observers.
+    journal : store or Journal, optional
+        Where the call tree's events are kept while it runs (a
+        ``functai.MemoryStore``, or ``functai.Journal(store,
+        required=True)``); only where the host sets none.
     **settings
         Any other setting ``configure`` takes (``api_key``, ``client``,
         ``cache_replies``, ``teacher``, ``optimizer``, ``debug``...). An

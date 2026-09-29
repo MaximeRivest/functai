@@ -91,13 +91,15 @@ class _Target:
         from .module import FunctAIModule
         self.program = program
         self.call_defaults = dict(call_defaults or {})
+        kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
         if isinstance(program, FunctAIFunc):
             self.predictors: List[FunctAIFunc] = [program]
-            params = program._sig.parameters
+            named = program._named_inputs()               # a function loaded from data: its interface's
             self.single = True
         elif isinstance(program, FunctAIModule):
             self.predictors = program.ai_functions()
-            params = inspect.signature(program._fn).parameters
+            named = [(n, p.default is inspect.Parameter.empty)
+                     for n, p in inspect.signature(program._fn).parameters.items() if p.kind not in kinds]
             self.single = False
             self.call_defaults = {**program._opt_call_defaults, **self.call_defaults}
             if not self.predictors:
@@ -105,11 +107,8 @@ class _Target:
         else:
             raise TypeError(f"expected an @ai function or a @module, not {type(program).__name__}")
         self.name = program.__name__
-        kinds = (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD)
-        self.input_names = [n for n, p in params.items() if p.kind not in kinds]
-        self.required = [n for n, p in params.items()
-                         if p.kind not in kinds and p.default is inspect.Parameter.empty
-                         and n not in self.call_defaults]
+        self.input_names = [n for n, _required in named]
+        self.required = [n for n, required in named if required and n not in self.call_defaults]
 
     @property
     def output_names(self) -> List[str]:
