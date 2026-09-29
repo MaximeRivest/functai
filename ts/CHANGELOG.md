@@ -87,10 +87,18 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   own properties only. Before, a required input named `toString` or
   `constructor` that was left out was sent to the model as JavaScript
   function text, and one named `__proto__` lost its value. A Standard
-  Schema's JSON Schema keeps a property named `__proto__`. An AI function
-  cannot have a field named `__proto__` for now (`TypeError`; loading one
-  refuses `saved-differs`): lmcc's TypeScript renderer would still lose its
-  value. A module can.
+  Schema's JSON Schema keeps a property named `__proto__`. lmcc is given
+  a call's and a worked example's values as records with no prototype, so
+  an AI function's input may be named `__proto__` (the same request as
+  Python's, saved and loaded both ways), and a worked example that leaves
+  out an input or output named like an Object member is sent without it
+  (before, the call failed). An AI function cannot have an output named
+  `__proto__` (`TypeError`; loading one refuses `saved-differs`): lmcc's
+  TypeScript reader would lose the answer. A JSON input whose value holds
+  a member named `__proto__` is refused before anything is sent
+  (`format-write-error`; before, the member was dropped and the rest sent,
+  unlike Python): lmcc's json format cannot write it yet. A module takes
+  every name.
 - A call whose code rejects with no reason (`Promise.reject()`, `throw
   undefined`) fails as any other: its `failed` event is kept and shown, and
   its record says it failed. Before, it made no terminal event and no
@@ -104,14 +112,18 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
 - Observers each have their own queue and share of the delivery time: a
   slow observer falls behind and loses events alone, never the others.
 - A journal writer whose round of resends gave up tries again later on
-  its own (1, 2, 4, 8, 16 s) and at the next event, then gives up on what
-  it holds for that log (warned once per outage); `flush()` sends what is
-  not confirmed once more, and returns `false` while a journal still holds
-  events it did not confirm or gives up on some (before, it said `true`,
-  and a tree's end could be lost for good).
+  its own (1, 2, 4, … 60 s apart, for as long as the process lives) and at
+  the next event. It gives up on a log only for memory: when all writers
+  hold more than 100,000 unconfirmed events, the one holding the oldest
+  gives up its log (warned once per outage). `flush()` sends what is not
+  confirmed once more (again after a round that was under way when it
+  began), and returns `false` while a journal still holds events it did
+  not confirm, or once after a writer gave up on events. (Before, it said
+  `true` while a tree's end was lost for good.)
 - A journal's `timeout` and `backoff` above 2,147,483,647 ms (a timer's
   limit) refuse where they are set; `timeout: Infinity` still waits for
-  ever. `JournalError.settle({ signal })` can be stopped.
+  ever. `JournalError.settle({ signal })` can be stopped, also by an abort
+  the store's own read makes.
 - A builder's extra keys never replace what it makes (`t.list(x, { items
   })` is a `TypeError`), and a builder's `default` is typed as its value.
   `ModuleResult` of outputs built at run time (`Record<string, …>`) is a

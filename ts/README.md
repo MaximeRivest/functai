@@ -72,10 +72,21 @@ p.answer;       // 15
   description, minItems: 1 })`) and never replace what it makes (`type`,
   `items`, `properties`, …: a `TypeError`); a default is a value of its
   type (`t.string({ default: "kind" })`).
-- **Field names** are data: `toString` or `constructor` is a field like
-  any other. One exception, for now: an AI function cannot have a field
-  named `__proto__` (a `TypeError`; loading one refuses `saved-differs`),
-  because lmcc's TypeScript renderer would lose its value. A module can.
+- **Field names** are data: `toString`, `constructor` or `__proto__` is a
+  field like any other, and a worked example that leaves one out is sent
+  without it. Three limits of lmcc's TypeScript kernel remain, for now:
+  - an AI function cannot have an *output* named `__proto__` (a
+    `TypeError`; loading one refuses `saved-differs`): lmcc's reader would
+    lose the answer. An input can, and a module can have either;
+  - a JSON input whose value holds a member named `__proto__` (`{
+    "__proto__": 1 }`, at any depth) is refused before anything is sent
+    (`format-write-error`): lmcc's json format would drop it. A text input
+    given such an object keeps it, written as JSON text;
+  - with the `json` adapter, a reply holding an output named like an
+    Object member (`toString`, `valueOf`, …) is refused as if the member
+    came twice (`parse-ambiguous`); and with any adapter, a reply that
+    leaves such an output out gives `""` for it instead of being asked
+    again. Name outputs otherwise, or use `xml` and check them.
 - **A call** takes its options second: `await mood(input, { lm:
   "gpt-6-luna", signal })`: settings for that call only, and an
   `AbortSignal` that cancels it (`Cancelled`).
@@ -193,8 +204,11 @@ observer that throws or rejects is warned about once and gets no more
 events; one that falls 10,000 events behind loses events (it sees the gap
 in `after`). Each observer has its own queue and its own share of the time
 given to observers, so one that is slow falls behind (and loses events)
-alone; the others beside it get every event. Observers add up over every
-layer; `configure({ observers })` replaces `configure`'s own list.
+alone; the others beside it get every event. One limit: observers run on
+this thread only between the call's steps, so more than 10,000 events
+made in one synchronous burst (thousands of calls started at once) make
+every observer lose events. Observers add up over every layer;
+`configure({ observers })` replaces `configure`'s own list.
 
 A journal keeps each call tree's kept log in a store while it is written,
 with appends the store answers (`MemoryStore` here; any object with
@@ -205,23 +219,32 @@ Each append is waited for at most `timeout` ms (default 30,000; its
 something else than `"kept"`, `"duplicate"` or a refusal never holds the
 call nor reaches the process. A best-effort journal that fails is warned
 about once per outage. When a round of resends gives up, the writer tries
-again on its own later (after 1, 2, 4, 8 and 16 s) and at the next event:
-a tree's last events have no next event to carry them. When those tries
-fail too, it gives up on what it holds for that log (warned once; the log
-is kept at least up to the events it confirmed), so a store that stays
-down costs a bounded amount of memory. `await flush()` sends what is still
-not confirmed once more, and says `true` only when every journal confirmed
-every event it was sent (or refused one: it is sent nothing more), none
-gave up on events while it waited, and every observer has its events. A required one makes the call wait until its events
-are kept, before its code runs, before each tool and before it returns (at
-most `timeout` at each; cancelling the call stops the first two), and
-raises `JournalError` when they are not: `journal-barrier` (the code or
-the tool did not run), or `journal-end`, which holds the call's outcome
+again on its own later (after 1 s, then 2, 4, … up to 60 s apart, for as
+long as the process lives; these tries never keep the process alive) and
+at the next event: a tree's last events have no next event to carry them.
+Time alone never makes it give up. Memory does: when all journal writers
+together hold more than 100,000 events not confirmed, the one holding the
+oldest gives up on its log (warned once per outage; the log is kept at
+least up to the events it confirmed, and nothing more is sent to it),
+then the next, so a store that stays down costs a bounded amount of
+memory.
+
+`await flush()` sends what is still not confirmed once more, and says
+`true` only when every journal confirmed every event it was sent (or
+refused one: it is sent nothing more), every observer has its events, and
+no writer gave up on events since the previous `flush()` (each loss makes
+one `flush()` say `false`).
+
+A required journal makes the call wait until its events are kept, before
+its code runs, before each tool and before it returns (at most `timeout`
+at each; cancelling the call stops the first two), and raises
+`JournalError` when they are not: `journal-barrier` (the code or the tool
+did not run), or `journal-end`, which holds the call's outcome
 (`err.outcome`: what you would have got, or the error) and the position of
 its end (`await err.settle({ signal: AbortSignal.timeout(5000) })` finds
 out whether it was kept; the signal stops waiting for a store that does
-not answer). A program's
-own settings cannot replace or remove a host's journal (`journal-policy`).
+not answer). A program's own settings cannot replace or remove a host's
+journal (`journal-policy`).
 
 ## How often is it right?
 
