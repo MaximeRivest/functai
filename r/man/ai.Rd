@@ -67,8 +67,63 @@ column each, which \code{\link[dplyr:mutate]{dplyr::mutate()}} splices in; name 
 (\code{message = "the customer's own words"});
 \item a type: \code{\link[=choice]{choice()}} (one of a set of answers), \code{integer()}, \code{double()},
 \code{logical()}, \code{character()}, \code{\link[=record]{record()}}, \code{\link[vctrs:list_of]{vctrs::list_of()}},
-\code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}; \code{\link[=described]{described()}} adds words to a type.
+\code{\link[=optional]{optional()}}, \code{\link[=json_shape]{json_shape()}}; \code{\link[=described]{described()}} adds words to a type;
+\item \code{\link[=defaults_to]{defaults_to()}}: an input the caller may leave out, and the value it
+is sent with then (\code{tone = defaults_to("kind")}), as an R function's
+default argument.
 }
+
+\strong{What it takes and gives} is its interface (\code{\link[=ai_interface]{ai_interface()}}), checked
+when the function is defined, as every language checks one: field names
+are ASCII identifiers (\code{order_id}, not \code{order.id}), and a default fits
+its type. A function that breaks these rules is refused then
+(\code{interface-malformed}), not later by whatever reads it.
+
+\strong{Values are checked on every call}, by the same rules as the defaults:
+a value given that does not fit its field's type (\code{5} for
+\code{json_shape(list(type = "integer", minimum = 10))}, \code{2.5} for a whole
+number) fails that row before any request (\code{interface-input}, a
+\code{functai_interface_input} condition naming the \code{field}), and its call
+record says so; a reply whose value does not fit is unreadable, and the
+model is asked again. A value given to a text input that is not text is
+sent as text. An input left out is sent with its default exactly as the
+interface holds it. A value is sent as it is given, and checked so:
+nothing is dropped or filled in. A record holds only the members it
+names, so a tibble given for a \code{\link[=record]{record()}} with a column the record does
+not name (an id, an e-mail address) is refused, never sent: select the
+record's columns first (\code{dplyr::select()}, \code{dplyr::pick()}). A member
+the record requires but the value lacks is refused too. An open object
+(\code{json_shape(list(type = "object"))}, or one whose
+\code{additionalProperties} is a shape or \code{TRUE}) keeps every member given.
+
+\strong{Missing values.} \code{NA} (or \code{NULL}) is JSON's null, never "left out": an
+input whose type takes null (an \code{\link[=optional]{optional()}} type, a \code{\link[=json_shape]{json_shape()}} that
+allows null) is sent null; in an input whose type takes no null, required
+or optional, the row has nothing to send and makes no call: its answer is
+\code{NA}, as with a missing value anywhere in R, and \code{predict()}'s \code{.error}
+says why. \code{input = NULL} in a call warns, since R code often means "the
+default" by it: leave the input out for that. Inside a record (a row of a
+tibble column, or a named list), \code{NA} is null too, except for a member
+the record does not require and whose type takes no null: a tibble cannot
+leave a member out, so \code{NA} there leaves it out, as an answer that leaves
+it out comes back \code{NA}. Nor can a tibble hold a null record: a row of \code{NA}
+given for a record that may be null (\code{\link[=optional]{optional()}}, or a \code{\link[=json_shape]{json_shape()}}
+that allows null) is null, as a null answer comes back (vctrs's missing
+row), when it names only members of the record and a member the record
+requires, one value and never null, is \code{NA}, so the row could be no
+record. Any other row is sent as it is: a record of nulls
+(\code{list(child = list(x = NULL))}) stays one, and a row with a column the
+record does not name, \code{NA} or not, is refused before any request, the
+message naming that column.
+
+\strong{What the call log keeps} is \code{.log_content} (see \code{\link[=ai_config]{ai_config()}}):
+\code{TRUE}, \code{FALSE}, \code{c(transcript = FALSE)}, or the names of the fields it
+may keep, \code{c("question")}. It only removes: a block around the call, or
+\code{ai_config()}, may drop more; nothing brings back what one of them drops.
+A name that is not one of the function's fields is refused
+(\code{log-content-field}). A one-output function's answer is \code{result} in the
+log, as in every language; \code{log_content} may call it by the formula's
+name too (\code{c(team = FALSE)}).
 }
 \examples{
 mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
@@ -88,4 +143,9 @@ refund <- ai(decision ~ message + price + final_sale, "Should the shop refund th
 mood("It broke after one day.")
 tickets |> dplyr::mutate(triage(message))
 }
+
+# an input the caller may leave out
+reply <- ai(reply ~ message + tone, "Answer the customer.",
+  tone = defaults_to("kind", choice("kind", "brief")))
+args(reply)
 }

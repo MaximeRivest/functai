@@ -1,0 +1,215 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/event.schema.json",
+  "title": "One event of a call tree's log (functai streaming, format 2; format 1 as shown before 2026-09-28). Keys a later writer adds are allowed: readers ignore them, form makers leave them out.",
+  "type": "object",
+  "if": {"required": ["functai_event"]},
+  "then": {"$ref": "#/$defs/format2"},
+  "else": {"$ref": "#/$defs/format1"},
+  "$defs": {
+    "position": {
+      "description": "An event of a log, named by the writer that numbered it and its seq (with the log's tree, its name in every form).",
+      "type": "object",
+      "required": ["writer", "seq"],
+      "properties": {
+        "writer": {"type": "integer", "minimum": 1},
+        "seq": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "format2": {
+      "type": "object",
+      "required": ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"],
+      "properties": {
+        "functai_event": {"const": 2},
+        "kind": {
+          "description": "streaming.md names nine kinds; a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "tree": {"$ref": "call.schema.json#/$defs/uuid"},
+        "writer": {"type": "integer", "minimum": 1},
+        "seq": {"type": "integer", "minimum": 1},
+        "after": {
+          "description": "The event before this one in the form being read, named by its writer and seq; null for the form's first event.",
+          "oneOf": [{"type": "null"}, {"$ref": "#/$defs/position"}]
+        },
+        "at": {"$ref": "call.schema.json#/$defs/time"},
+        "call": {"$ref": "call.schema.json#/$defs/uuid"},
+        "function": {"type": "string", "minLength": 1},
+        "content": {"type": "boolean"}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "started"}}},
+          "then": {
+            "required": ["parent", "root", "program", "content", "saw"],
+            "properties": {
+              "parent": {"oneOf": [{"$ref": "call.schema.json#/$defs/uuid"}, {"type": "null"}]},
+              "root": {"$ref": "call.schema.json#/$defs/uuid"},
+              "program": {"$ref": "call.schema.json#/$defs/program"},
+              "inputs": {"type": "object"},
+              "omitted": {"$ref": "call.schema.json#/$defs/omitted"},
+              "saw": {"$ref": "call.schema.json#/$defs/saw"}
+            },
+            "if": {"properties": {"content": {"const": true}}},
+            "then": {"required": ["inputs"], "not": {"required": ["omitted"]}},
+            "else": {"required": ["omitted"]}
+          },
+          "else": {"properties": {"content": {"const": false}}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "request"}}},
+          "then": {
+            "required": ["request", "model"],
+            "not": {"required": ["content"]},
+            "properties": {"request": {"type": "integer", "minimum": 1}, "model": {"type": ["string", "null"]}}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "text"}}},
+          "then": {
+            "required": ["field", "answer", "text"],
+            "not": {"required": ["content"]},
+            "properties": {
+              "field": {"type": "string", "minLength": 1},
+              "answer": {"type": "boolean"},
+              "text": {"type": "string", "minLength": 1}
+            }
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "thinking"}}},
+          "then": {
+            "required": ["text"],
+            "not": {"required": ["content"]},
+            "properties": {"text": {"type": "string", "minLength": 1}}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "tool_call"}}},
+          "then": {
+            "required": ["id", "name"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "input": {}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["input"]}},
+            "else": {"required": ["input"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "tool_result"}}},
+          "then": {
+            "required": ["id", "name"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "output": {"type": "string"}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["output"]}},
+            "else": {"required": ["output"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "retry"}}},
+          "then": {
+            "required": ["wait"],
+            "properties": {
+              "reason": {"type": "string", "minLength": 1},
+              "wait": {"type": ["number", "null"], "minimum": 0}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["reason"]}},
+            "else": {"required": ["reason"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "done"}}},
+          "then": {
+            "properties": {"value": {}},
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["value"]}},
+            "else": {"required": ["value"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "failed"}}},
+          "then": {
+            "required": ["error"],
+            "properties": {"error": {"$ref": "call.schema.json#/$defs/error"}},
+            "if": {"required": ["content"]},
+            "then": {"properties": {"error": {"not": {"required": ["message"]}}}},
+            "else": {}
+          }
+        }
+      ]
+    },
+    "format1": {
+      "type": "object",
+      "required": ["kind", "call", "function"],
+      "properties": {
+        "kind": {"enum": ["started", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed"]},
+        "call": {"$ref": "call.schema.json#/$defs/uuid"},
+        "function": {"type": "string", "minLength": 1}
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": {"const": "started"},
+            "parent": {"oneOf": [{"$ref": "call.schema.json#/$defs/uuid"}, {"type": "null"}]},
+            "inputs": {"type": "object"}
+          },
+          "required": ["parent", "inputs"]
+        },
+        {
+          "properties": {
+            "kind": {"const": "text"},
+            "field": {"type": "string", "minLength": 1},
+            "answer": {"type": "boolean"},
+            "text": {"type": "string", "minLength": 1}
+          },
+          "required": ["field", "answer", "text"]
+        },
+        {
+          "properties": {"kind": {"const": "thinking"}, "text": {"type": "string", "minLength": 1}},
+          "required": ["text"]
+        },
+        {
+          "properties": {
+            "kind": {"const": "tool_call"},
+            "id": {"type": ["string", "null"]},
+            "name": {"type": "string"},
+            "input": {}
+          },
+          "required": ["id", "name", "input"]
+        },
+        {
+          "properties": {
+            "kind": {"const": "tool_result"},
+            "id": {"type": ["string", "null"]},
+            "name": {"type": "string"},
+            "output": {"type": "string"}
+          },
+          "required": ["id", "name", "output"]
+        },
+        {
+          "properties": {
+            "kind": {"const": "retry"},
+            "reason": {"type": "string", "minLength": 1},
+            "wait": {"type": ["number", "null"], "minimum": 0}
+          },
+          "required": ["reason", "wait"]
+        },
+        {"properties": {"kind": {"const": "done"}, "value": {}}, "required": ["value"]},
+        {
+          "properties": {"kind": {"const": "failed"}, "error": {"$ref": "call.schema.json#/$defs/error"}},
+          "required": ["error"]
+        }
+      ]
+    }
+  }
+}

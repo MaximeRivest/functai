@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/maximerivest/functai/contract/schema/interface.schema.json",
+  "title": "A program's interface (contract/programs.md): the inputs it takes and the outputs it gives. Closed: a key this schema does not name is refused (interface-malformed), since it could change what a program accepts or how a field is kept. What the schema cannot check (names used once, shapes of the checked vocabulary, defaults that fit) programs.md refuses too.",
+  "type": "object",
+  "required": ["description", "inputs", "outputs"],
+  "properties": {
+    "description": {"type": "string"},
+    "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
+    "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/output"}}
+  },
+  "additionalProperties": false,
+  "$defs": {
+    "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "output": {
+      "type": "object",
+      "required": ["name", "shape"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "shape": {"type": "object"},
+        "desc": {"type": "string"},
+        "type": {"type": "string"},
+        "opaque": {"const": true}
+      },
+      "additionalProperties": false,
+      "if": {"required": ["opaque"]}, "then": {"properties": {"shape": {"maxProperties": 0}}}
+    },
+    "input": {
+      "type": "object",
+      "required": ["name", "shape"],
+      "properties": {
+        "name": {"$ref": "#/$defs/name"},
+        "shape": {"type": "object"},
+        "desc": {"type": "string"},
+        "type": {"type": "string"},
+        "opaque": {"const": true},
+        "optional": {"const": true}
+      },
+      "additionalProperties": false,
+      "if": {"required": ["opaque"]}, "then": {"properties": {"shape": {"maxProperties": 0}}}
+    }
+  }
+}

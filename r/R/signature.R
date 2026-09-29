@@ -32,7 +32,8 @@ instructions_of <- function(d, include_name, improved = NULL) {
 fields_of <- function(d, cot, tools) {
   out <- list()
   for (n in names(d$inputs)) {
-    f <- list(name = n, direction = "input", shape = d$inputs[[n]]$shape, purpose = "plain")
+    # an input's own default is how a call is bound, not what the model is told (functions.md)
+    f <- list(name = n, direction = "input", shape = data_shape(d$inputs[[n]]$shape), purpose = "plain")
     if (!is.null(field_desc(d$inputs[[n]]))) f$desc <- field_desc(d$inputs[[n]])
     out[[length(out) + 1L]] <- f
   }
@@ -50,7 +51,11 @@ sample_value <- function(shape) {
     opts <- Filter(function(s) !identical(s$type, "null"), shape$anyOf)
     return(if (length(opts)) sample_value(opts[[1L]]) else NULL)
   }
-  switch(shape$type %||% "string", string = "example text", integer = 3L, number = 2.5, boolean = TRUE,
+  # a type that is not one name (a list of them: ["object", "null"]) is no
+  # type calls.md lists: the text, as TypeScript and Julia give
+  t <- shape$type
+  if (!(is.character(t) && length(t) == 1L)) t <- "string"
+  switch(t, string = "example text", integer = 3L, number = 2.5, boolean = TRUE,
          array = list(), object = lmcc::jobj(), null = NULL, "example text")
 }
 
@@ -74,13 +79,16 @@ prepare_inputs <- function(sig, values) {
   for (f in lmcc::signature_to_list(sig)$fields) {
     if (f$direction != "input" || !f$name %in% names(values)) next
     v <- values[[f$name]]
-    if (identical(f$shape$type, "string") && is.null(f$shape$enum) && !is.null(v) && !(is.character(v) && length(v) == 1L)) {
-      v <- if (is.list(v)) json_indented(v) else format(v)
-    }
+    if (is_text_shape(f$shape) && !is.null(v) && !(is.character(v) && length(v) == 1L)) v <- text_form(v)
     out[f$name] <- list(v)
   }
   out
 }
+
+# A text input (a string that is not a choice), and a value as the text it
+# is sent as (functions.md, "Worked examples").
+is_text_shape <- function(shape) identical(shape$type, "string") && is.null(shape$enum)
+text_form <- function(v) if (is.list(v)) json_indented(v) else format(v)
 
 # JSON indented by two spaces, as Python's json.dumps(indent=2) writes it.
 json_indented <- function(v, depth = 0L) {

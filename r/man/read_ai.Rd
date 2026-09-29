@@ -21,5 +21,25 @@ function in it. It checks the function sends exactly what it sent where it
 was saved, and has its version, before any call. It refuses, with the
 reason, what only the saving language can run: code of its own around the
 model (\code{saved-code}), a module (\code{saved-not-ai}), tools (\code{saved-tools}), a
-baked model (\code{saved-model}).
+baked model (\code{saved-model}). Its inputs a caller may leave out, and what
+each is sent with then, come from the folder's interface of it
+(\code{\link[=ai_interface]{ai_interface()}} describes any program in a folder without loading it).
+}
+\details{
+\strong{Types.} A function R saved comes back with the R types it had (a
+\code{\link[=record]{record()}} is a tibble column, a \code{\link[=json_shape]{json_shape()}} a list column): R writes
+them in the interface's \code{type}. Another language's function comes back
+with, for each field, the R type that holds every value its shape admits
+exactly: text, numbers, yes or no, a factor for a choice, a \code{list_of}
+for a list, and a tibble for a record (a Python dataclass, a TypeScript
+object type, a Julia \code{NamedTuple}: records are closed, so no member can
+come back that a column does not hold) when each member it may leave out
+is one value that takes no null (\code{NA} then means "left out", and nothing
+else) and, when the record may be null, it requires a member that is one
+value and never null (a row of \code{NA} is then null, and nothing else). Any
+other object (an open one, a map, a record with an optional list, object
+or record in it) is a list column of named lists
+(\code{tidyr::unnest_wider()} spreads it), which keeps every member, and
+whether it is there, as it came. What a
+call sends never depends on these types: a value is sent as it is given.
 }

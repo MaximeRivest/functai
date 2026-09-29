@@ -47,6 +47,7 @@ reference:
       - record
       - optional
       - described
+      - defaults_to
       - json_shape
       - ai_tool
   - title: Settings
@@ -76,8 +77,9 @@ reference:
     contents:
       - ai_model
       - worked_examples
-  - title: What it sends, and its version
+  - title: What it takes, sends, and its version
     contents:
+      - ai_interface
       - ai_version
   - title: The call log and ratings
     contents:

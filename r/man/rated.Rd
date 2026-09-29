@@ -24,6 +24,10 @@ A tibble: the inputs, the outputs, then \code{call}, \code{version},
 The inputs of every rated call of \code{fn} and the right answer (the model's,
 when it was rated right; the correction, when wrong), typed like the
 function's inputs and outputs: ready for \code{\link[=evaluate]{evaluate()}} and the optimizers.
-Calls of another signature (the inputs or outputs changed since) and
-calls logged without content are left out and counted.
+Calls whose data has another shape (the inputs or outputs changed since)
+are left out and counted (\code{other_signature}); calls that record the same
+data pool, even when the instruction, a default or reasoning changed. So
+are calls whose inputs the log did not keep (\code{no_content}, \code{log_content}),
+and rated calls that give no answer (\code{no_answer}: a right verdict on an
+answer that was not kept). Reads every language's log, formats 1 and 2.
 }
