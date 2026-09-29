@@ -79,15 +79,25 @@ p.answer;       // 15
   a `__proto__` member in an object as data (`JSON.parse`,
   `lmcc.parseJson`, `{ ["__proto__"]: v }`): the literal `{ __proto__: v }`
   sets the object's prototype instead.
-- **Members keep their order**, as in Python: what a call sends, its
-  record, its events, the worked examples a bootstrap records and a saved
-  folder hold a value's members in the value's order, even names like
-  `"10"` that JavaScript lists first. JavaScript's own tools lose that
+- **Members keep their order**, as in Python: the messages a call sends,
+  its record, its events, the worked examples a bootstrap records and a
+  saved folder hold a value's members in the value's order, even names
+  like `"10"` that JavaScript lists first. JavaScript's own tools lose that
   order before FunctAI sees it: an object literal and `JSON.parse` list
   `"10"` first, and so do `JSON.stringify` and `structuredClone`. Read
   JSON with `lmcc.parseJson` and write it with `lmcc.jsonText`; what
   FunctAI gives you (answers, predictions, events, rows) carries lmcc's
-  record of the order (`lmcc.memberNames`).
+  record of the order (`lmcc.memberNames`). One exception: JSON that lm15
+  writes (the `json` adapter's `response_format` schema, a tool's
+  parameters, a `config`'s maps) reaches the provider in JavaScript's
+  order, `"10"` before `"b"`, where Python sends `"b"` first: lm15 takes
+  plain objects, which cannot hold another order. The same text in the
+  messages (the `xml` adapter's schema) keeps it.
+- **JSON FunctAI writes** (a text input given an object, the call log, a
+  saved folder) is what `JSON.stringify` writes, members aside: a hole in
+  an array is `null`, `new Number(42)` is `42`, and a value that holds
+  itself is refused (`TypeError`). An integer past 2^53 (lmcc reads one
+  as a `bigint`) is written and recorded as its digits.
 - **A call** takes its options second: `await mood(input, { lm:
   "gpt-6-luna", signal })`: settings for that call only, and an
   `AbortSignal` that cancels it (`Cancelled`).

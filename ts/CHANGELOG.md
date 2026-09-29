@@ -108,8 +108,28 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   reads back, the worked examples labeled and bootstrapped, and a saved
   folder, written and read (`save`, `load`). Values are copied, read and
   written with lmcc's helpers, never `structuredClone`, `JSON.parse` or
-  `JSON.stringify`. The reply cache and the requests lm15 serializes
-  follow lm15.
+  `JSON.stringify`. JSON lm15 writes (a `response_format` schema, a
+  tool's parameters, a `config`) follows lm15: JavaScript's order.
+- FunctAI gives lm15 plain data: a request, its `Config`, a saved
+  `config` and a cached reply carry no record of member order (lm15
+  refuses an object with a symbol key). Before, a `json`-adapter function
+  whose output shape had an integer-like property after another (from
+  `lmcc.parseJson`, or a saved folder, Python's included), or a tool with
+  such parameters, threw a `TypeError` at every render and call; a cached
+  reply read back that way was skipped with a warning.
+- The JSON FunctAI writes (a text input given an object, call log lines,
+  saved folders) visits every array index again, a hole written `null`:
+  before, `[, "B"]` was written `[,"B"]` (a call log line and a saved
+  folder no reader took), and `["A", ,]` and `new Array(2)` lost
+  elements. A boxed primitive is written as its value (`new Number(42)`
+  was `{}`; a `String` object given to a text input is its text), and
+  recorded as its value in the call log; a value that holds itself is
+  refused with `JSON.stringify`'s `TypeError` (was a stack overflow).
+- An integer past 2^53 in an answer, or anywhere in a value, is recorded
+  as its digits (before, as a description; a JSON answer holding one was
+  recorded as `{"$type": "Object", ...}`). An array's hole, or
+  `undefined`, in a recorded value is `null` (an `undefined` made the
+  whole value a description).
 - **functai needs lmcc with decision D-58** (commit `3492090` or later):
   it refuses to start on an lmcc without its helpers (lmcc 0.8.4 as
   published on npm). The workarounds for the older kernel are gone: values
