@@ -4,6 +4,185 @@
 
 ## functai 0.1.0 (unreleased)
 
+### Stage 1 foundations (the contract at `c1e5063`)
+
+* The call log is format 2 (`contract/calls.md`): every record has
+  `program.interface`, `saw` (`[]`: R's functions are shown no earlier
+  call) and, when its content is whole, each exchange's `request_hash`.
+  `rated()`, `calls()` and `read_log` read formats 1 and 2 and skip any
+  other.
+* `log_content` per field, as a layer that only removes: the function's
+  own, each `with_ai_config()` block, `ai_config()` and
+  `FUNCTAI_LOG_CONTENT=0` (which now wins over every setting; before, a
+  function's own `log_content` beat it). `c(transcript = FALSE)`, a named
+  list, or `c("question")` (the fields that may be kept). A record not
+  whole says what it `omitted`, keeps no request, reply, request hash or
+  error message, and drops the reasoning and tool calls with any field.
+  A name that is not one of the function's fields refuses when the
+  function is defined (`log-content-field`). A one-output function's
+  answer is `result` in the log; a map may call it by the formula's name
+  too. GEPA's own calls keep no value when the function it improves drops
+  a field.
+* `defaults_to()`: an input the caller may leave out; the R function's
+  argument defaults to it, and the call sends and records it. Defaults
+  are out of the signature and the version (`functions/12`).
+* `ai_interface()`: what an AI function, or any program in a saved
+  folder, takes and gives, as every language describes it. `ai()` checks
+  the interface when the function is defined (`interface-malformed`);
+  `write_ai()` writes it; `read_ai()` checks a node's interface against
+  its signature (`saved-differs`) and takes its optional inputs from it;
+  describing a folder needs no loading (`saved-no-interface` for an old
+  module node).
+* `rated()` pools calls by interface: calls whose data has the same shape
+  pool, reasoning or not; a call whose inputs were not kept as data, or
+  a right verdict on an answer not kept, is left out and counted.
+* Saved folders are checked against the contract's schema before
+  anything else (`saved-malformed`); `calls()` gains `content` and `saw`.
+* Refusals the contract names are errors of class `functai_refusal`
+  (and `functai_<code>`), with `code` and `field`.
+* A field name that is not an ASCII identifier (`my.message`) is refused
+  when the function is defined (lmcc's `signature-malformed`).
+
+#### After review
+
+* An input left out is sent with its default exactly as the interface
+  holds it (its JSON), not through an R copy: a record's default that
+  leaves out a member no longer gains a `null` for it after `read_ai()`.
+* A default of `null` is sent; `predict()` makes one call per row of
+  `new_data` even when every input is left out, and none for an empty
+  table.
+* Values are checked on every call by the contract's vocabulary: a given
+  input that does not fit fails its row before any request
+  (`interface-input`, recorded as `InterfaceError`); a reply that does not
+  fit is re-asked (`parse-value`), bounds, `const`, references, array and
+  object rules included. A number is no longer truncated to fit a whole
+  number, nor a value given to a choice turned into text.
+* `defaults_to()` casts as vctrs does (`defaults_to(2.5, integer())` is
+  refused), reads a sentence as words about the value's own type, and
+  takes a date as text.
+* A `log_content` name is the field of that name: a function named like
+  one of its inputs, or an answer named like a field FunctAI adds, no
+  longer moves that field's rule to the answer.
+* A tool-using call's record holds `outputs.calls` (the value lmcc's
+  finished turn holds: its last model step's) and its size.
+* `read_saw()` reads only call records of formats 1 and 2; an entry whose
+  known keys hold values of another kind, or two different records with
+  one id, is not guessed at.
+* A saved node without an interface is checked like any other; each probe
+  needs its own fingerprint (`saved-differs`); load and describe refusals
+  carry `field`; describing an optional input with no default no longer
+  prints `default null`.
+* GEPA's own calls keep no value when any layer in force (a block, `ai_config()`,
+  the environment) drops a field of the function it improves.
+* `calls()` gains `omitted`. Interface refusals name the first field at
+  fault, inputs first, and the call they came from.
+
+#### After the second review
+
+* Loading a saved function changes no value. A value is written as JSON by
+  its field's shape alone, whatever R type the field is read as, and
+  checked as it is: an object keeps every member it is given (a record's
+  tibble its extra columns too), a member it lacks stays out (a required
+  one is refused, even where it takes null), and a member a closed shape
+  does not allow is refused. Before, a loaded record kept only its
+  declared members and filled missing ones with null, so the same call
+  sent another request after `read_ai()`, or was sent where it should
+  have been refused.
+* `write_ai()` writes each field's R type in the interface's `type`
+  (`tibble(name = character, age = integer)`, `list` for JSON), and
+  `read_ai()` reads a function R saved back with those types. Another
+  language's function gets, per field, the R type that holds its values
+  exactly: a record is a tibble column only when it is closed, since a
+  tibble has no column for a member the record does not name; any other
+  object is a list column. A record a Python dataclass wrote (open) is
+  therefore a list column now, not a tibble.
+* In a record, `NA` for a member the record does not require and whose
+  type takes no null leaves the member out (a tibble cannot); elsewhere
+  `NA` is null, as before.
+* A row that makes no call because an input is missing says so in
+  `predict()`'s `.error`; `input = NULL` in a direct call, for an input
+  whose type takes no null, warns. An infinite number is refused before
+  any request (`interface-input`), not by the log writer. A row refused
+  before any request is refused once, whatever `samples` is.
+* A column's values are checked with each field's shape read once, not
+  once a row: about 3.7 times faster than the first repair on a column of
+  scalars.
+
+#### After the third review
+
+* Another language's closed record is a tibble only when a tibble keeps
+  whether each member is there: a member it may leave out must be one
+  value that takes no null (`NA` is "left out" then, and nothing else).
+  A record whose optional member is a list, an object or a record is a
+  list column: before, a left-out list came back `NULL` and was sent back
+  as `null` (refused), and a left-out record was a row of `NA`s, the same
+  tibble as the record with its members null. R's own saved `tibble(...)`
+  type is not believed either where it would lose that.
+* `optional(record(...))` tells a null record from a record of nulls. When
+  the record requires a member that is one value and never null, null is
+  a row of `NA` (vctrs's missing row) and is sent back as null (before, a
+  null answer given back was sent as `{"name":null}` and refused); when
+  every member may be null, the field is a list column (before, a null
+  answer and a record of nulls were the same row of `NA`).
+* A default is kept, shown and sent with its members in the order they
+  were written, before and after `read_ai()`: `ai_interface()` sorted
+  them, so a loaded function sent `{"age":1,"name":"Z"}` where the
+  function it was saved from sent `{"name":"Z","age":1}`. A default is held
+  as the JSON the interface holds (a number read back as JSON reads it).
+* A column named with a backslash (`a\b`) is written in the saved `type`
+  as R writes the symbol, so R reads the tibble type back; before, the
+  field came back a list column. Types are matched to fields by name.
+* `?ai` and `?record` say that every column of a tibble given for a record
+  is sent, and to select the record's columns first when the others are
+  not for the model.
+
+#### After the fourth review
+
+* A record whose leaves are all null (`{"child":{"x":null}}`) is sent as
+  that record, never as `null`, as given and as an answer given back, in a
+  list or inside another record too. Before, any record every leaf of which
+  was missing was sent as `null` where the record could be null. Now a row
+  is read as the null record (vctrs's missing row) only when a member the
+  record requires, one value that is never null, is `NA`: no record is
+  such a row, so nothing the record admits is changed.
+* Records are closed: a record holds only the members it names. A value
+  with another member (a tibble's `id` or `email` column given for a
+  `record()`) is refused before any request (`interface-input`), and so is
+  a default with one (`interface-malformed`) and an answer with one (the
+  model is asked again). Before, a tibble's extra columns were sent to the
+  model. An object shape that says `additionalProperties` is a shape or
+  `true`, a map, and `json_shape(list(type = "object"))` stay open.
+* Another language's record (a Python dataclass, a TypeScript object type)
+  is a tibble column where a tibble holds it exactly, as R's own
+  `record()` is; before, it was a list column unless it said
+  `additionalProperties: false`. A record that may be null is a tibble too
+  when it requires a member that is one value and never null.
+* An `optional(record(...))` held as a list column (every member may be
+  null) prints as `optional record of name (list column)`, not
+  `optional JSON`, and takes a one-row tibble for its default, as it does
+  for a value.
+* `?ai` says the row-of-`NA` rule holds for any record that may be null,
+  a `json_shape()` one too.
+
+#### After the fifth review
+
+* A row of `NA` with a column the record does not name
+  (`tibble(name = NA, email = NA)` for `optional(record(name =
+  character()))`), at any depth, is refused before any request, as a row
+  with a value in that column is, and so is a default like it; before, it
+  was sent as `null`. A row of `NA` is null only when it names only the
+  record's members and the member that tells null apart is `NA`.
+* A refusal names the member at fault for a record that may be null too:
+  `value: no member email is allowed`, not `… fits none of its options`;
+  a member a record does not name is named before what the members hold.
+* A `json_shape()` that may be null by a list of types
+  (`type = list("object", "null")`) is saved; before, `write_ai()` failed
+  making its sample input. Its sample value is `"example text"`, as
+  TypeScript and Julia make it (the contract lists no value for a list of
+  types).
+
+### Before stage 1
+
 The first R implementation of FunctAI, held to the same contract as the
 Python and TypeScript packages (`../contract`): every function, score,
 rating and saved-folder case, and a check against Python and TypeScript

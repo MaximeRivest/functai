@@ -1,0 +1,127 @@
+{
+ "description": "A log's first event is its outermost call's started, from writer 1: a started of another call, another kind, or another writer is refused.",
+ "kind": "store",
+ "steps": [
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "topic",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210? It's a week late."
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "event-start"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0009-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "field": "result",
+    "answer": true,
+    "text": "ship"
+   },
+   "expect": "event-start"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0008-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0008-7000-8000-000000000000",
+    "function": "support",
+    "parent": null,
+    "root": "01926c00-0008-7000-8000-000000000000",
+    "program": {
+     "name": "support",
+     "kind": "module",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210? It's a week late."
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "event-start"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0002-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "topic",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "topic",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210? It's a week late."
+    },
+    "content": true,
+    "saw": []
+   },
+   "expect": "kept"
+  }
+ ],
+ "reads": [],
+ "expect": {
+  "logs": {
+   "01926c00-0002-7000-8000-000000000000": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     }
+    ],
+    "writer": 1,
+    "finished": false
+   }
+  }
+ }
+}

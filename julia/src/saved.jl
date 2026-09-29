@@ -11,7 +11,8 @@ const SAVED_FORMAT = 1
 
 A saved program this loader will not run; `code` says why
 (`saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`,
-`saved-tools`, `saved-model`, `saved-differs`: contract/saved.md).
+`saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface`,
+`interface-malformed`: contract/saved.md).
 """
 struct LoadRefused <: Exception
     code::String
@@ -22,13 +23,94 @@ refuse_load(code, msg) = throw(LoadRefused(code, msg))
 
 const SNAKE_SETTINGS = (:retries, :api_retries, :max_steps, :tool_errors, :capabilities, :log_content)
 
+
+"""
+Why a manifest does not pass `schema/saved.schema.json` (with
+`schema/interface.schema.json` for every node's interface), read as the
+schemas themselves, or `nothing`.
+"""
+manifest_fault(m) = schema_fault("saved", m)
+
+"The manifest's first checks (saved.md, step 1): its format, then its schema."
 function check_form(m)
     m isa AbstractDict || refuse_load("saved-malformed", "functai.json is not a JSON object")
     get(m, "functai_saved", nothing) == SAVED_FORMAT ||
         refuse_load("saved-format", "functai.json is format $(repr(get(m, "functai_saved", nothing))); this loader reads format $SAVED_FORMAT")
-    (get(m, "entry", nothing) isa AbstractString && get(m, "nodes", nothing) isa AbstractDict) ||
-        refuse_load("saved-malformed", "functai.json needs entry and nodes")
+    why = manifest_fault(m)
+    why === nothing || refuse_load("saved-malformed", why)
     m
+end
+
+"The plain fields of an AI node's signature, as an interface's fields (by direction)."
+plain_fields(n, direction) = [f for f in n["ai"]["signature"]["fields"]
+                              if something(get(f, "purpose", nothing), "plain") == "plain" && f["direction"] == direction]
+
+"An AI node's interface must describe the data its signature takes and gives (saved.md, step 6)."
+function check_node_interface(key, n)
+    iface = n["interface"]
+    fault = interface_fault(iface; ai=n["kind"] == "ai")
+    fault === nothing || refuse_load("interface-malformed", "$key: its interface is refused: $(fault.msg)")
+    n["kind"] == "ai" || return iface
+    theirs = interface_signature(LMCC.jobj("inputs" => plain_fields(n, "input"), "outputs" => plain_fields(n, "output")))
+    interface_signature(iface) == theirs ||
+        refuse_load("saved-differs", "$key: its interface promises other data than its signature takes and gives")
+    iface
+end
+
+"""
+    FunctAI.describe(path_or_manifest; node) -> Dict
+
+What a saved program takes and gives, without loading or running anything
+(contract/saved.md, "Describing without loading"): the node's interface
+(the entry's by default), checked. A module saved in any language is
+described too. An AI node written before nodes had an interface is
+described by its signature (its instruction as the description: do not
+show it to outside callers as it is). Throws [`LoadRefused`](@ref).
+"""
+function describe(m::AbstractDict; node=nothing)
+    check_form(m)
+    key = something(node, m["entry"])
+    n = get(m["nodes"], key, nothing)
+    n isa AbstractDict || refuse_load("saved-malformed", "functai.json has no node $(repr(key))")
+    n["kind"] in ("ai", "module") || refuse_load("saved-not-ai", "$key is a $(n["kind"]): plain code, with no interface")
+    haskey(n, "interface") && return LMCC.deepcopy_json(check_node_interface(key, n))
+    n["kind"] == "module" && refuse_load("saved-no-interface", "$key was saved before programs had interfaces: what it takes is not known")
+    LMCC.deepcopy_json(signature_interface(key, n))
+end
+
+"""
+The interface an AI node written before nodes had one is read from
+(saved.md, "Describing without loading"): its signature's plain fields, its
+instruction as the description, no input optional. Checked as every
+interface read from a folder is (`interface-malformed`).
+"""
+function signature_interface(key, n)
+    field(f) = begin
+        out = LMCC.jobj("name" => f["name"], "shape" => LMCC.deepcopy_json(f["shape"]))
+        d = get(f, "desc", nothing)
+        d isa AbstractString && !isempty(d) && (out["desc"] = d)
+        t = get(f, "type", nothing)
+        t isa AbstractString && (out["type"] = t)
+        out
+    end
+    iface = LMCC.jobj("description" => n["ai"]["signature"]["instructions"],
+                      "inputs" => Any[field(f) for f in plain_fields(n, "input")],
+                      "outputs" => Any[field(f) for f in plain_fields(n, "output")])
+    fault = interface_fault(iface; ai=true)
+    fault === nothing || refuse_load("interface-malformed", "$key: the interface its signature gives is refused: $(fault.msg)")
+    iface
+end
+describe(path::AbstractString; node=nothing) = describe(first(manifest_at(path)); node)
+
+function manifest_at(path::AbstractString)
+    file = isdir(path) ? joinpath(path, "functai.json") : path
+    text = read(file, String)
+    manifest = try
+        LMCC.parse_json(text)
+    catch err
+        refuse_load("saved-malformed", "$file: $(sprint(showerror, err))")
+    end
+    (manifest, text)
 end
 
 """
@@ -63,6 +145,14 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
     catch err
         err isa LMCC.Refusal ? refuse_load("saved-malformed", "$key: $(err.hint)") : rethrow()
     end
+    declared = haskey(n, "interface") ? JObj(check_node_interface(key, n)) : nothing
+    declared === nothing && signature_interface(key, n)            # an old folder's: checked, as describing checks it
+    optional = Dict{String,Any}()          # an optional input's default, from the node's interface (saved.md, step 5)
+    if declared !== nothing
+        for f in declared["inputs"]
+            get(f, "optional", false) === true && (optional[f["name"]] = f["shape"]["default"])
+        end
+    end
     given = Dict{String,Any}(String(k) => v for (k, v) in pairs(types))
     field(f) = begin
         spec = if haskey(given, f.name)
@@ -73,7 +163,11 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         else
             JObj(f.shape)
         end
-        FieldDef(f.name, spec, JObj(f.shape), f.direction == "input" ? f.desc : nothing)
+        desc = f.direction == "input" ? f.desc : nothing
+        f.direction == "input" && haskey(optional, f.name) || return FieldDef(f.name, spec, JObj(f.shape), desc)
+        # the default is the JSON the folder keeps, sent as it is: never read as a type (a loaded function runs no code)
+        default = optional[f.name]
+        FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), LMCC.deepcopy_json(default))
     end
     inputs, outputs = FieldDef[], FieldDef[]
     reasoning = false
@@ -98,7 +192,7 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
     adapter === nothing || (own[:adapter] = adapter)
     for k in SNAKE_SETTINGS
         v = get(settings_in, String(k), nothing)
-        v === nothing || (own[k] = k === :tool_errors ? Symbol(v) : v)
+        v === nothing || (own[k] = k === :tool_errors ? Symbol(v) : k === :log_content ? content_setting(v) : v)
     end
     template = get(data, "template", nothing)
     template isa AbstractVector && (own[:template] = Any[template...])
@@ -112,10 +206,12 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         isempty(rest) || (own[:config] = LM15.from_dict(LM15.Config, rest))
     end
     state = something(get(data, "state", nothing), LMCC.jobj("instructions" => nothing, "demos" => Any[]))
-    definition = Definition(String(n["name"]), "", inputs, outputs, sig.instructions)
+    # described as describe() says: the node's interface, else its instruction (all an old folder holds)
+    definition = Definition(String(n["name"]), declared === nothing ? sig.instructions : declared["description"], inputs, outputs, sig.instructions)
     f = AIFunction(definition, own, AITool[], String(n["module"]), nothing, nothing, saved_id,
                    get(state, "instructions", nothing), Any[], nothing, nothing, nothing, nothing, nothing, nothing,
-                   Dict{Any,Any}(), ReentrantLock())
+                   declared, Dict{Any,Any}(), ReentrantLock())
+    check_own_content(f.own, program_fields(f; reasoning=get(f.own, :reasoning, false) === true), key)
     f = with_demos(f, something(get(state, "demos", nothing), Any[]))
     # it must send what was saved (contract/saved.md, "Loading", step 6)
     want = something(get(something(get(data, "fingerprints", nothing), JObj()), "requests", nothing), Any[])
@@ -149,13 +245,7 @@ mood("Arrived broken.")          # unhappy::Mood
 ```
 """
 function load(path::AbstractString; node=nothing, types=(;))
-    file = isdir(path) ? joinpath(path, "functai.json") : path
-    text = read(file, String)
-    manifest = try
-        LMCC.parse_json(text)
-    catch err
-        refuse_load("saved-malformed", "$file: $(sprint(showerror, err))")
-    end
+    manifest, text = manifest_at(path)
     from_manifest(manifest; node, types, saved_id="sha256:" * LMCC.sha256_hex(text))
 end
 
@@ -200,7 +290,8 @@ function to_manifest(f::AIFunction)
     LMCC.jobj("functai_saved" => SAVED_FORMAT, "language" => "julia", "entry" => key,
               "created" => Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS") * "+00:00",
               "functai" => string(FUNCTAI_VERSION),
-              "nodes" => LMCC.jobj(key => LMCC.jobj("kind" => "ai", "module" => f.module_name, "name" => f.definition.name, "ai" => ai)))
+              "nodes" => LMCC.jobj(key => LMCC.jobj("kind" => "ai", "module" => f.module_name, "name" => f.definition.name,
+                                                    "interface" => LMCC.deepcopy_json(interface(f)), "ai" => ai)))
 end
 
 """

@@ -33,7 +33,7 @@
   "scripts": {
     "build": "rm -rf dist && tsc -p tsconfig.build.json",
     "check": "tsc --noEmit",
-    "test": "node --conditions=functai-source --conditions=lmcc-source --test tests/*.test.ts",
+    "test": "node --conditions=functai-source --conditions=lmcc-source --test --test-timeout=60000 tests/*.test.ts",
     "prepublishOnly": "npm run check && npm test && npm run build",
     "docs": "typedoc"
   },

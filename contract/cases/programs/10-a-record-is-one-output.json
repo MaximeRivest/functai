@@ -1,0 +1,64 @@
+{
+ "description": "A return type that is a record is one output of object shape (Python: -> Tracking, a TypedDict or dataclass); several outputs are declared as several.",
+ "program": "module",
+ "interface": {
+  "description": "Where a parcel is.",
+  "inputs": [
+   {
+    "name": "order",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "where": {
+       "type": "string"
+      },
+      "late_days": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "where",
+      "late_days"
+     ]
+    },
+    "type": "Tracking"
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:c0e61b2a50b886b08d77027ce85e1500463ba5396522e60e3366908d5fa2dafb"
+ },
+ "checks": [
+  {
+   "returned": {
+    "where": "Leeds depot",
+    "late_days": 7
+   },
+   "expect": {
+    "outputs": {
+     "result": {
+      "where": "Leeds depot",
+      "late_days": 7
+     }
+    }
+   }
+  },
+  {
+   "returned": {
+    "where": "Leeds depot"
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "result"
+   }
+  }
+ ]
+}

@@ -86,7 +86,12 @@ prototype_of <- function(x) {
 
 #' An input or output that may be missing
 #'
-#' The model may answer `null` for it; it comes back as `NA`.
+#' The model may answer `null` for it; it comes back as `NA`. A record comes
+#' back as a row of `NA` (vctrs's missing row) when it requires a member
+#' that is one value and is never null, so that no record is a row of `NA`
+#' too; any other optional record is a list column, where `NULL` is null
+#' and a record of nulls is a named list of them (a one-row tibble is still
+#' a value, or a default, for it).
 #' @param x A type, or a sentence (text, described by it).
 #' @return A field.
 #' @examples
@@ -95,8 +100,11 @@ prototype_of <- function(x) {
 #' @export
 optional <- function(x) {
   f <- as_field(x)
-  f$shape <- list(anyOf = list(f$shape, list(type = "null")))
+  default <- if ("default" %in% names(f$shape)) f$shape["default"]      # an input's own default stays its own
+  inner <- data_shape(f$shape)
+  f$shape <- c(list(anyOf = list(inner, list(type = "null"))), default)
   f$nullable <- TRUE
+  if (identical(f$kind, "record") && !null_told(inner, f$fields, inner)) { f$kind <- "json"; f$fields <- NULL }   # a row of NA would be a record too
   f
 }
 
@@ -104,7 +112,9 @@ optional <- function(x) {
 #'
 #' Several named fields that belong together, each a type or a sentence
 #' (text, described), as in [ai()]. Records come back as tibble columns
-#' (`tidyr::unpack()` spreads them).
+#' (`tidyr::unpack()` spreads them). A record holds only the members it
+#' names: a tibble given for one with another column is refused, never
+#' sent, so select the record's columns first (`dplyr::select()`).
 #' @param ... Fields, as `name = type`.
 #' @return A field.
 #' @examples
@@ -113,6 +123,8 @@ optional <- function(x) {
 record <- function(...) {
   fields <- lapply(list(...), as_field)
   if (!length(fields) || is.null(names(fields)) || any(!nzchar(names(fields)))) cli::cli_abort("a record's fields are named: {.code record(name = character())}")
+  if (any(vapply(fields, function(f) isTRUE(f$optional), NA)))
+    cli::cli_abort("a default belongs to an input of the function ({.fn defaults_to}), not to a field of a record")
   new_field(list(type = "object", properties = lapply(fields, described_shape), required = as.list(names(fields))), "record", fields = fields)
 }
 
@@ -132,7 +144,7 @@ json_shape <- function(schema) {
 
 new_field <- function(shape, kind, desc = NULL, levels = NULL, fields = NULL, item = NULL, nullable = FALSE) {
   structure(list(shape = shape, kind = kind, desc = desc, levels = levels, fields = fields, item = item,
-                 nullable = nullable, meanings = NULL), class = "functai_field")
+                 nullable = nullable, meanings = NULL, optional = FALSE), class = "functai_field")
 }
 
 #' @export
@@ -159,6 +171,7 @@ as_field <- function(x) {
     cli::cli_abort(c("a field is a type or one sentence about it, not {length(x)} strings",
       i = "one of several answers is a choice: {.code choice({paste(encodeString(utils::head(x, 2L), quote = '\"'), collapse = ', ')}, ...)}"))
   }
+  if (inherits(x, c("Date", "POSIXt"))) return(new_field(list(type = "string"), "string"))   # dates are text, as a column of them is
   if (is.factor(x)) {
     lv <- levels(x)
     if (!length(lv)) cli::cli_abort("a factor prototype needs its levels: {.code factor(levels = c(\"a\", \"b\"))}")
@@ -166,6 +179,7 @@ as_field <- function(x) {
   }
   if (inherits(x, "vctrs_list_of")) {
     item <- as_field(attr(x, "ptype"))
+    if (isTRUE(item$optional)) cli::cli_abort("a default belongs to an input of the function ({.fn defaults_to}), not to a list's items")
     return(new_field(list(type = "array", items = item$shape), "list", item = item))
   }
   if (is.data.frame(x)) {
@@ -194,23 +208,144 @@ element <- function(x, i) {
 
 is_missing <- function(v) is.null(v) || (is.atomic(v) && length(v) == 1L && is.na(v))
 
-# A value as the JSON its field's shape describes (lmcc's R conventions:
-# named list = object, unnamed list = array, NULL = null).
-to_json <- function(f, v) {
+# A value given for a field, as JSON (lmcc's R conventions: named list =
+# object, unnamed list = array, NULL = null). The JSON depends on the value
+# and the field's shape alone, never on the R type the field is read as, so
+# the same value is sent the same by a function and by the one loaded from
+# its folder, whatever R type each reads the field as.
+to_json <- function(f, v) json_writer(f)(v)
+
+# to_json() for one field, its shape read once (a column writes every row
+# by it).
+json_writer <- function(f) {
+  shape <- data_shape(f$shape)
+  switch(guide_type(value_guide(shape, shape)) %||% "",
+    string = , boolean = function(v) if (is_missing(v)) NULL else plain_json(v),
+    function(v) json_of(v, shape, shape))
+}
+
+# A value as JSON, guided by a shape (`root` holds its `$defs`). Nothing is
+# lost, made up or changed to fit: a value that is not of the shape's type
+# stays what it is (2.5 given to a whole number stays 2.5), an object keeps
+# every member it has (those its shape does not name too) and has none it
+# does not have, so the check of the value refuses, as given, what does not
+# fit (calls.md, *Values*: the log writes a value by what it is). The shape
+# only says what R leaves open: a vector for an array is a list of its
+# items (even of one), a one-row tibble for an object is that row, and a
+# whole double for an integer is written as one. One thing R cannot say is
+# a member left out of a row of a tibble: there, and in any record, `NA`
+# for a member the shape does not require and whose type takes no null is
+# left out, as an answer that leaves it out reads back. Nor a null record:
+# a record whose members are all missing (NA, NULL, or a record of them)
+# and all named by the record, at any depth, is null where the shape takes
+# null and the row could be no record, since a member the record requires
+# that is one value and takes no null is NA; that is a null answer read
+# back (vctrs's missing row). Any other value is sent as it is, so no
+# record the shape admits (`{"child":{"x":null}}`) is ever sent as null,
+# and a row with a member the record does not name is refused as given.
+json_of <- function(v, shape, root) {
   if (is_missing(v)) return(NULL)
-  switch(f$kind,
-    string = , enum = as.character(v),
-    integer = if (is.numeric(v) && abs(v) <= .Machine$integer.max) as.integer(v) else v,
-    number = as.double(v),
-    boolean = as.logical(v),
-    record = {
-      v <- as.list(v)
-      out <- list()
-      for (n in names(f$fields)) out[n] <- list(to_json(f$fields[[n]], v[[n]]))
-      out
-    },
-    list = unname(lapply(as.list(v), function(x) to_json(f$item, x))),
-    json = plain_json(v))
+  s <- value_guide(shape, root)
+  switch(guide_type(s) %||% "",
+    integer = if (is.numeric(v) && length(v) == 1L && is.finite(v) && v == round(v) && abs(v) <= .Machine$integer.max)
+      as.integer(v) else plain_json(v),
+    number = if (is.numeric(v) && length(v) == 1L && !inherits(v, "lmcc_int")) as.double(v) else plain_json(v),  # lmcc's big integers keep their digits
+    array = array_json(v, s, root),
+    object = if (null_record(v, shape, s, root)) NULL else object_json(v, s, root),
+    plain_json(v))
+}
+
+array_json <- function(v, s, root) {
+  prefix <- if (is_arr(s$prefixItems)) s$prefixItems else list()
+  item <- function(i) if (i <= length(prefix)) prefix[[i]] else if (is_obj(s$items)) s$items
+  if (is.data.frame(v)) return(lapply(seq_len(nrow(v)), function(i) json_of(element(v, i), item(i), root)))
+  if (is.list(v) && !is.null(names(v)) && length(v)) return(plain_json(v))       # a named list is an object
+  if (is.list(v) || is.atomic(v)) return(lapply(seq_along(v), function(i) json_of(element(unname(v), i), item(i), root)))
+  plain_json(v)
+}
+
+# Whether a value is a null record (json_of()): a row of NA, given where the
+# shape takes null, whose members are all missing and all members the
+# record names (at any depth: undeclared()), and in which a member the
+# record requires that is one value and takes no null (a witness) is NA,
+# R's missing value. A record always has a value for its witness, so no
+# record the shape admits is such a row, and the row reads as null alone:
+# the reason a tibble holds a nullable record only when it has a witness
+# (null_told()). A row that could be a record (every required member may
+# be null, or is a list or an object) is never null, whatever its leaves;
+# nor is a JSON null (NULL) for the witness, which is sent as given; nor a
+# row with a member the record does not name, which is no value of it
+# (records are closed) and is sent as given, to be refused.
+null_record <- function(v, shape, s, root) {
+  if (is.data.frame(v)) { if (nrow(v) != 1L) return(FALSE); v <- element(v, 1L) }
+  if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
+  if (!all_missing(v) || !is.null(undeclared(v, s, root))) return(FALSE)
+  props <- if (is_obj(s$properties)) s$properties else list()
+  fits_shape(NULL, shape, root) &&
+    any(vapply(unlist(s$required), function(n) {
+      m <- v[[n]]
+      is.atomic(m) && length(m) == 1L && is.na(m) && !is.null(props[[n]]) && is_witness(props[[n]], root)
+    }, NA))
+}
+
+# A member shape that is one value (text, a number, yes/no, a choice of
+# texts) and takes no null: a column of it is NA only where a row has no
+# value.
+is_witness <- function(member, root) {
+  g <- value_guide(member, root)
+  !is.null(g) && (is_text_choice(g) || isTRUE(guide_type(g) %in% c("string", "integer", "number", "boolean"))) &&
+    !fits_shape(NULL, member, root)
+}
+
+# A named list every member of which is missing: NA, NULL, or such a list.
+all_missing <- function(v) is.list(v) && length(v) > 0L && !is.null(names(v)) &&
+  all(vapply(v, function(m) is_missing(m) || all_missing(m), NA))
+
+object_json <- function(v, s, root) {
+  if (is.data.frame(v)) { if (nrow(v) != 1L) return(plain_json(v)); v <- element(v, 1L) }
+  if (is.atomic(v) && !is.null(names(v))) v <- as.list(v)
+  if (!is.list(v)) return(plain_json(v))
+  if (!length(v)) return(lmcc::jobj())
+  nm <- names(v)
+  if (is.null(nm) || any(!nzchar(nm))) return(plain_json(v))
+  props <- if (is_obj(s$properties)) s$properties else list()
+  required <- unlist(s$required)
+  extra <- if (is_obj(s$additionalProperties)) s$additionalProperties
+  out <- list()
+  for (i in seq_along(v)) {
+    n <- nm[[i]]; m <- v[[i]]
+    member <- if (n %in% names(props)) props[[n]] else extra
+    if (n %in% names(props) && !n %in% required && is.atomic(m) && length(m) == 1L && is.na(m) &&
+        !fits_shape(NULL, member, root)) next                                    # a record's NA: left out
+    out[n] <- list(if (is.null(member)) plain_json(m) else json_of(m, member, root))
+  }
+  if (!length(out)) lmcc::jobj() else out
+}
+
+# The one shape a value's JSON form follows: through `$ref`, and an `anyOf`
+# whose options but one are null; NULL when there is none (several options).
+value_guide <- function(shape, root, seen = character(0)) {
+  if (!is_obj(shape)) return(NULL)
+  if (has_key(shape, "$ref")) {
+    n <- ref_name(shape[["$ref"]])
+    if (is.null(n) || n %in% seen) return(NULL)
+    return(value_guide(root[["$defs"]][[n]], root, c(seen, n)))
+  }
+  if (has_key(shape, "anyOf")) {
+    opts <- Filter(function(o) !(is_obj(o) && identical(o$type, "null")), shape$anyOf)
+    return(if (length(opts) == 1L) value_guide(opts[[1L]], root, seen))
+  }
+  shape
+}
+
+guide_type <- function(s) {
+  if (is.null(s)) return(NULL)
+  t <- s$type
+  if (is_arr(t)) t <- setdiff(unlist(t), "null")
+  if (is.character(t) && length(t) == 1L) return(t)
+  if (is.null(t) && is_obj(s$properties)) return("object")
+  if (is.null(t) && (is_obj(s$items) || is_arr(s$prefixItems))) return("array")
+  NULL
 }
 
 # Any R value as plain JSON (for the call log and for text inputs).
@@ -256,38 +391,3 @@ assemble <- function(f, values) {
     json = values)
 }
 
-# The first place a value does not fit a shape, or NULL (the JSON Schema
-# subset shapes use).
-misfit <- function(shape, v, where) {
-  opts <- shape$anyOf %||% shape$oneOf
-  if (!is.null(opts)) {
-    for (o in opts) if (is.null(misfit(o, v, where))) return(NULL)
-    return(sprintf("%s: %s fits none of its options", where, lmcc::json_text(v)))
-  }
-  if (!is.null(shape$enum) && !any(vapply(shape$enum, function(e) identical(lmcc::canonical_json(e), lmcc::canonical_json(v)), NA)))
-    return(sprintf("%s: %s is not one of %s", where, lmcc::json_text(v), lmcc::json_text(shape$enum)))
-  t <- shape$type
-  if (is.character(t) && length(t) == 1L) {
-    v2 <- num(v)
-    ok <- switch(t,
-      string = is.character(v) && length(v) == 1L,
-      integer = is.numeric(v2) && length(v2) == 1L && !is.na(v2) && v2 == round(v2),
-      number = is.numeric(v2) && length(v2) == 1L,
-      boolean = is.logical(v) && length(v) == 1L,
-      null = is.null(v),
-      array = is.list(v) && is.null(names(v)),
-      object = is.list(v) && (!is.null(names(v)) || !length(v)),
-      TRUE)
-    if (!ok) return(sprintf("%s: expected %s, got %s", where, t, lmcc::json_text(v)))
-  }
-  if (is.list(v) && is.null(names(v)) && is.list(shape$items))
-    for (i in seq_along(v)) { p <- misfit(shape$items, v[[i]], sprintf("%s[%d]", where, i - 1L)); if (!is.null(p)) return(p) }
-  if (is.list(v) && !is.null(names(v))) {
-    for (k in unlist(shape$required)) if (!k %in% names(v)) return(sprintf("%s: missing %s", where, k))
-    for (k in names(v)) {
-      if (!is.null(shape$properties[[k]])) { p <- misfit(shape$properties[[k]], v[[k]], paste0(where, ".", k)); if (!is.null(p)) return(p) }
-      else if (is.list(shape$additionalProperties)) { p <- misfit(shape$additionalProperties, v[[k]], paste0(where, ".", k)); if (!is.null(p)) return(p) }
-    }
-  }
-  NULL
-}

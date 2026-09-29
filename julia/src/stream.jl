@@ -8,110 +8,63 @@
 #     s = stream(solve, "10 pencils?"); foreach(println, eachevent(s)); fetch(s)
 
 """
-    Event
-
-One thing that happened in a watched call (contract/streaming.md): `kind`
-(`:started`, `:text`, `:thinking`, `:tool_call`, `:tool_result`, `:retry`,
-`:done`, `:failed`), the `call` it is about, the `function`'s name, and the
-fields of its kind (`e.text`, `e.field`, `e.answer`, `e.value`, `e.error`, …).
-`FunctAI.event_json(e)` is its JSON form.
-"""
-struct Event
-    kind::Symbol
-    call::String
-    fn::String
-    data::JObj
-end
-function Base.getproperty(e::Event, name::Symbol)
-    name in (:kind, :call, :data) && return getfield(e, name)
-    name === :function && return getfield(e, :fn)
-    haskey(getfield(e, :data), String(name)) || throw(ArgumentError("a $(getfield(e, :kind)) event has no $name; it has $(join(keys(getfield(e, :data)), ", "))"))
-    getfield(e, :data)[String(name)]
-end
-Base.propertynames(e::Event) = (:kind, :call, :function, Symbol.(keys(getfield(e, :data)))...)
-function Base.show(io::IO, e::Event)
-    print(io, "Event(:", e.kind, ", ", getfield(e, :fn))
-    for (k, v) in getfield(e, :data)
-        k == "julia_value" && continue
-        print(io, ", ", k, " = ", repr(v))
-    end
-    print(io, ")")
-end
-
-"An event as the contract's JSON (schema/event.schema.json)."
-function event_json(e::Event)
-    out = LMCC.jobj("kind" => String(e.kind), "call" => e.call, "function" => getfield(e, :fn))
-    for (k, v) in getfield(e, :data)
-        k == "julia_value" && continue
-        out[k] = v
-    end
-    out
-end
-
-"""
     AIStream
 
 A call being made and watched: iterate it for the answer's text as it is
-written; [`eachevent`](@ref) for everything (the calls inside it, reasoning,
-tool calls, retries); `fetch` for its value, typed (the same as calling);
-`close` to cancel it; `FunctAI.text(s)` for the answer so far.
+written; [`eachevent`](@ref) for everything (format 2 events: the calls
+inside it, requests, reasoning, tool calls, retries); `fetch` for its
+value, typed (the same as calling); `close` to cancel it; `FunctAI.text(s)`
+for the answer so far. It shows the whole log of its call's tree from that
+call down, with the tree's numbers (law 7: a stream opened on a call inside
+a tree starts at that call, its first `after` is `nothing`).
 """
-mutable struct AIStream <: Watch
+mutable struct AIStream
     log::Vector{Event}
+    calls::Set{String}
+    last::Union{Nothing,Position}
     cond::Threads.Condition
     finished::Bool
     closed::Bool
     outer::Union{Nothing,String}
+    answer::Union{Nothing,String}
     answer_text::String
     task::Union{Nothing,Task}
 end
 
-watch_closed(s::AIStream) = s.closed
-watch_check(s::AIStream) = s.closed ? throw(Cancelled()) : nothing
+"The stream starts watching a call (the one it was opened on) in a tree's log."
+function attach!(s::AIStream, t::TreeLog, call_id::AbstractString)
+    s.outer = String(call_id)
+    push!(s.calls, s.outer)
+    push!(t.streams, s)
+end
 
-function push_event!(s::AIStream, e::Event)
+"An event of the tree: the stream takes it when it is about its call or a call inside it."
+function offer!(s::AIStream, e::Event)
+    mine = e.call in s.calls
+    if !mine && e.kind === :started && datum(e, "parent") in s.calls
+        push!(s.calls, e.call)
+        mine = true
+    end
+    mine || return
     lock(s.cond) do
-        push!(s.log, e)
+        linked = relinked(e, s.last)
+        s.last = Position(linked)
+        if e.call == s.outer
+            e.kind === :started && (s.answer = datum(e, "program")["answer"])
+            e.kind in (:request, :retry) && (s.answer_text = "")          # law 3
+            e.kind === :text && datum(e, "answer") === true && (s.answer_text *= datum(e, "text"))
+        end
+        push!(s.log, linked)
         notify(s.cond)
     end
 end
 
-event(call::Call, kind::Symbol, data::JObj) = Event(kind, call.id, string(call.program()["name"]), data)
-
-function watch_started(s::AIStream, call, inputs)
-    s.outer === nothing && (s.outer = call.id)
-    push_event!(s, event(call, :started, LMCC.jobj("parent" => call.parent,
-                                                   "inputs" => JObj(String(k) => logvalue(v) for (k, v) in pairs(inputs)))))
-end
-
-function on_text(s::AIStream, call, field, text)
-    answer = field == call.program()["answer"]
-    call.id == s.outer && answer && (s.answer_text *= text)
-    push_event!(s, event(call, :text, LMCC.jobj("field" => field, "answer" => answer, "text" => text)))
-end
-on_thinking(s::AIStream, call, text) = push_event!(s, event(call, :thinking, LMCC.jobj("text" => text)))
-on_tool_call(s::AIStream, call, id, name, input) =
-    push_event!(s, event(call, :tool_call, LMCC.jobj("id" => id, "name" => name, "input" => input)))
-function on_tool_result(s::AIStream, call, id, name, output)
-    call.id == s.outer && (s.answer_text = "")
-    push_event!(s, event(call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output)))
-end
-function on_retry(s::AIStream, call, reason, wait)
-    call.id == s.outer && (s.answer_text = "")
-    push_event!(s, event(call, :retry, LMCC.jobj("reason" => reason, "wait" => wait)))
-end
-function watch_ended(s::AIStream, call, value, err=nothing)
-    if err === nothing
-        push_event!(s, event(call, :done, LMCC.jobj("value" => logvalue(value), "julia_value" => value)))
-    else
-        push_event!(s, event(call, :failed, LMCC.jobj("error" => error_json(err, true))))
-    end
-end
-
 function start_stream(thunk)
-    s = AIStream(Event[], Threads.Condition(), false, false, nothing, "", nothing)
-    s.task = @async try
-        with(thunk, WATCHING => s)
+    s = AIStream(Event[], Set{String}(), nothing, Threads.Condition(), false, false, nothing, nothing, "", nothing)
+    # a task of its own on any thread (it inherits the caller's scoped settings and call): not
+    # pinned to the caller's thread, and it does not pin the caller's task to it
+    s.task = Threads.@spawn try
+        with(thunk, STREAM_OPENING => s)
     finally
         lock(s.cond) do
             s.finished = true
@@ -153,12 +106,14 @@ end
 
 An iterator over every event of the watched call, in order, as they happen:
 the calls inside it, text, thinking, tool calls and results, retries, and
-the end (`:done` or `:failed`). A new iteration starts from the first.
+the end (`:done` or `:failed`). A new iteration starts from the first. Each is a format 2
+[`Event`](@ref): `FunctAI.event_json(e)` is what a page or another process
+reads.
 
 ```julia
 s = stream(support, "Where is order A-1042?")
 for e in eachevent(s)
-    println(e.kind, " ", e.function)
+    println(e.seq, " ", e.kind, " ", e.function)
 end
 ```
 """

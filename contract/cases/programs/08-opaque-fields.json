@@ -1,0 +1,105 @@
+{
+ "description": "An opaque field (a type with no JSON form, such as a data frame) takes any value and is never checked; only the names are. Its values cannot cross a boundary that needs data. How a value is written in the log does not depend on the field: [1, 2] is written as JSON, a data frame as a description (calls.md, Values).",
+ "program": "module",
+ "interface": {
+  "description": "A pipeline over a data frame.",
+  "inputs": [
+   {
+    "name": "frame",
+    "shape": {},
+    "type": "pd.DataFrame",
+    "opaque": true
+   },
+   {
+    "name": "args",
+    "shape": {
+     "type": "array",
+     "default": []
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {},
+    "opaque": true
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:8e2ee2011730711de511df558cbd8509e6b164cc30bdf45d6c4b2b89b082bf45"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "frame": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    }
+   },
+   "expect": {
+    "inputs": {
+     "frame": {
+      "$type": "DataFrame",
+      "$repr": "   a\n0  1"
+     },
+     "args": []
+    }
+   }
+  },
+  {
+   "inputs": {
+    "frame": [
+     1,
+     2
+    ],
+    "args": [
+     3
+    ]
+   },
+   "expect": {
+    "inputs": {
+     "frame": [
+      1,
+      2
+     ],
+     "args": [
+      3
+     ]
+    }
+   }
+  },
+  {
+   "inputs": {
+    "args": []
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "frame"
+   }
+  },
+  {
+   "returned": {
+    "$type": "DataFrame",
+    "$repr": "   a\n0  1"
+   },
+   "expect": {
+    "outputs": {
+     "result": {
+      "$type": "DataFrame",
+      "$repr": "   a\n0  1"
+     }
+    }
+   }
+  },
+  {
+   "returned": null,
+   "expect": {
+    "outputs": {
+     "result": null
+    }
+   }
+  }
+ ]
+}

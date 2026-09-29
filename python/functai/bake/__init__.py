@@ -192,11 +192,8 @@ def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: 
     from . import heads
     from .examples import head_fields, head_layout, head_signature, input_plan, render_input, row_inputs
     from ..evaluation import rows_of
-    from ..signature import build_spec
 
-    s = fn._effective()
-    spec = build_spec(fn._fn, instructions=fn._current_state().instructions,
-                      include_fn_name=bool(s.get("include_fn_name_in_instructions")), reasoning=False, tools=False)
+    spec = fn._variant_spec(reasoning=False, tools=False)
     fields = head_fields(spec)
     signature = head_signature(spec, fields)
     layout = head_layout(signature)

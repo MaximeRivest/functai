@@ -167,6 +167,7 @@ answer, not a probability for each class.
 
 ```julia
 FunctAI.configure!(log_calls = true)        # every call is a line of JSON in a folder
+FunctAI.configure!(log_content = (transcript = false,))   # every value but that one; layers only remove
 p = predict(mood, "Arrived broken, but support was great.")
 rate(p, :right)
 rate(p; answer = mixed, note = "broken item, good help")   # a correction
@@ -190,10 +191,24 @@ for piece in stream(haiku, "the first snow")
 end
 
 s = stream(support, "Where is order A-1042?")
-foreach(println, eachevent(s))  # started, text, tool_call, tool_result, retry, done
+foreach(println, eachevent(s))  # started, request, text, tool_call, tool_result, retry, done
 fetch(s)                        # the typed answer, the same as calling
 close(s)                        # cancels the call
 ```
+
+Events are the call tree's log (contract format 2: `tree`, `writer`, `seq`,
+`after`, `at`), one numbering for a tree, which another process can replay
+and follow (`FunctAI.replay`, `FunctAI.Follower`). Receivers keep it while it
+is written, whether or not anyone streams the call:
+
+```julia
+with_settings(observers = [e -> println(FunctAI.event_json(e))]) do … end   # watching, best effort: the call never waits for it
+FunctAI.configure!(journal = FunctAI.Journal(store; required = true))      # keeping: waits at start, tools, end
+```
+
+Observers get the kept form (what `log_content` keeps, nothing more), each
+on a task of its own; `FunctAI.drain()` waits until they have had every
+event.
 
 ## Tools and programs
 
@@ -205,14 +220,24 @@ lookup_order(order::String) = …
     "Answer the customer, looking up their order."
 end
 
-@program function reply(ticket::String)             # code that calls AI functions:
-    triage(ticket).minutes > 60 ? escalate(ticket) : support(ticket)
+@program function reply(ticket::String; tone::String = "kind")::String   # code that calls AI functions
+    "Answer a support ticket."
+    triage(ticket).minutes > 60 ? escalate(ticket) : support(ticket; tone)
 end
+
+FunctAI.interface(reply)     # what it takes and gives, as JSON every language reads
 ```
 
 A tool is a Julia function: its arguments' types and its docstring tell the
 model how to call it. A program is one call in the log, with the AI calls
-it made as its children.
+it made as its children. Every program has an interface, read from its
+declaration (an untyped or `Any` argument is opaque; `outputs = (a = T, …)`
+declares several outputs) and checked on every call (`InterfaceError`). An
+AI function's input with a default may be left out: the default is in its
+interface and is sent, so it is data, a literal or a constant whose value
+cannot change (a computed default is refused when the function is
+defined). A call ends once every call made inside it has, at every depth;
+`FunctAI.detached` starts work meant to outlive it.
 
 ## Saving
 
@@ -221,7 +246,9 @@ FunctAI.save("saved/mood", better)                     # functai.json: any langu
 mood = FunctAI.load("saved/mood"; types = (result = Mood,))
 ```
 
-A saved folder holds shapes, not Julia types; `types` gives them back. A
+A saved folder holds shapes, not Julia types; `types` gives them back.
+`FunctAI.describe("saved/mood")` says what a saved program (a module too,
+from any language) takes and gives, without loading it. A
 function saved in Python, TypeScript or R loads here when it has no code of
 its own; what it cannot run is refused with a reason (`LoadRefused`).
 TypeScript and R load what Julia saves; Python does not yet.
@@ -233,6 +260,37 @@ TypeScript and R load what Julia saves; Python does not yet.
 - **`reasoning = true`** is Python's `module = "cot"` (`module` is a Julia keyword).
 - **A column keeps the answers it paid for**: a failed row is `missing`
   with a warning, where plain Julia would stop at the first error.
+- **An AI function's default is data**, not code run on each call as Julia
+  runs it: it is written in the function's interface and sent when the
+  input is left out, so it is a literal or a constant whose value cannot
+  change, and each call gets a copy. What is sent is the default's JSON
+  as the interface writes it, taken when the function is defined and never
+  made again from the value (a `Set` in the order it had, a struct as its
+  fields were; a value not of its input's type as Julia's `convert` makes
+  it one, when it can: `1.0` for an `Int` is `1`); the function's own code
+  gets a copy of that value. A `missing` default is sent as `null` (a `missing` given
+  is still `missing` out, with no call). A computed default (`since::String =
+  string(today())`), one that uses another input, or a constant `Vector`
+  is refused when the function is defined, rather than frozen at that
+  moment; give such a value at each call. A `@program`'s default that is
+  data is written in its interface too; any other stays Julia code and the
+  input is optional with no default in its interface (its record has no
+  value for it). Either way a program's code makes its defaults anew on
+  each call, as Julia does.
+- **A call ends after the calls made inside it.** A program that starts a
+  task calling an AI function and returns without waiting for it returns
+  once that call has ended (the log's last event is the program's end); work
+  meant to outlive it is started with `FunctAI.detached`.
+- **Observers run on tasks of their own**: a script that reads what an
+  observer collected right after a call first calls `FunctAI.drain()`. An
+  observer or a store that holds its thread without yielding (a blocking C
+  call, `Libc.systemsleep`) holds the calls on that thread too: with one
+  default thread, start Julia with `--threads=auto`, or make it yield. So
+  "a slow observer does not slow the call" holds here for an observer that
+  yields, not for every observer. An observer function is not given the
+  calls its own code makes; a Channel's reader is your task, which FunctAI
+  cannot tell apart, so a reader that calls an AI function on each event
+  feeds itself: call AI functions from an observer function.
 - **Code of your own is versioned by its parsed form**, not its text:
   reformatting or editing comments does not make a new version. A Julia
   function with code of its own never shares a version with another
@@ -254,7 +312,7 @@ TypeScript and R load what Julia saves; Python does not yet.
 From the repository, with lmcc and lm15-dev checked out beside it:
 
 ```bash
-julia/check                                     # the contract's data, then Pkg.test() (every contract case, the doctests)
+julia/check                                     # the contract's data, then Pkg.test() on 4 threads (every contract case, the doctests)
 julia/tutorials [docs/julia/0N-*.md ...]        # run the tutorials on real models, write their outputs (about 60 cents)
 julia --project=julia/docs julia/docs/make.jl   # the manual (Documenter), into julia/docs/build
 set -a; source ~/Projects/lm15-dev/.env; set +a

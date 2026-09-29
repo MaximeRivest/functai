@@ -1,0 +1,160 @@
+{
+ "description": "Every value kept, but objects this contract defines carry members the maker does not know: the error a detail, the program an owner, saw an entry of a kind it does not know. The error and the program keep only their known members; the unknown saw entry becomes {} (still an entry no reader knows, so what the call saw stays not known, but nothing of it is passed on).",
+ "kind": "kept",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "triage_build",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "owner": "Ana"
+   },
+   "inputs": {
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test."
+   },
+   "content": true,
+   "saw": [
+    {
+     "call": "01926c00-0007-7000-8000-000000000000"
+    },
+    {
+     "summary": "Ana is upset."
+    }
+   ]
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "triage_build",
+   "error": {
+    "type": "ProviderError",
+    "message": "503",
+    "code": "provider-down",
+    "detail": {
+     "body": "Ana: the build is re"
+    }
+   }
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "inputs": {
+    "transcript": true
+   },
+   "outputs": {
+    "result": true
+   }
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "triage_build",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test."
+    },
+    "content": true,
+    "saw": [
+     {
+      "call": "01926c00-0007-7000-8000-000000000000"
+     },
+     {}
+    ]
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "error": {
+     "type": "ProviderError",
+     "message": "503",
+     "code": "provider-down"
+    }
+   }
+  ]
+ }
+}

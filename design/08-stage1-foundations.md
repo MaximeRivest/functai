@@ -1,0 +1,1789 @@
+# 08 — Stage 1, foundations: the contract
+
+*Status, 2026-09-28: contract written on the branch `stage1-contract`
+(8f3f1d7), reviewed twice and corrected on `stage1-contract-v2`
+(52e701d), re-reviewed twice and corrected on `stage1-contract-v3`
+(ebe7725), reviewed a third time and corrected on `stage1-contract-v4`
+(236d838), reviewed a fourth time ("accept with minor fixes", no
+blockers) and given its last precision pass on `stage1-contract-v5`;
+not implemented. Builds on `06-surfaces-research.md` and
+`07-vignettes.md` (and the section "Maxime's answers" there, which
+binds). The contract text is the authority; this note says why it is
+what it is, what each implementer must build, and what is still open.
+Sections 1 to 4 describe the contract as it is now. The four sections
+near the end, **After review**, **After the second review**, **After
+the third review** and **Before implementation**, are the record of how
+it got here: every reviewer finding, and what was done about it. Where
+an older one says otherwise, sections 1 to 4 win. Every open question
+for Maxime is in the one list at the very end.*
+
+Stage 1 lays four foundations every later stage stands on:
+
+1. a call tree's events, as one log that a store can keep while it is
+   written, that a reader can follow and resume, and that a later writer
+   can continue after the first one stopped;
+2. every program declares its interface, so it can be described, served,
+   conversed with and checked without running it;
+3. a call records what it was shown (`saw`), so a turn can be asked
+   again later with each helper's memory as it was, and a reader knows
+   when it cannot be;
+4. per-input (and per-output) control of what the log keeps.
+
+All four are true foundations, and none of the reviews found a fifth
+that must come first (see *What is not here*). Two are one piece of
+work: once events are kept outside the process (1), they are a log, and
+obey the log's content rules (4): the *kept form*.
+
+## What changed
+
+| file | change |
+|---|---|
+| `contract/streaming.md` | format 2: `functai_event`, `tree`, `writer`, `seq`, `after` (a position: writer and seq), `at`; the `request` kind; law 8 (a writer's requests are its record's exchanges); replaying, resuming (`event-unknown`; another form starts again), following on positions (stale, duplicate, next, rewind keeping what was shown, loss); resuming in place only from a source that can give every held event as held; the kept form (unknown members of known objects left out); views; *Where each form can be read* (a later writer gives earlier writers' events only as kept); observers (they add up) and journals (one per tree; a host's holds against a program's own setting, a required one against every closer layer: `JournalError` `journal-policy`), the required journal's barriers and what happens when it does not confirm (`JournalError` `journal-barrier` / `journal-end`, naming its event; settling by position); *Continuing a log* (claims, fencing, a new request for a call in a request); the rules a store keeps (one step per log; claim, append with the writer checked first, batches, read); what a reader does with what it does not know |
+| `contract/programs.md` | new: the interface (closed), its signature (shapes without defaults), which interfaces are refused (form and meaning field by field; every program's when it is defined, an AI function's included), the vocabulary "fits" uses for every interface (annotation kinds, references that end and are matched whole; only a field's own `default` must fit; an AI function's other keywords carried, never read), code-point order for names, how each kind of program has one (AI functions' optional inputs with defaults, Python's `Any` opaque, `*args`/`**kwargs`) |
+| `contract/calls.md` | format 2: `omitted`, `program.interface`, `saw`, `request_hash`, `described`, `journal`; *Content* (only removes; added fields go together; `tools` is not a field; an error without content keeps `type` and `code` only); *Saw* (a context that changed; the turn an AI function's record stands for, with the showing plan's fingerprint, steps deferred to stage 5, modules to stage 3; what the log must keep to show a call again); `rated` rules 3 and 4 for kept and described values; *Versions* with the interface |
+| `contract/functions.md` | a definition's inputs may be `optional`, with a `default` in the shape; the signature's field leaves the default out |
+| `contract/saved.md` | nodes' `interface`; loading takes optional inputs from it; describing without loading; the schema before the interface's own rules |
+| `contract/README.md` | what a reader does with what it does not know (one table for everything); the refusal codes FunctAI defines (`journal-policy` among them); which cases each language passes |
+| `contract/schema/` | `event` (format 2 with `writer`, `after` a position or null, kinds open), `call` (format 2 with `described`, `journal`), `interface` (new, its own file), `saved` (refers to `interface`) |
+| `contract/cases/` | generators `programs.py`, `content.py`, `saw.py`, `events.py`, `schemas.py` new; `rated.py`, `saved.py`, `functions.py` extended; `make.py` writes 8 folders, checks every case against the schemas (their patterns read as ECMA-262 reads them) as it writes it, and runs every `events/` and `programs/` case back from its file through the rules; `README.md` new: what every key of every case file means, for harness writers |
+| `python/tests/test_contract.py` | the saved-manifest fixture loads the interface schema beside the manifest's (a registry): the only change outside `contract/` and `design/` |
+
+185 cases, 135 more than the 50 before stage 1 (see *Cases*).
+
+---
+
+## 1. A call tree's events: one log, kept, followed, continued
+
+### What the contract says (`streaming.md`)
+
+```json
+{"functai_event": 2, "kind": "text", "tree": "0192…a1", "writer": 1, "seq": 57,
+ "after": {"writer": 1, "seq": 56},
+ "at": "2026-09-28T10:00:03.120000Z", "call": "0192…b7", "function": "answer",
+ "field": "result", "answer": true, "text": "in Leeds"}
+```
+
+- **One log per call tree.** `tree` is the outermost call's id. `seq`
+  numbers the tree's events densely in the whole log. `after` is the
+  **position** (writer and seq) of the event before this one *in the
+  form being read*, or `null` for the first. A stream opened on an
+  inner call shows the same events with the same numbers (law 7).
+- **Writers.** `writer` is the number of the process that numbered the
+  event: 1, or the number a later writer got when it claimed the log.
+  A position, `(writer, seq)`, names an event in its tree; a `seq`
+  alone does not, and nothing compares one alone.
+- **`request` events.** A call's `request` and `retry` empty its fields.
+  Every view keeps both, so no view keeps text the call voided. The
+  `request` events a writer makes for a call are its record's exchanges,
+  in order.
+- **Forms.** The *whole* log exists only in the running process. The
+  *kept* form follows each call's `log_content`: no piece of a dropped
+  field, not even its size, and no thinking. A *view* (stage 3 names
+  them) leaves out events and values, never alters one, and keeps
+  requests and retries. What makes a form leaves out kinds and keys it
+  does not know, and members it does not know of the objects it knows
+  (an `error`, a `program`; an unknown `saw` entry becomes `{}`).
+- **Replaying, resuming, following.** A reader replays a form to get what
+  a live watcher of it saw. It resumes after an event named by its
+  position, and only when the source can give every event it holds as
+  it holds it: always for the kept form and views made from it; for a
+  *live* form (the whole log, a view made from it), only the process
+  that gave it every event it holds. Otherwise it starts again,
+  whatever the cursor: from a store, and after following across a
+  hand-over. A source that lacks the event says `event-unknown`, and the
+  reader starts again. A follower keeps a last event per tree. For each
+  event it receives, it drops stale and duplicate ones and takes the one
+  whose `after` is its last position. When a later writer names an
+  event the reader holds, it rewinds there, keeping what it was shown up
+  to it (values never kept included); otherwise it has lost events and
+  reads again. It stops at a format it does not know.
+- **Where each form can be read.** The process gives any form, while it
+  runs. A store gives the kept form and views made from it, nothing
+  else. A later writer has earlier writers' events only as kept, and
+  gives them only so.
+- **Observers and journals.** Observers get the kept form, best effort,
+  and add up over the layers. A tree has one journal. A program's own
+  setting cannot replace or remove a journal a host layer set, and no
+  closer layer can replace, weaken or remove a required one
+  (`JournalError` `journal-policy`, before the tree runs, recorded where
+  the host's layers say). Journals keep whole trees' kept logs with
+  conditional, answered appends, and come in two modes:
+  - *Best effort* (the default): the call never waits.
+  - *Required*: the call waits at three barriers: its start, before each
+    tool, and its end. The outcome is decided before the journal is
+    asked, and never changed by its answer. If the barrier at the start
+    or before a tool is not confirmed, the call stops with `JournalError`
+    `journal-barrier`. If the end is not confirmed, the caller gets
+    `JournalError` `journal-end`, which holds the outcome, names its
+    event by position and says `"refused"` or `"unknown"`, and the
+    record says the same. The last event is shown to readers only once
+    kept. The caller settles `"unknown"` by looking for that position in
+    the journal: a finished log may have been ended by another writer;
+    "not kept" is final once the caller has claimed the log (fencing the
+    writer).
+- **Continuing a log.** A later writer claims the log from the store,
+  which gives it the next writer number and the position of the last
+  kept event, and fences every earlier writer. It numbers on from that
+  event with the number its claim gave, reusing seqs of events never
+  kept (the writer number tells them apart). The next request number
+  comes from the kept `request` events; a call that was in a request
+  starts a new one.
+- **The rules a store keeps.** Each claim and each append is one step
+  per log (a compare-and-set); a store that cannot do that gives no
+  claims. Claim, append (malformed, fenced, duplicate, conflict,
+  after-end, gap, start: in that order), a batch (each event checked as
+  if alone; whole or nothing; the refusal names its event), read (never
+  fenced).
+
+### Decisions, and the alternatives an expert would weigh
+
+**Dense integers under one writer, not opaque cursors.** Kafka offsets,
+Redis stream ids and UUIDv7 per event were weighed. Dense integers give
+three things that opaque cursors lose, since FunctAI owns the writer.
+They let a reader detect loss (with `after`) and let a store make appends
+idempotent (same seq, same bytes). They also detect a second writer
+(same seq, other bytes). And they map onto Server-Sent Events' `id:`, as
+`writer` and `seq` together.
+
+**One log per tree, source positions in every form, `after` for each
+form's chain** (the first repair's choice, endorsed by both
+re-reviews). This is event sourcing's shape: one stream per aggregate,
+with projections over it. A view's positions do not change when the
+view's rules do (EventStoreDB's filtered subscriptions). `after` is the
+conditional-append position and the follower's loss check in any form.
+
+**Writer numbers, issued by the store (the second review's blocker).**
+The first repair let a later writer "number on from the last kept
+event". Both re-reviewers showed that this reuses `(tree, seq)`
+identities a live reader already holds. The reader drops the new events
+as duplicates and never sees the end. Three answers were weighed:
+
+- *Durable position allocation before publication* (Astra's first
+  option): reserve seq ranges in the journal before showing any event
+  live, so a number is never reused. Rejected: it puts a durable write
+  on the path of every live event. A best-effort journal that is down
+  would then stall live streaming, which "best effort never gets in the
+  way" forbids. And a reader holding events that were never kept still
+  has to learn that the log went on from an earlier point, so a reset
+  rule is needed anyway.
+- *A writer term chosen by the writer* (Opus's proposal, read
+  literally: "the last term + 1"). Written into the generator first,
+  this failed its own case (`store-10`). Two writers continuing at once
+  both pick 2, and the store cannot fence the loser. Worse, if their
+  first events are byte-identical (the clamped `at` makes that possible),
+  the loser's append is answered `duplicate` and both believe they own
+  the log.
+- *A writer number issued by the store* (chosen): a claim is an epoch
+  bump at the store, as Kafka's controller issues leader epochs and
+  Raft's vote issues terms. Numbers are unique per log. A claim fences
+  every earlier writer at once, even one still running whose next event
+  would fit the chain. Stage 2's lease is a policy on who may claim; the
+  mechanism is here.
+
+**The predecessor is a position, not a seq (the third review's blocker).**
+Once a later writer may reuse a seq, `after` must name the event it
+follows by the same identity events have. Raft's consistency check
+carries `prevLogIndex` *and* `prevLogTerm`; Kafka's divergence check
+(KIP-320) is keyed by the leader epoch, not the offset alone. With a bare
+seq, a reader that missed one event at a hand-over took another writer's
+event as the next, or rewound to an event of the wrong writer, and ended
+with a finished state no store holds (both reviewers reproduced it with
+the contract's own `follow`). `after` is now `{"writer", "seq"}` (or
+`null`), the same shape as a read's cursor and a claim's answer, so no
+implementation can compare half of it. The follower's rules are stated
+on positions: next when `after` is its last position; rewind only to an
+event it holds, named by a later writer; anything else a loss, which the
+source settles (`event-unknown` when it lacks the reader's last event).
+Weighed and rejected: inferring ancestry from `writer == last + 1`
+(claims can give numbers no event carries); a separate `after_writer`
+key (Opus's sketch: the same information, but two keys invite comparing
+one); rejecting every later writer's event at a follower and always
+re-reading (correct, but needs a store behind every follower).
+
+**Which forms a hand-over keeps.** A later writer read its predecessors'
+events from the store, so every form it gives is the kept log up to its
+claim, then its own events. A follower that stays live across the
+change keeps what it holds up to the event the later writer names: all
+of it happened, including values shown live and never kept, and the
+later writer starts a new request for any call that was in one, so no
+text is continued across writers. A reader that *resumes* from a later
+writer's process, or from a store, in a form other than the kept one is
+going on in another form, and starts again: a cursor names a place, not
+what the reader saw before it (Astra's S1: the old rule mixed forms when
+the cursor happened to exist in both). After the fourth review, this is
+stated by what the reader *holds*, not by its cursor's writer: a reader
+of a live form resumes in place only from the process that gave it
+every event it holds. A cursor of the later writer's own does not make
+the reader's earlier events reproducible (Astra's round-4 S1). And a
+rewinding follower's state is pinned: what it held up to the named
+event, then the later writer's events (Opus's round-4 S4). The stay-live
+reader keeps real history; the resuming reader ends where its source's
+form ends. Each has one answer.
+
+**The writer is checked before the duplicate** (Opus S1). A fencing
+token is checked before anything else the protected resource does
+(Kleppmann's fencing tokens, ZooKeeper's zxid). Answering a fenced
+writer's resend `duplicate` let it pass a required barrier and run a
+tool after another writer took over. Now it is refused, and learns what
+was kept by reading, which is never fenced.
+
+**Which forms can be resumed where.** Opus's second failure was a reader
+of a form the store cannot make (a live owner view showing a field that
+is never kept). Such a reader looped on "loss" for ever. The answer has
+two parts. First, name what a store can give: the kept form and views of
+it. Second, give a reader whose last event the store lacks a definite
+answer (`event-unknown`), so it starts again in a form the store gives.
+The reader loses what was shown live and never kept, which is exactly
+what retention promised.
+
+**The terminal outcome when an acknowledgement is lost (the second
+review's other blocker).** Uncertainty about a commit is not failure of
+the computation. The outcome (value or error) is decided before the
+journal is asked, and is recorded in the terminal event and in the call
+record. A required journal adds *confirmation*, which is confirmed,
+refused, or unknown:
+
+- *Refused*: the journal answered, and did not keep the event.
+- *Unknown*: no answer came; the event may be kept. The writer cannot
+  tell a lost answer from an append that never arrived; only the store
+  can.
+
+The caller gets `JournalError` (`journal-end`) holding the outcome. The
+record keeps the outcome and says `journal`. The terminal event is shown
+to readers only once kept (commit, then publish: the transactional
+outbox's rule), so no reader sees an end a store does not hold. The
+alternative, turning a lost acknowledgement into a failed call, is what
+Astra showed to be false: the store would say success while the caller
+and the record said failure. The writer cannot repair that, since the
+store rightly refuses a `failed` after a kept `done`.
+
+**Barriers: start, each tool, end.** Only the outermost call has start
+and end barriers. Appends are in order, so the tree's end covers every
+child. The tool barrier keeps the *fact* that a tool was asked for
+before it runs, so a watcher can later say "may have run". It is not a
+checkpoint: with content not whole, the kept `tool_call` has no input
+(Opus S2). The checkpoint a waiting turn resumes from is a separate
+record, stage 4's, with its own barrier before effects.
+
+**`at` on every event.** It costs about 35 bytes per event. It gives
+replay at the pace things happened, visible stalls, expiry by time, and
+self-describing events. Order is `seq`'s. `at` never goes back (a clock
+set back repeats the last time).
+
+**Forward compatibility, once for everything.** Opus S1 found the schema
+refusing event kinds the prose told readers to skip. The rule is now one
+table in `contract/README.md`. A reader that only reads skips what it
+does not know. Anything that decides what is kept, shown, accepted or
+replayed fails closed:
+
+- form makers leave unknown kinds and keys out;
+- `saw` readers refuse an entry they do not know;
+- interface readers refuse a key they do not know.
+
+This is X.509's critical extensions, and JSON Schema 2019's required
+vocabularies, applied per role instead of per key. Event kinds are open
+in the schema.
+
+### What Python and TypeScript must build
+
+- Events: `tree`, `writer`, `seq`, `after` (a position, or null), `at`
+  (clamped), the `request` event, pieces without `request`; one
+  numbering per tree shared by every stream opened in it; law 3 as
+  written (the answer so far empties at `request` and `retry`);
+  `tool_call.id` always set.
+- The kept form (`kept-*`), leaving out unknown kinds, keys, and members
+  of known objects; replay and follow over event dicts (`replay-*`,
+  `follow-*`: stale, duplicate, next, rewind, loss on positions, unknown
+  format; one state per tree; a rewind keeps what was held up to the
+  named event; `recover`: which process gave the reader's events decides
+  whether it resumes in place or starts again). A follower keeps the
+  events it holds (or its state after each), since it must rewind.
+- Observers and journals as settings (Python `observers=`, `journal=`;
+  TypeScript `observers`, `journal`), best effort and required,
+  combined over layers as `receivers-01` says. The writer's
+  confirm/resend loop, the three barriers, `JournalError`
+  `journal-barrier` / `journal-end` with `outcome`, `event` and
+  `journal`, the terminal event withheld from readers until confirmed,
+  and settling by position (`journal-*`).
+- An in-memory store with claim, append, batches and read (`store-*`),
+  each one step, so the rules are tested before stage 2's stores exist.
+- `JournalError` with its four codes; a refused tree's log given where
+  `receivers-01` says.
+
+R has no streaming yet; its events will be lists with these names. Julia
+streams: NamedTuples or structs with these field names, and
+`journal = j` as a keyword.
+
+---
+
+## 2. Every program declares its interface
+
+### What the contract says (`programs.md`)
+
+```json
+{"description": "Answer a customer's message.",
+ "inputs": [{"name": "message", "shape": {"type": "string"}},
+            {"name": "tone", "shape": {"type": "string", "default": "kind"}, "optional": true}],
+ "outputs": [{"name": "result", "shape": {"type": "string"}}]}
+```
+
+- **What an interface is.** Every program has one. An AI function's is
+  its definition's inputs and outputs, without the fields FunctAI adds.
+  An AI function's optional input always has a default in its shape: a
+  model is sent every input, and TypeScript's default is `null`. A
+  module declares its interface. In Python it is derived from the
+  function: `Any`, `object` and unannotated arguments are opaque, and
+  `functai.JSON` means any JSON.
+- **Keys.** The interface is closed: a key it does not name is refused,
+  not ignored. `opaque` is for values that may have no JSON form.
+  `optional` means an input may be left out; left out, it takes its
+  shape's default, or else stays out (never null).
+- **Its signature.** The signature is lmcc's fingerprint of the fields.
+  Each shape is taken *without its own `default`*, all plain and
+  untyped. It says what recorded data looks like, not what is accepted:
+  `optional`, `opaque`, defaults and words are not in it. It is the
+  record's `program.interface`.
+- **Checks.** A module checks its inputs before its code runs and its
+  outputs when it returns. "Fits" uses a listed vocabulary, for every
+  interface:
+  - `type`, `enum`, `const`, `anyOf`;
+  - the array, object, string-length and number-bound keywords;
+  - `$ref` into the shape's own `$defs`, which must end (a `$defs` entry
+    that comes back to itself by `$ref` and `anyOf` alone refuses),
+    written `#/$defs/<name>` with ASCII letters, digits, `_`, `.`, `-`, and matched
+    whole (no escapes, nothing after it);
+  - annotation words, never checked, each of its kind. Only a field's
+    own `default` must fit; one inside its shape is a word.
+
+  Integers are numbers with no fraction (counts too: `2.0` is `2`).
+  Equality is canonical JSON. Lengths count code points. In a module,
+  any other keyword refuses the interface; in an AI function, other
+  keywords are lmcc's, carried untouched and never read by FunctAI (a
+  default is checked by the listed keywords alone).
+- **Refusals.** Every interface is checked when its program is defined
+  (an AI function's after lmcc's own check) and when it is read from a
+  folder. Form and meaning are checked together, field by field.
+  The first field at fault is named. Among several unknown names, the
+  first in code-point order is named. For outputs, unknown keys are
+  checked before missing ones.
+- **Where it is written.** The interface is written in a saved node
+  (loading an AI function takes its optional inputs from it) and in
+  every record, as the signature. A module's version includes it.
+
+### Decisions, and the alternatives an expert would weigh
+
+**FunctAI's own definition form, not lmcc's field list, not ProgramIR's.**
+Borrowed from ProgramIR (D-036): the declared signature on a module
+node, checkability, and structural admission. Not borrowed: purposes in
+the interface, because a caller does not pass a `tools.calls` field.
+
+**Check both ends on every call.** An interface that is not enforced is
+documentation. The check costs a JSON conversion and a schema test.
+Lightness comes from `{}` and `opaque`: an undeclared module is refused
+only for its names.
+
+**Defaults are behaviour, not data** (Opus S4, the second review). The
+first repair kept `default` in the fingerprint, for lmcc parity. That
+split a program's records whenever a default changed, including a
+default computed when the program loads (a date), so ratings split per
+process. In JSON Schema a default is an annotation. Behaviour belongs in
+the version:
+
+- a module's default is in its version, through its interface;
+- an AI function's default is bound before the request, and the record
+  holds the value used;
+- lmcc never sees a default: the signature's fields drop it
+  (`functions/12`).
+
+*Cost:* two versions of a module that differ only by a default pool
+their ratings. That is right: the records say which value each call
+used.
+
+**A portable vocabulary for "fits"** (Opus S6). "Draft 2020-12" alone
+is not portable. TypeScript has zod; R and Julia have uneven validators;
+`format`, `pattern`, `multipleOf` and remote `$ref` differ between them.
+The expert choice is to name the keywords, say how each reads, and
+refuse the rest. The generator checks values by those rules and asserts
+that a 2020-12 validator agrees on every case. The keywords are the ones
+Python's `shape_of` and pydantic write, less the non-portable ones.
+
+*Cost:* a module annotated with a pydantic `constr(pattern=...)` refuses
+at definition. Declare it opaque, or use a plainer type. A later
+contract may add keywords, and older readers refuse them (fail closed).
+
+**The same vocabulary for AI functions, without the refusal** (Opus S4,
+the third review). An AI function's shapes go to lmcc and the provider
+(`pattern` and `oneOf` in a pydantic output are legitimate there), so
+refusing them would break ordinary AI functions. But checking their
+defaults with a full validator made "fits" depend on a regex engine.
+So FunctAI reads only the listed keywords everywhere; for an AI
+function the others are carried. A generator check asserts that every
+shape the vocabulary accepts is a valid 2020-12 schema.
+
+**Opaque stays out of the signature** (Astra S3). A field `{}` and an
+opaque field `{}` have one signature, and records from both pool. The
+danger Astra found was descriptions (`$type`, `$repr`) passing as data.
+It is closed where it matters, not by splitting identity:
+
+- records now name their descriptions (`described`);
+- `rated` leaves such inputs out (`no_content`, `rated/16`);
+- replay refuses them (`not-kept`, `saw/15`).
+
+An opaque field given `[1, 2]` recorded real data, and that pools
+correctly. A descriptor record in stage 2 must be keyed by the whole
+interface's hash (or the version), never by this data signature.
+
+**Optional inputs.** Omission is preserved for modules: the program's
+own default applies. AI functions must send something, so theirs always
+have a JSON default in the interface. That is what makes save → describe
+→ load → call with a left-out input send the same bytes in another
+language (`saved/16`'s `sends`).
+
+**The interface is closed** (Opus S1, on interfaces). A later key (a
+label for private data, question 1) may narrow what is accepted or say
+how a field is kept. An old checker that ignored it would fail open.
+
+*Cost:* an older reader cannot describe a newer interface until it
+learns the key.
+
+**Its own schema file** (Astra M3). It is a shared type: manifests,
+program objects, stage 2's descriptors and stage 3's served
+descriptions all use it. Python's saved-manifest test loads it through a
+registry now (one fixture changed).
+
+### What Python and TypeScript must build
+
+- `interface` on every program object; the module checks with the
+  vocabulary, refusals and orders above; records named by interface;
+  versions with it; `save` writes each node's interface; `describe(path)`.
+- Python: `Any`/`object` opaque for modules, `functai.JSON`; defaults
+  never in the lmcc signature; an AI function's interface checked by
+  `programs.md`'s rules at definition (an optional input with a non-JSON
+  default, or one its own shape refuses, refuses there: `programs/19`);
+  names and `$ref`s matched whole (`re.fullmatch`, never `re.match` with
+  `$`).
+- TypeScript: the breaking `module(name, { description?, input, output |
+  outputs, uses }, run)`; an optional AI input without `.default()` gets
+  `default: null` in its interface shape (not in its lmcc shape).
+- Pass `programs/*` (`binds` for AI cases, `checks` for modules,
+  `programs/19`'s refusal at definition), `functions/12`, `saved/*`
+  including `describe` and `saved/16`'s `sends`.
+
+R: `ai_program(reply ~ message, function(message) ...)`, unannotated
+arguments opaque until `types = list(message = "text")`. Julia:
+`@program`, `Any` opaque.
+
+---
+
+## 3. A call records what it was shown (`saw`)
+
+### What the contract says (`calls.md`, *Saw*)
+
+```json
+"saw": [{"saw_of": "<turn 3's call>"}, {"call": "<turn 3's call>"}]
+"saw": [{"call": "<t1>", "without": ["photo"]}, {"call": "<t2>", "steps": true, "slot": "helper"}]
+```
+
+- The earlier calls a call was given as context, in order, and how
+  each was shown:
+  - `steps`: with its own model and tool steps, never deeper calls;
+  - `without`: fields left out; with `steps`, never the tool calls;
+  - `slot`: the lmcc slot it was placed in.
+- `saw_of` as the first entry stands for everything that call saw, so a
+  whole conversation's records grow linearly. `[]` is "nothing"; absent
+  is "not recorded".
+- A call whose context changed between its requests writes
+  `{"context": "changed"}` last. Readers today say `unknown-key`, not a
+  list that is true only of the first request.
+- **Knowing** (the entries, `saw_of` expanded) is separate from the log
+  **keeping** what showing them again needs:
+  - the record exists, is not truncated, and holds the values shown, as
+    data (not descriptions);
+  - with `steps`: every exchange's request hash, and its reply when one
+    came;
+  - an entry no call can have been shown refuses `turn-invalid`.
+- **The turn an AI function's record stands for.** It is shown with a
+  plan whose `program.signature` (type names empty) equals the record's;
+  the turn carries that plan's own fingerprint, the one lmcc checks
+  (type names included). The inputs are the record's inputs, and the
+  outputs are the record's `outputs`, not `returned`. How exchanges
+  become steps is deferred to stage 5, with a list of what it must
+  settle. Until then, calls are shown without steps. A module's record
+  is not shown by this recipe (stage 3).
+
+### Decisions, and the alternatives an expert would weigh
+
+**Ids, not copies; `saw_of`, not id lists.** Copies grow with the
+square of a conversation's length (lmcc F7), and so do id lists under
+"the model sees the whole conversation". `saw_of` keeps it linear.
+
+*Cost:* one lost record hides every later turn's context
+(`missing-call`).
+
+**Absent means unknown.** Python's `stateful=True` shown history was
+never recorded. Reading absent as `[]` would replay without context,
+silently.
+
+**"Replay OK" renamed to what it proves** (Opus S7, Astra S2). The
+first repair reported `replay: ok` on retention alone. Astra showed
+three failures:
+
+- a record with its replies stripped passed;
+- a description of an opaque value passed as the value;
+- `without` on the tool-calls field with `steps` made a turn that lmcc
+  refuses (`turn-invalid`, reproduced with the real kernel).
+
+Retention, reconstruction and rendering are different operations. The
+cases now say `keeps`, check the replies, the request hashes and
+`described`, and refuse the invalid entry with lmcc's own word.
+
+The record-to-turn operation for steps is honestly deferred, with the
+exact list Opus gave:
+
+- which exchanges become model steps;
+- how each step's outputs are read;
+- where tool steps come from;
+- which lmcc `replay` mode writes them.
+
+Specifying it now would mean guessing FunctAI's retry transcript, which
+lmcc turns cannot hold (a retry's correction message is no step kind).
+Stage 5 must also check each rebuilt request against `request_hash`.
+
+**A context that changes mid-call** (Opus minor, compaction in agents).
+A writer that cannot describe the change must not write a list that is
+only true of the first request. An entry no reader knows makes every
+reader say "not known" today, without a format change.
+
+### What Python and TypeScript must build
+
+- `saw` on every record and `started` event (`[]` when none); Python's
+  `stateful=True` history as ids.
+- The reader (`saw/* read`): expansion, the four reasons, `keeps`.
+- The `shown` rule when conversations come (stage 2/3).
+
+R and Julia: records gain `saw` (`[]`) and `described`; the reader is a
+function over records, needed by their `rated` in stage 5.
+
+---
+
+## 4. What the log keeps, per input and output
+
+### What the contract says (`calls.md`, *Content*)
+
+- `log_content` can be:
+  - `true`;
+  - `false`;
+  - a map from field names to booleans, where `"*"` stands for the
+    fields the map does not name.
+- A value is written only when no layer drops it. The layers are the
+  program's own setting, blocks, `configure`, and the environment. The
+  environment's `0` drops everything; `true` never keeps what another
+  layer drops.
+- The fields FunctAI adds (`reasoning`, `calls`) go together, and go
+  whenever any field goes. `tools` is not a field: naming it in a
+  program's own map refuses.
+- A misspelt name in a program's own map refuses `log-content-field`.
+  In a host layer it cannot be checked; `"*": false` is the host's safe
+  list. A key that is not a name refuses everywhere, kept for labels.
+- **The record.** A record that does not keep every value:
+  - is format 2, with `content: false` and `omitted` naming the fields
+    not kept;
+  - keeps no exchange request, reply or request hash, and of each error
+    only `type` and `code`;
+  - keeps `sizes` whole.
+- **The event log.** The kept form of events follows the same decisions.
+- **Scope.** `log_content` is retention for watching. It is not
+  disclosure (live views) and not memory (conversation stores, stage 2).
+- **`rated`.** A call whose inputs were not all kept as data is left out
+  (`no_content`). A call that kept every input but not the answer makes
+  a row only from a correction.
+
+### Decisions, and the alternatives an expert would weigh
+
+**One setting, widened; per-field layering that only removes.** A size
+limit is the host's own policy. Per-field marks in the signature would
+put logging into the program's identity. Only-removes is what makes
+"the host owns policy" true: a program can ask for less, never for more.
+
+**Added fields go together** (Opus S5, Astra S1). Two rules were
+possible: an added field goes when a plain field goes (the old
+generator), or when any field goes (the old prose). An added field can
+quote another (a tool call can repeat the reasoning), so the
+conservative closure is the privacy rule, and it is the simpler one to
+state. *Cost:* a host that hides only the tool calls also loses the
+reasoning.
+
+**Format 2, not a widened `content: false`** (the first repair, both
+re-reviews agreeing). A format number is the only promise a reader in
+another language, years later, can check.
+
+**Drop every message when any value is dropped.** A request holds every
+input, and a reply or an error can quote any of them. Searching them for
+the dropped value is unreliable.
+
+*Cost:* such calls cannot be debugged from the log.
+
+### What Python and TypeScript must build
+
+- Maps with `"*"`, only-removes layering, added fields together, the
+  refusals; records as `content/*` expect; `described` and `journal` on
+  records; `rated` reads `omitted` and `described` (`rated/12` to `16`).
+
+R: `log_content = list("*" = FALSE, question = TRUE)`. Julia:
+`Dict("*" => false, "question" => true)`. Both read format 2 in `rated`.
+
+---
+
+## Cases, and which fail today
+
+Every case is written by a script from the rules and checked against the
+schemas as it is written. `make.py` run twice gives no difference. It
+also checks that the schemas refuse 22 leaking or contradictory objects
+(an `after` that is a bare seq, and a name with a newline after it,
+among them) and accept 3 a later writer may write, and it runs every
+`events/` and `programs/` case back from its file through the rules.
+`contract/cases/README.md` says what every key means.
+
+| folder | cases | who must pass them | fails today |
+|---|---|---|---|
+| `functions/` | 12 (`12` new) | every language | `12` wherever a language puts a default into its signature (Python passes; TS, R, Julia to be seen) |
+| `rated/` | 16 (`12`–`16` new) | every language | `13`–`16` in every language (format 2 not read yet) |
+| `saved/` | 16 (`12`–`16` new) | every language | `14` in TS, R, Julia; `16` where the loader ignores the interface; `describe` and `sends` have no harness |
+| `programs/` | 21 (`19`–`21` new in v5) | AI cases every language; others with modules | no harness yet |
+| `content/` | 20 | every language | no harness yet |
+| `saw/` | 16 | `read` every language; `shown` with replay | no harness yet |
+| `events/` | 67: `replay` 14, `follow` 17, `kept` 10, `store` 12, `journal` 13, `receivers` 1 | streaming languages; `store-*` with stores; `journal-*` and `receivers-*` with journals | no harness yet |
+| `scores/` | 17 | every language | unchanged |
+
+## What is not here, on purpose
+
+- **Stores, conversations, turns, `request_id`, leases, stopping a call
+  from another process**: stage 2. Everything here is shaped for them:
+  - a turn's log is keyed by its call id;
+  - claims give leases their mechanism;
+  - a store's rules are fixed.
+- **Knowing a writer is dead** (heartbeats, lease expiry): stage 2. Until
+  then an unfinished log is simply unfinished.
+- **Views and who chooses them; forwarding a child's field as a module's
+  answer; re-attributing a nested approval to the boundary**: stage 3.
+- **Approval events, tool effects, the resume checkpoint, a tool
+  invocation id unique within a call**: stage 4, as new kinds and keys
+  under the extension rule.
+- **Showing a call again with its steps**: stage 5.
+
+## Open questions for Maxime
+
+See the one list at the end of this note.
+
+## Trade-offs, in one list
+
+Everything the contract now costs, whichever review it came from:
+
+**Formats and compatibility**
+- Format 2: a format-1-only reader skips new records (its sums over a
+  tree miss them) until it learns format 2; every implementation reads
+  both.
+- `saw` is required in format 2; format-1 records stay unreplayable.
+
+**Events and logs**
+- Events are bigger: `functai_event`, `tree`, `writer`, `seq`, `after`,
+  `at` add about 190 bytes to every piece (`after` as a position costs
+  about 20 of them), and `request` events add one event per model
+  request.
+- A reader following a live form that shows values never kept loses them
+  if it must resume from a store, or from a later writer's process: it
+  starts again, whatever its cursor. After following across a hand-over,
+  every resume of a live-form reader is a full replay from the beginning,
+  even with a cursor of the current writer's, and it then shows less
+  than it showed a moment before.
+- A reader that misses events where a later writer took over cannot
+  recover from pushed events alone: it reads again from a source.
+- A follower must keep the events it holds (or its state after each) to
+  rewind: memory that grows with the log. A reader of the kept form may
+  read again from the beginning instead.
+- A live follower of a form with values never kept may end holding
+  values no replay of any source shows (what it was shown before a
+  hand-over). Two pages that watched one turn end the same only if both
+  stayed connected, or both resumed.
+- A live-form reader must track which process gave its events (in
+  practice: whether it has taken an event from a second process).
+- A later writer reuses the seq numbers of events never kept. Only
+  `writer` tells them apart, so any tool that indexes events by
+  `(tree, seq)` alone is wrong after a hand-over.
+- A claim fences the earlier writer even when it is still running.
+  Stage 2's lease must decide who may claim, or a careless claim stops a
+  healthy call.
+- Readers and stores skip or drop unknown kinds and keys: an older store
+  making views strips a newer writer's keys, and the members it does not
+  know of errors and programs; an unknown `saw` entry becomes `{}`, so
+  lineage in a kept form made by an older maker says "not known".
+- A fenced writer is refused even when it sends again an event the store
+  holds: it learns that the event was kept only by reading.
+- A store without an atomic compare-and-set per log (a shared folder
+  without locks, an object store without conditional writes) cannot give
+  claims, so it cannot be a journal a later writer continues from.
+- A batch holding one refused event keeps none of the events before it:
+  the writer must send those again.
+
+**Journals**
+- A required journal adds waits at a call's start, before each tool, and
+  at its end, and can make a call raise `JournalError`. A caller must
+  handle `journal-end` holding a good outcome.
+- The last event of a call with a required journal reaches readers only
+  once kept: one journal round trip of extra latency at the end.
+- A caller that got `journal-end` `"unknown"` must keep `err.event` to
+  settle it: a finished log alone does not say its outcome was kept.
+- A program cannot remove a host's observers, nor replace or remove any
+  journal a host set, best effort included: a program that sets its own
+  journal (or none) is refused under a host that set another
+  (`journal-policy`). A published program that sets a journal fails
+  under every host with a journal of its own; its author should use an
+  observer. A host's own layers keep "the closest decides" for
+  best-effort journals.
+- A program's own observer cannot be vetoed by the host (it gets the
+  kept form only: question 13).
+- A best-effort writer that is fenced still returns its outcome and
+  shows its end to its readers, while the kept log says what a later
+  writer did.
+- "Not kept" after `journal-end` `"unknown"` is final only after the
+  caller claims the log, which fences the writer and leaves the log
+  waiting for the claimant.
+
+**What the log keeps**
+- `true` in `log_content` never keeps what another layer drops. The
+  environment's `0` drops everything.
+- Any dropped field takes the reasoning, the tool calls, every request,
+  reply, request hash and error message with it: such calls cannot be
+  debugged from the log.
+- Per-field retention does not follow values: a value copied into a kept
+  field is kept (labels: question 1).
+- `sizes` still tell a dropped value's length.
+- A kept log shows no progress for a dropped field.
+- Observers get only the kept form.
+- Journals keep whole trees only.
+
+**Views**
+- Views must show requests and retries: an outside caller learns that a
+  request was retried.
+- A module's boundary view shows no reply while it is written (stage 3).
+
+**Interfaces**
+- Defaults are out of the signature: records of versions that differ
+  only by a default pool (the record says which value each call used).
+- A value with no JSON form never fits a non-opaque field: a Python
+  module annotated `Any` is opaque, and cannot be served until it
+  declares data.
+- Returned keys that are not declared outputs are refused.
+- Interfaces are closed: an older reader refuses a newer interface's key
+  instead of describing it.
+- Module shapes are limited to the listed keywords: `pattern`, `oneOf`,
+  `multipleOf` refuse.
+- An AI function's shapes may carry other keywords, which FunctAI never
+  reads: a default that a `pattern` would refuse is accepted, and stage
+  3's check of a served AI function's inputs will not enforce `pattern`
+  either (the provider's structured output may).
+- A `$defs` entry that loops through `$ref` and `anyOf` alone is refused
+  even when nothing names it.
+- AI functions' optional inputs must have a JSON default.
+- An AI function is refused at definition when its interface breaks the
+  rules: a Python AI function with a pydantic default its own
+  constraints refuse (pydantic does not check it) no longer defines.
+- A `default` inside a shape is never checked, and stays in the
+  signature: a pydantic model whose field default changes (a date
+  computed at import) changes the signature of every function using it,
+  and splits its records (question 14).
+- `$defs` names are ASCII letters, digits, `_`, `.` and `-` (every
+  name pydantic writes fits); an entry named otherwise cannot be
+  referred to.
+- A saved folder carries each AI node's interface beside its signature,
+  checked to agree.
+
+**Replay**
+- `saw` cannot yet show calls with their steps (stage 5), nor a
+  module's calls (stage 3). A call whose context changed mid-call is
+  "not known": `{"context": "changed"}` goes through the unknown-entry
+  path, so even which calls it saw becomes `unknown-key` (a stopgap
+  until a format of entry says how it changed).
+- A call continued by a later writer has no single record yet: each
+  writer's record holds its own exchanges (stage 4 joins them).
+- Opaque and any-JSON fields share a data signature; `described` keeps
+  descriptions out of rows and replays, but a descriptor must not be
+  looked up by that signature.
+
+**Merging**
+- This branch cannot merge alone. `rated/13`–`16`, `saved/14` and
+  `saved/16`, and `functions/12` where a language differs, fail until
+  each implementation follows (AGENTS.md: every implementation in the
+  same commit).
+
+## After review (2026-09-28)
+
+*History: the first repair's record (52e701d), kept as it was written.
+Sections 1 to 4 above describe the contract as it is now, and the next
+section says what changed after the second review; where this section
+differs (its "What Python and TypeScript must build now", its case
+counts, per-writer numbering, "replay"), they win.*
+
+Two reviews of 8f3f1d7: Codex Astra ("redo the affected foundations",
+delegation 42f9104f, with runnable counterexamples) and Opus ("accept
+with fixes", delegation fbd0cc3f). Both found real faults; where they
+agreed, they were right every time I checked. This section says what the
+corrected contract (branch `stage1-contract-v2`) does about each finding,
+where they disagreed and what I chose, what it costs, and what is left
+for Maxime.
+
+### What changed, in short
+
+- **The call log is format 2.** A record may keep some values and not
+  others (`omitted`, always present when `content` is false); every
+  record has `program.interface` and `saw`; `program.signature` is for
+  AI functions only; exchanges gain `request_hash`, and lose every error
+  message when content is not whole. Format 1 stays exactly as it was at
+  8cd4597 (the schema checks both).
+- **`log_content` only removes.** A value is written only when no layer
+  drops it; `FUNCTAI_LOG_CONTENT=0` drops everything; `"*": false` lets a
+  host list what may be kept. The fields FunctAI adds (reasoning, tool
+  fields) are fields of the call, and go whenever any other field goes.
+  `log_content` is about what is kept for watching, not what a reader
+  allowed to see a value is sent, nor what a conversation keeps.
+- **One log per call tree.** Events carry `tree` (the outermost call's
+  id), `seq` (dense in the whole log) and `after` (the event before it in
+  the form being read). Streams, the kept form and views are forms of one
+  log: an event has one name, `(tree, seq)`, everywhere.
+- **A `request` event**, which with `retry` is what empties a call's
+  fields. Every view keeps both (a retry without its reason), so a view
+  never keeps text the call voided. Pieces no longer carry `request`.
+- **The kept form** (was "the stored form") keeps no piece of a field it
+  does not keep, not even its size, and no thinking; `done.value` only
+  when every output it holds is kept.
+- **Observers and journals** instead of one kind of sink: observers are
+  best effort; journals keep whole logs, with acknowledged, conditional
+  appends (`after`), best effort or required (the call waits before its
+  first request, before each tool runs, and before it returns). A log is
+  unfinished until its end is kept, and a later writer may continue it.
+- **Interfaces**: the id is called the interface's *signature* and says
+  only what data looks like; an optional input left out stays left out
+  (never null); `opaque` fields (no JSON form) are told apart from `{}`
+  (any JSON); a return type is one output; returned keys that are not
+  outputs are refused; malformed interfaces are refused
+  (`interface-malformed`); saved AI nodes carry `interface`, checked
+  against their signature.
+- **`saw`**: knowing what a call saw is separated from being able to show
+  it again (`missing-call`, `not-kept`); entries gain `slot`; the schema
+  accepts entries a later writer adds; `steps` is never deeper calls; the
+  turn a `without`/`steps` entry stands for is defined and pinned.
+- **A capability matrix** in `contract/README.md` says which cases each
+  language must pass.
+
+### Every finding, and what was done
+
+Astra's findings:
+
+| id | finding | done |
+|---|---|---|
+| B1.1 | `done.value` of several outputs keeps an omitted output | `done.value` defined (an AI function's answer; a module's outputs) and kept only when every output it holds is kept (`kept-07`). The schema refuses a `done` with a value marked not whole. |
+| B1.2 | nested exchange error messages survive | Every exchange's `error.message` goes when content is not whole (`content/02`, `03`); the schema refuses it. |
+| B1.3 | implicit fields (reasoning, tools) have no rule | They are fields of the call: nameable in a map, and dropped whenever any other field is (`content/03`, `08`, `15`; `kept-08`). |
+| B2 | a mandatory best-effort sink blocks durable approval and restart | Observers (best effort) and journals (acknowledged, conditional appends; best effort or required, with barriers before the first request, before each tool runs and before the call ends; the writer keeps what is not acknowledged). "Unfinished for ever" is gone: a later writer may continue a log (`store-08`); fencing and ending are stage 2/4's. |
+| B3 | filtered streams: no coherent gap rule; stale text after a hidden retry | `after` on every event gives each form its own chain, so following detects loss in any form (`follow-*`); views must keep `request` and `retry` (`replay-08` to `11`; Astra's counterexample is `replay-10`); resuming is in the same form, from the reader's own state. |
+| B4 | the call format changes meaning without a bump | Format 2 (see *Disagreements*). |
+| B5 | the interface id does not identify behaviour; impossible optional inputs; saved AI descriptions lose `optional` | The id is the interface's *signature*, stated to be about data only (`programs/12`); omission is not null (an optional input with no default stays left out: `programs/06`); a default that does not fit is refused; AI nodes carry `interface`, checked (`saved/13`, `14`). |
+| S1 | hosts cannot enforce retention; retention conflated with transport | Only-removes layering; `"*"`; retention (kept form, call log) separated from disclosure (views, live delivery) and from conversation memory (stage 2). Non-transitivity stated in `calls.md`. |
+| S2 | `saw` is lineage, not a replay specification | Separate reading and replaying (`saw/10`, `11`); `without` with `steps` defined (`saw/12`, `13`); `slot`; one context per call stated; `steps` never deeper calls; `request_hash` on exchanges. |
+| S3 | `{}` means both any JSON and no JSON form | `opaque: true` (shape `{}`) for no JSON form; `{}` alone is any JSON; a value with no JSON form fits only an opaque field (`programs/08`, `09`). The stage-1 refusal `interface-untyped` is gone: stages 2 and 3 say how their boundaries refuse opaque fields. |
+| S4 | definition validity, refusal precedence, conformance coverage | `interface-malformed` with its order (`programs/11`); input and output check order in `programs.md`; the README's matrix. Harnesses per language are the implementations' work, not written here. |
+| minor | `at` never decreasing on a wall clock | `at` is the writer's clock when it numbers the event, clamped to never go back; order is `seq`'s. |
+| minor | "never refused" overclaims; resume vs reconstruct | "Refused only for its names"; resuming continues the reader's own state (said in *Replaying*). |
+| minor | case count | 55 new at 8f3f1d7 (fixed above); 81 now. |
+| vignettes | `tool_call` id nullable; child calls not linked to their tool invocation; disconnect vs cancel; "saved already" | `tool_call.id` is required (lmcc always has one). The tool-invocation link on a child's `started`, and a tool invocation id unique across a call's requests, are stage 4's (lmcc's `call_1` repeats across replies). A reader that stops reading changes nothing (*Closing*). "Saved already" needs a required journal's acknowledgement of `started`, plus stage 2's turn record. |
+
+Opus's findings:
+
+| id | finding | done |
+|---|---|---|
+| B1 | content fails open | Only-removes layering; environment `0` absolute (`content/05`, `06`, `07`). Misspelt names in host layers: `"*": false` (see *Disagreements*). |
+| B2 | the stored form covers conversation stores | `log_content` is about what is kept for watching; conversation stores get their own setting in stage 2, and must refuse, not forget, when the two cannot both hold. |
+| B3 | "unfinished for ever" forbids durable turns | Removed; a later writer continues after the last kept event; the next request number comes from the log's `request` events. |
+| B4 | gap detection contradicts views | `after` (see *Disagreements*). |
+| B5 | per-piece sizes leak | No piece of a dropped field is kept, not even its size; thinking is not kept; `tool_result` keeps no size either. |
+| S1 | name-based redaction does not follow the value | Stated in `calls.md`, *What it does not do*. Labels are a question for Maxime; map keys that are not names are refused now, kept for them. |
+| S2 | `program.signature` means two things | `program.interface` on every record; `signature` for AI functions only; `rated` compares interfaces (`rated/14`). |
+| S3 | sink scope undefined | Observers: every call in scope. Journals: the whole log of every tree whose outermost call starts in scope; a journal set only inside a tree warns (or, required, refuses `journal-scope`). A stream and a journal on one tree share one numbering. After a failed append: resend (idempotent); after `event-conflict`: stop for good. Observers never slow the call; required journals wait only at barriers. |
+| S4 | an outside view cannot show a module's reply as written; per-root numbering | The view rules no longer say "views only skip"; a module boundary shows `started` and `done` until stage 3 adds forwarding (`replay-12`). Per-tree numbering adopted. |
+| S5 | stores need a conditional append; order of checks | `after` is the expected position; the rules table has an order. |
+| S6 | `saw` slots; schema blocks new entry kinds | `slot`; the schema accepts any entry object (`saw/07`). |
+| S7 | knowing is not replaying; request hash | `not-kept`, `missing-call` on replay; `request_hash` only when content is whole. |
+| S8 | optional inputs contradict the check | Optional with no default stays left out; a default that does not fit is refused. |
+| S9 | `{}` two meanings; `interface-untyped` premature | `opaque`; refusal left to stages 2 and 3. |
+| S10 | several outputs undefined | A return type is one output; several are declared (`programs/10`). |
+| S11 | `done.value` leaks | As Astra B1.1. |
+| S12 | describing a saved AI function exposes its prompt | AI nodes carry `interface` (description, words, `optional`); old folders fall back, with a warning in `saved.md` not to show that to outside callers. |
+| S13 | amend the README's rule for widening | Not done: format 2 instead. |
+| minor | `rated/13` description | Fixed. |
+| minor | `omitted` presence | Present exactly when `content` is false (format 2); the schema says so. |
+| minor | when `at` is stamped | When numbered, clamped. |
+| minor | `tool_call` gets no size | Neither kind keeps a size now. |
+| minor | the interface schema's file | Not moved (see *Disagreements*). |
+| minor | `default` is in the id | Stated in `programs.md` and pinned (`programs/12`). |
+| minor | extra returned keys dropped silently | Now refused (`programs/07`). |
+| minor | prose wrapping, law 3, duplicate README row | Rewritten. |
+| minor | the R sketch says the input twice | See *For R and Julia* below. |
+| vignette 3 | turn id before the call | Stage 2 must mint the turn's call id when the turn is created. |
+
+The first worker's seven questions, as settled here: (1) host override:
+yes, as the rule itself (only removes); (2) a failing sink: best effort
+or required, chosen by the host; (3) program records in the log:
+`program.interface` now, the descriptor record in stage 2; (4) widening
+`content: false`: no, format 2; (5) checking outputs on every call: yes;
+(6) `interface` on AI nodes: yes; (7) `at` on every event: yes.
+
+### Disagreements, both positions, and what I chose
+
+**The call format.** Astra: bump to format 2; a format number is a
+promise, and the base schema rejects 9 of the 81 new records. Opus: widen
+`content: false` and amend the README's rule; old readers take the
+conservative path, the classic must-ignore evolution. *Chosen: format 2.*
+Opus's argument holds for one consumer (`rated`), not for every one: a
+reader that validates against the published format-1 schema rejects the
+records, and a reader that uses `content: false` to mean "safe to share,
+no values" would share values. A format number is the only promise a
+reader in another language, years later, can check. Maxime's standing
+rule (existing data keeps its meaning) and "development cost is not a
+constraint" both point the same way. *Cost: a format-1-only reader skips
+format-2 records, so its sums over a tree miss them until it learns
+format 2; every implementation must read both formats.* Format 2 was then
+used to tidy what a bump makes cheap: `omitted` always present when
+`content` is false, `program.interface`, `saw` required, `request_hash`.
+
+**Numbering.** Opus: one sequence per call tree, every stream a
+projection. Astra: either dense numbering per view, or source positions
+with an explicit cursor. *Chosen: one log per tree, dense in the whole
+log, source positions (`seq`) kept in every form, and `after` on every
+event.* This is Opus's structure and Astra's second option, made
+checkable. Per tree gives each happening one name everywhere (a stream
+opened inside a module and the tree's journal no longer hold two copies
+of one event under two numbers; stage 4 can refer to an event), one
+conflict domain per tree, and the event-sourcing shape (one stream per
+aggregate, projections over it). Source positions are what EventStoreDB's
+filtered subscriptions and Kafka offsets use: a view's positions do not
+change when a view's rules change. Dense per-view numbering was rejected:
+it needs a map from view position to log position in every store, and
+every view's numbers shift when its policy changes. Plain source
+positions without `after` lose loss detection in every form but the
+whole one; `after` restores it (a reader checks that each event comes
+after the last it has) and is exactly the expected position a
+conditional append needs. It also let the kept form drop events (pieces of
+a dropped field) without inventing placeholders, which fixed the size
+leak. *Costs: one integer more per event; a form of a log is no longer a
+per-event function (its `after` depends on what it left out before);
+a journal cannot keep only part of a tree (a journal set inside a tree
+warns or refuses); a stream opened on an inner call starts at a `seq`
+above 1.*
+
+**Retention, disclosure, memory.** Astra: separate retention (what is
+kept) from disclosure (who may receive a live value); a process boundary
+is not a retention boundary. Opus: scope the stored form to observability;
+a conversation store keeps what the conversation needs. *Chosen: three
+dimensions, each with its place.* Retention for watching is
+`log_content` (the call log, the kept form, observers, journals).
+Disclosure is a view (stage 3), applied to whatever a reader is sent,
+live or kept; the whole form leaves the process only through the stream
+its caller watches. Memory is a conversation store's own setting (stage
+2); when it and `log_content` cannot both hold (a transcript the host
+never keeps, in a conversation that must remember it), stage 2 refuses
+rather than silently forgetting (Maxime's answer 8). *Cost: observers get
+the kept form; a host that wants whole events live in another process
+forwards them from the stream it watches.*
+
+**Sinks and journals.** Both reviewers: "every failure warns" with
+"unfinished for ever" blocks vignette 4. Opus proposed a knob
+(`on_error="warn" | "fail"`); Astra a separate required, acknowledged
+path. *Chosen: two receivers.* A knob on one kind of sink would leave
+open what "fail" means (fail on which event? before or after the tool?);
+a required journal says when the call waits (barriers) and what the
+writer keeps. Stage 2's stores are journals.
+
+**Optional inputs with no default.** Opus: refuse at definition, or skip
+the fit check for the filled-in default. Astra: either preserve omission
+until binding, or require a valid portable default; keep host-native
+defaults. *Chosen: preserve omission.* Refusing would forbid ordinary
+Python (`def f(since: date = TODAY)`, a sentinel default) and TypeScript
+optional parameters; filling in null contradicts the shape. Left out
+means the program's own default applies and the record has no value, so
+asking again from the record leaves it out again: faithful. *Cost: the
+record of such a call does not say what value the program used.*
+
+**Per-piece sizes.** Opus: drop, or one size per field per request. Astra:
+at most one per field per request. *Chosen: none.* The call record's
+`sizes` gives the total; a size per request would need an event with no
+other purpose. *Cost: a watcher of a kept log cannot show a dropped
+field's progress.*
+
+**Misspelt names in host layers.** Opus: warn once per name that matches
+no field in a block. *Not done:* a block around many programs names
+fields most of them lack, so the warning is noise, or needs end-of-block
+bookkeeping that still says nothing when the block's one call is the
+wrong one. *Chosen instead:* `"*": false`, a list of what may be kept,
+which a misspelling can only narrow.
+
+**The interface schema's own file.** Opus: move it to
+`interface.schema.json`. *Not done:* Python's saved-manifest test loads
+`saved.schema.json` without a registry; a `$ref` to another file would
+turn it red for a reason that is not the contract's. It stays in
+`saved.schema.json` `$defs/interface` (make.py checks against it there).
+Worth moving with the Python implementation of stage 1.
+
+**Returned keys that are not outputs.** The first draft dropped them
+silently; Opus asked to say why. *Changed: refused*, like an input the
+interface lacks. A key that is not an output is a mistake (a misspelt
+output name), and several outputs are always declared, so this never
+costs a light prototype anything.
+
+### Trade-offs, in one list
+
+- Format 2: a format-1-only reader skips new records (their sums miss
+  them) until it learns format 2; every implementation reads both.
+- `true` in `log_content` never keeps what another layer drops; a
+  program cannot insist on being logged. The environment's `0` drops
+  everything, for every program.
+- Any dropped field takes the reasoning, every request, reply, request
+  hash and error message with it: such calls cannot be debugged from the
+  log.
+- Per-field retention does not follow values: a value copied into a
+  kept field is kept (stated, not solved; labels are a question below).
+- `sizes` still tell a dropped value's length.
+- Observers receive the kept form only.
+- A kept log of a dropped field shows no progress for it; a watcher sees
+  requests and the end.
+- A journal keeps whole trees only; one set inside a tree warns or, when
+  required, refuses.
+- A required journal can stop a call (`JournalError`), and adds a wait
+  before the first request, before each tool and at the end.
+- Views must show a call's requests and retries (without reasons): an
+  outside caller learns that a request was retried.
+- A module's outside view shows no reply while it is written (until stage
+  3).
+- One integer (`after`) more on every event; `request` events add one
+  event per model request.
+- The interface's signature includes defaults (lmcc parity): changing a
+  default changes it.
+- An optional input left out with no JSON default has no value in the
+  record.
+- A value with no JSON form never fits a field that is not opaque: a
+  Python module annotated `Any` must say opaque (or be unannotated) to
+  take a data frame.
+- Returned keys that are not declared outputs are refused.
+- A saved folder carries each AI node's interface twice (once in its
+  signature's fields), checked to agree.
+- `saw` in format 2 is required; format-1 records stay unreplayable.
+- `request_hash` on exchanges only when content is whole.
+- The interface schema stays inside `saved.schema.json`.
+- This branch cannot merge alone: `rated/13`, `14`, `15` fail in every
+  language and `saved/14` in TypeScript, R and Julia, until each
+  implements format 2 and the interface check (AGENTS.md: every
+  implementation in the same commit).
+
+### What later stages must provide (and this contract does not block)
+
+- **Stage 2 (stores, conversations).** An `append(tree, events)` that is
+  atomic per batch and conditional on the first event's `after` (the
+  rules table), acknowledged with a declared durability (memory, a
+  process, fsync); `read(tree, after)` and a way to be told of new
+  events (`watch`, or `subscribe`); a turn's call id minted when the turn
+  is created, before the call; a turn-to-predecessor record
+  (`started.parent` is the call tree's parent, not the conversation's
+  previous turn); `request_id` deduplication; writer leases or tokens,
+  and who may end a log another writer left unfinished; stopping a call
+  from another process; the conversation store's own retention setting,
+  and its refusal when `log_content` forbids what a conversation must
+  remember; a program descriptor record (the interface a
+  `program.interface` names), so a reader of the log can build a form.
+- **Stage 3 (serving, views).** Named views and who chooses them; how a
+  module says that a child's field is its output as it is written (or
+  that its boundary is buffered); refusals for opaque fields at a
+  boundary; a remote call's place in the caller's tree.
+- **Stage 4 (tools, approval).** A tool invocation id unique within a
+  call (lmcc's ids repeat across replies), carried by the child calls a
+  tool makes; approval events; which tools need a required journal's
+  barrier; "may have run" after a crash; the writer that resumes a
+  waiting turn continues its log.
+- **Stage 5 (`rated` with `earlier`).** Replaying from `saw`, using the
+  `shown` rules and refusing with `missing-call` / `not-kept`.
+
+### What Python and TypeScript must build now (replacing sections 1–4's lists)
+
+- Write call records in format 2 (`omitted`, `program.interface`,
+  `program.signature` for AI functions only, `saw`, `request_hash`);
+  read formats 1 and 2 (`rated`: `interface`, rule 3's matching, skip
+  unknown formats: `rated/13` to `15`).
+- `log_content` maps with `"*"`, only-removes layering over every layer,
+  fields FunctAI adds, and the record of `content/*`.
+- Events: `tree`, `seq`, `after`, `at` (clamped), the `request` event;
+  retry and request empty fields; `tool_call.id` always set; one
+  numbering per tree shared by every stream opened in it; the kept form
+  (`kept-*`); replay and follow over dicts (`replay-*`, `follow-*`).
+- Observers and journals (settings; best effort and required; barriers;
+  resend; stop on conflict); `store-*` with an in-memory journal.
+- Interfaces: `opaque`, omission, several outputs declared, refusal of
+  undeclared returned keys, `interface-malformed`; `interface` on every
+  program object and on every saved node, checked at load
+  (`programs/*`, `saved/13`, `14`, `15`, `expect.describe`).
+- `saw`: the reader (`read` cases) and, when conversations come, the
+  `shown` rules.
+
+**For R and Julia** (they shape the design now, implement later): R
+reads format 2 in `rated` and writes it; `log_content = list("*" =
+FALSE, question = TRUE)` spells a host's list (the name `*` needs quoting
+in R, and in Julia a `Dict("*" => false, "question" => true)` or
+`var"*"`; each may offer a plainer alias for that list). R's module sketch in section 2
+said its input twice; a better one lets the formula carry names and the
+function carry code, with shapes from a type map only when given:
+`support <- ai_program(reply ~ message, function(message) ...)`, an
+unannotated R argument being opaque until a type is given
+(`ai_program(..., types = list(message = "text"))`). Julia's `@program`
+derives opaque from an untyped argument (`Any`).
+
+### Cases: what changed, and what fails today
+
+131 cases (81 more than the 50 before stage 1: `content/` 16, `events/`
+32, `programs/` 12, `saw/` 13, `rated/12` to `15`, `saved/12` to `15`).
+Every case is written by the generators from the rules; `make.py` run
+twice leaves no difference; every case passes its schema; `make.py` also
+checks that the schemas refuse 14 leaking or contradictory objects.
+
+Cases whose meaning changed on purpose: every `content/`, `events/`,
+`programs/` and `saw/` case (none had a harness); `rated/12` and `13`
+(their records are format 2; 13's description corrected); `saved/01` to
+`11` (their AI nodes now carry `interface`, and `05`'s describe reads the
+signature as an old folder's must). `rated/01` to `11`, `functions/` and
+`scores/` are byte for byte what they were at 8cd4597.
+
+Observed (2026-09-28, this branch):
+
+| language | result | failing, all new cases |
+|---|---|---|
+| Python | 320 passed, 3 failed | `rated/13`, `14`, `15` |
+| TypeScript (`npm test`; `npm run check` passes) | 100 passed, 4 failed | `rated/13`, `14`, `15`, `saved/14` |
+| R (`r/check`, with `LD_LIBRARY_PATH` pointing at nixpkgs' curl for `libcurl.so.4`) | 400 expectations, 6 failed, 1 error | `rated/13`, `14`, `15`, `saved/14` |
+| Julia (`julia/check`) | 392 passed, 6 failed | `rated/13`, `14`, `15`, `saved/14` |
+
+`tools/crosslang.py` and `./check` as a whole were not run (the latter
+stops at the first red step, which is expected here).
+
+### Questions for Maxime
+
+Carried into the one list at the end of this note (questions 1 to 5
+there).
+
+---
+
+## After the second review (2026-09-28)
+
+Two re-reviews of 52e701d, both "accept with fixes": Opus (delegation
+1c295283, `probes-critic.py`) and Codex Astra (delegation 8f89531a,
+`probes-independent.py`). The parent reproduced every failure they
+reported. Both endorsed the architecture:
+
+- format 2;
+- one log per tree;
+- `request` events;
+- observers versus journals;
+- `log_content` that only removes;
+- `opaque`;
+- lineage versus replay.
+
+That architecture is kept. This section maps every finding to what was
+done, says where I disagreed and why, and lists the costs and the
+questions. The branch is `stage1-contract-v3`. Sections 1 to 4 above
+describe the result.
+
+### The blockers
+
+**Opus B1 / Astra B1: event identity across a writer hand-over.** Both
+showed a later writer "numbering on from the last kept event" reusing
+`(tree, seq)` identities a live reader holds, with the reader dropping
+the new events as duplicates and never seeing `done`. Opus also showed a
+reader of a form the store cannot rebuild looping on "loss" for ever.
+Done:
+
+- `writer` on every event, so identity is `(tree, writer, seq)`.
+- Writer numbers are *issued by the store* through a claim, which fences
+  every earlier writer at once. See section 1 for why this beats both
+  proposals as literally stated: the writer-chosen term failed its own
+  race case in the generator.
+- A follower **rewinds** when a later writer's `after` is below its
+  last event, and drops **stale** events of earlier writers.
+- *Where each form can be read*: a store gives the kept form and views
+  of it; a read after an event it lacks refuses `event-unknown`, and the
+  reader starts again.
+- Where the next request number comes from is now in `streaming.md`.
+- Cases:
+  - `follow-03`: Opus's hand-over;
+  - `follow-04`: Astra's unacknowledged tail, and a stale event;
+  - `store-07`: the livelock, now `event-unknown`;
+  - `store-08`: claim, fencing, and a late event that fits the chain,
+    refused;
+  - `store-10`: two claims.
+
+**Astra B2: the terminal outcome when an acknowledgement is lost.** Done:
+the required-journal state machine in `streaming.md`.
+
+- The outcome is decided first, and never changed by the journal.
+- The confirmation is confirmed, refused, or unknown.
+- A barrier not passed makes the outcome `JournalError`
+  `journal-barrier`.
+- An end not confirmed raises `JournalError` `journal-end`, holding the
+  outcome.
+- The record keeps the outcome and says `journal`: `"refused"` or
+  `"unknown"`.
+- The terminal event is shown live only once kept.
+
+A deterministic fault script pins it: `journal-01` to `10`, each giving
+the caller's result, the record, the store's log, what readers were
+shown, and every append attempt. Among them are the three cases Astra
+asked for:
+
+- fail before commit, refused (`02`) and with no answer (`04`);
+- commit, then lose the acknowledgement (`03`, and `05` where a resend
+  answers duplicate);
+- a lost final acknowledgement on an already failed call (`06`).
+
+### Should-fix, Opus
+
+| id | finding | done |
+|---|---|---|
+| S1 | event `kind` closed in the schema while prose says readers skip; decide the extension policy once | Kinds open in the schema (any identifier); one table in `contract/README.md`. Readers skip; form makers leave out unknown kinds and keys (`kept-09`); `saw` readers refuse; interfaces are closed and refuse (`programs/11`); unknown formats stop a reader (`follow-07`); unknown kinds take their place (`replay-14`, `follow-06`). |
+| S2 | the tool barrier promises inputs the kept form drops; the journal is not the checkpoint; stage 2's store called a journal | `streaming.md` now says a journal is the watching log, and that conversation memory (stage 2) and the resume checkpoint (stage 4) are separate records under their own retention. The tool barrier is kept, but described as what it is: the fact of the request, so "may have run" can be said. The stage-4 checkpoint (lmcc steps, provider items, tool outputs as parts, invocation ids) is in *What later stages must provide*. "Stage 2's stores are journals" is gone. |
+| S3 | opaque logging prose against cases | `programs.md`: `opaque` governs checking and boundaries; how a value is written depends on the value (`calls.md` *Values*, `programs/08`'s description). |
+| S4 | defaults in the data signature split ratings | Defaults are left out of the interface's signature and out of lmcc's signature (`programs/12` with a date default, `functions/12`). A module's defaults stay in its version through its interface. |
+| S5 | added-field rule: prose against generator | The prose's rule (any field dropped drops every added field), in the generator too. Tools cases: `content/17`, `18`. `tools` is not a field (`content/19`). |
+| S6 | "fits" not portable | A listed vocabulary with each keyword's reading. Anything else refuses. The generator checks by those rules, and asserts that a 2020-12 validator agrees (`programs/14`, `11`). |
+| S7 | record → turn unspecified | The turn's signature, inputs and outputs are fixed. The steps operation is deferred to stage 5 with Opus's list, and readers show no steps until then. The result is renamed `keeps`, since it proves retention only. |
+| S8 | "first unknown" depends on map order | Code-point order; unknown names before anything else; outputs: unknown keys, then each output in order (`programs/15`). |
+| S9 | design/08 sections 1–4 still describe the old design | Rewritten (above). |
+| minor | "never changes one" too strong | "Never alters a value it shows, never invents one". Re-attribution is left to stage 3. |
+| minor | follower state per tree | Stated; `follow-08`. |
+| minor | an inner stream's first `after` is 0 | Law 7 says so; `follow-05`. |
+| minor | store table: malformed rows; unreachable "seq less than it" | Schema-invalid and wrong-tree appends are `event-malformed`; the unreachable clause is removed. **Not done**: refusing a first `started` with a non-null `parent`. A tree's outermost call may have a parent in another process (stage 3's remote call; the call log already allows dangling parents). |
+| minor | "take and give the same data" overclaims | "Record the same data". |
+| minor | `request` events and exchanges | Law 8: the *n*th request is the *n*th exchange. |
+| minor | context that changes between requests | `{"context": "changed"}` as a last entry (`saw/14`). |
+| minor | refusal codes registry | `contract/README.md`, *Refusal codes FunctAI defines*. |
+| minor | `**kwargs` mapping | `programs.md`. |
+
+### Should-fix and minor, Astra
+
+| id | finding | done |
+|---|---|---|
+| S1 | added-field retention: prose against generator | As Opus S5. |
+| S2 | "replay OK" stronger than the evidence; `without` + `steps` can make an invalid turn | `keeps` checks: with `steps`, the replies and request hashes; values that are descriptions refuse. An entry leaving out the tool calls with steps refuses `turn-invalid`, lmcc's word, and I reproduced lmcc's refusal with the real kernel (`saw/15`, `16`, probe A7). The record → turn step is deferred as in Opus S7. **Not done**: a full "record → normalized turn → rendered request" case. That operation is the one deferred: writing a case for it now would fix FunctAI's retry transcript in a form lmcc turns cannot hold. |
+| S3 | opaque and JSON share a data signature, so descriptions pool as data | **Partly, and differently.** `described` on records; `rated` leaves described inputs out and gives nothing for a described answer (`rated/16`); replay refuses them (`saw/15`). The signature stays blind to `opaque`, by decision (section 2): an opaque field that received JSON recorded real data. Descriptors in stage 2 must be keyed by the full interface or the version. |
+| S4 | optional metadata preserved in isolation, not end to end | A definition's inputs carry `optional`, with the default in the shape. An AI function's optional input must have a default. Loading takes both from the interface. `saved/16` pins save → describe → load → call with the input left out, and with it given (`sends`). `programs/13` pins the binding. The no-default case is a module's only (`programs/06`); explicit null is checked like any value. |
+| M1 | structural against semantic refusal precedence | Form and meaning are checked together, field by field, naming the first field at fault, in both the rules and the generator (`programs/11`, including a form fault after a meaning fault). For a saved folder, the manifest's schema comes first (`saved-malformed`), in both loading and describing. **Not added**: a saved case whose manifest fails the schema. Python's harness asserts that every saved manifest passes the schema, so it would turn red for a harness assumption rather than a contract fault; the order is in `saved.md` and the generator's `describe`. |
+| M2 | cursor advancement over unknown kinds; unknown formats | A reader takes the place of an unknown kind; an unknown format stops it (`follow-06`, `07`). |
+| M3 | keep the interface schema independent | Done: `schema/interface.schema.json`. Python's saved-manifest fixture now uses a registry: the only change to a language folder. |
+
+### Where I disagreed, or chose between the reviewers
+
+- **Writer terms: issued by the store, not chosen by the writer.** The
+  literal form of Opus's fix (the last term + 1) cannot fence two
+  concurrent continuers. My first cut failed `store-10` exactly so. The
+  claim keeps Opus's structure (terms, fencing, rewind) with Kafka's
+  and Raft's issuance.
+- **Durable allocation (Astra's first option): rejected** as the
+  primary mechanism. It makes live delivery wait on a journal, and still
+  needs the rewind rule.
+- **The tool barrier: kept** (Astra Q3), against Opus's "move it to
+  stage 4". Its meaning is narrowed to the fact of the request (audit,
+  "may have run"). The effect-safety barrier belongs to stage 4's
+  checkpoint, as Opus said.
+- **Added fields: the conservative closure** (Astra), not Opus's
+  "plain fields only".
+- **`opaque` stays out of the signature** (against the letter of Astra
+  S3). Eligibility, not identity, keeps descriptions out, and the stage-2
+  descriptor must not be addressed by the data signature.
+- **A non-null `parent` on a log's first event is allowed** (against
+  Opus's minor): remote calls in stage 3.
+- **No full record → turn → render case yet** (against Astra S2's last
+  request): the operation is deferred, not half-specified.
+
+### Cases that changed meaning on purpose
+
+- **Every `events/` case**: `writer` on events; follow cases now give
+  `results` and `state`; store cases give `steps` and `reads`.
+- **`programs/01` to `04`**: the new `binds` key.
+- **`programs/06`, `07`, `08`, `11`, `12`**: new orders, the vocabulary,
+  defaults out of the signature.
+- **`saw/01` to `11`**: `replay` renamed `keeps`, with stricter checks.
+
+`rated/01` to `15`, `saved/01` to `15`, `functions/01` to `11`, `scores/`
+and `content/01` to `16` are byte for byte what they were at 52e701d.
+
+New cases (31):
+
+- `content/17`–`19`;
+- `events/follow-03`–`08`, `journal-01`–`10`, `kept-09`, `replay-14`,
+  `store-10`;
+- `functions/12`;
+- `programs/13`–`15`;
+- `rated/16`;
+- `saved/16`;
+- `saw/14`–`16`.
+
+### Trade-offs taken in this repair
+
+All are in the list after section 4. These are new:
+
+- Identity is `(tree, writer, seq)`: a tool keyed by `(tree, seq)` alone
+  is wrong after a hand-over.
+- A claim fences a running writer: the lease (stage 2) must decide who
+  may claim.
+- Resuming a live-only form from a store starts again in the kept form.
+- A required journal's end is shown one round trip later. A caller must
+  handle `JournalError` `journal-end` holding a good outcome, and the
+  record says `journal` beside a successful outcome.
+- Two module versions that differ only by a default pool their ratings.
+- Pydantic `pattern`, `oneOf` and `multipleOf` refuse a module
+  interface.
+- Interfaces are closed: an older reader refuses a newer key.
+- An AI function's optional input needs a JSON default (TypeScript's
+  becomes `null` in its interface).
+- Dropping `calls` drops the reasoning, and the other way round.
+- Showing calls with steps waits for stage 5.
+
+### What later stages must provide (additions)
+
+- **Stage 2.**
+  - Leases on claims: who may claim, and when a writer counts as stopped.
+  - Durability declared per store.
+  - A descriptor record keyed by the program's version, or by a hash of
+    the whole interface, never by `program.interface` alone.
+  - Conversation memory as its own record, under its own retention.
+- **Stage 3.**
+  - Views that forward a child's field as a module's answer, or
+    re-attribute a nested event to the boundary.
+  - `media` in the vocabulary.
+- **Stage 4.**
+  - The resume checkpoint: lmcc's current-turn steps with provider
+    thinking and signature items, tool outputs as parts, tool invocation
+    ids unique within a call and carried by child calls, what each tool
+    was given, and "may have run".
+  - Its own barrier before effectful tools.
+- **Stage 5.** The record → turn operation with steps, checked against
+  `request_hash`.
+
+### Questions for Maxime
+
+Carried into the one list at the end of this note (questions 6 to
+10 there).
+
+---
+
+## After the third review (2026-09-28)
+
+Two reviews of ebe7725, by Opus (delegation 1f0756d1,
+`probes-critic-v3.py`, `fix-sketch-after-writer.py`) and by Codex Astra
+(delegation 51ba8544, `probes-round3.py`, `probes-additional.py`). Both
+kept the architecture. Both found the lost-acknowledgement outcome
+solved. Both found the same blocker, independently: `after` named a
+bare `seq` while an event's identity had become its writer and seq.
+The branch is `stage1-contract-v4`; sections 1 to 4 above describe the
+result. Their probes, adapted to the new API with every adaptation
+commented, run 17 of 17 fixed (`probes-v4.py` in delegation 942d1f80's
+output).
+
+### The blocker (Opus B1, Astra B1)
+
+**Done.** `after` is a **position**, `{"writer", "seq"}`, or `null` for
+a form's first event, in every form: the whole log, the kept form,
+views, an inner stream, observers' feeds. A claim answers `{"writer",
+"after": position}`, and the later writer's first event carries that
+position. Store reads name positions and answer positions. The
+follower's rules are restated on positions (`streaming.md`, *Following
+a log*):
+
+- next: `after` is its last position;
+- rewind: a later writer names an event it holds (or `null`);
+- anything else is a loss, which the source settles.
+
+Nothing infers ancestry from writer numbers: the text says why (claims
+give numbers no event carries; a reader may miss a whole writer). The
+store also refuses an `after` naming a later writer than the event's
+own (`store-09`). The schema refuses a bare-integer `after`.
+
+New cases, one per trace the reviewers reproduced. Each is asserted in
+the generator to end where the store ends. `probes-v4.py` asserts that
+each ends somewhere else under the old rule.
+
+- `follow-09`: one hand-over, one missed event (Opus P4);
+- `follow-10`: a missed range (Opus P1), whole-log reader, recovering
+  in another form;
+- `follow-11`: two hand-overs, where a bare seq said "next" (Astra; Opus
+  P2);
+- `follow-12`: two hand-overs, where a bare seq said "rewind" (Astra);
+- `follow-13`: a view that first shows the later writer after a hidden
+  event (Astra's view point).
+
+Follow cases gained an optional `recover`: the reader reads again from
+a source holding given events, in the same form (after its last event,
+then from the beginning on `event-unknown`) or in another form (from
+the beginning at once). The branch the old generator only asserted
+("does not have `after` itself: start again") is now a result: a loss,
+then recovery (Opus's third case request).
+
+**One consequence I had to settle that neither review spelled out:
+which forms survive a hand-over.** A later writer read its
+predecessors' events from the store. So every form it gives is the kept
+log up to its claim, then its own events. Two cases follow:
+
+- A reader that stays live across the change keeps everything up to the
+  event the later writer names. That history is real, including values
+  never kept.
+- A reader that *resumes* from the later writer's process in any form
+  but the kept one is switching form, and starts again. Otherwise it
+  could skip an unkept piece of a field between its cursor and the claim,
+  and end with a truncated field.
+
+For the live case to be right, a later writer must not continue text
+inside a request it did not make. *Continuing a log* now says that a
+call that was in a request starts a new one (it follows from law 2, but
+readers depend on it). This is a rule, not a mechanism.
+
+### Should-fix, Opus
+
+| id | finding | done |
+|---|---|---|
+| S1 | a fenced writer's resend answered `duplicate` passes a barrier | **Done, Opus's first option**: the store checks the writer before the duplicate. A fenced resend is `event-conflict`; reading is never fenced, so the writer can still learn what was kept. `store-11`, and `journal-12` (the tool does not run). Astra's M2 asked to keep the duplicate: see *Where I disagreed*. |
+| S2 | store atomicity never stated | **Done.** *The rules a store keeps* opens with "one step at a time, per log": a claim is one step, and an append's checks and write are one step (a compare-and-set on the last position and the writer number). A granted number is as durable as the events. A store that cannot do this gives no claims. The stage-2 store interface is `claim`, a conditional `append`, and `read` (below). |
+| S3 | journals and observers against host policy | **Done.** Observers add up over layers. A tree has one journal. The closest setting decides, except that no closer layer may replace, weaken or remove a required journal (`journal-policy`, a new refusal code). Pinned by a new case kind, `receivers-01` (8 scenarios). Several journals per tree was weighed and not taken: see trade-offs and question 11. |
+| S4 | "fits" for AI-function interfaces used a full validator | **Done.** The vocabulary applies to every interface. An AI function's other keywords are lmcc's: carried, never read by FunctAI, so a default is checked by the listed keywords alone. Listed keywords of the wrong kind, and looping references, refuse as for modules. `programs/18` (P6's interface accepted as an AI node, refused as a module's). |
+| S5 | law 8 across writers | **Done.** Law 8 is per writer: the requests a writer makes are its record's exchanges. A call continued across writers, and a record written by a fenced writer, are stage 4's (below). |
+| minor | "if it is finished, the outcome was kept" is false after a claim | Done with Astra S2. |
+| minor | best effort "stays kept up to" | "At least up to", and `journal-11`. |
+| minor | `$ref` cycles recurse for ever | A `$defs` entry that reaches itself by `$ref` and `anyOf` alone is refused. Recursion through `items`, `prefixItems`, `properties` or `additionalProperties` is accepted, since checking descends into the value. `programs/16`, `17`. |
+| minor | closed interfaces have no version | **Not changed.** Question 10. A format number belongs on the envelope an interface is served in (stage 3). A saved manifest already has one. |
+| minor | the turn's `signature` against lmcc's typed fingerprint | **Done, and it was more than wording.** lmcc's render refuses a turn whose fingerprint is not the plan's (kernel §3a, `turn-invalid`), and the plan's includes type names. So the recipe now compares the record's `program.signature` with the plan's (type-neutral), and gives the turn the plan's own fingerprint. A conversation store compares `program.signature`. |
+| minor | `{"context": "changed"}` as a stopgap | Listed with the trade-offs. |
+| minor | a barrier failure is double-wrapped | **Not changed.** `journal-end` always holds the outcome. A caller handles one code for "the end was not confirmed" and reads the outcome inside. Raising `journal-barrier` directly would give the same fact two shapes depending on which event failed. |
+| minor | SSE `id` must be writer and seq | Stage 2's list, below. |
+
+### Should-fix and minor, Astra
+
+| id | finding | done |
+|---|---|---|
+| S1 | switching from a live form to the kept form needs a reset even when the cursor exists | **Done.** *Resuming*: a reader going on in another form starts again from the beginning, whatever its cursor. *Where each form can be read* says so for stores and for a later writer's process. `follow-10` and probe R3. |
+| S2 | "finished" does not confirm the original writer's outcome | **Done.** `JournalError` `journal-end` names its event by position (`err.event`). Settling looks for that position: kept, not kept, or "another writer ended the log". `journal-13` scripts the hand-over with the new between-attempt events `claimed` and `ended`; `journal-03`, `04`, `06` and `07` now say how they settle. No second terminal event is appended. |
+| S3 | the continuation helper chose its epoch from events | **Done.** `Writer.continuing(kept, claim)` takes the claim and asserts it names the last kept event. `store-10` is built from real claims: writer 2 claims and writes nothing before writer 3 claims, and writer 3 appends. The serialization requirement is in the store rules (Opus S2). |
+| S4 | the shape checker accepts malformed schemas; loops | **Done.** Annotations are checked for their kind. `prefixItems` and `anyOf` hold at least one shape. `additionalProperties` may be `true` (pydantic writes it for `dict[str, Any]`). Counts are integers by the vocabulary's own rule, so `2.0` is `2`, since TypeScript cannot tell them apart. Loops are refused. The generator asserts that every accepted shape is a valid 2020-12 schema (the differential check asked for). `programs/16`, `17`. |
+| S5 | the fail-closed rule only at the event's top level | **Done.** A form maker keeps only the known members of the objects this contract defines: an `error` (`type`, `message` when content is whole, `code`), a `program` (the call log's keys). A `saw` entry it does not know becomes `{}`, so readers still say "not known" and nothing of the entry is passed on (the schema's own example of a later entry holds text). The record without content keeps `type` and `code` of each error. `kept-10`, `content/20`. |
+| M1 | the record-to-turn recipe and modules | **Done.** The recipe is scoped to AI functions. Module turns are stage 3's; lineage and `keeps` hold for modules. |
+| M2 | best effort "stays kept up to"; "refuses every event" vs the duplicate | First half done (`journal-11`). Second half: I chose the other way. See below. |
+
+### Where I disagreed, or chose between the reviewers
+
+- **A fenced writer's resend: refused, not `duplicate`** (Opus S1, against
+  Astra M2's "keep it, qualify the prose"). Astra is right that
+  confirming an immutable append authorizes no new append. But the
+  answer is what a required barrier acts on. A zombie told `duplicate`
+  runs its tool after another writer took over, and the later writer
+  already treats that tool as "may have run". Checking the fencing token
+  first costs the rightful writer nothing: a finished log cannot be
+  claimed, so a legitimate resend of a kept end is never fenced. And a
+  fenced writer can still learn the truth by reading. Fewer effects, the
+  same knowledge.
+- **`after` as one object, not `after_writer` beside it** (against the
+  letter of Opus's sketch). The same information. One value cannot be
+  half-compared, and it has the shape of a read cursor and of a claim's
+  answer. It costs a few bytes more per event than a separate key
+  (`{"writer":1,"seq":56}` against `56,"after_writer":1`).
+- **No reset of every whole-form follower at every hand-over.** I first
+  considered making readers of forms that show values never kept restart
+  whenever a later writer appears. That loops for a reader that starts
+  on the later writer's own form, whose prefix comes from earlier
+  writers. It is also unnecessary: the events up to the named position
+  happened. The reset is needed only for resuming, where a cursor can
+  skip unkept events. That is what the text says.
+- **One journal per tree, not several** (Opus S3's third option).
+  Fencing and writer numbers belong to one store. Two journals would each
+  issue numbers, and a later writer would need claims that agree across
+  stores. A host that wants a second copy adds an observer.
+
+### Cases that changed meaning on purpose
+
+- **Every `events/` case**: `after` is a position or `null`. Store and
+  claim answers name positions (`{"events": [...]}`, `{"writer",
+  "after"}`). Replay `resume` entries are `{"after", "expect"}`. Journal
+  `kept` lists positions.
+- **`store-10`**: built from real claims. Writer 3's first event is now
+  appended before writer 2's refused one.
+- **`journal-*`**: `JournalError` names `event`; unknown ends carry
+  `settled`.
+
+`rated/`, `saved/`, `functions/`, `scores/`, `saw/`, `content/01`–`19`
+and `programs/01`–`15` are byte for byte what they were at ebe7725.
+
+New cases (15):
+
+- `follow-09`–`13`;
+- `kept-10`;
+- `store-11`;
+- `journal-11`–`13`;
+- `receivers-01`;
+- `content/20`;
+- `programs/16`–`18`.
+
+177 in all.
+
+### Trade-offs taken in this repair
+
+All are also in the list after section 4.
+
+- `after` is an object: about 20 bytes more per event than a bare seq.
+- A reader that misses events at a hand-over must read again from a
+  source. Pushed events alone never settle it.
+- A reader of a live-only form restarts whenever it resumes somewhere
+  that cannot give its form, whatever its cursor.
+- A fenced writer learns that its event was kept only by reading.
+- A store without per-log compare-and-set cannot give claims.
+- A program cannot override a host's required journal. It is refused
+  (`journal-policy`) rather than silently ignored.
+- An AI function's `pattern`, `oneOf` and the like are never checked by
+  FunctAI.
+- Looping `$defs` are refused even when unused.
+- Older form makers drop members they do not know of errors and
+  programs, and blank unknown `saw` entries.
+- A caller must keep `err.event` to settle `"unknown"`.
+
+### What later stages must provide (additions)
+
+- **Stage 2.**
+  - The store interface is `claim`, a conditional `append` (checks and
+    write as one step) and `read`, not vignette 3's two methods.
+  - A store declares whether it can give claims.
+  - The SSE `id` (or any resume token) must carry the writer and the
+    seq. Its encoding is the host's, since one host writes and parses
+    it.
+- **Stage 3.**
+  - How a module's turn is shown in a conversation.
+  - A format number on interfaces served outside a manifest (question
+    10).
+- **Stage 4.**
+  - The record of a call continued across writers: joining each writer's
+    exchanges, and a line a fenced writer wrote for the same call id.
+  - What a later writer does with a call that was waiting on a tool.
+
+## Before implementation (2026-09-28)
+
+Two reviews of 236d838, both "accept with minor fixes", no blockers:
+Opus (delegation b7d5e7d9, `fuzz_follow*.py`, `probes-v5.py`) and Codex
+Astra (delegation 2dd0869f, `probes-round4.py`). Both found the
+round-3 blocker solved. Opus ran 60,000 randomized hand-overs through
+the contract's own `follow`, `Store` and `Writer.continuing`, and Astra
+37,504 enumerated omission schedules, with no mismatch. What they found
+was precision: one sentence against its own case, one fault found too
+late, two rules open between two answers, one parser edge. This pass
+fixes those and adds no mechanism. The branch is
+`stage1-contract-v5`; sections 1 to 4 above describe the result. Both
+reviewers' scripts, adapted where the case API changed (every adaptation
+commented), pass as `probes-v5.py` in delegation 3c13df6b's output,
+beside `probes-v4-on-v5.py` (the round-3 probes, 17 of 17).
+
+### Should fix
+
+| id | finding | done |
+|---|---|---|
+| Opus S1 | "a program cannot remove what a host set" against `receivers-01`, where a program's `journal: null` removed a host's best-effort journal | **Done, Opus's option (b)**: a program's own setting cannot replace or remove *any* journal a host layer set (it may name the same one, or make it required, and may set one where no host layer did). No closer layer, a host's included, can replace, weaken or remove a required one. Host layers among themselves keep "the closest decides" for best-effort journals. Both breaches are refused `journal-policy`. `receivers-01` now has 15 scenarios; its scenarios 2 and 3 (a program replacing or removing a host's best-effort journal) now refuse. |
+| Opus S2 | an AI function's interface is checked by FunctAI's rules only when read from a folder, so a function could be defined and saved in a form no language loads | **Done.** Every interface is checked when its program is defined: an AI function's after lmcc's own check (which asks only that each shape is an object), in carry mode (`programs.md`, *Interfaces that are refused*; `functions.md`, *A definition*). `programs/19`: pydantic's `Field(ge=10)` with a default of 5 refuses at definition. The `ai` case kind gains `expect: {"refuses", "field"}`. |
+| Opus S3 | whether `default` must fit only at the field or also inside a shape | **Done: only the field's own.** A `default` inside a shape is a word, like `title`: never checked, never filled in (the program's own types may fill it). This matches the generator, and pydantic, which writes nested defaults it never checks. `programs/21`. It stays in the signature (see below, and question 14). |
+| Opus S4, Astra S1 | after a rewind, "the state it had there, or the form read again from the beginning" gave two answers; and resuming after a live hand-over with a cursor of the *current* writer kept a prefix no source can give | **Done, one answer each.** *Rewind*: the reader keeps what it held up to the named event, values never kept included, then takes the later writer's events. Every follower keeps what it needs for that; a kept-form reader may re-read instead, which ends the same (`follow-14`). *Resume*: a reader resumes in place only when the source can give every event it holds as it holds it. For a live form, that means only from the process that gave it every event. So after following across a hand-over it starts again, whatever its last event's writer (`follow-15`, Astra's exact scenario), and from a store even when the store has its cursor (`follow-16`, the case Opus asked for in place of Astra's round-3 probe). From its own process it resumes in place (`follow-17`). A follow case's `recover` now gives what the choice is made from (`reader`: `kept` or `live`; `from`: `store` or a writer), not the choice, so a harness tests the choice. |
+| Astra M1 | `$ref` `"#/$defs/Node\n"` accepted (Python's `$` matches before a final newline), then the value check crashed | **Done.** The generator matches references and names whole (`fullmatch`: the same bug was in field names and in `content.py`'s `log_content` keys). `programs.md` states the grammar: `#/$defs/` plus ASCII letters, digits, `_`, `.`, `-` (pydantic's `normalize_name` writes only letters, digits, `_` and `-`, so its names fit), read as written, with no `~1` and no `%20`. `programs/20`. |
+
+### Minor
+
+| from | finding | done |
+|---|---|---|
+| Opus | `$defs` names unstated | Stated (Astra M1's grammar); `programs/20`. |
+| Opus | a batch's answer unspecified | *The rules a store keeps*: each event is checked as if appended alone; the batch is kept whole or not at all; it is answered `duplicate` when every event is one, and kept when every event is kept or a duplicate; otherwise nothing is kept, and the answer is the first refusal with its event's position. `store-12`, with a new step `{"batch"}`. This differs from Opus's sentence in one point: a batch of duplicates alone answers `duplicate`, so that a batch of one is answered as a single append is. |
+| Opus | `journal-policy`, `journal-scope`: no error type, nothing said of what is recorded | Both are codes of `JournalError`. A tree refused `journal-policy` has a log (its `started`, its `failed`) given to every layer's observers and to the journal the layers farther out than every refused setting give (the host's), and a record with that error; `receivers-01` names both for every refusal. A call inside a tree refused `journal-scope` is in the tree's log and records the error, like any failed call. |
+| Opus | when a settle is final | "Not kept" is final once the caller has claimed the unfinished log, which fences the writer. The log then waits for the claimant (stage 2's lease, stage 4's ending). |
+| Opus | best effort and fencing | One line in *Best effort*: a fenced best-effort writer goes on, and its caller and readers see its end while the kept log says what the later writer did. Claims are meant for logs kept by a required journal. |
+| Opus | the common-cursor form switch pinned only by a probe | `follow-16`. |
+| Opus | the case vocabulary lives in docstrings | `contract/cases/README.md`, for every folder (not only `events/`): the journal script's words and what `ended` appends, `trace`, `settled`, `recover`, the layers of `receivers`, batches, the no-JSON stand-in. The contract's README points to it. |
+| Opus | observers add up in one direction: a host cannot veto a program's own observer | Question 13. Not changed: the observer gets only the kept form, so retention holds. |
+
+### Found while doing this
+
+- **`make.py` changed cases after computing their expectations.** Its
+  schema check extended `case["received"]` in place with the recover
+  source's events, so at 236d838 `follow-09` to `13` held 10 or 11
+  received events for 5 or 6 results. Every harness would have failed
+  them. The reviewers ran the generator in memory and never saw it.
+  Fixed (the check takes a copy). `make.py` now also reads every
+  `events/` and `programs/` case back from its file and runs it through
+  the rules, as a harness would.
+- **`programs/12`'s checks** gave three results for five interfaces,
+  against its own vocabulary ("one result per interface"). The
+  read-back check found it; now five.
+- **Patterns in the schemas.** Python's `jsonschema` reads a pattern's
+  `$` as Python's `re` does, so it accepted `"message\n"` as a field
+  name, a kind, or a call id, which every ECMA-262 validator (the
+  standard JSON Schema follows) refuses. `schemas.py` now reads the
+  schemas' patterns as ECMA-262 does (`$` as `\Z`; every pattern uses
+  `$` only as its last anchor, which it checks). Three new schema
+  refusals pin it. *Not changed here:* Python's own tests load the
+  schemas with the stock validator. Python's stage-1 harness should read
+  them as `schemas.py` does. This is outside `contract/` and `design/`,
+  so it is left to that work.
+
+### Where I disagreed, or chose
+
+- **S1: (b), not (a).** For a host like Chattering, the best-effort
+  journal is what pages resume from and what later turns are read back
+  from. A program that silently turns it off or points it elsewhere
+  breaks the host's product, and Maxime's answers put policy with the
+  host. Refused rather than ignored: ignoring would drop a wish the
+  program stated, with nothing said, and refusing tells its author at
+  once. A program that wants its own copy has observers, which add up.
+  One choice I made that neither reviewer spelled out: a host layer
+  that sets `null` (no journal) protects nothing, so a program may then
+  set its own (question 11).
+- **S4: one required answer, not a rule with a fallback.** Opus offered
+  either. A fallback whose result differs means a harness cannot write
+  one expected state, and two conforming pages disagree. A reader that
+  cannot keep its events can still conform by following the kept form,
+  where re-reading gives the same result.
+- **Astra S1's reset "whatever its last event's writer": taken, with
+  what it buys stated.** I checked whether it prevents a false state. It
+  does not: resuming in place after `(2, 6)` gives exactly what a reader
+  that stayed connected holds, which is real history. What it buys is
+  one invariant for every reconnection: *after resuming, a reader holds
+  its source's form*. A source cannot check the reader's history, so
+  without the reset that promise would depend on it. It costs a full
+  replay on every reconnection after a hand-over, and the reader then
+  shows less than before (question 15).
+- **Only the field's own `default` leaves the signature.** Stripping
+  nested defaults too would stop those splits, but it would change the
+  shapes lmcc is given (the signature's fields, beyond `functions/12`'s
+  own-default rule, and what a layout may show or send of a shape) in
+  every language, and would add a mechanism. Kept as is, as a trade-off
+  (question 14).
+
+### Cases that changed meaning on purpose
+
+- `follow-09` to `13`: `recover` takes `reader` and `from` instead of
+  `form`, and `received` no longer carries the source's events (the
+  fault above). Results and states are unchanged.
+- `receivers-01`: scenarios 2 and 3 now refuse; every refusal names
+  `observers` and `journal`; 7 scenarios added (15).
+- `programs/12`: every check has one result per interface (5, was 3).
+
+Every other case is byte for byte what it was at 236d838. New (8):
+`follow-14` to `17`, `store-12`, `programs/19` to `21`. 185 in all.
+
+### Observed (2026-09-28, this branch)
+
+- `make.py` twice: 185 cases, no difference. Five schemas valid.
+- Probes: `probes-v5.py` passes (Opus's Q1–Q4 with Q4 now refused as
+  decided; the three fuzzers, 60,000 runs, 0 mismatches, with the same
+  counts as the review; Astra's 37,504 schedules and six orders, and
+  her provenance and `$ref` probes asserting the repair; added: 23,507
+  whole-form resumes after a hand-over, every one starting again and
+  ending at the source's form). `probes-v4-on-v5.py`: 17 of 17.
+- Python: 322 passed, 4 failed (`rated/13`–`16`). TypeScript: `npm run
+  check` passes; `npm test` 101 passed, 6 failed (`functions/12`,
+  `rated/13`–`16`, `saved/14`). Both exactly as at 236d838: no language
+  has a harness yet for any new or changed case.
+- Not run: R, Julia, `tools/crosslang.py`, `./check` end to end (it stops
+  at the first red step, which is expected on this branch).
+
+### Trade-offs taken in this repair
+
+All are also in the list after section 4.
+
+- A program cannot replace or remove a host's best-effort journal: a
+  published program that sets a journal fails under every host that has
+  one.
+- A follower keeps its events (or states) to rewind.
+- A live follower may end holding values no source shows; a live-form
+  reader that resumes after a hand-over starts again, a full replay,
+  and shows less.
+- An AI function whose interface breaks the rules no longer defines (a
+  pydantic default its own constraints refuse).
+- Nested defaults are never checked and stay in the signature.
+- `$defs` names are limited to ASCII letters, digits, `_`, `.` and `-`.
+- A refused batch keeps nothing, not even its events before the refused
+  one.
+- Settling "not kept" for good needs a claim, which leaves the log
+  waiting for its claimant.
+- A fenced best-effort writer's readers see an end the kept log may not
+  hold.
+
+### What later stages must provide (additions)
+
+- **Stage 2.** A subscription (SSE or other) tells a reader which
+  process gives its events (the writer number), so a live-form reader
+  can apply the resume rule. A store's batch answers as stated. The
+  lease says who ends a log a settling caller claimed.
+- **Stage 3.** Each named view says whether it is made from the kept
+  form or from the whole log, since that decides where it can be
+  resumed.
+
+## Open questions for Maxime (all of them, 2026-09-28)
+
+1. **Labels instead of names.** Should a program be able to mark a
+   field's kind of data (`private`), outside the signature, so one host
+   rule covers every program and stage 3's views read the same mark?
+2. **Conversation memory against `log_content`.** When a host never
+   keeps the transcript and a conversation must remember it: refuse a
+   persistent conversation (proposed), keep it in memory only, or let
+   the conversation store's own setting win?
+3. **Required journals' barriers.** Before every tool (now), or only
+   before tools that declare `effects="changes"` once stage 4 declares
+   effects?
+4. **Coalescing pieces.** May a writer merge adjacent pieces of one field
+   before numbering them? Both second-round reviewers said yes.
+5. **Python's `Any`**: opaque (now, as both second-round reviewers
+   answered) or any JSON?
+6. **Who may claim a log** (stage 2's lease): the first claimant until
+   its lease expires (proposed), or the latest, as the mechanism allows?
+7. **Required journals and live delivery.** The terminal event waits for
+   the journal (now). Should a host be able to show it at once, and
+   accept that a reader may see an end that is later not kept?
+8. **The added-fields closure.** Dropping the tool calls drops the
+   reasoning too (now, the conservative reading), or keeps it?
+9. **`opaque` in the data signature**: out (now; eligibility keeps
+   descriptions out) or in?
+10. **Closed interfaces.** Refuse unknown keys (now), or allow a marked
+    class of ignorable keys (`x_…`)? And should an interface served
+    outside a manifest carry a format number, so a reader can say
+    "newer" instead of "malformed"?
+11. **Journals across layers.** One journal per tree, with every journal
+    a host set holding against a program's own setting, best effort
+    included, and a required one holding against every closer layer
+    (now, `journal-policy`, since the fourth review), or several
+    journals per tree, each with its own mode (then claims must agree
+    across stores)? And may a program set its own journal where a host
+    layer explicitly set none (now: yes, the host protected nothing), or
+    should a host's `null` hold too?
+12. **A fenced writer's resend.** Refused, so a fenced writer never
+    passes a barrier (now), or answered `duplicate` because the event is
+    kept (Astra's reading)?
+13. **Vetoing a program's observers.** Observers add up in one
+    direction: a host cannot remove an observer a program set (it gets
+    only the kept form, so retention holds). Should a host be able to
+    (an allow-list of observers, say), since where events go is policy
+    too?
+14. **Defaults inside shapes, in the signature.** Only a field's own
+    `default` is left out of the signature (now). A pydantic model's
+    field default stays in, so a default computed at import (a date)
+    changes the signature of every function using the model, and splits
+    its records. Should every `default` be left out, which changes what
+    lmcc is given in every language (a change to `functions.md` and its
+    cases)?
+15. **What a page keeps across a writer's restart.** A reader that stays
+    connected keeps what it was shown before the hand-over, values never
+    kept included. One that reconnects afterwards starts again and shows
+    only what its source gives (now, the fourth review's two answers).
+    Should a live reader instead always drop, at a hand-over, what no
+    source can give again? Then it would show the same thing connected
+    or not, at the cost of rebuilding at every hand-over.

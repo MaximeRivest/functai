@@ -159,13 +159,12 @@ def request_text(request: Any) -> str:
 
 
 def row_inputs(fn, row: Dict[str, Any]) -> Dict[str, Any]:
-    names = [n for n in fn._sig.parameters if n in row]
-    bound = fn._sig.bind_partial(**{n: row[n] for n in names})
-    bound.apply_defaults()
-    missing = [n for n in fn._sig.parameters if n not in bound.arguments]
+    """A row's inputs for ``fn``, each optional one it lacks with its default."""
+    named = fn._named_inputs()
+    missing = [n for n, required in named if required and n not in row]
     if missing:
         raise BakeError(f"rows lack the input column(s) {missing}")
-    return dict(bound.arguments)
+    return fn._bind_inputs((), {n: row[n] for n, _required in named if n in row})
 
 
 def render_input(plan: lmcc.Plan, spec, inputs: Dict[str, Any]) -> str:

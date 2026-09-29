@@ -9,11 +9,13 @@
     recs, ratings = FunctAI.read_log(dir)
     rec = only(recs)
     @test isempty(ratings)
-    @test rec["functai_call"] == 1 && rec["id"] == p.call && rec["parent"] === nothing && rec["root"] == p.call
+    @test rec["functai_call"] == 2 && rec["id"] == p.call && rec["parent"] === nothing && rec["root"] == p.call
+    @test rec["saw"] == [] && !haskey(rec, "omitted") && !haskey(rec, "journal")
     @test occursin(r"^[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$", p.call)
     prog = rec["program"]
     @test prog["name"] == "mood" && prog["kind"] == "ai" && prog["module"] == "__main__"
     @test prog["version"] == version(mood) && prog["signature"] == signature_id(mood) && prog["answer"] == "result"
+    @test prog["interface"] == FunctAI.interface_signature(mood) == signature_id(mood)
     @test occursin(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{6}Z$", rec["started"])
     @test rec["inputs"] == Dict("review" => "Broke.") && rec["outputs"] == Dict("result" => "unhappy")
     @test !haskey(rec, "returned")
@@ -22,6 +24,7 @@
     ex = only(rec["exchanges"])
     @test ex["provider"] == "openai" && ex["cached"] == false && ex["finish"] == "stop"
     @test ex["request"]["config"]["temperature"] == 0 && haskey(ex, "response")
+    @test startswith(ex["request_hash"], "sha256:")
     @test rec["process"]["language"] == "julia" && rec["process"]["pid"] == getpid()
     day = only(readdir(dir))
     file = only(readdir(joinpath(dir, day)))
@@ -34,10 +37,62 @@ end
     dir = mktempdir()
     using_fake(() -> mood("secret"), fake(xml(:result => "happy")); log_calls=dir, log_content=false)
     rec = only(first(FunctAI.read_log(dir)))
-    @test rec["content"] == false
+    @test rec["content"] == false && rec["omitted"] == Dict("inputs" => ["review"], "outputs" => ["result"])
     @test !haskey(rec, "inputs") && !haskey(rec, "outputs")
     @test rec["sizes"]["inputs"]["review"] == 8
-    @test !haskey(only(rec["exchanges"]), "request")
+    @test !haskey(only(rec["exchanges"]), "request") && !haskey(only(rec["exchanges"]), "request_hash")
+end
+
+@testset "log_content per field: a map keeps the others; layers only remove" begin
+    @ai function triage(ticket::String, customer::String)::String
+        "Which team handles this?"
+    end
+    dir = mktempdir()
+    using_fake(() -> triage("Charged twice.", "Ana Lopez"), fake(xml(:result => "billing")); log_calls=dir, log_content=(customer=false,))
+    rec = only(first(FunctAI.read_log(dir)))
+    @test rec["content"] == false && rec["omitted"] == Dict("inputs" => ["customer"], "outputs" => [])
+    @test rec["inputs"] == Dict("ticket" => "Charged twice.") && rec["outputs"] == Dict("result" => "billing")
+    @test rec["sizes"]["inputs"]["customer"] == length("\"Ana Lopez\"")
+    # a host's list of what may be kept; the function's own true keeps nothing a host drops
+    dir = mktempdir()
+    own = configure(triage; log_content=true)
+    with_settings(log_content=Dict("*" => false, "ticket" => true)) do
+        using_fake(() -> own("Charged twice.", "Ana Lopez"), fake(xml(:result => "billing")); log_calls=dir)
+    end
+    rec = only(first(FunctAI.read_log(dir)))
+    @test rec["inputs"] == Dict("ticket" => "Charged twice.") && !haskey(rec, "outputs")
+    # the environment's 0 drops everything
+    dir = mktempdir()
+    withenv("FUNCTAI_LOG_CONTENT" => " Off ") do
+        using_fake(() -> triage("x", "y"), fake(xml(:result => "billing")); log_calls=dir)
+    end
+    @test !haskey(only(first(FunctAI.read_log(dir))), "inputs")
+    # a misspelt name in a function's own map refuses when it is defined; a key that is not a name, anywhere
+    err = try configure(triage; log_content=(custmer=false,)) catch e e end
+    @test err isa LogContentError && err.field == "custmer"
+    @test_throws LogContentError with_settings(() -> nothing; log_content=Dict("#private" => false))
+    @test_throws LogContentError @eval @ai log_content = (tools = false,) function t2(x::String)::String
+        "x"
+    end
+    # a block may name fields this function lacks
+    dir = mktempdir()
+    with_settings(log_content=(notes=false,)) do
+        using_fake(() -> triage("x", "y"), fake(xml(:result => "billing")); log_calls=dir)
+    end
+    @test only(first(FunctAI.read_log(dir)))["content"] == true
+end
+
+@testset "a value with no JSON form is described, and the record names it" begin
+    @program function tally(frame, label::String)::Int
+        length(label)
+    end
+    dir = mktempdir()
+    @test with_settings(() -> tally(IOBuffer(), "abc"); log_calls=dir) == 3
+    rec = only(first(FunctAI.read_log(dir)))
+    @test rec["described"] == Dict("inputs" => ["frame"], "outputs" => [])
+    @test rec["inputs"]["frame"]["\$type"] == "IOBuffer" && rec["inputs"]["label"] == "abc"
+    @test rec["program"]["kind"] == "module" && !haskey(rec["program"], "signature") &&
+          rec["program"]["interface"] == FunctAI.interface_signature(tally)
 end
 
 @testset "a failed call has its error; a re-ask is a second exchange" begin

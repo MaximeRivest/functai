@@ -1,0 +1,82 @@
+{
+ "description": "Only a field's own default is the value it takes, and must fit. A default inside its shape (a member's, as pydantic writes one for a model's defaulted field) is a word, like title: never checked, whatever it holds, and never filled in (the value is checked as given; the program's own types may fill it). It stays in the signature: it is part of the shape, as it is of lmcc's signature.",
+ "program": "module",
+ "interface": {
+  "description": "Count an order's parcels.",
+  "inputs": [
+   {
+    "name": "order",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "id": {
+       "type": "integer"
+      },
+      "count": {
+       "type": "integer",
+       "default": "none"
+      }
+     },
+     "required": [
+      "id"
+     ]
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:911d74f17f9e4a57e47708e852f34b68bf7b561e70998c810205801640e90e6e"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "order": {
+     "id": 1
+    }
+   },
+   "expect": {
+    "inputs": {
+     "order": {
+      "id": 1
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "order": {
+     "id": 1,
+     "count": 2
+    }
+   },
+   "expect": {
+    "inputs": {
+     "order": {
+      "id": 1,
+      "count": 2
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "order": {
+     "id": 1,
+     "count": "none"
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "order"
+   }
+  }
+ ]
+}

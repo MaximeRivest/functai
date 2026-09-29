@@ -1,0 +1,176 @@
+{
+ "description": "Two writers claim one log (a lease, stage 2's, decides who may): each claim gives a new number and fences every earlier one, so two writers never hold one number. Writer 2 claimed and wrote nothing before writer 3 claimed (a claim may give a number no event ever carries): writer 3 numbers from what its own claim named, and writer 2's event is refused. A finished log cannot be claimed; nor can a log the store does not have.",
+ "kind": "store",
+ "steps": [
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "gardener",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "request": "Merge groceries.md into todo.md"
+    },
+    "content": false,
+    "omitted": {
+     "inputs": [],
+     "outputs": [
+      "result"
+     ]
+    },
+    "saw": []
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "claim": "01926c00-0001-7000-8000-000000000000",
+   "expect": {
+    "writer": 2,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    }
+   }
+  },
+  {
+   "claim": "01926c00-0001-7000-8000-000000000000",
+   "expect": {
+    "writer": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    }
+   }
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 3,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:40.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:35.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "event-conflict"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 3,
+    "seq": 4,
+    "after": {
+     "writer": 3,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:40.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "value": "Merged."
+   },
+   "expect": "kept"
+  },
+  {
+   "claim": "01926c00-0001-7000-8000-000000000000",
+   "expect": {
+    "refuses": "event-after-end"
+   }
+  },
+  {
+   "claim": "01926c00-0007-7000-8000-000000000000",
+   "expect": {
+    "refuses": "event-unknown"
+   }
+  }
+ ],
+ "reads": [],
+ "expect": {
+  "logs": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     },
+     {
+      "writer": 3,
+      "seq": 3
+     },
+     {
+      "writer": 3,
+      "seq": 4
+     }
+    ],
+    "writer": 3,
+    "finished": true
+   }
+  }
+ }
+}

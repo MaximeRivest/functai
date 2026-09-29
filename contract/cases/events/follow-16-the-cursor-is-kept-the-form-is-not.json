@@ -1,0 +1,277 @@
+{
+ "description": "A reader of the whole log holds writer 1's events up to the child's done (seq 5), which the store keeps; it resumes from the store. The store has that event, but gives another form (the kept form, without the child's answer): the reader starts again from the beginning, whatever the cursor.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Please read my tracking log."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "read_tracking",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "log": "03:12 LEEDS DEPOT ARRIVED"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "field": "result",
+   "answer": true,
+   "text": "{\"where\": \"Leeds\"}"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "value": {
+    "where": "Leeds"
+   }
+  }
+ ],
+ "recover": {
+  "reader": "live",
+  "from": "store",
+  "source": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "support",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "support",
+     "kind": "module",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Please read my tracking log."
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "parent": "01926c00-0001-7000-8000-000000000000",
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "read_tracking",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "log": "03:12 LEEDS DEPOT ARRIVED"
+    },
+    "content": false,
+    "omitted": {
+     "inputs": [],
+     "outputs": [
+      "result"
+     ]
+    },
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0002-7000-8000-000000000000",
+    "function": "read_tracking",
+    "content": false
+   }
+  ]
+ },
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "{\"where\": \"Leeds\"}"
+      }
+     }
+    },
+    "finished": false
+   }
+  },
+  "recover": {
+   "reads": [
+    {
+     "after": null,
+     "expect": {
+      "events": [
+       {
+        "writer": 1,
+        "seq": 1
+       },
+       {
+        "writer": 1,
+        "seq": 2
+       },
+       {
+        "writer": 1,
+        "seq": 3
+       },
+       {
+        "writer": 1,
+        "seq": 5
+       }
+      ]
+     }
+    }
+   ],
+   "state": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {}
+     }
+    },
+    "finished": false
+   }
+  }
+ }
+}

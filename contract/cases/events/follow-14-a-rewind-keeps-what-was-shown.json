@@ -1,0 +1,290 @@
+{
+ "description": "A reader of the whole log, live: it saw the child's answer, which the log does not keep, then writer 1 started another child (never kept) and stopped. Writer 2 took over after the child's done (writer 1, seq 5). The reader rewinds there: it drops what it holds after that event and keeps the rest, so its state is what it was shown up to that event, the child's answer included (it was shown, and happened), then writer 2's events. It ends holding a value no source gives: the store's replay has the child's field empty. Every follower keeps what it needs to rewind so.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Please read my tracking log."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "read_tracking",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "log": "03:12 LEEDS DEPOT ARRIVED"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "field": "result",
+   "answer": true,
+   "text": "{\"where\": \"Leeds\"}"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0002-7000-8000-000000000000",
+   "function": "read_tracking",
+   "value": {
+    "where": "Leeds"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "reply",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "where": "Leeds"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:30.060000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "reply",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "where": "Leeds"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 7,
+   "after": {
+    "writer": 2,
+    "seq": 6
+   },
+   "at": "2026-09-28T10:00:30.070000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 8,
+   "after": {
+    "writer": 2,
+    "seq": 7
+   },
+   "at": "2026-09-28T10:00:30.080000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "field": "result",
+   "answer": true,
+   "text": "Your parcel is in Leeds."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 9,
+   "after": {
+    "writer": 2,
+    "seq": 8
+   },
+   "at": "2026-09-28T10:00:30.090000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "function": "reply",
+   "value": "Your parcel is in Leeds."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 10,
+   "after": {
+    "writer": 2,
+    "seq": 9
+   },
+   "at": "2026-09-28T10:00:30.100000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "support",
+   "value": "Your parcel is in Leeds."
+  }
+ ],
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "rewind",
+   "kept",
+   "kept",
+   "kept",
+   "kept"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {}
+     },
+     "01926c00-0002-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "{\"where\": \"Leeds\"}"
+      }
+     },
+     "01926c00-0003-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "Your parcel is in Leeds."
+      }
+     }
+    },
+    "finished": true
+   }
+  }
+ }
+}

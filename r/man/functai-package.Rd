@@ -6,13 +6,14 @@
 \alias{functai-package}
 \title{functai: Functions Whose Body a Language Model Writes, for the Tidyverse}
 \description{
-Write a function's inputs, its answer's type and a sentence saying what it does; a language model writes the body. The functions are vectorised, so they work as columns in 'dplyr' verbs; the answer comes back as the type you declared (a factor, a number, a tibble of fields). The same functions are 'parsnip' models (ai_model()), so they fit, predict, resample and tune with 'tidymodels'. Measure how often a function is right with a confidence interval ('broom'-style tidy(), glance() and augment()), log every call, rate calls, improve functions with worked examples, and run functions saved in 'Python' or 'TypeScript'. Implements the same contract as the 'Python' and 'TypeScript' packages.
+Write a function's inputs, its answer's type and a sentence saying what it does; a language model writes the body. The functions are vectorised, so they work as columns in 'dplyr' verbs; the answer comes back as the type you declared (a factor, a number, a tibble of fields). The same functions are 'parsnip' models (ai_model()), so they fit, predict, resample and tune with 'tidymodels'. Measure how often a function is right with a confidence interval ('broom'-style tidy(), glance() and augment()), log every call, rate calls, improve functions with worked examples or rewritten instructions, and run functions saved in 'Python', 'TypeScript' or 'Julia'. Implements the same contract as the 'Python', 'TypeScript' and 'Julia' packages.
 }
 \seealso{
 Useful links:
 \itemize{
+  \item \url{https://maximerivest.github.io/functai/r/manual/}
+  \item \url{https://maximerivest.github.io/functai/r/index.html}
   \item \url{https://github.com/MaximeRivest/functai}
-  \item \url{https://maximerivest.github.io/functai/}
   \item Report bugs at \url{https://github.com/MaximeRivest/functai/issues}
 }
 

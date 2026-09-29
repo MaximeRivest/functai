@@ -1,0 +1,306 @@
+{
+ "description": "A kept log leaves out events (thinking here), so its seqs skip; each event's after says what comes before it, and the store checks that. A reader that names an event the store does not have (seq 3, the thinking a live reader of the whole log saw) is told so (event-unknown): it starts again from the beginning, in the form the store keeps; it never waits for a chain that cannot come.",
+ "kind": "store",
+ "steps": [
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "triage_build",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "question": "Is it broken for a real reason?"
+    },
+    "content": false,
+    "omitted": {
+     "inputs": [
+      "transcript"
+     ],
+     "outputs": []
+    },
+    "saw": []
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "summary",
+    "answer": false,
+    "text": "A flaky test."
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "retry",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "wait": null,
+    "content": false
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 7,
+    "after": {
+     "writer": 1,
+     "seq": 6
+    },
+    "at": "2026-09-28T10:00:00.070000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "summary",
+    "answer": false,
+    "text": "A flaky upload test."
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 8,
+    "after": {
+     "writer": 1,
+     "seq": 7
+    },
+    "at": "2026-09-28T10:00:00.080000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "field": "result",
+    "answer": true,
+    "text": "no"
+   },
+   "expect": "kept"
+  },
+  {
+   "append": {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 9,
+    "after": {
+     "writer": 1,
+     "seq": 8
+    },
+    "at": "2026-09-28T10:00:00.090000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "triage_build",
+    "value": "no"
+   },
+   "expect": "kept"
+  }
+ ],
+ "reads": [
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "expect": {
+    "refuses": "event-unknown"
+   }
+  },
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     },
+     {
+      "writer": 1,
+      "seq": 6
+     },
+     {
+      "writer": 1,
+      "seq": 7
+     },
+     {
+      "writer": 1,
+      "seq": 8
+     },
+     {
+      "writer": 1,
+      "seq": 9
+     }
+    ]
+   }
+  },
+  {
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "after": null,
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     },
+     {
+      "writer": 1,
+      "seq": 6
+     },
+     {
+      "writer": 1,
+      "seq": 7
+     },
+     {
+      "writer": 1,
+      "seq": 8
+     },
+     {
+      "writer": 1,
+      "seq": 9
+     }
+    ]
+   }
+  }
+ ],
+ "expect": {
+  "logs": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     },
+     {
+      "writer": 1,
+      "seq": 6
+     },
+     {
+      "writer": 1,
+      "seq": 7
+     },
+     {
+      "writer": 1,
+      "seq": 8
+     },
+     {
+      "writer": 1,
+      "seq": 9
+     }
+    ],
+    "writer": 1,
+    "finished": true
+   }
+  }
+ }
+}

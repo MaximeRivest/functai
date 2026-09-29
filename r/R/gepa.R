@@ -19,11 +19,17 @@ Reply with the new instruction only."
 
 # The two AI functions GEPA calls. Their layout is fixed, so a session's
 # ai_config() (another layout, reasoning first) does not change how they work;
-# they reach models, and log, the way the function being improved does.
-meta_fn <- function(formula, text, name, teacher, like, run_id) {
+# they reach models, and log, the way the function being improved does. Their
+# inputs quote the function's cases, so when any layer in force (the
+# function's own log_content, a block around gepa(), ai_config(), the
+# environment) drops any of the function's fields, theirs drops every value:
+# a host's map names the function's fields, which theirs are not.
+meta_fn <- function(formula, text, name, teacher, core, run_id) {
+  like <- core$own
   s <- effective(like)
+  drops <- !all(content_kept(call_fields(core, s), content_layers(core)))
   ai(formula, text, .name = name, .defined_in = "functai.meta", .lm = teacher %||% s$lm, .router = s$router,
-     .log_calls = s$log_calls, .log_content = s$log_content, .caller = list(optimization = run_id),
+     .log_calls = s$log_calls, .log_content = if (drops) FALSE, .caller = list(optimization = run_id),
      .temperature = 1, .include_fn_name = FALSE, .adapter = "xml", .module = "predict", .on_error = "stop")
 }
 
@@ -108,8 +114,8 @@ gepa <- function(fn, data, expected = NULL, metric = NULL, feedback = NULL, budg
   fb <- feedback %||% default_feedback(mapping, core$single, pred_col)
   written <- ai_instructions(fn)
   fields <- fields_text(lmcc::signature_to_list(signature_of(core, effective(core$own)))$fields)
-  reflect <- meta_fn(new_instruction ~ fields + instruction + cases + tried, REFLECT_TEXT, "_reflect", teacher, core$own, run_id)
-  combine <- meta_fn(new_instruction ~ fields + first + second, COMBINE_TEXT, "_combine", teacher, core$own, run_id)
+  reflect <- meta_fn(new_instruction ~ fields + instruction + cases + tried, REFLECT_TEXT, "_reflect", teacher, core, run_id)
+  combine <- meta_fn(new_instruction ~ fields + first + second, COMBINE_TEXT, "_combine", teacher, core, run_id)
   s <- new.env()
   s$calls <- 0L; s$reflections <- 0L; s$trials <- list(); s$memo <- new.env(); s$order <- integer(0)
 

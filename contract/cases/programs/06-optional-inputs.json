@@ -1,0 +1,126 @@
+{
+ "description": "An optional input left out takes its shape's default; without one it stays left out (never null: the program's own default applies, and the record has no value for it). A given value is checked, null included.",
+ "program": "module",
+ "interface": {
+  "description": "Answer a customer's message, in a tone.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "what the customer wrote"
+   },
+   {
+    "name": "tone",
+    "shape": {
+     "type": "string",
+     "default": "kind"
+    },
+    "optional": true
+   },
+   {
+    "name": "order",
+    "shape": {
+     "anyOf": [
+      {
+       "type": "string"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    },
+    "optional": true
+   },
+   {
+    "name": "since",
+    "shape": {
+     "type": "string"
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:7d20d5db15ef55e710361ffd4ee1970f9cd06bbd1875776d736ee684eaaf8a61"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "message": "Hi"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "tone": "brief"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "brief"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "order": "B-2210"
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind",
+     "order": "B-2210"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "order": null
+   },
+   "expect": {
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind",
+     "order": null
+    }
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "tone": null
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "tone"
+   }
+  },
+  {
+   "inputs": {
+    "tone": "brief"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message"
+   }
+  }
+ ]
+}

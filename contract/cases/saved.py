@@ -4,12 +4,21 @@ fingerprints are the requests functions.py derives (the same rules).
 
 A case file: {"description", "manifest", "node": key or null (the
 entry), "expect": {"refuses": code} or {"loads": {"name", "module",
-"version", "signature_id", "requests"}}}.
+"version", "signature_id", "requests"}, "sends"?: [{"inputs",
+"request_hash"}]}, and "describe": {"interface"} or {"refuses": code}}.
+``describe`` is what describing the node without loading it gives
+(saved.md, "Describing without loading"; ../programs.md): the node's
+``interface`` (checked), or, for an AI node written before nodes had one,
+the interface its signature gives. ``sends``: the loaded function called
+with ``inputs`` (an optional one left out) sends the request whose hash
+is ``request_hash``, rendered under the probe facts.
 """
 
 import copy
 
 import functions
+import programs
+import schemas
 from common import sha
 
 LANG = "python"
@@ -53,8 +62,13 @@ def manifest(nodes: dict, entry: str) -> dict:
             "hashes": {}}
 
 
-def node(name: str, d: dict, **kw) -> dict:
-    return {"kind": "ai", "module": "shop", "name": name, "ai": ai_node(d, **kw)}
+def node(name: str, d: dict, *, interface: bool = True, **kw) -> dict:
+    """An AI node; ``interface``: written since 2026-09-28, with the node's interface."""
+    n = {"kind": "ai", "module": "shop", "name": name}
+    if interface:
+        n["interface"] = programs.of_definition(d)
+    n["ai"] = ai_node(d, **kw)
+    return n
 
 
 MOOD = functions.DEFINITIONS["01-an-answer-from-a-list"][1]
@@ -63,8 +77,54 @@ IMPROVED = functions.DEFINITIONS["08-an-improved-instruction"][1]
 JSON = functions.DEFINITIONS["06-one-json-object"][1]
 
 
+def plain_fields(n: dict) -> list:
+    return [f for f in n["ai"]["signature"]["fields"] if (f.get("purpose") or "plain") == "plain"]
+
+
+def differs(n: dict) -> bool:
+    """An AI node's interface must describe the data its signature takes and gives."""
+    fields = plain_fields(n)
+    ids = programs.signature({"inputs": [f for f in fields if f["direction"] == "input"],
+                              "outputs": [f for f in fields if f["direction"] == "output"]})
+    return programs.signature(n["interface"]) != ids
+
+
+def describe(m: dict, key) -> dict:
+    """What describing a node without loading it gives (saved.md, programs.md)."""
+    if m.get("functai_saved") != 1:
+        return {"refuses": "saved-format"}
+    if not schemas.SAVED.is_valid(m):
+        return {"refuses": "saved-malformed"}
+    n = m["nodes"][key or m["entry"]]
+    if n["kind"] not in ("ai", "module"):
+        return {"refuses": "saved-not-ai"}
+    if "interface" in n:
+        refused = programs.malformed(n["interface"], ai=n["kind"] == "ai")
+        if refused:
+            return {"refuses": refused["refuses"]}
+        if n["kind"] == "ai" and differs(n):
+            return {"refuses": "saved-differs"}
+        return {"interface": n["interface"]}
+    if n["kind"] == "module":
+        return {"refuses": "saved-no-interface"}
+    sig = n["ai"]["signature"]
+
+    def field(f):
+        return {"name": f["name"], "shape": f["shape"], **({"desc": f["desc"]} if f.get("desc") else {}),
+                **({"type": f["type"]} if isinstance(f.get("type"), str) else {})}
+    plain = plain_fields(n)
+    return {"interface": {"description": sig["instructions"],
+                          "inputs": [field(f) for f in plain if f["direction"] == "input"],
+                          "outputs": [field(f) for f in plain if f["direction"] == "output"]}}
+
+
 def loads(key: str, m: dict) -> dict:
     n = m["nodes"][key]
+    if "interface" in n:
+        if programs.malformed(n["interface"], ai=True):
+            return {"refuses": "interface-malformed"}
+        if differs(n):
+            return {"refuses": "saved-differs"}
     identity = [{"direction": f["direction"], "name": f["name"], "purpose": f.get("purpose") or "plain",
                  "shape": f["shape"], "type": ""} for f in n["ai"]["signature"]["fields"]]
     return {"loads": {"name": n["name"], "module": n["module"], "version": n["ai"]["version"],
@@ -98,10 +158,12 @@ def cases() -> dict:
         "description": "Code runs beside the model (return round(_ai, 2)): only the saving language can run it.",
         "manifest": m, "node": None, "expect": {"refuses": "saved-code"}}
 
-    m = manifest({"shop:mood": node("mood", MOOD)}, "shop:mood")
+    m = manifest({"shop:mood": node("mood", MOOD, interface=False)}, "shop:mood")
     del m["nodes"]["shop:mood"]["ai"]["body"], m["nodes"]["shop:mood"]["ai"]["version"], m["language"]
     out["05-written-before-body"] = {
-        "description": "A folder written before `body` existed: read as code, so it refuses.",
+        "description": "A folder written before `body` existed: read as code, so it refuses. Written before "
+                       "nodes had an interface too: describing it reads the interface from the signature, with "
+                       "the instruction as its description (all an old folder has).",
         "manifest": m, "node": None, "expect": {"refuses": "saved-code"}}
 
     m = manifest({"shop:mood": node("mood", MOOD),
@@ -138,4 +200,61 @@ def cases() -> dict:
     out["11-another-version"] = {
         "description": "The saved version is not the one its request gives: it refuses.",
         "manifest": m, "node": None, "expect": {"refuses": "saved-differs"}}
+
+    support = {"description": "Answer a customer's message.",
+               "inputs": [{"name": "message", "shape": {"type": "string"}, "type": "str"},
+                          {"name": "tone", "shape": {"type": "string", "default": "kind"}, "type": "str",
+                           "optional": True}],
+               "outputs": [{"name": "result", "shape": {"type": "string"}, "type": "str"}]}
+    m = manifest({"shop:mood": node("mood", MOOD),
+                  "shop:support": {"kind": "module", "module": "shop", "name": "support", "interface": support,
+                                   "module_program": {"call_defaults": {}, "requires": []}}}, "shop:support")
+    out["12-a-module-and-its-interface"] = {
+        "description": "A module node written since 2026-09-28 has its interface: another language still "
+                       "refuses to load it (it is code), but describes it without running anything.",
+        "manifest": m, "node": None, "expect": {"refuses": "saved-not-ai"}}
+
+    m = manifest({"shop:mood": node("mood", EXAMPLES)}, "shop:mood")
+    m["nodes"]["shop:mood"]["interface"]["inputs"][0]["desc"] = "what the customer wrote"
+    out["13-an-ai-function-and-its-interface"] = {
+        "description": "An AI node written since 2026-09-28 has its interface: describing it gives the "
+                       "function's description and its fields' words, not its instruction; loading it checks "
+                       "that the interface's signature is its signature's plain fields' (words may differ).",
+        "manifest": m, "node": None, "expect": loads("shop:mood", m)}
+
+    m = manifest({"shop:mood": node("mood", MOOD)}, "shop:mood")
+    m["nodes"]["shop:mood"]["interface"]["outputs"][0]["shape"] = {"type": "string"}
+    out["14-an-interface-that-says-otherwise"] = {
+        "description": "An AI node whose interface does not describe what its signature takes and gives is "
+                       "refused, loading and describing: a server would otherwise accept or promise other data.",
+        "manifest": m, "node": None, "expect": loads("shop:mood", m)}
+
+    bad = {"description": "Two fields named alike.",
+           "inputs": [{"name": "message", "shape": {"type": "string"}}],
+           "outputs": [{"name": "message", "shape": {"type": "string"}}]}
+    m = manifest({"shop:mood": node("mood", MOOD),
+                  "shop:support": {"kind": "module", "module": "shop", "name": "support", "interface": bad,
+                                   "module_program": {"call_defaults": {}, "requires": []}}}, "shop:support")
+    out["15-a-malformed-interface"] = {
+        "description": "An interface the schema accepts can still be refused (programs.md): describing the "
+                       "node says interface-malformed.",
+        "manifest": m, "node": None, "expect": {"refuses": "saved-not-ai"}}
+
+    reply = functions.DEFINITIONS["12-an-optional-input"][1]
+    m = manifest({"shop:reply": node("reply", reply)}, "shop:reply")
+    out["16-an-optional-input"] = {
+        "description": "An AI function with an input a caller may leave out: its interface says optional, with "
+                       "the default in the shape; describing shows it; loading takes it from the interface, so "
+                       "the loaded function called without the input sends the default, as the saving language "
+                       "does (a folder without an interface has no optional input).",
+        "manifest": m, "node": None,
+        "expect": {**loads("shop:reply", m),
+                   "sends": [{"inputs": i, "request_hash": functions.expect(with_sample(reply, {**b}))["request_hash"]}
+                             for i, b in (({"message": "Hi"}, {"message": "Hi", "tone": "kind"}),
+                                          ({"message": "Hi", "tone": "brief"}, {"message": "Hi", "tone": "brief"}))]}}
+
+    for case in out.values():
+        case["expect"]["describe"] = describe(case["manifest"], case["node"])
+    assert "refuses" not in out["01-a-function-the-model-writes-whole"]["expect"]["describe"]
+    assert out["14-an-interface-that-says-otherwise"]["expect"]["describe"] == {"refuses": "saved-differs"}
     return out

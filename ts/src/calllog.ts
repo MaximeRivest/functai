@@ -9,11 +9,19 @@
  */
 
 import * as lmcc from "lmcc";
-import { Request, Response, stringifyJson } from "@lm15/lm15";
+import { Request, Response } from "@lm15/lm15";
+import { writtenRecord, type CallFields } from "./content.ts";
+import type { Node } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
+import { entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
 
-export const FORMAT = 1;
+/** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
+export const FORMAT = 2;
+/** The formats of call records this reader reads. */
+const CALL_FORMATS = new Set([1, 2]);
+/** The rating record's format. */
+export const RATING_FORMAT = 1;
 const MAX_LINE = 8 * 1024 * 1024;
 const OFF = new Set(["", "0", "false", "no", "off"]);
 const ON = new Set(["1", "true", "yes", "on"]);
@@ -51,46 +59,7 @@ const now = () => (globalThis.performance ? globalThis.performance.timeOrigin + 
 
 // ------------------------------------------------------------------ values
 
-/** A value as the JSON the log holds, and its size (code points of its canonical JSON). */
-export function toJson(value: unknown): [Json, number] {
-  let data: Json;
-  try {
-    data = plain(value);
-    return [data, [...lmcc.canonicalJson(data as lmcc.Json)].length];
-  } catch {
-    const text = String(value).slice(0, 2000);
-    data = { $type: typeName(value), $repr: text };
-    return [data, [...lmcc.canonicalJson(data as lmcc.Json)].length];
-  }
-}
-
-function typeName(v: unknown): string {
-  if (v === null) return "null";
-  if (typeof v === "object") return (v as object).constructor?.name ?? "Object";
-  return typeof v;
-}
-
-function plain(v: unknown): Json {
-  if (v === null || typeof v === "string" || typeof v === "boolean") return v;
-  if (typeof v === "number") {
-    if (!Number.isFinite(v)) throw new TypeError("not finite");
-    return v;
-  }
-  if (typeof v === "bigint") {
-    if (v <= BigInt(Number.MAX_SAFE_INTEGER) && v >= BigInt(-Number.MAX_SAFE_INTEGER)) return Number(v);
-    throw new TypeError("bigint");
-  }
-  if (v instanceof Date) return v.toISOString();
-  if (Array.isArray(v)) return v.map(plain);
-  if (typeof v === "object") {
-    const proto = Object.getPrototypeOf(v);
-    if (proto !== Object.prototype && proto !== null) throw new TypeError("not plain data");
-    const out: Rec = {};
-    for (const [k, x] of Object.entries(v as Rec)) if (x !== undefined) out[k] = plain(x);
-    return out;
-  }
-  throw new TypeError(typeof v);
-}
+export { toJson } from "./values.ts";
 
 // ------------------------------------------------------------------ where
 
@@ -128,12 +97,6 @@ export function folderOf(setting: Settings["logCalls"]): string | null {
   return expand(setting);
 }
 
-function contentOf(setting: Settings["logContent"]): boolean {
-  if (setting !== undefined && setting !== null) return Boolean(setting);
-  const raw = (env()["FUNCTAI_LOG_CONTENT"] ?? "").trim().toLowerCase();
-  return !(OFF.has(raw) && raw !== "");
-}
-
 const warned = new Set<string>();
 export function warnOnce(key: string, message: string): void {
   if (warned.has(key)) return;
@@ -147,14 +110,14 @@ export function callerOf(settings: Settings): Rec {
   let base: Rec = {};
   if (raw) {
     try {
-      const parsed = JSON.parse(raw);
-      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) base = parsed;
+      const parsed = parseData(raw);
+      if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) base = parsed as Rec;
       else throw new Error("not a JSON object");
     } catch (err) {
       warnOnce(`caller:${raw}`, `$FUNCTAI_CALLER is not a JSON object (${(err as Error).message}); ignored`);
     }
   }
-  return { ...base, ...(settings.caller ?? {}) };
+  return lmcc.copyObject(base, settings.caller ?? {});             // members in order, as Python's {**env, **setting}
 }
 
 // ------------------------------------------------------------------ a call
@@ -164,7 +127,10 @@ export interface Program {
   kind: "ai" | "module";
   module: string;
   version: string;
+  /** AI functions only: lmcc's signature fingerprint with every type name empty. */
   signature?: string;
+  /** Every program: its interface's signature (programs.md). */
+  interface: string;
   answer: string;
   saved?: string;
   file?: string;
@@ -178,13 +144,14 @@ interface Exchange {
   seconds: number;
   cached: boolean;
   request: Request;
+  requestHash: string | null;
   response: Response | null;
   error: unknown;
   streamed: boolean;
   firstDelta: number | null;
 }
 
-/** One call being made. Only its id and timing exist when nothing is logged. */
+/** One call being made: what its record and its events need. */
 export class Call {
   readonly id = newId();
   readonly parent: string | null;
@@ -192,65 +159,78 @@ export class Call {
   readonly started = now();
   readonly exchanges: Exchange[] = [];
   provider: string | null = null;
-  inputs: Rec | null = null;
-  sizes: Record<string, number> = {};
+  /**
+   * Its inputs as the record holds them, by its interface's names, each as
+   * [JSON, size, whether it is a description]: written when the call starts
+   * (left-out optional inputs of a module with no default are absent).
+   */
+  inputsJson: Record<string, readonly [unknown, number, boolean]> = {};
+  /** Its outputs by name, once it has them. */
   outputs: Rec | null = null;
   confidence: number | null = null;
+  /** What a required journal said of its end, when it did not confirm it. */
+  journal: "refused" | "unknown" | null = null;
+  /** Its requests so far (the next `request` event's number is one more). */
+  requests = 0;
+  /** Its place in its tree's log (set when it starts). */
+  node!: Node;
 
   readonly program: () => Program;
   readonly folder: string | null;
-  readonly content: boolean;
+  /** Its fields (interface inputs and outputs, and those FunctAI adds), for what the log keeps. */
+  readonly fields: CallFields;
+  /** Whether each field's value is written (calls.md, "Content"). */
+  readonly keep: Record<string, boolean>;
   readonly caller: Rec;
+  /** Cancels the call (its caller's signal, a stream closed, a parent cancelled). */
+  readonly signal: AbortSignal | undefined;
 
-  constructor(program: () => Program, parent: Call | undefined, folder: string | null, content: boolean, caller: Rec) {
+  constructor(program: () => Program, parent: Call | undefined, folder: string | null, fields: CallFields,
+    keep: Record<string, boolean>, caller: Rec, signal?: AbortSignal) {
     this.program = program;
     this.folder = folder;
-    this.content = content;
+    this.fields = fields;
+    this.keep = keep;
     this.caller = caller;
+    this.signal = signal;
     this.parent = parent?.id ?? null;
     this.root = parent?.root ?? this.id;
   }
 
+  /** Whether every value is written. */
+  get content(): boolean {
+    return Object.values(this.keep).every(Boolean);
+  }
+
   exchange(model: string, request: Request, response: Response | null, started: number, seconds: number,
-    opts: { cached?: boolean; error?: unknown; streamed?: boolean; firstDelta?: number | null } = {}): void {
+    opts: { cached?: boolean; error?: unknown; streamed?: boolean; firstDelta?: number | null; requestHash?: string | null } = {}): void {
     this.exchanges.push({
       model, provider: this.provider, started, seconds, cached: opts.cached ?? false, request, response,
-      error: opts.error ?? null, streamed: opts.streamed ?? false, firstDelta: opts.firstDelta ?? null,
+      requestHash: opts.requestHash ?? null, error: opts.error ?? null, streamed: opts.streamed ?? false, firstDelta: opts.firstDelta ?? null,
     });
+  }
+
+  /** Make one of its events (streaming.md) when anything watches it: its streams, observers, the tree's journal. */
+  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry", fields: Rec) {
+    return this.node?.log.emit(this.node, kind, fields) ?? null;
+  }
+
+  /** Whether anything watches this call's events. */
+  get watched(): boolean {
+    return this.node ? this.node.log.watched(this.node) : false;
   }
 }
 
 export const current = new Context<Call>();
 
-/** Start a call of a program: an id, a parent, and a line in the log when logging is on. */
-export function start(program: () => Program, settings: Settings, inputs: Rec): Call {
-  let folder: string | null = null;
-  let content = true;
-  try {
-    folder = folderOf(settings.logCalls);
-    content = contentOf(settings.logContent);
-  } catch (err) {
-    warnOnce(`start:${(err as Error).name}`, `calls are not logged: ${(err as Error).message}`);
-  }
-  const call = new Call(program, current.get(), folder, content, callerOf(settings));
-  if (folder) {
-    const sizes: Record<string, number> = {};
-    const values: Rec = {};
-    for (const [k, v] of Object.entries(inputs)) {
-      const [data, n] = toJson(v);
-      values[k] = data;
-      sizes[k] = n;
-    }
-    call.sizes = sizes;
-    if (content) call.inputs = values;
-  }
-  return call;
-}
+/** FunctAI's own refusal codes (contract/README.md), recorded with their errors. */
+const OWN_CODES = /^(interface-|log-content-|journal-|saved-|event-)[a-z-]+$/;
 
-function errorJson(err: unknown, content: boolean): Rec {
+/** An error as a record or an event holds it: its type, its message, and its code when it has one. */
+export function errorJson(err: unknown, content = true): Rec {
   const e = err as { name?: string; code?: unknown; message?: string; constructor?: { name?: string } };
   const out: Rec = { type: e?.constructor?.name && e.constructor.name !== "Error" ? e.constructor.name : (e?.name ?? "Error") };
-  if (lmcc.isRefusal(err) && typeof e.code === "string") out["code"] = e.code;
+  if (typeof e?.code === "string" && (lmcc.isRefusal(err) || OWN_CODES.test(e.code))) out["code"] = e.code;
   if (content) out["message"] = e?.message ?? String(err);
   return out;
 }
@@ -258,7 +238,7 @@ function errorJson(err: unknown, content: boolean): Rec {
 function usageOf(response: Response): Record<string, number> {
   const u = (Response.toJSON(response)["usage"] ?? {}) as Rec;
   const out: Record<string, number> = {};
-  for (const [k, v] of Object.entries(u)) if (typeof v === "number" && Number.isInteger(v)) out[k] = v;
+  for (const [k, v] of Object.entries(u)) if (typeof v === "number" && Number.isInteger(v)) setOwn(out, k, v);
   return out;
 }
 
@@ -277,6 +257,7 @@ function exchangeJson(ex: Exchange, content: boolean): Rec {
   if (ex.error !== null && ex.error !== undefined) out["error"] = errorJson(ex.error, content);
   if (content) {
     out["request"] = Request.toJSON(ex.request);
+    if (ex.requestHash) out["request_hash"] = ex.requestHash;
     if (ex.response) out["response"] = Response.toJSON(ex.response);
   }
   return out;
@@ -297,54 +278,60 @@ function processJson(): Rec {
   return { ...processInfo };
 }
 
-/** The call's record (contract/calls.md, "A call record"). */
-export function record(call: Call, opts: { returned?: unknown; error?: unknown; hasReturned?: boolean } = {}): Rec {
+/**
+ * The call's record (contract/calls.md, "A call record"), format 2: the
+ * whole record, then what `logContent` lets it keep.
+ */
+/** How a call ended, for its record: what it returned, or what it threw (anything, `undefined` included). */
+export type Ending = { readonly failed: false; readonly returned: unknown } | { readonly failed: true; readonly error: unknown };
+
+export function record(call: Call, ending: Ending): Rec {
   const program = call.program();
-  const content = call.content;
-  let outputs: Rec | null = null;
-  const outSizes: Record<string, number> = {};
-  if (call.outputs) {
-    outputs = {};
-    for (const [k, v] of Object.entries(call.outputs)) {
-      const [data, n] = toJson(v);
-      outputs[k] = data;
-      outSizes[k] = n;
+  const described: { inputs: string[]; outputs: string[] } = { inputs: [], outputs: [] };
+  const written = (from: Record<string, readonly [unknown, number, boolean]>, which: "inputs" | "outputs"): [Rec, Record<string, number>] => {
+    const data: Rec = {};
+    const sizes: Record<string, number> = {};
+    for (const [k, [json, n, isDescription]] of entriesOf(from)) {
+      setOwn(data, k, json);
+      setOwn(sizes, k, n);
+      if (isDescription) described[which].push(k);
     }
-  }
-  if (program.kind === "module" && opts.error === undefined && opts.hasReturned) {
-    const [data, n] = toJson(opts.returned);
-    outputs = { result: data };
-    outSizes["result"] = n;
-  }
+    return [data, sizes];
+  };
+  const values = (from: Rec, which: "inputs" | "outputs") =>
+    written(recordOf(entriesOf(from).map(([k, v]) => [k, toJson(v)] as const)), which);
+  const [inputs, inSizes] = written(call.inputsJson, "inputs");
+  const failed = ending.failed;
+  const [outputs, outSizes] = call.outputs && !failed ? values(call.outputs, "outputs") : [null, {}];
   const answered = call.exchanges.filter((e) => e.response !== null);
   const usage: Record<string, number> = {};
-  for (const e of answered) for (const [k, v] of Object.entries(usageOf(e.response!))) usage[k] = (usage[k] ?? 0) + v;
+  for (const e of answered) for (const [k, v] of Object.entries(usageOf(e.response!))) setOwn(usage, k, (getOwn(usage, k) ?? 0) + v);
   const rec: Rec = {
     functai_call: FORMAT, id: call.id, parent: call.parent, root: call.root, program,
-    started: iso(call.started), seconds: round6((now() - call.started) / 1000), content,
+    started: iso(call.started), seconds: round6((now() - call.started) / 1000), content: true,
+    inputs, outputs,
   };
-  if (content) {
-    rec["inputs"] = call.inputs ?? {};
-    rec["outputs"] = outputs;
-    if (program.kind === "ai" && opts.hasReturned && opts.error === undefined) {
-      const [shown] = toJson(opts.returned);
-      if (outputs === null || !lmcc.jsonEqual((outputs as Rec)[program.answer] as lmcc.Json, shown as lmcc.Json)) rec["returned"] = shown;
-    }
+  if (program.kind === "ai" && !ending.failed) {
+    const [shown] = toJson(ending.returned);
+    if (outputs === null || !Object.hasOwn(outputs, program.answer) || !lmcc.jsonEqual(getOwn(outputs as Rec, program.answer) as lmcc.Json, shown)) rec["returned"] = shown;
   }
-  rec["sizes"] = { inputs: call.sizes, outputs: outSizes };
-  rec["error"] = opts.error !== undefined ? errorJson(opts.error, content) : null;
+  rec["sizes"] = { inputs: inSizes, outputs: outSizes };
+  if (described.inputs.length || described.outputs.length) rec["described"] = described;
+  rec["error"] = ending.failed ? errorJson(ending.error, true) : null;
   rec["model"] = answered.length ? answered[answered.length - 1]!.model : null;
   rec["usage"] = usage;
   rec["confidence"] = call.confidence;
-  rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, content));
-  rec["caller"] = { ...call.caller };
+  rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, true));
+  rec["saw"] = [];
+  if (call.journal) rec["journal"] = call.journal;
+  rec["caller"] = lmcc.copyObject(call.caller);
   rec["process"] = processJson();
-  return rec;
+  return writtenRecord(rec, call.fields, call.keep);
 }
 
 function line(rec: Rec): string {
-  // lm15 writes its numbers as they came (a temperature of 0.0 stays 0.0), as Python does
-  const dump = (r: Rec) => stringifyJson(r) + "\n";
+  // numbers as they came (a temperature of 0.0 stays 0.0) and every value's members in its order, as Python writes them
+  const dump = (r: Rec) => writeData(r) + "\n";
   let text = dump(rec);
   if (new TextEncoder().encode(text).length <= MAX_LINE) return text;
   rec = { ...rec, truncated: true, exchanges: (rec["exchanges"] as Rec[]).map(({ request: _q, response: _r, ...rest }) => rest) };
@@ -380,10 +367,10 @@ export function append(folder: string, rec: Rec): void {
 }
 
 /** End a call: write its line when logging is on. Never throws into the call. */
-export function finish(call: Call, opts: { returned?: unknown; error?: unknown; hasReturned?: boolean }): void {
+export function write(call: Call, ending: Ending): void {
   if (!call.folder) return;
   try {
-    append(call.folder, record(call, opts));
+    append(call.folder, record(call, ending));
   } catch (err) {
     warnOnce(`${call.folder}:${(err as Error).name}`,
       `could not log a call of ${call.program().name} to ${call.folder} (${(err as Error).message}); calls go on, unlogged`);
@@ -418,14 +405,14 @@ export function read(folder?: string | null, opts: { since?: Date | null } = {})
         if (!raw.trim()) continue;
         let rec: unknown;
         try {
-          rec = JSON.parse(raw);
+          rec = parseData(raw);
         } catch {
           continue;
         }
         if (typeof rec !== "object" || rec === null || Array.isArray(rec)) continue;
         const r = rec as Rec;
-        if (r["functai_call"] === FORMAT && String(r["started"] ?? "") >= cutoff) calls.push(r);
-        else if (r["functai_rating"] === FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+        if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
+        else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
       }
     }
   }
@@ -459,33 +446,45 @@ export function currentRatings(ratings: Iterable<Rec>, by?: string | null): Map<
   return out;
 }
 
+/** Whether a call's record kept every input as data (rule 3's `no_content`). */
+function inputsKept(call: Rec): boolean {
+  const described = ((call["described"] ?? {}) as Rec)["inputs"] as unknown[] | undefined;
+  if (described?.length) return false;
+  if (call["content"] === true) return "inputs" in call;
+  const omitted = call["omitted"] as { inputs?: unknown[] } | undefined;
+  return call["functai_call"] === 2 && omitted !== undefined && Array.isArray(omitted.inputs) && omitted.inputs.length === 0;
+}
+
+/** The values a counting rating gives (rule 4), or null. */
 function says(rating: Rec, call: Rec): Rec | null {
   const answer = ((call["program"] ?? {}) as Rec)["answer"] as string || "result";
   if (rating["verdict"] === "right") {
-    const outputs = (call["outputs"] ?? {}) as Rec | null;
-    return outputs && answer in outputs ? { [answer]: outputs[answer] } : null;
+    const outputs = (call["outputs"] ?? null) as Rec | null;
+    const described = (((call["described"] ?? {}) as Rec)["outputs"] ?? []) as string[];
+    return outputs && Object.hasOwn(outputs, answer) && !described.includes(answer) ? recordOf([[answer, outputs[answer]]]) : null;
   }
   const values: Rec = {};
-  if ("answer" in rating) values[answer] = rating["answer"];
-  for (const [k, v] of Object.entries((rating["outputs"] ?? {}) as Rec)) if (!(k in values)) values[k] = v;
+  if (Object.hasOwn(rating, "answer")) setOwn(values, answer, rating["answer"]);
+  for (const [k, v] of entriesOf((rating["outputs"] ?? {}) as Rec)) if (!Object.hasOwn(values, k)) setOwn(values, k, v);
   return Object.keys(values).length ? values : null;
 }
 
 function addMeta(row: Rec, meta: Rec): void {
   for (let [key, value] of Object.entries(meta)) {
-    while (key in row) key = "_" + key;
-    row[key] = value;
+    while (Object.hasOwn(row, key)) key = "_" + key;
+    setOwn(row, key, value);
   }
 }
 
 export interface LeftOut { other_signature: number; no_content: number; no_answer: number }
 
 /** Rows with known answers from rated calls (contract/calls.md, "Rows with known answers"). */
-export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>, opts: { name: string; module?: string | null; signature?: string | null; by?: string | null }): [Rec[], LeftOut] {
-  const counting = currentRatings(ratings, opts.by);
+export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
+  opts: { name: string; module?: string | null; signature?: string | null; interface?: string | null; by?: string | null }): [Rec[], LeftOut] {
+  const counting = currentRatings([...ratings].filter((r) => r["functai_rating"] === RATING_FORMAT), opts.by);
   const left: LeftOut = { other_signature: 0, no_content: 0, no_answer: 0 };
   const rows: Rec[] = [];
-  const mine = [...calls].filter((c) => {
+  const mine = [...calls].filter((c) => CALL_FORMATS.has(c["functai_call"] as number)).filter((c) => {
     const p = (c["program"] ?? {}) as Rec;
     return p["name"] === opts.name && (opts.module === undefined || opts.module === null || p["module"] === opts.module);
   });
@@ -494,11 +493,17 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>, opts: { 
     const rs = counting.get(call["id"] as string);
     if (!rs || !rs.length) continue;
     const program = (call["program"] ?? {}) as Rec;
-    if (opts.signature !== undefined && opts.signature !== null && program["signature"] !== opts.signature) {
-      left.other_signature++;
-      continue;
+    const bySignature = opts.signature !== undefined && opts.signature !== null;
+    const byInterface = opts.interface !== undefined && opts.interface !== null;
+    if (bySignature || byInterface) {
+      const own = (program["interface"] ?? program["signature"]) as string | undefined;
+      const matches = (byInterface && own === opts.interface) || (bySignature && program["signature"] === opts.signature);
+      if (!matches) {
+        left.other_signature++;
+        continue;
+      }
     }
-    if (!call["content"] || !("inputs" in call)) {
+    if (!inputsKept(call)) {
       left.no_content++;
       continue;
     }
@@ -512,9 +517,9 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>, opts: { 
     const spelled = new Set(usable.map(([, v]) => lmcc.canonicalJson(v as lmcc.Json)));
     const disputed = verdicts.size > 1 || spelled.size > 1;
     const answer = (program["answer"] as string) || "result";
-    const row: Rec = { ...((call["inputs"] ?? {}) as Rec) };
-    if (answer in values) row[answer] = values[answer];
-    for (const [k, v] of Object.entries(values)) if (k !== answer) row[k] = v;
+    const row: Rec = lmcc.copyObject((call["inputs"] ?? {}) as Rec);
+    if (Object.hasOwn(values, answer)) setOwn(row, answer, values[answer]);
+    for (const [k, v] of entriesOf(values)) if (k !== answer) setOwn(row, k, v);
     addMeta(row, {
       call: call["id"], version: program["version"], rating: rating["verdict"], rated_by: rating["by"],
       origin: rating["origin"] ?? "review", sample: rating["sample"] ?? null, disputed,
@@ -552,9 +557,9 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
   else throw new TypeError(`verdict is "right", "wrong", true, false, or null (withdraw); not ${JSON.stringify(verdict)}`);
   if (corrected && v !== "wrong") throw new TypeError("a right answer needs no correction: give answer or outputs only with \"wrong\"");
   const who = opts.by ?? (callerOf(settings)["user"] as string | undefined) ?? (processJson()["user"] as string | null) ?? "someone";
-  const rec: Rec = { functai_rating: FORMAT, id: newId(), call: callId, at: iso(Date.now()), by: who, verdict: v };
+  const rec: Rec = { functai_rating: RATING_FORMAT, id: newId(), call: callId, at: iso(Date.now()), by: who, verdict: v };
   if ("answer" in opts) rec["answer"] = toJson(opts.answer)[0];
-  if (opts.outputs) rec["outputs"] = Object.fromEntries(Object.entries(opts.outputs).map(([k, x]) => [k, toJson(x)[0]]));
+  if (opts.outputs) rec["outputs"] = recordOf(entriesOf(opts.outputs).map(([k, x]) => [k, toJson(x)[0]] as const));
   if (opts.reasons?.length) rec["reasons"] = [...opts.reasons];
   if (opts.note) rec["note"] = opts.note;
   rec["origin"] = opts.origin ?? "review";

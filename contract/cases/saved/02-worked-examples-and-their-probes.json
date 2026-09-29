@@ -14,6 +14,30 @@
     "kind": "ai",
     "module": "shop",
     "name": "mood",
+    "interface": {
+     "description": "How does the customer feel about what they bought?",
+     "inputs": [
+      {
+       "name": "review",
+       "shape": {
+        "type": "string"
+       }
+      }
+     ],
+     "outputs": [
+      {
+       "name": "result",
+       "shape": {
+        "enum": [
+         "happy",
+         "unhappy",
+         "mixed"
+        ],
+        "type": "string"
+       }
+      }
+     ]
+    },
     "ai": {
      "settings": {
       "lm": "gpt-4.1-mini",
@@ -147,6 +171,32 @@
     "sha256:0e52eb1171dd2d413232f1cd67763fa86b68610460e32e8ba5dd1058aeee5a44",
     "sha256:d7485d6eac27b9d2e305206af62e775daf0186981ba39dc03b2fd6f5d65a3c24"
    ]
+  },
+  "describe": {
+   "interface": {
+    "description": "How does the customer feel about what they bought?",
+    "inputs": [
+     {
+      "name": "review",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "enum": [
+        "happy",
+        "unhappy",
+        "mixed"
+       ],
+       "type": "string"
+      }
+     }
+    ]
+   }
   }
  }
 }

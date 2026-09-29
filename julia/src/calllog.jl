@@ -3,7 +3,9 @@
 # answers they make. The folder is the interface: Python, TypeScript, R,
 # Julia and any other tool read and write the same one.
 
-const LOG_FORMAT = 1
+const LOG_FORMAT = 2               # the call records this package writes (contract/calls.md, format 2)
+const READ_FORMATS = (1, 2)         # the call record formats it reads
+const RATING_FORMAT = 1
 const MAX_LINE = 8 * 1024 * 1024
 const OFF = Set(["", "0", "false", "no", "off"])
 const ON = Set(["1", "true", "yes", "on"])
@@ -61,12 +63,6 @@ function folder_of(setting)
     expand(setting)
 end
 
-function content_of(setting)
-    setting === nothing || return Bool(setting)
-    raw = lowercase(strip(get(ENV, "FUNCTAI_LOG_CONTENT", "")))
-    !(raw in OFF && raw != "")
-end
-
 const WARNED = Set{String}()
 function warn_once(key, message)
     first_time = lock(WARN_LOCK) do
@@ -108,66 +104,175 @@ mutable struct Exchange
     error::Any
     streamed::Bool
     first_delta::Union{Nothing,Float64}
+    request_hash::Union{Nothing,String}
 end
 
-"One call being made: its id, its parent, its exchanges; a line in the log when it ends, if logging is on."
+"""
+One call being made: its id, its parent, the tree's log it is in, which of
+its fields the log keeps, its exchanges; a line in the log when it ends, if
+logging is on.
+"""
 mutable struct Call
     const id::String
     const parent::Union{Nothing,String}
     const root::String
     const started::Float64
-    const program::Function              # () -> the program's Dict: its version is computed only when needed
+    const program::JObj                 # the call log's program object
+    const name::String
     const folder::Union{Nothing,String}
-    const content::Bool
     const caller::JObj
+    const tree::TreeLog
+    const fields::NamedTuple            # (inputs, outputs, added): the call's fields, by name
+    const keep::Keep
+    const observers::Vector{Any}
+    const watchers::Vector{Any}         # the streams whose closing cancels this call
+    refusal::Union{Nothing,Exception}   # a journal policy it breaks: raised once it has started
     exchanges::Vector{Exchange}
     provider::Union{Nothing,String}
-    inputs::Union{Nothing,JObj}
+    inputs::JObj                        # every input's value, as the log writes it
     sizes::JObj
+    described::Vector{String}
     outputs::Any
+    returned::Any
+    has_returned::Bool
+    value::Any                          # what the call returned (its done event's value)
     confidence::Any
+    requests::Int
+    const up::Union{Nothing,Call}       # the call it runs inside (its parent), which ends only once it has
+    open::Int                           # calls made inside it that have started and not ended (on its tree's lock)
+    ended::Bool                         # its end is numbered: no call attaches to it any more (on its tree's lock)
+    released::Bool                      # its parent no longer waits for it
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
+const STREAM_OPENING = ScopedValue{Any}(nothing)
+"""
+Internal: a scripted outermost call's id, the clock its tree's events are
+numbered by (`seq -> seconds`), and a vector that gets a copy of every event
+of the whole log as it is numbered. The contract's journal cases run through
+the engine with it (their ids and times are fixed); nothing else sets it.
+"""
+const SCRIPTED = ScopedValue{Any}(nothing)
 
-function exchange!(call::Call, model, request, response, started, seconds; cached=false, error=nothing, streamed=false, first_delta=nothing)
-    push!(call.exchanges, Exchange(model, call.provider, started, seconds, cached, request, response, error, streamed, first_delta))
+function exchange!(call::Call, model, request, response, started, seconds; cached=false, error=nothing, streamed=false,
+                   first_delta=nothing, request_hash=nothing)
+    push!(call.exchanges, Exchange(model, call.provider, started, seconds, cached, request, response, error, streamed,
+                                   first_delta, request_hash))
     nothing
 end
 
-"Start a call of a program: an id, its parent (the call it runs inside), and its inputs when logging is on."
-function start_call(program::Function, s::AbstractDict{Symbol}, inputs::AbstractDict)
-    folder, content = nothing, true
+"""
+Start a call of a program: an id, its parent (the call it runs inside), the
+tree's log it is in (a new one for an outermost call, with the journal its
+layers give), which of its fields the log keeps, its observers, and its
+inputs as the log writes them. Nothing here throws into the call but a
+closed stream (no call starts inside a cancelled one): a journal policy it
+breaks is kept in `refusal`, raised once it has started. A call made inside
+a call that has already ended (on a task that call started and did not wait
+for) starts a tree of its own: its parent's end was numbered after every
+call inside it had ended, and nothing joins a call after its end.
+"""
+function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
+                    inputs::AbstractDict, fields)
+    parent = CURRENT_CALL[]
+    check_cancelled(parent)
+    if parent !== nothing
+        attached = lock(parent.tree.lock) do
+            parent.ended ? false : (parent.open += 1; true)
+        end
+        if !attached
+            warn_once("after-end:$(program["module"]).$name", "$name was called inside a call that has ended; " *
+                      "it runs as a call of its own (its own tree)")
+            parent = nothing
+        end
+    end
+    try
+        new_call(parent, program, name, s, own, inputs, fields)
+    catch
+        # it never runs: the tree does not wait for it
+        parent === nothing || lock(() -> (parent.open -= 1; notify(parent.tree.cond)), parent.tree.lock)
+        rethrow()
+    end
+end
+
+function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
+                  inputs::AbstractDict, fields)
+    folder = nothing
     try
         folder = folder_of(setting(s, :log_calls))
-        content = content_of(setting(s, :log_content))
     catch err
         warn_once("start:$(typeof(err))", "calls are not logged: $(sprint(showerror, err))")
     end
-    parent = CURRENT_CALL[]
-    id = new_id()
-    call = Call(id, parent === nothing ? nothing : parent.id, parent === nothing ? id : parent.root, time(), program,
-                folder, content, caller_of(s), Exchange[], nothing, nothing, JObj(), nothing, nothing)
-    if folder !== nothing
-        values = JObj()
-        for (k, v) in inputs
-            data = logvalue(v)
-            values[String(k)] = data
-            call.sizes[String(k)] = jsonsize(data)
+    scripted = parent === nothing ? SCRIPTED[] : nothing
+    id = scripted === nothing ? new_id() : String(scripted.id)
+    layers = receiver_layers(own)
+    got = receivers(layers)
+    refusal = nothing
+    if parent === nothing
+        got.refused && (refusal = JournalError("journal-policy",
+            "a setting replaces or removes the journal a host layer set, or weakens a required one: the tree does not run"))
+        tree = scripted === nothing ? TreeLog(id, got.journal) : TreeLog(id, got.journal; clock=scripted.clock, tap=scripted.tap)
+    else
+        tree = parent.tree
+        mine = chosen_journal(layers)
+        if mine isa Journal && mine != tree.journal
+            if mine.required
+                refusal = JournalError("journal-scope", "a required journal set only inside a tree keeps nothing of it: set it around the tree's outermost call")
+            else
+                warn_once("journal-scope:$(objectid(mine.store))", "a journal set only inside a call tree keeps nothing of it: set it around the tree's outermost call")
+            end
         end
-        content && (call.inputs = values)
+    end
+    keep = Keep(fields, content_keep(fields, content_layers(own), environment_content()))
+    opening = STREAM_OPENING[]
+    watchers = parent === nothing ? Any[] : copy(parent.watchers)
+    call = Call(id, parent === nothing ? nothing : parent.id, parent === nothing ? id : parent.root, time(), program, String(name),
+                folder, caller_of(s), tree, fields, keep, got.observers, watchers, refusal, Exchange[], nothing, JObj(), JObj(),
+                String[], nothing, nothing, false, nothing, nothing, 0, parent, 0, false, false)
+    for (k, v) in inputs
+        data, described = logvalue_described(v)
+        call.inputs[String(k)] = data
+        call.sizes[String(k)] = jsonsize(data)
+        described && push!(call.described, String(k))
+    end
+    lock(tree.lock) do
+        tree.keeps[id] = keep
+        tree.observers[id] = got.observers
+        if opening !== nothing && opening.outer === nothing
+            attach!(opening, tree, id)
+            push!(call.watchers, opening)
+        end
     end
     call
+end
+
+"Whether a stream watching this call (or a call around it) was closed."
+cancelled(call::Call) = any(s -> s.closed, call.watchers)
+check_cancelled(call::Call) = cancelled(call) ? throw(Cancelled()) : nothing
+cancelled(::Nothing) = false
+check_cancelled(::Nothing) = nothing
+
+"Whether anyone receives this call's events: a stream, its observers, the tree's journal."
+watched(call::Call) = watched(call.tree, call.observers)
+
+"Make one of this call's events and give it to its readers."
+function emit!(call::Call, kind::Symbol, data::JObj; kw...)
+    call.ended && error("FunctAI: a $kind event of call $(call.id) after its end (a fault of FunctAI, not of your code)")
+    emit!(call.tree, kind, call.id, call.name, data; kw...)
 end
 
 "An exception as the log writes it: `{type, message?, code?}`."
 function error_json(err, content::Bool)
     err = unwrap(err)
     out = JObj("type" => error_type(err))
-    err isa LMCC.Refusal && (out["code"] = err.code)
+    code = error_code(err)
+    code === nothing || (out["code"] = code)
     content && (out["message"] = error_message(err))
     out
 end
+
+"lmcc's refusal code, or FunctAI's own (contract/README.md, \"Refusal codes FunctAI defines\"), or nothing."
+error_code(err) = err isa Union{LMCC.Refusal,InterfaceError,JournalError,LogContentError,LoadRefused,StoreRefusal,SawUnknown} ? err.code : nothing
 
 unwrap(err) = err isa TaskFailedException ? unwrap(err.task.exception) :
               err isa CompositeException && !isempty(err.exceptions) ? unwrap(first(err.exceptions)) : err
@@ -195,6 +300,7 @@ function exchange_json(ex::Exchange, content::Bool)
     ex.error === nothing || (out["error"] = error_json(ex.error, content))
     if content
         out["request"] = LM15.to_dict(ex.request)
+        ex.request_hash === nothing || (out["request_hash"] = ex.request_hash)
         ex.response === nothing || (out["response"] = LM15.to_dict(ex.response))
     end
     out
@@ -214,24 +320,23 @@ function process_json()
     copy(PROCESS[])
 end
 
-"The call's record (contract/calls.md, \"A call record\")."
-function call_record(call::Call; returned=nothing, has_returned::Bool=false, error=nothing)
-    program = call.program()
-    content = call.content
+"""
+The call's record (contract/calls.md, "A call record", format 2): the whole
+record, then what its `log_content` keeps of it (`written_record`).
+"""
+function call_record(call::Call; error=nothing, journal=nothing)
+    program = call.program
     outputs = nothing
     out_sizes = JObj()
+    out_described = String[]
     if call.outputs !== nothing
         outputs = JObj()
         for (k, v) in pairs(call.outputs)
-            data = logvalue(v)
+            data, described = logvalue_described(v)
             outputs[String(k)] = data
             out_sizes[String(k)] = jsonsize(data)
+            described && push!(out_described, String(k))
         end
-    end
-    if program["kind"] == "module" && error === nothing && has_returned
-        data = logvalue(returned)
-        outputs = LMCC.jobj("result" => data)
-        out_sizes["result"] = jsonsize(data)
     end
     answered = [e for e in call.exchanges if e.response !== nothing]
     usage = JObj()
@@ -240,24 +345,25 @@ function call_record(call::Call; returned=nothing, has_returned::Bool=false, err
     end
     rec = LMCC.jobj("functai_call" => LOG_FORMAT, "id" => call.id, "parent" => call.parent, "root" => call.root,
                     "program" => program, "started" => iso(call.started), "seconds" => round6(time() - call.started),
-                    "content" => content)
-    if content
-        rec["inputs"] = something(call.inputs, JObj())
-        rec["outputs"] = outputs
-        if program["kind"] == "ai" && has_returned && error === nothing
-            shown = logvalue(returned)
-            (outputs === nothing || !LMCC.json_equal(get(outputs, program["answer"], nothing), shown)) && (rec["returned"] = shown)
-        end
+                    "content" => true, "inputs" => copy(call.inputs), "outputs" => outputs)
+    if program["kind"] == "ai" && call.has_returned && error === nothing
+        shown = logvalue(call.returned)
+        (outputs === nothing || !same_json(get(outputs, program["answer"], nothing), shown)) && (rec["returned"] = shown)
     end
     rec["sizes"] = LMCC.jobj("inputs" => call.sizes, "outputs" => out_sizes)
-    rec["error"] = error === nothing ? nothing : error_json(error, content)
+    if !isempty(call.described) || !isempty(out_described)
+        rec["described"] = LMCC.jobj("inputs" => Any[call.described...], "outputs" => Any[out_described...])
+    end
+    rec["error"] = error === nothing ? nothing : error_json(error, true)
     rec["model"] = isempty(answered) ? nothing : last(answered).model
     rec["usage"] = usage
     rec["confidence"] = call.confidence
-    rec["exchanges"] = Any[exchange_json(e, content) for e in call.exchanges]
+    rec["exchanges"] = Any[exchange_json(e, true) for e in call.exchanges]
+    rec["saw"] = Any[]
+    journal === nothing || (rec["journal"] = journal)
     rec["caller"] = copy(call.caller)
     rec["process"] = process_json()
-    rec
+    written_record(rec, call.keep)
 end
 
 function log_line(rec::AbstractDict)
@@ -340,9 +446,9 @@ function read_log(folder=nothing; since=nothing)
                     continue
                 end
                 rec isa AbstractDict || continue
-                if get(rec, "functai_call", nothing) == LOG_FORMAT && string(get(rec, "started", "")) >= cutoff
+                if get(rec, "functai_call", nothing) in READ_FORMATS && string(get(rec, "started", "")) >= cutoff
                     push!(calls, rec)
-                elseif get(rec, "functai_rating", nothing) == LOG_FORMAT && string(get(rec, "at", "")) >= cutoff
+                elseif get(rec, "functai_rating", nothing) == RATING_FORMAT && string(get(rec, "at", "")) >= cutoff
                     push!(ratings, rec)
                 end
             end
@@ -378,11 +484,14 @@ function current_ratings(ratings; by=nothing)
     out
 end
 
+described(call, direction) = (d = get(call, "described", nothing); d isa AbstractDict ? something(get(d, direction, nothing), Any[]) : Any[])
+
 function what_it_says(rating, call)
     answer = something(get(get(call, "program", JObj()), "answer", nothing), "result")
     if rating["verdict"] == "right"
         outputs = get(call, "outputs", nothing)
-        return outputs isa AbstractDict && haskey(outputs, answer) ? JObj(answer => outputs[answer]) : nothing
+        (outputs isa AbstractDict && haskey(outputs, answer) && !(answer in described(call, "outputs"))) || return nothing
+        return JObj(answer => outputs[answer])
     end
     values = JObj()
     haskey(rating, "answer") && (values[answer] = rating["answer"])
@@ -401,26 +510,50 @@ function add_meta!(row, meta)
     end
 end
 
+"Whether a call's record matches the program's current signature or interface (rule 3; format 1 has no interface)."
+function matches(call, signature, interface)
+    program = call["program"]
+    signature === nothing && interface === nothing && return true
+    signature !== nothing && get(program, "signature", nothing) == signature && return true
+    if interface !== nothing
+        haskey(program, "interface") ? program["interface"] == interface : get(program, "signature", nothing) == interface
+    else
+        false
+    end
+end
+
+"Whether every input of a call was recorded as data (rule 3's `no_content`)."
+function inputs_recorded(call)
+    get(call, "content", false) === true || begin
+        omitted = get(call, "omitted", nothing)
+        call["functai_call"] >= 2 && omitted isa AbstractDict && isempty(something(get(omitted, "inputs", nothing), Any[0]))
+    end || return false
+    isempty(described(call, "inputs"))
+end
+
 """
 Rows with known answers from rated calls (contract/calls.md, "Rows with known
-answers"): `(rows, left_out)`.
+answers"): `(rows, left_out)`. Reads call records of formats 1 and 2 and
+skips the others. `signature` and `interface` are the program's current
+`program.signature` and `program.interface`, when known.
 """
-function rated_rows(calls, ratings; name, module_name=nothing, signature=nothing, by=nothing)
-    counting = current_ratings(ratings; by)
+function rated_rows(calls, ratings; name, module_name=nothing, signature=nothing, interface=nothing, by=nothing)
+    counting = current_ratings([r for r in ratings if get(r, "functai_rating", nothing) == RATING_FORMAT]; by)
     left = LMCC.jobj("other_signature" => 0, "no_content" => 0, "no_answer" => 0)
     rows = JObj[]
-    mine = [c for c in calls if get(get(c, "program", JObj()), "name", nothing) == name &&
+    mine = [c for c in calls if get(c, "functai_call", nothing) in READ_FORMATS &&
+                                get(get(c, "program", JObj()), "name", nothing) == name &&
                                 (module_name === nothing || get(c["program"], "module", nothing) == module_name)]
     sort!(mine; by=c -> (string(get(c, "started", "")), string(get(c, "id", ""))))
     for call in mine
         rs = get(counting, string(get(call, "id", "")), nothing)
         (rs === nothing || isempty(rs)) && continue
         program = call["program"]
-        if signature !== nothing && get(program, "signature", nothing) != signature
+        if !matches(call, signature, interface)
             left["other_signature"] += 1
             continue
         end
-        if !(get(call, "content", false) === true) || !haskey(call, "inputs")
+        if !inputs_recorded(call)
             left["no_content"] += 1
             continue
         end
@@ -432,7 +565,7 @@ function rated_rows(calls, ratings; name, module_name=nothing, signature=nothing
         rating, values = last(usable)
         disputed = length(Set(r["verdict"] for r in rs)) > 1 || length(Set(LMCC.canonical_json(v) for (_, v) in usable)) > 1
         answer = something(get(program, "answer", nothing), "result")
-        row = JObj(String(k) => v for (k, v) in something(call["inputs"], JObj()))
+        row = JObj(String(k) => v for (k, v) in something(get(call, "inputs", nothing), JObj()))
         haskey(values, answer) && (row[answer] = values[answer])
         for (k, v) in values
             k == answer || (row[k] = v)
@@ -466,7 +599,7 @@ function rating_record(call_id::AbstractString, verdict, s; answer=NOTHING_GIVEN
     corrected && v != "wrong" && throw(ArgumentError("a right answer needs no correction: give answer or outputs only with :wrong"))
     origin in (:review, :edit, "review", "edit") || throw(ArgumentError("origin is :review or :edit, not $(repr(origin))"))
     who = something(by, get(caller_of(s), "user", nothing), process_json()["user"], "someone")
-    rec = LMCC.jobj("functai_rating" => LOG_FORMAT, "id" => new_id(), "call" => String(call_id), "at" => iso(time()),
+    rec = LMCC.jobj("functai_rating" => RATING_FORMAT, "id" => new_id(), "call" => String(call_id), "at" => iso(time()),
                     "by" => String(who), "verdict" => v)
     answer === NOTHING_GIVEN || (rec["answer"] = logvalue(answer))
     outputs === nothing || (rec["outputs"] = JObj(String(k) => logvalue(x) for (k, x) in pairs(outputs)))

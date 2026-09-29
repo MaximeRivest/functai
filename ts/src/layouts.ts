@@ -8,6 +8,7 @@ import * as lmcc from "lmcc";
 import { install } from "lmcc/std";
 import { LAYOUTS, MODELS } from "./generated/contract.ts";
 import { JUDGMENT_ONLY } from "./models.ts";
+import { copyData } from "./values.ts";
 
 /** The registry every plan binds with: lmcc's standard pack and functai's reply reader. */
 export const REGISTRY = new lmcc.Registry();
@@ -46,16 +47,16 @@ export function resolveAdapter(adapter: unknown): lmcc.Adapter {
   if (adapter === null || adapter === undefined) return resolveAdapter("xml");
   if (typeof adapter === "string") {
     const key = adapter.toLowerCase().replaceAll("-", "").replaceAll(" ", "").replaceAll("_", "");
-    const name = NAMED[key];
+    const name = Object.hasOwn(NAMED, key) ? NAMED[key] : undefined;
     if (!name) throw new Error(`unknown adapter ${JSON.stringify(adapter)}; use "xml", "chat", "json", an lmcc adapter, or template: [...]`);
     let a = loaded.get(name);
     if (!a) {
-      a = lmcc.load(structuredClone(LAYOUTS[name]), { registry: REGISTRY });
+      a = lmcc.load(copyData(LAYOUTS[name]), { registry: REGISTRY });
       loaded.set(name, a);
     }
     return a;
   }
-  if (typeof adapter === "object") return lmcc.load(structuredClone(adapter) as Record<string, unknown>, { registry: REGISTRY });
+  if (typeof adapter === "object") return lmcc.load(copyData(adapter) as Record<string, unknown>, { registry: REGISTRY });
   throw new TypeError(`adapter must be "xml", "chat", "json", an lmcc adapter or an artifact, not ${typeof adapter}`);
 }
 
@@ -74,8 +75,8 @@ export function templateAdapter(messages: readonly Record<string, unknown>[], re
     msgs.splice(last < 0 ? msgs.length : last, 0, { directive: "turns" });
   }
   return lmcc.adapter({
-    name: "functai_template", messages: msgs, formats: structuredClone(XML.formats),
-    transports: structuredClone(XML.transports), reader: { kind: reader },
+    name: "functai_template", messages: msgs, formats: copyData(XML.formats),
+    transports: copyData(XML.transports), reader: { kind: reader },
   });
 }
 
@@ -94,7 +95,7 @@ function judgment(signature: lmcc.Signature): [lmcc.Adapter, lmcc.Signature] {
   const body = inputs.length === 1 ? `{${inputs[0]!["name"]}}` : INPUT_TAGS;
   const adapter = lmcc.adapter({
     name: "functai_judgment", messages: [{ directive: "turns" }, { role: "user", text: body }],
-    reader: { kind: "json_object" }, formats: structuredClone(XML.formats),
+    reader: { kind: "json_object" }, formats: copyData(XML.formats),
   });
   return [adapter, lmcc.signatureFromDict({ instructions: doc, fields })];
 }

@@ -1,0 +1,343 @@
+{
+ "description": "A call that failed (the provider's error) and whose failed is kept but its answer lost: the outcome is that error; the caller gets JournalError (journal-end, \"unknown\") holding it, and the record keeps the provider's error as the call's error, with journal \"unknown\".",
+ "kind": "journal",
+ "mode": "required",
+ "retries": 2,
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "I was charged twice."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "text": "billing?"
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "reason": "Your reply could not be read: <result> must be one of billing, shipping, product.",
+   "wait": 2.0
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "error": {
+    "type": "ProviderError",
+    "message": "503 from the provider"
+   }
+  }
+ ],
+ "script": [
+  "ok",
+  "ok",
+  "ok",
+  "ok",
+  "ok",
+  "lost",
+  "down",
+  "down"
+ ],
+ "expect": {
+  "log": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "team",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "I was charged twice."
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "field": "result",
+    "answer": true,
+    "text": "billing?"
+   },
+   {
+    "functai_event": 2,
+    "kind": "retry",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "reason": "Your reply could not be read: <result> must be one of billing, shipping, product.",
+    "wait": 2.0
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "team",
+    "error": {
+     "type": "ProviderError",
+     "message": "503 from the provider"
+    }
+   }
+  ],
+  "trace": [
+   {
+    "seq": 1,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 2,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 3,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 4,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 5,
+    "transport": "ok",
+    "answer": "kept"
+   },
+   {
+    "seq": 6,
+    "transport": "lost",
+    "answer": null
+   },
+   {
+    "seq": 6,
+    "transport": "down",
+    "answer": null
+   },
+   {
+    "seq": 6,
+    "transport": "down",
+    "answer": null
+   }
+  ],
+  "shown": [
+   1,
+   2,
+   3,
+   4,
+   5
+  ],
+  "kept": {
+   "events": [
+    {
+     "writer": 1,
+     "seq": 1
+    },
+    {
+     "writer": 1,
+     "seq": 2
+    },
+    {
+     "writer": 1,
+     "seq": 3
+    },
+    {
+     "writer": 1,
+     "seq": 4
+    },
+    {
+     "writer": 1,
+     "seq": 5
+    },
+    {
+     "writer": 1,
+     "seq": 6
+    }
+   ],
+   "finished": true
+  },
+  "caller": {
+   "raises": {
+    "type": "JournalError",
+    "code": "journal-end",
+    "journal": "unknown",
+    "event": {
+     "writer": 1,
+     "seq": 6
+    },
+    "outcome": {
+     "failed": {
+      "type": "ProviderError"
+     }
+    }
+   }
+  },
+  "record": {
+   "error": {
+    "type": "ProviderError"
+   },
+   "journal": "unknown"
+  },
+  "settled": "kept"
+ }
+}

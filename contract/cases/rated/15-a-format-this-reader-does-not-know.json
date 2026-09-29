@@ -1,0 +1,154 @@
+{
+ "description": "A call or rating record of a format the reader does not know is skipped: it makes no row and is not counted. A later format may mean something else by the same keys.",
+ "records": [
+  {
+   "functai_call": 3,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "I was charged twice for one order."
+   },
+   "outputs": {
+    "result": "billing"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 36
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0002-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:02:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "My parcel never came."
+   },
+   "outputs": {
+    "result": "shipping"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 23
+    },
+    "outputs": {
+     "result": 10
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0002-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926a90-0003-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:06:00.000000Z",
+   "by": "ana",
+   "verdict": "wrong",
+   "answer": "billing"
+  }
+ ],
+ "rated": {
+  "name": "team",
+  "module": "support",
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "by": null
+ },
+ "expect": {
+  "rows": [
+   {
+    "message": "My parcel never came.",
+    "result": "shipping",
+    "call": "01926a8e-0002-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}

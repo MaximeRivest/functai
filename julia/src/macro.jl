@@ -151,6 +151,18 @@ mood("Broke after a day.")        # unhappy
 df.mood = mood.(df.review)        # the column, 8 calls at a time
 ```
 
+An input with a default may be left out: `tone::String = "kind"`. The
+default is written in the function's [`interface`](@ref) and sent to the
+model whenever the input is left out, so it is data, the same for every
+call: a literal (`"kind"`, `3`, `String[]`, `(a = 1,)`) or a constant
+whose value can never change (`const TONE = "kind"`, an `@enum` value). A
+default that uses another input, is computed (`at::Float64 = time()`), or
+is a constant that can change (`const TAGS = ["a"]`: a `Vector` can be
+pushed to) is refused when the function is defined, rather than taken once
+then and shared by every call (unlike Julia, which runs a default on each
+call); give such a value at each call. Each call gets its own copy of the
+default, made from its JSON form, as loading a saved function makes it.
+
 With several outputs, calling returns them all as a `NamedTuple`
 (`(; summary, minutes) = triage(ticket)`). With code after the outputs, that
 code runs on them, and its value is what calling returns:
@@ -230,20 +242,27 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
                             "drop the return type ::$(ret), or add code that returns what it says"))
     end
 
-    # the inputs, positional then keyword, as Julia binds them
-    params = Any[x.has_default ? Expr(:kw, x.name, x.default) : x.name for x in inputs if !x.keyword]
-    kwparams = Any[x.has_default ? Expr(:kw, x.name, x.default) : x.name for x in inputs if x.keyword]
-    dict = :($OrderedDict{String,Any}($((:($(String(x.name)) => $(x.name)) for x in inputs)...)))
+    # the inputs, positional then keyword, as Julia binds them. An input with a
+    # default may be left out: the binder leaves it out, and the call takes the
+    # default from the interface. The default is data (written in the interface
+    # and sent to the model; contract/programs.md), so it is a literal or a
+    # constant, known when the function is defined; each call gets a copy.
+    given = NOTHING_GIVEN
+    params = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if !x.keyword]
+    kwparams = Any[x.has_default ? Expr(:kw, x.name, given) : x.name for x in inputs if x.keyword]
+    dict = :($(given_inputs)($((:($(String(x.name)) => $(x.name)) for x in inputs)...)))
     binder = isempty(kwparams) ? Expr(:->, Expr(:tuple, params...), dict) :
              Expr(:->, Expr(:tuple, Expr(:parameters, kwparams...), params...), dict)
     row = gensym(:row)
     assigns = Any[]
     for x in inputs
         col = String(x.name)
-        absent = x.has_default ? x.default : :(throw(ArgumentError($("the row has no column $col for $name's input"))))
+        absent = x.has_default ? given : :(throw(ArgumentError($("the row has no column $col for $name's input"))))
         push!(assigns, :($(x.name) = haskey($row, $col) ? $row[$col] : $absent))
     end
     from_row = Expr(:->, row, Expr(:block, assigns..., dict))
+    defaults = Expr(:tuple, (Expr(:(=), x.name, ai_default(mod, x.default, input_names, String(name), String(x.name)))
+                             for x in inputs if x.has_default)...)
 
     body_fn = nothing
     if has_code
@@ -269,7 +288,7 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
     any(o -> o.args[1] === :module_name, options) && (mname = nothing)     # the option says it
     fn = gensym(:fn)
     esc(:($name = let $fn = $(define_function)($(String(name)), $description;
-            inputs=$input_specs, outputs=$output_specs, binder=$binder, from_row=$from_row, body=$body_fn,
+            inputs=$input_specs, outputs=$output_specs, defaults=$defaults, binder=$binder, from_row=$from_row, body=$body_fn,
             code=$code, returns=$(has_code ? ret : nothing), declared_return=$(ret === nothing ? nothing : ret),
             $((mname === nothing ? () : (Expr(:kw, :module_name, mname),))...), file=$(source.file === nothing ? nothing : String(source.file)), line=$(source.line),
             source=$(QuoteNode(Base.remove_linenums!(deepcopy(whole)))), $(settings...))
@@ -279,6 +298,128 @@ function define_ai(mod::Module, source::LineNumberNode, options, fexpr, whole)
 end
 
 guidance_spec(type, desc) = desc === nothing || isempty(desc) ? type : :($type => $desc)
+
+"The inputs a call gave, by name (an input left out is not there)."
+given_inputs(pairs::Pair...) = OrderedDict{String,Any}(k => v for (k, v) in pairs if v !== NOTHING_GIVEN)
+
+# ------------------------------------------------------------------ defaults that are data
+
+"Whether an expression names one of `names` (a quoted symbol, `:x`, names nothing)."
+mentions(x, names) = x isa Symbol ? String(x) in names :
+                     x isa Expr ? x.head !== :quote && any(a -> mentions(a, names), x.args) : false
+
+"""
+A literal default: a number, text, a Bool, `nothing`, a quoted symbol, and
+lists, tuples, named tuples, typed vectors (`String[]`, `T[…]` where `T`
+names a type in `mod`: `COUNTS[1]` reads a global, and is not one) and
+`Dict`s of them.
+"""
+function is_literal(x, mod::Module)
+    lit(a) = is_literal(a, mod)
+    x isa Union{Number,AbstractString} && return true
+    x === :nothing && return true
+    x isa QuoteNode && return x.value isa Symbol
+    x isa Expr || return false
+    named(a) = a isa Expr && a.head === :(=) && a.args[1] isa Symbol && lit(a.args[2])
+    x.head === :vect && return all(lit, x.args)
+    x.head === :tuple && return all(a -> lit(a) || named(a), x.args)
+    x.head === :parameters && return all(a -> named(a) || (a isa Expr && a.head === :kw && lit(a.args[2])), x.args)
+    x.head === :ref && return !isempty(x.args) && names_type(mod, x.args[1]) && all(lit, x.args[2:end])
+    pair(a) = a isa Expr && a.head === :call && a.args[1] === :(=>) && length(a.args) == 3 && lit(a.args[2]) && lit(a.args[3])
+    x.head === :call && x.args[1] === :Dict && return all(pair, x.args[2:end])
+    false
+end
+"""
+Whether `x` names a type in `mod` (a typed vector's element type: `String`
+in `String[]`, `Vector{Int}` in `Vector{Int}[]`, `Base.String`): a constant
+holding a type, or one applied to such names and numbers.
+"""
+function names_type(mod::Module, x)
+    is_name_path(x) && return (v = constant_value(mod, x); v !== NOTHING_GIVEN && v isa Type)
+    x isa Expr && x.head === :curly || return false
+    names_type(mod, x.args[1]) && all(a -> a isa Integer || names_type(mod, a), x.args[2:end])
+end
+
+"""
+Whether a value can never change: numbers, characters, text, symbols,
+`nothing`, `missing`, enum values, and immutable values (tuples, named
+tuples, immutable structs) made only of them. A constant holding one is the
+same value on every call; a constant holding a `Vector` or a `Dict` is not
+(`push!(ITEMS, …)` changes it after the function is defined).
+"""
+frozen(v) = v isa Union{Number,AbstractChar,String,Symbol,Nothing,Missing,Enum} ? true :
+            ismutable(v) ? false : all(i -> !isdefined(v, i) || frozen(getfield(v, i)), 1:nfields(v))
+
+"A name, or a dotted path of names (`TONE`, `Settings.TONE`): what may be a constant."
+is_name_path(x) = x isa Symbol || (x isa Expr && x.head === :. && length(x.args) == 2 && is_name_path(x.args[1]) &&
+                                   x.args[2] isa QuoteNode && x.args[2].value isa Symbol)
+
+"The value of a constant named by a name path in `mod`, or `NOTHING_GIVEN` when it is not a constant."
+function constant_value(mod::Module, x)
+    owner, name = if x isa Symbol
+        (mod, x)
+    else
+        m = constant_value(mod, x.args[1])
+        m isa Module || return NOTHING_GIVEN
+        (m, x.args[2].value)
+    end
+    isdefined(owner, name) && isconst(owner, name) ? getfield(owner, name) : NOTHING_GIVEN
+end
+
+"""
+A `@program` argument's default as the interface writes it, when it is data
+(a literal, or a constant whose value can never change, and no other
+argument): the expression that gives it when the program is defined, else
+`NOTHING_GIVEN` (it is Julia code, run on each call as Julia runs it, and the
+input is optional with no default in its shape: a call that leaves it out
+records no value for it). The code evaluates a data default too, on each
+call; its value is the interface's, so the record holds what the code got.
+"""
+function default_data(mod::Module, default, arg_names)
+    mentions(default, arg_names) && return NOTHING_GIVEN
+    is_literal(default, mod) && return default
+    is_name_path(default) && return :($(frozen_constant)($mod, $(QuoteNode(default))))
+    NOTHING_GIVEN
+end
+
+"The value of a constant that can never change, named by `x` in `mod`, else `NOTHING_GIVEN`."
+function frozen_constant(mod::Module, x)
+    v = constant_value(mod, x)
+    v !== NOTHING_GIVEN && frozen(v) ? v : NOTHING_GIVEN
+end
+
+"""
+An `@ai` input's default, as the expression that gives it when the function
+is defined: it is written in the interface and sent to the model whenever
+the input is left out, so it is data, the same for every call: a literal or
+a constant whose value can never change. Anything else is refused when the
+function is defined, rather than computed once and silently shared (`time()`
+would be the definition's time on every call; a constant `Vector` would be
+its contents then, whatever was pushed to it since).
+"""
+function ai_default(mod::Module, default, input_names, fname, input)
+    if mentions(default, input_names)
+        used = join(sort!([n for n in input_names if mentions(default, [n])]), ", ")
+        return :(throw(ArgumentError($("@ai $fname: the default of $input uses $used, another input. A default is data, " *
+                                        "sent to the model whenever $input is left out: write a literal or a constant, or give $input at each call"))))
+    end
+    is_literal(default, mod) && return default
+    is_name_path(default) && return :($(ai_constant)($mod, $(QuoteNode(default)), $fname, $input))
+    :(throw(ArgumentError($("@ai $fname: the default of $input ($(default)) is computed. A default is data, written in the " *
+                            "function's interface and sent to the model whenever $input is left out, the same for every call: " *
+                            "write a literal or a constant (const X = …), or leave the default out and give $input at each call"))))
+end
+
+function ai_constant(mod::Module, x, fname, input)
+    v = constant_value(mod, x)
+    v === NOTHING_GIVEN && throw(ArgumentError("@ai $fname: the default of $input ($x) is not a constant. A default is data, " *
+        "sent to the model whenever $input is left out, the same for every call: make it one (const $x = …), or write a literal"))
+    frozen(v) || throw(ArgumentError("@ai $fname: the default of $input ($x) is a constant whose value can change (a " *
+        "$(typeof(v)): what it holds can be changed after the function is defined). A default is data, written in the " *
+        "function's interface when it is defined and sent to the model whenever $input is left out, the same for every " *
+        "call: write it as a literal, or give $input at each call"))
+    v
+end
 
 "The @ai macro's constructor: checks what only evaluated types can say, then makes the function."
 function define_function(name, description; inputs, outputs, declared_return, code, body, kw...)

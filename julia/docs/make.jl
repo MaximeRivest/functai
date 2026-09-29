@@ -76,6 +76,6 @@ makedocs(;
             "guides/saving.md",
         ],
         "Where Julia differs" => "differences.md",
-        "Reference" => "reference.md",
+        "Reference" => ["reference.md", "reference-logs.md"],
     ],
 )

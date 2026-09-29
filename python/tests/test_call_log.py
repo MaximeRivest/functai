@@ -49,11 +49,9 @@ def log(tmp_path):
 
 @pytest.fixture
 def schemas():
-    jsonschema = pytest.importorskip("jsonschema")
-    from referencing import Registry, Resource
-    docs = {name: json.loads((CONTRACT / "schema" / f"{name}.schema.json").read_text()) for name in ("call", "rating")}
-    registry = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in docs.values()])
-    return {name: jsonschema.Draft202012Validator(d, registry=registry) for name, d in docs.items()}
+    """The call and rating schemas, their patterns read as ECMA-262 reads them (contract_support)."""
+    from contract_support import validator
+    return {name: validator(name) for name in ("call", "rating")}
 
 
 def lines(folder):
@@ -110,8 +108,10 @@ def test_log_settings_are_checked_when_given():
         functai.configure(log_calls=3)
     with pytest.raises(ValueError, match="empty"):
         functai.configure(log_calls=" ")
-    with pytest.raises(TypeError, match="log_content is True or False"):
+    with pytest.raises(TypeError, match="log_content is True, False, or a map"):
         functai.configure(log_content="no")
+    with pytest.raises(functai.LogContentError, match="neither a field name"):
+        functai.configure(log_content={"#private": False})
     with pytest.raises(TypeError, match="caller is a dict"):
         functai.configure(caller="me")
     with pytest.raises(TypeError, match="JSON values"):
@@ -149,8 +149,9 @@ def test_without_content_only_sizes_times_and_tokens(fake, log, schemas):
     with pytest.raises(lmcc.Refusal):
         quiet("my password is hunter2")
     [rec] = valid(schemas, logged(log))
-    assert rec["content"] is False
-    assert not {"inputs", "outputs", "returned", "probabilities"} & set(rec)
+    assert rec["content"] is False and rec["omitted"] == {"inputs": ["message"], "outputs": ["result"]}
+    assert not {"inputs", "returned", "probabilities"} & set(rec)
+    assert rec["outputs"] is None                            # format 2: it failed before an answer
     assert rec["sizes"]["inputs"] == {"message": len('"my password is hunter2"')}
     assert rec["error"]["type"] == "Refusal" and rec["error"]["code"].startswith("parse-")
     assert "message" not in rec["error"]                     # it can quote the reply
@@ -596,7 +597,7 @@ def test_reading_skips_partial_lines_and_unknown_records(fake, log):
     fake(responder=team_reply)
     team("parcel late")
     day = next(log.iterdir())
-    (day / "other-writer.jsonl").write_text('{"functai_call": 2, "id": "x"}\n{"hello": 1}\n{"functai_call": 1, "id"')
+    (day / "other-writer.jsonl").write_text('{"functai_call": 3, "id": "x"}\n{"hello": 1}\n{"functai_call": 1, "id"')
     found, ratings = calllog.read(log)
     assert len(found) == 1 and ratings == []
 
@@ -611,7 +612,8 @@ def cases():
 @pytest.mark.parametrize("path", cases(), ids=lambda p: p.stem)
 def test_contract_case(path, schemas):
     case = json.loads(path.read_text())
-    valid(schemas, case["records"])
+    valid(schemas, [r for r in case["records"] if r.get("functai_call") in calllog.READS
+                    or r.get("functai_rating") == calllog.RATING_FORMAT])
     calls_ = [r for r in case["records"] if "functai_call" in r]
     ratings = [r for r in case["records"] if "functai_rating" in r]
     rows, left = calllog.rated_rows(calls_, ratings, **case["rated"])

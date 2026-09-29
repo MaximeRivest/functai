@@ -1,0 +1,298 @@
+{
+ "description": "Dropping the reasoning drops the calls too, for the same reason: every other value is written.",
+ "fields": {
+  "inputs": [
+   "transcript",
+   "question"
+  ],
+  "outputs": [
+   "reasoning",
+   "calls",
+   "summary",
+   "result"
+  ],
+  "added": [
+   "reasoning",
+   "calls"
+  ]
+ },
+ "layers": [
+  {
+   "where": "configure",
+   "log_content": {
+    "reasoning": false
+   }
+  }
+ ],
+ "environment": null,
+ "record": {
+  "functai_call": 2,
+  "id": "01926a8e-0001-7000-8000-000000000000",
+  "parent": null,
+  "root": "01926a8e-0001-7000-8000-000000000000",
+  "program": {
+   "name": "triage_build",
+   "kind": "ai",
+   "module": "ci",
+   "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+   "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+   "interface": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+   "answer": "result"
+  },
+  "started": "2026-09-28T10:00:00.000000Z",
+  "seconds": 1.6,
+  "content": true,
+  "inputs": {
+   "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n",
+   "question": "Is the build broken for a real reason?"
+  },
+  "outputs": {
+   "reasoning": "Ben says the upload test is flaky, so the build is not broken.",
+   "calls": [
+    {
+     "id": "call_1",
+     "name": "ci_log",
+     "input": {
+      "job": 4412
+     }
+    }
+   ],
+   "summary": "A flaky upload test fails the build.",
+   "result": "no"
+  },
+  "returned": "No",
+  "probabilities": {
+   "summary": {
+    "A flaky upload test fails the build.": 0.61
+   },
+   "result": {
+    "no": 0.93,
+    "yes": 0.07
+   }
+  },
+  "sizes": {
+   "inputs": {
+    "transcript": 197,
+    "question": 40
+   },
+   "outputs": {
+    "reasoning": 64,
+    "calls": 54,
+    "summary": 38,
+    "result": 4
+   }
+  },
+  "error": null,
+  "model": "gpt-4.1-mini",
+  "usage": {
+   "input_tokens": 270,
+   "output_tokens": 44,
+   "total_tokens": 314
+  },
+  "confidence": 0.61,
+  "exchanges": [
+   {
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "started": "2026-09-28T10:00:00.001000Z",
+    "seconds": 0.79,
+    "cached": false,
+    "finish": "stop",
+    "usage": {
+     "input_tokens": 120,
+     "output_tokens": 14,
+     "total_tokens": 134
+    },
+    "error": {
+     "type": "Refusal",
+     "code": "parse-value",
+     "message": "parse-value: 'Ben says the upload test is flaky' is not one of yes, no"
+    },
+    "request": {
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<transcript>\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n\n</transcript>\n<question>\nIs the build broken for a real reason?\n</question>"
+        }
+       ]
+      }
+     ]
+    },
+    "request_hash": "sha256:0d6077cf28f3fce7ab1532aba4e451b05a9abf74a45c68a05561c5d9ad79263f",
+    "response": {
+     "message": {
+      "role": "assistant",
+      "parts": [
+       {
+        "type": "text",
+        "text": "<result>\nBen says the upload test is flaky\n</result>"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "model": "gpt-4.1-mini",
+    "provider": "openai",
+    "started": "2026-09-28T10:00:00.801000Z",
+    "seconds": 0.8,
+    "cached": false,
+    "finish": "stop",
+    "usage": {
+     "input_tokens": 150,
+     "output_tokens": 30,
+     "total_tokens": 180
+    },
+    "request": {
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<transcript>\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n\n</transcript>\n<question>\nIs the build broken for a real reason?\n</question>"
+        }
+       ]
+      }
+     ]
+    },
+    "request_hash": "sha256:0d6077cf28f3fce7ab1532aba4e451b05a9abf74a45c68a05561c5d9ad79263f",
+    "response": {
+     "message": {
+      "role": "assistant",
+      "parts": [
+       {
+        "type": "text",
+        "text": "<summary>\nA flaky upload test fails the build.\n</summary>\n<result>\nno\n</result>"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "saw": [],
+  "caller": {
+   "kind": "script"
+  },
+  "process": {
+   "host": "lambda",
+   "pid": 1,
+   "user": "maxime",
+   "language": "python",
+   "runtime": "3.13.1",
+   "functai": "1.2.0"
+  }
+ },
+ "expect": {
+  "record": {
+   "functai_call": 2,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "triage_build",
+    "kind": "ai",
+    "module": "ci",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:6666666666666666666666666666666666666666666666666666666666666666",
+    "answer": "result"
+   },
+   "started": "2026-09-28T10:00:00.000000Z",
+   "seconds": 1.6,
+   "content": false,
+   "omitted": {
+    "inputs": [],
+    "outputs": [
+     "reasoning",
+     "calls"
+    ]
+   },
+   "inputs": {
+    "transcript": "Ana: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\nAna: the build is red again.\nBen: it is the flaky upload test.\n",
+    "question": "Is the build broken for a real reason?"
+   },
+   "outputs": {
+    "summary": "A flaky upload test fails the build.",
+    "result": "no"
+   },
+   "returned": "No",
+   "probabilities": {
+    "summary": {
+     "A flaky upload test fails the build.": 0.61
+    },
+    "result": {
+     "no": 0.93,
+     "yes": 0.07
+    }
+   },
+   "sizes": {
+    "inputs": {
+     "transcript": 197,
+     "question": 40
+    },
+    "outputs": {
+     "reasoning": 64,
+     "calls": 54,
+     "summary": 38,
+     "result": 4
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 270,
+    "output_tokens": 44,
+    "total_tokens": 314
+   },
+   "confidence": 0.61,
+   "exchanges": [
+    {
+     "model": "gpt-4.1-mini",
+     "provider": "openai",
+     "started": "2026-09-28T10:00:00.001000Z",
+     "seconds": 0.79,
+     "cached": false,
+     "finish": "stop",
+     "usage": {
+      "input_tokens": 120,
+      "output_tokens": 14,
+      "total_tokens": 134
+     },
+     "error": {
+      "type": "Refusal",
+      "code": "parse-value"
+     }
+    },
+    {
+     "model": "gpt-4.1-mini",
+     "provider": "openai",
+     "started": "2026-09-28T10:00:00.801000Z",
+     "seconds": 0.8,
+     "cached": false,
+     "finish": "stop",
+     "usage": {
+      "input_tokens": 150,
+      "output_tokens": 30,
+      "total_tokens": 180
+     }
+    }
+   ],
+   "saw": [],
+   "caller": {
+    "kind": "script"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   }
+  }
+ }
+}

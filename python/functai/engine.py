@@ -270,51 +270,62 @@ def _remember(request: Any, response: Any) -> None:
 
 
 def send(router: Any, request: Any, *, function: str, model: str, settings: Dict[str, Any],
-         plan: Optional[lmcc.Plan] = None) -> Any:
+         plan: Optional[lmcc.Plan] = None, request_hash: Optional[str] = None) -> Any:
     """One model call: from the cache when allowed, else through the router,
     re-sent after transient errors (rate limit, 5xx, timeout) with backoff.
-    Watched by a stream (``functai.streaming``), the reply is streamed and
-    shown field by field as it arrives (``plan`` reads it); what is returned
-    is the same whole reply."""
-    watch = calllog.WATCH.get()
+    Each attempt is an exchange of the call, and begins a ``request`` event.
+    When the call is watched (a stream, an observer or a journal sees it),
+    the reply is streamed and shown field by field as it arrives (``plan``
+    reads it); what is returned is the same whole reply. ``request_hash``:
+    lmcc's hash of the rendered request this one was made from."""
+    call = calllog.current()
+    watched = call is not None and call.watched and plan is not None
     use_cache = bool(settings.get("cache_replies"))
     key = CACHE.key(request) if use_cache else None
     if key is not None:
         hit = CACHE.get(key)
         if hit is not None:
+            if call is not None:
+                call.request(model)
             _record(CallRecord(function, model, request, hit, cached=True))
             _remember(request, hit)
-            calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True)
-            if watch is not None and plan is not None:
-                watch.replay(plan, hit)
+            calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True,
+                             request_hash=request_hash)
+            if watched:
+                from . import streaming
+                streaming.replay(call, plan, hit)
             return hit
     retries = max(0, int(settings.get("api_retries") or 0))
     first: Optional[float] = None
     for attempt in range(retries + 1):
+        if call is not None:
+            call.request(model)
         started, t0 = time.time(), time.perf_counter()
         try:
-            if watch is not None and plan is not None:
-                response, first = watch.request(router, request, plan)
+            if watched:
+                from . import streaming
+                response, first = streaming.request(call, router, request, plan)
             else:
                 response = router.complete(request)
             break
         except lm15.RETRYABLE_ERRORS as exc:
             calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
-                             streamed=watch is not None)
+                             streamed=watched, request_hash=request_hash)
             if attempt == retries:
                 _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
                 raise
             wait = getattr(exc, "retry_after", None)
             wait = float(wait) if isinstance(wait, (int, float)) and wait > 0 \
                 else min(30.0, 2 ** attempt) * (0.5 + random.random())
-            if watch is not None:
-                watch.retry(f"the provider failed ({type(exc).__name__}); sending again in {wait:.1f} s", wait)
-                watch.sleep(wait)
+            if call is not None:
+                call.emit("retry", reason=f"the provider failed ({type(exc).__name__}); sending again in "
+                                          f"{wait:.1f} s", wait=wait)
+                call.sleep(wait)
             else:
                 time.sleep(wait)
         except Exception as exc:
             calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
-                             streamed=watch is not None)
+                             streamed=watched, request_hash=request_hash)
             _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
             friendly = _login_error(exc)
             if friendly is not None:
@@ -322,10 +333,10 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
             raise
         except BaseException as exc:                 # a closed stream, Ctrl-C: the exchange still counts
             calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
-                             streamed=watch is not None)
+                             streamed=watched, request_hash=request_hash)
             raise
     calllog.exchange(model, request, response, started=started, seconds=time.perf_counter() - t0,
-                     streamed=watch is not None and first is not None, first_delta=first)
+                     streamed=watched and first is not None, first_delta=first, request_hash=request_hash)
     _record(CallRecord(function, model, request, response))
     _remember(request, response)
     if key is not None and response.finish_reason not in ("error",):
@@ -345,9 +356,16 @@ def config_of(settings: Dict[str, Any], overrides: Optional[Dict[str, Any]] = No
 def tool_spec(fn: Callable) -> Tool:
     """A Python function as a tool: its name, its docstring, and a JSON Schema of
     its parameters (lowered like a signature's inputs); a parameter without a
-    default is required."""
+    default is required. A function that holds its inputs' shapes as data (an
+    AI function loaded from a manifest: ``_tool_parameters``) gives them
+    itself, as its interface states them: they are what the original's
+    annotations lower to, which the Python types written for its signature
+    are not."""
     if isinstance(fn, Tool):
         return fn
+    own = getattr(fn, "_tool_parameters", None)
+    if callable(own):
+        return Tool(fn.__name__, inspect.cleandoc(fn.__doc__ or ""), own())
     try:
         hints = __import__("typing").get_type_hints(fn)
     except Exception:
@@ -384,7 +402,11 @@ def run_tool(tools: Dict[str, Callable], call: ToolCall, *, errors: str) -> str:
         if errors == "raise":
             raise
         return f"error: {type(exc).__name__}: {exc}"
-    return out if isinstance(out, str) else json.dumps(out, default=str, ensure_ascii=False)
+    if isinstance(out, str):
+        return out
+    from .interface import json_form
+    ok, data = json_form(out)          # a record as its JSON (a pydantic model, a dataclass), not its str()
+    return json.dumps(data if ok else out, default=str, ensure_ascii=False)
 
 
 # ------------------------------------------------------------------ the call
@@ -418,10 +440,12 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     that send the reader's hint back (a cut reply is re-sent with twice the
     token budget instead)."""
     request = lmcc_lm15.request(rendered, model=model, config=config_of(settings))
+    rendered_hash = lmcc.turn.sha256(rendered.request())
     retries = max(0, int(settings.get("retries") or 0))
     overrides: Dict[str, Any] = {}
     for attempt in range(retries + 1):
-        response = send(router, request, function=function, model=model, settings=settings, plan=plan)
+        response = send(router, request, function=function, model=model, settings=settings, plan=plan,
+                        request_hash=rendered_hash)
         responses.append(response)
         try:
             reading = lmcc_lm15.read(plan, response)
@@ -449,9 +473,9 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                     response.message,
                     lm15.Message.user(f"Your reply could not be read: {err.hint}. Reply again, in exactly "
                                       f"the form the instructions give."),))
-            watch = calllog.WATCH.get()
-            if watch is not None:
-                watch.retry(_asked_again(err))
+            call = calllog.current()
+            if call is not None:
+                call.emit("retry", reason=_asked_again(err), wait=None)
     raise AssertionError("unreachable")
 
 
@@ -517,13 +541,15 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
             return Prediction(outputs, turn=turn, response=response, responses=responses,
                               repairs=reading.repairs, attempts=len(responses),
                               probabilities=reading.probabilities, measured_by=reading.measured_by)
-        watch = calllog.WATCH.get()
+        current = calllog.current()
         for call in calls:
-            if watch is not None:
-                watch.tool_call(call)
+            if current is not None:
+                event = current.emit("tool_call", id=call.id, name=call.name, input=call.input)
+                # a required journal keeps the request before the tool runs
+                calllog.tool_barrier(event.seq if event is not None else None)
             output = run_tool(tools, call, errors=settings.get("tool_errors") or "report")
-            if watch is not None:
-                watch.tool_result(call, output)
+            if current is not None:
+                current.emit("tool_result", id=call.id, name=call.name, output=output)
             turn = turn.tool(call.id, output)
     raise StepLimit(f"{function}: no answer after {max_steps} model steps", turn)
 

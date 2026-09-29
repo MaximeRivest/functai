@@ -1,0 +1,388 @@
+{
+ "description": "Every value kept, but an event of a kind the form's maker does not know (approval) and a key it does not know (tokens) on an event it knows: neither is kept, since either may hold a value.",
+ "kind": "kept",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "helper",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "question": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "thinking",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "text": "Look the order up first.",
+   "tokens": 7
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "Let me check."
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "input": {
+    "order": "B-2210"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "approval",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "asked": "May I cancel order B-2210?"
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "id": "call_1",
+   "name": "lookup_order",
+   "output": "In the Leeds depot, 7 days late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": {
+    "writer": 1,
+    "seq": 8
+   },
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "It is in Leeds, "
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 10,
+   "after": {
+    "writer": 1,
+    "seq": 9
+   },
+   "at": "2026-09-28T10:00:00.090000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "a week late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 11,
+   "after": {
+    "writer": 1,
+    "seq": 10
+   },
+   "at": "2026-09-28T10:00:00.100000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "value": "It is in Leeds, a week late."
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "inputs": {
+    "question": true
+   },
+   "outputs": {
+    "result": true
+   }
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "helper",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "question": "Where is B-2210?"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "thinking",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "text": "Look the order up first."
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "field": "result",
+    "answer": true,
+    "text": "Let me check."
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "id": "call_1",
+    "name": "lookup_order",
+    "input": {
+     "order": "B-2210"
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_result",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 7,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-09-28T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "id": "call_1",
+    "name": "lookup_order",
+    "output": "In the Leeds depot, 7 days late."
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 8,
+    "after": {
+     "writer": 1,
+     "seq": 7
+    },
+    "at": "2026-09-28T10:00:00.070000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 9,
+    "after": {
+     "writer": 1,
+     "seq": 8
+    },
+    "at": "2026-09-28T10:00:00.080000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "field": "result",
+    "answer": true,
+    "text": "It is in Leeds, "
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 10,
+    "after": {
+     "writer": 1,
+     "seq": 9
+    },
+    "at": "2026-09-28T10:00:00.090000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "field": "result",
+    "answer": true,
+    "text": "a week late."
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 11,
+    "after": {
+     "writer": 1,
+     "seq": 10
+    },
+    "at": "2026-09-28T10:00:00.100000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "helper",
+    "value": "It is in Leeds, a week late."
+   }
+  ]
+ }
+}

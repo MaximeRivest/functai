@@ -15,7 +15,9 @@ A field.
 \description{
 Several named fields that belong together, each a type or a sentence
 (text, described), as in \code{\link[=ai]{ai()}}. Records come back as tibble columns
-(\code{tidyr::unpack()} spreads them).
+(\code{tidyr::unpack()} spreads them). A record holds only the members it
+names: a tibble given for one with another column is refused, never
+sent, so select the record's columns first (\code{dplyr::select()}).
 }
 \examples{
 record(order_id = optional("a letter, a dash and four digits"), days_waiting = described(integer(), "whole days"))

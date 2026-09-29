@@ -1,0 +1,218 @@
+{
+ "description": "One call: its answer's pieces add up; the log is finished when the tree's outermost call is done. A reader that has events up to one (named by its writer and seq) gets those after it; a position the log does not have (writer 2's seq 3) is event-unknown.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "My parcel never came."
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "text": "ship"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "field": "result",
+   "answer": true,
+   "text": "ping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "team",
+   "value": "shipping"
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "ship"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "shipping"
+      }
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": [
+  {
+   "after": null,
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 1
+     },
+     {
+      "writer": 1,
+      "seq": 2
+     },
+     {
+      "writer": 1,
+      "seq": 3
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     }
+    ]
+   }
+  },
+  {
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "expect": {
+    "events": [
+     {
+      "writer": 1,
+      "seq": 3
+     },
+     {
+      "writer": 1,
+      "seq": 4
+     },
+     {
+      "writer": 1,
+      "seq": 5
+     }
+    ]
+   }
+  },
+  {
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "expect": {
+    "events": []
+   }
+  },
+  {
+   "after": {
+    "writer": 2,
+    "seq": 3
+   },
+   "expect": {
+    "refuses": "event-unknown"
+   }
+  }
+ ]
+}

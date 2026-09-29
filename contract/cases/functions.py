@@ -9,8 +9,9 @@ values into a request is lmcc's rule, pinned byte for byte by lmcc's own
 corpus, so this script asks lmcc (the Python kernel with its standard
 pack) for that step only. It never imports FunctAI.
 
-A case file: {"description", "definition": {name, description, inputs,
-outputs, settings, state, tools?}, "expect": {"signature", "sample",
+A case file: {"description", "definition": {name, description, inputs
+(each {name, shape, desc?, optional?}), outputs, settings, state,
+tools?}, "expect": {"signature", "sample",
 "request", "request_hash", "version", "signature_id"}}. ``signature`` is
 lmcc's plain-data form without host type names (compare with ``type``
 left out).
@@ -72,9 +73,14 @@ def instructions(d: dict) -> str:
     return head + ("\n\n" if head else "") + guidance
 
 
+def without_default(shape: dict) -> dict:
+    """An input's shape as the signature has it: its default is how a call is bound, not data."""
+    return {k: v for k, v in shape.items() if k != "default"}
+
+
 def fields(d: dict) -> list:
     """The signature's fields, with the host type names the two tool fields need."""
-    out = [{"name": f["name"], "direction": "input", "shape": f["shape"], "purpose": "plain",
+    out = [{"name": f["name"], "direction": "input", "shape": without_default(f["shape"]), "purpose": "plain",
             **({"desc": f["desc"]} if f.get("desc") else {})} for f in d["inputs"]]
     tools = bool(d.get("tools"))
     if tools:
@@ -161,7 +167,8 @@ MOOD = {"enum": ["happy", "unhappy", "mixed"], "type": "string"}
 
 def definition(name, description, inputs, outputs, *, settings=None, state=None, tools=None):
     d = {"name": name, "description": description,
-         "inputs": [dict(name=n, shape=s, **({"desc": x} if x else {})) for n, s, x in inputs],
+         "inputs": [dict(name=n, shape=s, **({"desc": x} if x else {}), **(more[0] if more else {}))
+                    for n, s, x, *more in inputs],
          "outputs": [dict(name=n, shape=s, **({"desc": x} if x else {})) for n, s, x in outputs],
          "settings": settings or {}, "state": state or {"instructions": None, "demos": []}}
     if tools:
@@ -233,6 +240,12 @@ DEFINITIONS = {
         definition("helper", "Help with the order.", [("question", S, None)], [("result", S, None)],
                    tools=[{"name": "lookup_order", "description": "Look up an order.",
                            "parameters": {"type": "object", "properties": {"order": S}, "required": ["order"]}}])),
+    "12-an-optional-input": (
+        "An input a caller may leave out: optional, its default in its shape. The signature's field has the "
+        "shape without the default (a default is how a call is bound, not what the model is told).",
+        definition("reply", "Answer the customer.",
+                   [("message", S, None), ("tone", {"type": "string", "default": "kind"}, None, {"optional": True})],
+                   [("result", S, None)])),
 }
 
 

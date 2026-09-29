@@ -3,14 +3,57 @@
 # description and the guidance. And the sample input a version is rendered
 # with (contract/calls.md, "Versions").
 
-"One input or output: its name, its Julia type (or `OneOf`, or a shape when loaded), its shape, words about it."
+"""
+One input or output: its name, its Julia type (or `OneOf`, or a shape when
+loaded), its shape (without a default), words about it, and, for an input a
+caller may leave out, its default: `default` the value sent (as JSON, in the
+interface's shape) and `native` the value the function's code gets (a copy
+of the value it was defined with; a loaded function runs no code of its own,
+and its is the JSON).
+"""
 struct FieldDef
     name::String
     spec::Any
     shape::JObj
     desc::Union{Nothing,String}
+    optional::Bool
+    default::Any
+    native::Any
 end
+FieldDef(name, spec, shape, desc) = FieldDef(String(name), spec, shape, desc, false, nothing, nothing)
+
+"""
+An optional input a call left out: its default. Its JSON (`data`, the
+interface's `default`, which a saved folder keeps) is what the call sends,
+logs and shows, never made again from the value: so a function sends the
+same request before and after saving and loading, whatever the value's type
+does when it is built or iterated. The function's own code gets `native`, a
+copy of the value the function was defined with, anew for each call.
+"""
+struct LeftOut
+    data::Any
+    native::Any
+end
+LeftOut(x::FieldDef) = LeftOut(x.default, x.native)
+jsonvalue(x::LeftOut) = LMCC.deepcopy_json(x.data)
+
+"The inputs as the function's own code gets them: a default left out is a copy of its value, its own."
+code_inputs(inputs::AbstractDict) = OrderedDict{String,Any}(k => v isa LeftOut ? deepcopy(v.native) : v for (k, v) in inputs)
 FieldDef(name, spec; desc=nothing) = FieldDef(String(name), spec, shape_of(spec), desc === nothing || isempty(desc) ? nothing : String(desc))
+
+"The field's lmcc shape: its shape without its own `default` (functions.md, \"The signature\")."
+lmcc_shape(f::FieldDef) = haskey(f.shape, "default") ? data_shape(f.shape) : f.shape
+
+"The field as the interface writes it (programs.md): an optional input's default is in its shape."
+function interface_field(f::FieldDef; input::Bool)
+    shape = LMCC.deepcopy_json(f.shape)
+    f.optional && (shape["default"] = LMCC.deepcopy_json(f.default))
+    out = LMCC.jobj("name" => f.name, "shape" => shape)
+    f.desc === nothing || (out["desc"] = f.desc)
+    f.spec isa Type && (out["type"] = string(f.spec))
+    input && f.optional && (out["optional"] = true)
+    out
+end
 
 "What every language's AI function comes down to (contract/functions.md, \"A definition\")."
 struct Definition
@@ -22,6 +65,15 @@ struct Definition
 end
 
 answer_name(d::Definition) = last(d.outputs).name
+
+"""
+The interface of an AI function's definition (programs.md, "How each program
+has one"): its description, inputs (optional ones with their defaults) and
+outputs, without the fields FunctAI adds.
+"""
+interface_of(d::Definition) = LMCC.jobj("description" => d.description,
+    "inputs" => Any[interface_field(f; input=true) for f in d.inputs],
+    "outputs" => Any[interface_field(f; input=false) for f in d.outputs])
 
 const TOOL_LIST = LMCC.jobj("type" => "array", "items" => LMCC.jobj("type" => "object", "properties" => LMCC.jobj(
         "name" => LMCC.jobj("type" => "string"),
@@ -63,7 +115,7 @@ end
 function signature_of(d::Definition, improved, include_name::Bool, reasoning::Bool, tools::Bool)
     fields = Any[]
     for f in d.inputs
-        field = LMCC.jobj("name" => f.name, "direction" => "input", "shape" => f.shape, "purpose" => "plain")
+        field = LMCC.jobj("name" => f.name, "direction" => "input", "shape" => lmcc_shape(f), "purpose" => "plain")
         f.desc === nothing || (field["desc"] = f.desc)
         push!(fields, field)
     end
@@ -73,7 +125,7 @@ function signature_of(d::Definition, improved, include_name::Bool, reasoning::Bo
         push!(fields, LMCC.jobj("name" => "reasoning", "direction" => "output", "shape" => LMCC.jobj("type" => "string"), "purpose" => "reasoning"))
     tools && push!(fields, LMCC.jobj("name" => "calls", "direction" => "output", "shape" => CALL_LIST, "purpose" => "tools.calls", "type" => "list[ToolCall]"))
     for f in d.outputs
-        push!(fields, LMCC.jobj("name" => f.name, "direction" => "output", "shape" => f.shape, "purpose" => "plain"))
+        push!(fields, LMCC.jobj("name" => f.name, "direction" => "output", "shape" => lmcc_shape(f), "purpose" => "plain"))
     end
     LMCC.signature_from_dict(LMCC.jobj("instructions" => instructions_of(d, improved, include_name), "fields" => fields))
 end

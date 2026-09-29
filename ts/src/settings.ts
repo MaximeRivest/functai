@@ -1,11 +1,27 @@
 /**
- * Settings: where a call goes and how it behaves. A function's own settings
- * beat `withSettings(...)` blocks, which beat `configure(...)`, which beats
- * the defaults (the order Python uses).
+ * Settings: where a call goes and how it behaves. A call's options beat the
+ * program's own settings (`ai(...)`, `.using(...)`), which beat
+ * `withSettings(...)` blocks (the closest first), which beat
+ * `configure(...)`, which beats the defaults.
+ *
+ * Three settings are policy, and combine over every layer instead
+ * (contract/calls.md, "Content"; streaming.md, "Keeping a log while it is
+ * written"): `logContent` (a value is written only when no layer drops it),
+ * `observers` (they add up) and `journal` (a program's own setting cannot
+ * replace or remove a host's journal, and no closer layer a required one).
+ * For those, the layers are, closest first: the program's own settings, a
+ * call's options (a block around that one call), the blocks, `configure`.
+ *
+ * A setting that could only fail later refuses where it is set: a
+ * `logContent` key that is not a field name (`SettingError`), an observer
+ * that is neither a function nor has `postMessage`, a journal that is not a
+ * store (`TypeError`).
  */
 
 import type { Config, Request, Response, StreamEvent } from "@lm15/lm15";
+import { checkLogContent, type CallFields, type LogContent, type Where } from "./content.ts";
 import { Context } from "./host.ts";
+import { checkObservers, journalOf, type Journal, type Observer } from "./log.ts";
 import type { Capabilities } from "./models.ts";
 import type { ReplyCache } from "./cache.ts";
 
@@ -46,8 +62,34 @@ export interface Settings {
   toolErrors?: "report" | "raise";
   /** The call log: a folder, `true` (the default folder), or `false`. Unset: `FUNCTAI_LOG_CALLS` decides. */
   logCalls?: string | boolean | null;
-  /** `false`: log sizes, times and tokens, never values or messages. */
-  logContent?: boolean | null;
+  /**
+   * Which values the call log and the kept form of events keep: `true`,
+   * `false` (sizes, times and tokens only), or by field (`{ transcript: false }`;
+   * `{ "*": false, question: true }` keeps only the question). It only ever
+   * removes: a value is written only when no layer drops it, and
+   * `FUNCTAI_LOG_CONTENT=0` drops every value.
+   */
+  logContent?: LogContent | null;
+  /**
+   * Receivers of the kept form of every event of the calls in scope (a
+   * page, telemetry). They add up over the layers (`configure`'s replaces
+   * `configure`'s: keep your own list to add one). A function is called
+   * soon after each event, off the call's own turn, from a bounded queue
+   * (an observer 10,000 events behind loses events); it still runs on this
+   * thread, so heavy work belongs in a `Worker`: an object with
+   * `postMessage` is posted each event. One that throws is warned about
+   * once and given no more events.
+   */
+  observers?: readonly Observer[] | null;
+  /**
+   * Where each call tree's kept log is written while it runs: a store
+   * (best effort: the call never waits), or `{ store, mode: "required" }`
+   * (the call waits until its events are kept, before its code runs, before
+   * each tool and before it returns; at most `timeout` ms, 30 s by default).
+   * `null`: none. A program's own setting cannot replace or remove a host's
+   * journal (`JournalError` `journal-policy`).
+   */
+  journal?: Journal | null;
   /** Who is calling, added to `FUNCTAI_CALLER`: `{ kind: "agent", conversation: "…" }`. */
   caller?: Record<string, unknown> | null;
   /**
@@ -63,31 +105,71 @@ export const DEFAULTS: Required<Pick<Settings, "retries" | "apiRetries" | "maxSt
 };
 
 let global: Settings = {};
-const scoped = new Context<Settings>();
+/** The blocks in force, outermost first. */
+const scoped = new Context<readonly Settings[]>();
 
-/** Settings for every AI function (their own settings still win). Returns the settings now in force. */
+/**
+ * Refuse, where they are set, the policy settings that could only fail later:
+ * `logContent` (`SettingError` `log-content-field`: a key that is not a
+ * field name or `"*"`; with `fields`, a program's own map naming a field it
+ * does not have), `observers` and `journal` (`TypeError`).
+ */
+export function checkSettings(settings: Settings | null | undefined, where: string, fields?: CallFields): void {
+  if (!settings) return;
+  checkLogContent(settings.logContent, where, fields);
+  checkObservers(settings.observers, where);
+  if (settings.journal !== undefined) journalOf(settings.journal, where);
+}
+
+/**
+ * Settings for every program (their own settings still win). Returns the
+ * settings now in force. A `logContent` key that is not a field name refuses
+ * here (`SettingError`, `log-content-field`), and so does an observer or a
+ * journal that could only fail later (`TypeError`).
+ */
 export function configure(settings: Settings = {}): Settings {
+  checkSettings(settings, "configure");
   global = { ...global, ...settings };
   return { ...global };
 }
 
-/** Run `fn` with these settings over `configure`'s (their own settings still win). */
+/** Run `fn` with these settings over `configure`'s (a program's own settings and a call's options still win). */
 export function withSettings<R>(settings: Settings, fn: () => R): R {
-  const outer = scoped.get() ?? {};
-  // a caller adds to the enclosing block's (an evaluation inside an optimization is both)
-  const caller = settings.caller ? { caller: { ...(outer.caller ?? {}), ...settings.caller } } : {};
-  return scoped.run({ ...outer, ...settings, ...caller }, fn);
+  checkSettings(settings, "withSettings");
+  return scoped.run([...(scoped.get() ?? []), settings], fn);
 }
 
-/** The settings a function with `own` settings runs with. */
+/** The settings a program with `own` settings runs with (a call's options are part of `own`). */
 export function effective(own: Settings): Settings & typeof DEFAULTS {
   const out: Record<string, unknown> = { ...DEFAULTS };
-  for (const layer of [global, scoped.get() ?? {}, own]) {
+  const blocks = scoped.get() ?? [];
+  for (const layer of [global, ...blocks, own]) {
     for (const [k, v] of Object.entries(layer)) if (v !== undefined) out[k] = v;
   }
-  const caller = { ...(global.caller ?? {}), ...(scoped.get()?.caller ?? {}), ...(own.caller ?? {}) };
-  out["caller"] = caller;
+  // a caller adds to the enclosing ones' (an evaluation inside an optimization is both)
+  out["caller"] = Object.assign({}, global.caller ?? {}, ...blocks.map((b) => b.caller ?? {}), own.caller ?? {});
   return out as unknown as Settings & typeof DEFAULTS;
+}
+
+/** One layer of settings around a call, and where it was set. */
+export interface Layer {
+  readonly where: Where;
+  readonly settings: Settings;
+}
+
+/**
+ * The layers around a call, closest first: the program's own settings, the
+ * call's options (a block around this one call), the blocks in force
+ * (closest first), and `configure`.
+ */
+export function layersOf(own: Settings, call: Settings = {}): Layer[] {
+  const blocks = [...(scoped.get() ?? [])].reverse();
+  return [
+    { where: "own", settings: own },
+    ...(Object.keys(call).length ? [{ where: "block" as const, settings: call }] : []),
+    ...blocks.map((settings) => ({ where: "block" as const, settings })),
+    { where: "configure", settings: global },
+  ];
 }
 
 /** The lm15 Config fields of the settings. */

@@ -18,7 +18,8 @@ local_ai_config(..., .local_envir = parent.frame())
 (\code{"xml"}, \code{"chat"}, \code{"json"}), \code{module} (\code{"cot"}: reasoning first),
 \code{retries}, \code{api_retries}, \code{concurrency} (calls in flight at once, default
 8), \code{on_error} (\code{"warn"}, the default: a failed row is \code{NA}; or \code{"stop"}),
-\code{log_calls} (a folder, or \code{TRUE}), \code{log_content}, \code{caller}, \code{router} (an
+\code{log_calls} (a folder, or \code{TRUE}), \code{log_content} (\code{TRUE}, \code{FALSE},
+\code{c(transcript = FALSE)}, or the names of the fields to keep), \code{caller}, \code{router} (an
 \code{lm15::new_router()}).}
 
 \item{code}{Code to run with these settings.}
@@ -33,6 +34,24 @@ The settings in force, invisibly (\code{ai_config()}), or the value of
 \code{ai_config()} sets them for the session (a function's own settings still
 win); \code{with_ai_config()} and \code{local_ai_config()} for a block of code, as
 withr does.
+}
+\details{
+\strong{What the call log keeps} (\code{log_content}) is not overridden by a
+closer setting: every layer (a function's own, each block, \code{ai_config()},
+and the environment variable \code{FUNCTAI_LOG_CONTENT}) can only remove. A
+value is written only when no layer drops it, so a host holds every
+function it runs to "never write the transcript":
+\code{with_ai_config(code, log_content = c(transcript = FALSE))}, or, surest
+against a misspelt name, the list of what may be kept,
+\code{log_content = c("question")} (the same as \code{list("*" = FALSE, question = TRUE)}). Mind the difference: \code{c(question = TRUE)} names one field and
+says nothing of the others, so it keeps everything; \code{c("question")} keeps
+only the question. A name is always the field of that name (a field
+FunctAI adds included); a one-output function's answer may also be called
+by its formula's name when no field has that name.
+\code{FUNCTAI_LOG_CONTENT=0} drops every value, whatever the
+settings say. A field FunctAI adds (the reasoning, the tool calls) is
+written only when no field of the call is dropped. A record that does not
+keep every value keeps no request or reply either, and no error message.
 }
 \examples{
 ai_config(lm = "gpt-4.1-mini", temperature = 0)

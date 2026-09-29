@@ -5,7 +5,7 @@
  */
 
 import * as z from "zod";
-import { ai, evaluate, gepa, labeledFewShot, t, tool, type Prediction } from "../src/index.ts";
+import { ai, evaluate, gepa, JournalError, labeledFewShot, module, t, tool, type Prediction } from "../src/index.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const is = <T extends true>(_: T) => undefined;
@@ -85,4 +85,77 @@ export function tools() {
   tool("lookup_order", { input: { order: t.string(), n: t.integer() } }, ({ order, n }) => order.toUpperCase().repeat(n));
   // @ts-expect-error: `order` is text, not a number
   tool("lookup_order", { input: { order: t.string() } }, ({ order }) => order.toFixed());
+}
+
+export async function modules() {
+  const answer = ai("answer", { description: "Answer.", input: { message: t.string(), topic: t.string() } });
+  const support = module("support", {
+    description: "Answer a customer's message.",
+    input: { message: t.string(), tone: t.withDefault(t.string(), "kind"), order: z.string().optional(), frame: t.opaque<Map<string, number>>() },
+    output: t.string(),
+    uses: [answer],
+  }, async ({ message, tone, order, frame }, { signal }) => {
+    is<Equal<typeof tone, string>>(true);                          // a default: always there in the code
+    is<Equal<typeof order, string | undefined>>(true);             // optional with no default: may be absent
+    is<Equal<typeof frame, Map<string, number>>>(true);
+    return answer({ message: `${tone}: ${message} ${order ?? ""} ${frame.size}` , topic: "x" }, { signal });
+  });
+  is<Equal<Awaited<ReturnType<typeof support>>, string>>(true);
+  await support({ message: "Hi", frame: new Map() });              // tone and order may be left out
+  const triage = module("triage", { input: { ticket: t.string() }, outputs: { team: t.enum("billing", "shipping"), minutes: t.integer() } },
+    ({ ticket }) => ({ team: ticket ? "billing" as const : "shipping" as const, minutes: 5 }));
+  const got = await triage("I was charged twice.");                // one required input: its value alone
+  is<Equal<typeof got, { team: "billing" | "shipping"; minutes: number }>>(true);
+  for await (const e of triage.stream("x").events({ form: "kept" })) {
+    if (e.kind === "text") e.field.toUpperCase();                  // events narrow by kind
+    if (e.kind === "request") e.request.toFixed();
+  }
+
+  // @ts-expect-error: a module declares what it returns
+  module("m", { input: {} }, () => "x");
+  // @ts-expect-error: it returns what it declares
+  module("m", { input: {}, output: t.integer() }, () => "x");
+  // @ts-expect-error: message is required
+  await support({ frame: new Map() });
+  // @ts-expect-error: several outputs are returned by name
+  module("m", { input: {}, outputs: { a: t.string(), b: t.integer() } }, () => ({ a: "x" }));
+
+  // one output, whatever its name, is the value (programs.md, "Checking values")
+  const one = module("one", { input: {}, outputs: { count: t.integer() } }, () => 1);
+  is<Equal<Awaited<ReturnType<typeof one>>, number>>(true);
+  // @ts-expect-error: one named output is returned as its value, not as a record
+  module("one", { input: {}, outputs: { count: t.integer() } }, () => ({ count: 1 }));
+
+  // a builder's default says the input may be left out, in the types too
+  const polite = module("polite", { input: { message: t.string(), tone: t.string({ default: "kind" }), n: t.integer({ default: 1 }) }, output: t.string() },
+    ({ message, tone, n }) => {
+      is<Equal<typeof tone, string>>(true);
+      is<Equal<typeof n, number>>(true);
+      return `${tone}: ${message}`.repeat(n);
+    });
+  await polite("Where is my parcel?");                              // one required input: its value alone
+  await polite({ message: "x", tone: "brief" });
+  // @ts-expect-error: tone is text
+  await polite({ message: "x", tone: 3 });
+  t.json({ description: "each input by name" });                    // words about any JSON
+  // @ts-expect-error: a default is a value of the builder's type
+  t.string({ default: 5 });
+  // @ts-expect-error: a default is a value of the builder's type
+  t.integer({ default: "3" });
+
+  // outputs built at run time may be several: a record of each by name, not one value
+  const built: Record<string, ReturnType<typeof t.string>> = { a: t.string(), b: t.string() };
+  const many = module("many", { input: {}, outputs: built }, () => ({ a: "x", b: "y" }));
+  is<Equal<Awaited<ReturnType<typeof many>>, { [k: string]: string }>>(true);
+}
+
+export async function journalErrors() {
+  try {
+    await team({ message: "x", urgent: false });
+  } catch (err) {
+    if (err instanceof JournalError && err.outcome && "done" in err.outcome) {
+      const d = err.outcome.done;
+      is<Equal<typeof d, unknown>>(true);                          // never any: say what you expect
+    }
+  }
 }

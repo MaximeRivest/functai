@@ -1,7 +1,7 @@
 # The contract's data this package carries (data/contract, copied from the
-# repository's contract/ by julia/check): the three layouts, the model table
-# and Unicode case folding. test/runtests.jl checks the copies are equal to
-# the contract's. Read once, when the package is compiled.
+# repository's contract/ by julia/check): the three layouts, the model table,
+# Unicode case folding and the JSON Schemas (schema.jl). The tests check the
+# copies are equal to the contract's. Read once, when the package is compiled.
 
 const CONTRACT_DATA = normpath(joinpath(@__DIR__, "..", "data", "contract"))
 

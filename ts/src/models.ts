@@ -29,7 +29,7 @@ const PREFIXES = MODELS.native.reasoning_prefixes as Record<string, readonly str
 /** The facts FunctAI declares for `model` served by `provider`. */
 export function capabilities(provider: string, model: string): Capabilities {
   if (JUDGMENT_ONLY.has(provider)) return { native_structured_output: true };
-  if (provider in SPEAKS_AS) return capabilities(SPEAKS_AS[provider]!, model);
+  if (Object.hasOwn(SPEAKS_AS, provider)) return capabilities(SPEAKS_AS[provider]!, model);
   const caps: Capabilities = { instruct: true };
   if (NATIVE.has(provider)) {
     caps["native_function_calling"] = true;
@@ -97,7 +97,7 @@ export function modelString(lm: string): string {
   const i = lm.indexOf(":");
   if (i > 0) {
     const head = lm.slice(0, i).toLowerCase();
-    if (head in PREFIX_ALIASES) return `${PREFIX_ALIASES[head]}:${lm.slice(i + 1)}`;
+    if (Object.hasOwn(PREFIX_ALIASES, head)) return `${PREFIX_ALIASES[head]}:${lm.slice(i + 1)}`;
   }
   return lm;
 }

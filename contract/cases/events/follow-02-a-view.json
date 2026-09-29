@@ -1,0 +1,173 @@
+{
+ "description": "A view's seqs skip, and nothing is lost: each event's after is the one before it in the view. A view event that does not come is a loss; reading the view again after the last kept event recovers it.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "helper",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "question": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "Let me check."
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "It is in Leeds, "
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "It is in Leeds, "
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": {
+    "writer": 1,
+    "seq": 8
+   },
+   "at": "2026-09-28T10:00:00.090000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "field": "result",
+   "answer": true,
+   "text": "a week late."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 10,
+   "after": {
+    "writer": 1,
+    "seq": 9
+   },
+   "at": "2026-09-28T10:00:00.100000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "helper",
+   "value": "It is in Leeds, a week late."
+  }
+ ],
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "loss",
+   "kept",
+   "kept",
+   "kept",
+   "kept"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "It is in Leeds, a week late."
+      }
+     }
+    },
+    "finished": true
+   }
+  }
+ }
+}

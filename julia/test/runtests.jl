@@ -11,8 +11,11 @@ delete!(ENV, "FUNCTAI_CALLER")
 
 @testset "FunctAI" begin
     include("contract.jl")
+    include("events.jl")
     include("functions.jl")
     include("calls.jl")
+    include("foundations.jl")
+    include("guarantees.jl")
     include("gepa.jl")
     include("models.jl")
 end

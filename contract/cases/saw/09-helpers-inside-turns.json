@@ -1,0 +1,354 @@
+{
+ "description": "A helper that remembers its own calls in the conversation: its call in the second turn saw its call in the first; the module's turns saw each other. Ids are kept when values are not (content false), so what was seen is known, but a turn whose values were not kept cannot be shown again (not-kept).",
+ "kind": "read",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926b00-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926b00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:01:00.000000Z",
+   "seconds": 1.0,
+   "content": false,
+   "omitted": {
+    "inputs": [
+     "message"
+    ],
+    "outputs": [
+     "result"
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 2,
+   "id": "01926b00-0002-7000-8000-000000000000",
+   "parent": "01926b00-0001-7000-8000-000000000000",
+   "root": "01926b00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "answer",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:02:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 2"
+   },
+   "outputs": {
+    "result": "reply 2"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 2,
+   "id": "01926b00-0003-7000-8000-000000000000",
+   "parent": "01926b00-0001-7000-8000-000000000000",
+   "root": "01926b00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "topic",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:03:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 3"
+   },
+   "outputs": {
+    "result": "reply 3"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 2,
+   "id": "01926b00-0004-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926b00-0004-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:04:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 4"
+   },
+   "outputs": {
+    "result": "reply 4"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": [
+    {
+     "saw_of": "01926b00-0001-7000-8000-000000000000"
+    },
+    {
+     "call": "01926b00-0001-7000-8000-000000000000"
+    }
+   ]
+  },
+  {
+   "functai_call": 2,
+   "id": "01926b00-0005-7000-8000-000000000000",
+   "parent": "01926b00-0004-7000-8000-000000000000",
+   "root": "01926b00-0004-7000-8000-000000000000",
+   "program": {
+    "name": "answer",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:05:00.000000Z",
+   "seconds": 1.0,
+   "content": false,
+   "omitted": {
+    "inputs": [
+     "message"
+    ],
+    "outputs": [
+     "result"
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": [
+    {
+     "saw_of": "01926b00-0002-7000-8000-000000000000"
+    },
+    {
+     "call": "01926b00-0002-7000-8000-000000000000"
+    }
+   ]
+  },
+  {
+   "functai_call": 2,
+   "id": "01926b00-0006-7000-8000-000000000000",
+   "parent": "01926b00-0004-7000-8000-000000000000",
+   "root": "01926b00-0004-7000-8000-000000000000",
+   "program": {
+    "name": "topic",
+    "kind": "ai",
+    "module": "school",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555"
+   },
+   "started": "2026-09-28T10:06:00.000000Z",
+   "seconds": 1.0,
+   "content": true,
+   "inputs": {
+    "message": "message 6"
+   },
+   "outputs": {
+    "result": "reply 6"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 11
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "caller": {
+    "kind": "conversation"
+   },
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  }
+ ],
+ "queries": [
+  {
+   "call": "01926b00-0004-7000-8000-000000000000",
+   "expect": {
+    "saw": [
+     {
+      "call": "01926b00-0001-7000-8000-000000000000"
+     }
+    ]
+   },
+   "keeps": {
+    "refuses": "not-kept",
+    "call": "01926b00-0001-7000-8000-000000000000"
+   }
+  },
+  {
+   "call": "01926b00-0005-7000-8000-000000000000",
+   "expect": {
+    "saw": [
+     {
+      "call": "01926b00-0002-7000-8000-000000000000"
+     }
+    ]
+   },
+   "keeps": {
+    "ok": true
+   }
+  },
+  {
+   "call": "01926b00-0006-7000-8000-000000000000",
+   "expect": {
+    "saw": []
+   },
+   "keeps": {
+    "ok": true
+   }
+  }
+ ]
+}

@@ -13,8 +13,12 @@ API:
 - Programs:  @module; fn.opt(...), fn.map(table), and the optimizers
 - Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
 - Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
-- Call log:  configure(log_calls=True); calls(fn), rate(prediction, "right"), rated(fn); fn.version
+- Call log:  configure(log_calls=True, log_content={"transcript": False}); calls(fn), rate(prediction, "right"),
+             rated(fn); fn.version
+- Interfaces: fn.interface, module.interface (checked on every call: InterfaceError); JSON; describe(path)
 - Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s)
+- Event logs: configure(observers=[...], journal=Journal(store, required=True)); MemoryStore; Store; Follower;
+             flush() (function observers and best-effort journals catch up)
 - Utils:     phistory(), inspect_history(), clear_cache()
 - Data:      datasets.tickets(), datasets.field_notes()  (small labelled tables to learn with)
 """
@@ -47,6 +51,10 @@ from .core import (
     signature_text,
 )
 from .calllog import calls, rate, rated
+from .errors import (EventRefused, FunctAIError, InterfaceError, JournalError, LogContentError, Outcome,
+                     SawError)
+from .eventlog import Follower, Journal, MemoryStore, Store, flush
+from .interface import JSON
 from .streaming import Cancelled, Stream
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
@@ -54,7 +62,7 @@ from . import datasets  # noqa: F401  (functai.datasets.tickets(), ...)
 from .evaluation import Evaluation, compare, evaluate, exact_match, runs
 from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module
-from .saved import LoadRefused, Verification, file, load, save, verify
+from .saved import LoadRefused, Verification, describe, file, load, save, verify
 from .optimizers import (
     BootstrapFewShot,
     BootstrapFewShotWithRandomSearch,
@@ -78,10 +86,12 @@ __all__ = [
     "ai", "_ai", "configure", "login", "logins", "logout", "login_methods", "LoginRequired",
     "phistory", "inspect_history",
     "module", "FunctAIModule", "FunctAIFunc", "ProgramState", "Prediction", "StepLimit",
-    "check", "save", "load", "verify", "file", "Report", "Problem", "Refused", "LoadRefused", "Verification",
+    "check", "save", "load", "verify", "describe", "file", "Report", "Problem", "Refused", "LoadRefused",
+    "Verification",
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
     "calls", "rate", "rated",
-    "Stream", "Cancelled",
+    "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "Outcome",
+    "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "labeled_few_shot", "bootstrap_few_shot", "gepa",
     "Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch", "InstructionSearch", "GEPA",
 ]

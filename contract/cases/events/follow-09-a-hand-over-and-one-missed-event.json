@@ -1,0 +1,268 @@
+{
+ "description": "An observer's feed (the kept form; every value is kept). The reader holds writer 1's seq 3, which was never kept; writer 2 took over after seq 2 and the reader misses its first event (writer 2, seq 3). Writer 2's seq 4 names writer 2's seq 3 as its after: not the reader's last (writer 1, seq 3), and not an event it holds, so events were lost (a seq alone would call it next, and the reader would end with writer 1's text before writer 2's). It reads its form again after its last event: the store does not have it (event-unknown), so it starts again from the beginning, and ends where the store ends.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "gardener",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "request": "Merge groceries.md into todo.md"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "Merging the two"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 4,
+   "after": {
+    "writer": 2,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:30.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "Merged."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 2,
+   "seq": 5,
+   "after": {
+    "writer": 2,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:30.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "value": "Merged."
+  }
+ ],
+ "recover": {
+  "reader": "kept",
+  "from": "store",
+  "source": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "gardener",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "request": "Merge groceries.md into todo.md"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:30.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 4,
+    "after": {
+     "writer": 2,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:30.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "field": "result",
+    "answer": true,
+    "text": "Merged."
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 5,
+    "after": {
+     "writer": 2,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:30.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "value": "Merged."
+   }
+  ]
+ },
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "loss",
+   "loss"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Merging the two"
+      }
+     }
+    },
+    "finished": false
+   }
+  },
+  "recover": {
+   "reads": [
+    {
+     "after": {
+      "writer": 1,
+      "seq": 3
+     },
+     "expect": {
+      "refuses": "event-unknown"
+     }
+    },
+    {
+     "after": null,
+     "expect": {
+      "events": [
+       {
+        "writer": 1,
+        "seq": 1
+       },
+       {
+        "writer": 1,
+        "seq": 2
+       },
+       {
+        "writer": 2,
+        "seq": 3
+       },
+       {
+        "writer": 2,
+        "seq": 4
+       },
+       {
+        "writer": 2,
+        "seq": 5
+       }
+      ]
+     }
+    }
+   ],
+   "state": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "Merged."
+      }
+     }
+    },
+    "finished": true
+   }
+  }
+ }
+}

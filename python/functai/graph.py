@@ -375,13 +375,14 @@ def _deftime_names(fn_node: ast.AST) -> Set[str]:
     """Names evaluated when a def runs (decorators, annotations, defaults) plus
     the annotations inside the body (functai evaluates ``x: T = _ai`` lines)."""
     parts: List[Optional[ast.AST]] = []
+    values: List[Optional[ast.AST]] = []          # defaults: a string there is a value, not a forward reference
     if isinstance(fn_node, (ast.FunctionDef, ast.AsyncFunctionDef)):
         a = fn_node.args
         parts += list(fn_node.decorator_list) + [fn_node.returns]
         for arg in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg]:
             if arg is not None:
                 parts.append(arg.annotation)
-        parts += list(a.defaults) + [d for d in a.kw_defaults if d is not None]
+        values += list(a.defaults) + [d for d in a.kw_defaults if d is not None]
         for x in ast.walk(fn_node):
             if isinstance(x, ast.AnnAssign):
                 parts.append(x.annotation)
@@ -394,10 +395,10 @@ def _deftime_names(fn_node: ast.AST) -> Set[str]:
                 for arg in a.posonlyargs + a.args + a.kwonlyargs + [a.vararg, a.kwarg]:
                     if arg is not None:
                         parts.append(arg.annotation)
-                parts += list(a.defaults) + [d for d in a.kw_defaults if d is not None]
+                values += list(a.defaults) + [d for d in a.kw_defaults if d is not None]
             else:
                 parts.append(stmt)
-    return _load_names(parts) | _string_annotation_names(parts)
+    return _load_names(parts + values) | _string_annotation_names(parts)
 
 
 def _mutations(fn_node: ast.AST, local_names: Set[str]) -> Dict[str, str]:
@@ -612,6 +613,11 @@ class Analysis:
         node = Node(key, kind, module, name, obj)
         self.nodes[key] = node
         self._by_id[id(obj)] = key
+        if getattr(obj, "_loaded", False):
+            self.problem("loaded-from-data", key, f"{name!r} was built from a saved folder's data "
+                                                   f"(functai.from_manifest): it has no Python source to save",
+                         "save the program where its source is, or keep the folder it was loaded from")
+            return key
         try:
             source = textwrap.dedent(_class_source(fn) if inspect.isclass(fn) else inspect.getsource(fn))
         except (OSError, TypeError):
@@ -1230,14 +1236,16 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
     a = Analysis(include)
     entry = a.program(program)
     a.finish()
-    if isinstance(program, (FunctAIModule,)) or inspect.isfunction(program):
+    declared = isinstance(program, FunctAIModule) and program._declared    # its interface says what each is
+    if (isinstance(program, (FunctAIModule,)) or inspect.isfunction(program)) and not declared:
         fn = program._fn if isinstance(program, FunctAIModule) else program
         sig = inspect.signature(fn)
         for p in sig.parameters.values():
             if p.annotation is inspect.Parameter.empty and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD):
                 a.problem("untyped-input", entry, f"the input {p.name!r} has no type",
                           f"annotate it, e.g. {p.name}: str")
-        if sig.return_annotation is inspect.Signature.empty:
+        outputs_declared = isinstance(program, FunctAIModule) and program._declares_outputs
+        if sig.return_annotation is inspect.Signature.empty and not outputs_declared:
             a.problem("untyped-output", entry, "the program's result has no type",
                       "annotate the return type, e.g. -> list[str]")
     # requirements: the runtime, every package reached, and what was declared

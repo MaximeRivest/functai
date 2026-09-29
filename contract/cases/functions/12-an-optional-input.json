@@ -1,0 +1,94 @@
+{
+ "description": "An input a caller may leave out: optional, its default in its shape. The signature's field has the shape without the default (a default is how a call is bound, not what the model is told).",
+ "definition": {
+  "name": "reply",
+  "description": "Answer the customer.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "tone",
+    "shape": {
+     "type": "string",
+     "default": "kind"
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: reply\n\nAnswer the customer.",
+   "fields": [
+    {
+     "name": "message",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "tone",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "message": "example text",
+   "tone": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: reply\n\nAnswer the customer.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<message>\nexample text\n</message>\n<tone>\nexample text\n</tone>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:110eba6b401c754e1b5da8447a8cde9855ca921839a59ed838625d48f6cfc790",
+  "version": "sha256:064935d6aee88b6e57cf6756e6d775200cbe7de62b46624ebf4177cedeb4053b",
+  "signature_id": "sha256:b7748ee59bb45bf743a63cb8ffd5e88c739d7204edb8dac16719f59b2db3a3e3"
+ }
+}

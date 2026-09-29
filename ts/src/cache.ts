@@ -18,6 +18,7 @@
 import { Request, Response } from "@lm15/lm15";
 import * as lmcc from "lmcc";
 import { warnOnce } from "./calllog.ts";
+import { lm15Data } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -87,7 +88,7 @@ export async function lookup(cache: ReplyCache, key: string): Promise<Response |
   try {
     let hit = await cache.get(key);
     if (typeof hit === "string") hit = JSON.parse(hit);         // a store that keeps text
-    return hit && typeof hit === "object" ? Response.fromJSON(hit as never) : null;
+    return hit && typeof hit === "object" ? Response.fromJSON(lm15Data(hit) as never) : null;   // a store may hand back what lmcc parsed
   } catch (err) {
     skip("read", err);
     return null;

@@ -1,0 +1,145 @@
+{
+ "description": "A call shown with its steps and without its reasoning: the field goes from the inputs, the outputs and every model step; a step whose outputs held it loses its recorded message (it would show the field) and is written from its values; tool steps stay.",
+ "kind": "shown",
+ "turn": {
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "inputs": {
+   "message": "Where is B-2210?",
+   "photo": {
+    "$media": "image/jpeg",
+    "sha256": "9c1e000000000000000000000000000000000000000000000000000000000000"
+   }
+  },
+  "steps": [
+   {
+    "kind": "model",
+    "outputs": {
+     "reasoning": "Look the order up first.",
+     "tool_calls": [
+      {
+       "id": "call_1",
+       "name": "order_status",
+       "input": {
+        "order": "B-2210"
+       }
+      }
+     ]
+    },
+    "message": {
+     "role": "assistant",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<reasoning>Look the order up first.</reasoning>"
+      },
+      {
+       "type": "tool_call",
+       "id": "call_1",
+       "name": "order_status",
+       "input": {
+        "order": "B-2210"
+       }
+      }
+     ]
+    },
+    "request": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "calls_field": "tool_calls"
+   },
+   {
+    "kind": "tool",
+    "id": "call_1",
+    "name": "order_status",
+    "output": [
+     {
+      "type": "text",
+      "text": "In the Leeds depot, 7 days late."
+     }
+    ]
+   },
+   {
+    "kind": "model",
+    "outputs": {
+     "result": "It is in Leeds, a week late."
+    },
+    "message": {
+     "role": "assistant",
+     "parts": [
+      {
+       "type": "text",
+       "text": "It is in Leeds, a week late."
+      }
+     ]
+    },
+    "request": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+   }
+  ],
+  "outputs": {
+   "result": "It is in Leeds, a week late."
+  }
+ },
+ "entry": {
+  "call": "01926b00-0001-7000-8000-000000000000",
+  "steps": true,
+  "without": [
+   "reasoning",
+   "photo"
+  ]
+ },
+ "expect": {
+  "slot": "turns",
+  "turn": {
+   "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+   "inputs": {
+    "message": "Where is B-2210?"
+   },
+   "steps": [
+    {
+     "kind": "model",
+     "outputs": {
+      "tool_calls": [
+       {
+        "id": "call_1",
+        "name": "order_status",
+        "input": {
+         "order": "B-2210"
+        }
+       }
+      ]
+     },
+     "request": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "calls_field": "tool_calls"
+    },
+    {
+     "kind": "tool",
+     "id": "call_1",
+     "name": "order_status",
+     "output": [
+      {
+       "type": "text",
+       "text": "In the Leeds depot, 7 days late."
+      }
+     ]
+    },
+    {
+     "kind": "model",
+     "outputs": {
+      "result": "It is in Leeds, a week late."
+     },
+     "message": {
+      "role": "assistant",
+      "parts": [
+       {
+        "type": "text",
+        "text": "It is in Leeds, a week late."
+       }
+      ]
+     },
+     "request": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+    }
+   ],
+   "outputs": {
+    "result": "It is in Leeds, a week late."
+   }
+  }
+ }
+}

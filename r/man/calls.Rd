@@ -17,7 +17,11 @@ calls(fn = NULL, folder = NULL, since = NULL)
 A tibble, one row per call, oldest first: \code{id}, \code{started},
 \code{name}, \code{module}, \code{version}, \code{model}, \code{seconds}, \code{inputs} and \code{outputs}
 (list columns of JSON values), \code{error}, \code{input_tokens}, \code{output_tokens},
-\code{reasoning_tokens}, \code{total_tokens}, \code{parent}, \code{caller}, \code{language}.
+\code{reasoning_tokens}, \code{total_tokens}, \code{parent}, \code{caller}, \code{language},
+\code{content} (whether every value was kept), \code{omitted} (when it was not:
+the names of the fields whose values were not kept, as \code{inputs} and
+\code{outputs}; \code{NULL} otherwise), \code{saw} (the earlier calls it was shown,
+\code{NULL} when its record does not say).
 Providers count differently: OpenAI's and Anthropic's \code{output_tokens}
 include the model's hidden reasoning, Gemini's leave it out (it is in
 \code{reasoning_tokens}). Every one bills \code{total_tokens - input_tokens} as

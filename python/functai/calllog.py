@@ -22,6 +22,7 @@ as one append; writing never raises into the call.
 from __future__ import annotations
 
 import contextlib
+import copy
 import dataclasses
 import datetime as _dt
 import functools
@@ -48,7 +49,11 @@ from typing import Any, Callable, Dict, Iterable, Iterator, List, Optional, Tupl
 
 import lmcc
 
-FORMAT = 1
+from .errors import FunctAIError, InterfaceError, JournalError, LogContentError, Outcome, SawError
+
+FORMAT = 2                           # the call records this writes (contract/calls.md)
+READS = (1, 2)                       # the call record formats this reads
+RATING_FORMAT = 1
 ENV_FOLDER = "FUNCTAI_LOG_CALLS"
 ENV_CONTENT = "FUNCTAI_LOG_CONTENT"
 ENV_CALLER = "FUNCTAI_CALLER"
@@ -167,14 +172,51 @@ def _sha(text: str) -> str:
 def to_json(value: Any) -> Tuple[Any, int]:
     """A value as the JSON its type describes, and its size (code points of its
     canonical JSON). A value with no JSON form is described instead."""
+    data, size, _described = json_value(value)
+    return data, size
+
+
+def json_value(value: Any) -> Tuple[Any, int, bool]:
+    """``to_json``, and whether the value was written as a description
+    (``{"$type", "$repr"}``: it has no JSON form, so it is not data)."""
     try:
         data = lmcc.turn.to_json(value, where="value")
-        return data, len(canonical(data))
+        return data, len(canonical(data)), False
     except Exception:  # noqa: BLE001 — anything else is described, never refused
-        text = repr(value)
-        data = {"$type": type(value).__qualname__,
+        text = safe_repr(value)
+        data = {"$type": _type_name(value),
                 "$repr": text if len(text) <= _REPR_MAX else text[:_REPR_MAX - 1] + "…"}
-        return data, len(canonical(data))
+        return data, len(canonical(data)), True
+
+
+def _type_name(value: Any) -> str:
+    try:
+        return str(type(value).__qualname__)
+    except Exception:  # noqa: BLE001
+        return "object"
+
+
+def safe_repr(value: Any) -> str:
+    """``repr(value)``, or when that raises, a description that says so without
+    quoting the error (its message could hold a value)."""
+    try:
+        text = repr(value)
+        if isinstance(text, str):
+            return text
+    except Exception as exc:  # noqa: BLE001 — a value's repr never breaks a call or its record
+        return f"<{_type_name(value)} object: its repr raised {type(exc).__name__}>"
+    return f"<{_type_name(value)} object>"
+
+
+def safe_str(error: BaseException) -> str:
+    """``str(error)``, or when that raises, a sentence that says so."""
+    try:
+        text = str(error)
+        if isinstance(text, str):
+            return text
+    except Exception as exc:  # noqa: BLE001
+        return f"<its message could not be read: {type(exc).__name__}>"
+    return ""
 
 
 # ------------------------------------------------------------------ settings
@@ -188,8 +230,8 @@ def check_settings(settings: Mapping[str, Any]) -> None:
     if isinstance(where, str) and not where.strip():
         raise ValueError("log_calls is a folder, True or False, not an empty text")
     content = settings.get("log_content")
-    if content is not None and not isinstance(content, bool):
-        raise TypeError(f"log_content is True or False, not {content!r}")
+    if content is not None:
+        check_log_content(content)
     caller = settings.get("caller")
     if caller is not None:
         if not isinstance(caller, Mapping) or not all(isinstance(k, str) for k in caller):
@@ -251,10 +293,128 @@ def _resolve_folder(setting: Any) -> Optional[Path]:
     return folder.absolute()
 
 
-def _content_of(setting: Any) -> bool:
-    if setting is not None:
-        return bool(setting)
-    return os.environ.get(ENV_CONTENT, "").strip().lower() not in _OFF - {""}
+# ------------------------------------------------------------------ content: what a record keeps
+
+
+_FIELD = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")        # matched whole: nothing after it, not even a newline
+
+
+def check_log_content(value: Any, fields: Optional[Iterable[str]] = None, *, program: str = "") -> None:
+    """Refuse a ``log_content`` setting that cannot be honoured: not True,
+    False or a map of names to booleans (``TypeError``); a key that is neither
+    a field name nor ``"*"`` (``LogContentError``, wherever it is set); with
+    ``fields`` (a program's own setting), a name the program has no field for."""
+    if isinstance(value, bool):
+        return
+    if not isinstance(value, Mapping):
+        raise TypeError(f"log_content is True, False, or a map of field names to True or False "
+                        f"({{'transcript': False}}, {{'*': False, 'question': True}}); not {value!r}")
+    for key, keep in value.items():
+        if not isinstance(key, str) or (key != "*" and not _FIELD.fullmatch(key)):
+            raise LogContentError(str(key), f"log_content: {key!r} is neither a field name nor '*' (keys of other "
+                                            f"forms are kept for kinds of data)")
+        if not isinstance(keep, bool):
+            raise TypeError(f"log_content: {key!r} maps to True or False, not {keep!r}")
+    if fields is not None:
+        names = set(fields)
+        for key in value:
+            if key != "*" and key not in names:
+                hint = " (tools is the function's state, not a field)" if key == "tools" else ""
+                where = f"{program}: " if program else ""
+                raise LogContentError(key, f"{where}log_content names {key!r}, which is not one of its fields "
+                                           f"({', '.join(sorted(names))}){hint}: a misspelt name would write the "
+                                           f"value it meant to keep out")
+
+
+def _env_drops_all() -> bool:
+    """``$FUNCTAI_LOG_CONTENT`` is 0, false, no or off (any case, white space around): nothing is written."""
+    return os.environ.get(ENV_CONTENT, "").strip().lower() in _OFF - {""}
+
+
+def _drops(setting: Any, name: str) -> bool:
+    """Whether one layer's log_content drops a field."""
+    if setting is None or setting is True:
+        return False
+    if setting is False:
+        return True
+    if name in setting:
+        return not setting[name]
+    return setting.get("*") is False
+
+
+def kept_fields(inputs: Iterable[str], outputs: Iterable[str], added: Iterable[str],
+                settings: Iterable[Any], *, environment_off: Optional[bool] = None) -> Dict[str, bool]:
+    """For each field of a call, whether its value is written (contract/calls.md,
+    *Content*): only when no layer drops it (``settings``: each layer's
+    log_content), and the environment does not drop everything. A field
+    FunctAI added (``added``: reasoning, calls) is written only when no field
+    of the call is dropped: it can quote any of them."""
+    settings = [s for s in settings if s is not None]
+    off = _env_drops_all() if environment_off is None else environment_off
+    out = {n: not off and not any(_drops(s, n) for s in settings) for n in [*inputs, *outputs]}
+    if not all(out.values()):
+        for n in added:
+            out[n] = False
+    return out
+
+
+def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept: Mapping[str, bool]
+             ) -> Dict[str, Any]:
+    """The record as written when some values are not kept (contract/calls.md,
+    *What the record keeps*): ``content`` false and ``omitted`` naming them;
+    only the kept values; no exchange request, reply or request hash, and of
+    each error only its type and code; ``sizes`` whole. A name ``kept`` does
+    not list is not kept (fail closed)."""
+    if all(kept.get(n, False) for n in [*inputs, *outputs]):
+        return record
+    answer = (record.get("program") or {}).get("answer")
+    out: Dict[str, Any] = {}
+    for key, value in record.items():
+        if key == "content":
+            out["content"] = False
+            out["omitted"] = {"inputs": [n for n in inputs if not kept.get(n, False)],
+                              "outputs": [n for n in outputs if not kept.get(n, False)]}
+        elif key == "inputs":
+            kept_in = {k: v for k, v in (value or {}).items() if kept.get(k, False)}
+            if kept_in:
+                out["inputs"] = kept_in
+        elif key == "outputs":
+            if value is None:
+                out["outputs"] = None
+            else:
+                kept_out = {k: v for k, v in value.items() if kept.get(k, False)}
+                if kept_out:
+                    out["outputs"] = kept_out
+        elif key == "returned":
+            if kept.get(answer, False):
+                out["returned"] = value
+        elif key == "probabilities":
+            kept_p = {k: v for k, v in value.items() if kept.get(k, False)}
+            if kept_p:
+                out["probabilities"] = kept_p
+        elif key == "described":
+            kept_d = {k: [n for n in v if kept.get(n, False)] for k, v in value.items()}
+            if any(kept_d.values()):
+                out["described"] = kept_d
+        elif key == "error":
+            out["error"] = None if value is None else _error_without_values(value)
+        elif key == "exchanges":
+            exchanges = []
+            for ex in value:
+                ex = {k: v for k, v in ex.items() if k not in ("request", "response", "request_hash")}
+                if "error" in ex and ex["error"] is not None:
+                    ex["error"] = _error_without_values(ex["error"])
+                exchanges.append(ex)
+            out["exchanges"] = exchanges
+        else:
+            out[key] = value
+    return out
+
+
+def _error_without_values(error: Mapping[str, Any]) -> Dict[str, Any]:
+    """An error kept when content is not whole: its type and code (its message,
+    or a member this contract does not name, could quote a value)."""
+    return {k: v for k, v in error.items() if k in ("type", "code")}
 
 
 _env_caller_cache: Dict[str, Dict[str, Any]] = {}
@@ -307,7 +467,6 @@ def tagged(key: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 @dataclasses.dataclass(frozen=True)
 class _Target:
     folder: Path
-    content: bool
     caller: Dict[str, Any]
 
 
@@ -315,7 +474,7 @@ def _target(settings: Mapping[str, Any]) -> Optional[_Target]:
     folder = _folder_of(settings.get("log_calls"))
     if folder is None:
         return None
-    return _Target(folder, _content_of(settings.get("log_content")), caller_of(settings))
+    return _Target(folder, caller_of(settings))
 
 
 def reading_folder(folder: Any = None) -> Path:
@@ -340,28 +499,92 @@ def _warn_once(key: Any, message: str) -> None:
 
 
 class Call:
-    """One call being made. Only its id and timing exist when nothing is logged."""
+    """One call being made: its id and place in its tree, what sees it (the
+    streams, observers and journal of its tree), which of its values its log
+    keeps, and what the record needs. Only the id, the tree and timing are
+    worked out when nothing logs or watches."""
 
-    __slots__ = ("id", "parent", "root", "program", "started", "t0", "target", "inputs", "sizes", "pred",
-                 "exchanges", "provider")
+    __slots__ = ("id", "parent", "parent_call", "root", "program", "function", "started", "t0", "target",
+                 "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
+                 "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
+                 "journal_status", "context", "pid", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"]):
         self.id = new_id()
         self.parent = parent.id if parent is not None else None
+        self.parent_call = parent
         self.root = parent.root if parent is not None else self.id
         self.program = program
+        self.function: str = getattr(program, "__name__", "program")
         self.started = time.time()
         self.t0 = time.perf_counter()
         self.target: Optional[_Target] = None
-        self.inputs: Optional[Dict[str, Any]] = None
+        self.inputs: Optional[Dict[str, Any]] = None        # every input, as JSON (the record keeps what it may)
         self.sizes: Dict[str, int] = {}
+        self.described: List[str] = []
         self.pred: Any = None
         self.exchanges: List[tuple] = []
         self.provider: Optional[str] = None
+        self.log: Any = None                                 # the tree's eventlog.TreeLog
+        self.streams: List[Any] = []                         # the streams that see this call
+        self.observers: List[Any] = []
+        self.keep: Optional[Dict[str, Dict[str, bool]]] = None   # {"inputs": {name: kept}, "outputs": {...}};
+        #                                                    None until known: nothing is kept (fail closed)
+        self.kept: Dict[str, bool] = {}
+        self.fields: Tuple[List[str], List[str], List[str]] = ([], [], [])
+        self.info: Optional[Dict[str, Any]] = None          # the record's program object
+        self.requests = 0
+        self.saw: List[Dict[str, Any]] = []
+        self.answer: Optional[str] = None
+        self.answers_for: Optional[str] = None               # an escalation: this call answers for its parent
+        self.delegating = False
+        self.journal_status: Optional[str] = None
+        self.context: Any = None                             # what the program shows as earlier turns (stateful)
+        self.pid = os.getpid()                               # the process whose tree it is in
+
+    # ----- what sees it
+
+    @property
+    def watched(self) -> bool:
+        """Does anything see this call's events (a stream, an observer, a journal)?"""
+        return bool(self.streams or self.observers) or (self.log is not None and self.log.journal is not None)
+
+    def emit(self, kind: str, **fields: Any) -> Any:
+        """Number one event of this call in its tree's log, and hand it on."""
+        if self.log is None:
+            return None
+        return self.log.emit(self, kind, **fields)
+
+    def request(self, model: Optional[str]) -> None:
+        """The call begins a request to a model (every exchange is one)."""
+        self.requests += 1
+        self.emit("request", request=self.requests, model=model)
+
+    def check(self) -> None:
+        """Stop here if a stream watching this call was closed."""
+        for s in self.streams:
+            s._watch.check()
+
+    def cancelled(self) -> bool:
+        """Whether a stream watching this call was closed (the call is to stop)."""
+        return any(s._watch.cancelled.is_set() for s in self.streams)
+
+    def sleep(self, seconds: float) -> None:
+        """Wait, unless a stream watching this call is closed meanwhile."""
+        if not self.streams:
+            time.sleep(seconds)
+            return
+        deadline = time.monotonic() + seconds
+        while True:
+            self.check()
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return
+            self.streams[0]._watch.cancelled.wait(min(left, 0.05))
 
 
 _CURRENT: ContextVar[Optional[Call]] = ContextVar("functai_call", default=None)
-# The stream watching the calls made in this context (functai.streaming), or None.
+# The stream whose call is started in this context (functai.streaming), or None.
 WATCH: ContextVar[Any] = ContextVar("functai_watch", default=None)
 
 
@@ -369,50 +592,225 @@ def current() -> Optional[Call]:
     return _CURRENT.get()
 
 
+def _layers(program: Any) -> List[Tuple[str, Dict[str, Any]]]:
+    from .config import layers
+    return layers(getattr(program, "_settings", None) or {})
+
+
+def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tuple[str, Dict[str, Any]]],
+               forked_from: Optional[Call] = None) -> Optional[BaseException]:
+    """Which streams, observers and journal see ``call``; the JournalError the
+    call raises before its code runs (a tree refused by its journal policy, or
+    a required journal set only inside a tree), or None. ``forked_from``: the
+    call of another process this one is made in (a process forked inside
+    it): this call starts a tree of its own, seen by that call's observers
+    too, and kept in that tree's journal when its own layers set none."""
+    from . import eventlog
+    got = eventlog.receivers(layers)
+    refusal: Optional[BaseException] = None
+    if parent is None:
+        journal = got.journal
+        if forked_from is not None and eventlog.closest_journal(layers) is eventlog._ABSENT \
+                and forked_from.log is not None:
+            journal = forked_from.log.journal
+        call.log = eventlog.TreeLog(call.id, journal=journal, at_start=eventlog.LayersAtStart.of(layers))
+        refusal = got.refused
+    else:
+        call.log = parent.log
+        call.streams = list(parent.streams)
+        # Only a journal set inside the tree (this program's own, a block entered in it, configure changed
+        # since) can ask for what the tree's journal is not: the host's layers the tree started under decided it.
+        mine = eventlog.set_inside(layers, call.log.at_start)
+        tree = call.log.journal
+        if mine is not eventlog._ABSENT and mine is not None and mine != tree:
+            if mine.required:
+                refusal = JournalError(
+                    "journal-scope", f"{call.function}: a required journal is set only around a call inside a "
+                                     f"call tree, and a journal keeps whole trees: set it around the outermost call")
+            else:
+                _warn_once(("journal-scope", id(mine.store)),
+                           f"a journal set around {call.function}, a call inside a call tree, keeps nothing: a "
+                           f"journal keeps whole trees (set it around the outermost call)")
+    observers = list(parent.observers) if parent is not None else \
+        list(forked_from.observers) if forked_from is not None else []
+    for o in got.observers:
+        if not any(o is x for x in observers):
+            observers.append(o)
+    call.observers = observers
+    if watch is not None and watch.root is None:
+        watch.root = call.id
+        call.streams = [*call.streams, watch.stream]
+    return refusal
+
+
+def _fields_of(program: Any) -> Tuple[List[str], List[str], List[str]]:
+    """(inputs, outputs, added) of a program's calls: its interface's fields,
+    and for an AI function the outputs FunctAI adds (reasoning, calls), in the
+    record's order."""
+    fields = getattr(program, "_fields", None)
+    if callable(fields):
+        return fields()
+    return [], ["result"], []
+
+
 def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[str, Any]],
         invoke: Callable[[], Any]) -> Any:
     """Make one call of ``program`` (``invoke()``), followed as a call: an id, a
-    parent, and a line in the log when logging is on (``inputs()`` binds the
-    arguments to their names; only then)."""
+    place in its tree's log (its events, to whatever sees them), and a line in
+    the call log when logging is on (``inputs()`` gives the inputs by name, as
+    the record holds them; asked only then)."""
+    parent = _CURRENT.get()
     watch = WATCH.get()
+    forked_from: Optional[Call] = None
+    pid = os.getpid()
+    if parent is not None and parent.pid != pid:
+        # made in a process forked inside a call: that call's tree is written by the process that started it
+        forked_from, parent = parent, None
+    if watch is not None and watch.pid != pid:
+        watch = None                              # nor is a parent process's stream watching here
     if watch is not None:
         watch.check()                             # a closed stream starts no new call
-    call = Call(program, _CURRENT.get())
-    bound: Optional[Mapping[str, Any]] = None
+    if parent is not None:
+        parent.check()
+    call = Call(program, parent)
+    refusal: Optional[BaseException] = None
     try:
         call.target = _target(settings)
-        if call.target is not None or watch is not None:
-            try:
-                bound = inputs()
-            except TypeError:                     # wrong arguments: the call itself says so
-                bound = {}
-        if call.target is not None:
-            values = {k: to_json(v) for k, v in bound.items()}
-            call.sizes = {k: n for k, (_v, n) in values.items()}
-            if call.target.content:
-                call.inputs = {k: v for k, (v, _n) in values.items()}
     except Exception as exc:  # noqa: BLE001 — logging never stands in the way of a call
         _warn_once(("start", type(exc).__name__), f"calls are not logged: {type(exc).__name__}: {exc}")
         call.target = None
-    token = _CURRENT.set(call)
+    layers = _layers(program)
     try:
-        if watch is not None:
-            watch.started(call, dict(bound or {}))
-        out = invoke()
-    except BaseException as exc:
-        if call.target is not None:
-            _finish(call, error=exc)
-        if watch is not None:
-            watch.ended(call, error=exc)
-        raise
-    else:
-        if call.target is not None:
-            _finish(call, returned=out)
-        if watch is not None:
-            watch.ended(call, value=out)
-        return out
+        refusal = _receivers(call, parent, watch, layers, forked_from)
+    except Exception as exc:  # noqa: BLE001 — a receiver that cannot be set up never stops a call
+        from . import eventlog
+        _warn_once(("receivers", type(exc).__name__), f"call events are not kept: {type(exc).__name__}: {exc}")
+        call.log = parent.log if parent is not None else eventlog.TreeLog(call.id)
+    if parent is not None and parent.delegating:
+        parent.delegating = False
+        call.answers_for = parent.id
+    if call.target is not None or call.watched:
+        try:
+            _prepare(call, program, layers, inputs)
+        except Exception as exc:  # noqa: BLE001 — fail closed: nothing of this call is kept or written
+            # (its type only: a message could quote a value)
+            _warn_once(("prepare", type(exc).__name__), f"a call of {call.function} could not be prepared for "
+                                                        f"its record and events ({type(exc).__name__}): none is "
+                                                        f"written, and its tree's kept log stops there")
+            call.target = None
+            call.keep = None
+    token = _CURRENT.set(call)
+    value: Any = _NOTHING
+    error: Optional[BaseException] = None
+    try:
+        try:
+            call.emit("started", parent=call.parent, root=call.root, program=call.info,
+                      inputs=copy.deepcopy(call.inputs or {}), content=True, saw=copy.deepcopy(list(call.saw)))
+            if refusal is not None:
+                raise refusal
+            if parent is None and call.log.required and call.log.barrier(call.cancelled) != "confirmed":
+                call.check()                      # a closed stream: the call is cancelled, not refused
+                raise barrier_error(1)
+            value = invoke()
+        except BaseException as exc:  # noqa: BLE001 — the outcome, recorded, then raised as it is
+            error = exc
+        finally:
+            _CURRENT.reset(token)
+        journal_error = None
+        if call.pid == os.getpid():
+            journal_error = _end(call, value, error)
+            if call.target is not None:
+                _finish(call, returned=value, error=error)
+        else:
+            _warn_once(("forked-end", call.function), f"{call.function} was called in process {call.pid} and ends in a "
+                                                f"process forked inside it ({os.getpid()}): its end, events and "
+                                                f"record are that process's, and are not written here")
     finally:
-        _CURRENT.reset(token)
+        if parent is None and call.log is not None and call.pid == os.getpid():
+            call.log.close()
+    if journal_error is not None:
+        raise journal_error
+    if error is not None:
+        raise error
+    return value
+
+
+def _prepare(call: Call, program: Any, layers: List[Tuple[str, Dict[str, Any]]],
+             inputs: Callable[[], Mapping[str, Any]]) -> None:
+    """What the record and the events need, which fields the log keeps first
+    (so a later failure keeps nothing rather than everything): the fields, what
+    the log keeps of them, the inputs as JSON (only those the interface names:
+    a value given under another name is refused, never recorded), the program
+    object, what the call is shown as context."""
+    ins, outs, added = call.fields = _fields_of(program)
+    kept = kept_fields(ins, outs, added, [layer.get("log_content") for _w, layer in layers])
+    call.kept = kept
+    call.keep = {"inputs": {n: kept[n] for n in ins}, "outputs": {n: kept[n] for n in outs}}
+    try:
+        bound = inputs()
+    except (TypeError, InterfaceError):           # wrong arguments: the call itself says so
+        bound = {}
+    names = set(ins)
+    values = {k: json_value(v) for k, v in bound.items() if k in names}
+    call.inputs = {k: v for k, (v, _n, _d) in values.items()}
+    call.sizes = {k: n for k, (_v, n, _d) in values.items()}
+    call.described = [k for k, (_v, _n, d) in values.items() if d]
+    call.info = program_info(program)
+    call.answer = call.info.get("answer")
+    saw = getattr(program, "_saw", None)
+    if callable(saw):
+        call.saw, call.context = saw()
+
+
+def _end(call: Call, value: Any, error: Optional[BaseException]) -> Optional[BaseException]:
+    """The call's last event, and for the outermost call of a tree with a
+    required journal, the end's confirmation: a JournalError (journal-end)
+    holding the outcome when it is not confirmed."""
+    from .data import Prediction
+    log = call.log
+    if log is None:
+        return None
+    outermost = call.parent_call is None
+    hold = outermost and log.required
+    if error is not None:
+        event = call.emit("failed", error=error, hold=hold)
+    else:
+        shown, pred = value, call.pred
+        if isinstance(value, Prediction):                      # predict(): the answer is in it
+            pred, shown = value, value.get(call.answer) if call.answer else value
+        event = call.emit("done", value=shown, prediction=pred, hold=hold)
+    if not outermost:
+        return None
+    status = log.end()
+    if status == "confirmed":
+        if hold:
+            log.release(call, event)
+        return None
+    call.journal_status = "refused" if status == "refused" else "unknown"
+    outcome = Outcome(value=None if error is not None else value, error=error)
+    end = {"writer": event.writer, "seq": event.seq} if event is not None else {"writer": log.writer, "seq": log.seq}
+    what = "refused it" if status == "refused" else "did not answer (it may have kept it)"
+    return JournalError("journal-end", f"{call.function} ended, and the journal {what}: its outcome is on "
+                                       f"err.outcome; err.settle() says whether the journal kept it",
+                        outcome=outcome, event=end, journal=call.journal_status, store=log.journal.store,
+                        tree=log.tree)
+
+
+def barrier_error(seq: int) -> JournalError:
+    """The outcome of a call stopped at a required journal's barrier."""
+    return JournalError("journal-barrier", f"the journal did not keep event {seq}")
+
+
+def tool_barrier(seq: Optional[int] = None) -> None:
+    """Before a tool runs: with a required journal, wait until the tool call
+    (event ``seq``) is confirmed kept; otherwise the tool does not run
+    (JournalError, journal-barrier)."""
+    call = _CURRENT.get()
+    if call is None or call.log is None or not call.log.required:
+        return
+    if call.log.barrier(call.cancelled) != "confirmed":
+        call.check()                              # a closed stream: the call is cancelled, not refused
+        raise barrier_error(seq if seq is not None else call.log.seq)
 
 
 def attach(program: Any, pred: Any) -> None:
@@ -432,13 +830,14 @@ def route(provider: Optional[str]) -> None:
 
 def exchange(model: str, request: Any, response: Any = None, *, started: float, seconds: float,
              cached: bool = False, error: Optional[BaseException] = None, streamed: bool = False,
-             first_delta: Optional[float] = None) -> None:
+             first_delta: Optional[float] = None, request_hash: Optional[str] = None) -> None:
     """One request of the call in progress and its reply or error (``engine.send``);
-    ``first_delta``: seconds to the first piece of a streamed reply."""
+    ``first_delta``: seconds to the first piece of a streamed reply;
+    ``request_hash``: lmcc's hash of the rendered request it came from."""
     call = _CURRENT.get()
     if call is not None and call.target is not None:
         call.exchanges.append((model, call.provider, started, seconds, cached, request, response, error,
-                               streamed, first_delta))
+                               streamed, first_delta, request_hash))
 
 
 # ------------------------------------------------------------------ versions
@@ -504,6 +903,8 @@ def version_document(fn: Any, request: str) -> Dict[str, str]:
     writes the whole body, ``{"code": C, "request": R}`` when code of its own
     runs beside the model (contract/calls.md, *Versions*). So the same AI
     function written in two languages has one version."""
+    if getattr(fn, "_loaded", False):                  # built from a saved manifest: the model writes it whole
+        return {"request": request}
     body = fn.__wrapped__
     return {"request": request} if _model_body(body) else {"code": code_hash(body), "request": request}
 
@@ -579,10 +980,11 @@ def _module_graph(m: Any) -> Tuple[Dict[str, str], Dict[str, Any]]:
 
 
 def module_version(m: Any) -> str:
-    """A module's version: ``sha256:`` of the code it reaches and the versions
-    of the AI functions it calls (contract/calls.md)."""
+    """A module's version: ``sha256:`` of the code it reaches, the versions of
+    the AI functions it calls, and its interface (contract/calls.md)."""
     code, ai = _module_graph(m)
-    return _sha(canonical({"code": code, "ai": {k: ai_version(fn) for k, fn in ai.items()}}))
+    return _sha(canonical({"code": code, "ai": {k: ai_version(fn) for k, fn in ai.items()},
+                           "interface": m.interface}))
 
 
 def _original(module: Optional[str]) -> str:
@@ -593,20 +995,26 @@ def _original(module: Optional[str]) -> str:
 def program_info(program: Any) -> Dict[str, Any]:
     """The ``program`` part of a call record."""
     from .core import FunctAIFunc
+    from .interface import signature
     is_ai = isinstance(program, FunctAIFunc)
     fn = program.__wrapped__ if is_ai else program._fn
     from .saved import origin
     module, saved_id = origin(getattr(fn, "__module__", None))
+    loaded = getattr(program, "_loaded", False)
+    if loaded:                                        # an AI function built from a saved manifest's data
+        module, saved_id = getattr(fn, "__module__", None) or "__main__", getattr(program, "_saved_id", None)
     info: Dict[str, Any] = {"name": program.__name__, "kind": "ai" if is_ai else "module", "module": module}
+    interface = program.interface
     if is_ai:
-        info["version"], info["signature"], info["answer"] = ai_facts(program)
+        info["version"], info["signature"], _answer = ai_facts(program)
     else:
         info["version"] = module_version(program)
-        info["answer"] = "result"
+    info["interface"] = signature(interface)
+    info["answer"] = interface["outputs"][-1]["name"]
     if saved_id:
         info["saved"] = saved_id
     code = getattr(fn, "__code__", None)
-    if code is not None:
+    if code is not None and not loaded:
         info["file"], info["line"] = code.co_filename, code.co_firstlineno
     return info
 
@@ -631,13 +1039,13 @@ def _process_info() -> Dict[str, Any]:
     return dict(_process)
 
 
-def _error(exc: BaseException, content: bool) -> Dict[str, Any]:
+def _error(exc: BaseException, content: bool = True) -> Dict[str, Any]:
     out: Dict[str, Any] = {"type": type(exc).__name__}
-    code = getattr(exc, "code", None)
-    if isinstance(exc, lmcc.Refusal) and isinstance(code, str):
-        out["code"] = code
     if content:
-        out["message"] = str(exc)
+        out["message"] = safe_str(exc)
+    code = getattr(exc, "code", None)
+    if isinstance(exc, (lmcc.Refusal, FunctAIError)) and isinstance(code, str):
+        out["code"] = code
     return out
 
 
@@ -653,9 +1061,9 @@ def _usage(response: Any) -> Dict[str, int]:
     return out
 
 
-def _exchange_record(ex: tuple, content: bool) -> Dict[str, Any]:
+def _exchange_record(ex: tuple) -> Dict[str, Any]:
     from lm15.serde import request_to_dict, response_to_dict
-    model, provider, started, seconds, cached, request, response, error, streamed, first_delta = ex
+    model, provider, started, seconds, cached, request, response, error, streamed, first_delta, rhash = ex
     out: Dict[str, Any] = {"model": model, "provider": provider, "started": _iso(started),
                            "seconds": round(seconds, 6), "cached": cached}
     if streamed:
@@ -665,36 +1073,63 @@ def _exchange_record(ex: tuple, content: bool) -> Dict[str, Any]:
         out["finish"] = getattr(response, "finish_reason", None)
         out["usage"] = _usage(response)
     if error is not None:
-        out["error"] = _error(error, content)
-    if content:
-        out["request"] = request_to_dict(request)
-        if response is not None:
-            out["response"] = response_to_dict(response)
+        out["error"] = _error(error)
+    out["request"] = request_to_dict(request)
+    if rhash is not None:
+        out["request_hash"] = rhash
+    if response is not None:
+        out["response"] = response_to_dict(response)
     return out
 
 
-def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseException] = None) -> Dict[str, Any]:
+def _outputs_of(call: Call, returned: Any, error: Optional[BaseException]
+                ) -> Tuple[Optional[Dict[str, Any]], Dict[str, int], List[str], Any]:
+    """(outputs as JSON, their sizes, those written as descriptions, what an AI
+    function's code returned when it changed the answer)."""
     from .core import FunctAIFunc
     from .data import Prediction
-    target = call.target
-    content = target.content
-    program = program_info(call.program)
-    pred = call.pred
-    outputs: Optional[Dict[str, Any]] = None
-    out_sizes: Dict[str, int] = {}
+    from .interface import outputs_of
+    program = call.program
     shown: Any = _NOTHING
-    if isinstance(call.program, FunctAIFunc):
-        if pred is not None:
-            values = {k: to_json(v) for k, v in pred.items()}
-            outputs = {k: v for k, (v, _n) in values.items()}
-            out_sizes = {k: n for k, (_v, n) in values.items()}
-        if returned is not _NOTHING and not isinstance(returned, Prediction):
-            value, _n = to_json(returned)
-            if outputs is None or outputs.get(program["answer"], _NOTHING) != value:
+    if isinstance(program, FunctAIFunc):
+        pred = call.pred
+        if pred is None:
+            return None, {}, [], shown
+        raw = dict(pred.items())
+        calls_ = (getattr(getattr(pred, "turn", None), "outputs", None) or {}).get("calls")
+        order = call.fields[1] or list(raw)
+        named = {}
+        for name in order:
+            if name in raw:
+                named[name] = raw[name]
+            elif name == "calls" and calls_ is not None:
+                named[name] = calls_
+        named.update({k: v for k, v in raw.items() if k not in named})
+        values = {k: json_value(v) for k, v in named.items()}
+        outputs = {k: v for k, (v, _n, _d) in values.items()}
+        if returned is not _NOTHING and not isinstance(returned, Prediction) and error is None:
+            value, _n, _d = json_value(returned)
+            if outputs.get(call.answer or "result", _NOTHING) != value:
                 shown = value
-    elif error is None:
-        value, n = to_json(returned)
-        outputs, out_sizes = {"result": value}, {"result": n}
+        return outputs, {k: n for k, (_v, n, _d) in values.items()}, [k for k, (_v, _n, d) in values.items() if d], \
+            shown
+    if error is not None:
+        return None, {}, [], shown
+    ok, named = outputs_of(program.interface, returned)
+    if not ok:
+        named = {call.answer or "result": returned}
+    values = {k: json_value(v) for k, v in named.items()}
+    return ({k: v for k, (v, _n, _d) in values.items()}, {k: n for k, (_v, n, _d) in values.items()},
+            [k for k, (_v, _n, d) in values.items() if d], shown)
+
+
+def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseException] = None) -> Dict[str, Any]:
+    """The call's record as written: every value first (format 2), then only
+    what the log keeps (``restrict``)."""
+    target = call.target
+    program = call.info if call.info is not None else program_info(call.program)
+    pred = call.pred
+    outputs, out_sizes, out_described, shown = _outputs_of(call, returned, error)
     refusal = getattr(pred, "refusal", None) if pred is not None else None
     failure = error if error is not None else refusal
     answered = [ex for ex in call.exchanges if ex[6] is not None]
@@ -704,26 +1139,31 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
             usage[k] = usage.get(k, 0) + v
     rec: Dict[str, Any] = {
         "functai_call": FORMAT, "id": call.id, "parent": call.parent, "root": call.root, "program": program,
-        "started": _iso(call.started), "seconds": round(time.perf_counter() - call.t0, 6), "content": content,
+        "started": _iso(call.started), "seconds": round(time.perf_counter() - call.t0, 6), "content": True,
+        "inputs": call.inputs or {}, "outputs": outputs,
     }
-    if content:
-        rec["inputs"] = call.inputs or {}
-        rec["outputs"] = outputs
-        if shown is not _NOTHING:
-            rec["returned"] = shown
+    if shown is not _NOTHING:
+        rec["returned"] = shown
     rec["sizes"] = {"inputs": call.sizes, "outputs": out_sizes}
-    rec["error"] = _error(failure, content) if failure is not None else None
+    if call.described or out_described:
+        rec["described"] = {"inputs": list(call.described), "outputs": out_described}
+    rec["error"] = _error(failure) if failure is not None else None
     rec["model"] = answered[-1][0] if answered else None
     rec["usage"] = usage
     rec["confidence"] = getattr(pred, "confidence", None) if pred is not None else None
-    if content and pred is not None and getattr(pred, "probabilities", None):
+    if pred is not None and getattr(pred, "probabilities", None):
         rec["probabilities"] = {k: {str(a): float(p) for a, p in d.items()} for k, d in pred.probabilities.items()}
     if pred is not None and getattr(pred, "escalated", False):
         rec["escalated"] = True
-    rec["exchanges"] = [_exchange_record(ex, content) for ex in call.exchanges]
-    rec["caller"] = dict(target.caller)
+    rec["exchanges"] = [_exchange_record(ex) for ex in call.exchanges]
+    rec["saw"] = list(call.saw)
+    if call.journal_status is not None:
+        rec["journal"] = call.journal_status
+    rec["caller"] = dict(target.caller) if target is not None else {}
     rec["process"] = _process_info()
-    return rec
+    ins, outs, _added = call.fields
+    outs = list(outs) + [k for k in (outputs or {}) if k not in outs]       # a name no field has: not kept
+    return restrict(rec, list(ins), outs, call.kept)
 
 
 def _line(rec: Dict[str, Any]) -> bytes:
@@ -748,9 +1188,10 @@ def _finish(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
         line = _line(_record(call, returned=returned, error=error))
         _writer(call.target.folder).write(line)
     except Exception as exc:  # noqa: BLE001 — logging never stands in the way of a call
+        why = f"{type(exc).__name__}: {exc}" if isinstance(exc, OSError) else type(exc).__name__
         _warn_once((str(call.target.folder), type(exc).__name__),
                    f"could not log a call of {getattr(call.program, '__name__', '?')} to {call.target.folder} "
-                   f"({type(exc).__name__}: {exc}); calls go on, unlogged")
+                   f"({why}); calls go on, unlogged")
 
 
 # ------------------------------------------------------------------ writing
@@ -876,9 +1317,9 @@ def read(folder: Any = None, *, since: Any = None) -> Tuple[List[Dict[str, Any]]
                 continue
             if not isinstance(rec, dict):
                 continue
-            if rec.get("functai_call") == FORMAT and rec.get("started", "") >= cutoff:
+            if rec.get("functai_call") in READS and rec.get("started", "") >= cutoff:
                 calls.append(rec)
-            elif rec.get("functai_rating") == FORMAT and rec.get("at", "") >= cutoff:
+            elif rec.get("functai_rating") == RATING_FORMAT and rec.get("at", "") >= cutoff:
                 ratings.append(rec)
     return calls, ratings
 
@@ -893,6 +1334,8 @@ def current_ratings(ratings: Iterable[Dict[str, Any]], *, by: Optional[str] = No
     someone who withdrew theirs (verdict null); only ``by``'s when given."""
     latest: Dict[Tuple[str, str], Dict[str, Any]] = {}
     for r in ratings:
+        if r.get("functai_rating") != RATING_FORMAT:
+            continue                                   # a format this reader does not know
         if by is not None and r.get("by") != by:
             continue
         key = (r.get("call"), r.get("by"))
@@ -912,7 +1355,8 @@ def _says(rating: Dict[str, Any], call: Dict[str, Any]) -> Optional[Dict[str, An
     answer = (call.get("program") or {}).get("answer") or "result"
     if rating.get("verdict") == "right":
         outputs = call.get("outputs") or {}
-        return {answer: outputs[answer]} if answer in outputs else None
+        described = (call.get("described") or {}).get("outputs") or []
+        return {answer: outputs[answer]} if answer in outputs and answer not in described else None
     values: Dict[str, Any] = {}
     if "answer" in rating:
         values[answer] = rating["answer"]
@@ -937,24 +1381,52 @@ def matches(call: Dict[str, Any], name: str, module: Optional[str] = None) -> bo
     return program.get("name") == name and (module is None or program.get("module") == module)
 
 
+def _same_data(program: Mapping[str, Any], signature: Optional[str], interface: Optional[str]) -> bool:
+    """Whether a call records the data the reader was given (rule 3): its
+    ``program.interface`` is the interface (a format-1 record has none: its
+    ``program.signature`` then), or its ``program.signature`` the signature."""
+    if signature is None and interface is None:
+        return True
+    if interface is not None:
+        mine = program.get("interface") if "interface" in program else program.get("signature")
+        if mine == interface:
+            return True
+    return signature is not None and program.get("signature") == signature
+
+
+def _inputs_are_data(call: Mapping[str, Any]) -> bool:
+    """Every input recorded, as data (not a description of a value with no JSON form)."""
+    if call.get("content") is not True:
+        omitted = call.get("omitted")
+        if call.get("functai_call") == 1 or not isinstance(omitted, Mapping) or omitted.get("inputs"):
+            return False
+    if (call.get("described") or {}).get("inputs"):
+        return False
+    if "inputs" not in call and (call.get("sizes") or {}).get("inputs") and call.get("content") is True:
+        return False                            # a record cut to fit (truncated) keeps no values
+    return True
+
+
 def rated_rows(calls: Iterable[Dict[str, Any]], ratings: Iterable[Dict[str, Any]], *, name: str,
-               module: Optional[str] = None, signature: Optional[str] = None, by: Optional[str] = None
-               ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+               module: Optional[str] = None, signature: Optional[str] = None, by: Optional[str] = None,
+               interface: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Rows with known answers from rated calls, and how many rated calls were
     left out and why (``other_signature``, ``no_content``, ``no_answer``).
-    The rules are contract/calls.md's "Rows with known answers"."""
+    The rules are contract/calls.md's "Rows with known answers". Records of
+    formats 1 and 2 are read; others are skipped (not counted)."""
     counting = current_ratings(ratings, by=by)
     left = {"other_signature": 0, "no_content": 0, "no_answer": 0}
     rows: List[Dict[str, Any]] = []
-    for call in sorted((c for c in calls if matches(c, name, module)), key=lambda c: _order(c, "started")):
+    known = (c for c in calls if c.get("functai_call") in READS and matches(c, name, module))
+    for call in sorted(known, key=lambda c: _order(c, "started")):
         rs = counting.get(call.get("id"))
         if not rs:
             continue
         program = call.get("program") or {}
-        if signature is not None and program.get("signature") != signature:
+        if not _same_data(program, signature, interface):
             left["other_signature"] += 1
             continue
-        if not call.get("content") or "inputs" not in call:
+        if not _inputs_are_data(call):
             left["no_content"] += 1
             continue
         said = [(r, _says(r, call)) for r in rs]
@@ -978,21 +1450,110 @@ def rated_rows(calls: Iterable[Dict[str, Any]], ratings: Iterable[Dict[str, Any]
     return rows, left
 
 
+# ------------------------------------------------------------------ what a call saw
+
+
+_ENTRY_KEYS = frozenset({"call", "steps", "without", "slot"})
+
+
+def _by_id(records: Any) -> Dict[str, Dict[str, Any]]:
+    if isinstance(records, Mapping):
+        return dict(records)
+    return {r.get("id"): r for r in records if isinstance(r, Mapping) and "functai_call" in r}
+
+
+def saw(call: str, records: Any) -> List[Dict[str, Any]]:
+    """The calls ``call`` was given as context, in order, each with how it was
+    shown (``steps``, ``without``, ``slot``), every ``saw_of`` replaced by the
+    entries of the call it names (contract/calls.md, *Saw*).
+
+    ``records``: call records (a list, or a dict by id). Raises ``SawError``
+    when what it saw cannot be known: ``not-recorded`` (its record has no
+    ``saw``), ``missing-call`` (a ``saw_of`` names a call the records lack, or
+    one with no ``saw``), ``unknown-key`` (an entry this reader does not
+    know), ``saw-cycle``."""
+    return _expand(_by_id(records), call, ())
+
+
+def _expand(records: Dict[str, Dict[str, Any]], call: str, following: tuple) -> List[Dict[str, Any]]:
+    rec = records.get(call)
+    if rec is None or not isinstance(rec.get("saw"), list):
+        code = "missing-call" if following else "not-recorded"
+        raise SawError(code, call, f"what call {call} saw is not recorded")
+    out: List[Dict[str, Any]] = []
+    for i, entry in enumerate(rec["saw"]):
+        if isinstance(entry, Mapping) and "saw_of" in entry:
+            if i != 0 or set(entry) != {"saw_of"}:
+                raise SawError("unknown-key", call, f"call {call}: saw_of is a first entry with no other key")
+            target = entry["saw_of"]
+            if target == call or target in following:
+                raise SawError("saw-cycle", target, f"saw_of comes back to call {target}")
+            out += _expand(records, target, (*following, call))
+        elif isinstance(entry, Mapping) and "call" in entry and set(entry) <= _ENTRY_KEYS:
+            out.append(copy.deepcopy(dict(entry)))
+        else:
+            raise SawError("unknown-key", call, f"call {call} was shown something this reader does not know "
+                                                f"({entry!r}): what it saw cannot be reproduced")
+    return out
+
+
+def check_kept(call: str, records: Any) -> None:
+    """Whether the log keeps what showing ``call`` its context again needs
+    (contract/calls.md, *Knowing is not replaying*): for each entry, a call it
+    can have been shown (else ``turn-invalid``), its record (``missing-call``),
+    and the values it was shown with, as data; with steps, every exchange's
+    request hash and reply (``not-kept``). Raises ``SawError``; returns None
+    when the log keeps it all. This says the values are kept; it shows nothing."""
+    records = _by_id(records)
+    for entry in saw(call, records):
+        if entry.get("steps") and "calls" in (entry.get("without") or []):
+            raise SawError("turn-invalid", entry["call"], f"call {entry['call']} shown with its steps and without "
+                                                          f"its tool calls: its tool steps would answer nothing")
+        rec = records.get(entry["call"])
+        if rec is None:
+            raise SawError("missing-call", entry["call"], f"call {entry['call']} is not in the log")
+        if not _shows_again(rec, entry):
+            raise SawError("not-kept", entry["call"], f"the log does not keep what call {entry['call']} was "
+                                                      f"shown with")
+
+
+def _shows_again(rec: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
+    if rec.get("truncated"):
+        return False
+    left_out = set(entry.get("without") or [])
+    sizes = rec.get("sizes") or {}
+    shown = (set(sizes.get("inputs") or {}) | set(sizes.get("outputs") or {})) - left_out
+    described = rec.get("described") or {}
+    if shown & (set(described.get("inputs") or []) | set(described.get("outputs") or [])):
+        return False
+    if entry.get("steps"):
+        return rec.get("content") is True and all(
+            "request_hash" in ex and ("response" in ex or ex.get("finish") is None) for ex in rec.get("exchanges") or [])
+    if rec.get("content") is True:
+        return True
+    omitted = rec.get("omitted")
+    if rec.get("functai_call") == 1 or not isinstance(omitted, Mapping):
+        return False
+    return not ((set(omitted.get("inputs") or []) | set(omitted.get("outputs") or [])) - left_out)
+
+
 # ------------------------------------------------------------------ the public functions
 
 
-def _program_key(program: Any) -> Tuple[str, Optional[str], Optional[str]]:
-    """(name, module, current signature) a program's calls are found by."""
+def _program_key(program: Any) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
+    """(name, module, current signature, current interface) a program's calls are found by."""
     from .core import FunctAIFunc
+    from .interface import signature as interface_signature
     from .module import FunctAIModule
     if isinstance(program, str):
-        return program, None, None
+        return program, None, None, None
     if isinstance(program, FunctAIFunc):
         from .saved import origin
         return (program.__name__, origin(getattr(program.__wrapped__, "__module__", None))[0],
-                signature_id(program._spec().signature))
+                signature_id(program._spec().signature), interface_signature(program.interface))
     if isinstance(program, FunctAIModule):
-        return program.__name__, _original(getattr(program._fn, "__module__", None)), None
+        return (program.__name__, _original(getattr(program._fn, "__module__", None)), None,
+                interface_signature(program.interface))
     raise TypeError(f"expected an AI function, a module, or a program's name, not {type(program).__name__}")
 
 
@@ -1080,7 +1641,7 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
     found, ratings = read(root, since=since)
     name = module = None
     if program is not None:
-        name, module, _sig = _program_key(program)
+        name, module, _sig, _interface = _program_key(program)
         found = [c for c in found if matches(c, name, module)]
     if not found:
         what = f"of {name} " if name else ""
@@ -1188,9 +1749,10 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
     from .evaluation import _cell, _dpyr, _tabular
     _dpyr()
     root = reading_folder(folder)
-    name, module, signature = _program_key(program)
+    name, module, signature, interface = _program_key(program)
     found, ratings = read(root, since=since)
-    rows, left = rated_rows(found, ratings, name=name, module=module, signature=signature, by=by)
+    rows, left = rated_rows(found, ratings, name=name, module=module, signature=signature, by=by,
+                            interface=interface)
     reasons = {"no_answer": "marked wrong without the right answer",
                "other_signature": "made when its inputs or outputs were different",
                "no_content": "logged without their values"}
@@ -1312,7 +1874,7 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
                              "functai.configure(log_calls=True), or rate(..., folder=...)")
     if by is None:
         by = caller_of(settings).get("user") or _process_info().get("user") or "unknown"
-    rec: Dict[str, Any] = {"functai_rating": FORMAT, "id": new_id(), "call": call_id, "at": _iso(time.time()),
+    rec: Dict[str, Any] = {"functai_rating": RATING_FORMAT, "id": new_id(), "call": call_id, "at": _iso(time.time()),
                            "by": str(by), "verdict": verdict}
     if answer is not _NOTHING:
         rec["answer"] = to_json(answer)[0]
@@ -1330,4 +1892,4 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     return rec
 
 
-__all__ = ["calls", "rated", "rate", "default_folder"]
+__all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept"]

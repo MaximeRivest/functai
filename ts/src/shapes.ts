@@ -6,6 +6,8 @@
  */
 
 import * as lmcc from "lmcc";
+import { InterfaceError } from "./interface.ts";
+import { copyData, entriesOf, setOwn } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -36,12 +38,25 @@ export interface StandardSchemaLike<T = unknown, In = unknown> {
 export type StandardResult = { readonly value: unknown; readonly issues?: undefined }
   | { readonly issues: readonly { readonly message: string; readonly path?: readonly unknown[] }[] };
 
-/** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc }`. */
-export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T>
-  | { readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>; readonly desc?: string };
+/**
+ * A field with more said about it: its words (`desc`), whether a caller may
+ * leave it out (`optional`: then it takes its shape's `default`, or, for a
+ * module, stays out), and whether its values may have no JSON form
+ * (`opaque`, modules only).
+ */
+export interface FieldWith<T = unknown> {
+  readonly shape: Shape<T> | ZodLike<T> | StandardSchemaLike<T>;
+  readonly desc?: string;
+  readonly optional?: boolean;
+  readonly opaque?: boolean;
+}
+
+/** What a field is written as: a shape, a zod or other Standard Schema, or `{ shape, desc?, optional?, opaque? }`. */
+export type FieldSpec<T = unknown> = Shape<T> | ZodLike<T> | StandardSchemaLike<T> | FieldWith<T>;
 
 /** What a caller passes for an input field: a Standard Schema's input type (before defaults and transforms), else the value type. */
 export type InputValueOf<S> =
+  S extends { readonly shape: infer X; readonly optional: true } ? Exclude<InputValueOf<X>, undefined> :
   S extends { readonly shape: infer X } ? InputValueOf<X> :
   S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? Exclude<T, undefined> :
   ValueOf<S>;
@@ -52,26 +67,101 @@ export type InputValueOf<S> =
  * must be given). A shape: when it allows null (`t.optional(...)`).
  */
 export type IsOptional<S> =
+  S extends { readonly optional: true } ? true :
+  S extends { readonly optional: false } ? false :
   S extends { readonly shape: infer X } ? IsOptional<X> :
   S extends { readonly "~standard": { readonly types?: { readonly input: infer T } } } ? (undefined extends T ? true : false) :
+  S extends { readonly default: unknown } ? true :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? false : null extends T ? true : false) : false;
 
 /** The value type of a field spec. */
 export type ValueOf<S> =
   S extends { readonly "~standard": { readonly types?: { readonly output: infer T } } } ? T :
   S extends ZodLike<infer T> ? T :
+  S extends { readonly shape: infer X; readonly optional: true } ? ValueOf<X> | undefined :
   S extends { readonly shape: infer X } ? ValueOf<X> :
   S extends lmcc.TypedShape<infer T> ? (unknown extends T ? unknown : T) : unknown;
 
-/** Builders for shapes (lmcc's, plus a map and `optional`). Each takes extra JSON Schema keys. */
+const OPAQUE = Symbol.for("functai.opaque");
+
+/** Any JSON value. */
+export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
+
+/** Extra JSON Schema keys a builder takes (`{ description }`, `{ minimum: 0 }`, `{ default: "kind" }`). */
+type Extra = Record<string, unknown>;
+/** A shape of values `T`; with a `default`, one a caller may leave out (its type says so). */
+type Built<E, T> = E extends { readonly default: unknown } ? Shape<T> & { readonly default: T } : Shape<T>;
+
+/**
+ * A builder's extra keys, checked: they add to the shape (words, bounds, a
+ * default) and never replace what the builder makes (`type`, `items`,
+ * `properties`, …), which its value type describes.
+ */
+function extraOf<E>(extra: E | undefined, builder: string, structural: readonly string[]): E {
+  const got = (extra ?? {}) as E & object;
+  if (typeof got !== "object" || got === null || Array.isArray(got)) throw new TypeError(`t.${builder}(…, extra): extra is an object of JSON Schema keys`);
+  const bad = structural.filter((k) => Object.hasOwn(got, k));
+  if (bad.length) throw new TypeError(`t.${builder}: ${bad.join(", ")} is what t.${builder} makes; extra keys add to it (description, bounds, default), never replace it`);
+  return got;
+}
+
+const SCALAR = ["type"];
+const LIST = ["type", "items"];
+const OBJECT = ["type", "properties", "required", "additionalProperties"];
+const RECORD = ["type", "properties", "additionalProperties"];
+
+/** Builders for shapes (lmcc's, plus a map, `optional`, `json` and `opaque`). Each takes extra JSON Schema keys, which add to the shape it makes. */
 export const t = {
   ...lmcc.t,
-  /** Text, integers, numbers or yes/no: `t.string()`, `t.integer()`, `t.number()`, `t.boolean()`. */
+  /** Text: `t.string()`; `t.string({ default: "kind" })` may be left out (and is typed so). */
+  string: <const E extends Extra & { readonly default?: string } = {}>(extra?: E): Built<E, string> =>
+    lmcc.t.string(extraOf(extra, "string", SCALAR) as never) as never,
+  /** An integer; `t.integer({ default: 3 })` may be left out. */
+  integer: <const E extends Extra & { readonly default?: number } = {}>(extra?: E): Built<E, number> =>
+    lmcc.t.integer(extraOf(extra, "integer", SCALAR) as never) as never,
+  /** A number; `t.number({ default: 0.5 })` may be left out. */
+  number: <const E extends Extra & { readonly default?: number } = {}>(extra?: E): Built<E, number> =>
+    lmcc.t.number(extraOf(extra, "number", SCALAR) as never) as never,
+  /** Yes or no; `t.boolean({ default: false })` may be left out. */
+  boolean: <const E extends Extra & { readonly default?: boolean } = {}>(extra?: E): Built<E, boolean> =>
+    lmcc.t.boolean(extraOf(extra, "boolean", SCALAR) as never) as never,
+  /** A list: `t.list(t.string(), { description: "one per line" })`. */
+  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => ({ ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
+  /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
+  object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
+    ({ ...lmcc.t.object(properties), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
   /** A map from text keys to values: `t.record(t.integer())`. */
-  record: <V>(values: Shape<V>): Shape<Record<string, V>> => ({ type: "object", additionalProperties: values }) as Shape<Record<string, V>>,
-  /** The shape or null. */
+  record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> =>
+    ({ type: "object", additionalProperties: values, ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
+  /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
+  /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
+  withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => ({ ...shape, default: value }) as Shape<T> & { readonly default: T },
+  /** Any JSON value (shape `{}`), with words about it if you like: `t.json({ description: "each input by name" })`. */
+  json: (extra: Extra = {}): Shape<Json> => ({ ...extra }) as Shape<Json>,
+  /**
+   * A module's field whose values may have no JSON form (a class instance, a
+   * buffer, a data frame): never checked, written in the log as a
+   * description. It cannot cross a boundary that needs data (a server, a
+   * conversation store). `t.opaque<Buffer>()`.
+   */
+  opaque: <T = unknown>(): Shape<T> => Object.defineProperty({}, OPAQUE, { value: true }) as Shape<T>,
 };
+
+const isWrapper = (spec: unknown): spec is FieldWith => typeof spec === "object" && spec !== null && "shape" in spec
+  && !("type" in spec) && !isZod(spec) && !isStandard(spec);
+
+/** Whether a field spec was declared opaque (`t.opaque()`, or `{ shape: {}, opaque: true }`). */
+export function isOpaque(spec: unknown): boolean {
+  if (isWrapper(spec) && spec.opaque === true) return true;
+  const raw = isWrapper(spec) ? spec.shape : spec;
+  return typeof raw === "object" && raw !== null && (raw as Record<symbol, unknown>)[OPAQUE] === true;
+}
+
+/** Whether a field spec says itself whether it may be left out (`{ shape, optional }`): true, false, or undefined (inferred). */
+export function saysOptional(spec: unknown): boolean | undefined {
+  return isWrapper(spec) && typeof spec.optional === "boolean" ? spec.optional : undefined;
+}
 
 /** A field with words about it: `describe(t.string(), "the customer's own words")`. */
 export function describe<S extends Shape | ZodLike | StandardSchemaLike>(shape: S, desc: string): { shape: S; desc: string } {
@@ -110,19 +200,19 @@ function fromZod(schema: JsonObject): JsonObject {
     if (Array.isArray(s)) return s.map(walk);
     if (typeof s !== "object" || s === null) return s;
     const o: JsonObject = {};
-    for (const [k, v] of Object.entries(s)) {
+    for (const [k, v] of entriesOf(s as JsonObject)) {
       if (k === "$schema") continue;
-      o[k] = walk(v);
+      setOwn(o, k, walk(v));                          // a property may be named __proto__: data, not the prototype
     }
     if (o["type"] === "integer" && o["minimum"] === -SAFE && o["maximum"] === SAFE) {
       delete o["minimum"];
       delete o["maximum"];
     }
-    if (o["type"] === "object" && "additionalProperties" in o && typeof o["additionalProperties"] === "object"
+    if (o["type"] === "object" && Object.hasOwn(o, "additionalProperties") && typeof o["additionalProperties"] === "object"
       && JSON.stringify(o["propertyNames"]) === '{"type":"string"}') {
       delete o["propertyNames"];
     }
-    if ("const" in o && !("enum" in o)) {
+    if (Object.hasOwn(o, "const") && !Object.hasOwn(o, "enum")) {
       o["enum"] = [o["const"]];
       delete o["const"];
     }
@@ -139,19 +229,41 @@ function fromZod(schema: JsonObject): JsonObject {
   return walk(schema) as JsonObject;
 }
 
-/** A field spec as `{shape, desc}`: a top-level `description` in the shape becomes the desc. */
-export function readField(spec: FieldSpec, where: string): { shape: JsonObject; desc: string | null } {
+/**
+ * A field spec as `{shape, desc}`: a top-level `description` in the shape
+ * becomes the desc. `field`: the interface field it declares (then a spec
+ * that is not a shape refuses `interface-malformed`, naming it).
+ */
+export function readField(spec: FieldSpec, where: string, field?: string): { shape: JsonObject; desc: string | null } {
   let desc: string | null = null;
   let raw: unknown = spec;
-  if (typeof spec === "object" && spec !== null && "shape" in spec && !("type" in spec) && !isZod(spec) && !isStandard(spec)) {
-    desc = (spec as { desc?: string }).desc ?? null;
-    raw = (spec as { shape: unknown }).shape;
+  const refuse = (why: string): never => {
+    if (field !== undefined) throw new InterfaceError("interface-malformed", field, `${where}: ${why}`);
+    throw new TypeError(`${where}: ${why}`);
+  };
+  if (isWrapper(spec)) {
+    if (spec.desc !== undefined && spec.desc !== null && typeof spec.desc !== "string") refuse("desc is text");
+    desc = spec.desc ?? null;
+    raw = spec.shape;
   }
   let shape: JsonObject;
   if (isStandard(raw)) shape = fromZod(raw["~standard"].jsonSchema!.input({ target: "draft-2020-12" }));
   else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
-  else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) shape = structuredClone(raw) as JsonObject;
-  else throw new TypeError(`${where}: expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${JSON.stringify(raw)}`);
+  else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
+    try {
+      shape = copyData(raw) as JsonObject;
+    } catch {
+      return refuse("a shape is JSON Schema: plain data");
+    }
+  } else {
+    let shown: string;
+    try {
+      shown = JSON.stringify(raw) ?? String(raw);
+    } catch {
+      shown = typeof raw;
+    }
+    return refuse(`expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${shown}`);
+  }
   if (typeof shape["description"] === "string") {
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];
@@ -190,10 +302,10 @@ export function misfit(shape: JsonObject, value: unknown, where: string): string
     const obj = value as JsonObject;
     const props = (shape["properties"] ?? {}) as Record<string, JsonObject>;
     for (const name of (shape["required"] ?? []) as string[]) {
-      if (!(name in obj)) return `${where}: missing ${name}`;
+      if (!Object.hasOwn(obj, name)) return `${where}: missing ${name}`;
     }
-    for (const [k, v] of Object.entries(obj)) {
-      if (k in props) {
+    for (const [k, v] of entriesOf(obj)) {
+      if (Object.hasOwn(props, k)) {
         const p = misfit(props[k]!, v, `${where}.${k}`);
         if (p) return p;
       } else if (shape["additionalProperties"] === false) {

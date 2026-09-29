@@ -9,10 +9,11 @@
 import { cacheOf, forget, keep, lookup, replyKey } from "./cache.ts";
 import * as lmcc from "lmcc";
 import * as bridge from "lmcc/lm15";
-import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Request, type Response, type StreamEvent } from "@lm15/lm15";
+import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Config, type Request, type Response,
+  type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
-import { Context } from "./host.ts";
 import { misfit } from "./shapes.ts";
+import { entriesOf, lm15Data, setOwn, writeData } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
 
@@ -77,20 +78,6 @@ export class Prediction<O = Rec, A = unknown> {
   }
 }
 
-/** What watches a call as it is made (a stream); the engine tells it what happens. */
-export interface Watch {
-  readonly signal: AbortSignal;
-  check(): void;
-  onText(call: Call, field: string, text: string): void;
-  onThinking(call: Call, text: string): void;
-  onToolCall(call: Call, id: string, name: string, input: unknown): void;
-  onToolResult(call: Call, id: string, name: string, output: string): void;
-  onRetry(call: Call, reason: string, wait: number | null): void;
-}
-
-/** The stream watching the calls made in this context, if any. */
-export const watching = new Context<Watch>();
-
 export interface Router {
   complete(request: Request, opts?: { signal?: AbortSignal }): Promise<Response>;
   stream?(request: Request, opts?: { signal?: AbortSignal }): AsyncIterable<StreamEvent>;
@@ -106,44 +93,64 @@ export interface Job {
   readonly model: string;
   readonly tools: readonly Tool[];
   readonly call: Call;
-  readonly watch: Watch | null;
   readonly answer: string;
-  /** Cancels the call: a stream's, the caller's, or both. */
-  readonly signal?: AbortSignal;
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
-  const t = setTimeout(resolve, ms);
-  signal?.addEventListener("abort", () => { clearTimeout(t); reject(new Cancelled()); }, { once: true });
+  if (signal?.aborted) {
+    reject(new Cancelled());
+    return;
+  }
+  const onAbort = () => {
+    clearTimeout(t);
+    reject(new Cancelled());
+  };
+  const t = setTimeout(() => {
+    signal?.removeEventListener("abort", onAbort);
+    resolve();
+  }, ms);
+  signal?.addEventListener("abort", onAbort, { once: true });
 });
 
 const retryable = (err: unknown) => RETRYABLE_ERRORS.some((cls) => err instanceof cls);
 
+/** A request event: the call begins a request to a model (streaming.md, law 8: each is an exchange). */
+function requested(job: Job): void {
+  job.call.requests += 1;
+  job.call.event("request", { request: job.call.requests, model: job.model });
+}
+
+const stopped = (job: Job) => {
+  if (job.call.signal?.aborted) throw new Cancelled();
+};
+
 /** One request: from the reply cache when on, else through the router, re-sent after transient errors; streamed when watched. */
-async function send(job: Job, request: Request): Promise<Response> {
-  const { call, watch } = job;
+async function send(job: Job, request: Request, requestHash: string): Promise<Response> {
+  const { call } = job;
+  const signal = call.signal;
   const cache = cacheOf(job.settings.cacheReplies);
   const key = cache ? replyKey(request) : null;
   if (cache && key) {
-    watch?.check();
+    stopped(job);
     const hit = await lookup(cache, key);
     if (hit) {
-      call.exchange(job.model, request, hit, Date.now(), 0, { cached: true });
-      if (watch) replay(job, hit);                  // a whole reply: one text piece per field (streaming.md)
+      requested(job);
+      call.exchange(job.model, request, hit, Date.now(), 0, { cached: true, requestHash });
+      if (call.watched) replay(job, hit);           // a whole reply: one text piece per field (streaming.md)
       return hit;
     }
   }
   const retries = Math.max(0, job.settings.apiRetries);
   for (let attempt = 0; ; attempt++) {
-    watch?.check();
-    if (job.signal?.aborted) throw new Cancelled();
+    stopped(job);
     const started = Date.now();
     const t0 = performance.now();
+    requested(job);
+    const watched = call.watched;
     try {
       let response: Response;
       let first: number | null = null;
-      const streamed = watch !== null;
-      if (watch && job.router.stream) {
+      if (watched && job.router.stream) {
         // The view (lmcc's stream reader) never decides the call: a piece it
         // cannot read stops the view, and the whole reply is read below.
         const events: StreamEvent[] = [];
@@ -151,15 +158,15 @@ async function send(job: Job, request: Request): Promise<Response> {
         let viewing = true;
         const thinkingIsRead = job.plan.signature.fields.some((f) => f.purpose === "reasoning");
         const show = (batch: readonly { kind: string; field?: string; text?: string }[]) => {
-          for (const ev of batch) if (ev.kind === "field_delta" && ev.field !== "calls") watch.onText(call, ev.field!, ev.text!);
+          for (const ev of batch) if (ev.kind === "field_delta" && ev.field !== "calls" && ev.text) text(job, ev.field!, ev.text);
         };
-        for await (const e of job.router.stream(request, { signal: job.signal ?? watch.signal })) {
-          if (job.signal?.aborted || watch.signal.aborted) throw new Cancelled();
+        for await (const e of job.router.stream(request, signal ? { signal } : undefined)) {
+          stopped(job);
           events.push(e);
           if (e.type !== "delta") continue;
           first ??= (performance.now() - t0) / 1000;
           const d = e.delta as { type: string; text?: string };
-          if (d.type === "thinking" && !thinkingIsRead && d.text) watch.onThinking(call, d.text);
+          if (d.type === "thinking" && !thinkingIsRead && d.text) call.event("thinking", { text: d.text });
           if (viewing) {
             try {
               show(view.feed(Delta.toJSON(e.delta) as Rec) as never);
@@ -178,23 +185,29 @@ async function send(job: Job, request: Request): Promise<Response> {
         }
         response = materializeResponse(events, request);
       } else {
-        response = await job.router.complete(request, job.signal ? { signal: job.signal } : undefined);
-        if (watch) replay(job, response);
+        response = await job.router.complete(request, signal ? { signal } : undefined);
+        if (watched) replay(job, response);
       }
       call.exchange(job.model, request, response, started, (performance.now() - t0) / 1000,
-        { streamed: streamed && job.router.stream !== undefined, firstDelta: first });
+        { streamed: watched && job.router.stream !== undefined, firstDelta: first, requestHash });
       if (cache && key && response.finishReason !== "error") await keep(cache, key, response);
       return response;
     } catch (err) {
-      call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000, { error: err, streamed: watch !== null });
-      if (job.signal?.aborted || watch?.signal.aborted) throw new Cancelled();
+      call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000,
+        { error: err, streamed: watched && job.router.stream !== undefined, requestHash });
+      if (signal?.aborted) throw new Cancelled();
       if (!retryable(err) || attempt >= retries) throw err;
       const after = (err as { retryAfter?: number }).retryAfter;
       const wait = typeof after === "number" && after > 0 ? after : Math.min(30, 2 ** attempt) * (0.5 + Math.random());
-      watch?.onRetry(call, `the provider failed (${(err as Error).name}); sending again in ${wait.toFixed(1)} s`, wait);
-      await sleep(wait * 1000, job.signal);
+      call.event("retry", { reason: `the provider failed (${(err as Error).name}); sending again in ${wait.toFixed(1)} s`, wait });
+      await sleep(wait * 1000, signal);
     }
   }
+}
+
+/** A piece of an output's text (the answer's when it is the answer field). */
+function text(job: Job, field: string, piece: string): void {
+  job.call.event("text", { field, answer: field === job.answer, text: piece });
 }
 
 /** A reply that came whole, shown as one text piece per field (streaming.md, law 6). */
@@ -211,13 +224,27 @@ function replay(job: Job, response: Response): void {
   }
   const texts = new Map<string, string>();
   for (const e of shown) if (e.kind === "field_delta" && e.field !== "calls") texts.set(e.field!, (texts.get(e.field!) ?? "") + e.text);
-  for (const [field, text] of texts) job.watch!.onText(job.call, field, text);
+  for (const [field, piece] of texts) if (piece) text(job, field, piece);
+}
+
+/**
+ * The lm15 request for a rendered plan: lmcc's bridge (the plan's request
+ * settings, the caller's Config merged under them), given the plan's request
+ * and the Config as data lm15 takes (values.ts `lm15Data`). The plan holds
+ * lmcc's record of member order wherever an integer-like name follows
+ * another (a `response_format` schema, a tool's parameters, a recorded tool
+ * call's input), and lm15 refuses an object that carries it. The bridge
+ * reads only the rendered plan's `request`; everything else is the plan's.
+ */
+export function lm15Request(rendered: lmcc.RenderResult, model: string, config: Config | undefined): Request {
+  const plain = Object.create(rendered, { request: { value: (m?: string) => lm15Data(rendered.request(m)) } }) as lmcc.RenderResult;
+  return bridge.request(plain, { model, config: config === undefined ? undefined : lm15Data(config) });
 }
 
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
   for (const f of plan.signature.fields) {
-    if (f.direction !== "output" || f.purpose !== "plain" || !(f.name in values)) continue;
+    if (f.direction !== "output" || f.purpose !== "plain" || !Object.hasOwn(values, f.name)) continue;
     const problem = misfit(f.shape as Rec, values[f.name], f.name);
     if (problem) throw new lmcc.Refusal("parse-value", problem);
   }
@@ -232,10 +259,13 @@ function askedAgain(err: lmcc.Refusal): string {
 /** One model call; after an unreadable reply, up to `retries` follow-ups that send the reader's hint back. */
 async function complete(job: Job, rendered: lmcc.RenderResult, responses: Response[]): Promise<[Response, lmcc.Reading]> {
   const overrides: Rec = {};
-  let request = bridge.request(rendered, { model: job.model, config: configOf(job.settings) });
+  let request = lm15Request(rendered, job.model, configOf(job.settings));
+  // lmcc's hash of the rendered request (a model step's `request`, kernel §3a): every exchange made from it has it,
+  // a re-ask (the reply and the re-ask sentence appended) and a re-send with a larger token budget included, as in Python
+  const requestHash = lmcc.sha256(rendered.request() as lmcc.Json);
   const retries = Math.max(0, job.settings.retries);
   for (let attempt = 0; ; attempt++) {
-    const response = await send(job, request);
+    const response = await send(job, request, requestHash);
     responses.push(response);
     try {
       const reading = bridge.read(job.plan, response);
@@ -255,14 +285,14 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       if (refusal.code === "parse-truncated") {
         const current = (configOf(job.settings, overrides as never)?.maxTokens) ?? 1024;
         overrides["maxTokens"] = current * 2;
-        request = bridge.request(rendered, { model: job.model, config: configOf(job.settings, overrides as never) });
+        request = lm15Request(rendered, job.model, configOf(job.settings, overrides as never));
       } else {
         request = {
           ...request, messages: [...request.messages, response.message,
             Message.user(`Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`)],
         };
       }
-      job.watch?.onRetry(job.call, askedAgain(refusal), null);
+      job.call.event("retry", { reason: askedAgain(refusal), wait: null });
     }
   }
 }
@@ -278,16 +308,17 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
     out = await tool.run(call.input ?? {});
   } catch (err) {
     if (errors === "raise") throw err;
-    return `error: ${(err as Error).name ?? "Error"}: ${(err as Error).message ?? String(err)}`;
+    const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
+    return `error: ${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
   }
-  return typeof out === "string" ? out : JSON.stringify(out);
+  return typeof out === "string" ? out : writeData(out);     // members in the value's order
 }
 
 /** Call the model (and run tools until it answers). */
 export async function run(job: Job): Promise<Prediction> {
   const { plan } = job;
   const values = prepareInputs(plan.signature, job.inputs);
-  if (job.tools.length) values["tools"] = job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters }));
+  if (job.tools.length) setOwn(values, "tools", job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
   let turn = plan.turn(values);
   const responses: Response[] = [];
   const steps = Math.max(1, job.settings.maxSteps);
@@ -299,13 +330,16 @@ export async function run(job: Job): Promise<Prediction> {
     if (!calls.length) {
       turn = turn.finish();
       const outputs: Rec = {};
-      for (const [k, v] of Object.entries(turn.outputs ?? {})) if (k !== "calls") outputs[k] = v;
+      for (const [k, v] of entriesOf(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
       return new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
     }
     for (const c of calls) {
-      job.watch?.onToolCall(job.call, c.id, c.name, c.input ?? {});
+      const asked = job.call.event("tool_call", { id: c.id, name: c.name, input: c.input ?? {} });
+      // a required journal keeps the request before the tool runs (at most its timeout; a cancelled call stops waiting)
+      if (await job.call.node?.log.barrier(asked, job.call.signal) === "cancelled") throw new Cancelled();
+      stopped(job);
       const output = await runTool(job.tools, c, job.settings.toolErrors);
-      job.watch?.onToolResult(job.call, c.id, c.name, output);
+      job.call.event("tool_result", { id: c.id, name: c.name, output });
       turn = turn.tool(c.id, output);
     }
   }

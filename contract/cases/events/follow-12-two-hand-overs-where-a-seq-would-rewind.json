@@ -1,0 +1,308 @@
+{
+ "description": "The same, when the reader holds writer 1's seqs 1 to 6: writer 3's failed names writer 2's seq 4, below the reader's last seq. The reader holds a seq 4, but writer 1's: it does not rewind to it (a seq alone would, and keep writer 1's text), since the event named is not one it holds. A loss.",
+ "kind": "follow",
+ "received": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "gardener",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "request": "Merge groceries.md into todo.md"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": "OLD"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": " TAIL"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": " MORE"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "field": "result",
+   "answer": true,
+   "text": " AGAIN"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 3,
+   "seq": 5,
+   "after": {
+    "writer": 2,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:40.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "gardener",
+   "error": {
+    "type": "Cancelled"
+   }
+  }
+ ],
+ "recover": {
+  "reader": "kept",
+  "from": "store",
+  "source": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-28T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "gardener",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "inputs": {
+     "request": "Merge groceries.md into todo.md"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-28T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-28T10:00:20.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 2,
+    "seq": 4,
+    "after": {
+     "writer": 2,
+     "seq": 3
+    },
+    "at": "2026-09-28T10:00:20.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "field": "result",
+    "answer": true,
+    "text": "NEW"
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 3,
+    "seq": 5,
+    "after": {
+     "writer": 2,
+     "seq": 4
+    },
+    "at": "2026-09-28T10:00:40.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "gardener",
+    "error": {
+     "type": "Cancelled"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "results": [
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "kept",
+   "loss"
+  ],
+  "state": {
+   "01926c00-0001-7000-8000-000000000000": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "OLD TAIL MORE AGAIN"
+      }
+     }
+    },
+    "finished": false
+   }
+  },
+  "recover": {
+   "reads": [
+    {
+     "after": {
+      "writer": 1,
+      "seq": 6
+     },
+     "expect": {
+      "refuses": "event-unknown"
+     }
+    },
+    {
+     "after": null,
+     "expect": {
+      "events": [
+       {
+        "writer": 1,
+        "seq": 1
+       },
+       {
+        "writer": 1,
+        "seq": 2
+       },
+       {
+        "writer": 2,
+        "seq": 3
+       },
+       {
+        "writer": 2,
+        "seq": 4
+       },
+       {
+        "writer": 3,
+        "seq": 5
+       }
+      ]
+     }
+    }
+   ],
+   "state": {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "failed",
+      "fields": {
+       "result": "NEW"
+      }
+     }
+    },
+    "finished": true
+   }
+  }
+ }
+}
