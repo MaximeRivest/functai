@@ -83,10 +83,11 @@ SAMPLE = {"mood": {"review": "Broke."}, "mood_taught": {"review": "Broke."}, "pe
 
 
 def schemas():
-    """Validators for the contract's schemas (the rating schema refers to the call schema)."""
+    """Validators for the contract's schemas. Every schema is registered, since
+    they refer to each other (rating to call, saved to interface)."""
     from referencing import Registry, Resource
     contract = ROOT / "contract" / "schema"
-    docs = {name: json.loads((contract / f"{name}.schema.json").read_text()) for name in ("call", "rating", "saved")}
+    docs = {p.name.removesuffix(".schema.json"): json.loads(p.read_text(encoding="utf-8")) for p in sorted(contract.glob("*.schema.json"))}
     registry = Registry().with_resources([(d["$id"], Resource.from_contents(d)) for d in docs.values()])
     return {name: jsonschema.Draft202012Validator(d, registry=registry) for name, d in docs.items()}
 

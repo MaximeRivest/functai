@@ -38,7 +38,7 @@
     "docs": "typedoc"
   },
   "dependencies": {
-    "@lm15/lm15": "1.0.0-rc.2",
+    "@lm15/lm15": "1.0.0-rc.3",
     "lmcc": "file:../../lmcc/ts"
   },
   "devDependencies": {

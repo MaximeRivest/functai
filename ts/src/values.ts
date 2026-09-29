@@ -107,12 +107,12 @@ export function toJson(value: unknown): [lmcc.Json, number, boolean] {
  * in its order, as Python's do (tests/order.test.ts).
  */
 
-// An lmcc without these (0.8.4 as published) reads a missing output named `toString` as `""`, drops a `__proto__`
+// An lmcc without these (0.8.4 and earlier) reads a missing output named `toString` as `""`, drops a `__proto__`
 // member, and reorders members: functai would send and keep other data than it was given. It refuses to run instead.
 const HELPERS = ["setMember", "ownValue", "memberNames", "orderedObject", "copyObject", "parseJson", "jsonText"] as const;
 const missing = HELPERS.filter((h) => typeof (lmcc as unknown as Record<string, unknown>)[h] !== "function");
 if (missing.length) {
-  throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc commit 3492090 or later): this lmcc has no ${missing.join(", ")}`);
+  throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc 0.8.5 or later): this lmcc has no ${missing.join(", ")}`);
 }
 
 /** Set a member as data: `__proto__` is an own member, and a new name comes after the others (lmcc's `setMember`). */
@@ -240,38 +240,6 @@ export function writeData(value: unknown, indent = 0): string {
   };
   write(lowered(value, ""), 0);
   return out.join("");
-}
-
-/**
- * Data as lm15 takes it (a request, a `Config`, a cached reply): each plain
- * object and array copied, without the record of member order lmcc keeps
- * under a symbol (lm15 refuses an object with a symbol key: "must contain
- * only JSON-compatible values"), a `__proto__` member kept as a member;
- * anything else as it is, for lm15 to judge (a `bigint` is refused: lm15's
- * form of such an integer is its own `RawNumber` class, and the copy of
- * lm15 lmcc's bridge checks against may not be this one).
- *
- * lm15 takes plain objects and writes their members in JavaScript's order,
- * integer-like names first: so an object whose order lmcc recorded (`"b"`
- * before `"10"`) reaches the wire as `{"10": …, "b": …}`. JSON text FunctAI
- * writes itself (a message's text, the call log, a saved folder) keeps the
- * value's order; what lm15 writes (a `response_format` schema, a tool's
- * parameters) cannot.
- */
-export function lm15Data<T>(value: T): T {
-  const walk = (v: unknown): unknown => {
-    if (v === null || typeof v !== "object") return v;
-    if (Array.isArray(v)) return Array.from(v, walk);
-    if (!isPlain(v)) return v;
-    const out: Rec = {};
-    for (const k of lmcc.memberNames(v)) {
-      const x = walk((v as Rec)[k]);
-      if (k === "__proto__") Object.defineProperty(out, k, { value: x, writable: true, enumerable: true, configurable: true });
-      else out[k] = x;
-    }
-    return out;
-  };
-  return walk(value) as T;
 }
 
 /** Code-point order of two strings (JavaScript's `<` compares UTF-16 code units). */

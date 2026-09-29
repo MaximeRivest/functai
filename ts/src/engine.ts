@@ -13,7 +13,7 @@ import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
-import { entriesOf, lm15Data, setOwn, writeData } from "./values.ts";
+import { entriesOf, setOwn, writeData } from "./values.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
 
@@ -228,17 +228,13 @@ function replay(job: Job, response: Response): void {
 }
 
 /**
- * The lm15 request for a rendered plan: lmcc's bridge (the plan's request
- * settings, the caller's Config merged under them), given the plan's request
- * and the Config as data lm15 takes (values.ts `lm15Data`). The plan holds
- * lmcc's record of member order wherever an integer-like name follows
- * another (a `response_format` schema, a tool's parameters, a recorded tool
- * call's input), and lm15 refuses an object that carries it. The bridge
- * reads only the rendered plan's `request`; everything else is the plan's.
+ * The lm15 request for a rendered plan: lmcc's bridge, the plan's request
+ * settings with the caller's Config merged under them. The bridge hands lm15
+ * both as data it takes (lmcc D-59): member order kept where lm15 keeps it
+ * (lmcc's record is lm15's), a big integer as lm15's own number.
  */
 export function lm15Request(rendered: lmcc.RenderResult, model: string, config: Config | undefined): Request {
-  const plain = Object.create(rendered, { request: { value: (m?: string) => lm15Data(rendered.request(m)) } }) as lmcc.RenderResult;
-  return bridge.request(plain, { model, config: config === undefined ? undefined : lm15Data(config) });
+  return bridge.request(rendered, { model, config });
 }
 
 /** The first output value that does not fit its shape, as a parse-value refusal. */

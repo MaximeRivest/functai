@@ -87,12 +87,12 @@ p.answer;       // 15
   `"10"` first, and so do `JSON.stringify` and `structuredClone`. Read
   JSON with `lmcc.parseJson` and write it with `lmcc.jsonText`; what
   FunctAI gives you (answers, predictions, events, rows) carries lmcc's
-  record of the order (`lmcc.memberNames`). One exception: JSON that lm15
-  writes (the `json` adapter's `response_format` schema, a tool's
-  parameters, a `config`'s maps) reaches the provider in JavaScript's
-  order, `"10"` before `"b"`, where Python sends `"b"` first: lm15 takes
-  plain objects, which cannot hold another order. The same text in the
-  messages (the `xml` adapter's schema) keeps it.
+  record of the order (`lmcc.memberNames`), and so does what lm15 writes
+  (the `json` adapter's `response_format` schema, a tool's parameters, a
+  `config`'s maps) and reads (a tool call's input), since lmcc's record
+  is lm15's (lm15 1.0.0-rc.3, lmcc 0.8.5): a request goes out with the
+  same bytes as Python's. With an older lm15 installed anyway, what lm15
+  writes reaches the provider in JavaScript's order, `"10"` before `"b"`.
 - **JSON FunctAI writes** (a text input given an object, the call log, a
   saved folder) is what `JSON.stringify` writes, members aside: a hole in
   an array is `null`, `new Number(42)` is `42`, and a value that holds

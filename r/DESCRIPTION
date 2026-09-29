@@ -21,7 +21,7 @@ URL: https://maximerivest.github.io/functai/r/manual/,
 BugReports: https://github.com/MaximeRivest/functai/issues
 Encoding: UTF-8
 Depends: R (>= 4.1.0)
-Imports: cli, curl, generics, lm15 (>= 1.0.0), lmcc (>= 0.8.4), openssl,
+Imports: cli, curl, generics, lm15 (>= 1.0.0), lmcc (>= 0.8.5), openssl,
     rlang (>= 1.1.0), stats, tibble, utils, vctrs (>= 0.6.0), withr
 Suggests: dials, dplyr, glmnet, httpuv, knitr, parsnip (>= 1.2.0), recipes,
     ggplot2, rmarkdown, rsample, testthat (>= 3.0.0), textrecipes, tidymodels,

@@ -15,10 +15,10 @@
  * is given plain JSON under string keys.
  */
 
-import { Request, Response } from "@lm15/lm15";
+import { Request, Response, parseJson } from "@lm15/lm15";
 import * as lmcc from "lmcc";
 import { warnOnce } from "./calllog.ts";
-import { lm15Data } from "./values.ts";
+import * as bridge from "lmcc/lm15";
 
 type Rec = Record<string, unknown>;
 
@@ -87,8 +87,8 @@ const skip = (what: string, err: unknown) => warnOnce(`cache:${what}`, `the repl
 export async function lookup(cache: ReplyCache, key: string): Promise<Response | null> {
   try {
     let hit = await cache.get(key);
-    if (typeof hit === "string") hit = JSON.parse(hit);         // a store that keeps text
-    return hit && typeof hit === "object" ? Response.fromJSON(lm15Data(hit) as never) : null;   // a store may hand back what lmcc parsed
+    if (typeof hit === "string") hit = parseJson(hit);          // a store that keeps text: lm15 reads it, member order and big integers kept
+    return hit && typeof hit === "object" ? Response.fromJSON(bridge.toLm15(hit) as never) : null;   // a store may hand back what lmcc parsed
   } catch (err) {
     skip("read", err);
     return null;

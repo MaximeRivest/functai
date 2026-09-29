@@ -19,7 +19,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as lmcc from "lmcc";
-import { Request, type Request as Req } from "@lm15/lm15";
+import { Request, stringifyJson, type Request as Req } from "@lm15/lm15";
+import * as bridge from "lmcc/lm15";
 import { ai, configure, flush, fromManifest, load, save, t, toManifest, tool, type StreamEvent } from "../src/index.ts";
 import { writeData } from "../src/values.ts";
 import { FakeRouter } from "./fake.ts";
@@ -130,11 +131,22 @@ test("boxed primitives given to a text input are sent and recorded as their valu
 // ------------------------------------------------------------------ what lm15 is given
 
 // Opus, round 5 (B1): lmcc records member order under a symbol wherever an integer-like name follows another, and lm15
-// refuses an object with a symbol key, so a json-adapter function whose output shape came from lmcc.parseJson (or a
-// saved folder) threw a TypeError at every render and call, and so did a tool with such parameters.
+// refused an object with a symbol key, so a json-adapter function whose output shape came from lmcc.parseJson (or a
+// saved folder) threw a TypeError at every render and call, and so did a tool with such parameters. The record is now
+// lm15's (lmcc D-59): an lm15 that keeps member order sends it; one that does not (1.0.0-rc.2) is given plain copies.
+
+/** `wanted` (a piece of the request lm15 writes) holds where lm15 keeps member order; else no record reaches lm15. */
+function sentInOrder(request: Req, wanted: string, jsOrder: string): void {
+  const text = stringifyJson(Request.toJSON(request));
+  if (bridge.lm15KeepsOrder) assert.ok(text.includes(wanted), `sent in the value's order (${wanted}): ${text}`);
+  else {
+    assert.deepEqual(symbolKeys(request), []);
+    assert.ok(text.includes(jsOrder), `an lm15 without the record sends JavaScript's order (${jsOrder}): ${text}`);
+  }
+}
 const ORDERED_SHAPE = '{"type": "object", "properties": {"b": {"type": "integer"}, "10": {"type": "integer"}}, "required": ["b", "10"], "additionalProperties": false}';
 
-test("an output shape whose members lmcc keeps in order: the json adapter renders, calls, saves and loads; lm15 is given no order record", async () => {
+test("an output shape whose members lmcc keeps in order: the json adapter renders, calls, saves and loads; the schema is sent in its order", async () => {
   const router = new FakeRouter([], () => '{"result": {"b": 1, "10": 2}}');
   const f = ai("shaped", { input: { q: t.string() }, output: lmcc.parseJson(ORDERED_SHAPE), adapter: "json", router: router as never } as never);
   const rendered = f.render({ q: "x" } as never);
@@ -142,7 +154,7 @@ test("an output shape whose members lmcc keeps in order: the json adapter render
   assert.deepEqual(lmcc.memberNames(answer), ["b", "10"], "the answer keeps the reply's order");
   const request = router.requests[0]!;
   assert.deepEqual(Request.toJSON(rendered), Request.toJSON(request));
-  assert.deepEqual(symbolKeys(request), []);
+  sentInOrder(request, '"properties":{"b":{"type":"integer"},"10":', '"properties":{"10":{"type":"integer"},"b":');
   const schema = (Request.toJSON(request) as Rec)["config"]["response_format"]["schema"]["properties"]["result"];
   assert.deepEqual(new Set(Object.keys(schema["properties"])), new Set(["b", "10"]));
   assert.deepEqual(schema["required"], ["b", "10"], "an array keeps its order");
@@ -152,6 +164,7 @@ test("an output shape whose members lmcc keeps in order: the json adapter render
   assert.equal(loaded.version, f.version);
   await loaded({ q: "x" } as never);
   assert.deepEqual(Request.toJSON(router.requests[1]!), Request.toJSON(request), "the loaded copy sends the very request");
+  assert.equal(stringifyJson(Request.toJSON(router.requests[1]!)), stringifyJson(Request.toJSON(request)), "byte for byte, order included");
   // text FunctAI and lmcc write keep the order: the xml adapter's schema in the instructions
   const xml = new FakeRouter([], () => '<result>\n{"b": 1, "10": 2}\n</result>');
   await f.using({ adapter: "xml", router: xml as never })({ q: "x" } as never);
@@ -159,7 +172,7 @@ test("an output shape whose members lmcc keeps in order: the json adapter render
   assert.ok(system.indexOf('"b"') < system.indexOf('"10"'), system);
 });
 
-test("a tool whose parameters lmcc keeps in order: rendered and called with native tool calling; lm15 is given no order record", async () => {
+test("a tool whose parameters lmcc keeps in order: rendered and called with native tool calling; the parameters are sent in their order", async () => {
   const seen: unknown[] = [];
   const look = tool("look", { input: { x: lmcc.parseJson(ORDERED_SHAPE) as never } }, (input) => { seen.push(input); return "found"; });
   const router = new FakeRouter([{ calls: [{ id: "c1", name: "look", input: { x: { b: 1, 10: 2 } } }] }, "<result>\ndone\n</result>"]);
@@ -167,18 +180,18 @@ test("a tool whose parameters lmcc keeps in order: rendered and called with nati
   f.render({ q: "x" } as never);
   assert.equal(await f({ q: "x" } as never), "done");
   assert.equal(router.requests.length, 2);
-  for (const r of router.requests) assert.deepEqual(symbolKeys(r), []);
+  for (const r of router.requests) sentInOrder(r, '"properties":{"b":{"type":"integer"},"10":', '"properties":{"10":{"type":"integer"},"b":');
   const params = (Request.toJSON(router.requests[0]!) as Rec)["tools"][0]["parameters"];
   assert.deepEqual(new Set(Object.keys(params["properties"]["x"]["properties"])), new Set(["b", "10"]));
   assert.equal(seen.length, 1);
 });
 
-test("a Config holding members lmcc keeps in order, given in settings or read from a saved folder, reaches lm15 as plain data", async () => {
+test("a Config holding members lmcc keeps in order, given in settings or read from a saved folder, is sent in its order", async () => {
   const router = new FakeRouter([], () => "<result>\nok\n</result>");
   const extensions = lmcc.parseJson('{"b": 1, "10": 2}');
   const f = ai("configured", { input: { q: t.string() }, output: t.string(), config: { extensions }, router: router as never } as never);
   await f({ q: "x" } as never);
-  assert.deepEqual(symbolKeys(router.requests[0]!), []);
+  sentInOrder(router.requests[0]!, '"extensions":{"b":1,"10":2}', '"extensions":{"10":2,"b":1}');
   assert.deepEqual((Request.toJSON(router.requests[0]!) as Rec)["config"]["extensions"], { b: 1, 10: 2 });
   // a folder whose config another language wrote in the value's order ("b" before "10"), read with lmcc's parser
   const manifest = lmcc.parseJson(writeData(toManifest(f))) as Rec;
@@ -186,6 +199,27 @@ test("a Config holding members lmcc keeps in order, given in settings or read fr
   const loaded = fromManifest(manifest).using({ router: router as never });
   await loaded({ q: "x" } as never);
   assert.deepEqual(Request.toJSON(router.requests[1]!), Request.toJSON(router.requests[0]!));
+  sentInOrder(router.requests[1]!, '"extensions":{"b":1,"10":2}', '"extensions":{"10":2,"b":1}');
+});
+
+test("a cached reply a store keeps as text is read by lm15: the tool call's input reaches the tool in the order written", async () => {
+  const text = new Map<string, string>();
+  // another writer kept the reply in the value's order; JSON.parse would have lost it
+  const store = {
+    get: (k: string) => text.get(k),
+    set: (k: string, v: unknown) => { text.set(k, stringifyJson(v).replace('{"10":2,"b":1}', '{"b":1,"10":2}')); },
+    delete: (k: string) => { text.delete(k); },
+  };
+  const seen: unknown[] = [];
+  const look = tool("look", { input: { x: t.json() } }, (input) => { seen.push((input as Rec)["x"]); return "found"; });
+  const router = new FakeRouter([], (_r, i) => i % 2 === 0 ? { calls: [{ id: "c1", name: "look", input: { x: { b: 1, 10: 2 } } }] } : "<result>\ndone\n</result>");
+  const f = ai("cached-text", { input: { q: t.string() }, output: t.string(), tools: [look], cacheReplies: store, router: router as never } as never);
+  assert.equal(await f({ q: "x" } as never), "done");
+  assert.ok([...text.values()].some((v) => v.includes('{"b":1,"10":2}')), "the test's premise: the kept text holds that order");
+  const calls = router.requests.length;
+  assert.equal(await f({ q: "x" } as never), "done");
+  assert.equal(router.requests.length, calls, "answered from the cache");
+  assert.deepEqual(lmcc.memberNames(seen.at(-1) as object), bridge.lm15KeepsOrder ? ["b", "10"] : ["10", "b"]);
 });
 
 test("a cached reply a store hands back as lmcc parsed it (members in the order written) answers the call", async () => {
