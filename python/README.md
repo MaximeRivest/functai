@@ -55,7 +55,8 @@ def support(message: str, tone: str = "kind") -> str:
     ...
 
 support.interface          # {"description", "inputs": [...], "outputs": [...]}: served, saved, described
-support(3)                 # InterfaceError (interface-input): 3 does not fit {"type":"string"}
+support(3)                 # 3 is bound to "3": a value is converted when its meaning is clear
+support(None)              # InterfaceError (interface-input): null does not bind to {"type":"string"}
 functai.describe("saved/") # what a saved program takes and gives, without loading it
 ```
 

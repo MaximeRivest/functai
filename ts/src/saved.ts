@@ -179,9 +179,12 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
   };
   const fallback = signatureInterface(data);
   const iface: Interface = declared && !malformed(declared, { ai: true }) ? declared : fallback;
+  // an input's default that counts by its code: the node keeps the code (saved.md, a node's defaults)
+  const defaultCode: Record<string, string> = {};
+  for (const [k, v] of Object.entries((node!["defaults"] ?? {}) as Record<string, { code: string }>)) setOwn(defaultCode, k, v.code);
   const fn = make({
     definition, interface: iface, own, tools: [], module: node!["module"] as string, saved: opts.savedId,
-    state: { instructions: state.instructions ?? null, demos: [] },
+    state: { instructions: state.instructions ?? null, demos: [] }, defaultCode,
   });
   // its own policy, as a definition's is checked: a misspelt field would write the very value it keeps out (calls.md, "Content")
   checkSettings(own, `${key} (loaded)`, fieldsOf(iface, fn.signature));
@@ -278,11 +281,14 @@ export function toManifest(program: AIFunction | AnyModule): Rec {
   const add = (p: AIFunction | AnyModule) => {
     const key = `${p.module}:${p.name}`;
     if (key in nodes) return;
+    // each input whose default counts by its code keeps that code (saved.md, a node's defaults)
+    const code = (p as unknown as { defaultCode?: Record<string, string> }).defaultCode ?? {};
+    const defaults = Object.keys(code).length ? { defaults: Object.fromEntries(Object.entries(code).map(([k, c]) => [k, { code: c }])) } : {};
     if (isModule(p)) {
-      nodes[key] = { kind: "module", module: p.module, name: p.name, interface: p.interface };
+      nodes[key] = { kind: "module", module: p.module, name: p.name, interface: p.interface, ...defaults };
       for (const u of p.uses) add(u);
     } else {
-      nodes[key] = { kind: "ai", module: p.module, name: p.name, interface: p.interface, ai: aiEntry(p) };
+      nodes[key] = { kind: "ai", module: p.module, name: p.name, interface: p.interface, ...defaults, ai: aiEntry(p) };
     }
   };
   add(program);

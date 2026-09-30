@@ -112,13 +112,23 @@ one does not change the version.
 function version(p::AIProgram)
     code, ai = JObj(), JObj()
     version_parts!(p, code, ai, Set{UInt}())
-    LMCC.sha256_of(LMCC.jobj("code" => code, "ai" => ai, "interface" => p.interface))
+    # the interface without its defaults (a computed one must not give a new version each day), and each data
+    # default by its value; a default written as code is in the code the version hashes (calls.md, "Defaults")
+    plain = LMCC.jobj("description" => p.interface["description"],
+                      "inputs" => Any[JObj(k => (k == "shape" ? no_defaults(v) : v) for (k, v) in f) for f in p.interface["inputs"]],
+                      "outputs" => Any[JObj(k => (k == "shape" ? no_defaults(v) : v) for (k, v) in f) for f in p.interface["outputs"]])
+    doc = LMCC.jobj("code" => code, "ai" => ai, "interface" => plain)
+    defaults = JObj(f["name"] => LMCC.jobj("value" => LMCC.deepcopy_json(f["shape"]["default"]))
+                    for f in p.interface["inputs"] if haskey(f["shape"], "default"))
+    isempty(defaults) || (doc["defaults"] = defaults)
+    LMCC.sha256_of(doc)
 end
 
 function program_of(p::AIProgram)
     out = LMCC.jobj("name" => p.name, "kind" => "module", "module" => p.module_name, "version" => version(p),
                     "interface" => interface_signature(p), "answer" => last(p.interface["outputs"])["name"])
-    p.file === nothing || (out["file"] = p.file)
+    file = p.module_name == "__main__" ? top_level_file(p.file) : p.file
+    file === nothing || (out["file"] = file)
     p.line === nothing || (out["line"] = p.line)
     out
 end
@@ -138,7 +148,7 @@ function run_program(p::AIProgram, bound)
     checked = nothing
     if refusal === nothing
         try
-            checked = check_inputs(p.interface, bound.given)
+            checked = check_inputs(p.interface, bound.given; dropped=dropped_fields(Dict{Symbol,Any}(), fields))
         catch err
             err isa InterfaceError || rethrow()
             refusal = err
@@ -154,7 +164,7 @@ function run_program(p::AIProgram, bound)
         # from data gets the interface's (a copy each call)
         inputs = p.own_defaults ? OrderedDict{String,Any}(k => v for (k, v) in checked if haskey(bound.given, k)) : checked
         value = as_declared(p, p.run(inputs))
-        call.outputs = check_returned(p.interface, value)
+        call.outputs = check_returned(p.interface, value; dropped=dropped_fields(Dict{Symbol,Any}(), fields))
         value
     end
 end

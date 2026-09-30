@@ -47,6 +47,13 @@ r_function <- function(d) {
     if (!isTRUE(f$optional)) return(field_from_shape(f$shape, f$desc))
     x <- field_from_shape(data_shape(f$shape), f$desc)
     if (!"default" %in% names(f$shape)) { x$optional <- TRUE; return(x) }
+    if (!is.null(f$default_code)) {
+      # a default written as code (`today()`): a one-sided formula, whose called function gives the shape's default today
+      env <- new.env(parent = globalenv())
+      value <- default_value(within_default(x, f$shape[["default"]]))
+      assign(sub("\\(.*$", "", f$default_code), function() value, envir = env)
+      return(defaults_to(rlang::new_formula(NULL, str2lang(f$default_code), env), x))
+    }
     defaults_to(default_value(within_default(x, f$shape[["default"]])), x)
   }
   inputs <- stats::setNames(lapply(d$inputs, field), vapply(d$inputs, function(f) f$name, ""))
@@ -122,7 +129,7 @@ for (name in names(cases("rated"))) {
     on.exit(unlink(folder, recursive = TRUE))
     log <- read_log(folder)
     got <- rated_rows(log$calls, log$ratings, name = c$rated$name, module = c$rated$module, signature = c$rated$signature,
-                      by = c$rated$by, interface = c$rated$interface)
+                      by = c$rated$by, interface = c$rated$interface, file = c$rated$file)
     expect_identical(vapply(got$rows, lmcc::canonical_json, ""), vapply(c$expect$rows, lmcc::canonical_json, ""))
     expect_identical(lmcc::canonical_json(got$left_out), lmcc::canonical_json(c$expect$left_out))
   })
@@ -194,8 +201,23 @@ for (name in names(Filter(function(c) identical(c$program, "ai"), cases("program
     expect_identical(ai_signature_id(got), c$expect$signature_id)
     expect_identical(program_of(core_of(got))()$interface, c$expect$signature)
     for (b in c$binds) {
-      expect_sends(got, b$inputs, bound = b$expect$inputs)             # the call itself: its record holds what it bound
-      expect_identical(plain(bound_row(got, b$inputs)), plain(b$expect$inputs), info = plain(b$inputs))
+      # a stand-in for a value with no JSON form: nearly every R value has one (a list is JSON), so R has no
+      # native value to give for it here
+      if (any(vapply(b$inputs, function(v) is.list(v) && all(c("$type", "$repr") %in% names(v)), NA))) next
+      if (!is.null(b$expect$refuses)) {
+        # refused before any request, its call recorded with the refusal (programs.md, "Binding a call's inputs")
+        call <- probe_call(got, b$inputs)
+        expect_length(call$requests, 0L)
+        expect_identical(call$record$error$code, b$expect$refuses)
+        row <- bound_row(got, b$inputs)
+        expect_s3_class(row, "functai_misfit")
+        expect_identical(row$field, b$expect$field)
+        next
+      }
+      # one value that is a list or a record is one row of a list column, as an R user gives one (a list alone is a column)
+      one <- lapply(b$inputs, function(v) if (is.list(v)) list(v) else v)
+      expect_sends(got, one, bound = b$expect$inputs)                  # the call itself: its record holds what it bound
+      expect_identical(plain(bound_row(got, one)), plain(b$expect$inputs), info = plain(b$inputs))
     }
   })
 }

@@ -73,7 +73,7 @@ class Prediction(_Record):
     """
 
     __slots__ = ("turn", "response", "responses", "repairs", "attempts", "probabilities",
-                 "measured_by", "escalated", "first", "refusal", "call_id")
+                 "measured_by", "escalated", "first", "refusal", "call_id", "tool_calls")
 
     def __init__(self, values: Dict[str, Any], *, turn=None, response=None, responses: Iterable = (),
                  repairs: Iterable = (), attempts: int = 1, probabilities=None, measured_by=None):
@@ -82,6 +82,7 @@ class Prediction(_Record):
         object.__setattr__(self, "first", None)
         object.__setattr__(self, "refusal", None)      # on_unreadable="record": why the reply had no values
         object.__setattr__(self, "call_id", None)      # set by the call that produced it
+        object.__setattr__(self, "tool_calls", None)   # with tools: every tool call asked for, across steps
         object.__setattr__(self, "turn", turn)
         object.__setattr__(self, "response", response)
         object.__setattr__(self, "responses", list(responses))

@@ -1,0 +1,452 @@
+{
+ "description": "Every input is bound before it is checked (programs.md, Binding a call's inputs): text takes a number's canonical JSON, true or false, a list or record as JSON indented by two spaces; an integer takes a number with no fraction or text that reads as one; a number takes text that reads as one; a boolean takes only true and false; items and members are bound by their shapes; a choice binds by its type, then matches exactly; anyOf takes the first option the value binds to and fits.",
+ "program": "module",
+ "interface": {
+  "description": "Bind every kind of value.",
+  "inputs": [
+   {
+    "name": "text",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "count",
+    "shape": {
+     "type": "integer"
+    }
+   },
+   {
+    "name": "ratio",
+    "shape": {
+     "type": "number"
+    }
+   },
+   {
+    "name": "flag",
+    "shape": {
+     "type": "boolean"
+    }
+   },
+   {
+    "name": "ids",
+    "shape": {
+     "type": "array",
+     "items": {
+      "type": "integer"
+     },
+     "default": []
+    },
+    "optional": true
+   },
+   {
+    "name": "level",
+    "shape": {
+     "enum": [
+      1,
+      2,
+      3
+     ],
+     "type": "integer",
+     "default": 1
+    },
+    "optional": true
+   },
+   {
+    "name": "size",
+    "shape": {
+     "anyOf": [
+      {
+       "type": "integer"
+      },
+      {
+       "type": "null"
+      }
+     ],
+     "default": null
+    },
+    "optional": true
+   },
+   {
+    "name": "either",
+    "shape": {
+     "type": [
+      "integer",
+      "string"
+     ],
+     "default": 0
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:20dd441e157eec49253939969e8d0af0c31a20dbdf6b724b732ed9bb58abda43"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "text": 42,
+    "count": 5.0,
+    "ratio": "2.5",
+    "flag": true
+   },
+   "expect": {
+    "inputs": {
+     "text": "42",
+     "count": 5,
+     "ratio": 2.5,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": 2.5,
+    "count": " 7 ",
+    "ratio": 3,
+    "flag": false
+   },
+   "expect": {
+    "inputs": {
+     "text": "2.5",
+     "count": 7,
+     "ratio": 3,
+     "flag": false,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": true,
+    "count": "5.0",
+    "ratio": "1e3",
+    "flag": true
+   },
+   "expect": {
+    "inputs": {
+     "text": "true",
+     "count": 5,
+     "ratio": 1000,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": [
+     1,
+     "a"
+    ],
+    "count": 1,
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "inputs": {
+     "text": "[\n  1,\n  \"a\"\n]",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": {
+     "b": 1,
+     "a": [
+      true,
+      null
+     ]
+    },
+    "count": 1,
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "inputs": {
+     "text": "{\n  \"b\": 1,\n  \"a\": [\n    true,\n    null\n  ]\n}",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": [],
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "ids": [
+     "1",
+     2.0,
+     " 3"
+    ]
+   },
+   "expect": {
+    "inputs": {
+     "text": "[]",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [
+      1,
+      2,
+      3
+     ],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "level": "2"
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 2,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "level": "4"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "level"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "size": "12"
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": 12,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "size": null
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 0
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "either": "12"
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": 12
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "either": true
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "count": 1,
+     "ratio": 1,
+     "flag": true,
+     "ids": [],
+     "level": 1,
+     "size": null,
+     "either": "true"
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 2.5,
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "count"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": "abc",
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "count"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": true,
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "count"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": "two",
+    "flag": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "ratio"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": "yes"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "flag"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": 1
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "flag"
+   }
+  },
+  {
+   "inputs": {
+    "text": null,
+    "count": 1,
+    "ratio": 1,
+    "flag": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "text"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "count": 1,
+    "ratio": 1,
+    "flag": true,
+    "ids": [
+     "1",
+     "x"
+    ]
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "ids"
+   }
+  }
+ ]
+}

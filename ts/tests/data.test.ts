@@ -79,13 +79,14 @@ test("the writer writes what JSON.stringify writes: every array index, a hole as
 });
 
 // Opus, round 5 (minor): a value that holds itself overflowed the stack; JSON.stringify refuses it with a TypeError.
-test("the writer refuses a value that holds itself with JSON.stringify's TypeError, and a call given one sends nothing", async () => {
+test("the writer refuses a value that holds itself with JSON.stringify's TypeError, and a call given one is refused and sends nothing", async () => {
   const cyclic: Rec = { a: 1 };
   cyclic["self"] = [cyclic];
   assert.throws(() => writeData(cyclic), { name: "TypeError", message: /circular structure/ });
   const router = new FakeRouter([], () => "<result>\nok\n</result>");
   const f = ai("cyclic", { input: { text: t.string() }, output: t.string(), router: router as never } as never);
-  await assert.rejects(f({ text: cyclic } as never), { name: "TypeError", message: /circular structure/ });
+  // it has no JSON form and no text of its own: binding refuses it (programs.md, "Binding a call's inputs")
+  await assert.rejects(f({ text: cyclic } as never), { name: "InterfaceError", code: "interface-input", field: "text" });
   assert.equal(router.requests.length, 0);
 });
 
@@ -98,7 +99,8 @@ test("arrays with holes given to a text input: the request, the call log line an
     assert.ok(texts(router.requests[0]!).includes(`<text>\n${JSON.stringify(value, null, 2)}\n</text>`), `${label}: ${texts(router.requests[0]!)}`);
     assert.ok(await flush());
     const [line] = logLines(where);
-    assert.deepEqual(JSON.parse(line!)["inputs"]["text"], JSON.parse(JSON.stringify(value)), `${label}: the log line is JSON and holds the nulls: ${line}`);
+    // the record holds the bound value, the text the model was sent (programs.md, "Binding a call's inputs")
+    assert.deepEqual(JSON.parse(line!)["inputs"]["text"], JSON.stringify(value, null, 2), `${label}: the log line holds the text sent, nulls where JSON has them: ${line}`);
 
     f.demos = [{ inputs: { text: value }, outputs: { result: "ok" } }] as never;
     const saved = folder();
@@ -115,7 +117,7 @@ test("arrays with holes given to a text input: the request, the call log line an
   }
 });
 
-test("boxed primitives given to a text input are sent and recorded as their values, nested ones too", async () => {
+test("boxed primitives given to a text input are sent and recorded as the text they are sent as, nested ones too", async () => {
   for (const [label, value] of BOXED) {
     const where = folder();
     const router = new FakeRouter([], () => "<result>\nok\n</result>");
@@ -124,7 +126,8 @@ test("boxed primitives given to a text input are sent and recorded as their valu
     const written = typeof value === "object" && value !== null && !(value instanceof String) ? JSON.stringify(value, null, 2) : String(value);
     assert.ok(texts(router.requests[0]!).includes(`<text>\n${written}\n</text>`), `${label}: ${texts(router.requests[0]!)}`);
     assert.ok(await flush());
-    assert.deepEqual(JSON.parse(logLines(where)[0]!)["inputs"]["text"], JSON.parse(JSON.stringify(value)), label);
+    // the record holds the bound value: the text the model was sent (programs.md, "Binding a call's inputs")
+    assert.deepEqual(JSON.parse(logLines(where)[0]!)["inputs"]["text"], written, label);
   }
 });
 

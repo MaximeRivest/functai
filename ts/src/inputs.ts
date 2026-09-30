@@ -4,7 +4,7 @@
  * left-out input takes, and binding a call's argument to inputs by name.
  */
 
-import { InterfaceError, type InterfaceField } from "./interface.ts";
+import { bindValue, InterfaceError, type InterfaceField } from "./interface.ts";
 import { allowsNull, isOpaque, readField, saysOptional, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
 import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn } from "./values.ts";
 
@@ -21,8 +21,11 @@ const isThenable = (r: unknown): r is PromiseLike<StandardResult> =>
 /** What a call does with one input. */
 export interface InputRule {
   readonly optional: boolean;
-  /** The value a left-out input takes (absent: it stays left out, a module's only). */
-  readonly fill?: { readonly value: unknown };
+  /**
+   * The value a left-out input takes (absent: it stays left out, a module's
+   * only); `compute`, a default given as a function, gives it at each call.
+   */
+  readonly fill?: { readonly value: unknown; readonly compute?: () => unknown };
   /** A Standard Schema that checks and parses a given value (zod, valibot, …). */
   readonly schema: StandardSchemaLike | null;
 }
@@ -31,6 +34,24 @@ export interface InputRule {
 export interface DeclaredInput {
   readonly field: InterfaceField;
   readonly rule: InputRule;
+  /** A default given as a function: its source, as the version counts it (calls.md, "Versions", "Defaults"). */
+  readonly code?: string;
+}
+
+/**
+ * A default function's code as a version counts it (calls.md, "Versions",
+ * "Defaults"): the expression it returns (after `=>`, or a lone `return`'s),
+ * each run of white space one space; its whole text when it is written
+ * otherwise. `() => today()` is `today()`, as Python's `today()` is.
+ */
+export function defaultCode(f: (...args: never[]) => unknown): string {
+  const text = Function.prototype.toString.call(f).replace(/\s+/g, " ").trim();
+  const arrow = /^(?:async )?\( ?\) ?=> ?([\s\S]+)$/.exec(text);
+  const body = arrow ? arrow[1]!.trim() : (/^(?:async )?function ?\w* ?\( ?\) ?(\{[\s\S]*\})$/.exec(text)?.[1] ?? null);
+  if (body === null) return text;
+  if (!body.startsWith("{")) return body;
+  const ret = /^\{ ?return ([\s\S]*?);? ?\}$/.exec(body);
+  return ret ? ret[1]!.trim() : text;
 }
 
 /**
@@ -43,7 +64,17 @@ export interface DeclaredInput {
  * input with no default stays left out.
  */
 export function declareInput(name: string, spec: FieldSpec, where: string, program: "ai" | "module"): DeclaredInput {
-  const { shape: read, desc } = readField(spec, where, name);
+  const { shape: written, desc } = readField(spec, where, name);
+  // a default given as a function (`t.string({ default: () => today() })`) is computed at each call that leaves the
+  // input out; the interface holds the value it gives now, and the version counts its code
+  let read = written;
+  let compute: (() => unknown) | undefined;
+  let code: string | undefined;
+  if (typeof written["default"] === "function") {
+    compute = written["default"] as () => unknown;
+    code = defaultCode(compute);
+    read = { ...written, default: compute() };
+  }
   const opaque = isOpaque(spec);
   if (opaque && program === "ai") {
     throw new InterfaceError("interface-malformed", name, `${where}: an AI function's input is sent to a model: it cannot be opaque`);
@@ -51,7 +82,7 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
   const schema = standardOf(spec);
   const said = saysOptional(spec);
   let optional = false;
-  let fill: { value: unknown } | undefined;
+  let fill: { value: unknown; compute?: () => unknown } | undefined;
   if (said !== undefined) {
     optional = said;
     if (said && Object.hasOwn(read, "default")) fill = { value: copyData(read["default"]) };
@@ -82,10 +113,20 @@ export function declareInput(name: string, spec: FieldSpec, where: string, progr
     }
     shape = { ...shape, default: json };
   }
+  if (Object.hasOwn(shape, "default") && !opaque && shape["default"] !== null) {
+    // bound as a given value is (programs.md, "Binding"): "5" for an integer is 5; one that does not bind stays, and is refused
+    const [ok, bound] = bindValue(shape["default"], { name, shape });
+    const json = ok ? jsonForm(bound) : undefined;
+    if (json !== undefined) {
+      shape = { ...shape, default: json };
+      if (fill && !compute) fill = { value: bound };
+    }
+  }
+  if (compute && fill) fill = { value: fill.value, compute };
   const field: InterfaceField = {
     name, shape, ...(desc ? { desc } : {}), ...(opaque ? { opaque: true as const } : {}), ...(optional ? { optional: true as const } : {}),
   };
-  return { field, rule: { optional, ...(fill ? { fill } : {}), schema } };
+  return { field, rule: { optional, ...(fill ? { fill } : {}), schema }, ...(code ? { code } : {}) };
 }
 
 /**
@@ -175,7 +216,8 @@ export class Binder {
       const value = getOwn(given, n);
       if (value !== undefined) setOwn(out, n, value);
       else if (opts.fill !== false && this.rule(n).fill) {
-        setOwn(out, n, copyData(this.rule(n).fill!.value));
+        const fill = this.rule(n).fill!;
+        setOwn(out, n, fill.compute ? fill.compute() : copyData(fill.value));
         filled.add(n);
       }
     }

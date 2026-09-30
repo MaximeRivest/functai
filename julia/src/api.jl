@@ -66,7 +66,7 @@ function calls(f=nothing; folder=nothing, since=nothing)
 end
 
 """
-    rated(f; by, folder, since)
+    rated(f; by, folder, since, any_file = false)
 
 Rows with known answers from people's ratings of `f`'s calls
 (contract/calls.md, "Rows with known answers"): the inputs, the right answer
@@ -78,10 +78,13 @@ interfaces), so turning reasoning on still pools its ratings. Calls rated
 under another interface, whose inputs were not all logged, or rated wrong
 with no correction are left out (and counted in an `@info`).
 """
-function rated(f::AIFunction; by=nothing, folder=nothing, since=nothing)
+function rated(f::AIFunction; by=nothing, folder=nothing, since=nothing, any_file::Bool=false)
     recs, ratings = read_log(log_root(folder); since)
+    # a function defined at the top level (a notebook, a script) is known by its file too: two notebooks' summarize
+    # are two programs; any_file pools across files (a notebook that moved)
+    file = any_file || f.module_name != "__main__" ? nothing : top_level_file(f.file)
     rows, left = rated_rows(recs, ratings; name=f.definition.name, module_name=f.module_name, signature=signature_id(f),
-                            interface=interface_signature(f), by)
+                            interface=interface_signature(f), by, file)
     total = sum(values(left))
     total > 0 && @info "rated($(f.definition.name)): $total rated call(s) left out: " *
                        join(("$v $(replace(k, "_" => " "))" for (k, v) in left if v > 0), ", ")

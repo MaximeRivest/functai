@@ -153,15 +153,17 @@ df.mood = mood.(df.review)        # the column, 8 calls at a time
 
 An input with a default may be left out: `tone::String = "kind"`. The
 default is written in the function's [`interface`](@ref) and sent to the
-model whenever the input is left out, so it is data, the same for every
-call: a literal (`"kind"`, `3`, `String[]`, `(a = 1,)`) or a constant
-whose value can never change (`const TONE = "kind"`, an `@enum` value). A
-default that uses another input, is computed (`at::Float64 = time()`), or
-is a constant that can change (`const TAGS = ["a"]`: a `Vector` can be
-pushed to) is refused when the function is defined, rather than taken once
-then and shared by every call (unlike Julia, which runs a default on each
-call); give such a value at each call. Each call gets its own copy of the
-default, made from its JSON form, as loading a saved function makes it.
+model whenever the input is left out. A literal (`"kind"`, `3`,
+`String[]`, `(a = 1,)`) or a constant whose value can never change
+(`const TONE = "kind"`, an `@enum` value) is data: it counts in the
+function's [`version`](@ref) by its value, and each call gets its own copy.
+A computed default (`day::String = string(today())`) is run at each call
+that leaves the input out, as Julia runs a default; the interface holds
+the value it gave when the function was defined, and the version counts
+its code (`string(today())`), so the version is the same every day and
+changes when the code does. A default that uses another input, or a
+constant that can change (`const TAGS = ["a"]`: a `Vector` can be pushed
+to), is refused when the function is defined.
 
 With several outputs, calling returns them all as a `NamedTuple`
 (`(; summary, minutes) = triage(ticket)`). With code after the outputs, that
@@ -175,7 +177,13 @@ code runs on them, and its value is what calling returns:
 end
 ```
 
-`missing` in, `missing` out, with no call.
+Each input is bound to its type (contract/programs.md, "Binding a call's
+inputs"): `3` for a `String` is `"3"`, `"5"` for an `Int` is `5`, a record
+keeps only its fields; one that does not bind is refused
+(`InterfaceError`), recorded, before any request. `missing` or `nothing`
+for an input whose type takes null is null, sent; for an optional one whose
+type does not, the input is left out (its default); for a required one,
+`missing` out, the refused call recorded, and no request.
 """
 macro ai(args...)
     isempty(args) && throw(ArgumentError("@ai needs a function: @ai function name(x::String)::String … end"))
@@ -405,9 +413,10 @@ function ai_default(mod::Module, default, input_names, fname, input)
     end
     is_literal(default, mod) && return default
     is_name_path(default) && return :($(ai_constant)($mod, $(QuoteNode(default)), $fname, $input))
-    :(throw(ArgumentError($("@ai $fname: the default of $input ($(default)) is computed. A default is data, written in the " *
-                            "function's interface and sent to the model whenever $input is left out, the same for every call: " *
-                            "write a literal or a constant (const X = …), or leave the default out and give $input at each call"))))
+    # computed (`today()`): run at each call that leaves the input out, as Julia runs a default; the version counts
+    # its code, and the interface holds the value it gives when the function is defined (calls.md, "Defaults")
+    code = string(Base.remove_linenums!(deepcopy(default)))
+    :($(ComputedDefault)($code, () -> $default))
 end
 
 function ai_constant(mod::Module, x, fname, input)

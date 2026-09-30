@@ -4,7 +4,7 @@ the rows ``rated`` must make from it, written from the rules in
 make.py writes them.
 
 A case file: {"description", "records": [...], "rated": {name, module,
-signature, by, and interface when given}, "expect": {"rows": [...],
+file, signature, by, and interface when given}, "expect": {"rows": [...],
 "left_out": {...}}}. An implementation passes a case when rated(records,
 **rated) gives exactly ``expect`` (rows in order, keys and values;
 left_out counts). Records are of format 1 and 2 (and, in one case, of a
@@ -37,7 +37,8 @@ def at(minute, second=0):
 
 
 def call(n, minute, inputs, outputs, *, name="team", module="support", version=V1, signature=SIG,
-         answer="result", content=True, error=None, omitted=None, fmt=1, interface=None, described=None):
+         answer="result", content=True, error=None, omitted=None, fmt=1, interface=None, described=None,
+         file=None):
     """``omitted``: {"inputs": [...], "outputs": [...]}, the fields whose values were not written
     (calls.md, "Content", format 2); the record then keeps the other values, with content false.
     ``fmt``: the record's format; a format-2 record has ``program.interface``."""
@@ -45,6 +46,8 @@ def call(n, minute, inputs, outputs, *, name="team", module="support", version=V
     if fmt >= 2:
         program["interface"] = interface or signature
     program["answer"] = answer
+    if file is not None:
+        program["file"] = file
     rec = {"functai_call": fmt, "id": cid(n), "parent": None, "root": cid(n), "program": program,
            "started": at(minute), "seconds": 0.4, "content": content if omitted is None else False}
     if omitted is not None:
@@ -75,7 +78,9 @@ def call(n, minute, inputs, outputs, *, name="team", module="support", version=V
 
 
 def rating(n, call_n, minute, by, verdict, **extra):
-    return {"functai_rating": 1, "id": rid(n), "call": cid(call_n), "at": at(minute), "by": by,
+    """``by`` None: made under the operating system's account "maxime", no person named."""
+    who = {"by": by} if by is not None else {"account": "maxime"}
+    return {"functai_rating": 1, "id": rid(n), "call": cid(call_n), "at": at(minute), **who,
             "verdict": verdict, **extra}
 
 
@@ -87,7 +92,12 @@ def row(inputs, answers, n, *, rating_, by, version=V1, origin="review", sample=
 M1 = {"message": "I was charged twice for one order."}
 M2 = {"message": "My parcel never came."}
 M3 = {"message": "The kettle broke on day one."}
-TEAM = {"name": "team", "module": "support", "signature": SIG, "by": None}
+TEAM = {"name": "team", "module": "support", "file": None, "signature": SIG, "by": None}
+LEGAL = "/home/maxime/legal.md"
+STORIES = "/home/maxime/bedtime.md"
+T1 = {"text": "The lessee shall pay rent monthly."}
+T2 = {"text": "Once upon a time a fox found a key."}
+T3 = {"text": "The parties agree to arbitration."}
 
 CASES = {
     "01-right-means-the-answer-it-gave": dict(
@@ -269,4 +279,53 @@ CASES = {
                  {**rating(3, 2, 6, "ana", "wrong", answer="billing"), "functai_rating": 2}],
         rated=TEAM,
         expect={"rows": [row(M2, {"result": "shipping"}, 2, rating_="right", by="maxime")], "left_out": LEFT}),
+    "17-two-notebooks-are-two-programs": dict(
+        description="Every notebook's code is in module __main__: a program defined there is known by its "
+                    "file too. The reader is given the file, and takes only calls with that program.file; a "
+                    "call with no program.file does not match.",
+        records=[call(1, 1, T1, {"result": "Rent is due monthly."}, name="summarize", module="__main__", fmt=2,
+                      file=LEGAL),
+                 call(2, 2, T2, {"result": "A fox finds a key."}, name="summarize", module="__main__", fmt=2,
+                      file=STORIES),
+                 call(3, 3, T3, {"result": "Disputes go to arbitration."}, name="summarize", module="__main__",
+                      fmt=2),
+                 rating(1, 1, 5, "maxime", "right"), rating(2, 2, 5, "maxime", "right"),
+                 rating(3, 3, 5, "maxime", "right")],
+        rated={"name": "summarize", "module": "__main__", "file": LEGAL, "signature": SIG, "by": None},
+        expect={"rows": [row(T1, {"result": "Rent is due monthly."}, 1, rating_="right", by="maxime")],
+                "left_out": LEFT}),
+    "18-pooled-across-files": dict(
+        description="A reader told to pool across files (a notebook that moved) is given no file: every "
+                    "call of the name and module is taken, with a file or without.",
+        records=[call(1, 1, T1, {"result": "Rent is due monthly."}, name="summarize", module="__main__", fmt=2,
+                      file=LEGAL),
+                 call(2, 2, T3, {"result": "Disputes go to arbitration."}, name="summarize", module="__main__",
+                      fmt=2, file="/home/maxime/contracts/legal.md"),
+                 rating(1, 1, 5, "maxime", "right"), rating(2, 2, 5, "maxime", "right")],
+        rated={"name": "summarize", "module": "__main__", "file": None, "signature": SIG, "by": None},
+        expect={"rows": [row(T1, {"result": "Rent is due monthly."}, 1, rating_="right", by="maxime"),
+                         row(T3, {"result": "Disputes go to arbitration."}, 2, rating_="right", by="maxime")],
+                "left_out": LEFT}),
+    "19-ratings-under-an-account-are-kept-apart": dict(
+        description="A rating made under an account (no person named: no by, an account) counts on its own: "
+                    "it replaces no rating and none replaces it, and its null verdict withdraws nothing. On a "
+                    "shared account, two people's right and wrong both count, and the row is disputed; "
+                    "rated_by is null when the rating giving the values has no by.",
+        records=[call(1, 1, M1, {"result": "billing"}), call(2, 2, M2, {"result": "shipping"}),
+                 call(3, 3, M3, {"result": "product"}),
+                 rating(1, 1, 5, None, "right"), rating(2, 1, 6, None, "wrong", answer="shipping"),
+                 rating(3, 2, 5, None, "right"), rating(4, 2, 6, None, None),
+                 rating(5, 3, 5, "ana", "right"), rating(6, 3, 6, None, "wrong")],
+        rated=TEAM,
+        expect={"rows": [row(M1, {"result": "shipping"}, 1, rating_="wrong", by=None, disputed=True),
+                         row(M2, {"result": "shipping"}, 2, rating_="right", by=None),
+                         row(M3, {"result": "product"}, 3, rating_="right", by="ana", disputed=True)],
+                "left_out": LEFT}),
+    "20-one-persons-ratings-leave-accounts-out": dict(
+        description="With by, only that person's ratings are read: ratings made under an account are no "
+                    "one's.",
+        records=[call(1, 1, M1, {"result": "billing"}), call(2, 2, M2, {"result": "shipping"}),
+                 rating(1, 1, 5, "ana", "right"), rating(2, 2, 5, None, "right")],
+        rated={**TEAM, "by": "ana"},
+        expect={"rows": [row(M1, {"result": "billing"}, 1, rating_="right", by="ana")], "left_out": LEFT}),
 }

@@ -905,11 +905,28 @@ class FunctAIFunc(Generic[P, R]):
 
     # ----- calling -----
 
-    def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
-        """A call's inputs by name, each left-out optional one with its default."""
+    def _bind_args(self, args, kwargs) -> Dict[str, Any]:
+        """A call's arguments by name, as Python binds them, each left-out
+        optional one with its default: Python's own ``TypeError`` for wrong
+        arguments, before any call starts."""
         bound = self._sig.bind(*args, **kwargs)
         bound.apply_defaults()
         return dict(bound.arguments)
+
+    def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
+        """A call's inputs, bound to the interface (contract/programs.md,
+        *Binding a call's inputs*): what the model is sent. Raises
+        ``InterfaceError`` (``interface-input``) for an input that does not
+        bind; its message never quotes a value the log drops."""
+        from . import interface as _interface
+        return _interface.bind_call(self.interface, self._bind_args(args, kwargs), program=self.__name__,
+                                    dropped=calllog.dropped_now(self))
+
+    def _recorded_inputs(self, args, kwargs) -> Dict[str, Any]:
+        """The inputs the call's record holds: bound where they bind (a call
+        refused for one is recorded with its error)."""
+        from . import interface as _interface
+        return _interface.bound_for_record(self.interface, self._bind_args(args, kwargs))
 
     def _named_inputs(self) -> List[Tuple[str, bool]]:
         """``(name, required)`` of each input a call can be given by name, in
@@ -1059,12 +1076,12 @@ class FunctAIFunc(Generic[P, R]):
         return await self._in_thread(args, kwargs, full=True)
 
     async def _in_thread(self, args: tuple, kwargs: Dict[str, Any], full: bool) -> Any:
-        self._bind_inputs(args, kwargs)               # wrong arguments fail here, in the caller
+        self._bind_args(args, kwargs)                 # wrong arguments fail here, in the caller
         return await asyncio.to_thread(self._invoke, args, kwargs, full)   # settings and states go along
 
     def _invoke(self, args: tuple, kwargs: Dict[str, Any], full: bool = False) -> Any:
         """One call, made here and now, followed in the call log."""
-        return calllog.run(self, self._effective(), lambda: self._bind_inputs(args, kwargs),
+        return calllog.run(self, self._effective(), lambda: self._recorded_inputs(args, kwargs),
                            lambda: self._call(args, kwargs, full))
 
     def _call(self, args: tuple, kwargs: Dict[str, Any], full: bool = False) -> Any:
@@ -1182,7 +1199,7 @@ class FunctAIFunc(Generic[P, R]):
         from .columns import has_column
         if has_column(args, kwargs):
             raise TypeError(f"{self.__name__}.stream watches one call; on columns, use {self.__name__}(col.x)")
-        self._bind_inputs(args, kwargs)               # wrong arguments fail here, not in the background
+        self._bind_args(args, kwargs)                 # wrong arguments fail here, not in the background
         return streaming.Stream(self, args, kwargs)
 
     # ----- optimization -----

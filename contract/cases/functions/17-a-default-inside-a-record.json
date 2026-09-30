@@ -1,0 +1,101 @@
+{
+ "description": "A default inside a record's shape (a member's, as pydantic writes one) is sent to the model as part of the shape, so it is in the request, but it is not in the signature id (calls.md, program.signature: every default is left out).",
+ "definition": {
+  "name": "summarize",
+  "description": "Summarize a visit.",
+  "inputs": [
+   {
+    "name": "visit",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "note": {
+       "type": "string"
+      },
+      "day": {
+       "type": "string",
+       "default": "2026-09-30"
+      }
+     },
+     "required": [
+      "note"
+     ]
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: summarize\n\nSummarize a visit.",
+   "fields": [
+    {
+     "name": "visit",
+     "direction": "input",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "note": {
+        "type": "string"
+       },
+       "day": {
+        "type": "string",
+        "default": "2026-09-30"
+       }
+      },
+      "required": [
+       "note"
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "visit": {}
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: summarize\n\nSummarize a visit.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<visit>\n{}\n</visit>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:f6a506e4af2e7d94d71bf2c6292b57ce7343f7ffbb24027d6268ec31a4f39fec",
+  "version": "sha256:0b0f179118f1806143ca2bb16a3d616d0276303e10528b6ed0c7aa663d54aee4",
+  "signature_id": "sha256:6f9041e3417a89d5bb936b9c7181ab0295e80d13c1985f7450b1b1c911ba53bb"
+ }
+}

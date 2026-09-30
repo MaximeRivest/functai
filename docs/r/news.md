@@ -4,6 +4,38 @@
 
 ## functai 0.1.0 (unreleased)
 
+### Stage 1.1 (`design/09-stage1.1-decisions.md`)
+
+* **Inputs are bound** (breaking): each value is converted to its field's
+  type when the meaning is clear (`42` to text is `"42"`, `"5"` to a whole
+  number is `5`), else refused before any request (`interface-input`,
+  recorded). A record keeps only the members it names: a tibble with more
+  columns than its `record()` sends the record's columns (before, it was
+  refused). `NA` for an optional input whose type takes no null is that
+  input left out: it takes its default (before, the row made no call). `NA`
+  for a required one refuses that row, recorded (before: no call, no
+  record). The call record holds the bound values. A default is bound when
+  the function is defined.
+* **Error messages quote the value** (cut after 80 characters, ending
+  `…`), except a value a `log_content` setting drops.
+* **Defaults count in the version by what is written**: `defaults_to(~
+  Sys.Date())` (a formula) is computed at each call that leaves the input
+  out, and counts by its code; any other default by its value (every
+  function with a default has a new version once). A saved folder keeps a
+  formula default's code. Signatures leave out every default.
+* **The call log**: a re-ask's `request_hash` is the hash of what it sent;
+  `outputs$calls` holds every tool call of the call (it was `[]`);
+  `returned` is kept only when nothing is dropped; dropping `calls` keeps
+  `reasoning`; `process$lmcc` and `process$lm15`.
+* **Ratings**: with no person named (`by`, or the caller's `user`), a
+  rating is made under the computer's `account` and kept on its own, so
+  ratings on a shared account no longer replace each other. A function
+  defined at the top level is known by its file (the knitted document, the
+  `source()`d file, the `Rscript` script): `rated()` no longer pools two
+  notebooks' functions; `rated(fn, any_file = TRUE)` does.
+* The sample value of a shape whose type is a list of types is the first
+  non-null one.
+
 ### Stage 1 foundations (the contract at `c1e5063`)
 
 * The call log is format 2 (`contract/calls.md`): every record has

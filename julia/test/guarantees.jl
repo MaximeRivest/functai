@@ -145,7 +145,7 @@ end
     end
     @test FunctAI.drain()
     @test err isa InterfaceError && err.field == "pin" && !occursin("hunter2", sprint(showerror, err))
-    @test occursin("a text of 14 characters", err.msg)
+    @test occursin("does not bind", err.msg)                # the field and what it wants; never the dropped value
     @test !any(e -> occursin("hunter2", FunctAI.LMCC.json_text(e)), seen)
     @test !any(r -> occursin("hunter2", FunctAI.LMCC.json_text(r)), first(FunctAI.read_log(dir)))
 end
@@ -527,10 +527,13 @@ end
         n
     end
     @test !haskey(FunctAI.interface(counted)["inputs"][1]["shape"], "default") && counted() == 5
-    err = try @eval(@ai function counted_ai(x::String; n::Int = COUNTS[1])::String
+    # an AI function's computed default (not a literal nor a constant) is run at each call that leaves it out, and
+    # counts in the version by its code (calls.md, "Versions", "Defaults")
+    counted_ai = @eval @ai function counted_ai(x::String; n::Int = COUNTS[1])::String
         "Count."
-    end) catch e e end
-    @test err isa ArgumentError && occursin("is computed", err.msg)
+    end
+    @test FunctAI.interface(counted_ai)["inputs"][2]["shape"]["default"] == 5
+    @test only(x for x in counted_ai.definition.inputs if x.name == "n").code == "COUNTS[1]"
     # a constant is data too, and so is its value in the interface
     @eval const DEFAULT_TONE = "kind"
     @eval @program function toned(m::String; tone::String = DEFAULT_TONE)::String
@@ -552,10 +555,16 @@ end
         "Echo."
     end) catch e e end
     @test err isa ArgumentError && occursin("uses message, another input", err.msg)
-    err = try @eval(@ai function stamped(x::String; at::Float64 = time())::String
+    first_stamp = @eval @ai function stamped(x::String; at::Float64 = time())::String
         "Stamp."
-    end) catch e e end
-    @test err isa ArgumentError && occursin("is computed", err.msg)
+    end
+    sleep(0.01)
+    second_stamp = @eval @ai function stamped(x::String; at::Float64 = time())::String
+        "Stamp."
+    end
+    # the same code another moment: another value in the interface, the same version
+    @test FunctAI.interface(first_stamp)["inputs"][2]["shape"]["default"] != FunctAI.interface(second_stamp)["inputs"][2]["shape"]["default"]
+    @test FunctAI.version(first_stamp) == FunctAI.version(second_stamp)
     err = try @eval(@ai function not_const(x::String; tone::String = message)::String
         "Tone."
     end) catch e e end
@@ -648,11 +657,14 @@ end
     got = using_fake(() -> typed(), FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok")); retries=0)
     @test got[1] === 1 && got[2] isa Vector{Float64} && got[2] == [1.0, 2.0]
     @test !occursin("CHANGED", LMCC.json_text(LM15.to_dict(r.requests[2])))
-    # a missing default is sent as null; a missing given is still missing out, with no call
+    # a missing default is sent as null; a missing given to a type that takes null is null, sent (programs.md, Binding)
     m = AIFunction("maybe"; inputs=(x=Union{Missing,String},), output=String, defaults=(x=missing,))
     r = FakeRouter(Any[]; responder=(req, i) -> xml(:result => "ok"))
     @test using_fake(() -> m(), r; retries=0) == "ok" && length(r.requests) == 1
-    @test using_fake(() -> m(missing), r; retries=0) === missing && length(r.requests) == 1
+    @test using_fake(() -> m(missing), r; retries=0) == "ok" && length(r.requests) == 2
+    # a missing given to a required input whose type takes no null: missing out, recorded, with no call
+    req = AIFunction("needs"; inputs=(x=String,), output=String)
+    @test using_fake(() -> req(missing), r; retries=0) === missing && length(r.requests) == 2
     # a record's field typed Missing reads null, as its shape says
     @test FunctAI.fromjson(MissingRecord, Dict{String,Any}("n" => nothing)) === (n=missing,)
 end

@@ -90,6 +90,12 @@ export interface Settings {
    * journal (`JournalError` `journal-policy`).
    */
   journal?: Journal | null;
+  /**
+   * `false` (a host's block or `configure`): the observers a program sets for
+   * itself are given no event; the host's still are. It only removes: a
+   * program's own `true` does not undo it.
+   */
+  programObservers?: boolean | null;
   /** Who is calling, added to `FUNCTAI_CALLER`: `{ kind: "agent", conversation: "…" }`. */
   caller?: Record<string, unknown> | null;
   /**
@@ -118,6 +124,9 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
   if (!settings) return;
   checkLogContent(settings.logContent, where, fields);
   checkObservers(settings.observers, where);
+  if (settings.programObservers !== undefined && settings.programObservers !== null && typeof settings.programObservers !== "boolean") {
+    throw new TypeError(`${where}: programObservers is true or false`);
+  }
   if (settings.journal !== undefined) journalOf(settings.journal, where);
 }
 

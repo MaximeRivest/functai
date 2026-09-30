@@ -10,7 +10,7 @@ new_job <- function(plan, past, inputs, settings, model, tools, call) {
   job <- new.env(parent = emptyenv())
   job$plan <- plan; job$past <- past; job$settings <- settings; job$model <- model; job$tools <- tools; job$call <- call
   job$state <- "send"; job$not_before <- 0; job$retries <- 0L; job$api_retries <- 0L; job$steps <- 1L
-  job$responses <- list(); job$overrides <- list()
+  job$responses <- list(); job$overrides <- list(); job$tool_calls <- list()
   values <- prepare_inputs(plan$signature, inputs)
   if (length(tools)) values$tools <- lapply(tools, function(t) list(name = t$name, description = t$description, parameters = t$parameters))
   job$turn <- lmcc::new_turn(plan, values)
@@ -20,7 +20,8 @@ new_job <- function(plan, past, inputs, settings, model, tools, call) {
 
 render_next <- function(job) {
   job$rendered <- lmcc::render(job$plan, job$turn, if (length(job$past)) job$past else NULL)
-  job$request_hash <- lmcc::sha256_of(lmcc::request_of(job$rendered))
+  job$asked <- lmcc::request_of(job$rendered)          # the lmcc request this exchange sends (calls.md, exchanges)
+  job$request_hash <- lmcc::sha256_of(job$asked)
   job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
   job$retries <- 0L
 }
@@ -59,21 +60,27 @@ on_response <- function(job, response, started, seconds) {
       job$overrides$max_tokens <- 2L * as.integer(job$overrides$max_tokens %||% job$settings$max_tokens %||% 1024L)
       job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
     } else {
+      correction <- sprintf(REASK, reading$hint)
       d <- lm15::as_dict(job$request)
-      d$messages <- c(d$messages, list(lm15::as_dict(response$message), lm15::as_dict(lm15::message_user(sprintf(REASK, reading$hint)))))
+      d$messages <- c(d$messages, list(lm15::as_dict(response$message), lm15::as_dict(lm15::message_user(correction))))
       job$request <- lm15::from_dict(d, "request")
+      # the re-ask's request_hash: the request it follows, then the reply's message and the correction
+      job$asked$messages <- c(job$asked$messages, list(lm15::as_dict(response$message),
+                                                       list(role = "user", parts = list(list(type = "text", text = correction)))))
+      job$request_hash <- lmcc::sha256_of(job$asked)
     }
     return(invisible())
   }
   job$turn <- lmcc::lm15_step(job$rendered, response)
   calls <- reading$values$calls %||% list()
+  job$tool_calls <- c(job$tool_calls, calls)
   if (!length(calls)) {
     job$turn <- lmcc::finish_turn(job$turn)
-    # the turn's outputs, the fields FunctAI added included: `calls` is what
-    # lmcc's finished turn holds for it (its last model step's, `[]` once the
-    # model answers); the calls made on the way are in the turn's steps and
-    # the call's exchanges
+    # the turn's outputs, the fields FunctAI added included; `calls` is every
+    # tool call the model asked for in the call, across steps (functions.md),
+    # not the finished turn's last step's list (`[]` once the model answers)
     job$outputs <- lmcc::turn_to_list(job$turn)$outputs
+    if (length(job$tools) && "calls" %in% names(job$outputs)) job$outputs["calls"] <- list(job$tool_calls)
     job$probabilities <- reading$probabilities %||% list()      # what the provider measured (TypeSafe's Jev), by output
     job$state <- "done"
     ended(job)

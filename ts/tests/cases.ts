@@ -16,7 +16,14 @@ export const cases = (folder: string, prefix = ""): [string, Rec][] =>
 export function tsFunction(d: Rec) {
   const field = (f: Rec, input: boolean) => {
     const words = f.desc ? { desc: f.desc } : {};
-    return input ? { shape: f.shape, ...words, optional: Boolean(f.optional) } : f.desc ? { shape: f.shape, ...words } : f.shape;
+    let shape = f.shape;
+    if (f.default_code) {
+      // a default written as an expression: a function returning it, whose called name gives the shape's default today
+      const called = String(f.default_code).split("(")[0]!;
+      const make = new Function("v", `const ${called} = () => v; return () => ${f.default_code};`);
+      shape = { ...f.shape, default: make(f.shape.default) };
+    }
+    return input ? { shape, ...words, optional: Boolean(f.optional) } : f.desc ? { shape, ...words } : shape;
   };
   const tools: Tool[] = (d.tools ?? []).map((t: Rec) => ({ ...t, run: () => "" }));
   const settings: Rec = {};
@@ -36,21 +43,29 @@ export function tsFunction(d: Rec) {
 /** A position, as the cases write one. */
 export const pos = (e: Rec) => ({ writer: e.writer, seq: e.seq });
 
-/** The contract's stand-in for a value with no JSON form, `{ $type, $repr }`, and a native value for it. */
+/**
+ * The contract's stand-in for a value with no JSON form, `{ $type, $repr,
+ * $text? }`, and a native value for it: its text is `$text` when the case
+ * gives one (a type with a text of its own), else JavaScript's default for
+ * any object (`[object Object]`).
+ */
 export class Native {
   readonly $type: string;
   readonly $repr: string;
+  readonly $text: string | undefined;
   constructor(d: Rec) {
     this.$type = d.$type;
     this.$repr = d.$repr;
+    this.$text = d.$text;
   }
   toString() {
-    return this.$repr;
+    return this.$text ?? Object.prototype.toString.call(this);
   }
 }
 export const isStandIn = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v)
-  && Object.keys(v).length === 2 && "$type" in v && "$repr" in v;
+  && "$type" in v && "$repr" in v && (Object.keys(v).length === 2 || (Object.keys(v).length === 3 && "$text" in v));
 /** A case's value as the program gets it: stand-ins become native values. */
 export const native = (v: unknown): unknown => (isStandIn(v) ? new Native(v) : v);
 /** A program's value as the case writes it: native values become their stand-ins. */
-export const described = (v: unknown): unknown => (v instanceof Native ? { $type: v.$type, $repr: v.$repr } : v);
+export const described = (v: unknown): unknown =>
+  (v instanceof Native ? { $type: v.$type, $repr: v.$repr, ...(v.$text !== undefined ? { $text: v.$text } : {}) } : v);

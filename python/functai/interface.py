@@ -248,7 +248,8 @@ def _fits_shape(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> bool:
         props = shape.get("properties") or {}
         if any(k not in v for k in shape.get("required") or []):
             return False
-        extra = shape.get("additionalProperties", True)
+        # a record (properties, no additionalProperties) is closed: programs.md, "Checking values"
+        extra = shape.get("additionalProperties", False if "properties" in shape else True)
         for k, x in v.items():
             if k in props:
                 if not _fits_shape(x, props[k], root):
@@ -258,9 +259,30 @@ def _fits_shape(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> bool:
     return True
 
 
-def data_shape(shape: Dict[str, Any]) -> Dict[str, Any]:
-    """A field's shape without its own ``default``: what its data looks like."""
-    return {k: v for k, v in shape.items() if k != "default"}
+_SUBSHAPES = ("items", "additionalProperties", "not")
+_SHAPE_LISTS = ("anyOf", "prefixItems", "oneOf", "allOf")
+_SHAPE_MAPS = ("properties", "$defs")
+
+
+def data_shape(shape: Any) -> Any:
+    """A shape without any ``default`` keyword, its own or one inside it: what
+    its data looks like (programs.md, the signature). A member named
+    ``default`` stays, and so does data (``enum``, ``const``, ``examples``)."""
+    if not isinstance(shape, dict):
+        return shape
+    out: Dict[str, Any] = {}
+    for k, v in shape.items():
+        if k == "default":
+            continue
+        if k in _SUBSHAPES and isinstance(v, dict):
+            out[k] = data_shape(v)
+        elif k in _SHAPE_LISTS and isinstance(v, list):
+            out[k] = [data_shape(x) for x in v]
+        elif k in _SHAPE_MAPS and isinstance(v, dict):
+            out[k] = {n: data_shape(x) for n, x in v.items()}
+        else:
+            out[k] = v
+    return out
 
 
 def fits(value: Any, field: Mapping[str, Any]) -> bool:
@@ -362,15 +384,246 @@ def signature(interface: Mapping[str, Any]) -> str:
 # ------------------------------------------------------------------ checking a call
 
 
-def bind_inputs(interface: Mapping[str, Any], given: Mapping[str, Any], *, program: str = "",
-                has_default: Any = ()) -> Dict[str, Any]:
-    """The inputs a module's code gets, checked (programs.md, *Checking values*).
+# ------------------------------------------------------------------ binding (programs.md, "Binding a call's inputs")
 
-    ``given``: the inputs the call gives, by name (native values or JSON).
-    An optional input left out takes its shape's default, unless the code
-    has a default of its own for it (``has_default``, names), which then
-    applies; with neither, it stays left out. Raises ``InterfaceError``
-    (``interface-input``) naming the first input at fault."""
+
+_NUMBER_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+_INTEGER_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)")
+_REFUSED = object()
+
+
+def is_missing(value: Any) -> bool:
+    """Python's missing values: ``None``, a float not-a-number (pandas' gap
+    in a numeric column), pandas' ``NA`` and ``NaT``."""
+    if value is None:
+        return True
+    if isinstance(value, float) and value != value:
+        return True
+    return type(value).__name__ in ("NAType", "NaTType")
+
+
+_DEFAULT_TEXT = re.compile(r"<[^<>]* at 0x[0-9a-fA-F]+>", re.S)
+
+
+def _own_text(value: Any) -> Optional[str]:
+    """A value's text when its type gives it one (a data frame, a date), else
+    None: text that is only Python's default for any object
+    (``<Thing object at 0x…>``) says nothing about the value."""
+    try:
+        text = str(value)
+    except Exception:  # noqa: BLE001 — a text that raises is no text
+        return None
+    return None if _DEFAULT_TEXT.fullmatch(text) else text
+
+
+def _text_of(v: Any) -> str:
+    """JSON as text (programs.md, Binding): a number as canonical JSON, a
+    boolean ``true``/``false``, a list or object indented by two spaces."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if _is_number(v):
+        return _canonical(v)
+    return _indented(v)
+
+
+def _indented(v: Any, level: int = 0) -> str:
+    pad, inner = "  " * level, "  " * (level + 1)
+    if isinstance(v, (list, tuple)):
+        return "[]" if not v else "[\n" + ",\n".join(inner + _indented(x, level + 1) for x in v) + "\n" + pad + "]"
+    if isinstance(v, Mapping):
+        return "{}" if not v else "{\n" + ",\n".join(
+            inner + _canonical(str(k)) + ": " + _indented(x, level + 1) for k, x in v.items()) + "\n" + pad + "}"
+    return _canonical(v)
+
+
+def _number_from_text(s: str) -> Any:
+    s = s.strip(" \t\n\r")
+    if not _NUMBER_TEXT.fullmatch(s):
+        return None
+    if _INTEGER_TEXT.fullmatch(s):
+        return int(s)
+    x = float(s)
+    if not math.isfinite(x):
+        return None
+    return int(x) if x.is_integer() and abs(x) < 2 ** 53 else x
+
+
+class _NoJSON:
+    """A value with no JSON form, carried through binding (only text may take it)."""
+    __slots__ = ("value",)
+
+    def __init__(self, value: Any) -> None:
+        self.value = value
+
+
+def _convert(v: Any, kind: str) -> Any:
+    if kind == "null":
+        return None if v is None else _REFUSED
+    if v is None:
+        return _REFUSED
+    if isinstance(v, _NoJSON):
+        if kind == "string":
+            text = _own_text(v.value)
+            return text if text is not None else _REFUSED
+        return _REFUSED
+    if kind == "string":
+        return v if isinstance(v, str) else _text_of(v)
+    if kind == "boolean":
+        return v if isinstance(v, bool) else _REFUSED
+    if kind in ("integer", "number"):
+        if isinstance(v, bool):
+            return _REFUSED
+        x = v if _is_number(v) else _number_from_text(v) if isinstance(v, str) else None
+        if x is None or (isinstance(x, float) and not math.isfinite(x)):
+            return _REFUSED
+        if kind == "integer":
+            if not float(x).is_integer():
+                return _REFUSED
+            return int(x) if isinstance(x, float) else x
+        return x
+    if kind == "array":
+        return list(v) if isinstance(v, (list, tuple)) else _REFUSED
+    if kind == "object":
+        return dict(v) if isinstance(v, Mapping) else _REFUSED
+    return _REFUSED
+
+
+def _fits_bound(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> bool:
+    if isinstance(v, _NoJSON):
+        return False
+    try:
+        return _fits_shape(v, shape, root)
+    except TypeError:
+        return False
+
+
+def _bind_shape(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> Any:
+    ref = shape.get("$ref")
+    if isinstance(ref, str) and REF.fullmatch(ref):
+        v = _bind_shape(v, (root.get("$defs") or {})[REF.fullmatch(ref).group(1)], root)   # type: ignore[union-attr]
+    if isinstance(shape.get("anyOf"), list) and shape["anyOf"]:
+        if v is None:
+            return None
+        for option in shape["anyOf"]:
+            b = _bind_shape(v, option, root)
+            if _fits_bound(b, option, root):
+                v = b
+                break
+        else:
+            return _bind_shape(v, shape["anyOf"][0], root)
+    if "type" in shape:
+        names = shape["type"] if isinstance(shape["type"], list) else [shape["type"]]
+        if v is None:
+            return None
+        for name in names:
+            if name == "null":
+                continue
+            c = _convert(v, name)
+            if c is _REFUSED:
+                continue
+            c = _descend(c, shape, root)
+            if _fits_bound(c, {**shape, "type": name}, root):
+                return c
+        return v
+    return _descend(v, shape, root)
+
+
+def _descend(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> Any:
+    if isinstance(v, (list, tuple)) and ("items" in shape or "prefixItems" in shape):
+        prefix = shape.get("prefixItems") or []
+        return [_bind_shape(x, prefix[i], root) if i < len(prefix) else
+                _bind_shape(x, shape["items"], root) if isinstance(shape.get("items"), dict) else x
+                for i, x in enumerate(v)]
+    if isinstance(v, Mapping) and ("properties" in shape or "additionalProperties" in shape):
+        props = shape.get("properties") or {}
+        extra = shape.get("additionalProperties")
+        out: Dict[str, Any] = {}
+        for k, x in v.items():
+            if k in props:
+                out[k] = _bind_shape(x, props[k], root)
+            elif isinstance(extra, dict):
+                out[k] = _bind_shape(x, extra, root)
+            elif extra is True or (extra is None and "properties" not in shape):
+                out[k] = x
+            # a record (closed) drops a member it does not name
+        return out
+    return v
+
+
+def bind(value: Any, field: Mapping[str, Any]) -> Tuple[bool, Any]:
+    """``(True, the bound value)`` or ``(False, value)`` when it does not bind
+    and fit (programs.md, *Binding a call's inputs*). An opaque field takes
+    anything. A value that fits as it is comes back as it is (a dataclass
+    stays one); one that binds to something else comes back as the bound
+    JSON (``"5"`` for an integer is ``5``)."""
+    if field.get("opaque"):
+        return True, value
+    shape = {k: v for k, v in field["shape"].items() if k != "default"}
+    ok, data = json_form(value)
+    start: Any = None if is_missing(value) else data if ok else _NoJSON(value)
+    bound = _bind_shape(start, shape, shape)
+    if isinstance(bound, _NoJSON) or not _fits_bound(bound, shape, shape):
+        return False, value
+    if ok and _same_json(bound, data):
+        return True, value                   # it fitted as it was: the program gets its own value
+    return True, bound
+
+
+def _same_json(a: Any, b: Any) -> bool:
+    """Equal as JSON, and of the same kinds all the way down (``5.0`` is not
+    ``5`` here: binding made one from the other)."""
+    if isinstance(a, bool) or isinstance(b, bool):
+        return type(a) is type(b) and a == b
+    if _is_number(a) and _is_number(b):
+        return type(a) is type(b) and a == b
+    if isinstance(a, (list, tuple)) and isinstance(b, (list, tuple)):
+        return len(a) == len(b) and all(_same_json(x, y) for x, y in zip(a, b))
+    if isinstance(a, Mapping) and isinstance(b, Mapping):
+        return list(a) == list(b) and all(_same_json(a[k], b[k]) for k in a)
+    return type(a) is type(b) and a == b
+
+
+def _missing_to_optional(f: Mapping[str, Any], value: Any) -> bool:
+    """``null`` given to an optional input that null does not fit is that input left out."""
+    if not f.get("optional") or not is_missing(value) or f.get("opaque"):
+        return False
+    shape = {k: v for k, v in f["shape"].items() if k != "default"}
+    return not _fits_bound(None, shape, shape)
+
+
+def refusal_message(program: str, field: Mapping[str, Any], value: Any, direction: str = "input",
+                    quote: bool = True) -> str:
+    """programs.md, *The message*: the program, the field, what it wants, and
+    the value (canonical JSON, or a description's ``$repr``, cut after 80 code
+    points) unless its field is dropped from the log."""
+    where = f"{program}: " if program else ""
+    wants = "any value" if field.get("opaque") else _canonical(data_shape(field["shape"]))
+    name = field["name"]
+    if not quote:
+        return f"{where}{direction} {name!r} does not bind to {wants} (its value is not shown: the log drops it)"
+    ok, data = json_form(value)
+    if ok:
+        text = "null" if is_missing(value) else _canonical(data)
+    else:
+        from .calllog import safe_repr
+        text = safe_repr(value)
+    if len(text) > 80:
+        text = text[:80] + "\u2026"
+    why = "has no JSON form, and does not bind to" if not ok else "does not bind to"
+    return f"{where}{direction} {name!r}: {text} {why} {wants}"
+
+
+def bind_call(interface: Mapping[str, Any], given: Mapping[str, Any], *, program: str = "",
+              has_default: Any = (), dropped: Any = ()) -> Dict[str, Any]:
+    """Every input bound and checked (programs.md, *Binding a call's inputs*,
+    *Checking values*): what a program's code, or a model, is given.
+
+    ``given``: the inputs the call gives, by name. An optional input left out,
+    or given a missing value null does not fit, takes its shape's default,
+    unless the code has a default of its own for it (``has_default``), which
+    then applies; with neither, it stays left out. ``dropped``: the fields a
+    ``log_content`` layer drops, whose values a message never quotes. Raises
+    ``InterfaceError`` (``interface-input``) naming the first input at fault."""
     where = f"{program}: " if program else ""
     names = [f["name"] for f in interface["inputs"]]
     unknown = sorted(k for k in given if k not in names)
@@ -380,22 +633,43 @@ def bind_inputs(interface: Mapping[str, Any], given: Mapping[str, Any], *, progr
     out: Dict[str, Any] = {}
     for f in interface["inputs"]:
         name = f["name"]
-        if name in given:
-            value = given[name]
-            if not fits(value, f):
-                ok, _ = json_form(value)
-                shown = _shown(value)
-                why = (f"{shown} has no JSON form, and the input is not opaque" if not ok
-                       else f"{shown} does not fit {_canonical(data_shape(f['shape']))}")
-                raise InterfaceError("interface-input", name, f"{where}input {name!r}: {why}")
+        if name in given and not _missing_to_optional(f, given[name]):
+            ok, value = bind(given[name], f)
+            if not ok:
+                raise InterfaceError("interface-input", name,
+                                     refusal_message(program, f, given[name],
+                                                     quote="*" not in dropped and name not in dropped))
             out[name] = value
-        elif not f.get("optional"):
+        elif name in given or f.get("optional"):
+            if name in has_default:
+                continue
+            if "default" in f["shape"]:
+                out[name] = copy.deepcopy(f["shape"]["default"])
+        else:
             raise InterfaceError("interface-input", name, f"{where}input {name!r} is required")
-        elif name in has_default:
-            continue
+    return out
+
+
+def bound_for_record(interface: Mapping[str, Any], given: Mapping[str, Any]) -> Dict[str, Any]:
+    """The inputs a call's record holds: each bound where it binds, as given
+    where it does not (the call is then refused, and its record says so),
+    and an optional input left out with its shape's default. A name the
+    interface lacks is never recorded."""
+    out: Dict[str, Any] = {}
+    for f in interface["inputs"]:
+        name = f["name"]
+        if name in given and not _missing_to_optional(f, given[name]):
+            ok, value = bind(given[name], f)
+            out[name] = value
         elif "default" in f["shape"]:
             out[name] = copy.deepcopy(f["shape"]["default"])
     return out
+
+
+def bind_inputs(interface: Mapping[str, Any], given: Mapping[str, Any], *, program: str = "",
+                has_default: Any = (), dropped: Any = ()) -> Dict[str, Any]:
+    """The inputs a module's code gets: ``bind_call``."""
+    return bind_call(interface, given, program=program, has_default=has_default, dropped=dropped)
 
 
 def _shown(value: Any) -> str:
@@ -407,18 +681,10 @@ def _shown(value: Any) -> str:
 
 
 def recorded_inputs(interface: Mapping[str, Any], given: Mapping[str, Any]) -> Dict[str, Any]:
-    """The inputs a call's record holds, named as the interface names them:
-    those given, and for an optional input left out, its shape's default
-    (absent when it has none). A value given under a name the interface does
-    not have is refused (``bind_inputs``) and never recorded: the refusal
-    names it, and no log keeps what it held."""
-    out: Dict[str, Any] = {}
-    for f in interface["inputs"]:
-        if f["name"] in given:
-            out[f["name"]] = given[f["name"]]
-        elif "default" in f["shape"]:
-            out[f["name"]] = copy.deepcopy(f["shape"]["default"])
-    return out
+    """The inputs a call's record holds, named as the interface names them
+    (``bound_for_record``). A value given under a name the interface does
+    not have is refused (``bind_inputs``) and never recorded."""
+    return bound_for_record(interface, given)
 
 
 def outputs_of(interface: Mapping[str, Any], returned: Any) -> Tuple[bool, Dict[str, Any]]:
@@ -437,7 +703,8 @@ def outputs_of(interface: Mapping[str, Any], returned: Any) -> Tuple[bool, Dict[
     return False, {}
 
 
-def check_outputs(interface: Mapping[str, Any], returned: Any, *, program: str = "") -> Dict[str, Any]:
+def check_outputs(interface: Mapping[str, Any], returned: Any, *, program: str = "",
+                  dropped: Any = ()) -> Dict[str, Any]:
     """The call's outputs by name, checked; raises ``InterfaceError``
     (``interface-output``) naming the first output at fault."""
     where = f"{program}: " if program else ""
@@ -458,12 +725,10 @@ def check_outputs(interface: Mapping[str, Any], returned: Any, *, program: str =
         if name not in values:
             raise InterfaceError("interface-output", name, f"{where}output {name!r} is missing")
         if not fits(values[name], f):
-            value = values[name]
-            ok, _ = json_form(value)
-            shown = _shown(value)
-            why = (f"{shown} has no JSON form, and the output is not opaque" if not ok
-                   else f"{shown} does not fit {_canonical(data_shape(f['shape']))}")
-            raise InterfaceError("interface-output", name, f"{where}output {name!r}: {why}")
+            raise InterfaceError("interface-output", name,
+                                 refusal_message(program, f, values[name], "output",
+                                                 quote="*" not in dropped and name not in dropped)
+                                 .replace("does not bind to", "does not fit"))
     return {f["name"]: values[f["name"]] for f in outputs}
 
 
@@ -578,7 +843,14 @@ def _with_default(field: Dict[str, Any], default: Any) -> Dict[str, Any]:
         shape = dict(nullable(shape))
     ok, data = json_form(default)
     if ok:
-        shape["default"] = data
+        # bound as a given value is (programs.md, Binding): "5" for an integer is 5; one that does not bind
+        # stays as it is, and check() refuses it (interface-malformed)
+        bound_ok, bound = bind(default, {"name": field["name"], "shape": shape})
+        if bound_ok and not is_missing(default):
+            ok2, data2 = json_form(bound)
+            shape["default"] = data2 if ok2 else data
+        else:
+            shape["default"] = data
     field["shape"] = shape
     return field
 
@@ -756,7 +1028,11 @@ def of_ai(fn: Any) -> Dict[str, Any]:
             field["optional"] = True
             ok, data = json_form(p.default)
             if ok:
-                field["shape"]["default"] = data
+                # bound as a given value is (programs.md, Binding): "5" for an integer is 5; one that does
+                # not bind stays as it is, and check() refuses it (interface-malformed)
+                bound_ok, bound = bind(p.default, {"name": f.name, "shape": field["shape"]})
+                ok2, data2 = json_form(bound) if bound_ok else (False, None)
+                field["shape"]["default"] = data2 if ok2 else data
         inputs.append(field)
     outputs = []
     descs = getattr(spec, "descs", {}) or {}
@@ -774,3 +1050,86 @@ def of_ai(fn: Any) -> Dict[str, Any]:
 
 __all__ = ["JSON", "check", "signature", "fits", "bind_inputs", "check_outputs", "of_function", "of_ai",
            "python_type", "python_signature", "InterfaceError"]
+
+
+# ------------------------------------------------------------------ defaults by their logic (calls.md, Versions)
+
+
+def _is_value_expr(node: Any) -> bool:
+    """A default written as a constant (a literal, a container of them, a signed
+    number) or a name (``DEFAULT_TONE``, ``Tone.KIND``): it counts by its value."""
+    import ast
+    if isinstance(node, ast.Constant):
+        return True
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, (ast.USub, ast.UAdd)) \
+            and isinstance(node.operand, ast.Constant):
+        return True
+    if isinstance(node, (ast.List, ast.Tuple, ast.Set)):
+        return all(_is_value_expr(x) for x in node.elts)
+    if isinstance(node, ast.Dict):
+        return all(k is not None and _is_value_expr(k) for k in node.keys) and all(_is_value_expr(v)
+                                                                                  for v in node.values)
+    if isinstance(node, ast.Name):
+        return True
+    if isinstance(node, ast.Attribute):
+        return _is_value_expr(node.value) if isinstance(node.value, (ast.Name, ast.Attribute)) else False
+    return False
+
+
+_default_code_cache: Dict[Any, Dict[str, str]] = {}
+_warned_no_source: set = set()
+
+
+def default_code(fn: Any) -> Dict[str, str]:
+    """``{parameter: text}`` for each parameter whose default is written as an
+    expression that is neither a constant nor a name (``today()``,
+    ``3 * 60``): ``ast.unparse`` of it (calls.md, *Versions*, *Defaults*).
+    Read from the function's source once; where the source cannot be read (a
+    function typed at a bare prompt), every default counts by its value, with
+    one warning per function."""
+    import ast
+    import textwrap
+    import warnings
+    fn = inspect.unwrap(fn)
+    code_obj = getattr(fn, "__code__", None)
+    key = code_obj if code_obj is not None else id(fn)
+    if key in _default_code_cache:
+        return _default_code_cache[key]
+    out: Dict[str, str] = {}
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+        node = next(n for n in ast.walk(tree) if isinstance(n, (ast.FunctionDef, ast.AsyncFunctionDef))
+                    and n.name == fn.__name__)
+    except (OSError, TypeError, SyntaxError, StopIteration, IndentationError):
+        has_defaults = any(p.default is not inspect.Parameter.empty
+                           for p in inspect.signature(fn).parameters.values())
+        if has_defaults and key not in _warned_no_source:
+            _warned_no_source.add(key)
+            warnings.warn(f"[functai] {getattr(fn, '__name__', fn)}: its source cannot be read, so its defaults "
+                          f"count in its version by their values, not by what is written", stacklevel=3)
+        _default_code_cache[key] = out
+        return out
+    a = node.args
+    positional = [*a.posonlyargs, *a.args]
+    for arg, default in zip(positional[len(positional) - len(a.defaults):], a.defaults):
+        if not _is_value_expr(default):
+            out[arg.arg] = ast.unparse(default)
+    for arg, default in zip(a.kwonlyargs, a.kw_defaults):
+        if default is not None and not _is_value_expr(default):
+            out[arg.arg] = ast.unparse(default)
+    _default_code_cache[key] = out
+    return out
+
+
+def defaults_document(interface: Mapping[str, Any], code: Mapping[str, str]) -> Dict[str, Any]:
+    """``D`` of a version (calls.md, *Versions*, *Defaults*): each input that has
+    a default, in the interface's order, ``{"code": text}`` when it is
+    written as an expression, else ``{"value": its JSON}``."""
+    out: Dict[str, Any] = {}
+    for f in interface["inputs"]:
+        name = f["name"]
+        if name in code:
+            out[name] = {"code": code[name]}
+        elif "default" in (f.get("shape") or {}):
+            out[name] = {"value": f["shape"]["default"]}
+    return out

@@ -307,6 +307,19 @@ function exchange_json(ex::Exchange, content::Bool)
 end
 
 const PROCESS = Ref{Union{Nothing,JObj}}(nothing)
+"""
+The notebook or script a program defined in `Main` is in (calls.md,
+`program.file`): a Pluto notebook's file (its cell's `path#==#cell` cut at
+`#==#`), a script's path; `nothing` at a REPL (`REPL[3]`) or an IJulia cell
+(`In[1]`), whose notebook is not known.
+"""
+function top_level_file(file)
+    file isa AbstractString || return nothing
+    (startswith(file, "REPL[") || startswith(file, "In[") || file == "none" || startswith(file, "<")) && return nothing
+    i = findfirst("#==#", file)
+    i === nothing ? String(file) : String(file[1:first(i)-1])
+end
+
 function process_json()
     if PROCESS[] === nothing
         user = something(get(ENV, "USER", nothing), get(ENV, "USERNAME", nothing), try
@@ -316,6 +329,15 @@ function process_json()
         end, Some(nothing))
         PROCESS[] = LMCC.jobj("host" => gethostname(), "pid" => getpid(), "user" => user, "language" => "julia",
                               "runtime" => string(VERSION), "functai" => string(FUNCTAI_VERSION))
+        # the libraries that build the request and send it (calls.md, process)
+        for (key, m) in (("lmcc", LMCC), ("lm15", LM15))
+            v = try
+                pkgversion(m)
+            catch
+                nothing
+            end
+            v === nothing || (PROCESS[][key] = string(v))
+        end
     end
     copy(PROCESS[])
 end
@@ -464,12 +486,19 @@ function later(a, b, key)
     string(get(a, "id", "")) > string(get(b, "id", ""))
 end
 
-"For each call, the ratings that count: each person's latest (a `null` verdict withdraws it)."
+"""
+For each call, the ratings that count: each person's latest (a `null` verdict
+withdraws it). A rating with no `by` (made under an account, which may be
+shared) counts on its own: it replaces none, none replaces it, and its null
+verdict withdraws nothing (calls.md, rule 2).
+"""
 function current_ratings(ratings; by=nothing)
-    latest = Dict{Tuple{Any,Any},Any}()
+    latest = Dict{Tuple{Any,Any,Any},Any}()
     for r in ratings
         by !== nothing && get(r, "by", nothing) != by && continue
-        key = (get(r, "call", nothing), get(r, "by", nothing))
+        person = get(r, "by", nothing)
+        key = person isa AbstractString && !isempty(person) ? (get(r, "call", nothing), :by, person) :
+                                                              (get(r, "call", nothing), :rating, get(r, "id", nothing))
         had = get(latest, key, nothing)
         (had === nothing || later(r, had, "at")) && (latest[key] = r)
     end
@@ -537,13 +566,15 @@ answers"): `(rows, left_out)`. Reads call records of formats 1 and 2 and
 skips the others. `signature` and `interface` are the program's current
 `program.signature` and `program.interface`, when known.
 """
-function rated_rows(calls, ratings; name, module_name=nothing, signature=nothing, interface=nothing, by=nothing)
+function rated_rows(calls, ratings; name, module_name=nothing, signature=nothing, interface=nothing, by=nothing, file=nothing)
     counting = current_ratings([r for r in ratings if get(r, "functai_rating", nothing) == RATING_FORMAT]; by)
     left = LMCC.jobj("other_signature" => 0, "no_content" => 0, "no_answer" => 0)
     rows = JObj[]
     mine = [c for c in calls if get(c, "functai_call", nothing) in READ_FORMATS &&
                                 get(get(c, "program", JObj()), "name", nothing) == name &&
-                                (module_name === nothing || get(c["program"], "module", nothing) == module_name)]
+                                (module_name === nothing || get(c["program"], "module", nothing) == module_name) &&
+                                # a program defined at the top level is known by its file too (calls.md, program.file)
+                                (file === nothing || get(c["program"], "file", nothing) == file)]
     sort!(mine; by=c -> (string(get(c, "started", "")), string(get(c, "id", ""))))
     for call in mine
         rs = get(counting, string(get(call, "id", "")), nothing)
@@ -598,9 +629,15 @@ function rating_record(call_id::AbstractString, verdict, s; answer=NOTHING_GIVEN
     end
     corrected && v != "wrong" && throw(ArgumentError("a right answer needs no correction: give answer or outputs only with :wrong"))
     origin in (:review, :edit, "review", "edit") || throw(ArgumentError("origin is :review or :edit, not $(repr(origin))"))
-    who = something(by, get(caller_of(s), "user", nothing), process_json()["user"], "someone")
-    rec = LMCC.jobj("functai_rating" => RATING_FORMAT, "id" => new_id(), "call" => String(call_id), "at" => iso(time()),
-                    "by" => String(who), "verdict" => v)
+    # a person when one was named; else the account, which names no one (it may be shared: calls.md, "A rating record")
+    person = something(by, get(caller_of(s), "user", nothing), Some(nothing))
+    rec = LMCC.jobj("functai_rating" => RATING_FORMAT, "id" => new_id(), "call" => String(call_id), "at" => iso(time()))
+    if person !== nothing && !isempty(string(person))
+        rec["by"] = String(person)
+    else
+        rec["account"] = String(something(process_json()["user"], "unknown"))
+    end
+    rec["verdict"] = v
     answer === NOTHING_GIVEN || (rec["answer"] = logvalue(answer))
     outputs === nothing || (rec["outputs"] = JObj(String(k) => logvalue(x) for (k, x) in pairs(outputs)))
     reasons === nothing || isempty(reasons) || (rec["reasons"] = Any[String(r) for r in reasons])

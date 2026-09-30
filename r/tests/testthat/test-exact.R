@@ -64,35 +64,33 @@ test_that("a required member left out is refused, before and after loading, even
   expect_identical(plain(x$record$inputs$options), '{"a":null}')
 })
 
-test_that("a member a record does not name is refused, before and after loading, whether it says so or not", {
+test_that("a member a record does not name is dropped, before and after loading, whether it says so or not", {
+  # binding keeps a record's own members (programs.md, "Binding a call's inputs")
   for (shape in list(rec_obj, c(rec_obj, list(additionalProperties = FALSE)))) {
     fns <- three_ways(ai(answer ~ options, "x", options = json_shape(shape), .lm = "gpt-4.1-mini"))
     expect_identical(core_of(fns$foreign)$definition$inputs$options$kind, "record")      # a record: a tibble
-    refused_input(sends_alike(fns, list(options = list(list(a = "x", extra = "BAD")))))
-    refused_input(sends_alike(fns, list(options = tibble::tibble(a = "x", extra = "BAD"))))
-    x <- sends_alike(fns, list(options = tibble::tibble(a = "x")))
-    expect_identical(plain(x$record$inputs$options), '{"a":"x"}')
+    for (given in list(list(list(a = "x", extra = "BAD")), tibble::tibble(a = "x", extra = "BAD"), tibble::tibble(a = "x"))) {
+      x <- sends_alike(fns, list(options = given))
+      expect_identical(plain(x$record$inputs$options), '{"a":"x"}')
+      expect_length(x$requests, 1L)
+    }
   }
 })
 
-test_that("a record()'s tibble is sent as it is, and refused with a column the record does not name or without one it does", {
+test_that("a record()'s tibble sends the record's columns: one it does not name is dropped, one it needs and lacks is refused", {
   fns <- three_ways(ai(answer ~ person, "x", person = record(name = character(), age = integer()), .lm = "gpt-4.1-mini"))
   x <- sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 3)))
   expect_identical(plain(x$record$inputs$person), '{"age":3,"name":"Ann"}')
   x <- sends_alike(fns, list(person = tibble::tibble(name = "Ann", age = 3, email = "ann@example.com")))
-  refused_input(x)
-  expect_match(x$record$error$message, "no member email is allowed", fixed = TRUE)
-  router <- fake_router()
-  e <- tryCatch(update(fns$defined, router = router, log_calls = FALSE)(person = tibble::tibble(name = "Ann", age = 3, email = "ann@example.com")),
-                functai_interface_input = function(e) e)
-  expect_identical(e$field, "person")
-  expect_length(router$env$requests, 0L)
+  expect_identical(plain(x$record$inputs$person), '{"age":3,"name":"Ann"}')          # the e-mail address is not sent
+  expect_length(x$requests, 1L)
   # inside a list, and inside a record in a list
   fns <- three_ways(ai(answer ~ people, "x", people = vctrs::list_of(.ptype = tibble::tibble(name = character(), pet = tibble::tibble(kind = character()))),
                        .lm = "gpt-4.1-mini"))
   ok <- tibble::tibble(name = "Ann", pet = tibble::tibble(kind = "cat"))
   expect_length(sends_alike(fns, list(people = list(ok)))$requests, 1L)
-  refused_input(sends_alike(fns, list(people = list(tibble::tibble(name = "Ann", pet = tibble::tibble(kind = "cat", chip = 1L))))))
+  x <- sends_alike(fns, list(people = list(tibble::tibble(name = "Ann", pet = tibble::tibble(kind = "cat", chip = 1L)))))
+  expect_false(grepl("chip", plain(x$record$inputs$people), fixed = TRUE))
   # a member it requires but lacks
   fns <- three_ways(ai(answer ~ person, "x", person = record(name = character(), age = integer()), .lm = "gpt-4.1-mini"))
   refused_input(sends_alike(fns, list(person = tibble::tibble(name = "Ann"))))
@@ -108,7 +106,8 @@ test_that("objects inside lists are sent as given, and checked where they are", 
   refused_input(sends_alike(fns, list(items = list(list(list(a = "x"), list(b = "y"))))))
   closed <- list(type = "array", items = rec_obj)
   fns <- three_ways(ai(answer ~ items, "x", items = json_shape(closed), .lm = "gpt-4.1-mini"))
-  refused_input(sends_alike(fns, list(items = list(list(list(a = "x", more = 1L))))))
+  x <- sends_alike(fns, list(items = list(list(list(a = "x", more = 1L)))))
+  expect_identical(plain(x$record$inputs$items), '[{"a":"x"}]')                  # a record in a list keeps its own members
   # one item, from a vector, is still a list
   fns <- three_ways(ai(answer ~ items, "x", items = json_shape(list(type = "array", items = list(type = "string"))), .lm = "gpt-4.1-mini"))
   x <- sends_alike(fns, list(items = list("only")))
@@ -379,48 +378,32 @@ test_that("a row of NA is null only where a member the record requires is one va
   expect_identical(plain(sends_alike(fns, list(value = null_row))$record$inputs$value), "null")
 })
 
-test_that("a row of NA with a member the record does not name is refused, never sent as null, and the refusal names that member", {
+test_that("a row with a member the record does not name has it dropped; a row of NA is then refused where the record needs its members", {
   s <- optional(record(name = character()))
+  # a member the record does not name is dropped (programs.md, "Binding"); what is left, {name: null}, is no record
+  # (name is text) and not null either: refused before any request
   bad <- list(
-    `an NA column` = list(value = tibble::tibble(name = NA_character_, email = NA_character_), member = "email"),
-    `an NA member` = list(value = list(list(name = NA_character_, email = NA)), member = "email"),
-    `a NULL member` = list(value = list(list(name = NA_character_, id = NULL)), member = "id"),
-    `a record of NULL` = list(value = list(list(name = NA_character_, email = list(address = NULL))), member = "email"),
-    `a value in it` = list(value = tibble::tibble(name = NA_character_, email = "BAD"), member = "email"),
-    `a record with a value` = list(value = tibble::tibble(name = "Ann", email = NA_character_), member = "email"))
+    `an NA column` = tibble::tibble(name = NA_character_, email = NA_character_),
+    `an NA member` = list(list(name = NA_character_, email = NA)),
+    `a NULL member` = list(list(name = NA_character_, id = NULL)),
+    `a record of NULL` = list(list(name = NA_character_, email = list(address = NULL))),
+    `a value in it` = tibble::tibble(name = NA_character_, email = "BAD"))
   for (field in list(s, json_shape(s$shape), json_shape(list(anyOf = list(c(s$shape$anyOf[[1L]], list(additionalProperties = FALSE)), list(type = "null")))))) {
     fns <- three_ways(ai(answer ~ value, "x", value = field, .lm = "gpt-4.1-mini"))
     for (name in names(bad)) {
-      x <- sends_alike(fns, list(value = bad[[name]]$value))
+      x <- sends_alike(fns, list(value = bad[[name]]))
       refused_input(x)
-      expect_match(x$record$error$message, sprintf("value: no member %s is allowed", bad[[name]]$member), fixed = TRUE, info = name)
+      expect_false(grepl("BAD", x$record$error$message %||% ""), info = name)
     }
+    x <- sends_alike(fns, list(value = tibble::tibble(name = "Ann", email = NA_character_)))
+    expect_identical(plain(x$record$inputs$value), '{"name":"Ann"}')
     # the row of NA it names is null; a record is sent as it is
     expect_identical(plain(sends_alike(fns, list(value = tibble::tibble(name = NA_character_)))$record$inputs$value), "null")
     expect_identical(plain(sends_alike(fns, list(value = tibble::tibble(name = "Ann")))$record$inputs$value), '{"name":"Ann"}')
   }
-  # inside a list, and inside a required record
-  for (field in list(json_shape(list(type = "array", items = s$shape)), record(child = s))) {
-    given <- if (field$kind == "record") list(list(child = list(name = NA_character_, extra = NA))) else list(list(list(name = NA_character_, extra = NA)))
-    x <- sends_alike(three_ways(ai(answer ~ value, "x", value = field, .lm = "gpt-4.1-mini")), list(value = given))
-    refused_input(x)
-    expect_match(x$record$error$message, "no member extra is allowed", fixed = TRUE)
-  }
-  # a member not named inside a record the row names: the row is not null either
-  fns <- three_ways(ai(answer ~ value, "x", value = optional(record(name = character(), pet = record(kind = character()))), .lm = "gpt-4.1-mini"))
-  x <- sends_alike(fns, list(value = tibble::tibble(name = NA_character_, pet = tibble::tibble(kind = NA_character_, chip = NA_integer_))))
-  refused_input(x)
-  expect_match(x$record$error$message, "value.pet: no member chip is allowed", fixed = TRUE)
-  expect_identical(plain(sends_alike(fns, list(value = tibble::tibble(name = NA_character_, pet = tibble::tibble(kind = NA_character_))))$record$inputs$value), "null")
-  # and inside a list in it: the member the record does not name is the one the refusal names
-  fns <- three_ways(ai(answer ~ value, "x", value = optional(record(name = character(), pets = vctrs::list_of(.ptype = tibble::tibble(kind = character())))),
-                       .lm = "gpt-4.1-mini"))
-  x <- sends_alike(fns, list(value = tibble::tibble(name = NA_character_, pets = list(tibble::tibble(kind = "cat", chip = 1L)))))
-  refused_input(x)
-  expect_match(x$record$error$message, "value.pets[0]: no member chip is allowed", fixed = TRUE)
   # nor is a default: refused when the function is defined
   expect_error(ai(answer ~ value, "x", value = defaults_to(tibble::tibble(name = NA_character_, extra = NA), s), .lm = "gpt-4.1-mini"),
-               "no member extra is allowed", class = "functai_interface_malformed")
+               class = "functai_interface_malformed")
 })
 
 test_that("a row of NA is null only where the shape takes null", {
@@ -439,7 +422,8 @@ test_that("a record that may be null by a list of types is saved, loaded and cal
     x <- sends_alike(fns, list(value = list(lmcc::parse_json(json))))
     expect_identical(request_json(x$requests[[1L]]), intended_request(fns$defined, json))
   }
-  refused_input(sends_alike(fns, list(value = list(list(x = "a", y = "b")))))
+  x <- sends_alike(fns, list(value = list(list(x = "a", y = "b"))))
+  expect_identical(plain(x$record$inputs$value), '{"x":"a"}')                    # a member it does not name: dropped
   # its answer comes back, three ways
   producers <- three_ways(ai(answer ~ text, "x", answer = json_shape(s), .lm = "gpt-4.1-mini"))
   answers_round_trip(producers, json_shape(s), c("null", '{"x":"a"}'), "a list of types")

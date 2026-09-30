@@ -259,11 +259,17 @@ test_that("an input with a default: the R function's default argument, sent when
     '{"name":"tone","optional":true,"shape":{"default":"kind","enum":["kind","brief","formal"],"type":"string"},"type":"factor"}')
   expect_output(print(iface), "optional, default \"kind\"")
   expect_output(print(reply), "tone     one of kind, brief, formal = \"kind\"")
-  # a default is behaviour, not data: neither the signature nor the version sees it
+  # a default is behaviour, not data: the signature does not see it; the version does, by its logic (calls.md, Versions)
   other <- ai(reply ~ message + tone, "Answer the customer.", message = "the customer's own words",
               tone = defaults_to("brief", choice("kind", "brief", "formal")), .lm = "gpt-4.1-mini")
   expect_identical(ai_signature_id(other), ai_signature_id(reply))
-  expect_identical(ai_version(other), ai_version(reply))
+  expect_false(identical(ai_version(other), ai_version(reply)))
+  # a default written as a formula is computed at each call; the version counts its code, not today's value
+  day <- "2026-09-28"
+  a <- ai(reply ~ message + day, "x", day = defaults_to(~ day), .lm = "gpt-4.1-mini")
+  day <- "2026-09-29"
+  b <- ai(reply ~ message + day, "x", day = defaults_to(~ day), .lm = "gpt-4.1-mini")
+  expect_identical(ai_version(a), ai_version(b))
   expect_identical(lines[[1L]]$program$interface, lines[[1L]]$program$signature)
   # predict and render take it too when the column is not there
   p <- predict(reply, tibble::tibble(message = "Hi"))

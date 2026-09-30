@@ -14,7 +14,7 @@ import functai
 from functai import adapters, calllog, evaluation, models
 from functai.saved import probe_plan, probe_request, request_fingerprint
 from conftest import FakeRouter
-from contract_support import CONTRACT, case_files, load, python_function, validator
+from contract_support import writable, loaded_function, CONTRACT, case_files, load, python_function, validator
 
 
 # ------------------------------------------------------------------ AI functions (functions.md)
@@ -34,7 +34,7 @@ def without_type(signature) -> dict:
 def test_function_case(path):
     case = load(path)
     d, expect = case["definition"], case["expect"]
-    fn = python_function(d)
+    fn = python_function(d) if writable(d) else loaded_function(d)
     spec, settings = fn._spec(), fn._effective()
     got = without_type(spec.signature)
     want = {"instructions": expect["signature"]["instructions"],

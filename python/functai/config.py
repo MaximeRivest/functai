@@ -82,6 +82,8 @@ DEFAULTS: Dict[str, Any] = {
     # receivers of each call tree's events (contract/streaming.md): they add up over the layers
     "observers": None,         # [callable or list, ...]: given the kept form of every event, best effort
     "journal": None,           # a store, functai.Journal(store, required=True), or False (none): one per tree
+    "program_observers": None, # False (a host's block or configure): a program's own observers get no event;
+                                # only removes: a program cannot turn it back on
 
     # debug
     "debug": False,
@@ -130,6 +132,8 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
                 or settings.get("caller") is not None:
             from . import calllog
             calllog.check_settings(settings)
+        if settings.get("program_observers") not in (None, True, False):
+            raise TypeError(f"program_observers is True or False, not {settings['program_observers']!r}")
         if settings.get("observers") is not None or settings.get("journal") is not None:
             from . import eventlog
             settings = {**settings, **eventlog.check_settings(settings)}
@@ -185,9 +189,11 @@ class configure:
         holds for every call inside it), and ``caller`` (who is calling, a
         dict). Each call tree's events: ``observers`` (a list of functions
         or lists, given the kept form of every event; they add up over
-        blocks) and ``journal`` (a store, ``functai.Journal(store,
-        required=True)``, or ``False``: where whole trees are kept while
-        they run; a program cannot replace or remove the one you set).
+        blocks), ``program_observers=False`` (the observers a program sets
+        for itself are given nothing; yours still are) and ``journal`` (a
+        store, ``functai.Journal(store, required=True)``, or ``False``:
+        where whole trees are kept while they run; a program cannot replace
+        or remove the one you set).
 
     Returns
     -------

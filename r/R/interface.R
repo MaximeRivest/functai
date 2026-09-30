@@ -132,7 +132,7 @@ is_closed <- function(shape) if (has_key(shape, "additionalProperties")) isFALSE
 # A value as a short text for a message (a value can be long).
 short_json <- function(v) {
   s <- tryCatch(lmcc::json_text(v), error = function(e) "a value with no JSON form")
-  if (nchar(s) > 80L) paste0(substr(s, 1L, 77L), "...") else s
+  if (nchar(s) > 80L) paste0(substr(s, 1L, 80L), "\u2026") else s     # programs.md, "The message"
 }
 
 # Why a JSON value does not fit a shape (the first place it does not, as
@@ -242,8 +242,110 @@ undeclared <- function(v, shape, root, where = "value") {
   NULL
 }
 
-# A field's shape without its own `default`: what its data looks like.
+# A field's shape without its own `default` (what binding and checking read:
+# a default inside a shape is a word, never checked nor filled in).
 data_shape <- function(shape) shape[names(shape) != "default"]
+
+# A shape without any `default` keyword, its own or one inside it: what its
+# data looks like (programs.md, the signature). A member named `default` (a
+# key of `properties`) stays, and so does data (`enum`, `const`, `examples`).
+no_defaults <- function(shape) {
+  if (!is_obj(shape)) return(shape)
+  out <- shape[names(shape) != "default"]
+  for (k in intersect(names(out), c("items", "additionalProperties", "not")))
+    if (is_obj(out[[k]])) out[[k]] <- no_defaults(out[[k]])
+  for (k in intersect(names(out), c("anyOf", "prefixItems", "oneOf", "allOf")))
+    if (is.list(out[[k]])) out[[k]] <- lapply(out[[k]], no_defaults)
+  for (k in intersect(names(out), c("properties", "$defs")))
+    if (is_obj(out[[k]])) out[[k]] <- stats::setNames(lapply(out[[k]], no_defaults), names(out[[k]]))
+  out
+}
+
+# ---------------------------------------------------------------- binding (programs.md, "Binding a call's inputs")
+
+BIND_REFUSED <- structure(list(), class = "functai_bind_refused")
+bind_refused <- function(x) inherits(x, "functai_bind_refused")
+NUMBER_RE <- "\\A-?(?:0|[1-9][0-9]*)(?:\\.[0-9]+)?(?:[eE][+-]?[0-9]+)?\\z"
+
+number_from_text <- function(s) {
+  s <- trimws(s, whitespace = "[ \t\n\r]")
+  if (!grepl(NUMBER_RE, s, perl = TRUE)) return(NULL)
+  x <- as.numeric(s)
+  if (!is.finite(x)) NULL else x
+}
+
+# A JSON value converted to one JSON type, or BIND_REFUSED.
+convert_json <- function(v, kind) {
+  if (kind == "null") return(if (is.null(v)) NULL else BIND_REFUSED)
+  if (is.null(v)) return(BIND_REFUSED)
+  switch(kind,
+    string = if (is_str(v)) v else if (is_flag(v)) (if (v) "true" else "false")
+             else if (is_num(v)) lmcc::json_text(v) else if (is.list(v)) json_indented(v) else BIND_REFUSED,
+    integer = , number = {
+      if (is.logical(v)) return(BIND_REFUSED)
+      x <- if (is_num(v)) num(v) else if (is_str(v)) number_from_text(v) else NULL
+      if (is.null(x) || !is.finite(x)) return(BIND_REFUSED)
+      if (kind == "integer" && x != floor(x)) BIND_REFUSED else x
+    },
+    boolean = if (is_flag(v)) v else BIND_REFUSED,
+    array = if (is_arr(v)) v else BIND_REFUSED,
+    object = if (is_obj(v) || (is.list(v) && !length(v))) v else BIND_REFUSED,
+    BIND_REFUSED)
+}
+
+# A JSON value bound to a shape (programs.md, "Binding a call's inputs"):
+# converted where its meaning is clear, else as it is (the check refuses it).
+bind_json <- function(v, shape, root = shape) {
+  ref <- ref_name(shape[["$ref"]])
+  if (!is.null(ref) && is_obj(root[["$defs"]][[ref]])) v <- bind_json(v, root[["$defs"]][[ref]], root)
+  if (is.list(shape$anyOf) && length(shape$anyOf)) {
+    if (is.null(v)) return(NULL)
+    found <- FALSE
+    for (option in shape$anyOf) {
+      b <- bind_json(v, option, root)
+      if (!bind_refused(b) && fits_shape(b, option, root)) { v <- b; found <- TRUE; break }
+    }
+    if (!found) return(bind_json(v, shape$anyOf[[1L]], root))
+  }
+  if (has_key(shape, "type")) {
+    if (is.null(v)) return(NULL)
+    for (kind in unlist(shape$type)) {
+      if (kind == "null") next
+      c <- convert_json(v, kind)
+      if (bind_refused(c)) next
+      c <- bind_members(c, shape, root)
+      one <- shape; one$type <- kind
+      if (fits_shape(c, one, root)) return(c)
+    }
+    return(v)
+  }
+  bind_members(v, shape, root)
+}
+
+# Items and members bound by their own shapes; a record keeps only the
+# members it names, in the value's order.
+bind_members <- function(v, shape, root) {
+  if (is_arr(v) && (has_key(shape, "items") || has_key(shape, "prefixItems"))) {
+    prefix <- shape$prefixItems %||% list()
+    return(lapply(seq_along(v), function(i) {
+      if (i <= length(prefix)) bind_json(v[[i]], prefix[[i]], root)
+      else if (is_obj(shape$items)) bind_json(v[[i]], shape$items, root) else v[[i]]
+    }))
+  }
+  if (is_obj(v) && (has_key(shape, "properties") || has_key(shape, "additionalProperties"))) {
+    props <- shape$properties %||% list()
+    extra <- shape$additionalProperties
+    out <- lmcc::jobj()
+    for (k in names(v)) {
+      if (k %in% names(props)) out[k] <- list(bind_json(v[[k]], props[[k]], root))
+      else if (is_obj(extra)) out[k] <- list(bind_json(v[[k]], extra, root))
+      else if (isTRUE(extra) || (is.null(extra) && !has_key(shape, "properties"))) out[k] <- list(v[[k]])
+      # a record (closed) drops a member it does not name
+    }
+    return(out)
+  }
+  v
+}
 
 # ---------------------------------------------------------------- interfaces
 
@@ -288,7 +390,7 @@ interface_problem <- function(iface, ai = FALSE) {
 # each plain and untyped, each shape without its own default. The call log's
 # program.interface.
 interface_signature <- function(iface) {
-  field <- function(f, direction) list(direction = direction, name = f$name, purpose = "plain", shape = data_shape(f$shape), type = "")
+  field <- function(f, direction) list(direction = direction, name = f$name, purpose = "plain", shape = no_defaults(f$shape), type = "")
   lmcc::sha256_of(c(lapply(iface$inputs, field, "input"), lapply(iface$outputs, field, "output")))
 }
 
@@ -404,13 +506,44 @@ interface_fault <- function(iface, f) {
 #' defaults_to(3L, "how many suggestions to give")     # a whole number, described
 #' @export
 defaults_to <- function(value, type = NULL) {
+  # a one-sided formula is a default computed at each call that leaves the
+  # input out (`defaults_to(~ Sys.Date())`): the version counts its code, and
+  # the interface holds the value it gives now (calls.md, "Versions", "Defaults")
+  code <- NULL; compute <- NULL
+  if (rlang::is_formula(value, lhs = FALSE)) {
+    expr <- rlang::f_rhs(value); env <- rlang::f_env(value)
+    code <- paste(deparse(expr, width.cutoff = 500L), collapse = "")
+    compute <- function() eval(expr, env)
+    value <- compute()
+  }
   sentence <- rlang::is_string(type)
   f <- if (is.null(type) || sentence) type_of_value(value) else as_field(type)
   if (sentence) f <- described(f, type)
   f$shape <- f$shape[names(f$shape) != "default"]
-  f$shape["default"] <- list(json_normal(default_json(f, value)))   # as the interface holds it, and sends it
+  # as the interface holds it, and sends it: bound as a given value is (programs.md, "Binding"); one that does
+  # not bind stays as it is, and is refused when the function is defined
+  written <- default_json(f, value)
+  bound <- if (is.null(written)) NULL else bind_json(written, data_shape(f$shape))
+  f$shape["default"] <- list(json_normal(if (bind_refused(bound)) written else bound))
   f$optional <- TRUE
+  if (!is.null(code)) { f$default_code <- code; f$compute <- compute }
   f
+}
+
+# `D` of a version (calls.md, "Versions", "Defaults"): each input with a
+# default, `list(code = ...)` when it is written as code, else `list(value =
+# ...)`; NULL when none has one. `code`: by name, the inputs whose default
+# counts by its code (a loaded function's, from its node).
+defaults_document <- function(core, code = NULL) {
+  out <- lmcc::jobj()
+  code <- code %||% core$default_code %||% list()
+  for (k in names(core$definition$inputs)) {
+    f <- core$definition$inputs[[k]]
+    if (!is.null(code[[k]])) out[[k]] <- list(code = code[[k]])
+    else if (!is.null(f$default_code)) out[[k]] <- list(code = f$default_code)
+    else if (has_key(f$shape, "default")) out[k] <- list(list(value = f$shape[["default"]]))
+  }
+  if (length(out)) out else NULL
 }
 
 # The type a default's value has: text for a string (or a date, as a column

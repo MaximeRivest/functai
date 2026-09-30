@@ -7,7 +7,7 @@
  */
 
 import * as lmcc from "lmcc";
-import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn } from "./values.ts";
+import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -80,10 +80,35 @@ function jsonType(v: unknown): string {
   return "object";
 }
 
-/** A field's shape without its own `default`: what its data looks like. */
+/** A field's shape without its own `default` (what binding and checking read). */
+export function ownDefaultOut(shape: Rec): Rec {
+  const out: Rec = {};
+  for (const [k, v] of entriesOf(shape)) if (k !== "default") setOwn(out, k, v);
+  return out;
+}
+
+const SUBSHAPES = new Set(["items", "additionalProperties", "not"]);
+const SHAPE_LISTS = new Set(["anyOf", "prefixItems", "oneOf", "allOf"]);
+const SHAPE_MAPS = new Set(["properties", "$defs"]);
+
+/**
+ * A shape without any `default` keyword, its own or one inside it: what its
+ * data looks like (programs.md, the signature). A member named `default`
+ * stays, and so does data (`enum`, `const`, `examples`).
+ */
 export function dataShape(shape: Rec): Rec {
-  const { default: _default, ...rest } = shape;
-  return rest;
+  const out: Rec = {};
+  for (const [k, v] of entriesOf(shape)) {
+    if (k === "default") continue;
+    if (SUBSHAPES.has(k) && isObject(v)) setOwn(out, k, dataShape(v));
+    else if (SHAPE_LISTS.has(k) && Array.isArray(v)) setOwn(out, k, v.map((x) => (isObject(x) ? dataShape(x) : x)));
+    else if (SHAPE_MAPS.has(k) && isObject(v)) {
+      const inner: Rec = {};
+      for (const [n, x] of entriesOf(v)) setOwn(inner, n, isObject(x) ? dataShape(x) : x);
+      setOwn(out, k, inner);
+    } else setOwn(out, k, v);
+  }
+  return out;
 }
 
 /** The interface's signature: lmcc's fingerprint of its fields, plain and untyped, each shape without its own default. */
@@ -219,6 +244,8 @@ export function fitsShape(v: unknown, shape: Rec, root: Rec): boolean {
       } else if (has("additionalProperties")) {
         const extra = shape["additionalProperties"];
         if (extra === false || (isObject(extra) && !fitsShape(x, extra, root))) return false;
+      } else if (has("properties")) {
+        return false;                                   // a record is closed: a member it does not name
       }
     }
   }
@@ -230,9 +257,211 @@ export function fits(value: unknown, field: InterfaceField): boolean {
   if (field.opaque) return true;
   const data = jsonForm(value);
   if (data === undefined) return false;
-  const shape = dataShape(field.shape);
+  const shape = ownDefaultOut(field.shape);
   return fitsShape(data, shape, shape);
 }
+
+// ------------------------------------------------------------------ binding (programs.md, "Binding a call's inputs")
+
+const NUMBER_TEXT = /^-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?$/;
+const INTEGER_TEXT = /^-?(?:0|[1-9][0-9]*)$/;
+const DEFAULT_TEXT = /^\[object [^\]]*\]$/;
+const REFUSED = Symbol("refused");
+/** A value with no JSON form, carried through binding (only text may take it). */
+class NoJson {
+  readonly value: unknown;
+  constructor(value: unknown) {
+    this.value = value;
+  }
+}
+
+/** JavaScript's missing values: `null`, `undefined`, and a number that is not a number. */
+export function isMissing(v: unknown): boolean {
+  return v === null || v === undefined || (typeof v === "number" && Number.isNaN(v));
+}
+
+/** A value's text when its type gives it one (a class with its own `toString`); `[object …]` says nothing about it. */
+function ownText(v: unknown): string | undefined {
+  if (typeof v === "function" || typeof v === "symbol") return undefined;
+  let text: string;
+  try {
+    text = String(v);
+  } catch {
+    return undefined;
+  }
+  return DEFAULT_TEXT.test(text) ? undefined : text;
+}
+
+/** JSON as text: a number as canonical JSON, a boolean `true`/`false`, a list or record indented by two spaces. */
+function textOf(v: unknown): string {
+  if (typeof v === "boolean") return v ? "true" : "false";
+  if (typeof v === "number" || typeof v === "bigint") return lmcc.canonicalJson(v as lmcc.Json);
+  return indented(v, 0);
+}
+
+function indented(v: unknown, level: number): string {
+  const pad = "  ".repeat(level), inner = "  ".repeat(level + 1);
+  if (Array.isArray(v)) return v.length ? `[\n${v.map((x) => inner + indented(x, level + 1)).join(",\n")}\n${pad}]` : "[]";
+  if (isObject(v)) {
+    const entries = entriesOf(v);
+    return entries.length
+      ? `{\n${entries.map(([k, x]) => `${inner}${lmcc.canonicalJson(k)}: ${indented(x, level + 1)}`).join(",\n")}\n${pad}}`
+      : "{}";
+  }
+  return lmcc.canonicalJson(v as lmcc.Json);
+}
+
+function numberFromText(s: string): number | bigint | undefined {
+  s = s.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, "");
+  if (!NUMBER_TEXT.test(s)) return undefined;
+  if (INTEGER_TEXT.test(s)) {
+    const n = Number(s);
+    return Number.isSafeInteger(n) ? n : BigInt(s);
+  }
+  const x = Number(s);
+  return Number.isFinite(x) ? x : undefined;
+}
+
+function convert(v: unknown, kind: string): unknown {
+  if (kind === "null") return v === null ? null : REFUSED;
+  if (v === null) return REFUSED;
+  if (v instanceof NoJson) {
+    if (kind !== "string") return REFUSED;
+    return ownText(v.value) ?? REFUSED;
+  }
+  if (kind === "string") return typeof v === "string" ? v : textOf(v);
+  if (kind === "boolean") return typeof v === "boolean" ? v : REFUSED;
+  if (kind === "integer" || kind === "number") {
+    if (typeof v === "boolean") return REFUSED;
+    const x = typeof v === "number" || typeof v === "bigint" ? v : typeof v === "string" ? numberFromText(v) : undefined;
+    if (x === undefined) return REFUSED;
+    if (kind === "integer" && typeof x === "number" && !Number.isInteger(x)) return REFUSED;
+    return x;
+  }
+  if (kind === "array") return Array.isArray(v) ? v : REFUSED;
+  if (kind === "object") return isObject(v) ? v : REFUSED;
+  return REFUSED;
+}
+
+function fitsBound(v: unknown, shape: Rec, root: Rec): boolean {
+  return !(v instanceof NoJson) && fitsShape(v, shape, root);
+}
+
+function bindShape(v: unknown, shape: Rec, root: Rec): unknown {
+  if (typeof shape["$ref"] === "string") {
+    const target = getOwn(isObject(root["$defs"]) ? root["$defs"] as Record<string, Rec> : null, REF.exec(shape["$ref"])?.[1] ?? "");
+    if (isObject(target)) v = bindShape(v, target, root);
+  }
+  if (Array.isArray(shape["anyOf"]) && shape["anyOf"].length) {
+    if (v === null) return null;
+    let found = false;
+    for (const option of shape["anyOf"] as Rec[]) {
+      const b = bindShape(v, option, root);
+      if (fitsBound(b, option, root)) {
+        v = b;
+        found = true;
+        break;
+      }
+    }
+    if (!found) return bindShape(v, (shape["anyOf"] as Rec[])[0]!, root);
+  }
+  if (Object.hasOwn(shape, "type")) {
+    const names = (Array.isArray(shape["type"]) ? shape["type"] : [shape["type"]]) as string[];
+    if (v === null) return null;
+    for (const name of names) {
+      if (name === "null") continue;
+      let c = convert(v, name);
+      if (c === REFUSED) continue;
+      c = descend(c, shape, root);
+      const one: Rec = {};
+      for (const [k, x] of entriesOf(shape)) setOwn(one, k, k === "type" ? name : x);
+      if (fitsBound(c, one, root)) return c;
+    }
+    return v;
+  }
+  return descend(v, shape, root);
+}
+
+function descend(v: unknown, shape: Rec, root: Rec): unknown {
+  if (Array.isArray(v) && (Object.hasOwn(shape, "items") || Object.hasOwn(shape, "prefixItems"))) {
+    const prefix = (shape["prefixItems"] ?? []) as Rec[];
+    return v.map((x, i) => (i < prefix.length ? bindShape(x, prefix[i]!, root)
+      : isObject(shape["items"]) ? bindShape(x, shape["items"] as Rec, root) : x));
+  }
+  if (isObject(v) && (Object.hasOwn(shape, "properties") || Object.hasOwn(shape, "additionalProperties"))) {
+    const props = (shape["properties"] ?? {}) as Record<string, Rec>;
+    const extra = shape["additionalProperties"];
+    const out: Rec = {};
+    for (const [k, x] of entriesOf(v)) {
+      if (Object.hasOwn(props, k)) setOwn(out, k, bindShape(x, props[k]!, root));
+      else if (isObject(extra)) setOwn(out, k, bindShape(x, extra, root));
+      else if (extra === true || (extra === undefined && !Object.hasOwn(shape, "properties"))) setOwn(out, k, x);
+      // a record (closed) drops a member it does not name
+    }
+    return out;
+  }
+  return v;
+}
+
+/** Equal as JSON and of the same kinds all the way down. */
+function sameJson(a: unknown, b: unknown): boolean {
+  if (typeof a !== typeof b) return false;
+  if (Array.isArray(a)) return Array.isArray(b) && a.length === b.length && a.every((x, i) => sameJson(x, b[i]));
+  if (isObject(a)) {
+    if (!isObject(b)) return false;
+    const ka = lmcc.memberNames(a), kb = lmcc.memberNames(b);
+    return ka.length === kb.length && ka.every((k, i) => k === kb[i] && sameJson(a[k], b[k]));
+  }
+  return a === b;
+}
+
+/**
+ * A given value bound to its field (programs.md, "Binding a call's inputs"):
+ * `[true, value]` or `[false, value]` when it does not bind and fit. An
+ * opaque field takes anything; a value that fits as it is comes back as it
+ * is; one that binds to something else comes back as the bound JSON.
+ */
+export function bindValue(value: unknown, field: InterfaceField): [boolean, unknown] {
+  if (field.opaque) return [true, value];
+  const shape = ownDefaultOut(field.shape);
+  const data = isMissing(value) ? undefined : jsonForm(value);
+  const start: unknown = isMissing(value) ? null : data === undefined ? new NoJson(value) : data;
+  const bound = bindShape(start, shape, shape);
+  if (bound instanceof NoJson || !fitsBound(bound, shape, shape)) return [false, value];
+  if (data !== undefined && sameJson(bound, data)) return [true, value];
+  return [true, bound];
+}
+
+/** `null` given to an optional input that null does not fit is that input left out (its default applies). */
+function missingToOptional(f: InterfaceField, value: unknown): boolean {
+  if (!f.optional || f.opaque || !isMissing(value)) return false;
+  const shape = ownDefaultOut(f.shape);
+  return !fitsShape(null, shape, shape);
+}
+
+/**
+ * programs.md, "The message": the program, the field, what it wants, and the
+ * value (canonical JSON, or its description's `$repr`, cut after 80 code
+ * points), unless its field is dropped from the log.
+ */
+export function refusalMessage(where: string, field: InterfaceField, value: unknown, direction: "input" | "output",
+                               quote: boolean): string {
+  const wants = field.opaque ? "any value" : lmcc.canonicalJson(dataShape(field.shape) as lmcc.Json);
+  const verb = direction === "input" ? "does not bind to" : "does not fit";
+  if (!quote) return `${where}: ${direction} ${field.name} ${verb} ${wants} (its value is not shown: the log drops it)`;
+  const data = isMissing(value) ? null : jsonForm(value);
+  let text: string;
+  if (data !== undefined) text = lmcc.canonicalJson(data as lmcc.Json);
+  else {
+    const [described] = toJson(value);
+    text = String((described as Rec)["$repr"]);
+  }
+  const points = [...text];
+  if (points.length > 80) text = points.slice(0, 80).join("") + "\u2026";
+  return `${where}: ${direction} ${field.name}: ${text} ${data === undefined ? "has no JSON form, and " : ""}${verb} ${wants}`;
+}
+
+const quotes = (dropped: readonly string[], name: string) => !dropped.includes("*") && !dropped.includes(name);
 
 /**
  * The first fault of an interface, or null when it is accepted (programs.md,
@@ -270,7 +499,7 @@ export function malformed(iface: unknown, opts: { ai?: boolean } = {}): { field:
       if (ai && f["optional"] && !Object.hasOwn(shape, "default")) return fault("an AI function's optional input has a default (a model is sent every input)");
       if (f["opaque"] && Object.keys(shape).length) return fault("an opaque field's shape is {}");
       if (Object.hasOwn(shape, "default")) {
-        const ds = dataShape(shape);
+        const ds = ownDefaultOut(shape);
         if (!fitsShape(shape["default"], ds, ds)) return fault(`its default ${JSON.stringify(shape["default"])} does not fit its shape`);
       }
     }
@@ -317,7 +546,7 @@ function kind(v: unknown): string {
  * gets, or throws `InterfaceError` (`interface-input`), whose message says
  * which field and what kind of value, never the value.
  */
-export function checkInputs(iface: Interface, given: Readonly<Rec>, where: string): Rec {
+export function checkInputs(iface: Interface, given: Readonly<Rec>, where: string, dropped: readonly string[] = []): Rec {
   const names = iface.inputs.map((f) => f.name);
   const present = Object.keys(given).filter((k) => given[k] !== undefined);
   const unknown = present.filter((k) => !names.includes(k)).sort(byCodePoint);
@@ -325,11 +554,10 @@ export function checkInputs(iface: Interface, given: Readonly<Rec>, where: strin
   const out: Rec = {};
   for (const f of iface.inputs) {
     const value = getOwn(given, f.name);
-    if (value !== undefined) {
-      if (!fits(value, f)) {
-        throw new InterfaceError("interface-input", f.name, `${where}: input ${f.name}: ${kind(value)} does not fit ${JSON.stringify(dataShape(f.shape))}`);
-      }
-      setOwn(out, f.name, value);
+    if (value !== undefined && !missingToOptional(f, value)) {
+      const [ok, bound] = bindValue(value, f);
+      if (!ok) throw new InterfaceError("interface-input", f.name, refusalMessage(where, f, value, "input", quotes(dropped, f.name)));
+      setOwn(out, f.name, bound);
     } else if (!f.optional) {
       throw new InterfaceError("interface-input", f.name, `${where} needs ${f.name}`);
     } else if (Object.hasOwn(f.shape, "default")) {
@@ -350,7 +578,7 @@ export function recordedInputs(iface: Interface, given: Readonly<Rec>): Rec {
   const out: Rec = {};
   for (const f of iface.inputs) {
     const value = getOwn(given, f.name);
-    if (value !== undefined) setOwn(out, f.name, value);
+    if (value !== undefined && !missingToOptional(f, value)) setOwn(out, f.name, bindValue(value, f)[1]);
     else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, copyData(f.shape["default"]));
   }
   return out;
@@ -361,7 +589,7 @@ export function recordedInputs(iface: Interface, given: Readonly<Rec>): Rec {
  * "Checking values", 2): one output is the value; several are a record of
  * each by name and nothing else. Throws `InterfaceError` (`interface-output`).
  */
-export function checkReturned(iface: Interface, returned: unknown, where: string): Rec {
+export function checkReturned(iface: Interface, returned: unknown, where: string, dropped: readonly string[] = []): Rec {
   const outputs = iface.outputs;
   let values: Rec;
   if (outputs.length === 1) values = { [outputs[0]!.name]: returned };
@@ -379,7 +607,7 @@ export function checkReturned(iface: Interface, returned: unknown, where: string
   for (const f of outputs) {
     if (!Object.hasOwn(values, f.name) || (outputs.length > 1 && values[f.name] === undefined)) throw new InterfaceError("interface-output", f.name, `${where} did not return ${f.name}`);
     if (!fits(values[f.name], f)) {
-      throw new InterfaceError("interface-output", f.name, `${where}: output ${f.name}: ${kind(values[f.name])} does not fit ${JSON.stringify(dataShape(f.shape))}`);
+      throw new InterfaceError("interface-output", f.name, refusalMessage(where, f, values[f.name], "output", quotes(dropped, f.name)));
     }
   }
   return Object.fromEntries(outputs.map((f) => [f.name, values[f.name]]));

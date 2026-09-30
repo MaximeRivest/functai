@@ -197,6 +197,7 @@ function run_receivers_scenario(scenario)
             out[:observers] = fs
         end
         haskey(layer, "journal") && (out[:journal] = journal(layer["journal"]))
+        haskey(layer, "program_observers") && (out[:program_observers] = layer["program_observers"])
         out
     end
     layer(where) = (i = findfirst(l -> l["where"] == where, scenario["layers"]); i === nothing ? Dict{Symbol,Any}() : settings(scenario["layers"][i]))

@@ -113,7 +113,10 @@ struct Job
     tools::Vector{Any}
     call::Call
     typed::Function                  # the reply's values (JSON) → typed, or a parse-value refusal
+    asked::Vector{Any}               # every tool call the model asked for, across steps (outputs.calls)
 end
+Job(name, plan, past, inputs, settings, router, model, tools, call, typed) =
+    Job(name, plan, past, inputs, settings, router, model, tools, call, typed, Any[])
 
 "Sleep `seconds`, waking to stop when a stream watching the call closes."
 function cancellable_sleep(call, seconds)
@@ -323,6 +326,7 @@ function run_job(job::Job)
         response, reading, typed = complete_once(job, rendered, responses)
         turn = LMCC.step(rendered, response)
         calls = get(reading.values, "calls", nothing)
+        calls === nothing || append!(job.asked, calls)
         if calls === nothing || isempty(calls)
             turn = LMCC.finish(turn)
             return (typed, turn, responses, reading)

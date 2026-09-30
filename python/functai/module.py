@@ -240,13 +240,38 @@ class FunctAIModule(Generic[P, R]):
         # its own (native) default. Declared, the interface's default is the one that applies.
         own_defaults = () if self._declared else [
             n for n, p in self._signature.parameters.items() if p.default is not inspect.Parameter.empty]
-        checked = _interface.bind_inputs(iface, given, program=self.__name__, has_default=own_defaults)
+        from .calllog import dropped_now
+        dropped = dropped_now(self)
+        checked = _interface.bind_inputs(iface, given, program=self.__name__, has_default=own_defaults,
+                                         dropped=dropped)
         if self._declared:
             out = self._invoke_original(**checked)
         else:
-            out = self._invoke_original(*args, **kwargs)     # as Python calls it: every name was checked above
-        _interface.check_outputs(iface, out, program=self.__name__)
+            call_args, call_kwargs = self._as_python_call(checked)
+            out = self._invoke_original(*call_args, **call_kwargs)   # the bound values, as Python passes them
+        _interface.check_outputs(iface, out, program=self.__name__, dropped=dropped)
         return out
+
+    def _as_python_call(self, bound: Dict[str, Any]) -> Tuple[tuple, Dict[str, Any]]:
+        """The bound inputs as the function's parameters take them: ``*args``'s
+        list spread after the parameters before it (given positionally), and
+        ``**kwargs``'s object spread as keywords; an input left out stays out,
+        so the function's own default applies."""
+        params = list(self._signature.parameters.values())
+        var_pos = next((p for p in params if p.kind is inspect.Parameter.VAR_POSITIONAL), None)
+        extra_pos = list(bound.get(var_pos.name) or []) if var_pos is not None else []
+        args: list = []
+        kwargs: Dict[str, Any] = {}
+        for p in params:
+            if p.kind is inspect.Parameter.VAR_POSITIONAL:
+                args.extend(extra_pos)
+            elif p.kind is inspect.Parameter.VAR_KEYWORD:
+                kwargs.update(bound.get(p.name) or {})
+            elif p.kind is inspect.Parameter.POSITIONAL_OR_KEYWORD and extra_pos:
+                args.append(bound[p.name] if p.name in bound else p.default)
+            elif p.name in bound:
+                kwargs[p.name] = bound[p.name]
+        return tuple(args), kwargs
 
     def _own_states(self):
         """Run with this copy's states, under any states already set (an optimizer's candidates)."""

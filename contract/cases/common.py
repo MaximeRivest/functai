@@ -53,3 +53,29 @@ def canonical(value) -> str:
 def sha(value) -> str:
     """``"sha256:"`` and the hex SHA-256 of the canonical JSON of ``value``."""
     return "sha256:" + hashlib.sha256(canonical(value).encode("utf-8")).hexdigest()
+
+
+SUBSHAPES = ("items", "additionalProperties", "not")
+SHAPE_LISTS = ("anyOf", "prefixItems", "oneOf", "allOf")
+SHAPE_MAPS = ("properties", "$defs")
+
+
+def no_defaults(shape):
+    """Every ``default`` keyword out of a shape, at any depth where a shape is (programs.md, the signature):
+    a member named ``default`` (a key of ``properties``) stays, and so does data (``enum``, ``const``,
+    ``examples``)."""
+    if not isinstance(shape, dict):
+        return shape
+    out = {}
+    for k, v in shape.items():
+        if k == "default":
+            continue
+        if k in SUBSHAPES and isinstance(v, dict):
+            out[k] = no_defaults(v)
+        elif k in SHAPE_LISTS and isinstance(v, list):
+            out[k] = [no_defaults(x) for x in v]
+        elif k in SHAPE_MAPS and isinstance(v, dict):
+            out[k] = {n: no_defaults(x) for n, x in v.items()}
+        else:
+            out[k] = v
+    return out

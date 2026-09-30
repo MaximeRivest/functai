@@ -1,0 +1,112 @@
+{
+ "description": "A default counts in the version by its logic: default_code says it is written as an expression (today()), and the version holds that text, not the value it gave when the function was defined (the shape's default). The interface keeps the value.",
+ "definition": {
+  "name": "plan",
+  "description": "Plan the day.",
+  "inputs": [
+   {
+    "name": "notes",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "day",
+    "shape": {
+     "type": "string",
+     "default": "2026-09-30"
+    },
+    "optional": true,
+    "default_code": "today()"
+   },
+   {
+    "name": "tone",
+    "shape": {
+     "type": "string",
+     "default": "kind"
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: plan\n\nPlan the day.",
+   "fields": [
+    {
+     "name": "notes",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "day",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "tone",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "notes": "example text",
+   "day": "example text",
+   "tone": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: plan\n\nPlan the day.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<notes>\nexample text\n</notes>\n<day>\nexample text\n</day>\n<tone>\nexample text\n</tone>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:80474f59497d0bfa18ddca72db095548acaf4e6192a0704f7d6a23dcf0e07914",
+  "version": "sha256:5209456a13cef6c30bd0688f7a698b73c8de9e228b311cec0fe590e7848f6741",
+  "signature_id": "sha256:abc0852a3639fc7fe4189ba31ac38e041349278b9f7b2cbaf802f2576eecdbc2"
+ }
+}

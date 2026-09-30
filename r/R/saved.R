@@ -355,6 +355,7 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
                own = own, tools = list(), single = length(outputs) == 1L && identical(names(outputs), "result"),
                columns = if (identical(names(outputs), "result")) c(result = n$name) else stats::setNames(names(outputs), names(outputs)),
                module = n$module, state = list(instructions = state$instructions, demos = list()), saved = saved,
+    default_code = lapply(n$defaults %||% list(), function(d) d$code),
                interface = iface)
   core$state$demos <- as_demos(core, state$demos)
   # each probe against its own fingerprint: a probe with none cannot be
@@ -415,7 +416,11 @@ to_manifest <- function(fn) {
              signature = lmcc::signature_to_list(sig), probes = probes,
              fingerprints = list(signature = lmcc::signature_fingerprint(sig), requests = lapply(probes, function(p) request_hash(core, p))),
              body = NULL, version = version_of(core))
-  node <- list(kind = "ai", module = core$module, name = core$definition$name, interface = r_typed(interface_of(core), core), ai = ai)
+  node <- list(kind = "ai", module = core$module, name = core$definition$name, interface = r_typed(interface_of(core), core))
+  # each input whose default counts by its code keeps that code (saved.md, a node's defaults)
+  code <- Filter(Negate(is.null), lapply(core$definition$inputs, function(f) f$default_code))
+  if (length(code)) node$defaults <- lapply(code, function(c) list(code = c))
+  node$ai <- ai
   nodes <- list(); nodes[[key]] <- node
   list(functai_saved = 1L, language = "r", entry = key, created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S+00:00", tz = "UTC"),
        functai = as.character(utils::packageVersion("functai")), nodes = nodes)

@@ -91,7 +91,9 @@ Laws:
 2. **Text is exact.** Within one request, the concatenation of a field's
    `text` pieces is that field's raw text in the reply (lmcc kernel §8: a
    piece is shown only once no later byte can change it). Pieces are never
-   revised. What they mean as a typed value is known only at `done`.
+   revised. A writer may join adjacent pieces of one field (the same
+   call, field and kind, with no event between them) into one before
+   numbering it: readers see fewer, longer pieces with the same text. What they mean as a typed value is known only at `done`.
 3. **A field's text is its latest request's.** A call's `request` event
    empties every field of the call: the text of a field so far is the
    concatenation, in order, of its pieces since the call's latest
@@ -322,6 +324,15 @@ closest layer.
 - **Observers add up.** A call's observers are those of every layer
   around it: a program's own observer is given events beside the host's,
   never instead of them.
+- **A host may refuse a program's own observers.** A host layer's
+  `program_observers: false` (Python `configure(program_observers=False)`,
+  TypeScript `programObservers: false`, R `program_observers = FALSE`,
+  Julia `program_observers = false`) means the observers set in a
+  program's own settings are given no event of the calls in its scope;
+  the host's observers still are. Like `log_content`, it only removes: a
+  program's own setting cannot turn it back on, and a host layer's `true`
+  does not undo a farther host layer's `false`. Where events go is policy
+  too.
 - **One journal per tree, and the host's holds.** A tree has one journal
   (its claims and fencing are that store's). The closest layer that sets
   one (or sets none) decides, as for every setting, with two exceptions:
@@ -352,7 +363,20 @@ for watching (a socket, a telemetry exporter, a page). An observer never
 gets in the way: if it fails, the implementation warns once and stops
 giving it events. A slow observer does not slow the call: an
 implementation may hand events to it from another thread, in order, and
-may drop them (the observer then sees a loss: *Following a log*).
+may drop them (the observer then sees a loss: *Following a log*). Where
+a language's tasks switch only when they yield (Julia), this holds for an
+observer that yields; one that computes or blocks without yielding holds
+the thread it runs on, and the language says so.
+
+**An observer never triggers itself.** The calls an observer's own code
+makes while handling an event (an exporter that summarizes each call
+with an AI function), and the calls another observer makes on seeing
+those, are not given to it, so observers never feed themselves without
+end. Every other observer sees them. An observer that is a queue (a
+Julia `Channel`) is given events by being put into, and the code that
+takes them out is the user's, which FunctAI cannot recognize: the rule
+covers what runs while an event is put, and the language says that a
+reader that calls an AI function on each event feeds itself.
 
 **Journals** keep logs for watching: a folder, a store. A journal keeps
 the kept form of the whole log of every tree whose outermost call starts

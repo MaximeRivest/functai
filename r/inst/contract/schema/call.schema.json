@@ -64,7 +64,9 @@
             "user": {"type": ["string", "null"]},
             "language": {"type": "string"},
             "runtime": {"type": "string"},
-            "functai": {"type": "string"}
+            "functai": {"type": "string"},
+            "lmcc": {"type": "string", "minLength": 1},
+            "lm15": {"type": "string", "minLength": 1}
           }
         },
         "truncated": {"const": true}
@@ -147,7 +149,9 @@
             "user": {"type": ["string", "null"]},
             "language": {"type": "string"},
             "runtime": {"type": "string"},
-            "functai": {"type": "string"}
+            "functai": {"type": "string"},
+            "lmcc": {"type": "string", "minLength": 1},
+            "lm15": {"type": "string", "minLength": 1}
           }
         },
         "truncated": {"const": true}

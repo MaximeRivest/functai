@@ -81,8 +81,13 @@ def check_returned(m, holder, returned, tmp_path):
 
 
 def _sample(field):
-    shape = field["shape"]
+    return _sample_of(field["shape"])
+
+
+def _sample_of(shape):
     t = shape.get("type")
+    if t == "object" and "properties" in shape:
+        return {k: _sample_of(shape["properties"][k]) for k in shape.get("required") or []}
     return {"string": "x", "integer": 1, "number": 1.5, "boolean": True, "array": [], "object": {},
             "null": None}.get(t, "x")
 
@@ -109,6 +114,14 @@ def test_programs_case(path, tmp_path):
             folder = tmp_path / f"binds-{i}"
             router = FakeRouter(responder=lambda request: "<result>\nok\n</result>")
             with functai.configure(client=router, lm="gpt-4.1-mini", log_calls=folder):
+                if "refuses" in b["expect"]:
+                    with pytest.raises(functai.InterfaceError) as err:
+                        fn(**native(b["inputs"]))
+                    assert refusal(err.value) == b["expect"], b
+                    assert not router.requests, "a refused call sends nothing"
+                    [rec] = [json.loads(line) for f in folder.rglob("*.jsonl") for line in f.read_text().splitlines()]
+                    assert rec["error"]["type"] == "InterfaceError" and rec["exchanges"] == []
+                    continue
                 fn(**native(b["inputs"]))
             [rec] = [json.loads(line) for f in folder.rglob("*.jsonl") for line in f.read_text().splitlines()]
             assert rec["inputs"] == b["expect"]["inputs"], b
@@ -141,6 +154,22 @@ def test_programs_case(path, tmp_path):
                 else:
                     got = {"signature": interface.signature(m.interface)}
             assert got == expect, x
+    elif kind == "message":
+        from functai.calllog import canonical
+        for check in case["checks"]:
+            settings = {"log_content": check["log_content"]} if "log_content" in check else {}
+            m = module(interface=case["interface"], **settings)(lambda **_inputs: "ok")
+            with pytest.raises(functai.InterfaceError) as err:
+                m(**native(check["inputs"]))
+            expect = check["expect"]
+            assert refusal(err.value) == {"refuses": expect["refuses"], "field": expect["field"]}, check
+            message = str(err.value)
+            if expect["quotes"] is not None:
+                assert expect["quotes"] in message, (message, check)
+            else:
+                value = check["inputs"][expect["field"]]
+                for part in {canonical(value), json.dumps(value), str(value)}:
+                    assert part not in message, (message, check)
     elif kind == "same-data":
         modules = [declared(iface) for iface in case["interfaces"]]
         assert [interface.signature(m.interface) for m, _ in modules] == case["expect"]["signatures"]
@@ -151,4 +180,4 @@ def test_programs_case(path, tmp_path):
 
 
 def test_the_contract_has_program_cases():
-    assert len(CASES) >= 21
+    assert len(CASES) >= 26

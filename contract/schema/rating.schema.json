@@ -1,15 +1,16 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/maximerivest/functai/contract/schema/rating.schema.json",
-  "title": "One person's judgement of one call (functai call log, format 1)",
+  "title": "A judgement of one call, by a person (by) or under an account (functai call log, format 1)",
   "type": "object",
-  "required": ["functai_rating", "id", "call", "at", "by", "verdict"],
+  "required": ["functai_rating", "id", "call", "at", "verdict"],
   "properties": {
     "functai_rating": {"const": 1},
     "id": {"$ref": "call.schema.json#/$defs/uuid"},
     "call": {"$ref": "call.schema.json#/$defs/uuid"},
     "at": {"$ref": "call.schema.json#/$defs/time"},
     "by": {"type": "string", "minLength": 1},
+    "account": {"type": "string", "minLength": 1},
     "verdict": {"enum": ["right", "wrong", null]},
     "answer": {},
     "outputs": {"type": "object"},
@@ -18,6 +19,8 @@
     "origin": {"type": "string", "minLength": 1},
     "sample": {"type": "string", "minLength": 1}
   },
+  "oneOf": [{"required": ["by"], "not": {"required": ["account"]}},
+            {"required": ["account"], "not": {"required": ["by"]}}],
   "allOf": [
     {"if": {"properties": {"verdict": {"not": {"const": "wrong"}}}},
      "then": {"not": {"anyOf": [{"required": ["answer"]}, {"required": ["outputs"]}]}}}

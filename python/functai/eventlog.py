@@ -1197,7 +1197,11 @@ def receivers(layers: List[Tuple[str, Mapping[str, Any]]]) -> Receivers:
     journal again (the same store and mode) keeps the farther one's
     ``timeout``, ``retries`` and ``backoff``."""
     observers: List[Any] = []
-    for _w, layer in reversed(layers):
+    # a host layer's program_observers=False: the program's own observers are given nothing (it only removes)
+    vetoed = any(layer.get("program_observers") is False for w, layer in layers if w != "own")
+    for w, layer in reversed(layers):
+        if vetoed and w == "own":
+            continue
         for o in layer.get("observers") or ():
             if not any(o is x for x in observers):
                 observers.append(o)

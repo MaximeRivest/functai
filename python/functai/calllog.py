@@ -347,15 +347,30 @@ def kept_fields(inputs: Iterable[str], outputs: Iterable[str], added: Iterable[s
     """For each field of a call, whether its value is written (contract/calls.md,
     *Content*): only when no layer drops it (``settings``: each layer's
     log_content), and the environment does not drop everything. A field
-    FunctAI added (``added``: reasoning, calls) is written only when no field
-    of the call is dropped: it can quote any of them."""
+    FunctAI added (``added``: reasoning, calls) is written only when no input
+    or output of the program is dropped (it can quote any of them); dropping
+    one added field drops only it."""
     settings = [s for s in settings if s is not None]
+    added = list(added)
     off = _env_drops_all() if environment_off is None else environment_off
     out = {n: not off and not any(_drops(s, n) for s in settings) for n in [*inputs, *outputs]}
-    if not all(out.values()):
+    if not all(v for n, v in out.items() if n not in added):
         for n in added:
             out[n] = False
     return out
+
+
+def dropped_now(program: Any) -> List[str]:
+    """The fields of ``program`` a log_content layer in effect drops now (the
+    program's own setting, blocks, ``configure``, the environment): an error
+    message never quotes their values (contract/programs.md, *The message*)."""
+    try:
+        ins, outs, added = _fields_of(program)
+        layers = _layers(program)
+        kept = kept_fields(ins, outs, added, [layer.get("log_content") for _w, layer in layers])
+        return [n for n, keep in kept.items() if not keep]
+    except Exception:  # noqa: BLE001 — when unsure, a message quotes nothing
+        return ["*"]
 
 
 def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept: Mapping[str, bool]
@@ -367,7 +382,6 @@ def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept
     not list is not kept (fail closed)."""
     if all(kept.get(n, False) for n in [*inputs, *outputs]):
         return record
-    answer = (record.get("program") or {}).get("answer")
     out: Dict[str, Any] = {}
     for key, value in record.items():
         if key == "content":
@@ -386,8 +400,7 @@ def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept
                 if kept_out:
                     out["outputs"] = kept_out
         elif key == "returned":
-            if kept.get(answer, False):
-                out["returned"] = value
+            pass                          # code can return any value of the call: kept only when nothing is dropped
         elif key == "probabilities":
             kept_p = {k: v for k, v in value.items() if kept.get(k, False)}
             if kept_p:
@@ -898,15 +911,24 @@ def ai_facts(fn: Any) -> Tuple[str, str, str]:
     return facts
 
 
-def version_document(fn: Any, request: str) -> Dict[str, str]:
+def version_document(fn: Any, request: str) -> Dict[str, Any]:
     """What an AI function's version hashes: ``{"request": R}`` when the model
     writes the whole body, ``{"code": C, "request": R}`` when code of its own
-    runs beside the model (contract/calls.md, *Versions*). So the same AI
-    function written in two languages has one version."""
+    runs beside the model, each with ``"defaults": D`` when an input has a
+    default, counted by its logic (contract/calls.md, *Versions*). So the same
+    AI function written in two languages has one version."""
+    from .interface import default_code, defaults_document
     if getattr(fn, "_loaded", False):                  # built from a saved manifest: the model writes it whole
-        return {"request": request}
-    body = fn.__wrapped__
-    return {"request": request} if _model_body(body) else {"code": code_hash(body), "request": request}
+        doc: Dict[str, Any] = {"request": request}
+        code = dict(getattr(fn, "_saved_default_code", None) or {})
+    else:
+        body = fn.__wrapped__
+        doc = {"request": request} if _model_body(body) else {"code": code_hash(body), "request": request}
+        code = default_code(body)
+    defaults = defaults_document(fn.interface, code)
+    if defaults:
+        doc["defaults"] = defaults
+    return doc
 
 
 _model_bodies: "weakref.WeakKeyDictionary[Any, bool]" = weakref.WeakKeyDictionary()
@@ -932,8 +954,10 @@ def signature_id(signature: Any) -> str:
     field's host type name left out (``"type": ""``), so the fields' names,
     directions, purposes and JSON shapes decide it, not how one language
     spells a type (``str``, ``string``, ``character``) (contract/calls.md)."""
+    from .interface import data_shape
     return lmcc.signature_fingerprint(lmcc.SignatureCore(
-        signature.instructions, [dataclasses.replace(f, type=None) for f in signature.fields]))
+        signature.instructions, [dataclasses.replace(f, type=None, shape=data_shape(f.shape))
+                                 for f in signature.fields]))
 
 
 def ai_version(fn: Any) -> str:
@@ -982,9 +1006,18 @@ def _module_graph(m: Any) -> Tuple[Dict[str, str], Dict[str, Any]]:
 def module_version(m: Any) -> str:
     """A module's version: ``sha256:`` of the code it reaches, the versions of
     the AI functions it calls, and its interface (contract/calls.md)."""
+    from .interface import data_shape, default_code, defaults_document
     code, ai = _module_graph(m)
-    return _sha(canonical({"code": code, "ai": {k: ai_version(fn) for k, fn in ai.items()},
-                           "interface": m.interface}))
+    iface = m.interface
+    doc: Dict[str, Any] = {"code": code, "ai": {k: ai_version(fn) for k, fn in ai.items()},
+                           "interface": {**iface, **{d: [{**f, "shape": data_shape(f["shape"])} for f in iface[d]]
+                                                      for d in ("inputs", "outputs")}}}
+    saved = getattr(m, "_saved_default_code", None)
+    logic = dict(saved) if saved is not None else ({} if getattr(m, "_declared", False) else default_code(m._fn))
+    defaults = defaults_document(iface, logic)
+    if defaults:
+        doc["defaults"] = defaults
+    return _sha(canonical(doc))
 
 
 def _original(module: Optional[str]) -> str:
@@ -1015,14 +1048,50 @@ def program_info(program: Any) -> Dict[str, Any]:
         info["saved"] = saved_id
     code = getattr(fn, "__code__", None)
     if code is not None and not loaded:
-        info["file"], info["line"] = code.co_filename, code.co_firstlineno
+        where = top_level_file(code.co_filename) if module == "__main__" else code.co_filename
+        if where:
+            info["file"] = where
+        info["line"] = code.co_firstlineno
     return info
+
+
+def top_level_file(filename: Optional[str]) -> Optional[str]:
+    """The notebook or script a program defined in ``__main__`` is in
+    (contract/calls.md, ``program.file``): the notebook a Jupyter kernel
+    names (VS Code's ``__vsc_ipynb_file__``, ``__session__``,
+    ``$JPY_SESSION_NAME``), never the file a kernel runs its cells from;
+    a script's own path; None when neither is known."""
+    main = sys.modules.get("__main__")
+    for key in ("__vsc_ipynb_file__", "__session__"):
+        v = getattr(main, key, None)
+        if isinstance(v, str) and v and not v.startswith("<"):
+            return v
+    v = os.environ.get("JPY_SESSION_NAME")
+    if v and not v.startswith("<") and os.path.splitext(v)[1]:
+        return v
+    if not filename or filename.startswith("<") or "ipykernel_" in filename or "/ipython-input-" in filename:
+        return None
+    return filename
 
 
 # ------------------------------------------------------------------ the record
 
 
 _process: Dict[str, Any] = {}
+
+
+def _library_version(name: str) -> Optional[str]:
+    """The version of the library running here: its own ``__version__`` (a
+    source checkout's metadata can be older than its code), else its
+    installed metadata."""
+    v = getattr(sys.modules.get(name), "__version__", None)
+    if isinstance(v, str) and v:
+        return v
+    try:
+        from importlib.metadata import version
+        return version(name)
+    except Exception:  # noqa: BLE001 — unknown: the record leaves it out
+        return None
 
 
 def _process_info() -> Dict[str, Any]:
@@ -1036,6 +1105,11 @@ def _process_info() -> Dict[str, Any]:
         _process.clear()
         _process.update(host=socket.gethostname(), pid=pid, user=user, language="python",
                         runtime=platform.python_version(), functai=__version__)
+        # the libraries that built the request and sent it (contract/calls.md, process)
+        for lib in ("lmcc", "lm15"):
+            version = _library_version(lib)
+            if version:
+                _process[lib] = version
     return dict(_process)
 
 
@@ -1096,7 +1170,10 @@ def _outputs_of(call: Call, returned: Any, error: Optional[BaseException]
         if pred is None:
             return None, {}, [], shown
         raw = dict(pred.items())
-        calls_ = (getattr(getattr(pred, "turn", None), "outputs", None) or {}).get("calls")
+        # outputs.calls: every tool call the model asked for in the call, across steps (contract/functions.md)
+        calls_ = getattr(pred, "tool_calls", None)
+        if calls_ is None:
+            calls_ = (getattr(getattr(pred, "turn", None), "outputs", None) or {}).get("calls")
         order = call.fields[1] or list(raw)
         named = {}
         for name in order:
@@ -1331,18 +1408,22 @@ def _order(rec: Dict[str, Any], time_key: str) -> Tuple[str, str]:
 def current_ratings(ratings: Iterable[Dict[str, Any]], *, by: Optional[str] = None
                     ) -> Dict[str, List[Dict[str, Any]]]:
     """For each call, the ratings that count: each person's latest, none for
-    someone who withdrew theirs (verdict null); only ``by``'s when given."""
-    latest: Dict[Tuple[str, str], Dict[str, Any]] = {}
+    someone who withdrew theirs (verdict null); only ``by``'s when given. A
+    rating with no ``by`` (made under an account, which may be shared) counts
+    on its own: it replaces none and none replaces it, and its null verdict
+    withdraws nothing (contract/calls.md, rule 2)."""
+    latest: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for r in ratings:
         if r.get("functai_rating") != RATING_FORMAT:
             continue                                   # a format this reader does not know
         if by is not None and r.get("by") != by:
             continue
-        key = (r.get("call"), r.get("by"))
+        person = r.get("by")
+        key = (r.get("call"), "by", person) if person else (r.get("call"), "rating", r.get("id"))
         if key not in latest or _order(r, "at") > _order(latest[key], "at"):
             latest[key] = r
     out: Dict[str, List[Dict[str, Any]]] = {}
-    for (call, _by), r in latest.items():
+    for (call, *_who), r in latest.items():
         if r.get("verdict") in ("right", "wrong"):
             out.setdefault(call, []).append(r)
     for rs in out.values():
@@ -1376,9 +1457,14 @@ def _add_meta(row: Dict[str, Any], meta: Mapping[str, Any]) -> None:
         row[key] = value
 
 
-def matches(call: Dict[str, Any], name: str, module: Optional[str] = None) -> bool:
+def matches(call: Dict[str, Any], name: str, module: Optional[str] = None, file: Optional[str] = None) -> bool:
+    """A call of the program (rule 1): its name, its module when given, and
+    its file when given (a program defined at the top level, in a notebook or
+    a script: every one is ``__main__``); with a file, a call that has none
+    does not match."""
     program = call.get("program") or {}
-    return program.get("name") == name and (module is None or program.get("module") == module)
+    return program.get("name") == name and (module is None or program.get("module") == module) \
+        and (file is None or program.get("file") == file)
 
 
 def _same_data(program: Mapping[str, Any], signature: Optional[str], interface: Optional[str]) -> bool:
@@ -1409,7 +1495,8 @@ def _inputs_are_data(call: Mapping[str, Any]) -> bool:
 
 def rated_rows(calls: Iterable[Dict[str, Any]], ratings: Iterable[Dict[str, Any]], *, name: str,
                module: Optional[str] = None, signature: Optional[str] = None, by: Optional[str] = None,
-               interface: Optional[str] = None) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
+               interface: Optional[str] = None, file: Optional[str] = None
+               ) -> Tuple[List[Dict[str, Any]], Dict[str, int]]:
     """Rows with known answers from rated calls, and how many rated calls were
     left out and why (``other_signature``, ``no_content``, ``no_answer``).
     The rules are contract/calls.md's "Rows with known answers". Records of
@@ -1417,7 +1504,7 @@ def rated_rows(calls: Iterable[Dict[str, Any]], ratings: Iterable[Dict[str, Any]
     counting = current_ratings(ratings, by=by)
     left = {"other_signature": 0, "no_content": 0, "no_answer": 0}
     rows: List[Dict[str, Any]] = []
-    known = (c for c in calls if c.get("functai_call") in READS and matches(c, name, module))
+    known = (c for c in calls if c.get("functai_call") in READS and matches(c, name, module, file))
     for call in sorted(known, key=lambda c: _order(c, "started")):
         rs = counting.get(call.get("id"))
         if not rs:
@@ -1538,6 +1625,16 @@ def _shows_again(rec: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
 
 
 # ------------------------------------------------------------------ the public functions
+
+
+def _program_file(program: Any) -> Optional[str]:
+    """A program's ``program.file`` when it is defined at the top level (in a
+    notebook or a script, ``__main__``): its calls are known by it too."""
+    try:
+        info = program_info(program)
+    except Exception:  # noqa: BLE001 — unknown: calls are not told apart by file
+        return None
+    return info.get("file") if info.get("module") == "__main__" else None
 
 
 def _program_key(program: Any) -> Tuple[str, Optional[str], Optional[str], Optional[str]]:
@@ -1680,7 +1777,8 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
     return _dpyr().read(_tabular(names, records))
 
 
-def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: Any = None):
+def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: Any = None,
+          any_file: bool = False):
     '''The calls people rated, as rows with known answers.
 
     Each row is a call someone judged: its inputs under their names, and
@@ -1711,6 +1809,11 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
         disagree, the latest rating is used and ``disputed`` is true.
     since : date, datetime, timedelta or text, optional
         Only calls and ratings from then on.
+    any_file : bool, optional
+        A program defined in a notebook or a script is known by its file
+        too, so two notebooks' ``summarize`` are two programs. ``True``
+        takes its calls from any file (a notebook that was moved or
+        renamed).
 
     Returns
     -------
@@ -1750,9 +1853,10 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
     _dpyr()
     root = reading_folder(folder)
     name, module, signature, interface = _program_key(program)
+    file = None if any_file or isinstance(program, str) else _program_file(program)
     found, ratings = read(root, since=since)
     rows, left = rated_rows(found, ratings, name=name, module=module, signature=signature, by=by,
-                            interface=interface)
+                            interface=interface, file=file)
     reasons = {"no_answer": "marked wrong without the right answer",
                "other_signature": "made when its inputs or outputs were different",
                "no_content": "logged without their values"}
@@ -1813,8 +1917,11 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     reasons : list of str, optional
         Short tags: ``["wrong category"]``.
     by : str, optional
-        Who is judging. Default: the caller's ``user``, else this computer's
-        account. One person's later rating of a call replaces their earlier one.
+        Who is judging: a person. Default: the caller's ``user``
+        (``configure(caller={"user": ...})``). One person's later rating of a
+        call replaces their earlier one. With no person named, the rating is
+        made under this computer's account, which may be shared: it is kept
+        on its own, and never replaces nor is replaced by another.
     origin : str, optional
         ``"review"`` (default: someone judged the answer) or ``"edit"``
         (someone changed the output while using it).
@@ -1873,9 +1980,11 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
             raise ValueError("ratings are written to the call log, and no call is logged here: "
                              "functai.configure(log_calls=True), or rate(..., folder=...)")
     if by is None:
-        by = caller_of(settings).get("user") or _process_info().get("user") or "unknown"
+        by = caller_of(settings).get("user")
+    # a person when one was named; else the account, which names no one (contract/calls.md, A rating record)
+    who = {"by": str(by)} if by else {"account": str(_process_info().get("user") or "unknown")}
     rec: Dict[str, Any] = {"functai_rating": RATING_FORMAT, "id": new_id(), "call": call_id, "at": _iso(time.time()),
-                           "by": str(by), "verdict": verdict}
+                           **who, "verdict": verdict}
     if answer is not _NOTHING:
         rec["answer"] = to_json(answer)[0]
     if outputs:

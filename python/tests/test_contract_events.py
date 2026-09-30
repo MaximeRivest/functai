@@ -359,6 +359,8 @@ def test_receivers_case(path):
                 out["observers"] = [observers.setdefault(o, []) for o in layer["observers"]]
             if "journal" in layer:
                 out["journal"] = journal(layer["journal"])
+            if "program_observers" in layer:
+                out["program_observers"] = layer["program_observers"]
             return out
 
         layers = {x["where"]: settings(x) for x in scenario["layers"]}

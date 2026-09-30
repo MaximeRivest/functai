@@ -10,8 +10,8 @@ corpus, so this script asks lmcc (the Python kernel with its standard
 pack) for that step only. It never imports FunctAI.
 
 A case file: {"description", "definition": {name, description, inputs
-(each {name, shape, desc?, optional?}), outputs, settings, state,
-tools?}, "expect": {"signature", "sample",
+(each {name, shape, desc?, optional?, default_code?}), outputs, settings,
+state, tools?}, "expect": {"signature", "sample",
 "request", "request_hash", "version", "signature_id"}}. ``signature`` is
 lmcc's plain-data form without host type names (compare with ``type``
 left out).
@@ -24,7 +24,7 @@ from pathlib import Path
 import lmcc
 import lmcc_std
 
-from common import sha
+from common import no_defaults, sha
 
 CONTRACT = Path(__file__).resolve().parent.parent
 PROBE = {k: v for k, v in json.loads((CONTRACT / "models.json").read_text())["probe"].items() if k != "about"}
@@ -104,8 +104,24 @@ def sample(shape: dict):
     if "anyOf" in shape:
         options = [s for s in shape["anyOf"] if s.get("type") != "null"]
         return sample(options[0]) if options else None
+    kind = shape.get("type")
+    if isinstance(kind, list):                        # a list of types: the first non-null one (calls.md)
+        kind = next((k for k in kind if k != "null"), "null")
     return {"string": "example text", "integer": 3, "number": 2.5, "boolean": True, "array": [],
-            "object": {}, "null": None}.get(shape.get("type"), "example text")
+            "object": {}, "null": None}.get(kind, "example text")
+
+
+def defaults(d: dict) -> dict:
+    """calls.md, Versions, Defaults: each input's default by its logic. ``default_code`` on an input says the
+    default is written as that expression (its value today is the shape's default); otherwise it counts by
+    its value."""
+    out = {}
+    for f in d["inputs"]:
+        if "default_code" in f:
+            out[f["name"]] = {"code": f["default_code"]}
+        elif "default" in f["shape"]:
+            out[f["name"]] = {"value": f["shape"]["default"]}
+    return out
 
 
 def layout(d: dict, reg: lmcc.Registry) -> lmcc.Adapter:
@@ -152,11 +168,14 @@ def expect(d: dict) -> dict:
     request = json.loads(json.dumps(request))
     request_hash = sha(request)
     identity = [{"direction": f["direction"], "name": f["name"], "purpose": f.get("purpose", "plain"),
-                 "shape": f["shape"], "type": ""} for f in sig_dict["fields"]]
+                 "shape": no_defaults(f["shape"]), "type": ""} for f in sig_dict["fields"]]
+    version = {"request": request_hash}
+    if defaults(d):
+        version["defaults"] = defaults(d)
     return {"signature": {"instructions": sig_dict["instructions"],
                           "fields": [{k: v for k, v in f.items() if k != "type"} for f in sig_dict["fields"]]},
             "sample": values, "request": request, "request_hash": request_hash,
-            "version": sha({"request": request_hash}), "signature_id": sha(identity)}
+            "version": sha(version), "signature_id": sha(identity)}
 
 
 # ------------------------------------------------------------------ the definitions
@@ -246,9 +265,50 @@ DEFINITIONS = {
         definition("reply", "Answer the customer.",
                    [("message", S, None), ("tone", {"type": "string", "default": "kind"}, None, {"optional": True})],
                    [("result", S, None)])),
+    "13-a-list-of-types": (
+        "A shape whose type is a list: the sample value is the first non-null type's (calls.md, Versions).",
+        definition("label", "Label a note.",
+                   [("note", {"type": ["string", "null"]}, None), ("count", {"type": ["null", "integer"]}, None)],
+                   [("result", S, None)])),
+    "14-a-default-by-its-code": (
+        "A default counts in the version by its logic: default_code says it is written as an expression "
+        "(today()), and the version holds that text, not the value it gave when the function was defined "
+        "(the shape's default). The interface keeps the value.",
+        definition("plan", "Plan the day.",
+                   [("notes", S, None), ("day", {"type": "string", "default": "2026-09-30"}, None,
+                                         {"optional": True, "default_code": "today()"}),
+                    ("tone", {"type": "string", "default": "kind"}, None, {"optional": True})],
+                   [("result", S, None)])),
+    "15-the-same-code-another-day": (
+        "The function of case 14 defined on another day: its default gives another value, and its version is "
+        "the same.",
+        definition("plan", "Plan the day.",
+                   [("notes", S, None), ("day", {"type": "string", "default": "2026-10-01"}, None,
+                                         {"optional": True, "default_code": "today()"}),
+                    ("tone", {"type": "string", "default": "kind"}, None, {"optional": True})],
+                   [("result", S, None)])),
+    "16-another-default-value": (
+        "Case 14 with tone's default changed from kind to formal: a new version.",
+        definition("plan", "Plan the day.",
+                   [("notes", S, None), ("day", {"type": "string", "default": "2026-09-30"}, None,
+                                         {"optional": True, "default_code": "today()"}),
+                    ("tone", {"type": "string", "default": "formal"}, None, {"optional": True})],
+                   [("result", S, None)])),
+    "17-a-default-inside-a-record": (
+        "A default inside a record's shape (a member's, as pydantic writes one) is sent to the model as part "
+        "of the shape, so it is in the request, but it is not in the signature id (calls.md, program.signature: "
+        "every default is left out).",
+        definition("summarize", "Summarize a visit.",
+                   [("visit", {"type": "object", "properties": {"note": S, "day": {"type": "string",
+                                                                                   "default": "2026-09-30"}},
+                               "required": ["note"]}, None)],
+                   [("result", S, None)])),
 }
 
 
 def cases() -> dict:
-    return {name: {"description": text, "definition": d, "expect": expect(d)}
-            for name, (text, d) in DEFINITIONS.items()}
+    out = {name: {"description": text, "definition": d, "expect": expect(d)}
+           for name, (text, d) in DEFINITIONS.items()}
+    v = {k: c["expect"]["version"] for k, c in out.items()}
+    assert v["14-a-default-by-its-code"] == v["15-the-same-code-another-day"] != v["16-another-default-value"]
+    return out

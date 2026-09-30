@@ -59,7 +59,10 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
 #'   your earlier rating. Default: `"wrong"` when `answer` is given.
 #' @param answer The right answers, for `"wrong"`.
 #' @param note,reasons Why, in a sentence, and short tags.
-#' @param by Who is judging (default: the caller's `user`, else this computer's account).
+#' @param by Who is judging: a person (default: the caller's `user`). With
+#'   no person named, the rating is made under this computer's account,
+#'   which may be shared: it is kept on its own, and never replaces nor is
+#'   replaced by another rating.
 #' @param origin `"review"` (someone judged it) or `"edit"` (someone changed the output while using it).
 #' @param sample The id of a random draw of calls these ratings belong to.
 #' @param folder The log folder (default: where calls are logged here).
@@ -88,7 +91,9 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
     rec
   })
   invisible(tibble::tibble(id = vapply(recs, function(r) r$id, ""), call = as.character(call),
-                           verdict = vapply(recs, function(r) r$verdict %||% NA_character_, ""), by = vapply(recs, function(r) r$by, "")))
+                           verdict = vapply(recs, function(r) r$verdict %||% NA_character_, ""),
+                           by = vapply(recs, function(r) r$by %||% NA_character_, ""),
+                           account = vapply(recs, function(r) r$account %||% NA_character_, "")))
 }
 
 #' Rows with known answers, from people's ratings
@@ -106,16 +111,21 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
 #' @param by Only this person's ratings.
 #' @param folder The log folder.
 #' @param since Only calls and ratings from this time on.
+#' @param any_file A function defined in a notebook or a script is known by
+#'   its file too, so two notebooks' `summarize` are two programs. `TRUE`
+#'   takes its calls from any file (a notebook that moved).
 #' @return A tibble: the inputs, the outputs, then `call`, `version`,
 #'   `rating`, `rated_by`, `origin`, `sample`, `disputed`. Attribute
 #'   `left_out`: the counts.
 #' @export
-rated <- function(fn, by = NULL, folder = NULL, since = NULL) {
+rated <- function(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE) {
   core <- core_of(fn)
   log <- read_log(log_folder(folder), since)
+  # a function defined at the top level is known by its file too: two notebooks' summarize are two programs
+  file <- if (isTRUE(any_file) || !identical(core$module, "__main__")) NULL else core$file
   out <- rated_rows(log$calls, log$ratings, name = core$definition$name, module = core$module,
                     signature = signature_id(signature_of(core, effective(core$own))),
-                    interface = interface_signature(interface_of(core)), by = by)
+                    interface = interface_signature(interface_of(core)), by = by, file = file)
   rows <- out$rows
   fields <- c(core$definition$inputs, core$definition$outputs)
   cols <- list()

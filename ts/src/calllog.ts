@@ -10,6 +10,10 @@
 
 import * as lmcc from "lmcc";
 import { Request, Response } from "@lm15/lm15";
+import * as lm15 from "@lm15/lm15";
+
+const LMCC_VERSION: unknown = (lmcc as unknown as { VERSION?: unknown }).VERSION;
+const LM15_VERSION: unknown = (lm15 as unknown as { VERSION?: unknown }).VERSION;
 import { writtenRecord, type CallFields } from "./content.ts";
 import type { Node } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
@@ -274,6 +278,8 @@ function processJson(): Rec {
       user = null;
     }
     processInfo = { host: os ? os.hostname() : null, pid: pid(), user, language: "typescript", runtime: runtime(), functai: VERSION };
+    // the libraries that build the request and send it (calls.md, process), when their versions can be read
+    for (const [key, v] of [["lmcc", LMCC_VERSION], ["lm15", LM15_VERSION]] as const) if (typeof v === "string" && v) processInfo[key] = v;
   }
   return { ...processInfo };
 }
@@ -426,12 +432,18 @@ const later = (a: Rec, b: Rec, key: string) => {
   return String(a["id"] ?? "") > String(b["id"] ?? "");
 };
 
-/** For each call, the ratings that count: each person's latest, none for a withdrawn one. */
+/**
+ * For each call, the ratings that count: each person's latest, none for a
+ * withdrawn one. A rating with no `by` (made under an account, which may be
+ * shared) counts on its own: it replaces none, none replaces it, and its
+ * null verdict withdraws nothing (calls.md, rule 2).
+ */
 export function currentRatings(ratings: Iterable<Rec>, by?: string | null): Map<string, Rec[]> {
   const latest = new Map<string, Rec>();
   for (const r of ratings) {
     if (by !== undefined && by !== null && r["by"] !== by) continue;
-    const key = JSON.stringify([r["call"], r["by"]]);
+    const person = typeof r["by"] === "string" && r["by"] ? r["by"] : null;
+    const key = person !== null ? JSON.stringify([r["call"], "by", person]) : JSON.stringify([r["call"], "rating", r["id"]]);
     const had = latest.get(key);
     if (!had || later(r, had, "at")) latest.set(key, r);
   }
@@ -480,13 +492,15 @@ export interface LeftOut { other_signature: number; no_content: number; no_answe
 
 /** Rows with known answers from rated calls (contract/calls.md, "Rows with known answers"). */
 export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
-  opts: { name: string; module?: string | null; signature?: string | null; interface?: string | null; by?: string | null }): [Rec[], LeftOut] {
+  opts: { name: string; module?: string | null; file?: string | null; signature?: string | null; interface?: string | null; by?: string | null }): [Rec[], LeftOut] {
   const counting = currentRatings([...ratings].filter((r) => r["functai_rating"] === RATING_FORMAT), opts.by);
   const left: LeftOut = { other_signature: 0, no_content: 0, no_answer: 0 };
   const rows: Rec[] = [];
   const mine = [...calls].filter((c) => CALL_FORMATS.has(c["functai_call"] as number)).filter((c) => {
     const p = (c["program"] ?? {}) as Rec;
-    return p["name"] === opts.name && (opts.module === undefined || opts.module === null || p["module"] === opts.module);
+    // a program defined at the top level (a notebook, a script) is known by its file too: with a file, a call with none does not match
+    return p["name"] === opts.name && (opts.module === undefined || opts.module === null || p["module"] === opts.module)
+      && (opts.file === undefined || opts.file === null || p["file"] === opts.file);
   });
   mine.sort((a, b) => (order(a, "started") < order(b, "started") ? -1 : order(a, "started") > order(b, "started") ? 1 : 0));
   for (const call of mine) {
@@ -521,7 +535,7 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
     if (Object.hasOwn(values, answer)) setOwn(row, answer, values[answer]);
     for (const [k, v] of entriesOf(values)) if (k !== answer) setOwn(row, k, v);
     addMeta(row, {
-      call: call["id"], version: program["version"], rating: rating["verdict"], rated_by: rating["by"],
+      call: call["id"], version: program["version"], rating: rating["verdict"], rated_by: rating["by"] ?? null,
       origin: rating["origin"] ?? "review", sample: rating["sample"] ?? null, disputed,
     });
     rows.push(row);
@@ -556,8 +570,10 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
   else if (verdict === false || verdict === "wrong") v = "wrong";
   else throw new TypeError(`verdict is "right", "wrong", true, false, or null (withdraw); not ${JSON.stringify(verdict)}`);
   if (corrected && v !== "wrong") throw new TypeError("a right answer needs no correction: give answer or outputs only with \"wrong\"");
-  const who = opts.by ?? (callerOf(settings)["user"] as string | undefined) ?? (processJson()["user"] as string | null) ?? "someone";
-  const rec: Rec = { functai_rating: RATING_FORMAT, id: newId(), call: callId, at: iso(Date.now()), by: who, verdict: v };
+  // a person when one was named; else the account, which names no one (it may be shared: calls.md, "A rating record")
+  const person = opts.by ?? (callerOf(settings)["user"] as string | undefined);
+  const who: Rec = person ? { by: person } : { account: (processJson()["user"] as string | null) ?? "unknown" };
+  const rec: Rec = { functai_rating: RATING_FORMAT, id: newId(), call: callId, at: iso(Date.now()), ...who, verdict: v };
   if ("answer" in opts) rec["answer"] = toJson(opts.answer)[0];
   if (opts.outputs) rec["outputs"] = recordOf(entriesOf(opts.outputs).map(([k, x]) => [k, toJson(x)[0]] as const));
   if (opts.reasons?.length) rec["reasons"] = [...opts.reasons];
