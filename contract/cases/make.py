@@ -9,6 +9,9 @@ implementation's output:
     content/     ../calls.md, "Content"                      (content.py)
     saw/         ../calls.md, "Saw"                          (saw.py)
     events/      ../streaming.md                             (events.py)
+    replies/, conversations/, tools/, views/, context/
+                 ../replies.md, ../conversations.md, ../tools.md, ../streaming.md "Views",
+                 ../calls.md "Rows that keep their context"   (stages.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -33,6 +36,7 @@ import saved  # noqa: E402
 import saw  # noqa: E402
 import schemas  # noqa: E402
 import scores  # noqa: E402
+import stages  # noqa: E402
 
 
 KNOWN = {"functai_call": (1, 2), "functai_rating": (1,)}
@@ -70,6 +74,15 @@ def check(folder: str, cases: dict) -> None:
                 ifaces = [case["interface"]]
             for iface in ifaces:
                 schemas.check(schemas.INTERFACE, iface, f"{where} interface")
+        elif folder == "conversations":
+            for i, rec in enumerate(case["records"]):
+                schemas.check(schemas.CONVERSATION, rec, f"{where} records[{i}]")
+        elif folder == "views":
+            for i, e in enumerate(case["events"] + case["expect"]["events"]):
+                schemas.check(schemas.EVENT, e, f"{where} event {i}")
+        elif folder == "context":
+            for i, rec in enumerate(case["records"]):
+                schemas.record(rec, f"{where} records[{i}]")
         elif folder == "events":
             kind = case["kind"]
             if kind == "receivers":
@@ -115,4 +128,6 @@ if __name__ == "__main__":
     n = write("rated", rated.CASES) + write("functions", functions.cases()) + write("scores", scores.cases()) \
         + write("saved", saved.cases()) + write("programs", programs.cases()) + write("content", content.cases()) \
         + write("saw", saw.cases()) + write("events", events.cases())
+    for folder, made in stages.cases().items():
+        n += write(folder, made)
     print(f"{n} cases written")

@@ -286,15 +286,20 @@ def test_a_required_journal_set_only_inside_a_tree_is_refused(fake):
     assert err.value.code == "journal-scope" and store.trees() == []
 
 
-def test_a_stateful_function_records_the_calls_it_was_shown(fake, tmp_path):
-    chat = ai(stateful=True, log_calls=tmp_path)(haiku.__wrapped__)
+def test_a_conversation_records_the_calls_each_turn_was_shown(fake, tmp_path):
+    chat = ai(log_calls=tmp_path)(haiku.__wrapped__).conversation()
     fake(responder=lambda req: XML.format("Snow."))
     chat("snow")
     chat("rain")
-    first, second = records(tmp_path)
+    chat("hail")
+    first, second, third = records(tmp_path)
     assert first["saw"] == [] and second["saw"] == [{"call": first["id"], "steps": True}]
-    calllog.check_kept(second["id"], [first, second])                      # the log keeps what showing it needs
-    assert calllog.saw(second["id"], [first, second]) == second["saw"]
+    # the third saw what the second saw, then the second: its record does not grow with the conversation
+    assert third["saw"] == [{"saw_of": second["id"]}, {"call": second["id"], "steps": True}]
+    calllog.check_kept(third["id"], [first, second, third])       # the log keeps what showing it needs
+    assert calllog.saw(third["id"], [first, second, third]) == [{"call": first["id"], "steps": True},
+                                                                {"call": second["id"], "steps": True}]
+    assert third["conversation"] == {"id": chat.id, "turn": third["id"], "parent": second["id"]}
 
 
 class Frame:

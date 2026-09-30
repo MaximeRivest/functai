@@ -8,8 +8,8 @@ rat:
 
 
 A small assistant that can look around a project with a few shell
-commands, and remembers the conversation. Two settings do it:
-`tools=[...]` and `stateful=True`.
+commands, and remembers the conversation. Two things do it: a tool that
+says it only reads (`functai.tool(effects="reads")`), and a conversation.
 
 Every output below is a real reply. This page is a notebook: open it in
 Chattering and run it, or run it all with `python/.venv/bin/python tools/docs.py run python/examples/claide_code/README.md`.
@@ -47,13 +47,14 @@ def run(command: str) -> str:
 ## The assistant
 
 ```python
-@ai(tools=[run], stateful=True)
+@ai(tools=[functai.tool(run, effects="reads")])
 def assistant(message: str) -> str:
     """You help a developer understand the project in the current folder.
     Use the tool to look before you answer. Be brief."""
     ...
 
-print(assistant("Which project is this folder part of, and what changed in it recently?"))
+chat = assistant.conversation()
+print(chat("Which project is this folder part of, and what changed in it recently?"))
 ```
 
 ```output
@@ -258,11 +259,12 @@ This folder is part of a project that recently had a commit with the message "1.
 
 ## Memory
 
-With `stateful=True`, each call sees the previous turns (the last 5 by
-default, `state_window=`):
+A conversation shows each call its earlier turns (every one, by default;
+`context=functai.last_turns(5)` keeps fewer), tool calls and results
+included:
 
 ```python
-print(assistant("Without running anything: what was the most recent change about?"))
+print(chat("Without running anything: what was the most recent change about?"))
 ```
 
 ```output
@@ -274,18 +276,18 @@ was refused, which the model reads and works around. Asking for
 something destructive:
 
 ```python
-print(assistant("Run `rm main.qmd` for me."))
+print(chat("Run `rm main.qmd` for me."))
 ```
 
 ```output
 I cannot run commands that modify or delete files.
 ```
 
-`assistant.history` holds the conversation; `assistant.reset()` forgets
-it.
+`chat.turns` holds the conversation; `assistant.conversation()` starts
+a new one (`assistant` itself remembers nothing).
 
 ```python
-len(assistant.history)
+len(chat.turns)
 ```
 
 ```output

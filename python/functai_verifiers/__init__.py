@@ -203,8 +203,8 @@ def decode_inputs(fn: FunctAIFunc, text: str) -> dict:
 
 
 class FunctaiSession(HarnessSession):
-    """One rollout: a fresh copy of the function (its own conversation memory),
-    one call per verifiers segment."""
+    """One rollout: a conversation of its own with the function (every
+    earlier turn of the rollout is shown), one turn per verifiers segment."""
 
     def __init__(self, harness: "FunctaiHarness", ctx: ModelContext, trace: Trace, runtime: Runtime, endpoint: str,
                  secret: str, mcp_urls: dict[str, str], data: TaskData, tool_interception_url: str | None = None):
@@ -214,8 +214,10 @@ class FunctaiSession(HarnessSession):
                     if k in ("temperature", "top_p", "max_tokens")}
         base = load_program(config)
         self.fn = base.using(lm=ctx.model, client=EndpointClient(endpoint, secret, config.read_timeout),
-                             capabilities=dict(config.capabilities), retries=0, stateful=True, state_window=0,
+                             capabilities=dict(config.capabilities), retries=0,
                              on_unreadable=config.on_unreadable, escalate_to=None, cache_replies=False, **sampling)
+        # its own memory, gone with the session
+        self.chat = self.fn.conversation(store=functai.MemoryConversations())
 
     async def _run(self, messages) -> ProgramResult:
         if messages is None:                  # a prompted task opens the exchange
@@ -227,7 +229,7 @@ class FunctaiSession(HarnessSession):
             text = _text_of(users[-1]) if users else ""
         inputs = decode_inputs(self.fn, text)
         context = contextvars.copy_context()
-        pred = await asyncio.to_thread(context.run, lambda: self.fn.predict(**inputs))
+        pred = await asyncio.to_thread(context.run, lambda: self.chat.predict(**inputs))
         _record(self.trace, pred)
         return ProgramResult(exit_code=0, stdout="", stderr="")
 

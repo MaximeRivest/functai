@@ -77,7 +77,16 @@ class Optimizer:
         raise NotImplementedError
 
 
+def _with_context(row: Row) -> bool:
+    """A row that was answered after earlier turns (``rated`` on a
+    conversation): it measures, but is never a worked example (a worked
+    example is one turn placed before the question)."""
+    return bool(row.get("earlier")) or bool(row.get("helpers"))
+
+
 def _labeled_demo(fn: FunctAIFunc, target: _Target, row: Row) -> Optional[Dict[str, Any]]:
+    if _with_context(row):
+        return None
     outs = set(fn._spec().outputs) | {"reasoning"}
     labels = {k: v for k, v in row.items() if k in outs}
     if not labels:
@@ -175,6 +184,8 @@ class BootstrapFewShot(Optimizer):
                     if not ok:
                         continue
                     used.add(i)
+                    if _with_context(examples[i]):
+                        continue                  # asked with its earlier turns: measured, never an example
                     for fn, turn in traced:
                         if fn in boot and len(boot[fn]) < self.max_bootstrapped_demos and turn is not None:
                             boot[fn].append(turn)
@@ -765,6 +776,12 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
             opts["teacher"] = teacher_lm or teacher
     opt = _instantiate(choice, metric, opts)
     target.check(examples)
+    in_context = sum(1 for ex in examples if _with_context(ex))
+    if in_context:
+        import warnings
+        warnings.warn(f"[functai] {target.name}: {in_context} of {len(examples)} rows were answered after earlier "
+                      f"turns (a conversation): they are asked again with those turns and scored, but never used "
+                      f"as worked examples", stacklevel=3)
     val = rows_of(valset) if valset is not None else None
     mapping = expected_columns(target, expected, examples)
     if mapping:                                 # the right answers under the outputs' names

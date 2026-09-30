@@ -1,0 +1,207 @@
+{
+ "description": "saw_of expanded: every earlier turn, in order.",
+ "kind": "context",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926d00-00c9-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926d00-00c9-7000-8000-000000000000",
+   "program": {
+    "name": "tutor",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   "started": "2026-09-30T10:00:01.000000Z",
+   "seconds": 0.1,
+   "content": true,
+   "inputs": {
+    "message": "Hi, I'm Alex."
+   },
+   "outputs": {
+    "result": "Welcome, Alex!"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 1
+    },
+    "outputs": {
+     "result": 1
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "h",
+    "pid": 1,
+    "language": "python",
+    "runtime": "3.13",
+    "functai": "1.2.0"
+   },
+   "steps": [
+    {
+     "kind": "model",
+     "outputs": {
+      "result": "Welcome, Alex!"
+     }
+    }
+   ],
+   "conversation": {
+    "id": "alex",
+    "turn": "01926d00-00c9-7000-8000-000000000000",
+    "parent": null
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926d00-00ca-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926d00-00ca-7000-8000-000000000000",
+   "program": {
+    "name": "tutor",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   "started": "2026-09-30T10:00:02.000000Z",
+   "seconds": 0.1,
+   "content": true,
+   "inputs": {
+    "message": "What is my name?"
+   },
+   "outputs": {
+    "result": "Alex."
+   },
+   "sizes": {
+    "inputs": {
+     "message": 1
+    },
+    "outputs": {
+     "result": 1
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "exchanges": [],
+   "saw": [
+    {
+     "call": "01926d00-00c9-7000-8000-000000000000",
+     "steps": true
+    }
+   ],
+   "caller": {},
+   "process": {
+    "host": "h",
+    "pid": 1,
+    "language": "python",
+    "runtime": "3.13",
+    "functai": "1.2.0"
+   },
+   "conversation": {
+    "id": "alex",
+    "turn": "01926d00-00ca-7000-8000-000000000000",
+    "parent": "01926d00-00c9-7000-8000-000000000000"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926d00-00cb-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926d00-00cb-7000-8000-000000000000",
+   "program": {
+    "name": "tutor",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   "started": "2026-09-30T10:00:03.000000Z",
+   "seconds": 0.1,
+   "content": true,
+   "inputs": {
+    "message": "And again?"
+   },
+   "outputs": {
+    "result": "Alex!"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 1
+    },
+    "outputs": {
+     "result": 1
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {},
+   "exchanges": [],
+   "saw": [
+    {
+     "saw_of": "01926d00-00ca-7000-8000-000000000000"
+    },
+    {
+     "call": "01926d00-00ca-7000-8000-000000000000"
+    }
+   ],
+   "caller": {},
+   "process": {
+    "host": "h",
+    "pid": 1,
+    "language": "python",
+    "runtime": "3.13",
+    "functai": "1.2.0"
+   },
+   "conversation": {
+    "id": "alex",
+    "turn": "01926d00-00cb-7000-8000-000000000000",
+    "parent": "01926d00-00ca-7000-8000-000000000000"
+   }
+  }
+ ],
+ "call": "01926d00-00cb-7000-8000-000000000000",
+ "expect": {
+  "earlier": [
+   {
+    "inputs": {
+     "message": "Hi, I'm Alex."
+    },
+    "outputs": {
+     "result": "Welcome, Alex!"
+    },
+    "steps": [
+     {
+      "kind": "model",
+      "outputs": {
+       "result": "Welcome, Alex!"
+      }
+     }
+    ],
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+   },
+   {
+    "inputs": {
+     "message": "What is my name?"
+    },
+    "outputs": {
+     "result": "Alex."
+    }
+   }
+  ],
+  "conversation": "alex"
+ }
+}

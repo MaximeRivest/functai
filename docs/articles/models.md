@@ -154,7 +154,8 @@ program: the machine that loads it uses its own.
 | `adapter`, `template` | the [prompt format](layouts.md) |
 | `module` | `"predict"` (default), `"cot"` ([reasoning first](outputs.md)), `"react"` |
 | `tools`, `max_steps`, `tool_errors` | the [tool loop](tools.md) |
-| `stateful`, `state_window` | [memory](memory.md) |
+| `approve` | tools that ask first (`functai.tool`) |
+| `cache_replies`, `replicate` | replies kept, and asked again |
 | `retries`, `api_retries`, `cache_replies` | [reliability](reliability.md) |
 | `capabilities` | what the model can do, when you know better than functai's table |
 | `optimizer`, `teacher`, `teacher_lm` | [optimization](improving.md) defaults |

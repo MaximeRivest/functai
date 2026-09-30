@@ -19,6 +19,13 @@ API:
 - Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s)
 - Event logs: configure(observers=[...], journal=Journal(store, required=True)); MemoryStore; Store; Follower;
              flush() (function observers and best-effort journals catch up)
+- Conversations: fn.conversation(id, store="folder/", context=last_turns(10)) → Conversation (chat(...),
+             chat.turns, chat.continue_from(turn), chat.render(...), turn.approve()); all_turns, last_turns,
+             remember, earlier(); FolderStore
+- Tools:     @tool(effects="reads"|"changes"); approve=ask or "changes"; Waiting, ApprovalError
+- Serving:   serve(program), Service; remote(url, key=...)
+- Long runs: configure(cache_replies="disk"), replicate=; fn.map(rows, threads=8) (a progress line; run again to
+             resume); quotes_found(text, quotes); prune_calls(older_than="90d"); split(rows, by="conversation")
 - Utils:     phistory(), inspect_history(), clear_cache()
 - Data:      datasets.tickets(), datasets.field_notes()  (small labelled tables to learn with)
 """
@@ -51,11 +58,18 @@ from .core import (
     signature_text,
 )
 from .calllog import calls, rate, rated
-from .errors import (EventRefused, FunctAIError, InterfaceError, JournalError, LogContentError, Outcome,
-                     SawError)
+from .errors import (ApprovalError, ConversationError, EventRefused, FunctAIError, InterfaceError, JournalError,
+                     LogContentError, Outcome, SawError, ServeError, Waiting)
 from .eventlog import Follower, Journal, MemoryStore, Store, flush
 from .interface import JSON
 from .streaming import Cancelled, Stream
+from .conversations import Conversation, Turn, all_turns, earlier, last_turns, remember
+from .stores import FolderStore, MemoryConversations
+from .tools import Approval, Tool, tool
+from .serving import Service, serve
+from .remote import RemoteProgram, remote
+from .judges import quotes_found
+from .calllog import prune_calls, split
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
 from . import datasets  # noqa: F401  (functai.datasets.tickets(), ...)
@@ -92,6 +106,9 @@ __all__ = [
     "calls", "rate", "rated",
     "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "Outcome",
     "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
+    "Conversation", "Turn", "all_turns", "last_turns", "remember", "earlier", "FolderStore", "MemoryConversations",
+    "tool", "Tool", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",
+    "Service", "serve", "remote", "RemoteProgram", "quotes_found", "prune_calls", "split",
     "labeled_few_shot", "bootstrap_few_shot", "gepa",
     "Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch", "InstructionSearch", "GEPA",
 ]

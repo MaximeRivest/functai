@@ -1,0 +1,22 @@
+{
+ "description": "The key of the third independent answer to the same request: sha256 of the canonical JSON of functai_reply, the request, replicate.",
+ "kind": "key",
+ "request": {
+  "model": "gpt-4.1-mini",
+  "messages": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "type": "text",
+      "text": "Chile"
+     }
+    ]
+   }
+  ]
+ },
+ "replicate": 2,
+ "expect": {
+  "key": "sha256:3190187683c825a1c1fdf7187f3d67ce9c7cb39fb8b34ddf4cb61adccb42c067"
+ }
+}

@@ -87,6 +87,42 @@ Watch a call while it is made. `fn.stream(...)` returns a Stream; its events are
 | [Stream](Stream.md#functai.Stream) | One call of an AI function or a module, watched while it is made. |
 | [Cancelled](Cancelled.md#functai.Cancelled) | The stream was closed before its call ended. |
 
+## Conversations
+
+A program's calls that remember each other, kept in a store; branches, what the model sees, and helpers' memory inside a module.
+
+| | |
+| --- | --- |
+| [conversations.Conversation](conversations.Conversation.md#functai.conversations.Conversation) | A program's conversation: its turns, kept in a store, called like the |
+| [conversations.Turn](conversations.Turn.md#functai.conversations.Turn) | One turn of a conversation, as its records say now. |
+| [last_turns](last_turns.md#functai.last_turns) | Only the last ``n`` earlier turns are shown. ``without``: fields left |
+| [all_turns](all_turns.md#functai.all_turns) | Every earlier turn is shown (the default). ``without``: fields left out |
+| [remember](remember.md#functai.remember) | What a helper remembers: ``remember("conversation", steps=True)``. |
+| [earlier](earlier.md#functai.earlier) | The conversation so far, as data: inside a module's turn, one row per |
+| [FolderStore](FolderStore.md#functai.FolderStore) | Conversations kept in a folder, shared by every process that opens it: |
+| [Waiting](Waiting.md#functai.Waiting) | A turn stopped to wait for a person's answer (code ``turn-waiting``): |
+| [ConversationError](ConversationError.md#functai.ConversationError) | A conversation, or one of its turns, refused what was asked |
+
+## Tools that ask first
+
+Tools say what they do to the world; a person can be asked before they run.
+
+| | |
+| --- | --- |
+| [tool](tool.md#functai.tool) | Make a function a tool that says what it does to the world. |
+| [Approval](Approval.md#functai.Approval) | One tool call waiting for a person's answer. |
+| [ApprovalError](ApprovalError.md#functai.ApprovalError) | A tool call needs a person's answer and nobody can be asked (code |
+
+## Serving
+
+Serve a program over HTTP to callers who see only its boundary; use a served program like a local one.
+
+| | |
+| --- | --- |
+| [serve](serve.md#functai.serve) | Serve a program over HTTP: its interface, calls, streams and |
+| [Service](Service.md#functai.Service) | A program as an HTTP service, independent of any server: ``handle`` |
+| [remote](remote.md#functai.remote) | A program served elsewhere, used like a local one (contract/serving.md). |
+
 ## The call log
 
 Keep every call on disk, mark answers right or wrong, and turn the corrections into rows with known answers.
@@ -96,6 +132,16 @@ Keep every call on disk, mark answers right or wrong, and turn the corrections i
 | [calls](calls.md#functai.calls) | Every logged call, as a table. |
 | [rate](rate.md#functai.rate) | Say whether a call's answer is right, and if not, what it should have been. |
 | [rated](rated.md#functai.rated) | The calls people rated, as rows with known answers. |
+| [split](split.md#functai.split) | Two tables, with every group of rows on one side: ``train, test = |
+| [prune_calls](prune_calls.md#functai.prune_calls) | Delete the call log's day folders older than a time, keeping what |
+
+## Long runs
+
+Replies kept on disk, and a check on a judge's evidence.
+
+| | |
+| --- | --- |
+| [quotes_found](quotes_found.md#functai.quotes_found) | Whether each quote is in the text, word for word. |
 
 ## Baking into weights
 
@@ -126,7 +172,7 @@ See exactly what was sent and what came back.
 | [phistory](phistory.md#functai.phistory) | The last model calls, as readable text: what was sent, what came back. |
 | [inspect_history](inspect_history.md#functai.inspect_history) | The last ``n`` requests functai sent (or answered from its cache), oldest first. |
 | [signature_text](signature_text.md#functai.signature_text) | A one-line summary of the signature. |
-| [clear_cache](clear_cache.md#functai.clear_cache) | Forget every cached reply. |
+| [clear_cache](clear_cache.md#functai.clear_cache) | Forget cached replies: the memory cache (default), or the store a |
 
 ## Errors
 
@@ -137,7 +183,7 @@ What functai raises, and what each one tells you to do.
 | [LoginRequired](LoginRequired.md#functai.LoginRequired) | No usable credential for the model's provider: sign in or pass a key. |
 | [StepLimit](StepLimit.md#functai.StepLimit) | The tool loop reached ``max_steps`` without an answer. ``.turn`` is the turn so far. |
 | [Refused](Refused.md#functai.Refused) | ``save`` found errors; ``.report`` has them all. |
-| [LoadRefused](LoadRefused.md#functai.LoadRefused) | The saved program cannot be loaded as saved; ``.problems`` says why. |
+| [LoadRefused](LoadRefused.md#functai.LoadRefused) | The saved program cannot be loaded as saved; ``.problems`` says why, and |
 
 ## Low-level helpers
 

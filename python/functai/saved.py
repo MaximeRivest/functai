@@ -303,7 +303,7 @@ def probe_plan(fn, spec, settings: Dict[str, Any]) -> Tuple[Any, List[Any]]:
                              baked.provider)
     else:
         plan = adapters.bind(fn._layout(settings), spec.signature, PROBE_CAPABILITIES, "probe")
-    return plan, fn._past(plan, spec, {**settings, "stateful": False})
+    return plan, fn._past(plan, spec, settings, context=False)
 
 
 def probe_request(fn, spec, plan, past, inputs: Dict[str, Any]) -> Dict[str, Any]:

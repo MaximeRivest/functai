@@ -99,7 +99,7 @@
   },
   {
    "functai_event": 2,
-   "kind": "approval",
+   "kind": "handoff",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 6,
@@ -110,7 +110,7 @@
    "at": "2026-09-28T10:00:00.050000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "helper",
-   "asked": "May I cancel order B-2210?"
+   "asked": "May a person take over order B-2210?"
   },
   {
    "functai_event": 2,

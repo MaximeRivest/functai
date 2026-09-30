@@ -1,0 +1,366 @@
+{
+ "description": "A turn waits for a person's answer (after its lease was last renewed): a new turn is refused (conversation-busy) until it is answered.",
+ "kind": "state",
+ "records": [
+  {
+   "functai_conversation": 1,
+   "kind": "program",
+   "seq": 1,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "name": "tutor",
+   "program_kind": "ai",
+   "module": "__main__",
+   "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "answer": "result",
+   "interface": {
+    "description": "Tutor.",
+    "inputs": [
+     {
+      "name": "message",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "fields": [
+    {
+     "name": "message",
+     "direction": "input",
+     "purpose": "plain",
+     "shape": {
+      "type": "string"
+     }
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "purpose": "plain",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "turn",
+   "seq": 2,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0001-7000-8000-000000000000",
+   "parent": null,
+   "program": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "inputs": {
+    "message": "Hi, I'm Alex."
+   }
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "lease",
+   "seq": 3,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0001-7000-8000-000000000000",
+   "holder": "h:1:a",
+   "until": "2026-09-30T10:10:30.000000Z",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "ended",
+   "seq": 4,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0001-7000-8000-000000000000",
+   "state": "done",
+   "outputs": {
+    "result": "Welcome, Alex!"
+   },
+   "value": "Welcome, Alex!",
+   "lmcc": {
+    "signature": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "inputs": {
+     "message": "Hi, I'm Alex."
+    },
+    "steps": [
+     {
+      "kind": "model",
+      "outputs": {
+       "result": "Welcome, Alex!"
+      }
+     }
+    ],
+    "outputs": {
+     "result": "Welcome, Alex!"
+    }
+   },
+   "saw": [],
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "turn",
+   "seq": 5,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0002-7000-8000-000000000000",
+   "parent": "01926d00-0001-7000-8000-000000000000",
+   "program": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "inputs": {
+    "message": "What is 1/2 + 1/3?"
+   }
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "lease",
+   "seq": 6,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0002-7000-8000-000000000000",
+   "holder": "h:1:a",
+   "until": "2026-09-30T10:10:30.000000Z",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "ended",
+   "seq": 7,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0002-7000-8000-000000000000",
+   "state": "done",
+   "outputs": {
+    "result": "First, the bottoms."
+   },
+   "value": "First, the bottoms.",
+   "lmcc": {
+    "signature": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "inputs": {
+     "message": "What is 1/2 + 1/3?"
+    },
+    "steps": [
+     {
+      "kind": "model",
+      "outputs": {
+       "result": "First, the bottoms."
+      }
+     }
+    ],
+    "outputs": {
+     "result": "First, the bottoms."
+    }
+   },
+   "saw": [
+    {
+     "call": "01926d00-0001-7000-8000-000000000000",
+     "steps": true
+    }
+   ],
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "turn",
+   "seq": 8,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0003-7000-8000-000000000000",
+   "parent": "01926d00-0002-7000-8000-000000000000",
+   "program": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "inputs": {
+    "message": "Is it 2/5?"
+   }
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "lease",
+   "seq": 9,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0003-7000-8000-000000000000",
+   "holder": "h:1:a",
+   "until": "2026-09-30T10:10:30.000000Z",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "ended",
+   "seq": 10,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0003-7000-8000-000000000000",
+   "state": "done",
+   "outputs": {
+    "result": "Not quite."
+   },
+   "value": "Not quite.",
+   "lmcc": {
+    "signature": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "inputs": {
+     "message": "Is it 2/5?"
+    },
+    "steps": [
+     {
+      "kind": "model",
+      "outputs": {
+       "result": "Not quite."
+      }
+     }
+    ],
+    "outputs": {
+     "result": "Not quite."
+    }
+   },
+   "saw": [
+    {
+     "saw_of": "01926d00-0002-7000-8000-000000000000"
+    },
+    {
+     "call": "01926d00-0002-7000-8000-000000000000",
+     "steps": true
+    }
+   ],
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "turn",
+   "seq": 11,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0004-7000-8000-000000000000",
+   "parent": "01926d00-0002-7000-8000-000000000000",
+   "program": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "inputs": {
+    "message": "Is it 5/6?"
+   }
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "lease",
+   "seq": 12,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0004-7000-8000-000000000000",
+   "holder": "h:1:a",
+   "until": "2026-09-30T10:10:30.000000Z",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "ended",
+   "seq": 13,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0004-7000-8000-000000000000",
+   "state": "done",
+   "outputs": {
+    "result": "Yes!"
+   },
+   "value": "Yes!",
+   "lmcc": {
+    "signature": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "inputs": {
+     "message": "Is it 5/6?"
+    },
+    "steps": [
+     {
+      "kind": "model",
+      "outputs": {
+       "result": "Yes!"
+      }
+     }
+    ],
+    "outputs": {
+     "result": "Yes!"
+    }
+   },
+   "saw": [
+    {
+     "saw_of": "01926d00-0002-7000-8000-000000000000"
+    },
+    {
+     "call": "01926d00-0002-7000-8000-000000000000",
+     "steps": true
+    }
+   ],
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "turn",
+   "seq": 14,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0006-7000-8000-000000000000",
+   "parent": "01926d00-0004-7000-8000-000000000000",
+   "program": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+   "inputs": {
+    "message": "tidy"
+   }
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "lease",
+   "seq": 15,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0006-7000-8000-000000000000",
+   "holder": "h:1:a",
+   "until": "2026-09-30T10:10:30.000000Z",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "tool",
+   "seq": 16,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0006-7000-8000-000000000000",
+   "site": "gardener#1",
+   "invocation": 1,
+   "id": "c1",
+   "name": "read_note",
+   "state": "done",
+   "output": "text of a.md",
+   "attempt": 1
+  },
+  {
+   "functai_conversation": 1,
+   "kind": "waiting",
+   "seq": 17,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "turn": "01926d00-0006-7000-8000-000000000000",
+   "approvals": [
+    {
+     "call": "01926d00-0006-7000-8000-000000000000",
+     "invocation": 2,
+     "id": "c2",
+     "name": "write_note",
+     "input": {
+      "name": "b.md"
+     },
+     "effects": "changes",
+     "path": "gardener/write_note",
+     "site": "gardener#1"
+    }
+   ],
+   "attempt": 1
+  }
+ ],
+ "now": "2026-09-30T10:10:00.000000Z",
+ "expect": {
+  "states": {
+   "01926d00-0001-7000-8000-000000000000": "done",
+   "01926d00-0002-7000-8000-000000000000": "done",
+   "01926d00-0003-7000-8000-000000000000": "done",
+   "01926d00-0004-7000-8000-000000000000": "done",
+   "01926d00-0006-7000-8000-000000000000": "waiting"
+  },
+  "head": "01926d00-0006-7000-8000-000000000000",
+  "next": {
+   "refuses": "conversation-busy"
+  },
+  "waiting": {
+   "01926d00-0006-7000-8000-000000000000": [
+    2
+   ]
+  },
+  "unfinished": {}
+ }
+}

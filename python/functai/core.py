@@ -306,6 +306,7 @@ _SETTING_ALIASES = {
 
 
 _KEEP = object()   # `using` left the template as it was
+_NO_APPROVE = object()
 
 
 def _checked_template(messages: Any) -> Optional[tuple]:
@@ -352,50 +353,27 @@ def _shown_as(plan: Any, spec: Spec, turns: List[Any], ids: List[str]) -> Tuple[
     for a turn no logged call made: ``{"unrecorded": true}``)."""
     entries: List[Dict[str, Any]] = []
     shown: List[Any] = []
+    def part(t: Any, key: str) -> Any:
+        return t.get(key) if isinstance(t, dict) else getattr(t, key, None)
+
+    fingerprint = getattr(plan, "fingerprint", None)
     for turn, cid in zip(turns, ids):
         fitted = engine.fit_turn(plan, spec, turn) if plan is not None else turn
         if fitted is None:
             continue
+        whole = fitted is turn or (isinstance(turn, dict) and fingerprint is not None
+                                   and turn.get("signature") == fingerprint)
         if not cid:
             entries.append({"unrecorded": True})
-        elif fitted is turn:
-            entries.append({"call": cid, "steps": True} if getattr(turn, "steps", None) else {"call": cid})
+        elif whole:
+            entries.append({"call": cid, "steps": True} if part(turn, "steps") else {"call": cid})
         else:
-            had = set(getattr(turn, "inputs", None) or {}) | set(getattr(turn, "outputs", None) or {})
+            had = set(part(turn, "inputs") or {}) | set(part(turn, "outputs") or {})
             kept = set(getattr(fitted, "inputs", None) or {}) | set(getattr(fitted, "outputs", None) or {})
             left_out = sorted(had - kept)
             entries.append({"call": cid, "without": left_out} if left_out else {"call": cid})
         shown.append(fitted)
     return entries, shown
-
-
-def _turn_print(turn: Any) -> Optional[str]:
-    """What a turn holds, as canonical JSON (None when it has no JSON form:
-    such a turn cannot be shown to be unchanged, so no call is credited with it)."""
-    try:
-        return calllog.canonical(turn.to_dict())
-    except Exception:  # noqa: BLE001 — a value with no JSON form
-        return None
-
-
-def _frozen(turn: Any) -> Any:
-    """A copy of a turn that later edits of the original cannot reach: a deep
-    copy, or, when a value in it cannot be copied (a host object holding a
-    lock), the turn rebuilt from its JSON form, the values a request shows of
-    it. A turn with neither cannot be fixed as the call's context: TypeError
-    (the call's record and events are then not written, never written with a
-    context the call was not shown)."""
-    try:
-        return copy.deepcopy(turn)
-    except Exception:  # noqa: BLE001 — a value that cannot be copied: its JSON form is
-        pass
-    try:
-        if isinstance(turn, lmcc.Turn):
-            return lmcc.Turn.from_dict(json.loads(calllog.canonical(turn.to_dict())))
-        return json.loads(calllog.canonical(turn))
-    except Exception:  # noqa: BLE001 — no JSON form either
-        raise TypeError("a turn in history can be neither copied nor written as JSON, so what a call is "
-                        "shown of it cannot be fixed") from None
 
 
 class FunctAIFunc(Generic[P, R]):
@@ -443,7 +421,6 @@ class FunctAIFunc(Generic[P, R]):
         self._tools: List[Callable] = list(tools or [])
         self._tool_specs = [engine.tool_spec(t) for t in self._tools]
         self._state = ProgramState()
-        self.history: List[lmcc.Turn] = []
         self._lock = threading.RLock()
         self._spec_cache: Dict[Tuple, Spec] = {}
         self._plan_cache: Dict[Tuple, lmcc.Plan] = {}
@@ -453,9 +430,6 @@ class FunctAIFunc(Generic[P, R]):
         self._instr_refined = 0
         self._instr_frozen = False
         self._autoinstructed = False
-        # which logged call made each turn of `history`: by the turn itself, and what it held then (a turn put
-        # there by hand, or changed since, has none)
-        self._history_calls: Dict[int, Tuple[Any, str, Optional[str]]] = {}
         self._interface_cache: Optional[Tuple[Any, Dict[str, Any]]] = None
         self._spec()                                          # signature errors surface at definition
         self._check_definition()                              # and interface and log_content ones
@@ -600,8 +574,6 @@ class FunctAIFunc(Generic[P, R]):
                 merged.pop("adapter", None)
         elif checked.get("adapter") is not None:
             clone._template = None
-        clone.history = []
-        clone._history_calls = {}
         clone._interface_cache = None
         clone._lock = threading.RLock()
         clone._spec_cache, clone._plan_cache = {}, {}
@@ -677,12 +649,6 @@ class FunctAIFunc(Generic[P, R]):
             raise ValueError(f"{path}: not a functai program file")
         return self.load_state(ProgramState.from_dict(data))
 
-    def reset(self) -> None:
-        """Forget the conversation (stateful functions)."""
-        with self._lock:
-            self.history.clear()
-            self._history_calls.clear()
-
     # ----- the interface, and what a call records -----
 
     @property
@@ -712,47 +678,28 @@ class FunctAIFunc(Generic[P, R]):
 
     def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
         """(what a call is shown as context, entries of the call log's ``saw``;
-        the turns themselves): a stateful function's latest turns, as the ids
-        of the calls they were, each as the call's plan shows it: whole, with
-        its steps, when the turn was made for that plan; as its values alone
-        (``without`` the fields the plan no longer has) when it was made for
-        another; not at all when none of its outputs is left.
-
-        A turn is matched to its call by identity and by what it holds (its
-        JSON form when the call made it), so editing ``history`` never lends a
-        turn another call's id: a turn no logged call made (put there by hand,
-        or changed since, even inside its values) is written ``{"unrecorded":
-        true}``, which no reader knows (``unknown-key``). The turns returned
-        are copies taken now, the ones the call is shown, whatever happens to
-        ``history`` or to the turns in it meanwhile."""
-        s = self._effective()
-        if not s.get("stateful"):
+        the context itself): in a conversation, the earlier turns its rule
+        shows (the conversation's own program), or a helper's own earlier
+        calls when the conversation says it remembers them; in a row being
+        asked again (``evaluate`` on rows with ``earlier``), that row's
+        earlier turns. Each turn as the call's plan shows it: whole, with its
+        steps, when it was made for that plan; as its values alone
+        (``without`` the fields the plan no longer has) otherwise; not at all
+        when none of its outputs is left. Nothing otherwise: ``[]``."""
+        from . import conversations
+        found = conversations.context_for(self)
+        if found is None:
             return [], None
-        with self._lock:
-            history = list(self.history)
-            made = dict(self._history_calls)
-        window = int(s.get("state_window") or 0)
-        if window > 0:
-            history = history[-window:]
+        turns, ids, fixed = found
         spec = self._spec()
         try:
-            plan = self._plan_for(spec, s)[0]
+            plan = self._plan_for(spec, self._effective())[0]
         except Exception:  # noqa: BLE001 — no model to plan for: the call fails there, and says why
             plan = None
-        ids, frozen = [], []
-        for turn in history:
-            # what the call is shown: a copy taken now, whatever changes meanwhile; the copy, not the live
-            # turn, is compared with what the call that made it recorded (an edit between the two is not lent
-            # that call's id)
-            copied = _frozen(turn)
-            owner = made.get(id(turn))
-            same = owner is not None and owner[0] is turn and owner[2] is not None \
-                and _turn_print(copied) == owner[2]
-            ids.append(owner[1] if same else "")
-            frozen.append(copied)
-        history = frozen
-        entries, shown = _shown_as(plan, spec, history, ids)
-        return entries, {"plan": getattr(plan, "fingerprint", None), "turns": history, "ids": ids,
+        entries, shown = _shown_as(plan, spec, turns, ids)
+        if fixed is not None:
+            entries = fixed(entries)
+        return entries, {"plan": getattr(plan, "fingerprint", None), "turns": turns, "ids": ids,
                          "entries": entries, "shown": shown}
 
     # ----- signature and plan -----
@@ -824,24 +771,29 @@ class FunctAIFunc(Generic[P, R]):
         """How calls are laid out for the current model: adapter, reader, transports, formats."""
         return self.plan().explain()
 
-    def _past(self, plan: lmcc.Plan, spec: Spec, settings: Dict[str, Any]) -> List[lmcc.Turn]:
+    def _past(self, plan: lmcc.Plan, spec: Spec, settings: Dict[str, Any], *, context: bool = True
+              ) -> List[lmcc.Turn]:
+        """The turns placed before the call's own: the worked examples, then
+        (``context``) what the call is shown as earlier turns."""
         past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos) if t is not None]
-        if settings.get("stateful"):
-            call = calllog.current()
-            if call is not None and call.program is self and call.context is not None:
-                context = call.context                     # what its record says it saw, as captured
-                if context["plan"] == plan.fingerprint:
-                    return past + list(context["shown"])
-                # another plan than the one its saw was worked out for (an escalation to another model):
-                # shown again as this plan shows it, and if that differs, its record says the context changed
-                entries, refit = _shown_as(plan, spec, context["turns"], context["ids"])
-                if entries != context["entries"] and {"context": "changed"} not in call.saw:
-                    call.saw.append({"context": "changed"})
-                return past + refit
-            with self._lock:
-                window = int(settings.get("state_window") or 0)
-                recent = list(self.history[-window:] if window > 0 else self.history)
-            past += [t for t in (engine.fit_turn(plan, spec, h) for h in recent) if t is not None]
+        if not context:
+            return past
+        call = calllog.current()
+        if call is not None and call.program is self and call.context is not None:
+            ctx = call.context                             # what its record says it saw, as captured
+            if ctx["plan"] == plan.fingerprint:
+                return past + list(ctx["shown"])
+            # another plan than the one its saw was worked out for (an escalation to another model):
+            # shown again as this plan shows it, and if that differs, its record says the context changed
+            entries, refit = _shown_as(plan, spec, ctx["turns"], ctx["ids"])
+            if entries != ctx["entries"] and {"context": "changed"} not in call.saw:
+                call.saw.append({"context": "changed"})
+            return past + refit
+        if call is None or call.program is not self:
+            from . import conversations              # render(): what the next call would be shown
+            found = conversations.context_for(self)
+            if found is not None:
+                past += _shown_as(plan, spec, found[0], found[1])[1]
         return past
 
     def render(self, *args, **kwargs):
@@ -955,18 +907,6 @@ class FunctAIFunc(Generic[P, R]):
         escalate_to = s.get("escalate_to")
         if escalate_to is not None:
             pred, model, plan = self._maybe_escalate(pred, inputs, s, escalate_to, (model, plan))
-        if s.get("stateful"):
-            call = calllog.current()
-            with self._lock:
-                self.history.append(pred.turn)
-                if call is not None and call.program is self:
-                    self._history_calls[id(pred.turn)] = (pred.turn, call.id, _turn_print(pred.turn))
-                window = int(s.get("state_window") or 0)
-                if window > 0 and len(self.history) > window:
-                    del self.history[:-window]
-                live = {id(t) for t in self.history}
-                for k in [k for k in self._history_calls if k not in live]:
-                    del self._history_calls[k]
         trace = _TRACE.get()
         if trace is not None:
             trace.append((self, pred))
@@ -1199,8 +1139,66 @@ class FunctAIFunc(Generic[P, R]):
         from .columns import has_column
         if has_column(args, kwargs):
             raise TypeError(f"{self.__name__}.stream watches one call; on columns, use {self.__name__}(col.x)")
+        approve = _NO_APPROVE
+        if "approve" in kwargs and "approve" not in self._sig.parameters:
+            approve = kwargs.pop("approve")           # a setting for this call, not an input
         self._bind_args(args, kwargs)                 # wrong arguments fail here, not in the background
-        return streaming.Stream(self, args, kwargs)
+        if approve is _NO_APPROVE:
+            return streaming.Stream(self, args, kwargs)
+        from .config import forced
+        with forced(approve=approve):
+            return streaming.Stream(self, args, kwargs)
+
+    def conversation(self, id: Optional[str] = None, *, store: Any = None, context: Any = None,
+                     earlier_without: Any = (), sends: str = "queue", **settings: Any) -> Any:
+        '''A conversation with this function: each call a turn that sees the
+        earlier ones, kept in ``store``; the function itself is unchanged.
+
+        Parameters
+        ----------
+        id : str, optional
+            The conversation's id; the same id in the same store opens it
+            again (tomorrow, in another process). Default: a new one.
+        store : None, True, folder, or store
+            None: this process's memory. A folder (or True: the default
+            one) keeps it across runs. Any object with ``append`` and
+            ``read`` (``functai.stores``).
+        context : optional
+            Which earlier turns the model sees: every one (default), or
+            ``functai.last_turns(10)``; ``without=[...]`` leaves bulky
+            inputs out of earlier turns.
+        earlier_without : list of str
+            Outputs this function now writes that earlier turns lack
+            (``reasoning`` after turning on ``module="cot"``).
+        sends : str
+            Two sends at once: ``"queue"`` (default), ``"refuse"`` or
+            ``"branch"``.
+        **settings
+            Settings for every turn (``approve``, ``lm``...).
+
+        Returns
+        -------
+        Conversation
+            Called like the function. ``chat.turns``, ``chat.render(...)``,
+            ``chat.continue_from(turn)``, ``chat.stream(...)``.
+
+        Examples
+        --------
+        ```python
+        @ai
+        def tutor(message: str) -> str:
+            """Tutor a student in fractions, one small step at a time."""
+            ...
+
+        chat = tutor.conversation("alex")
+        chat("Hi, I'm Alex.")
+        chat("What is 1/2 + 1/3?")
+        [t.inputs["message"] for t in chat.turns[-1].saw]
+        ```
+        '''
+        from .conversations import Conversation
+        return Conversation(self, id, store=store, context=context, earlier_without=earlier_without, sends=sends,
+                            **settings)
 
     # ----- optimization -----
 
@@ -1303,20 +1301,30 @@ class FunctAIFunc(Generic[P, R]):
         return vectorize_function(self, dtype=dtype, threads=threads, errors=errors,
                                   version=version)
 
-    def map(self, data: Any, *, num_threads: int = 1):
+    def map(self, data: Any, *, threads: Optional[int] = None, num_threads: Optional[int] = None,
+            progress: Optional[bool] = None):
         '''Run on every row of a table, and return the run table.
 
         ``evaluate`` without the scoring: the rows, the predictions
         (``pred_<output>``), and each row's ``error``, ``seconds``, tokens and
-        ``model``. Needs ``pip install "functai[data]"``.
+        ``model``. A row that fails keeps its error; the others go on. Needs
+        ``pip install "functai[data]"``.
+
+        For long runs, keep replies on disk (``functai.configure(
+        cache_replies="disk")``): running ``map`` again after an interruption,
+        or to retry the rows that failed, sends only what has no kept reply.
 
         Parameters
         ----------
         data : list of dict, or a table
             Anything ``dpyr.read()`` takes; columns named like the parameters
             are the inputs.
-        num_threads : int
-            How many rows run at once.
+        threads : int
+            How many rows run at once (default 1). ``num_threads`` is the
+            same.
+        progress : bool, optional
+            A line on stderr, updated as rows finish: rows done, errors,
+            tokens, time left. Default: on in a terminal or a notebook.
 
         Returns
         -------
@@ -1334,11 +1342,12 @@ class FunctAIFunc(Generic[P, R]):
             """The country's capital city."""
             ...
 
-        capital.map([{"country": "Norway"}, {"country": "Ghana"}], num_threads=2)
+        capital.map([{"country": "Norway"}, {"country": "Ghana"}], threads=2, progress=False)
         ```
         '''
-        from .evaluation import evaluate
-        return evaluate(self, data, (), num_threads=num_threads).table
+        from .evaluation import evaluate, show_progress
+        n = threads if threads is not None else num_threads if num_threads is not None else 1
+        return evaluate(self, data, (), num_threads=n, progress=show_progress(progress)).table
 
     def opt(self, data: Any = None, *, optimizer: Any = None, metric: Any = None, valset: Any = None,
             **opts) -> "FunctAIFunc[P, R]":
@@ -1531,9 +1540,11 @@ def ai(_fn: Any = None, /, **cfg: Any) -> Any:
     tools : list of functions
         Typed Python functions the model may call. A call then runs the tool
         loop: at most ``max_steps`` model calls (default 8).
-    stateful : bool
-        Remember the conversation between calls (the last ``state_window``
-        turns, default 5).
+    approve : function or rule, optional
+        Ask before a tool runs (``functai.tool(effects=...)`` says what each
+        does): a function given each ``Approval`` (``True``, ``False``, or a
+        reason to refuse), or a rule (``"changes"``, ``"all"``, a list of
+        tool names). See ``functai.tool``.
     adapter : str or lmcc.Adapter
         The prompt layout: ``"xml"`` (default), ``"chat"``, ``"json"``, or an
         lmcc adapter.

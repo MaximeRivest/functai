@@ -8,7 +8,7 @@ rat:
 # rated { #functai.rated }
 
 ```{.python .no-run}
-rated(program, *, folder=None, by=None, since=None)
+rated(program, *, folder=None, by=None, since=None, any_file=False)
 ```
 
 The calls people rated, as rows with known answers.
@@ -30,12 +30,13 @@ keep the rows of that draw (``col.sample == "..."``).
 
 ## Parameters {.doc-section .doc-section-parameters}
 
-| Name    | Type                                | Description                                                                                                                                                                         | Default    |
-|---------|-------------------------------------|-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| program | AI function, module or name         | Whose calls. Given the function itself, only calls with its current signature are used (calls from earlier versions of the prompt are kept: their inputs and outputs are the same). | _required_ |
-| folder  | str or path                         | The log folder (default as for ``calls``).                                                                                                                                          | `None`     |
-| by      | str                                 | Only this person's ratings. Default: everyone's; when people disagree, the latest rating is used and ``disputed`` is true.                                                          | `None`     |
-| since   | (date, datetime, timedelta or text) | Only calls and ratings from then on.                                                                                                                                                | `None`     |
+| Name     | Type                                | Description                                                                                                                                                                                            | Default    |
+|----------|-------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| program  | AI function, module or name         | Whose calls. Given the function itself, only calls with its current signature are used (calls from earlier versions of the prompt are kept: their inputs and outputs are the same).                    | _required_ |
+| folder   | str or path                         | The log folder (default as for ``calls``).                                                                                                                                                             | `None`     |
+| by       | str                                 | Only this person's ratings. Default: everyone's; when people disagree, the latest rating is used and ``disputed`` is true.                                                                             | `None`     |
+| since    | (date, datetime, timedelta or text) | Only calls and ratings from then on.                                                                                                                                                                   | `None`     |
+| any_file | bool                                | A program defined in a notebook or a script is known by its file too, so two notebooks' ``summarize`` are two programs. ``True`` takes its calls from any file (a notebook that was moved or renamed). | `False`    |
 
 ## Returns {.doc-section .doc-section-returns}
 

@@ -1,0 +1,285 @@
+{
+ "description": "An AI function's boundary: its answer's text (not its reasoning), requests and retries without their reason, and a failure's type and code, no message.",
+ "kind": "view",
+ "view": "outside",
+ "answer_from": null,
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "parent": null,
+   "root": "01926d00-0064-7000-8000-000000000000",
+   "program": {
+    "name": "answer",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "hi"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "field": "reasoning",
+   "answer": false,
+   "text": "they greet"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "field": "result",
+   "answer": true,
+   "text": "Hel"
+  },
+  {
+   "functai_event": 2,
+   "kind": "retry",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "reason": "the reply could not be read (it quoted the SECRET log)",
+   "wait": null
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "field": "result",
+   "answer": true,
+   "text": "Hello!"
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "error": {
+    "type": "ToolError",
+    "message": "could not read: SECRET",
+    "code": "x-1"
+   }
+  }
+ ],
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "parent": null,
+    "root": "01926d00-0064-7000-8000-000000000000",
+    "program": {
+     "name": "answer",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "hi"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "field": "result",
+    "answer": true,
+    "text": "Hel"
+   },
+   {
+    "functai_event": 2,
+    "kind": "retry",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "wait": null,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "text",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 7,
+    "after": {
+     "writer": 1,
+     "seq": 6
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "field": "result",
+    "answer": true,
+    "text": "Hello!"
+   },
+   {
+    "functai_event": 2,
+    "kind": "failed",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 8,
+    "after": {
+     "writer": 1,
+     "seq": 7
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "answer",
+    "error": {
+     "type": "ToolError",
+     "code": "x-1"
+    },
+    "content": false
+   }
+  ]
+ }
+}

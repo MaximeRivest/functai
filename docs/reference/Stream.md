@@ -65,11 +65,23 @@ for piece in haiku.stream("autumn rain"):
 
 | Name | Description |
 | --- | --- |
+| [approve](#functai.Stream.approve) | Say yes to a tool call this stream's call waits for (``approve`` is |
 | [close](#functai.Stream.close) | Stop: cancel the call if it is still running (at the model's next |
+| [deny](#functai.Stream.deny) | Say no: the model is told the person did not allow it (and why). |
 | [events](#functai.Stream.events) | Every event of the call and of the calls inside it, in order: |
 | [show](#functai.Stream.show) | Print the call as it is written, and wait for its end. |
 | [text_of](#functai.Stream.text_of) | The answer's text of every call of ``fn`` inside this stream, as it |
 | [wait](#functai.Stream.wait) | Wait for the call to end (at most ``timeout`` seconds); returns the stream. |
+
+### approve { #functai.Stream.approve }
+
+```{.python .no-run}
+Stream.approve(approval=None, *, by=None)
+```
+
+Say yes to a tool call this stream's call waits for (``approve`` is
+a rule and no function answers: the call waits here). ``approval``:
+an ``Approval`` event, its invocation number, or None for the only one.
 
 ### close { #functai.Stream.close }
 
@@ -80,16 +92,32 @@ Stream.close()
 Stop: cancel the call if it is still running (at the model's next
 piece of text; the provider may bill what it already generated).
 
+### deny { #functai.Stream.deny }
+
+```{.python .no-run}
+Stream.deny(approval=None, reason=None, *, by=None)
+```
+
+Say no: the model is told the person did not allow it (and why).
+
 ### events { #functai.Stream.events }
 
 ```{.python .no-run}
-Stream.events()
+Stream.events(view=None)
 ```
 
 Every event of the call and of the calls inside it, in order:
-``Started``, ``Text``, ``Thinking``, ``ToolCall``, ``ToolResult``,
-``Retry``, ``Done``, ``Failed`` (``functai.streaming``). Works with
-``for`` and ``async for``; each event has ``.kind`` and ``.to_dict()``.
+``Started``, ``Request``, ``Text``, ``Thinking``, ``ToolCall``,
+``ToolResult``, ``Retry``, ``Done``, ``Failed``, ``Approval``,
+``Approved`` (``functai.streaming``). Works with ``for`` and ``async
+for``; each event has ``.kind``, ``.position`` (its place in its
+tree's log) and ``.to_dict()`` (the contract's JSON, format 2).
+
+``view``: the events as one kind of reader may see them, as the
+contract's JSON (what a server sends): ``"kept"`` (what
+``log_content`` lets be kept) or ``"outside"`` (a caller who sees
+only the program's boundary: its answer's text, approvals addressed
+to it, its end). See ``functai.views``.
 
 ### show { #functai.Stream.show }
 

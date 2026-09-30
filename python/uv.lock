@@ -1832,7 +1832,7 @@ wheels = [
 
 [[package]]
 name = "lmcc"
-version = "0.8.4"
+version = "0.8.5"
 source = { editable = "../../lmcc/python" }
 
 [package.metadata]

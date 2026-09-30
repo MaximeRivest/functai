@@ -469,15 +469,17 @@ def test_a_derived_module_names_the_input_at_fault(tmp_path):
 # ------------------------------------------------------------------ what a call saw is what it was shown
 
 
-def test_what_a_call_saw_is_what_it_was_shown_even_if_history_is_reset_meanwhile(tmp_path):
+def test_what_a_turn_saw_is_fixed_when_it_is_made(tmp_path):
+    """A branch added while a turn runs changes neither what it was shown nor its record."""
     router = FakeRouter(responder=lambda request: XML.format("ok"))
     functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path)
 
-    @ai(stateful=True)
+    @ai
     def chat(message: str) -> str:
         """Answer."""
 
-    chat("FIRST-MESSAGE")
+    c = chat.conversation()
+    c("FIRST-MESSAGE")
 
     class Gate(functai.MemoryStore):
         def __init__(self):
@@ -498,38 +500,37 @@ def test_what_a_call_saw_is_what_it_was_shown_even_if_history_is_reset_meanwhile
 
     gate = Gate()
     with functai.configure(journal=functai.Journal(gate, required=True)):
-        s = chat.stream("SECOND")
+        s = c.stream("SECOND")
         assert gate.arrived.wait(5)
         assert len(router.requests) == 1                                       # nothing sent before the start is kept
-        chat.reset()
-        gate.allow.set()
-        assert s.result == "ok"
-    last = max(records(tmp_path), key=lambda r: r["id"])
-    shown = "FIRST-MESSAGE" in str(router.requests[-1])
-    assert bool(last["saw"]) == shown and shown                               # the record and the request agree
+    other = chat.conversation(c.id).continue_from(c.turns[0])
+    with functai.configure(journal=False):
+        pass
+    gate.allow.set()
+    assert s.result == "ok"
+    branch = other("BRANCH")                                                   # after it, beside it
+    assert branch == "ok"
+    second = s.turn
+    assert [t.inputs["message"] for t in second.saw] == ["FIRST-MESSAGE"]
+    rec = next(r for r in records(tmp_path) if r["id"] == second.id)
+    assert rec["saw"] == [{"call": c.turns[0].id, "steps": True}] and "FIRST-MESSAGE" in str(router.requests[1])
 
 
-def test_a_turn_s_call_is_known_by_the_turn_itself():
+def test_a_turn_given_out_is_a_copy():
     router = FakeRouter(responder=lambda request: XML.format("ok"))
     functai.configure(client=router, lm="gpt-4.1-mini")
 
-    @ai(stateful=True)
+    @ai
     def chat(message: str) -> str:
         """Answer."""
 
-    first, second = chat.predict("one"), chat.predict("two")
-    entries, _turns = chat._saw()
-    assert [e["call"] for e in entries] == [first.call_id, second.call_id]
-    chat.history.pop()                                                         # the newest turn dropped by hand
-    entries, _turns = chat._saw()
-    assert [e["call"] for e in entries] == [first.call_id]                    # the one left keeps its own id
-    chat.history.append(dataclasses.replace(chat.history[0]) if dataclasses.is_dataclass(chat.history[0])
-                        else copy.copy(chat.history[0]))                      # a turn made by hand
-    entries, _turns = chat._saw()
-    assert entries == [{"call": first.call_id, "steps": True}, {"unrecorded": True}]
-    chat.history.reverse()
-    entries, _turns = chat._saw()
-    assert entries == [{"unrecorded": True}, {"call": first.call_id, "steps": True}]
+    c = chat.conversation()
+    c("ORIGINAL")
+    t = c.turns[0]
+    t.inputs["message"] = "ALTERED"
+    t.outputs["result"] = "ALTERED"
+    c("second")
+    assert "ALTERED" not in str(router.requests[-1]) and c.turns[0].inputs == {"message": "ORIGINAL"}
 
 
 # ------------------------------------------------------------------ a format this reader does not know
@@ -901,22 +902,27 @@ def test_an_object_that_is_no_constraint_puts_no_keyword_in_a_shape():
 
 
 def test_a_turn_made_for_another_plan_is_recorded_as_shown(tmp_path):
-    """A turn made for another signature (reasoning added since) is shown as an example of its values, without its steps: the record says so
-    (``{"call"}``, not ``"steps"``), and what was sent agrees."""
+    """Turns made before reasoning was turned on are shown as examples of their values, without their steps:
+    only when the conversation says so (``earlier_without``), and the record says it (``{"call"}``, no
+    ``"steps"``); what was sent agrees."""
     router = FakeRouter(responder=lambda request: XML.format("ok"))
     functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path)
 
-    @ai(stateful=True)
+    @ai
     def chat(message: str) -> str:
         """Answer."""
 
-    first = chat.predict("FIRST-MESSAGE")
-    chat.predict("SECOND")
+    c = chat.conversation("plans")
+    first = c.predict("FIRST-MESSAGE")
+    c.predict("SECOND")
     second = max(records(tmp_path), key=lambda r: r["id"])
     assert second["saw"] == [{"call": first.call_id, "steps": True}]          # the same plan: whole, with steps
-    chat.module = "cot"                                                      # another signature from now on
+    thinking = chat.using(module="cot")                                      # another signature from now on
+    with pytest.raises(functai.ConversationError) as err:
+        thinking.conversation("plans")
+    assert err.value.code == "conversation-signature" and "earlier_without=['reasoning']" in str(err.value)
     router.responder = lambda request: "<reasoning>\nhm\n</reasoning>\n" + XML.format("ok")
-    chat.predict("THIRD")
+    thinking.conversation("plans", earlier_without=["reasoning"]).predict("THIRD")
     third = max(records(tmp_path), key=lambda r: r["id"])
     assert third["saw"] == [{"call": first.call_id}, {"call": second["id"]}]  # shown as values, not as steps
     assert "FIRST-MESSAGE" in str(router.requests[-1])
@@ -961,121 +967,6 @@ def test_a_python_folder_s_probes_each_have_their_fingerprint_before_its_code_ru
     with pytest.raises(functai.LoadRefused) as err:
         saved.from_manifest(m)
     assert err.value.code == "saved-malformed"
-
-
-def _chat_with_a_turn(tmp_path):
-    router = FakeRouter(responder=lambda request: XML.format("ok"))
-    functai.configure(client=router, lm="gpt-4.1-mini", log_calls=tmp_path)
-
-    @ai(stateful=True)
-    def chat(message: str) -> str:
-        """Answer."""
-
-    first = chat.predict("ORIGINAL")
-    return router, chat, first
-
-
-@pytest.mark.parametrize("edit", ["input", "output", "step"])
-def test_a_turn_changed_in_place_is_no_longer_its_call_s(edit, tmp_path):
-    router, chat, first = _chat_with_a_turn(tmp_path)
-    turn = chat.history[0]
-    if edit == "input":
-        turn.inputs["message"] = "ALTERED"
-    elif edit == "output":
-        turn.outputs["result"] = "ALTERED"
-    else:
-        turn.steps[0].outputs["result"] = "ALTERED"
-    chat("second")
-    last = max(records(tmp_path), key=lambda r: r["id"])
-    assert last["saw"] == [{"unrecorded": True}]                   # the turn is not what the first call made
-    if edit != "output":                                           # (a turn with steps is shown by its steps)
-        assert "ALTERED" in str(router.requests[-1])
-    assert next(r for r in records(tmp_path) if r["id"] == first.call_id)["inputs"] == {"message": "ORIGINAL"}
-
-
-def test_what_a_call_is_shown_is_copied_when_it_is_prepared(tmp_path):
-    router, chat, first = _chat_with_a_turn(tmp_path)
-
-    class Gate(functai.MemoryStore):
-        def __init__(self):
-            super().__init__()
-            self.arrived, self.allow = threading.Event(), threading.Event()
-
-        def append(self, e):
-            if e["kind"] == "started":
-                self.arrived.set()
-                assert self.allow.wait(5)
-            return super().append(e)
-
-    gate = Gate()
-    with functai.configure(journal=functai.Journal(gate, required=True)):
-        s = chat.stream("SECOND")
-        assert gate.arrived.wait(5)
-        chat.history[0].inputs["message"] = "ALTERED-AFTER-START"      # after the call was prepared
-        gate.allow.set()
-        assert s.result == "ok"
-    sent = str(router.requests[-1])
-    assert "ORIGINAL" in sent and "ALTERED-AFTER-START" not in sent
-    started = gate.read(gate.trees()[0])[0]
-    assert started["saw"] == [{"call": first.call_id, "steps": True}]
-    last = max(records(tmp_path), key=lambda r: r["id"])
-    assert last["saw"] == [{"call": first.call_id, "steps": True}]
-
-
-class _Text(str):
-    """Text as JSON, holding a host value that cannot be copied."""
-
-    def __new__(cls, value):
-        text = super().__new__(cls, value)
-        text.lock = threading.Lock()
-        return text
-
-
-def test_a_turn_that_cannot_be_copied_is_shown_as_its_json_form(tmp_path):
-    router, chat, first = _chat_with_a_turn(tmp_path)
-    chat.history[0].inputs["message"] = _Text("ORIGINAL")        # the same JSON as the first call recorded
-    with pytest.raises(TypeError):
-        copy.deepcopy(chat.history[0])
-
-    class Gate(functai.MemoryStore):
-        def __init__(self):
-            super().__init__()
-            self.arrived, self.allow = threading.Event(), threading.Event()
-
-        def append(self, e):
-            if e["kind"] == "started":
-                self.arrived.set()
-                assert self.allow.wait(5)
-            return super().append(e)
-
-    gate = Gate()
-    with functai.configure(journal=functai.Journal(gate, required=True)):
-        s = chat.stream("SECOND")
-        assert gate.arrived.wait(5)
-        chat.history[0].inputs["message"] = "ALTERED-AFTER-START"      # after the call was prepared
-        gate.allow.set()
-        assert s.result == "ok"
-    sent = str(router.requests[-1])
-    assert "ORIGINAL" in sent and "ALTERED-AFTER-START" not in sent
-    assert gate.read(gate.trees()[0])[0]["saw"] == [{"call": first.call_id, "steps": True}]
-
-
-def test_a_turn_edited_while_it_is_copied_is_not_its_call_s(tmp_path, monkeypatch):
-    """What is compared with the recorded turn is the copy the call is shown,
-    not the live turn read a moment before or after."""
-    from functai import core
-    router, chat, first = _chat_with_a_turn(tmp_path)
-    frozen = core._frozen
-
-    def edited_meanwhile(turn):
-        turn.inputs["message"] = "ALTERED"                           # another thread, just before the copy
-        return frozen(turn)
-
-    monkeypatch.setattr(core, "_frozen", edited_meanwhile)
-    chat("second")
-    last = max(records(tmp_path), key=lambda r: r["id"])
-    assert last["saw"] == [{"unrecorded": True}]
-    assert "ALTERED" in str(router.requests[-1])
 
 
 def test_memory_stores_are_known_by_identity(fake, tmp_path):

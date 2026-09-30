@@ -37,6 +37,9 @@ dependencies = [
     "lm15>=1.0.1,<2",
 ]
 
+[project.scripts]
+functai = "functai.__main__:main"
+
 [project.urls]
 "Homepage" = "https://github.com/maximerivest/functai"
 "Bug Tracker" = "https://github.com/maximerivest/functai/issues"

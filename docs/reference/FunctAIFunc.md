@@ -32,6 +32,7 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | Name | Description |
 | --- | --- |
 | `instructions` | The instruction the model gets: an optimized one, or the one written from the code. |
+| `interface` | What a caller gives and gets, as data (contract/programs.md): the |
 | `signature` | The lmcc signature: inputs, outputs, instruction. |
 | `trials` | What the search that made this copy tried (``GEPA``'s candidates, |
 | `version` | The function's version: a fingerprint of what it sends besides its inputs. |
@@ -43,6 +44,7 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | [acall](#functai.FunctAIFunc.acall) | ``await fn.acall(...)``: the answer, in async code. The call runs in a |
 | [apredict](#functai.FunctAIFunc.apredict) | ``await fn.apredict(...)``: ``predict`` in async code. |
 | [bake](#functai.FunctAIFunc.bake) | Train weights that answer this function; returns the baked model. |
+| [conversation](#functai.FunctAIFunc.conversation) | A conversation with this function: each call a turn that sees the |
 | [explain](#functai.FunctAIFunc.explain) | How calls are laid out for the current model: adapter, reader, transports, formats. |
 | [freeze](#functai.FunctAIFunc.freeze) | Stop further automatic instruction refinement. |
 | [map](#functai.FunctAIFunc.map) | Run on every row of a table, and return the run table. |
@@ -51,7 +53,6 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | [plan](#functai.FunctAIFunc.plan) | The lmcc plan for the current model: ``.explain()``, ``.describe()``, ``.render(...)``. |
 | [predict](#functai.FunctAIFunc.predict) | The call, with everything it produced: every output (``p.result``, |
 | [render](#functai.FunctAIFunc.render) | The exact request the next call would send, without sending it. |
-| [reset](#functai.FunctAIFunc.reset) | Forget the conversation (stateful functions). |
 | [save](#functai.FunctAIFunc.save) | Write the instruction and demos to a JSON file (``load`` reads it back). |
 | [state](#functai.FunctAIFunc.state) | The instruction and demos in use. |
 | [stream](#functai.FunctAIFunc.stream) | Call the function and watch the answer being written. |
@@ -86,6 +87,59 @@ Train weights that answer this function; returns the baked model.
 ``fast = fn.using(lm=baked)`` runs the function on them. See
 ``functai.bake.bake`` for the options (student, teacher, labels, test, ...).
 
+### conversation { #functai.FunctAIFunc.conversation }
+
+```{.python .no-run}
+FunctAIFunc.conversation(
+    id=None,
+    *,
+    store=None,
+    context=None,
+    earlier_without=(),
+    sends='queue',
+    **settings,
+)
+```
+
+A conversation with this function: each call a turn that sees the
+earlier ones, kept in ``store``; the function itself is unchanged.
+
+#### Parameters {.doc-section .doc-section-parameters}
+
+| Name            | Type                         | Description                                                                                                                                          | Default   |
+|-----------------|------------------------------|------------------------------------------------------------------------------------------------------------------------------------------------------|-----------|
+| id              | str                          | The conversation's id; the same id in the same store opens it again (tomorrow, in another process). Default: a new one.                              | `None`    |
+| store           | None, True, folder, or store | None: this process's memory. A folder (or True: the default one) keeps it across runs. Any object with ``append`` and ``read`` (``functai.stores``). | `None`    |
+| context         | optional                     | Which earlier turns the model sees: every one (default), or ``functai.last_turns(10)``; ``without=[...]`` leaves bulky inputs out of earlier turns.  | `None`    |
+| earlier_without | list of str                  | Outputs this function now writes that earlier turns lack (``reasoning`` after turning on ``module="cot"``).                                          | `()`      |
+| sends           | str                          | Two sends at once: ``"queue"`` (default), ``"refuse"`` or ``"branch"``.                                                                              | `'queue'` |
+| **settings      | Any                          | Settings for every turn (``approve``, ``lm``...).                                                                                                    | `{}`      |
+
+#### Returns {.doc-section .doc-section-returns}
+
+| Name   | Type         | Description                                                                                                         |
+|--------|--------------|---------------------------------------------------------------------------------------------------------------------|
+|        | Conversation | Called like the function. ``chat.turns``, ``chat.render(...)``, ``chat.continue_from(turn)``, ``chat.stream(...)``. |
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+import functai
+from functai import *
+```
+
+```python
+@ai
+def tutor(message: str) -> str:
+    """Tutor a student in fractions, one small step at a time."""
+    ...
+
+chat = tutor.conversation("alex")
+chat("Hi, I'm Alex.")
+chat("What is 1/2 + 1/3?")
+[t.inputs["message"] for t in chat.turns[-1].saw]
+```
+
 ### explain { #functai.FunctAIFunc.explain }
 
 ```{.python .no-run}
@@ -105,21 +159,27 @@ Stop further automatic instruction refinement.
 ### map { #functai.FunctAIFunc.map }
 
 ```{.python .no-run}
-FunctAIFunc.map(data, *, num_threads=1)
+FunctAIFunc.map(data, *, threads=None, num_threads=None, progress=None)
 ```
 
 Run on every row of a table, and return the run table.
 
 ``evaluate`` without the scoring: the rows, the predictions
 (``pred_<output>``), and each row's ``error``, ``seconds``, tokens and
-``model``. Needs ``pip install "functai[data]"``.
+``model``. A row that fails keeps its error; the others go on. Needs
+``pip install "functai[data]"``.
+
+For long runs, keep replies on disk (``functai.configure(
+cache_replies="disk")``): running ``map`` again after an interruption,
+or to retry the rows that failed, sends only what has no kept reply.
 
 #### Parameters {.doc-section .doc-section-parameters}
 
-| Name        | Type                     | Description                                                                       | Default    |
-|-------------|--------------------------|-----------------------------------------------------------------------------------|------------|
-| data        | list of dict, or a table | Anything ``dpyr.read()`` takes; columns named like the parameters are the inputs. | _required_ |
-| num_threads | int                      | How many rows run at once.                                                        | `1`        |
+| Name     | Type                     | Description                                                                                                              | Default    |
+|----------|--------------------------|--------------------------------------------------------------------------------------------------------------------------|------------|
+| data     | list of dict, or a table | Anything ``dpyr.read()`` takes; columns named like the parameters are the inputs.                                        | _required_ |
+| threads  | int                      | How many rows run at once (default 1). ``num_threads`` is the same.                                                      | `None`     |
+| progress | bool                     | A line on stderr, updated as rows finish: rows done, errors, tokens, time left. Default: on in a terminal or a notebook. | `None`     |
 
 #### Returns {.doc-section .doc-section-returns}
 
@@ -133,18 +193,13 @@ Run on every row of a table, and return the run table.
 
 #### Examples {.doc-section .doc-section-examples}
 
-```python
-import functai
-from functai import *
-```
-
-```python
+```{.python .no-run}
 @ai
 def capital(country: str) -> str:
     """The country's capital city."""
     ...
 
-capital.map([{"country": "Norway"}, {"country": "Ghana"}], num_threads=2)
+capital.map([{"country": "Norway"}, {"country": "Ghana"}], threads=2, progress=False)
 ```
 
 ### opt { #functai.FunctAIFunc.opt }
@@ -280,14 +335,6 @@ request = capital.render("Chile")
 print(request.system)
 print(request.messages[0].parts[0].text)
 ```
-
-### reset { #functai.FunctAIFunc.reset }
-
-```{.python .no-run}
-FunctAIFunc.reset()
-```
-
-Forget the conversation (stateful functions).
 
 ### save { #functai.FunctAIFunc.save }
 

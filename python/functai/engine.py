@@ -13,7 +13,6 @@ import collections
 import contextvars
 import dataclasses
 import datetime as _dt
-import hashlib
 import inspect
 import json
 import random
@@ -208,51 +207,11 @@ def phistory(n: int = 1) -> _Text:
 # ------------------------------------------------------------------ cache
 
 
-class _Cache:
-    """Replies by request, in memory: an identical request (model, messages,
-    settings) gets the same reply without a new model call. A reply that
-    could not be read is forgotten (``discard``), so a passing failure never
-    becomes a permanent one."""
-
-    def __init__(self, capacity: int = 20_000):
-        self.capacity = capacity
-        self._data: "collections.OrderedDict[str, Any]" = collections.OrderedDict()
-        self._lock = threading.Lock()
-
-    @staticmethod
-    def key(request: Any) -> str:
-        data = json.dumps(request_to_dict(request), sort_keys=True, ensure_ascii=False, default=str)
-        return hashlib.sha256(data.encode("utf-8")).hexdigest()
-
-    def get(self, key: str) -> Any:
-        with self._lock:
-            hit = self._data.get(key)
-            if hit is not None:
-                self._data.move_to_end(key)
-            return hit
-
-    def put(self, key: str, response: Any) -> None:
-        with self._lock:
-            self._data[key] = response
-            self._data.move_to_end(key)
-            while len(self._data) > self.capacity:
-                self._data.popitem(last=False)
-
-    def discard(self, key: str) -> None:
-        with self._lock:
-            self._data.pop(key, None)
-
-    def clear(self) -> None:
-        with self._lock:
-            self._data.clear()
-
-
-CACHE = _Cache()
-
-
-def clear_cache() -> None:
-    """Forget every cached reply."""
-    CACHE.clear()
+def clear_cache(which: Any = None) -> None:
+    """Forget cached replies: the memory cache (default), or the store a
+    ``cache_replies`` value names (``clear_cache("disk")``, a path)."""
+    from . import replies
+    replies.clear(which)
 
 
 # ------------------------------------------------------------------ sending
@@ -270,31 +229,30 @@ def _remember(request: Any, response: Any) -> None:
 
 
 def send(router: Any, request: Any, *, function: str, model: str, settings: Dict[str, Any],
-         plan: Optional[lmcc.Plan] = None, request_hash: Optional[str] = None) -> Any:
-    """One model call: from the cache when allowed, else through the router,
-    re-sent after transient errors (rate limit, 5xx, timeout) with backoff.
-    Each attempt is an exchange of the call, and begins a ``request`` event.
-    When the call is watched (a stream, an observer or a journal sees it),
-    the reply is streamed and shown field by field as it arrives (``plan``
-    reads it); what is returned is the same whole reply. ``request_hash``:
-    lmcc's hash of the rendered request this one was made from."""
+         plan: Optional[lmcc.Plan] = None, request_hash: Optional[str] = None, hit: Any = None) -> Any:
+    """One model call: ``hit`` when the reply is already known (the reply
+    cache, or a turn being resumed: contract/tools.md), else through the
+    router, re-sent after transient errors (rate limit, 5xx, timeout) with
+    backoff. Each attempt is an exchange of the call, and begins a
+    ``request`` event. When the call is watched (a stream, an observer or a
+    journal sees it), the reply is streamed and shown field by field as it
+    arrives (``plan`` reads it); what is returned is the same whole reply.
+    ``request_hash``: lmcc's hash of the rendered request this one was made
+    from."""
     call = calllog.current()
-    watched = call is not None and call.watched and plan is not None
-    use_cache = bool(settings.get("cache_replies"))
-    key = CACHE.key(request) if use_cache else None
-    if key is not None:
-        hit = CACHE.get(key)
-        if hit is not None:
-            if call is not None:
-                call.request(model)
-            _record(CallRecord(function, model, request, hit, cached=True))
-            _remember(request, hit)
-            calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True,
-                             request_hash=request_hash)
-            if watched:
-                from . import streaming
-                streaming.replay(call, plan, hit)
-            return hit
+    watched = call is not None and call.wants_pieces and plan is not None
+    whole = call is not None and not watched and call.watched and plan is not None   # shown, not live
+    if hit is not None:
+        if call is not None:
+            call.request(model)
+        _record(CallRecord(function, model, request, hit, cached=True))
+        _remember(request, hit)
+        calllog.exchange(model, request, hit, started=time.time(), seconds=0.0, cached=True,
+                         request_hash=request_hash)
+        if watched or whole:
+            from . import streaming
+            streaming.replay(call, plan, hit)
+        return hit
     retries = max(0, int(settings.get("api_retries") or 0))
     first: Optional[float] = None
     for attempt in range(retries + 1):
@@ -330,6 +288,9 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
             friendly = _login_error(exc)
             if friendly is not None:
                 raise friendly from exc
+            if isinstance(exc, lm15.ContextLengthError):
+                exc.add_note(f"{function}: the request no longer fits the model. In a conversation, show fewer "
+                             f"earlier turns: context=functai.last_turns(10)")
             raise
         except BaseException as exc:                 # a closed stream, Ctrl-C: the exchange still counts
             calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
@@ -337,10 +298,11 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
             raise
     calllog.exchange(model, request, response, started=started, seconds=time.perf_counter() - t0,
                      streamed=watched and first is not None, first_delta=first, request_hash=request_hash)
+    if whole:
+        from . import streaming
+        streaming.replay(call, plan, response)          # a reply that arrived whole: one piece per field
     _record(CallRecord(function, model, request, response))
     _remember(request, response)
-    if key is not None and response.finish_reason not in ("error",):
-        CACHE.put(key, response)
     return response
 
 
@@ -444,19 +406,33 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     rendered_hash = lmcc.turn.sha256(asked)
     retries = max(0, int(settings.get("retries") or 0))
     overrides: Dict[str, Any] = {}
+    from . import conversations, replies
+    call = calllog.current()
+    cancelled = call.check if call is not None else None
     for attempt in range(retries + 1):
-        response = send(router, request, function=function, model=model, settings=settings, plan=plan,
-                        request_hash=rendered_hash)
-        responses.append(response)
+        # a reply already known: the turn being resumed recorded it, or the reply cache kept it
+        hit = conversations.recorded_reply(request, settings)
+        flight = replies.begin(settings, request, cancelled) if hit is None else None
         try:
-            reading = lmcc_lm15.read(plan, response)
-            problem = _misfit(annotations or {}, reading.values)
-            if problem:
-                raise lmcc.Refusal("parse-value", problem)
+            if hit is None and flight is not None:
+                hit = flight.reply
+            response = send(router, request, function=function, model=model, settings=settings, plan=plan,
+                            request_hash=rendered_hash, hit=hit)
+            responses.append(response)
+            conversations.note_reply(request, response, settings)    # a stored turn keeps every reply
+            try:
+                reading = lmcc_lm15.read(plan, response)
+                problem = _misfit(annotations or {}, reading.values)
+                if problem:
+                    raise lmcc.Refusal("parse-value", problem)
+            except lmcc.Refusal:
+                if flight is not None:
+                    flight.drop()                     # a kept reply that no longer reads is forgotten
+                raise
+            if flight is not None:
+                flight.keep(response)                 # only a reply that was read is kept
             return response, reading
         except lmcc.Refusal as err:
-            if settings.get("cache_replies"):
-                CACHE.discard(CACHE.key(request))     # not kept: asked again, it is asked of the model
             thought = getattr(response.usage, "reasoning_tokens", None) or 0
             if err.code == "parse-truncated" and thought:
                 err = lmcc.Refusal(err.code, f"{err.hint} (the model spent {thought} of its tokens thinking "
@@ -478,9 +454,11 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 asked = {**asked, "messages": [*asked["messages"], message_to_dict(response.message),
                                                {"role": "user", "parts": [{"type": "text", "text": correction}]}]}
                 rendered_hash = lmcc.turn.sha256(asked)
-            call = calllog.current()
             if call is not None:
                 call.emit("retry", reason=_asked_again(err), wait=None)
+        finally:
+            if flight is not None:
+                flight.end()
     raise AssertionError("unreachable")
 
 
@@ -553,15 +531,52 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
             return pred
         current = calllog.current()
         for call in calls:
-            if current is not None:
-                event = current.emit("tool_call", id=call.id, name=call.name, input=call.input)
-                # a required journal keeps the request before the tool runs
-                calllog.tool_barrier(event.seq if event is not None else None)
-            output = run_tool(tools, call, errors=settings.get("tool_errors") or "report")
-            if current is not None:
-                current.emit("tool_result", id=call.id, name=call.name, output=output)
+            output = _one_tool(current, tools, call, settings)
             turn = turn.tool(call.id, output)
     raise StepLimit(f"{function}: no answer after {max_steps} model steps", turn)
+
+
+def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings: Dict[str, Any]) -> str:
+    """One tool call of the call in progress (contract/tools.md): numbered
+    (its invocation), shown, asked about when ``approve`` says so, kept
+    before and after it runs when it changes things (a stored turn, a
+    required journal), run, and its result shown. A refusal is the result."""
+    from . import tools as _tools
+    errors = settings.get("tool_errors") or "report"
+    if current is None:
+        return run_tool(tools, call, errors=errors)
+    current.invocations += 1
+    n = current.invocations
+    fn = tools.get(call.name)
+    effects = _tools.effects_of(fn) if fn is not None else "reads"     # an unknown tool runs nothing
+    event = current.emit("tool_call", id=call.id, name=call.name, input=call.input, invocation=n)
+    approval = _tools.Approval(current.id, n, call.id, call.name, call.input, effects,
+                               _tools.path_of(current, call.name), current.path)
+    allowed, reason, _by = _tools.decide(current, approval, settings)
+    if not allowed:
+        output = _tools.denial(reason)
+    else:
+        run = current.turn_run
+        known = run.recorded_tool(current, approval) if run is not None else None
+        if known is not None:
+            output = known                            # a turn resumed: this tool ran before; its result is kept
+        else:
+            from .conversations import frontier
+            frontier()
+            if effects != "reads":
+                # a required journal keeps the request before a tool that changes things runs
+                calllog.tool_barrier(event.seq if event is not None else None)
+                if run is not None:
+                    run.tool_started(current, approval)
+            token = calllog.INVOCATION.set(n)
+            try:
+                output = run_tool(tools, call, errors=errors)
+            finally:
+                calllog.INVOCATION.reset(token)
+            if run is not None:
+                run.tool_done(current, approval, output)
+    current.emit("tool_result", id=call.id, name=call.name, output=output, invocation=n)
+    return output
 
 
 def fit_turn(plan: lmcc.Plan, spec: Spec, demo: Any) -> Optional[lmcc.Turn]:
