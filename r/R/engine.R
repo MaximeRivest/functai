@@ -33,6 +33,36 @@ fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job)
 sending <- function(job) if (is.null(job$call$sent)) { job$call$sent <- TRUE; job$call$started <- as.numeric(Sys.time()) }
 ended <- function(job) if (!is.null(job$call)) job$call$ended <- as.numeric(Sys.time())
 
+LMCC_TRUNCATED_ADVICE <- "; raise max_tokens or ask for less"
+
+# A token count as text: lm15 keeps a JSON number's own spelling.
+count_text <- function(x) { x <- unclass(x); if (is.character(x)) x else format(x, scientific = FALSE, trim = TRUE) }
+
+# A parse-truncated refusal that says what happened (functions.md, "When the
+# reply cannot be read"): how much went to thinking, whose limit it was and
+# whether it can be raised, and what lm15 changed in the request. `limit`: the
+# max_tokens this request set, or NULL.
+cut_off <- function(refusal, response, limit) {
+  hint <- refusal$hint
+  if (endsWith(hint, LMCC_TRUNCATED_ADVICE)) hint <- substr(hint, 1L, nchar(hint) - nchar(LMCC_TRUNCATED_ADVICE))
+  thought <- as.numeric(unclass(response$usage$reasoning_tokens %||% 0))
+  total <- as.numeric(unclass(response$usage$output_tokens %||% 0))
+  if (thought > 0) hint <- paste0(hint, if (total >= thought)
+    sprintf("; the model spent %s of its %s output tokens thinking", count_text(thought), count_text(total)) else
+    sprintf("; the model spent %s tokens thinking", count_text(thought)))
+  notes <- response$adaptations %||% list()
+  chosen <- NULL
+  for (a in notes) if (identical(a$field, "config.max_tokens") && identical(a$action, "defaulted")) { chosen <- a$applied; break }
+  hint <- paste0(hint, if (!is.null(limit)) sprintf("; raise max_tokens (it was %s) or ask for less", count_text(limit))
+    else if (!is.null(chosen)) sprintf(paste0("; no max_tokens was set, and lm15 sent %s, the most it knows this model to allow: ",
+                                              "lower the reasoning effort or ask for less"), count_text(chosen))
+    else "; no max_tokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less")
+  other <- vapply(Filter(function(a) !identical(a$field, "config.max_tokens"), notes),
+                  function(a) paste0(a$field, " ", a$action, ": ", a$reason), "")
+  if (length(other)) hint <- paste0(hint, " (lm15 adapted the request: ", paste(other, collapse = "; "), ")")
+  lmcc::refusal(refusal$code, hint, fix = refusal$fix, partial = refusal$partial)
+}
+
 # The first output value that does not fit its shape, as a parse-value
 # refusal (functions.md: a value that does not fit its type is an unreadable
 # reply). Read by the keywords programs.md lists, as a default and an input
@@ -54,10 +84,14 @@ on_response <- function(job, response, started, seconds) {
                       lmcc_refusal = function(e) e)
   if (inherits(reading, "lmcc_refusal")) {
     code <- reading$code
+    # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
+    limit <- job$overrides$max_tokens %||% job$settings$max_tokens
+    if (code == "parse-truncated") reading <- cut_off(reading, response, limit)
     if (job$retries >= job$settings$retries || !(startsWith(code, "parse-") || code == "format-read-error")) return(fail(job, reading))
+    if (code == "parse-truncated" && is.null(limit)) return(fail(job, reading))   # nothing larger to give
     job$retries <- job$retries + 1L
     if (code == "parse-truncated") {
-      job$overrides$max_tokens <- 2L * as.integer(job$overrides$max_tokens %||% job$settings$max_tokens %||% 1024L)
+      job$overrides$max_tokens <- 2L * as.integer(limit)
       job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
     } else {
       correction <- sprintf(REASK, reading$hint)
@@ -187,6 +221,10 @@ run_jobs <- function(jobs, router, concurrency) {
       done = function(res) {
         parsed <- tryCatch(lm15::parse_response(plan$lm, plan$request, res$content, status = res$status_code,
                                                 headers = curl::parse_headers_list(res$headers)), error = identity)
+        # what lm15 adapted in the request rides on the reply, as lm15::complete does (MAP-13),
+        # so the call log and a cut-off refusal can say it
+        noted <- if (identical(plan$lm$adaptations, "silent")) list() else plan$wire$adaptations
+        if (!inherits(parsed, "error") && length(noted) && !length(parsed$adaptations)) parsed["adaptations"] <- list(noted)
         if (inherits(parsed, "error")) finish(NULL, parsed) else finish(parsed)
       },
       # curl's message can hold the address, and an address can hold a key: only its kind leaves

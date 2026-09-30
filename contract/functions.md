@@ -218,8 +218,36 @@ JSON.
   and a user message: `Your reply could not be read: <lmcc's hint>. Reply
   again, in exactly the form the instructions give.`
 - **A cut-off reply** (`parse-truncated`) is sent again instead, with
-  twice the token budget (`max_tokens`, 1024 when none was set), unless
-  the provider takes no budget.
+  twice the token budget, only when the request set one (`max_tokens`,
+  the caller's or a previous re-send's) and the provider takes one. When
+  none was set, the reply already had the most the call allows (lm15's
+  default for the model, recorded on the response as a `config.max_tokens`
+  `defaulted` adaptation, or the provider's own maximum): it is not sent
+  again, since no larger budget can be given and a guessed number would
+  shrink it. (Until 2026-09-30 the guess was 1024: the re-send asked for
+  2048 after a reply that had 128000.)
+- **The cut-off refusal says what happened.** Its hint is lmcc's with
+  lmcc's closing advice (`; raise max_tokens or ask for less`) removed,
+  then, in order:
+  - `; the model spent <T> of its <O> output tokens thinking` when the
+    response's `usage.reasoning_tokens` `<T>` is above 0 (`; the model
+    spent <T> tokens thinking` when `usage.output_tokens` `<O>` is absent
+    or smaller);
+  - the budget and the advice that fits it, one of:
+    `; raise max_tokens (it was <N>) or ask for less` (the request set
+    `<N>`), `; no max_tokens was set, and lm15 sent <N>, the most it knows
+    this model to allow: lower the reasoning effort or ask for less` (the
+    `defaulted` record's `applied`), or `; no max_tokens was set, so the
+    provider used its own maximum: lower the reasoning effort or ask for
+    less`;
+  - ` (lm15 adapted the request: <field> <action>: <reason>; ...)` for the
+    response's other adaptations, in order, when there are any. A dropped
+    thinking budget is the usual one: without it a caller cannot tell why
+    `thinking_budget` did not bound the thinking.
+
+  The name is the language's (`maxTokens` in TypeScript); the rest is the
+  same text in every language. lm15's adaptations of every exchange are
+  also in the call log, on the recorded response.
 - **A value that does not fit its type** (a choice outside its list, a
   record missing a field or holding one it does not name) is an
   unreadable reply (`parse-value`).

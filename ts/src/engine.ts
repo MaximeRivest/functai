@@ -246,6 +246,31 @@ function checkValues(plan: lmcc.Plan, values: Rec): void {
   }
 }
 
+const LMCC_TRUNCATED_ADVICE = "; raise max_tokens or ask for less";
+
+/**
+ * A `parse-truncated` refusal that says what happened (functions.md, "When the reply cannot be read"):
+ * how much went to thinking, whose limit it was and whether it can be raised, and what lm15 changed in
+ * the request. `limit`: the maxTokens this request set, or undefined.
+ */
+export function cutOff(err: lmcc.Refusal, response: Response, limit: number | undefined): lmcc.Refusal {
+  let hint = err.hint.endsWith(LMCC_TRUNCATED_ADVICE) ? err.hint.slice(0, -LMCC_TRUNCATED_ADVICE.length) : err.hint;
+  const thought = response.usage?.reasoningTokens ?? 0;
+  const total = response.usage?.outputTokens ?? 0;
+  if (thought) {
+    hint += total >= thought ? `; the model spent ${thought} of its ${total} output tokens thinking` : `; the model spent ${thought} tokens thinking`;
+  }
+  const notes = response.adaptations ?? [];
+  const chosen = notes.find((a) => a.field === "config.max_tokens" && a.action === "defaulted")?.applied;
+  if (limit !== undefined) hint += `; raise maxTokens (it was ${limit}) or ask for less`;
+  else if (chosen !== undefined) {
+    hint += `; no maxTokens was set, and lm15 sent ${String(chosen)}, the most it knows this model to allow: lower the reasoning effort or ask for less`;
+  } else hint += "; no maxTokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less";
+  const other = notes.filter((a) => a.field !== "config.max_tokens").map((a) => `${a.field} ${a.action}: ${a.reason}`);
+  if (other.length) hint += ` (lm15 adapted the request: ${other.join("; ")})`;
+  return new lmcc.Refusal(err.code, hint, { fix: err.fix, partial: err.partial });
+}
+
 function askedAgain(err: lmcc.Refusal): string {
   return err.code === "parse-truncated"
     ? "the reply was cut off; asking again with a larger token budget"
@@ -273,15 +298,13 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       const cache = cacheOf(job.settings.cacheReplies);
       if (cache) await forget(cache, replyKey(request));   // an unreadable reply is not kept: asked again, it is asked of the model
       let refusal = err as lmcc.Refusal;
-      const thought = response.usage.reasoningTokens ?? 0;
-      if (refusal.code === "parse-truncated" && thought) {
-        refusal = new lmcc.Refusal(refusal.code, `${refusal.hint} (the model spent ${thought} of its tokens thinking first; raise maxTokens)`,
-          { fix: refusal.fix, partial: refusal.partial });
-      }
+      // the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
+      const limit = configOf(job.settings, overrides as never)?.maxTokens ?? undefined;   // null: none set
+      if (refusal.code === "parse-truncated") refusal = cutOff(refusal, response, limit);
       if (attempt >= retries || !(refusal.code.startsWith("parse-") || refusal.code === "format-read-error")) throw refusal;
+      if (refusal.code === "parse-truncated" && limit === undefined) throw refusal;   // nothing larger to give
       if (refusal.code === "parse-truncated") {
-        const current = (configOf(job.settings, overrides as never)?.maxTokens) ?? 1024;
-        overrides["maxTokens"] = current * 2;
+        overrides["maxTokens"] = limit! * 2;
         request = lm15Request(rendered, job.model, configOf(job.settings, overrides as never));
       } else {
         const correction = `Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`;

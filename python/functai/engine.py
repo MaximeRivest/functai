@@ -397,10 +397,43 @@ def _asked_again(err: lmcc.Refusal) -> str:
     return f"the reply could not be read ({err.hint}); asking again"
 
 
+LMCC_TRUNCATED_ADVICE = "; raise max_tokens or ask for less"
+
+
+def cut_off(err: lmcc.Refusal, response: Any, limit: Optional[int]) -> lmcc.Refusal:
+    """A ``parse-truncated`` refusal that says what happened (functions.md,
+    "When the reply cannot be read"): how much went to thinking, whose limit
+    it was and whether it can be raised, and what lm15 changed in the request.
+    ``limit``: the ``max_tokens`` this request set, or None."""
+    hint = err.hint[:-len(LMCC_TRUNCATED_ADVICE)] if err.hint.endswith(LMCC_TRUNCATED_ADVICE) else err.hint
+    usage = getattr(response, "usage", None)
+    thought = getattr(usage, "reasoning_tokens", None) or 0
+    total = getattr(usage, "output_tokens", None) or 0
+    if thought:
+        hint += (f"; the model spent {thought} of its {total} output tokens thinking" if total >= thought
+                 else f"; the model spent {thought} tokens thinking")
+    notes = tuple(getattr(response, "adaptations", None) or ())
+    chosen = next((a.applied for a in notes if a.field == "config.max_tokens" and a.action == "defaulted"), None)
+    if limit is not None:
+        hint += f"; raise max_tokens (it was {limit}) or ask for less"
+    elif chosen is not None:
+        hint += (f"; no max_tokens was set, and lm15 sent {chosen}, the most it knows this model to allow: "
+                 "lower the reasoning effort or ask for less")
+    else:
+        hint += ("; no max_tokens was set, so the provider used its own maximum: "
+                 "lower the reasoning effort or ask for less")
+    other = [f"{a.field} {a.action}: {a.reason}" for a in notes if a.field != "config.max_tokens"]
+    if other:
+        hint += " (lm15 adapted the request: " + "; ".join(other) + ")"
+    return lmcc.Refusal(err.code, hint, fix=err.fix, partial=err.partial)
+
+
 def _complete(plan, rendered, *, router, model, settings, function, responses, annotations=None) -> tuple:
     """One model call; after an unreadable reply, up to ``retries`` follow-ups
-    that send the reader's hint back (a cut reply is re-sent with twice the
-    token budget instead)."""
+    that send the reader's hint back. A cut reply is re-sent with twice the
+    token budget instead, when a budget was set: without one the reply already
+    had the most the call allows (lm15's default for the model, or the
+    provider's own maximum), and a guessed number would only shrink it."""
     request = lmcc_lm15.request(rendered, model=model, config=config_of(settings))
     asked = rendered.request()
     rendered_hash = lmcc.turn.sha256(asked)
@@ -438,17 +471,18 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 flight.keep(response)                 # only a reply that was read is kept
             return response, reading
         except lmcc.Refusal as err:
-            thought = getattr(response.usage, "reasoning_tokens", None) or 0
-            if err.code == "parse-truncated" and thought:
-                err = lmcc.Refusal(err.code, f"{err.hint} (the model spent {thought} of its tokens thinking "
-                                             f"first; raise max_tokens)", fix=err.fix, partial=err.partial)
+            limit = None
+            if err.code == "parse-truncated":
+                # the budget this request set; none when this provider takes none
+                if "max_tokens" not in (settings.get("_dropped") or ()):
+                    limit = (config_of(settings, overrides) or lm15.Config()).max_tokens
+                err = cut_off(err, response, limit)
             if attempt == retries or not (err.code.startswith("parse-") or err.code == "format-read-error"):
                 raise err
-            if err.code == "parse-truncated" and "max_tokens" in (settings.get("_dropped") or ()):
-                raise err                     # this provider takes no token budget to raise
+            if err.code == "parse-truncated" and limit is None:
+                raise err                     # no budget was set: nothing larger to give
             if err.code == "parse-truncated":
-                current = (config_of(settings, overrides) or lm15.Config()).max_tokens or 1024
-                overrides["max_tokens"] = current * 2
+                overrides["max_tokens"] = limit * 2
                 request = lmcc_lm15.request(rendered, model=model, config=config_of(settings, overrides))
             else:
                 correction = (f"Your reply could not be read: {err.hint}. Reply again, in exactly "

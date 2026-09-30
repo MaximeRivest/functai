@@ -14,6 +14,7 @@ fake_router <- function(replies = list(), responder = NULL, provider = "openai")
     i <- length(env$requests)
     reply <- if (!is.null(responder)) responder(request, i) else { r <- env$replies[[1L]]; env$replies <- env$replies[-1L]; r }
     if (inherits(reply, "condition")) stop(reply)
+    if (inherits(reply, "lm15_Response")) return(reply)       # a reply built whole (usage, adaptations)
     if (is.character(reply)) reply <- list(text = reply)
     parts <- list()
     if (!is.null(reply$text)) parts[[length(parts) + 1L]] <- lm15::text_part(reply$text)

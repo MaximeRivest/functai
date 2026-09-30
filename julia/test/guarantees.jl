@@ -723,7 +723,8 @@ end
     f = AIFunction("one", "Answer."; inputs=(x=String,), output=String)
     dir = mktempdir()
     r = fake("unreadable", (text="<result>cut", finish="length"), xml(:result => "ok"))
-    @test using_fake(() -> f("hi"), r; retries=2, log_calls=dir) == "ok"
+    # a set budget: a cut reply is re-sent only then (functions.md)
+    @test using_fake(() -> f("hi"), r; retries=2, max_tokens=100, log_calls=dir) == "ok"
     rec = only(first(FunctAI.read_log(dir)))
     hashes = [x["request_hash"] for x in rec["exchanges"]]
     @test [length(x.messages) for x in r.requests] == [1, 3, 1]

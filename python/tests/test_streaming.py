@@ -154,8 +154,9 @@ def test_an_unreadable_reply_is_asked_again_and_the_retry_is_shown(streaming):
 
 
 def test_a_cut_reply_says_so(streaming):
+    # re-sent with a larger budget only when one was set (functions.md)
     streaming(("<result>\nSnow on the ced", "length"), XML.format("Snow on the cedar."))
-    s = haiku.stream("snow")
+    s = haiku.using(max_tokens=100).stream("snow")
     [retry] = [e for e in s.events() if isinstance(e, Retry)]
     assert "cut off" in retry.reason and s.result == "Snow on the cedar."
 
