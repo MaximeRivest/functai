@@ -64,8 +64,8 @@ reply  AI function (message: str → str)  [__main__]
 └── tool lookup_order  function  [__main__]
     └── ORDERS = {'A-1042': 'stuck at carrier'}
 
-requirements: functai @ file:///home/maxime/Projects/.pi-worktrees/functai-docs/python
+requirements: functai @ file:///home/maxime/Projects/functai/python
 
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/.pi-worktrees/functai-docs/python), lmcc (/home/maxime/Projects/.pi-worktrees/lmcc/python)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python), lmcc (/home/maxime/Projects/lmcc/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
