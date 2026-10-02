@@ -89,9 +89,9 @@ opaque <- function() { f <- new_field(lmcc::jobj(), "opaque"); f$opaque <- TRUE;
 #' @param interface A program's interface, as data ([ai_interface()]'s form).
 #' @param name The program's name.
 #' @export
-program_from_interface <- function(interface, .body, name = "program", .defined_in = NULL) {
+program_from_interface <- function(interface, .body, name = "program", .defined_in = NULL, ai = FALSE) {
   core <- list(kind = "module", interface = json_normal(interface), own = list(), body = .body, module = .defined_in %||% "__main__")
-  problem <- interface_problem(core$interface, ai = FALSE)
+  problem <- interface_problem(core$interface, ai = ai)
   if (!is.null(problem)) refuse("interface-malformed", c("{name} cannot be defined: {interface_fault(core$interface, problem$field)}"), field = problem$field)
   fields <- function(side) stats::setNames(lapply(core$interface[[side]], function(f) {
     out <- if (isTRUE(f$opaque)) opaque() else field_from_shape(f$shape, f$desc)
@@ -180,6 +180,9 @@ program_version <- function(core) {
 
 program_json <- function(core) {
   iface <- program_interface(core)
+  if (!is.null(core$remote))
+    return(list(name = core$definition$name, kind = "remote", module = core$module, version = core$remote$version,
+                interface = interface_signature(iface), answer = iface$outputs[[length(iface$outputs)]]$name, remote = core$remote$url))
   p <- list(name = core$definition$name, kind = "module", module = core$module, version = program_version(core),
             interface = interface_signature(iface), answer = iface$outputs[[length(iface$outputs)]]$name)
   if (!is.null(core$file)) p$file <- core$file

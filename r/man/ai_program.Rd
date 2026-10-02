@@ -16,7 +16,13 @@ ai_program(
   .answer_from = NULL
 )
 
-program_from_interface(interface, .body, name = "program", .defined_in = NULL)
+program_from_interface(
+  interface,
+  .body,
+  name = "program",
+  .defined_in = NULL,
+  ai = FALSE
+)
 }
 \arguments{
 \item{.formula}{\code{outputs ~ inputs}, as in \code{\link[=ai]{ai()}}.}
