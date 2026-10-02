@@ -885,13 +885,34 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
                           .call = vapply(votes, function(v) paste(stats::na.omit(v$calls), collapse = " "), ""),
                           .error = error_or_missing(vapply(votes, function(v) v$error, ""), rows)))
   }
-  results <- memo_rows(core, rows, settings)
+  results <- memo_rows(core, rows, settings, row_contexts(new_data))
   out <- answers(core, results, pred_names(core))
   if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
   out$.error <- error_or_missing(vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), ""), rows)
   attr(out, "turns") <- lapply(results, function(r) r$turn)
   if (is_choice(core)) attr(out, "probabilities") <- measured_table(core, results)
+  out
+}
+
+# Each row's context (rated() of a conversation's turns: `earlier`, `helpers`,
+# `sections`, and the rated `call`), or NULL for a row that had none.
+row_contexts <- function(data) {
+  if (!any(c("earlier", "helpers", "sections") %in% names(data))) return(NULL)
+  lapply(seq_len(nrow(data)), function(i) {
+    get <- function(k) if (k %in% names(data)) data[[k]][[i]] else NULL
+    ctx <- list(earlier = get("earlier"), helpers = get("helpers"), sections = get("sections"), call = if ("call" %in% names(data)) data$call[[i]] else NULL)
+    if (length(ctx$earlier) || length(ctx$helpers) || length(ctx$sections)) ctx else NULL
+  })
+}
+
+# Rows asked again with what their calls were shown: those with a context one
+# at a time (each with its own earlier turns), the others together.
+run_rows_in_context <- function(core, rows, settings, contexts) {
+  out <- vector("list", length(rows))
+  plain <- which(vapply(contexts, is.null, NA))
+  if (length(plain)) out[plain] <- run_rows(core, rows[plain], settings)
+  for (i in setdiff(seq_along(rows), plain)) out[i] <- replaying(contexts[[i]], core, run_rows(core, rows[i], settings))
   out
 }
 
@@ -922,7 +943,8 @@ measures_probabilities <- function(core, settings = list()) {
 # augment() asks for both, in either order) share one call a row: a fitted
 # model keeps each row's result in `core$memo`, as it keeps votes. Only a
 # fitted model has a memo, and only a measuring model uses it this way.
-memo_rows <- function(core, rows, settings) {
+memo_rows <- function(core, rows, settings, contexts = NULL) {
+  if (!is.null(contexts) && any(!vapply(contexts, is.null, NA))) return(run_rows_in_context(core, rows, settings, contexts))
   if (is.null(core$memo) || !measures_probabilities(core, settings)) return(if (length(rows)) run_rows(core, rows, settings) else list())
   s <- effective(set_all(core$own, settings))
   prefix <- paste("measured", version_of(core), s$lm %||% "", sep = "|")

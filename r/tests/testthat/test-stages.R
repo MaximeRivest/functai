@@ -204,3 +204,14 @@ for (name in names(stage_cases("plugins"))) {
     expect_identical(ran, as.integer(want$ran))
   })
 }
+
+# ---------------------------------------------------------------- rows that keep their context (stage 5)
+
+for (name in names(stage_cases("context"))) {
+  test_that(paste("context case", name), {
+    c <- stage_cases("context")[[name]]
+    got <- tryCatch(earlier_of(c$call, c$records), functai_saw_unknown = identity)
+    if (!is.null(c$expect$refuses)) { expect_s3_class(got, "functai_saw_unknown"); expect_identical(got$code, c$expect$refuses) }
+    else expect_identical(plain(got[c("earlier", "conversation")]), plain(c$expect))
+  })
+}

@@ -156,3 +156,27 @@ test_that("delegate() hands work to another program, which remembers on its bran
   helper_requests <- Filter(function(q) grepl("Look things up", paste(unlist(lmcc::lm15_plain(lm15::as_dict(q))$system), collapse = " ")), r$env$requests)
   expect_identical(msg_count(helper_requests[[2L]]), 3L)            # it remembered its first question
 })
+
+test_that("a rated turn is a row that keeps its earlier turns, and is asked again with them", {
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  logs <- withr::local_tempdir()
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("answer %d", i)))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, log_calls = logs, {
+    chat <- ai_conversation(tutor, "alex")
+    chat("Hi, I'm Alex."); chat("What is my name?")
+  })
+  t <- ai_turns(chat)
+  rate(t$turn[[2L]], "wrong", answer = "Alex.", folder = logs)
+  rows <- rated(tutor, folder = logs, any_file = TRUE)
+  expect_identical(nrow(rows), 1L)
+  expect_identical(rows$conversation, "alex")
+  expect_identical(rows$earlier[[1L]][[1L]]$inputs$message, "Hi, I'm Alex.")
+  # asked again with its earlier turns (and nothing written to the conversation)
+  ev <- with_ai_config(evaluate(tutor, rows), lm = "gpt-4.1-mini", router = r, log_calls = logs)
+  expect_identical(msg_count(r$env$requests[[3L]]), 3L)
+  again <- Filter(function(x) length(x$saw) && !is.null(x$saw[[1L]]$saw_of), log_lines(logs))
+  expect_length(again, 1L)
+  expect_identical(again[[1L]]$saw, list(list(saw_of = t$turn[[2L]])))
+  expect_identical(nrow(ai_turns(chat)), 2L)
+  expect_length(ai_demos(labeled_few_shot(tutor, rows)), 0L)           # never a worked example
+})

@@ -126,7 +126,9 @@ rated <- function(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE) 
   out <- rated_rows(log$calls, log$ratings, name = core$definition$name, module = core$module,
                     signature = signature_id(signature_of(core, effective(core$own))),
                     interface = interface_signature(interface_of(core)), by = by, file = file)
-  rows <- out$rows
+  ctx <- with_context(out$rows, log$calls)
+  rows <- ctx$rows
+  out$left_out$no_context <- ctx$dropped
   fields <- c(core$definition$inputs, core$definition$outputs)
   cols <- list()
   keys <- unique(unlist(lapply(rows, names)))
@@ -134,6 +136,8 @@ rated <- function(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE) 
     values <- lapply(rows, function(r) r[[k]])
     cols[[k]] <- if (k %in% names(fields)) assemble(fields[[k]], values)
       else if (k == "disputed") vapply(values, isTRUE, NA)
+      else if (k %in% c("earlier", "helpers", "sections")) values
+      else if (k == "conversation") vapply(values, function(v) if (is.null(v)) NA_character_ else as.character(v), "")
       else vapply(values, function(v) if (is.null(v)) NA_character_ else as.character(v), "")
   }
   if (core$single && "result" %in% names(cols)) names(cols)[names(cols) == "result"] <- columns_of(core)[["result"]]
