@@ -74,3 +74,16 @@ with functai.configure(log_calls=tempfile.mkdtemp()):
     rows = functai.rated(team)
 rows.select("message", "result", "rating")
 ```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+# dpyr dataframe · source: polars · showing 2 of 2 rows
+┌───────────────────────────────────────┬──────────┬────────┐
+│ message                               ┆ result   ┆ rating │
+│ ---                                   ┆ ---      ┆ ---    │
+│ str                                   ┆ str      ┆ str    │
+╞═══════════════════════════════════════╪══════════╪════════╡
+│ My parcel never came.                 ┆ shipping ┆ right  │
+│ The chair arrived with a snapped leg. ┆ shipping ┆ wrong  │
+└───────────────────────────────────────┴──────────┴────────┘
+```

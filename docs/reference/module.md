@@ -65,6 +65,7 @@ inputs before its code runs, its outputs when it returns
 
 | Name | Description |
 | --- | --- |
+| [ai_functions](#functai.module.FunctAIModule.ai_functions) | Every AI function this module reaches (``named_ai_functions().values()``). |
 | [conversation](#functai.module.FunctAIModule.conversation) | A conversation with this module: each call a turn, kept in ``store``; |
 | [load](#functai.module.FunctAIModule.load) | A copy running with the states a ``save`` wrote. |
 | [map](#functai.module.FunctAIModule.map) | Run on every row of a table; returns the rows with ``pred_result`` |
@@ -74,6 +75,14 @@ inputs before its code runs, its outputs when it returns
 | [state](#functai.module.FunctAIModule.state) | The instruction and demos each AI function runs with in this module, by name. |
 | [stream](#functai.module.FunctAIModule.stream) | Call the module and watch every AI function it calls, as it works. |
 | [vectorize](#functai.module.FunctAIModule.vectorize) | This module as a dpyr row function (see ``FunctAIFunc.vectorize``); |
+
+##### ai_functions { #functai.module.FunctAIModule.ai_functions }
+
+```{.python .no-run}
+module.FunctAIModule.ai_functions()
+```
+
+Every AI function this module reaches (``named_ai_functions().values()``).
 
 ##### conversation { #functai.module.FunctAIModule.conversation }
 
@@ -272,4 +281,9 @@ def blurb(topic: str) -> str:
     return shorten(draft(topic))
 
 blurb("why paired comparisons need fewer examples")
+```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+'Paired comparisons simplify choices, reducing examples needed for efficient preference identification.'
 ```

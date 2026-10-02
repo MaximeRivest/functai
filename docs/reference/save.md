@@ -80,3 +80,8 @@ folder = os.path.join(tempfile.mkdtemp(), "capital")
 save(capital, folder, record=[{"country": "Kenya"}])
 sorted(os.listdir(folder))
 ```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+['code', 'functai.json', 'recordings.json', 'requirements.lock', 'requirements.txt']
+```

@@ -61,9 +61,16 @@ functai.configure(cache_replies=True)
 
 An identical request (same model, same messages, same settings) is then
 answered from memory, so re-running a cell or an evaluation costs
-nothing. `functai.clear_cache()` empties it. A reply that could not be
-read is not kept, so asking again reaches the model. It is off by
-default, because a cached answer hides how much a model's answers vary:
-an identical request gets an identical answer even when the model
-samples (the optimizers' teacher is never answered from it, for that
-reason).
+nothing. `cache_replies="disk"` keeps the replies in a file instead,
+across runs and processes (one request in flight for the same question,
+however many processes ask), so a long run resumes by being run again
+([Big tables](tables.md#long-runs)). `functai.clear_cache()` empties the
+memory cache, `functai.clear_cache("disk")` the file.
+
+A reply that could not be read is not kept, so asking again reaches the
+model. The cache is off by default, because a cached answer hides how
+much a model's answers vary: an identical request gets an identical
+answer even when the model samples (the optimizers' teacher is never
+answered from it, for that reason). `fn.using(replicate=1)` asks for a
+second, independent answer to the same request (`replicate=2` a third),
+cached under its own key.

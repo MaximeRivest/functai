@@ -42,3 +42,7 @@ def order_status(order: str) -> str:
 
 order_status.effects
 ```
+
+```output
+'reads'
+```

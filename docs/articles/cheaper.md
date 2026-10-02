@@ -56,10 +56,10 @@ models
 │ ---              ┆ ---    ┆ ---      ┆ ---      ┆ ---          ┆ ---           ┆ ---      │
 │ str              ┆ f64    ┆ f64      ┆ f64      ┆ i64          ┆ i64           ┆ f64      │
 ╞══════════════════╪════════╪══════════╪══════════╪══════════════╪═══════════════╪══════════╡
-│ gpt-4.1-mini     ┆ 0.9875 ┆ 0.932537 ┆ 0.99779  ┆ 7488         ┆ 720           ┆ 0.711048 │
-│ gpt-4.1-nano     ┆ 0.8875 ┆ 0.799818 ┆ 0.939673 ┆ 7791         ┆ 741           ┆ 0.71245  │
-│ claude-haiku-4-5 ┆ 0.95   ┆ 0.878377 ┆ 0.980386 ┆ 7741         ┆ 720           ┆ 0.51464  │
-│ gemini-2.5-flash ┆ 0.9875 ┆ 0.932537 ┆ 0.99779  ┆ 7411         ┆ 400           ┆ 0.862319 │
+│ gpt-4.1-mini     ┆ 0.9875 ┆ 0.932537 ┆ 0.99779  ┆ 7488         ┆ 720           ┆ 1.005348 │
+│ gpt-4.1-nano     ┆ 0.875  ┆ 0.784972 ┆ 0.930664 ┆ 7488         ┆ 721           ┆ 1.060754 │
+│ claude-haiku-4-5 ┆ 0.9375 ┆ 0.861899 ┆ 0.973011 ┆ 7741         ┆ 720           ┆ 0.573799 │
+│ gemini-2.5-flash ┆ 0.9625 ┆ 0.895453 ┆ 0.987165 ┆ 7411         ┆ 400           ┆ 1.09125  │
 └──────────────────┴────────┴──────────┴──────────┴──────────────┴───────────────┴──────────┘
 ```
 
@@ -92,9 +92,9 @@ read(results).select(col.model, col.right, col.per_1000_messages)
 │ str              ┆ f64    ┆ f64               │
 ╞══════════════════╪════════╪═══════════════════╡
 │ gpt-4.1-mini     ┆ 0.9875 ┆ 0.052             │
-│ gpt-4.1-nano     ┆ 0.8875 ┆ 0.013             │
-│ claude-haiku-4-5 ┆ 0.95   ┆ 0.142             │
-│ gemini-2.5-flash ┆ 0.9875 ┆ 0.04              │
+│ gpt-4.1-nano     ┆ 0.875  ┆ 0.013             │
+│ claude-haiku-4-5 ┆ 0.9375 ┆ 0.142             │
+│ gemini-2.5-flash ┆ 0.9625 ┆ 0.04              │
 └──────────────────┴────────┴───────────────────┘
 ```
 
@@ -117,8 +117,10 @@ check your own before deciding.)
 While you work in a notebook, re-running a cell calls the model again.
 `functai.configure(cache_replies=True)` answers identical requests from
 memory instead (same model, same prompt, same input), so re-running an
-evaluation costs nothing. It's off by default because a cached answer
-hides how much a model's answers vary.
+evaluation costs nothing; `cache_replies="disk"` keeps the replies across
+runs and processes, so a long run that was interrupted resumes where it
+stopped ([Big tables](tables.md#long-runs)). It's off by default because
+a cached answer hides how much a model's answers vary.
 
 On tables, each distinct input is sent once per session anyway: 10,000
 rows with 2,000 distinct messages cost 2,000 calls.

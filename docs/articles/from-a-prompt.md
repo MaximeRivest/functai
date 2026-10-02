@@ -117,7 +117,7 @@ yours
 ```
 
 ```output
-Evaluation(route, 80 examples: exact_match 0.75 [0.65, 0.83])
+Evaluation(route, 80 examples: exact_match 0.76 [0.66, 0.84])
 ```
 
 **Every call is inspectable**: `print(functai.phistory())` shows the
@@ -178,7 +178,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T18:52:40] team → gpt-4.1-mini
+[2026-10-02T09:57:20] team → gpt-4.1-mini
 
 System message:
 
@@ -217,13 +217,13 @@ functai.compare(yours, functai.evaluate(team, tickets, expected="category", num_
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬───────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff  ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪═══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.75   ┆ 0.825 ┆ 0.075 ┆ 0.006204 ┆ 0.143796 ┆ 7      ┆ 1     ┆ 72   ┆ 80  │
-└─────────────┴────────┴───────┴───────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬────────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after  ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---    ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64    ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪════════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.7625 ┆ 0.8125 ┆ 0.05 ┆ -0.010298 ┆ 0.110298 ┆ 5      ┆ 1     ┆ 74   ┆ 80  │
+└─────────────┴────────┴────────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 If yours is better, keep your template: it is a first-class way to use

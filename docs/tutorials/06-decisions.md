@@ -242,7 +242,7 @@ outcome(two_step, "the model reads, Python decides")
 │ ---                             ┆ ---     ┆ ---             ┆ ---           ┆ ---     │
 │ str                             ┆ i64     ┆ i64             ┆ i64           ┆ f64     │
 ╞═════════════════════════════════╪═════════╪═════════════════╪═══════════════╪═════════╡
-│ the model reads, Python decides ┆ 0       ┆ 0               ┆ 0             ┆ 0.0     │
+│ the model reads, Python decides ┆ 0       ┆ 1               ┆ 0             ┆ 13.26   │
 └─────────────────────────────────┴─────────┴─────────────────┴───────────────┴─────────┘
 ```
 
@@ -306,7 +306,7 @@ rated_reads.select(col.item, col.state, col.read_state, col.read_confidence).sli
 │ ---             ┆ ---        ┆ ---        ┆ ---             │
 │ str             ┆ str        ┆ str        ┆ f64             │
 ╞═════════════════╪════════════╪════════════╪═════════════════╡
-│ wall clock      ┆ wrong_item ┆ wrong_item ┆ 1.0             │
+│ wall clock      ┆ wrong_item ┆ wrong_item ┆ 0.99            │
 │ floor rug       ┆ wrong_item ┆ wrong_item ┆ 0.99            │
 │ stand mixer     ┆ faulty     ┆ faulty     ┆ 0.99            │
 │ ceramic planter ┆ faulty     ┆ faulty     ┆ 0.99            │
@@ -328,15 +328,16 @@ rated_reads.mutate(said=said).group_by(col.said).summarize(answers=n(), right=(c
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 3 of 3 rows
+# dpyr dataframe · source: polars · showing 4 of 4 rows
 ┌──────────────┬─────────┬──────────┐
 │ said         ┆ answers ┆ right    │
 │ ---          ┆ ---     ┆ ---      │
 │ str          ┆ i64     ┆ f64      │
 ╞══════════════╪═════════╪══════════╡
-│ 0.70-0.90    ┆ 6       ┆ 0.833333 │
-│ 0.90-0.99    ┆ 27      ┆ 0.925926 │
-│ 0.99 or more ┆ 87      ┆ 0.988506 │
+│ 0.70-0.90    ┆ 3       ┆ 0.666667 │
+│ 0.90-0.99    ┆ 24      ┆ 1.0      │
+│ 0.99 or more ┆ 90      ┆ 0.988889 │
+│ under 0.70   ┆ 3       ┆ 0.666667 │
 └──────────────┴─────────┴──────────┘
 ```
 
@@ -398,16 +399,16 @@ jev.mutate(said=sure).group_by(col.said).summarize(answers=n(), right=(col.state
 
 ```output
 # dpyr dataframe · source: polars · showing 4 of 4 rows
-┌──────────────┬─────────┬───────┐
-│ said         ┆ answers ┆ right │
-│ ---          ┆ ---     ┆ ---   │
-│ str          ┆ i64     ┆ f64   │
-╞══════════════╪═════════╪═══════╡
-│ 0.70-0.90    ┆ 8       ┆ 0.875 │
-│ 0.90-0.99    ┆ 18      ┆ 1.0   │
-│ 0.99 or more ┆ 91      ┆ 1.0   │
-│ under 0.70   ┆ 3       ┆ 1.0   │
-└──────────────┴─────────┴───────┘
+┌──────────────┬─────────┬──────────┐
+│ said         ┆ answers ┆ right    │
+│ ---          ┆ ---     ┆ ---      │
+│ str          ┆ i64     ┆ f64      │
+╞══════════════╪═════════╪══════════╡
+│ 0.70-0.90    ┆ 6       ┆ 1.0      │
+│ 0.90-0.99    ┆ 19      ┆ 0.947368 │
+│ 0.99 or more ┆ 92      ┆ 1.0      │
+│ under 0.70   ┆ 3       ┆ 1.0      │
+└──────────────┴─────────┴──────────┘
 ```
 
 The answers it was very sure of were right, and its mistakes, if any,
@@ -488,9 +489,9 @@ jev.filter(col.action == "review").select(col.item, col.price, col.p, col.state,
 │ ---             ┆ ---    ┆ ---  ┆ ---        ┆ ---        │
 │ str             ┆ f64    ┆ f64  ┆ str        ┆ str        │
 ╞═════════════════╪════════╪══════╪════════════╪════════════╡
-│ wool throw      ┆ 13.26  ┆ 0.21 ┆ used       ┆ used       │
-│ coffee grinder  ┆ 251.17 ┆ 0.16 ┆ used       ┆ used       │
-│ ceramic planter ┆ 189.77 ┆ 0.89 ┆ wrong_item ┆ wrong_item │
+│ wool throw      ┆ 13.26  ┆ 0.19 ┆ used       ┆ used       │
+│ coffee grinder  ┆ 251.17 ┆ 0.13 ┆ used       ┆ used       │
+│ ceramic planter ┆ 189.77 ┆ 0.92 ┆ wrong_item ┆ wrong_item │
 └─────────────────┴────────┴──────┴────────────┴────────────┘
 ```
 
@@ -520,7 +521,7 @@ plt.title("green: approve · orange: deny · blue: a person reads it", fontsize=
 plt.show()
 ```
 
-![plot](../_assets/generated/532b48cd25b55c7a.png)
+![plot](../_assets/generated/62468f82997bd2bf.png)
 
 Most requests sit at the top or bottom edge: Jev was sure, and right.
 The few in between are the ones it was honestly unsure about, and there
@@ -541,7 +542,7 @@ ev_careful, f"{escalated} of {len(ev_careful)} asked gpt-6-sol"
 ```
 
 ```output
-(Evaluation(item_state, 120 examples: exact_match 0.99 [0.95, 1.00]), '10 of 120 asked gpt-6-sol')
+(Evaluation(item_state, 120 examples: exact_match 0.98 [0.94, 1.00]), '8 of 120 asked gpt-6-sol')
 ```
 
 Both answers are logged, the first one as the call's child, so you can
@@ -562,7 +563,7 @@ outcome(careful_reads.mutate(action=policy(col.state_read, col.days_since_delive
 │ ---                        ┆ ---     ┆ ---             ┆ ---           ┆ ---     │
 │ str                        ┆ i64     ┆ i64             ┆ i64           ┆ f64     │
 ╞════════════════════════════╪═════════╪═════════════════╪═══════════════╪═════════╡
-│ Jev, gpt-6-sol when unsure ┆ 0       ┆ 0               ┆ 0             ┆ 0.0     │
+│ Jev, gpt-6-sol when unsure ┆ 0       ┆ 1               ┆ 0             ┆ 13.26   │
 └────────────────────────────┴─────────┴─────────────────┴───────────────┴─────────┘
 ```
 
@@ -591,9 +592,9 @@ read([s.collect().to_dicts()[0] for s in strategies]).arrange(col.dollars)
 │ ---                             ┆ ---     ┆ ---             ┆ ---           ┆ ---     │
 │ str                             ┆ i64     ┆ i64             ┆ i64           ┆ f64     │
 ╞═════════════════════════════════╪═════════╪═════════════════╪═══════════════╪═════════╡
-│ the model reads, Python decides ┆ 0       ┆ 0               ┆ 0             ┆ 0.0     │
-│ Jev, gpt-6-sol when unsure      ┆ 0       ┆ 0               ┆ 0             ┆ 0.0     │
 │ expected cost, jev-latest       ┆ 3       ┆ 0               ┆ 0             ┆ 12.0    │
+│ the model reads, Python decides ┆ 0       ┆ 1               ┆ 0             ┆ 13.26   │
+│ Jev, gpt-6-sol when unsure      ┆ 0       ┆ 1               ┆ 0             ┆ 13.26   │
 │ the model decides               ┆ 0       ┆ 1               ┆ 1             ┆ 53.26   │
 │ a person reads everything       ┆ 120     ┆ 0               ┆ 0             ┆ 480.0   │
 │ deny everything                 ┆ 0       ┆ 0               ┆ 62            ┆ 2480.0  │
@@ -617,15 +618,15 @@ functai.calls(folder=log_folder).left_join(prices_per_m, on=col.model).group_by(
 
 ```output
 # dpyr dataframe · source: polars · showing 3 of 3 rows
-┌────────────┬───────┬───────────┐
-│ model      ┆ calls ┆ dollars   │
-│ ---        ┆ ---   ┆ ---       │
-│ str        ┆ i64   ┆ f64       │
-╞════════════╪═══════╪═══════════╡
-│ gpt-6-luna ┆ 360   ┆ 0.0161684 │
-│ gpt-6-sol  ┆ 10    ┆ 0.027158  │
-│ jev-latest ┆ 231   ┆ 0.005313  │
-└────────────┴───────┴───────────┘
+┌────────────┬───────┬──────────┐
+│ model      ┆ calls ┆ dollars  │
+│ ---        ┆ ---   ┆ ---      │
+│ str        ┆ i64   ┆ f64      │
+╞════════════╪═══════╪══════════╡
+│ gpt-6-luna ┆ 360   ┆ 0.016502 │
+│ gpt-6-sol  ┆ 8     ┆ 0.02123  │
+│ jev-latest ┆ 233   ┆ 0.005364 │
+└────────────┴───────┴──────────┘
 ```
 
 ## If nobody wrote the rules down

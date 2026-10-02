@@ -58,7 +58,29 @@ def _pct(xs: Sequence[int], q: float) -> int:
 
 
 class Examples:
-    """Training conversations (see the module docstring)."""
+    """The training conversations for a student, made by
+    ``functai.bake.examples``: what FunctAI will send the student, in a form
+    every trainer reads.
+
+    One row per example: ``function`` (the AI function it trains);
+    ``messages`` (the chat as the function's layout writes it, the reply
+    last: TRL, Axolotl, Unsloth and prime-rl read it as is); ``prompt`` and
+    ``completion`` (the same chat split at the reply, written on ``save``);
+    with ``student=``, ``input_ids`` (the exact tokens under the student's
+    chat template: what training sees and what a call sends),
+    ``answer_start`` (where the reply starts: the loss is on the tokens from
+    there on), ``prompt_tokens`` and ``answer_tokens``; ``tag`` and
+    ``weight`` (from your columns); ``row_id`` and ``split`` (``train`` or
+    ``validation``); ``source`` (``data``, ``teacher`` or ``program``).
+
+    ```{.python .no-run}
+    ex = functai.bake.examples(summarize, rows, student="Qwen/Qwen3.5-4B")
+    ex.stats()                                   # counts and token lengths
+    ex = ex.filter(lambda r: r["prompt_tokens"] < 16_000)
+    ex.save("train.parquet")                     # or .jsonl / .jsonl.gz; ex.to_hf() for datasets
+    baked = functai.bake.bake(ex)                # or train elsewhere, then functai.bake.adopt(...)
+    ```
+    """
 
     def __init__(self, rows: List[Dict[str, Any]], *, student: Optional[str] = None,
                  template: Optional[Dict[str, Any]] = None, entries: Optional[Dict[str, Any]] = None,
@@ -86,13 +108,16 @@ class Examples:
 
     @property
     def tokenized(self) -> bool:
+        """Whether every example carries its tokens (``input_ids``: made with ``student=``)."""
         return bool(self.rows) and all(r.get("input_ids") is not None for r in self.rows)
 
     @property
     def functions(self) -> List[str]:
+        """The names of the AI functions the examples train."""
         return sorted({r["function"] for r in self.rows})
 
     def split(self, name: str) -> "Examples":
+        """The examples of one split: ``ex.split("train")`` or ``ex.split("validation")``."""
         return self._with([r for r in self.rows if r.get("split", "train") == name])
 
     def filter(self, keep: Callable[[Dict[str, Any]], bool]) -> "Examples":
@@ -226,6 +251,8 @@ class Examples:
 
     @classmethod
     def from_records(cls, recs: Sequence[Dict[str, Any]], meta: Optional[Dict[str, Any]] = None) -> "Examples":
+        """Examples from plain rows (each needs ``function`` and ``messages``), as ``records()`` gives
+        them; ``meta`` carries the student, template and layouts when known."""
         meta = meta or {}
         rows = []
         for r in recs:

@@ -111,6 +111,19 @@ def test_a_service_describes_and_answers(model):
     assert b"<form" in svc.handle("GET", "/", {}).body
 
 
+def test_a_served_ai_function_refuses_wrong_inputs_before_anything_runs(model):
+    svc = Service(topic)
+    asked = len(model.requests)
+    for body in (b'{"inputs": {}}', b'{"inputs": {"mesage": "x"}}', b'{"inputs": {"message": null}}'):
+        for route in ("/call", "/stream", "/conversations/c/turns"):
+            r = svc.handle("POST", route, {}, body)
+            err = json.loads(r.body)["error"]
+            assert (r.status, err["type"], err["code"]) == (422, "InterfaceError", "interface-input"), (route, body)
+            assert err["field"] == "message" or "mesage" in err["message"]
+    assert len(model.requests) == asked                                      # no model was asked
+    assert json.loads(svc.handle("POST", "/call", {}, b'{"inputs": {"message": "x"}}').body)["value"] == "shipping"
+
+
 def test_a_service_streams_the_outside_view(model):
     svc = Service(support)
     r = svc.handle("POST", "/stream", {}, b'{"inputs": {"message": "x"}}')

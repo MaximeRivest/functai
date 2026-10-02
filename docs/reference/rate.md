@@ -76,3 +76,8 @@ with functai.configure(log_calls=tempfile.mkdtemp()):
     rating = functai.rate(p, "right")
 rating["verdict"]
 ```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+'right'
+```

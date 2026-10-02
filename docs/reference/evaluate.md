@@ -77,18 +77,23 @@ ev = evaluate(team, tickets, expected="category", num_threads=8)
 ev
 ```
 
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+Evaluation(team, 20 examples: exact_match 0.90 [0.70, 0.97])
+```
+
 ```python
 ev.table.filter(col.exact_match == 0).select(col.message, col.category, col.pred_result)
 ```
 
 ```output
 # dpyr dataframe · source: polars · showing 2 of 2 rows
-┌───────────────────────────────────────────────────────────────┬──────────┬─────────────┐
-│ message                                                       ┆ category ┆ pred_result │
-│ ---                                                           ┆ ---      ┆ ---         │
-│ str                                                           ┆ str      ┆ str         │
-╞═══════════════════════════════════════════════════════════════╪══════════╪═════════════╡
-│ The mug arrived in pieces.                                    ┆ shipping ┆ product     │
-│ Refund the blender please, it stopped working after two days. ┆ billing  ┆ product     │
-└───────────────────────────────────────────────────────────────┴──────────┴─────────────┘
+┌────────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
+│ message                                                            ┆ category ┆ pred_result │
+│ ---                                                                ┆ ---      ┆ ---         │
+│ str                                                                ┆ str      ┆ str         │
+╞════════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
+│ You sent me a blue rug but I ordered the green one (order A-1187). ┆ shipping ┆ product     │
+│ Refund the blender please, it stopped working after two days.      ┆ billing  ┆ product     │
+└────────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
 ```

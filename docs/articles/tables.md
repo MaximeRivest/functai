@@ -186,9 +186,63 @@ sentiment.map(reviews).select(col.review, col.pred_result, col.input_tokens, col
 │ ---                                   ┆ ---         ┆ ---          ┆ ---      │
 │ str                                   ┆ str         ┆ i64          ┆ f64      │
 ╞═══════════════════════════════════════╪═════════════╪══════════════╪══════════╡
-│ Loved it, would buy again.            ┆ positive    ┆ 57           ┆ 0.660623 │
-│ Arrived late and the box was crushed. ┆ negative    ┆ 59           ┆ 1.810363 │
-│ Loved it, would buy again.            ┆ positive    ┆ 57           ┆ 0.588793 │
-│ Does what it says. Nothing more.      ┆ neutral     ┆ 58           ┆ 0.551985 │
+│ Loved it, would buy again.            ┆ positive    ┆ 57           ┆ 1.0967   │
+│ Arrived late and the box was crushed. ┆ negative    ┆ 59           ┆ 0.897529 │
+│ Loved it, would buy again.            ┆ positive    ┆ 57           ┆ 0.967973 │
+│ Does what it says. Nothing more.      ┆ neutral     ┆ 58           ┆ 0.867175 │
 └───────────────────────────────────────┴─────────────┴──────────────┴──────────┘
 ```
+
+## Long runs
+
+On ten thousand rows, `map` shows a progress line as rows finish (rows
+done, errors, tokens, time left; `progress=False` hides it) and runs
+`threads` rows at once. A run that long gets interrupted: a crash, a
+laptop lid, a rate limit. Keep the model's replies on disk, and running
+the same line again sends only what has no reply yet:
+
+```python
+import tempfile, time
+functai.configure(cache_replies=tempfile.mkdtemp())   # in real use: cache_replies="disk"
+
+def timed(run):
+    start = time.perf_counter()
+    table = run()
+    return table, round(time.perf_counter() - start, 2)
+
+first, first_seconds = timed(lambda: sentiment.map(reviews, threads=4, progress=False))
+again, again_seconds = timed(lambda: sentiment.map(reviews, threads=4, progress=False))   # as after an interruption
+first_seconds, again_seconds, list(again.pull(col.pred_result)) == list(first.pull(col.pred_result))
+```
+
+```output
+(0.85, 0.01, True)
+```
+
+The second run cost nothing and took a fraction of the time: every
+reply came from the file. `cache_replies="disk"` keeps them in one SQLite file in your cache
+folder (`~/.cache/functai/replies.sqlite` on Linux), shared by every
+process and notebook; a folder or a `.sqlite` path keeps them there
+instead. A reply is kept only once it was read into the function's types,
+so an interrupted run leaves nothing half-written, and a row that failed
+is asked again. Two processes asking the same thing at once make one
+request: the second waits for the first's reply.
+
+A cached reply is the same reply: the model is not asked again, so it
+cannot vary. To get another, independent answer to the same request (to
+see how much answers vary, or to vote), ask for another replicate; it is
+kept too:
+
+```python
+another = sentiment.using(replicate=1)("Does what it says. Nothing more.")
+functai.configure(cache_replies=False)       # back to no cache, for what follows
+another
+```
+
+```output
+'neutral'
+```
+
+`functai.clear_cache("disk")` empties the file. A function whose
+`log_content` keeps a field out of the log is never written to disk,
+since the file holds whole requests and replies.

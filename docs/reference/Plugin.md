@@ -40,6 +40,10 @@ def refuse_deletes(tool):
 functai.configure(plugins=[guard])
 ```
 
+```output
+configure(plugins=(<Plugin no-deletes 1.0.0: tool_call>,))
+```
+
 ## Methods
 
 | Name | Description |

@@ -42,6 +42,11 @@ signature.
 | `MIPROv2` | `InstructionSearch` |
 | `dspy.configure(lm=dspy.LM("openai/gpt-4o"))` | `functai.configure(lm="openai/gpt-4o")` (the same spelling works) |
 | `dspy.inspect_history()` | `functai.phistory()` |
+| `program.save(path)` / `load` | `fn.save(path)` / `fn.load(path)` for the instruction and examples; [`functai.save`](saving.md) for a whole program with what it depends on |
+
+FunctAI no longer runs on DSPy, so a program cannot be turned back into
+one: `fn.to_dspy()` raises, and says what to use instead (`fn.state()`,
+the instruction and examples an optimizer found).
 
 ## pandas and polars
 

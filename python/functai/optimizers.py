@@ -66,10 +66,28 @@ def _mean_score(program: Any, rows: Sequence[Row], metric: Metric, num_threads: 
 
 
 class Optimizer:
-    """The base class of optimizers.
+    """The base class of optimizers: subclass it to write your own.
 
-    Base class. ``compile(program, trainset=..., valset=...)`` returns the new
-    state of each AI function; it never changes the functions itself."""
+    An optimizer has one method, ``compile(program, *, trainset, valset=None)``:
+    given an AI function or a ``@module`` and rows with known answers (a list
+    of dicts), it
+    returns the new state of each AI function it improves, as
+    ``{fn: ProgramState(instructions=..., demos=...)}``. It never changes the
+    functions itself: ``fn.opt(rows, optimizer=MyOptimizer())`` builds the
+    improved copy from what it returns. ``metric`` (``metric(row,
+    prediction)``) is set from ``fn.opt(metric=...)`` when the optimizer has
+    none.
+
+    ```{.python .no-run}
+    class FirstRows(functai.Optimizer):          # the first three rows become worked examples
+        def compile(self, program, *, trainset, valset=None):
+            demos = tuple({"inputs": {"message": r["message"]}, "outputs": {"result": r["team"]}}
+                          for r in trainset[:3])
+            return {program: functai.ProgramState(demos=demos)}
+
+    better = team.opt(rows, optimizer=FirstRows())
+    ```
+    """
 
     metric: Optional[Callable] = None
 
@@ -95,7 +113,23 @@ def _labeled_demo(fn: FunctAIFunc, target: _Target, row: Row) -> Optional[Dict[s
 
 
 class LabeledFewShot(Optimizer):
-    """Up to ``k`` labeled examples become demos (a random sample, or the first ``k``)."""
+    """Rows with known answers become worked examples, sent before every call.
+
+    The cheapest optimizer: no model is called to optimize. Use it as
+    ``fn.opt(rows, optimizer=LabeledFewShot(k=8))``, or by name:
+    ``functai.labeled_few_shot(fn, rows, k=8)``. One AI function only (a
+    ``@module`` needs ``BootstrapFewShot``, which knows which step each
+    example belongs to).
+
+    Parameters
+    ----------
+    k : int
+        At most this many examples (default 16).
+    sample : bool
+        True (default): a random sample of the rows; False: the first ``k``.
+    seed : int
+        The sample's seed, so the same rows give the same examples.
+    """
 
     def __init__(self, k: int = 16, *, sample: bool = True, seed: int = 0):
         self.k, self.sample, self.seed = k, sample, seed
@@ -807,14 +841,24 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
 
 def labeled_few_shot(fn: "FunctAIFunc[P, R]", data: Any, *, k: int = 16, expected: Any = None,
                      sample: bool = True, seed: int = 0) -> "FunctAIFunc[P, R]":
-    """An improved copy: up to ``k`` rows with known answers become worked examples.
+    '''An improved copy: up to ``k`` rows with known answers become worked examples.
 
     Examples
     --------
-    ```{.python .no-run}
-    taught = functai.labeled_few_shot(team, train, k=8, expected="category")
+    ```python
+    from typing import Literal
+
+    @ai
+    def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
+        """Which team should answer this customer message?"""
+        ...
+
+    taught = functai.labeled_few_shot(team, functai.datasets.tickets(), k=3, expected="category")
+    taught.state()
     ```
-    """
+
+    No model is called: the rows are the examples.
+    '''
     return fn.opt(data, optimizer=LabeledFewShot(k, sample=sample, seed=seed), expected=expected)
 
 
@@ -827,7 +871,8 @@ def bootstrap_few_shot(fn: "FunctAIFunc[P, R]", data: Any, *, teacher: Any = Non
 
     Examples
     --------
-    ```{.python .no-run}
+    ```python
+    # not run: the teacher answers every row (Make it better runs one)
     taught = functai.bootstrap_few_shot(team, train, teacher="gpt-6-sol", expected="category")
     ```
     """
@@ -850,7 +895,8 @@ def gepa(fn: "FunctAIFunc[P, R]", data: Any, *, teacher: Any = None, expected: A
 
     Examples
     --------
-    ```{.python .no-run}
+    ```python
+    # not run: a search asks the teacher many times (Make it better runs one)
     better = functai.gepa(team.using(lm="gpt-5.4-nano"), train, teacher="gpt-6-sol", expected="category")
     better.instructions
     functai.evaluate(better, test, expected="category")

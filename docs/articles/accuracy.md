@@ -36,7 +36,7 @@ ev
 ```
 
 ```output
-Evaluation(team, 80 examples: exact_match 0.89 [0.80, 0.94])
+Evaluation(team, 80 examples: exact_match 0.93 [0.85, 0.97])
 ```
 
 - `expected="category"` says which column holds the right answers. (A
@@ -93,7 +93,7 @@ ev.table.filter(col.exact_match == 0).select(col.message, col.category, col.pred
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 9 of 9 rows
+# dpyr dataframe · source: polars · showing 6 of 6 rows
 ┌─────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
 │ message                                                         ┆ category ┆ pred_result │
 │ ---                                                             ┆ ---      ┆ ---         │
@@ -101,12 +101,9 @@ ev.table.filter(col.exact_match == 0).select(col.message, col.category, col.pred
 ╞═════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
 │ Refund the blender please, it stopped working after two days.   ┆ billing  ┆ product     │
 │ I want a refund for the chair, it wobbles no matter what I do.  ┆ billing  ┆ product     │
-│ The frying pan arrived with a big dent in it.                   ┆ shipping ┆ product     │
 │ Money back please, the knife set is not as sharp as advertised. ┆ billing  ┆ product     │
 │ The duvet shrank in the wash, I'd like my money back.           ┆ billing  ┆ product     │
 │ Refund please: the towels are much thinner than in the photos.  ┆ billing  ┆ product     │
-│ Package arrived but the bowl inside was in three pieces.        ┆ shipping ┆ product     │
-│ The teapot spout was chipped when it arrived. Order b2610.      ┆ shipping ┆ product     │
 │ Return the headphones and give me a refund please.              ┆ billing  ┆ shipping    │
 └─────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
 ```
@@ -127,7 +124,7 @@ ev.table.group_by(col.category).summarize(right=col.exact_match.mean(), rows=n()
 │ account  ┆ 1.0      ┆ 18   │
 │ billing  ┆ 0.727273 ┆ 22   │
 │ product  ┆ 1.0      ┆ 18   │
-│ shipping ┆ 0.863636 ┆ 22   │
+│ shipping ┆ 1.0      ┆ 22   │
 └──────────┴──────────┴──────┘
 ```
 
@@ -144,8 +141,8 @@ ev.table.group_by(col.channel).summarize(right=col.exact_match.mean(), rows=n())
 │ ---     ┆ ---   ┆ ---  │
 │ str     ┆ f64   ┆ i64  │
 ╞═════════╪═══════╪══════╡
-│ chat    ┆ 0.85  ┆ 40   │
-│ email   ┆ 0.925 ┆ 40   │
+│ chat    ┆ 0.9   ┆ 40   │
+│ email   ┆ 0.95  ┆ 40   │
 └─────────┴───────┴──────┘
 ```
 
@@ -186,19 +183,40 @@ replies.summary
 
 ```output
 # dpyr dataframe · source: polars · showing 2 of 2 rows
-┌────────┬──────────┬──────────┬─────────┬─────┬────────┐
-│ metric ┆ mean     ┆ low      ┆ high    ┆ n   ┆ failed │
-│ ---    ┆ ---      ┆ ---      ┆ ---     ┆ --- ┆ ---    │
-│ str    ┆ f64      ┆ f64      ┆ f64     ┆ i64 ┆ i64    │
-╞════════╪══════════╪══════════╪═════════╪═════╪════════╡
-│ judge  ┆ 0.583333 ┆ 0.319511 ┆ 0.80674 ┆ 12  ┆ 0      │
-│ short  ┆ 1.0      ┆ 0.757506 ┆ 1.0     ┆ 12  ┆ 0      │
-└────────┴──────────┴──────────┴─────────┴─────┴────────┘
+┌────────┬──────────┬──────────┬──────────┬─────┬────────┐
+│ metric ┆ mean     ┆ low      ┆ high     ┆ n   ┆ failed │
+│ ---    ┆ ---      ┆ ---      ┆ ---      ┆ --- ┆ ---    │
+│ str    ┆ f64      ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
+╞════════╪══════════╪══════════╪══════════╪═════╪════════╡
+│ judge  ┆ 0.416667 ┆ 0.19326  ┆ 0.680489 ┆ 12  ┆ 0      │
+│ short  ┆ 1.0      ┆ 0.757506 ┆ 1.0      ┆ 12  ┆ 0      │
+└────────┴──────────┴──────────┴──────────┴─────┴────────┘
 ```
 
 A judge is itself a model, so it can be wrong: check a few of its
 verdicts by hand (`replies.table.select(col.message, col.pred_result, col.judge)`)
 before trusting its average.
+
+A judge that must quote its evidence is easier to check, and
+`functai.quotes_found` checks the quotes for you, for free: each must be
+in the source word for word (spacing, case, curly quotes and dashes
+aside). A judge that paraphrased, or made a sentence up, is caught:
+
+```python
+@ai
+def supported(source: str, claim: str) -> bool:
+    """Is the claim supported by the source?"""
+    evidence: list[str] = _ai["sentences copied word for word from the source that support or contradict the claim"]
+    return _ai
+
+source = "The parcel left Leeds on Monday. It was delayed by snow near Carlisle and arrived on Friday."
+verdict = supported.predict(source, "Snow slowed the parcel down.")
+verdict.result, verdict.evidence, functai.quotes_found(source, verdict.evidence)
+```
+
+```output
+(True, ['It was delayed by snow near Carlisle'], [True])
+```
 
 ## Did a change help?
 
@@ -224,7 +242,7 @@ change
 │ ---         ┆ ---    ┆ ---   ┆ ---    ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
 │ str         ┆ f64    ┆ f64   ┆ f64    ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
 ╞═════════════╪════════╪═══════╪════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.8875 ┆ 0.9   ┆ 0.0125 ┆ -0.043416 ┆ 0.068416 ┆ 3      ┆ 2     ┆ 75   ┆ 80  │
+│ exact_match ┆ 0.925  ┆ 0.9   ┆ -0.025 ┆ -0.074761 ┆ 0.024761 ┆ 1      ┆ 3     ┆ 76   ┆ 80  │
 └─────────────┴────────┴───────┴────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 

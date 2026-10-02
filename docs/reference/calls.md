@@ -54,3 +54,16 @@ with functai.configure(log_calls=tempfile.mkdtemp()):
     table = functai.calls(team)
 table.select("message", "pred_result", "rating", "model", "seconds")
 ```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+# dpyr dataframe · source: polars · showing 2 of 2 rows
+┌───────────────────────┬─────────────┬────────┬──────────────┬──────────┐
+│ message               ┆ pred_result ┆ rating ┆ model        ┆ seconds  │
+│ ---                   ┆ ---         ┆ ---    ┆ ---          ┆ ---      │
+│ str                   ┆ str         ┆ null   ┆ str          ┆ f64      │
+╞═══════════════════════╪═════════════╪════════╪══════════════╪══════════╡
+│ My parcel never came. ┆ shipping    ┆ null   ┆ gpt-4.1-mini ┆ 1.016987 │
+│ I was charged twice.  ┆ billing     ┆ null   ┆ gpt-4.1-mini ┆ 0.834514 │
+└───────────────────────┴─────────────┴────────┴──────────────┴──────────┘
+```

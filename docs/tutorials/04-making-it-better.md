@@ -132,7 +132,7 @@ ev_plain
 ```
 
 ```output
-Evaluation(refund, 40 examples: exact_match 0.93 [0.80, 0.97])
+Evaluation(refund, 40 examples: exact_match 0.90 [0.77, 0.96])
 ```
 
 The model has never seen the shop's rules, yet it's right most of the
@@ -145,7 +145,7 @@ wrong? Look at the dev rows (never the test rows):
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 3 of 3 rows
+# dpyr dataframe · source: polars · showing 4 of 4 rows
 ┌──────────┬─────────────┬─────────────────────┬────────────┬────────┬─────────────────────────────────────────────────────────────────────────────────────────┐
 │ decision ┆ pred_result ┆ days_since_delivery ┆ final_sale ┆ state  ┆ message                                                                                 │
 │ ---      ┆ ---         ┆ ---                 ┆ ---        ┆ ---    ┆ ---                                                                                     │
@@ -157,6 +157,11 @@ wrong? Look at the dev rows (never the test rows):
 │          ┆             ┆                     ┆            ┆        ┆ so …                                                                                    │
 │ deny     ┆ approve     ┆ 20                  ┆ false      ┆ used   ┆ I got this about three weeks ago and I've been cooking with it since, but honestly it's │
 │          ┆             ┆                     ┆            ┆        ┆ ju…                                                                                     │
+│ approve  ┆ deny        ┆ 11                  ┆ true       ┆ faulty ┆ Subject: Refund Request                                                                 │
+│          ┆             ┆                     ┆            ┆        ┆                                                                                         │
+│          ┆             ┆                     ┆            ┆        ┆ Dear Sir/Madam,                                                                         │
+│          ┆             ┆                     ┆            ┆        ┆                                                                                         │
+│          ┆             ┆                     ┆            ┆        ┆ I am writing regarding the shoe rack delivered t…                                       │
 └──────────┴─────────────┴─────────────────────┴────────────┴────────┴─────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -247,7 +252,7 @@ ev_taught
 ```
 
 ```output
-Evaluation(refund_rules, 40 examples: exact_match 1.00 [0.91, 1.00])
+Evaluation(refund_rules, 40 examples: exact_match 0.97 [0.87, 1.00])
 ```
 
 (A fourth lever, `@ai(module="cot")`, asks the model to reason before
@@ -273,10 +278,10 @@ read([{"version": name, **ev.summary.collect().to_dicts()[0]} for name, ev in [
 │ ---                            ┆ ---   ┆ ---      ┆ ---      │
 │ str                            ┆ f64   ┆ f64      ┆ f64      │
 ╞════════════════════════════════╪═══════╪══════════╪══════════╡
-│ 1. no rules                    ┆ 0.925 ┆ 0.801358 ┆ 0.974164 │
+│ 1. no rules                    ┆ 0.9   ┆ 0.769482 ┆ 0.96042  │
 │ 2. the rules                   ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
 │ 3. rules + 8 examples          ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
-│ 4. rules + taught by gpt-6-sol ┆ 1.0   ┆ 0.912378 ┆ 1.0      │
+│ 4. rules + taught by gpt-6-sol ┆ 0.975 ┆ 0.871186 ┆ 0.995573 │
 └────────────────────────────────┴───────┴──────────┴──────────┘
 ```
 
@@ -292,13 +297,13 @@ functai.compare(ev_plain, ev_rules)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.925  ┆ 0.975 ┆ 0.05 ┆ -0.020589 ┆ 0.120589 ┆ 2      ┆ 0     ┆ 38   ┆ 40  │
-└─────────────┴────────┴───────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬───────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff  ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪═══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.9    ┆ 0.975 ┆ 0.075 ┆ -0.010308 ┆ 0.160308 ┆ 3      ┆ 0     ┆ 37   ┆ 40  │
+└─────────────┴────────┴───────┴───────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 `better` is how many rows the rules got right that the plain version got
@@ -316,13 +321,13 @@ functai.compare(ev_rules, ev_taught)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬───────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff  ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪═══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.975  ┆ 1.0   ┆ 0.025 ┆ -0.025566 ┆ 0.075566 ┆ 1      ┆ 0     ┆ 39   ┆ 40  │
-└─────────────┴────────┴───────┴───────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬──────┬─────┬──────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff ┆ low ┆ high ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ --- ┆ ---  ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64 ┆ f64  ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪══════╪═════╪══════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.975  ┆ 0.975 ┆ 0.0  ┆ 0.0 ┆ 0.0  ┆ 0      ┆ 0     ┆ 40   ┆ 40  │
+└─────────────┴────────┴───────┴──────┴─────┴──────┴────────┴───────┴──────┴─────┘
 ```
 
 Once the rules are in, examples and a teacher have little left to fix on
@@ -362,7 +367,7 @@ ev_final
 ```
 
 ```output
-Evaluation(refund_rules, 39 examples: exact_match 1.00 [0.91, 1.00])
+Evaluation(refund_rules, 39 examples: exact_match 0.97 [0.87, 1.00])
 ```
 
 That is the number to report. When it's lower than on dev, as it often
@@ -387,8 +392,8 @@ functai.calls(folder=log_folder).left_join(prices, on=col.model).group_by(col.mo
 │ ---        ┆ ---   ┆ ---       │
 │ str        ┆ i64   ┆ f64       │
 ╞════════════╪═══════╪═══════════╡
-│ gpt-6-luna ┆ 199   ┆ 0.0141256 │
-│ gpt-6-sol  ┆ 8     ┆ 0.006338  │
+│ gpt-6-luna ┆ 199   ┆ 0.0141581 │
+│ gpt-6-sol  ┆ 8     ┆ 0.006538  │
 └────────────┴───────┴───────────┘
 ```
 

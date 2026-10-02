@@ -65,3 +65,7 @@ def capital(country: str) -> str:
 with functai.configure(lm="gpt-4.1-nano"):
     print(capital("Canada"))
 ```
+
+```output
+Ottawa
+```

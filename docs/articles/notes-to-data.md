@@ -102,7 +102,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:38:27] sighting → gpt-4.1-mini
+[2026-10-02T09:59:05] sighting → gpt-4.1-mini
 
 System message:
 
@@ -151,12 +151,12 @@ records
 │ ---             ┆ ---                                                                            ┆ ---                    ┆ ---   ┆ ---       │
 │ str             ┆ str                                                                            ┆ str                    ┆ i64   ┆ str       │
 ╞═════════════════╪════════════════════════════════════════════════════════════════════════════════╪════════════════════════╪═══════╪═══════════╡
-│ Marsh boardwalk ┆ Great blue heron standing in the shallows, stabbing at fish. Caught one.       ┆ great blue heron       ┆ null  ┆ feeding   │
+│ Marsh boardwalk ┆ Great blue heron standing in the shallows, stabbing at fish. Caught one.       ┆ great blue heron       ┆ 1     ┆ feeding   │
 │ North field     ┆ A pair of robins pulling worms on the lawn.                                    ┆ American robin         ┆ 2     ┆ feeding   │
 │ Creek trail     ┆ Heard a chickadee calling 'chick-a-dee-dee' from the pines, didn't see it.     ┆ black-capped chickadee ┆ null  ┆ calling   │
 │ Old orchard     ┆ Downy woodpecker drumming on a dead branch.                                    ┆ downy woodpecker       ┆ null  ┆ calling   │
 │ Marsh boardwalk ┆ About 40 Canada geese flying over in a V, heading north.                       ┆ Canada goose           ┆ 40    ┆ flying    │
-│ North field     ┆ Red-tailed hawk perched on the fence post, just sitting there for ten minutes. ┆ red-tailed hawk        ┆ null  ┆ resting   │
+│ North field     ┆ Red-tailed hawk perched on the fence post, just sitting there for ten minutes. ┆ red-tailed hawk        ┆ 1     ┆ resting   │
 │ Creek trail     ┆ 3 blue jays squabbling at the feeder over peanuts.                             ┆ blue jay               ┆ 3     ┆ feeding   │
 │ Old orchard     ┆ Male cardinal singing from the top of the apple tree.                          ┆ northern cardinal      ┆ 1     ┆ calling   │
 │ Marsh boardwalk ┆ Mallards, a few of them, dabbling near the reeds.                              ┆ mallard                ┆ null  ┆ feeding   │
@@ -182,14 +182,14 @@ And now it's data. Birds per species and site:
 ╞════════════════════════╪═══════╪═══════╡
 │ Canada goose           ┆ 5     ┆ 60    │
 │ barn swallow           ┆ 4     ┆ 47    │
-│ mallard                ┆ 4     ┆ 12    │
+│ mallard                ┆ 4     ┆ 13    │
 │ American robin         ┆ 5     ┆ 10    │
 │ blue jay               ┆ 5     ┆ 10    │
-│ northern cardinal      ┆ 4     ┆ 6     │
+│ great blue heron       ┆ 5     ┆ 5     │
+│ northern cardinal      ┆ 4     ┆ 5     │
 │ black-capped chickadee ┆ 5     ┆ 4     │
-│ great blue heron       ┆ 5     ┆ 4     │
+│ red-tailed hawk        ┆ 4     ┆ 4     │
 │ American crow          ┆ 4     ┆ 3     │
-│ downy woodpecker       ┆ 5     ┆ 2     │
 └────────────────────────┴───────┴───────┘
 ```
 
@@ -211,9 +211,9 @@ before.summary
 │ ---             ┆ ---      ┆ ---      ┆ ---      ┆ --- ┆ ---    │
 │ str             ┆ f64      ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
 ╞═════════════════╪══════════╪══════════╪══════════╪═════╪════════╡
-│ exact_match     ┆ 0.6      ┆ 0.473661 ┆ 0.714305 ┆ 60  ┆ 0      │
+│ exact_match     ┆ 0.633333 ┆ 0.50683  ┆ 0.743791 ┆ 60  ┆ 0      │
 │ species_match   ┆ 1.0      ┆ 0.939828 ┆ 1.0      ┆ 60  ┆ 0      │
-│ count_match     ┆ 0.616667 ┆ 0.490176 ┆ 0.729117 ┆ 60  ┆ 0      │
+│ count_match     ┆ 0.666667 ┆ 0.540569 ┆ 0.772707 ┆ 60  ┆ 0      │
 │ behaviour_match ┆ 0.933333 ┆ 0.840746 ┆ 0.973771 ┆ 60  ┆ 0      │
 └─────────────────┴──────────┴──────────┴──────────┴─────┴────────┘
 ```
@@ -236,13 +236,13 @@ before.table.filter(col.count_match == 0).select(col.note, col.count, col.pred_c
 │ Heard a chickadee calling 'chick-a-dee-dee' from the pines, didn't see it.   ┆ 1     ┆ null       │
 │ Downy woodpecker drumming on a dead branch.                                  ┆ 1     ┆ null       │
 │ Song sparrow singing on a shrub by the bridge.                               ┆ 1     ┆ null       │
-│ Turkey vulture circling high over the marsh.                                 ┆ 1     ┆ null       │
 │ Robin carrying mud and grass into the hedge. Nest in progress!               ┆ 1     ┆ null       │
 │ Heron flew across the pond and landed out of sight.                          ┆ 1     ┆ null       │
-│ Canada goose sitting on eggs on the island, mate standing guard next to her. ┆ 2     ┆ 1          │
+│ Canada goose sitting on eggs on the island, mate standing guard next to her. ┆ 2     ┆ null       │
 │ Blue jay screaming its alarm call, probably at a cat.                        ┆ 1     ┆ null       │
 │ hawk (red tail seen clearly) soaring in circles                              ┆ 1     ┆ null       │
 │ Chickadee pecking at birch catkins.                                          ┆ 1     ┆ null       │
+│ Woodpecker (downy, small, short bill) resting on the trunk in the rain.      ┆ 1     ┆ null       │
 └──────────────────────────────────────────────────────────────────────────────┴───────┴────────────┘
 ```
 
@@ -257,10 +257,10 @@ before.table.filter(col.behaviour_match == 0).select(col.note, col.behaviour, co
 │ ---                                                                  ┆ ---       ┆ ---            │
 │ str                                                                  ┆ str       ┆ str            │
 ╞══════════════════════════════════════════════════════════════════════╪═══════════╪════════════════╡
-│ Mallard hen with 9 ducklings swimming along the edge.                ┆ resting   ┆ feeding        │
 │ Osprey hovering then diving into the pond!                           ┆ feeding   ┆ flying         │
 │ Song sparrow carrying a caterpillar into the thicket (nest nearby?). ┆ nesting   ┆ feeding        │
 │ Robin feeding worms to 3 chicks in the nest by the bridge.           ┆ nesting   ┆ feeding        │
+│ Goose family: 2 adults, 5 goslings, swimming.                        ┆ resting   ┆ feeding        │
 └──────────────────────────────────────────────────────────────────────┴───────────┴────────────────┘
 ```
 
@@ -306,10 +306,10 @@ functai.compare(before, after)
 │ ---             ┆ ---      ┆ ---      ┆ ---      ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
 │ str             ┆ f64      ┆ f64      ┆ f64      ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
 ╞═════════════════╪══════════╪══════════╪══════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match     ┆ 0.6      ┆ 0.916667 ┆ 0.316667 ┆ 0.17807   ┆ 0.455263 ┆ 21     ┆ 2     ┆ 37   ┆ 60  │
+│ exact_match     ┆ 0.633333 ┆ 0.916667 ┆ 0.283333 ┆ 0.156676  ┆ 0.409991 ┆ 18     ┆ 1     ┆ 41   ┆ 60  │
 │ species_match   ┆ 1.0      ┆ 1.0      ┆ 0.0      ┆ 0.0       ┆ 0.0      ┆ 0      ┆ 0     ┆ 60   ┆ 60  │
-│ count_match     ┆ 0.616667 ┆ 0.983333 ┆ 0.366667 ┆ 0.24113   ┆ 0.492203 ┆ 22     ┆ 0     ┆ 38   ┆ 60  │
-│ behaviour_match ┆ 0.933333 ┆ 0.933333 ┆ 0.0      ┆ -0.067262 ┆ 0.067262 ┆ 2      ┆ 2     ┆ 56   ┆ 60  │
+│ count_match     ┆ 0.666667 ┆ 0.966667 ┆ 0.3      ┆ 0.180621  ┆ 0.419379 ┆ 18     ┆ 0     ┆ 42   ┆ 60  │
+│ behaviour_match ┆ 0.933333 ┆ 0.933333 ┆ 0.0      ┆ -0.047562 ┆ 0.047562 ┆ 1      ┆ 1     ┆ 58   ┆ 60  │
 └─────────────────┴──────────┴──────────┴──────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
@@ -324,17 +324,18 @@ after.table.filter(col.exact_match == 0).select(col.note, col.species, col.pred_
 
 ```output
 # dpyr dataframe · source: polars · showing 5 of 5 rows
-┌──────────────────────────────────────────────────────────────────────┬────────────────┬────────────────┬───────┬────────────┬───────────┬────────────────┐
-│ note                                                                 ┆ species        ┆ pred_species   ┆ count ┆ pred_count ┆ behaviour ┆ pred_behaviour │
-│ ---                                                                  ┆ ---            ┆ ---            ┆ ---   ┆ ---        ┆ ---       ┆ ---            │
-│ str                                                                  ┆ str            ┆ str            ┆ i64   ┆ i64        ┆ str       ┆ str            │
-╞══════════════════════════════════════════════════════════════════════╪════════════════╪════════════════╪═══════╪════════════╪═══════════╪════════════════╡
-│ A dozen barn swallows skimming the creek for insects.                ┆ barn swallow   ┆ barn swallow   ┆ 12    ┆ 12         ┆ feeding   ┆ flying         │
-│ Osprey hovering then diving into the pond!                           ┆ other          ┆ other          ┆ 1     ┆ 1          ┆ feeding   ┆ flying         │
-│ Several Canada geese flying low over the field, honking.             ┆ Canada goose   ┆ Canada goose   ┆ null  ┆ null       ┆ flying    ┆ calling        │
-│ Song sparrow carrying a caterpillar into the thicket (nest nearby?). ┆ song sparrow   ┆ song sparrow   ┆ 1     ┆ 1          ┆ nesting   ┆ feeding        │
-│ Robin feeding worms to 3 chicks in the nest by the bridge.           ┆ American robin ┆ American robin ┆ 4     ┆ 3          ┆ nesting   ┆ nesting        │
-└──────────────────────────────────────────────────────────────────────┴────────────────┴────────────────┴───────┴────────────┴───────────┴────────────────┘
+┌──────────────────────────────────────────────────────────────────────────┬────────────────┬────────────────┬───────┬────────────┬───────────┬────────────────┐
+│ note                                                                     ┆ species        ┆ pred_species   ┆ count ┆ pred_count ┆ behaviour ┆ pred_behaviour │
+│ ---                                                                      ┆ ---            ┆ ---            ┆ ---   ┆ ---        ┆ ---       ┆ ---            │
+│ str                                                                      ┆ str            ┆ str            ┆ i64   ┆ i64        ┆ str       ┆ str            │
+╞══════════════════════════════════════════════════════════════════════════╪════════════════╪════════════════╪═══════╪════════════╪═══════════╪════════════════╡
+│ Canada goose sitting on eggs on the island, mate standing guard next to  ┆ Canada goose   ┆ Canada goose   ┆ 2     ┆ 1          ┆ nesting   ┆ nesting        │
+│ her.                                                                     ┆                ┆                ┆       ┆            ┆           ┆                │
+│ A dozen barn swallows skimming the creek for insects.                    ┆ barn swallow   ┆ barn swallow   ┆ 12    ┆ 12         ┆ feeding   ┆ flying         │
+│ Osprey hovering then diving into the pond!                               ┆ other          ┆ other          ┆ 1     ┆ 1          ┆ feeding   ┆ flying         │
+│ Song sparrow carrying a caterpillar into the thicket (nest nearby?).     ┆ song sparrow   ┆ song sparrow   ┆ 1     ┆ 1          ┆ nesting   ┆ feeding        │
+│ Robin feeding worms to 3 chicks in the nest by the bridge.               ┆ American robin ┆ American robin ┆ 4     ┆ 1          ┆ nesting   ┆ feeding        │
+└──────────────────────────────────────────────────────────────────────────┴────────────────┴────────────────┴───────┴────────────┴───────────┴────────────────┘
 ```
 
 Some of what's left may be the protocol being unclear rather than the

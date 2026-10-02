@@ -61,10 +61,18 @@ for piece in haiku.stream("autumn rain"):
     print(piece, end="", flush=True)
 ```
 
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+Soft autumn rain falls,  
+Whispering through amber leaves,  
+Nature’s gentle breath.
+```
+
 ## Methods
 
 | Name | Description |
 | --- | --- |
+| [aclose](#functai.Stream.aclose) | ``close()``, for ``async with`` and async code. |
 | [approve](#functai.Stream.approve) | Say yes to a tool call this stream's call waits for (``approve`` is |
 | [close](#functai.Stream.close) | Stop: cancel the call if it is still running (at the model's next |
 | [deny](#functai.Stream.deny) | Say no: the model is told the person did not allow it (and why). |
@@ -72,6 +80,14 @@ for piece in haiku.stream("autumn rain"):
 | [show](#functai.Stream.show) | Print the call as it is written, and wait for its end. |
 | [text_of](#functai.Stream.text_of) | The answer's text of every call of ``fn`` inside this stream, as it |
 | [wait](#functai.Stream.wait) | Wait for the call to end (at most ``timeout`` seconds); returns the stream. |
+
+### aclose { #functai.Stream.aclose }
+
+```{.python .no-run}
+Stream.aclose()
+```
+
+``close()``, for ``async with`` and async code.
 
 ### approve { #functai.Stream.approve }
 

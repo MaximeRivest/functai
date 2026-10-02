@@ -413,6 +413,23 @@ def test_recordings_replay_and_catch_behavior_changes(project, tmp_path):
         functai.verify(target)
 
 
+def test_recordings_made_on_the_default_model_replay(project, tmp_path, monkeypatch):
+    # no model configured: functai picks one from the logins it finds; the replay has none to pick from
+    from functai import models
+    prog = project(PIPELINE, DATA)["prog"]
+    functai.configure(lm=None, client=pipeline_model())
+    real = models.resolve
+    monkeypatch.setattr(models, "resolve", lambda s: real({**s, "lm": "gpt-4.1-mini"}) if s.get("lm") is None
+                        else real(s))                                     # as a default pick does
+    functai.save(prog.fact_check, tmp_path / "s", record=[{"claim": "Paris is the capital of France"}])
+    monkeypatch.setattr(models, "resolve", real)
+    functai.configure(client=None)
+    rec = json.loads((tmp_path / "s" / "recordings.json").read_text())
+    assert rec["settings"]["lm"] == "gpt-4.1-mini"
+    v = functai.verify(tmp_path / "s", trust=True, fresh=False)
+    assert v.ok, v.problems
+
+
 @pytest.mark.skipif(shutil.which("uv") is None, reason="fresh verification builds environments with uv")
 def test_verify_in_a_fresh_environment(project, tmp_path):
     prog = project(PIPELINE, DATA)["prog"]

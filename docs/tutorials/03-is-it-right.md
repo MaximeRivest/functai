@@ -61,7 +61,7 @@ ev
 ```
 
 ```output
-Evaluation(team, 80 examples: exact_match 0.97 [0.91, 0.99])
+Evaluation(team, 80 examples: exact_match 0.96 [0.90, 0.99])
 ```
 
 `expected="category"` says which column holds the right answers. The
@@ -82,7 +82,7 @@ interval(right)          # (mean, low, high)
 ```
 
 ```output
-(0.975, 0.9133556694270627, 0.9931171068589743)
+(0.9625, 0.8954527983617241, 0.9871654311799435)
 ```
 
 The summary and the table are ordinary tables:
@@ -93,13 +93,13 @@ ev.summary
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬───────┬──────────┬──────────┬─────┬────────┐
-│ metric      ┆ mean  ┆ low      ┆ high     ┆ n   ┆ failed │
-│ ---         ┆ ---   ┆ ---      ┆ ---      ┆ --- ┆ ---    │
-│ str         ┆ f64   ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
-╞═════════════╪═══════╪══════════╪══════════╪═════╪════════╡
-│ exact_match ┆ 0.975 ┆ 0.913356 ┆ 0.993117 ┆ 80  ┆ 0      │
-└─────────────┴───────┴──────────┴──────────┴─────┴────────┘
+┌─────────────┬────────┬──────────┬──────────┬─────┬────────┐
+│ metric      ┆ mean   ┆ low      ┆ high     ┆ n   ┆ failed │
+│ ---         ┆ ---    ┆ ---      ┆ ---      ┆ --- ┆ ---    │
+│ str         ┆ f64    ┆ f64      ┆ f64      ┆ i64 ┆ i64    │
+╞═════════════╪════════╪══════════╪══════════╪═════╪════════╡
+│ exact_match ┆ 0.9625 ┆ 0.895453 ┆ 0.987165 ┆ 80  ┆ 0      │
+└─────────────┴────────┴──────────┴──────────┴─────┴────────┘
 ```
 
 ```python
@@ -113,16 +113,16 @@ ev.table.select(col.category, col.pred_result, col.exact_match, col.seconds)
 │ ---      ┆ ---         ┆ ---         ┆ ---      │
 │ str      ┆ str         ┆ f64         ┆ f64      │
 ╞══════════╪═════════════╪═════════════╪══════════╡
-│ shipping ┆ shipping    ┆ 1.0         ┆ 1.554531 │
-│ shipping ┆ shipping    ┆ 1.0         ┆ 1.420876 │
-│ billing  ┆ billing     ┆ 1.0         ┆ 1.418334 │
-│ account  ┆ account     ┆ 1.0         ┆ 0.978765 │
-│ product  ┆ product     ┆ 1.0         ┆ 1.073679 │
-│ billing  ┆ billing     ┆ 1.0         ┆ 1.215069 │
-│ shipping ┆ shipping    ┆ 1.0         ┆ 0.948176 │
-│ account  ┆ account     ┆ 1.0         ┆ 1.099904 │
-│ shipping ┆ shipping    ┆ 1.0         ┆ 0.934892 │
-│ billing  ┆ billing     ┆ 1.0         ┆ 1.2271   │
+│ shipping ┆ shipping    ┆ 1.0         ┆ 2.441017 │
+│ shipping ┆ shipping    ┆ 1.0         ┆ 1.689111 │
+│ billing  ┆ billing     ┆ 1.0         ┆ 1.155995 │
+│ account  ┆ account     ┆ 1.0         ┆ 1.148381 │
+│ product  ┆ product     ┆ 1.0         ┆ 1.767776 │
+│ billing  ┆ billing     ┆ 1.0         ┆ 1.343658 │
+│ shipping ┆ shipping    ┆ 1.0         ┆ 1.142292 │
+│ account  ┆ account     ┆ 1.0         ┆ 1.068671 │
+│ shipping ┆ shipping    ┆ 1.0         ┆ 1.169654 │
+│ billing  ┆ billing     ┆ 1.0         ┆ 3.250009 │
 └──────────┴─────────────┴─────────────┴──────────┘
 ```
 
@@ -229,7 +229,7 @@ scores
 ╞═══════════════════╪══════════╪══════════╪══════════╡
 │ always 'shipping' ┆ 0.275    ┆ 0.189178 ┆ 0.381441 │
 │ keyword rule      ┆ 0.9375   ┆ 0.861899 ┆ 0.973011 │
-│ team (gpt-6-luna) ┆ 0.975    ┆ 0.913356 ┆ 0.993117 │
+│ team (gpt-6-luna) ┆ 0.9625   ┆ 0.895453 ┆ 0.987165 │
 └───────────────────┴──────────┴──────────┴──────────┘
 ```
 
@@ -244,7 +244,7 @@ plt.xlabel("right, with a 95% interval")
 plt.show()
 ```
 
-![plot](../_assets/generated/3c9370e621327252.png)
+![plot](../_assets/generated/027e7cf5bce4ca97.png)
 
 The null model gets about one in four, by construction: four teams of
 roughly equal size. The keyword rule is the humbling one. Its interval
@@ -275,7 +275,7 @@ ev.table.count(col.category, col.pred_result).pivot_wider(names_from=col.pred_re
 │ str      ┆ i64     ┆ i64     ┆ i64     ┆ i64      │
 ╞══════════╪═════════╪═════════╪═════════╪══════════╡
 │ account  ┆ 18      ┆ null    ┆ null    ┆ null     │
-│ billing  ┆ null    ┆ 20      ┆ 2       ┆ null     │
+│ billing  ┆ null    ┆ 19      ┆ 2       ┆ 1        │
 │ product  ┆ null    ┆ null    ┆ 18      ┆ null     │
 │ shipping ┆ null    ┆ null    ┆ null    ┆ 22       │
 └──────────┴─────────┴─────────┴─────────┴──────────┘
@@ -305,9 +305,9 @@ recall.left_join(precision, on=col.team)
 │ str      ┆ f64      ┆ f64       │
 ╞══════════╪══════════╪═══════════╡
 │ account  ┆ 1.0      ┆ 1.0       │
-│ billing  ┆ 0.909091 ┆ 1.0       │
+│ billing  ┆ 0.863636 ┆ 1.0       │
 │ product  ┆ 1.0      ┆ 0.9       │
-│ shipping ┆ 1.0      ┆ 1.0       │
+│ shipping ┆ 1.0      ┆ 0.956522  │
 └──────────┴──────────┴───────────┘
 ```
 
@@ -341,13 +341,13 @@ functai.compare(ev, ev2)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.975  ┆ 0.975 ┆ 0.0  ┆ -0.035408 ┆ 0.035408 ┆ 1      ┆ 1     ┆ 78   ┆ 80  │
-└─────────────┴────────┴───────┴──────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬────────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff   ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---    ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64    ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.9625 ┆ 0.975 ┆ 0.0125 ┆ -0.012381 ┆ 0.037381 ┆ 1      ┆ 0     ┆ 79   ┆ 80  │
+└─────────────┴────────┴───────┴────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 `better` and `worse` count the rows that flipped each way; `same`, the
@@ -360,15 +360,14 @@ first.left_join(second, on=col.example).filter(col.first != col.second).select(c
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 2 of 2 rows
-┌──────────┬─────────┬──────────┬────────────────────────────────────────────────────────────────┐
-│ category ┆ first   ┆ second   ┆ message                                                        │
-│ ---      ┆ ---     ┆ ---      ┆ ---                                                            │
-│ str      ┆ str     ┆ str      ┆ str                                                            │
-╞══════════╪═════════╪══════════╪════════════════════════════════════════════════════════════════╡
-│ billing  ┆ product ┆ billing  ┆ I want a refund for the chair, it wobbles no matter what I do. │
-│ billing  ┆ billing ┆ shipping ┆ Why was I charged for shipping when my order was over $50?     │
-└──────────┴─────────┴──────────┴────────────────────────────────────────────────────────────────┘
+# dpyr dataframe · source: polars · showing 1 of 1 rows
+┌──────────┬─────────┬─────────┬────────────────────────────────────────────────────────────────┐
+│ category ┆ first   ┆ second  ┆ message                                                        │
+│ ---      ┆ ---     ┆ ---     ┆ ---                                                            │
+│ str      ┆ str     ┆ str     ┆ str                                                            │
+╞══════════╪═════════╪═════════╪════════════════════════════════════════════════════════════════╡
+│ billing  ┆ product ┆ billing ┆ I want a refund for the chair, it wobbles no matter what I do. │
+└──────────┴─────────┴─────────┴────────────────────────────────────────────────────────────────┘
 ```
 
 The rows that flip are the ones the model finds hard: usually the same
@@ -380,7 +379,7 @@ team.using(temperature=0)("Where is my parcel?")
 ```
 
 ```output
-/home/maxime/Projects/functai/python/functai/core.py:788: UserWarning: [functai] openai:gpt-6-luna does not take temperature; left out of its requests
+/home/maxime/Projects/.pi-worktrees/functai-docs/python/functai/core.py:1041: UserWarning: [functai] openai:gpt-6-luna does not take temperature; left out of its requests
   s = models.adjust(s, route)
 'shipping'
 ```
@@ -405,7 +404,7 @@ functai.calls(folder=log_folder).left_join(prices, on=col.model).summarize(
 │ ---   ┆ ---      │
 │ i64   ┆ f64      │
 ╞═══════╪══════════╡
-│ 161   ┆ 0.004078 │
+│ 161   ┆ 0.004003 │
 └───────┴──────────┘
 ```
 

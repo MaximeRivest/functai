@@ -59,3 +59,8 @@ folder = os.path.join(tempfile.mkdtemp(), "capital")
 save(capital, folder, record=[{"country": "Kenya"}])
 verify(folder, trust=True, fresh=False)
 ```
+
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+verified in this environment
+```

@@ -44,7 +44,10 @@ REPO = "https://github.com/maximerivest/functai/blob/master"
 KERNEL = "py-functai-docs"
 # how tables print in the docs kernel: whole texts, every column, no shape line
 KERNEL_ENV = {"POLARS_FMT_STR_LEN": "90", "POLARS_FMT_MAX_COLS": "12", "POLARS_TABLE_WIDTH": "160",
-              "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION": "1"}
+              "POLARS_FMT_TABLE_HIDE_DATAFRAME_SHAPE_INFORMATION": "1",
+              # what the machine running the pages says about itself stays out of their outputs: rat,
+              # Chattering and agents set who calls and where calls are logged for the processes they start
+              "FUNCTAI_CALLER": "", "FUNCTAI_LOG_CALLS": "0"}
 
 # ------------------------------------------------------------------ notebooks: MRMD's result format
 
@@ -315,9 +318,7 @@ def generate_reference() -> None:
         text = re.sub(r"```python\n", "```{.python .no-run}\n", text)
         m = re.search(r"^(#+) Examples[^\n]*\n", text, re.M)
         if m:
-            level = len(m.group(1))
-            end = re.search(rf"^#{{1,{level}}} ", text[m.end():], re.M)
-            stop = m.end() + end.start() if end else len(text)
+            stop = section_end(text, m.end(), len(m.group(1)))
             section = re.sub(r"```\{\.python \.no-run\}\n(?!# not run)", "```python\n", text[m.end():stop])
             text = text[:m.end()] + "\n" + REFERENCE_SETUP + section.lstrip("\n") + text[stop:]
         ids = set(re.findall(r"\{ #([^ }]+)", text))
@@ -328,6 +329,24 @@ def generate_reference() -> None:
         if cells(text):
             text = with_header(out / f"{name}.md", text)
         (out / f"{name}.md").write_text(keep_outputs(text, before.get(f"{name}.md", "")))
+
+
+def section_end(text: str, start: int, level: int) -> int:
+    """Where a section that starts at ``start`` ends: the next heading of
+    ``level`` or higher outside a code block (a ``# comment`` in code is not
+    a heading), else the end of the text."""
+    pos, fence = start, None
+    for line in text[start:].splitlines(keepends=True):
+        f = FENCE.match(line.rstrip("\n"))
+        if f and fence is None:
+            fence = f.group(2)
+        elif f and fence is not None and f.group(2)[0] == fence[0] and len(f.group(2)) >= len(fence) \
+                and not f.group(3).strip():
+            fence = None
+        elif fence is None and re.match(rf"#{{1,{level}}} ", line):
+            return pos
+        pos += len(line)
+    return len(text)
 
 
 def see_also_links(text: str, pages: set[str]) -> str:

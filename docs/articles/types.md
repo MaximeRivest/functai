@@ -192,7 +192,7 @@ read_review("Great tacos, loud music, slow service. I'll be back though.")
 ```
 
 ```output
-Review(stars=3, summary='The tacos are great and the atmosphere is lively, but the service is slow.')
+Review(stars=3, summary='The tacos are great and the atmosphere lively, but the service is slow.')
 ```
 
 Records nest: a field can be a list of another record, an enum, or an

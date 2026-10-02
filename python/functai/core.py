@@ -49,8 +49,15 @@ from .signature import (MAIN_OUTPUT_DEFAULT_NAME, Spec, _collect_ast_outputs, _r
 
 @dataclasses.dataclass(frozen=True)
 class ProgramState:
-    """What an optimizer tunes in one AI function: the instruction (None: the one
-    written from the code) and the demos (lmcc turns, or ``{"inputs", "outputs"}``)."""
+    """What an optimizer tunes in one AI function: its instruction and its
+    worked examples (``fn.state()``).
+
+    ``instructions``: the instruction sent, or None for the one written from
+    the code (the docstring). ``demos``: the worked examples sent before
+    every call (lmcc turns, or ``{"inputs", "outputs"}`` dicts).
+    ``to_dict()`` and ``ProgramState.from_dict(...)`` turn it into JSON data
+    and back; ``fn.load_state(state)`` makes a function use it.
+    """
     instructions: Optional[str] = None
     demos: Tuple[Any, ...] = ()
 
@@ -469,25 +476,34 @@ class FunctAIFunc(Generic[P, R]):
             self._plan_cache.clear()
 
     @property
-    def lm(self): return self._settings.get("lm")
+    def lm(self):
+        """The model this function's own settings name (``@ai(lm=...)``, ``fn.lm = ...``); None when it
+        uses the one set by ``configure``. Setting it changes this function in place; ``fn.using(lm=...)``
+        makes a copy instead."""
+        return self._settings.get("lm")
     @lm.setter
     def lm(self, v): self._set("lm", v)
 
     @property
-    def adapter(self): return self._settings.get("adapter")
+    def adapter(self):
+        """How values are written into the prompt and read back: a name (``"xml"``, ``"chat"``,
+        ``"json"``), an lmcc adapter, or a saved adapter artifact; None for the default layout.
+        Setting one replaces the function's template (see the *Prompt formats* guide)."""
+        return self._settings.get("adapter")
     @adapter.setter
     def adapter(self, v):
-        """A layout: a name ('xml', 'chat', 'json'), an lmcc adapter, or a saved
-        adapter artifact. Setting one replaces the function's template."""
         self._set("adapter", v)
         self._template = None
 
     @property
-    def template(self): return self._template
+    def template(self):
+        """The chat template the function writes its conversation with
+        (``[system(...), turns(), user(...)]``), or None. Setting one replaces the function's
+        adapter; setting None removes it (the function then uses its adapter setting, or the
+        default layout)."""
+        return self._template
     @template.setter
     def template(self, messages):
-        """A chat template; it replaces the function's adapter. None removes it
-        (the function then uses its adapter setting, or the default layout)."""
         checked = _checked_template(messages)
         with self._lock:
             self._template = checked
@@ -496,17 +512,26 @@ class FunctAIFunc(Generic[P, R]):
             self._plan_cache.clear()
 
     @property
-    def module(self): return self._effective().get("module")
+    def module(self):
+        """How the model answers: ``"predict"`` (the default) or ``"cot"`` (it writes its reasoning
+        first, kept as the ``reasoning`` output). ``"react"`` is accepted and answers as ``"predict"`` does:
+        tools always run in the tool loop. Not to be confused with ``@module``."""
+        return self._effective().get("module")
     @module.setter
     def module(self, v): self._set("module", _module_name(v))
 
     @property
-    def temperature(self): return self._settings.get("temperature")
+    def temperature(self):
+        """The sampling temperature this function's own settings name; None when it uses the one
+        set by ``configure`` (or the provider's default)."""
+        return self._settings.get("temperature")
     @temperature.setter
     def temperature(self, v): self._set("temperature", v)
 
     @property
-    def tools(self): return list(self._tools)
+    def tools(self):
+        """The tools the model may call (a copy of the list). Setting it replaces them."""
+        return list(self._tools)
     @tools.setter
     def tools(self, seq):
         self._tools = list(seq or [])
@@ -515,12 +540,16 @@ class FunctAIFunc(Generic[P, R]):
         self._plan_cache.clear()
 
     @property
-    def optimizer(self): return self._effective().get("optimizer")
+    def optimizer(self):
+        """The optimizer ``fn.opt(rows)`` uses when none is given (default: ``BootstrapFewShot``)."""
+        return self._effective().get("optimizer")
     @optimizer.setter
     def optimizer(self, v): self._set("optimizer", v)
 
     @property
-    def debug(self): return bool(self._effective().get("debug"))
+    def debug(self):
+        """Whether each call prints what it sends and what comes back."""
+        return bool(self._effective().get("debug"))
     @debug.setter
     def debug(self, v: bool): self._set("debug", bool(v))
 
@@ -593,6 +622,8 @@ class FunctAIFunc(Generic[P, R]):
         return self._current_state()
 
     def load_state(self, state: "ProgramState | Dict[str, Any]") -> "FunctAIFunc":
+        """Use this instruction and these demos (a ``ProgramState``, or its dict from
+        ``state().to_dict()``), in place. Returns the function."""
         self._state = state if isinstance(state, ProgramState) else ProgramState.from_dict(state)
         return self
 
@@ -607,6 +638,8 @@ class FunctAIFunc(Generic[P, R]):
 
     @property
     def demos(self) -> List[Any]:
+        """The worked examples sent before every call (input and answer pairs), usually chosen by
+        an optimizer. Setting it takes rows (dicts with the inputs and outputs by name)."""
         return list(self._current_state().demos)
 
     @demos.setter
@@ -644,6 +677,9 @@ class FunctAIFunc(Generic[P, R]):
         Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str))
 
     def load(self, path: "str | Path") -> "FunctAIFunc":
+        """Read an instruction and demos written by ``fn.save(path)`` and use them, in place.
+        Returns the function. (To save a whole program with everything it depends on:
+        ``functai.save``.)"""
         data = json.loads(Path(path).read_text())
         if data.get("functai") != 1:
             raise ValueError(f"{path}: not a functai program file")
@@ -1002,6 +1038,10 @@ class FunctAIFunc(Generic[P, R]):
         if rec is not None and s.get("lm") is not None:
             rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
                 [route.provider, route.model, model]
+        elif rec is not None:
+            # no model configured: the one picked by default answered, and a replay must ask for it too
+            rec["routes"][model] = [route.provider, route.model, model]
+            rec.setdefault("default_lm", model)
         s = models.adjust(s, route)
         calllog.route(route.provider)
         past = self._past(plan, spec, s)
@@ -1053,7 +1093,8 @@ class FunctAIFunc(Generic[P, R]):
         return await self._in_thread(args, kwargs, full=False)
 
     async def apredict(self, *args: P.args, **kwargs: P.kwargs) -> Prediction:
-        """``await fn.apredict(...)``: ``predict`` in async code."""
+        """``await fn.apredict(...)``: ``predict`` in async code (every output, the usage and the
+        call's id), run in a worker thread so the event loop is free while the model answers."""
         return await self._in_thread(args, kwargs, full=True)
 
     async def _in_thread(self, args: tuple, kwargs: Dict[str, Any], full: bool) -> Any:
@@ -1483,13 +1524,28 @@ class FunctAIFunc(Generic[P, R]):
         return list(self._opt_runs)
 
     def to_dspy(self, deepcopy: bool = False):
+        """Removed: FunctAI no longer runs on DSPy, so there is no DSPy program to give.
+
+        Always raises ``NotImplementedError``. What an optimizer found is
+        ``fn.state()`` (the instruction and the worked examples), which
+        ``fn.save(path)`` writes as JSON; a whole program, with everything it
+        depends on, is saved with ``functai.save``.
+        """
         raise NotImplementedError("functai 1.0 no longer runs on DSPy. The optimized program is "
                                   "`fn.state()` (instruction and demos); `fn.save(path)` writes it as JSON.")
 
     # ----- instruction writing and refinement (opt-in) -----
 
     def freeze(self) -> "FunctAIFunc":
-        """Stop further automatic instruction refinement."""
+        """Stop automatic instruction refinement for this function, now.
+
+        Only matters when refinement was turned on
+        (``@ai(instruction_autorefine_calls=n)``): the first ``n`` calls then
+        ask a model to rewrite the instruction from what it saw. ``freeze()``
+        keeps the instruction as it is from here on, which you want before
+        evaluating, saving or comparing versions. It changes the function in
+        place and returns it.
+        """
         self._instr_frozen = True
         return self
 

@@ -80,7 +80,7 @@ print(functai.phistory(5)[:1500], "…")
 ```
 
 ```output
-[2026-09-26T17:38:15] next_query → gpt-4.1-mini
+[2026-10-02T09:58:49] next_query → gpt-4.1-mini
 
 System message:
 
@@ -114,7 +114,7 @@ Is K2 located in Nepal?
 
 ────────────────────────────────────────────────────────────
 
-[2026-09-26T17:38:16] take_notes → gpt-4.1-mini
+[2026-10-02T09:58:50] take_notes → gpt-4.1-mini
 
 System message:
 
@@ -146,14 +146,14 @@ K2 is in Nepal.
 Response:
 
 <result>
-["K2 is in Nepal is incorrect because K2 is located on the China–Pakistan border, not in Nepal."]
+["K2 is not in Nepal; it is located on the China–Pakistan border."]
 </result>
 
-(finish: stop; tokens in 109, out 31)
+(finish: stop; tokens in 109, out 25)
 
 ────────────────────────────────────────────────────────────
 
-[2026-09-26T17:38:17] next_query → gpt-4.1-mini
+[2026-10-02T09:58:51] next_query → gpt-4.1-mini
 
 System message:
 
@@ -174,9 +174,16 @@ K2 is in Nepal.
 </claim>
 <notes>
 [
-  "K2 is in Nepal is incorrect because K2 is located on the China–Pakistan border, not in Nepal."
+  "K2 is not in Nepal; it is located on the China–Pakistan border."
 ]
-</not …
+</notes>
+
+
+Response:
+
+<result>
+K2 location China Pakistan border
+ …
 ```
 
 ## Measured and improved as one

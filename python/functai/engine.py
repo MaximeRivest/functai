@@ -70,7 +70,14 @@ def _login_error(exc: Exception) -> Optional[LoginRequired]:
 
 
 class StepLimit(RuntimeError):
-    """The tool loop reached ``max_steps`` without an answer. ``.turn`` is the turn so far."""
+    """A function with tools asked the model ``max_steps`` times (8 by
+    default) and still had no answer.
+
+    ``err.turn`` is the exchange so far (every tool call and result), to see
+    what the model kept doing. Raise the limit with
+    ``@ai(tools=[...], max_steps=20)`` (or ``fn.using(max_steps=20)``), or
+    make the instruction say when to stop looking things up.
+    """
 
     def __init__(self, message: str, turn: lmcc.Turn):
         super().__init__(message)
@@ -102,7 +109,24 @@ def _record(rec: CallRecord) -> None:
 
 
 def inspect_history(n: int = 1) -> List[CallRecord]:
-    """The last ``n`` requests functai sent (or answered from its cache), oldest first."""
+    """The last ``n`` requests FunctAI sent (or answered from its cache), oldest first.
+
+    Each is a record with ``function``, ``model``, ``request`` and
+    ``response`` (lm15's objects: exactly what went to the provider and what
+    came back; ``response`` is None when the provider raised), ``cached``,
+    ``error`` and ``timestamp``. The last 500 are kept, in this process only;
+    ``phistory()`` prints them as readable text. For every call, kept on
+    disk: ``configure(log_calls=True)`` and ``functai.calls()``.
+
+    Parameters
+    ----------
+    n : int
+        How many (default 1: the last one).
+
+    Returns
+    -------
+    list of CallRecord
+    """
     with _RECORDS_LOCK:
         return list(_RECORDS)[-max(0, int(n)):] if n else []
 
@@ -208,8 +232,25 @@ def phistory(n: int = 1) -> _Text:
 
 
 def clear_cache(which: Any = None) -> None:
-    """Forget cached replies: the memory cache (default), or the store a
-    ``cache_replies`` value names (``clear_cache("disk")``, a path)."""
+    """Forget the replies the reply cache kept, so the next identical requests
+    reach the model again.
+
+    Parameters
+    ----------
+    which : optional
+        None (default): the cache in this process's memory
+        (``cache_replies=True``). ``"disk"``: the shared file
+        ``cache_replies="disk"`` uses (in the user's cache folder,
+        ``functai/replies.sqlite``). A folder or ``.sqlite`` path: that file.
+
+    Examples
+    --------
+    ```python
+    # not run: it deletes the replies kept on this machine
+    functai.clear_cache()            # this process's memory
+    functai.clear_cache("disk")      # the replies kept across runs
+    ```
+    """
     from . import replies
     replies.clear(which)
 

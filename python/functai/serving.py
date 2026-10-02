@@ -249,9 +249,16 @@ class Service:
             return _error(500, exc)
 
     def _inputs(self, data: Mapping[str, Any]) -> Dict[str, Any]:
+        """The request's inputs, checked against the program's interface before
+        anything runs (a missing, unknown or unbindable input is
+        ``interface-input``, 422): an AI function's own wrong arguments would
+        otherwise be Python's ``TypeError``. The program binds them again
+        itself when it is called (its defaults included)."""
         inputs = data.get("inputs", {})
         if not isinstance(inputs, dict):
             raise InterfaceError("interface-input", None, "inputs is a JSON object of the program's inputs")
+        from .interface import bind_inputs
+        bind_inputs(self.program.interface, inputs, program=self.program.__name__)
         return inputs
 
     def _context(self, parent: Optional[str]) -> Any:

@@ -56,16 +56,10 @@ import functai
 from functai import *
 ```
 
-```python
+```{.python .no-run}
 # not run: opens a browser to sign in
 functai.login("claude")
 functai.configure(lm="claude:claude-sonnet-4-5")
 
 functai.login("groq", key="gsk-...")
-```
-
-```output
-Already signed in: Login(Claude: saved login, ready, until 2026-09-27 03:33 UTC). Use functai.login('claude', again=True) to sign in again.
-Saved the groq API key. Try: functai.configure(lm='groq:openai/gpt-oss-120b')
-Login(groq: saved key, ready)
 ```
