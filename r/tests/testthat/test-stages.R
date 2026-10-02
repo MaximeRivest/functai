@@ -215,3 +215,64 @@ for (name in names(stage_cases("context"))) {
     else expect_identical(plain(got[c("earlier", "conversation")]), plain(c$expect))
   })
 }
+
+# ---------------------------------------------------------------- baked examples
+
+contract_function <- function(d) {
+  field <- function(f) { x <- field_from_shape(f$shape, f$desc); x }
+  inputs <- stats::setNames(lapply(d$inputs, field), vapply(d$inputs, function(f) f$name, ""))
+  outputs <- stats::setNames(lapply(d$outputs, field), vapply(d$outputs, function(f) f$name, ""))
+  single <- identical(names(outputs), "result")
+  lhs <- if (single) d$name else names(outputs)
+  if (single) names(outputs) <- d$name
+  settings <- list()
+  if (!is.null(d$settings$adapter)) settings$.adapter <- d$settings$adapter
+  if (identical(d$settings$module, "cot")) settings$.module <- "cot"
+  fn <- do.call(ai, c(list(stats::reformulate(names(inputs), response = str2lang(paste(lhs, collapse = " + "))), d$description), inputs, outputs, list(.name = d$name), settings))
+  if (!is.null(d$state$instructions)) fn <- with_instructions(fn, d$state$instructions)
+  fn
+}
+
+for (name in names(stage_cases("baked"))) {
+  test_that(paste("baked case", name), {
+    c <- stage_cases("baked")[[name]]
+    f <- contract_function(c$definition)
+    rows <- lapply(c$rows, function(r) c(r$inputs, r$outputs))
+    b <- c$bake
+    e <- bake_entry(f, reasoning = isTRUE(b$reasoning), fixed = b$fixed %||% list(), derived = b$derived %||% list(), rows = rows)
+    want <- c$expect
+    sig <- lmcc::signature_to_list(e$signature)
+    sig$fields <- lapply(sig$fields, function(x) { x$type <- NULL; x$purpose <- x$purpose %||% "plain"; Filter(Negate(is.null), x) })
+    wsig <- want$signature
+    wsig$fields <- lapply(wsig$fields, function(x) { x$purpose <- x$purpose %||% "plain"; x })
+    expect_identical(plain(sig[c("instructions", "fields")]), plain(wsig[c("instructions", "fields")]))
+    expect_identical(plain(e$fixed), plain(want$fixed)); expect_identical(plain(e$derived), plain(want$derived))
+    for (i in seq_along(c$rows)) {
+      r <- c$rows[[i]]
+      got <- student_messages(e, c(r$inputs, b$fixed %||% list()), r$outputs)
+      expect_identical(plain(c(got$messages, list(list(role = "assistant", content = got$reply)))), plain(want$examples[[i]]$messages))
+    }
+  })
+}
+
+test_that("a function runs on a baked student served elsewhere, as it was trained", {
+  f <- ai(result ~ section + text + guidance, "Rewrite the section.", .name = "rewrite")
+  rows <- list(list(section = "methods", text = "We did X.", guidance = "Keep every number.", result = "We did X, carefully."))
+  folder <- withr::local_tempdir()
+  e <- bake_entry(f, derived = list(guidance = "section"), rows = rows)
+  writeLines(lmcc::json_text(list(functai_baked = 2L, kind = "generative", name = "student", student = "Qwen/Qwen3-0.6B", functions = list(entry_meta(e)))), file.path(folder, "baked.json"))
+  student <- baked(folder, url = "http://127.0.0.1:1/v1")
+  sent <- NULL
+  local_mocked_bindings(baked_router = function(b) list(resolve = function(m) list(provider = "functai-baked-lm", model = m), complete = function(request) {
+    sent <<- chat_messages(plain_lm15(request))
+    lm15::response(b$model, lm15::message_assistant(list(lm15::text_part("<result>\nWe did X, well.\n</result>"))), "stop")
+  }))
+  g <- update(f, lm = student)
+  expect_identical(g("methods", "We did X.", "Keep every number."), "We did X, well.")
+  expect_identical(plain(sent), plain(student_messages(e, list(section = "methods", text = "We did X."))$messages))
+  expect_error(g("results", "Y.", "anything"), class = "functai_baked_derived")
+  tab <- bake_examples(f, tibble::tibble(section = "methods", text = "We did X.", guidance = "Keep every number.", result = "We did X, carefully."), derived = list(guidance = "section"))
+  expect_identical(tab$messages[[1L]][[3L]]$content, "<result>\nWe did X, carefully.\n</result>")
+  path <- export_examples(file.path(folder, "ex.jsonl"), f, rows, derived = list(guidance = "section"))
+  expect_true(file.exists(paste0(path, ".meta.json")))
+})

@@ -343,12 +343,22 @@ route <- function(s) {
 # `started`, its requests, its `done` or `failed` and its record.
 run_rows <- function(core, rows, extra = list()) {
   s <- effective(set_all(core$own, extra))
-  r <- route(s)
-  s <- adjust_settings(s, r$provider, r$wire)
-  caps <- call_capabilities(r$provider, r$wire, s)
-  sig <- signature_of(core, s)
-  plan <- bind_layout(s$adapter, s$template, sig, caps, r$provider)
-  past <- past_turns(core, plan)
+  student <- if (inherits(s$lm, "functai_baked")) s$lm else NULL
+  if (!is.null(student)) {
+    # a baked student reads its calls as it was trained: its signature and layout, no worked examples
+    entry <- entry_for(student, core)
+    r <- list(model = student$model, router = baked_router(student), provider = "functai-baked-lm", wire = student$model)
+    plan <- student_plan(entry)
+    past <- list()
+    full_sig <- bake_signature(core, entry$reasoning && identical(s$module, "cot"))
+  } else {
+    r <- route(s)
+    s <- adjust_settings(s, r$provider, r$wire)
+    caps <- call_capabilities(r$provider, r$wire, s)
+    sig <- signature_of(core, s)
+    plan <- bind_layout(s$adapter, s$template, sig, caps, r$provider)
+    past <- past_turns(core, plan)
+  }
   version <- version_of(core)
   program <- program_of(core, version)
   fields <- call_fields(core, s)
@@ -369,10 +379,18 @@ run_rows <- function(core, rows, extra = list()) {
     if (is.null(err)) {
       hooked <- tryCatch(before_call_hooks(core, call, s, rows[[i]], plan, past), error = identity)
       if (inherits(hooked, "error")) err <- hooked
+      else if (!is.null(student) && !is.null(hooked$plan))
+        err <- plugin_error("plugin-change", sprintf("%s: plugins changed its instruction, and it runs on a baked model, which reads only the message it was trained on: the change would not reach it", core$definition$name))
+    }
+    row_inputs <- rows[[i]]
+    if (is.null(err) && !is.null(student)) {
+      row_inputs <- tryCatch(student_inputs(entry, full_sig, rows[[i]]), error = identity)
+      if (inherits(row_inputs, "error")) err <- row_inputs
+      hooked$past <- list(); hooked$plan <- NULL; hooked$tools <- list()
     }
     if (!is.null(err)) { refused[[i]] <- err; next }
-    job <- tryCatch(new_job(hooked$plan %||% plan, hooked$past %||% past, rows[[i]], hooked$settings %||% s, hooked$model %||% r$model,
-                            hooked$tools %||% core$tools, call, core), error = identity)
+    job <- tryCatch(new_job(hooked$plan %||% plan, hooked$past %||% past, row_inputs, hooked$settings %||% s, hooked$model %||% r$model,
+                            if (is.null(student)) hooked$tools %||% core$tools else list(), call, core), error = identity)
     if (inherits(job, "error")) { e <- job; job <- new.env(); job$state <- "failed"; job$error <- e; job$call <- call }
     job$escalation <- s$escalate_to
     jobs[[as.character(i)]] <- job
@@ -646,7 +664,7 @@ print.functai_fn <- function(x, ...) {
     }
   }
   n <- length(core$state$demos)
-  cat(sprintf("  model: %s%s%s\n", s$lm %||% "(the default)", if (n) sprintf(" \u00b7 %d worked example%s", n, if (n > 1) "s" else "") else "",
+  cat(sprintf("  model: %s%s%s\n", if (inherits(s$lm, "functai_baked")) paste("baked", s$lm$model) else s$lm %||% "(the default)", if (n) sprintf(" \u00b7 %d worked example%s", n, if (n > 1) "s" else "") else "",
               if (length(core$tools)) sprintf(" \u00b7 tools: %s", paste(vapply(core$tools, function(t) t$name, ""), collapse = ", ")) else ""))
   invisible(x)
 }
