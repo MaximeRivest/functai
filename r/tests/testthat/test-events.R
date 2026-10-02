@@ -65,10 +65,13 @@ run_journal_case <- function(c) {
   fields <- list(inputs = names(start$inputs), outputs = program$answer, added = character(0))
   keep <- stats::setNames(rep(TRUE, length(fields$inputs) + 1L), c(fields$inputs, fields$outputs))
   raised <- NULL
+  reader <- NULL
   with_ai_config(journal = ai_journal(j, required = c$mode == "required", retries = c$retries), log_calls = dir, {
     old <- the$scripted
     the$scripted <- list(id = tree, clock = function(seq) times[[seq]], tap = tap)
-    on.exit(the$scripted <- old)
+    reader <- new.env(); reader$events <- list(); reader$calls <- character(0); reader$closed <- FALSE
+    the$stream_opening <- reader
+    on.exit({ the$scripted <- old; the$stream_opening <- NULL })
     call <- start_call(function() program, effective(), start$inputs, fields, keep)
     raised <- tryCatch({
       run_call(call, function(call) {
@@ -95,11 +98,11 @@ run_journal_case <- function(c) {
   } else if (is.null(raised)) list(returns = outcome$value)
   else list(raises = Filter(Negate(is.null), error_json(raised)[c("type", "code")]))
   kept <- if (tree %in% j$inner$trees()) j$inner$read(tree) else list()
-  shown <- tap$shown
-  got <- list(log = lapply(tap$events, unclass), trace = j$trace, kept = list(events = positions(kept), finished = j$inner$finished(tree)),
+  shown <- vapply(reader$events, function(e) e$seq, 0L)
+  got <- list(log = lapply(tap$events, unclass), shown = as.list(shown), trace = j$trace, kept = list(events = positions(kept), finished = j$inner$finished(tree)),
               caller = caller, record = record)
   if (!is.null(settled)) got$settled <- settled
-  for (k in setdiff(names(c$expect), "shown")) same(got[[k]], c$expect[[k]])
+  for (k in names(c$expect)) same(got[[k]], c$expect[[k]])
 }
 
 run_receivers_scenario <- function(scenario) {

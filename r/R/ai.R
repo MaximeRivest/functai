@@ -378,6 +378,7 @@ run_rows <- function(core, rows, extra = list()) {
     jobs[[as.character(i)]] <- job
   }
   old <- the$current
+  progress_line(core, jobs, s$progress)
   run_jobs(unname(jobs), r$router, s$concurrency)
   the$current <- old
   waiting <- NULL
@@ -401,6 +402,25 @@ run_rows <- function(core, rows, extra = list()) {
   })
   if (!is.null(waiting)) stop(waiting)
   out
+}
+
+# A progress line over a column's calls (cli's progress bar: shown when the
+# run lasts more than two seconds in an interactive session, or always with
+# `progress = TRUE`): rows done, failed, tokens, time left. A long run with a
+# disk reply cache resumes by being run again.
+progress_line <- function(core, jobs, setting, envir = parent.frame()) {
+  if (isFALSE(setting) || length(jobs) < 2L) return(invisible())
+  if (isTRUE(setting)) withr::local_options(cli.progress_show_after = 0, .local_envir = envir)
+  envir$pl_failed <- 0L; envir$pl_tokens <- 0
+  bar <- cli::cli_progress_bar(total = length(jobs), clear = FALSE, .envir = envir,
+    format = paste0(core$definition$name, " {cli::pb_bar} {cli::pb_current}/{cli::pb_total} | {pl_failed} failed | ",
+                    "{format(pl_tokens, big.mark = ',')} tokens | {cli::pb_eta_str}"))
+  for (job in jobs) job$on_finish <- function(job) {
+    if (identical(job$state, "failed")) envir$pl_failed <- envir$pl_failed + 1L
+    for (r in job$responses) envir$pl_tokens <- envir$pl_tokens + as.numeric(unclass(r$usage$total_tokens %||% 0))
+    cli::cli_progress_update(id = bar, .envir = envir)
+  }
+  invisible()
 }
 
 # How sure the model was (contract/calls.md, `confidence`): the probability it
@@ -640,7 +660,7 @@ type_label <- function(f) {
       sprintf("record of %s (list column)", paste(names(value_guide(shape, shape)$properties), collapse = ", "))
     } else "JSON",
     list = sprintf("list of %s", type_label(f$item)),
-    string = "text", integer = "whole number", number = "number", boolean = "yes or no", f$kind)
+    string = "text", integer = "whole number", number = "number", boolean = "yes or no", opaque = "any R value", f$kind)
   if (isTRUE(f$nullable)) paste("optional", base) else base
 }
 
@@ -671,7 +691,7 @@ update.functai_fn <- function(object, ...) {
 #' @param ... Inputs, as for calling it (one row).
 #' @return A string (`ai_version()`, `ai_instructions()`) or a list.
 #' @export
-ai_version <- function(fn) version_of(core_of(fn))
+ai_version <- function(fn) if (inherits(fn, "functai_program")) program_version(program_core(fn)) else version_of(core_of(fn))
 
 #' @rdname ai_version
 #' @export

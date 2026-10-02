@@ -156,7 +156,7 @@ declared_field_of <- function(shape, type, root) {
 # `tibble(<name> = <type>, ...)`.
 r_type_of <- function(f) {
   switch(f$kind,
-    string = "character", integer = "integer", number = "double", boolean = "logical", enum = "factor", json = "list",
+    string = "character", integer = "integer", number = "double", boolean = "logical", enum = "factor", json = "list", opaque = "any",
     list = sprintf("list_of(%s)", r_type_of(f$item)),
     record = sprintf("tibble(%s)", paste(sprintf("%s = %s", vapply(names(f$fields), r_name, ""),
                                                  vapply(f$fields, r_type_of, "")), collapse = ", ")),

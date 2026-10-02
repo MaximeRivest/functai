@@ -43,6 +43,7 @@ open_call <- function(call, own = list(), name = NULL) {
   }
   t <- call$tree
   t$keeps[[call$id]] <- call$keep_events
+  stream_attach(call)
   t$parents[[call$id]] <- call$parent
   t$observers[[call$id]] <- call$observers
   call

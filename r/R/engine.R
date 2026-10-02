@@ -32,7 +32,10 @@ render_next <- function(job) {
   job$retries <- 0L
 }
 
-fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job) }
+fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job); finished(job) }
+
+# A job is done, failed or waiting: whoever watches the batch hears of it (a progress line).
+finished <- function(job) if (is.function(job$on_finish)) job$on_finish(job)
 
 # A call's own time: from its first request to its last reply, not its
 # batch's (rows wait their turn in the pool).
@@ -176,11 +179,12 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     job$probabilities <- reading$probabilities %||% list()      # what the provider measured (TypeSafe's Jev), by output
     job$state <- "done"
     ended(job)
+    finished(job)
     return(invisible())
   }
   for (c in calls) {
     out <- tryCatch(tool_step(job, c), functai_waiting = function(w) w)
-    if (inherits(out, "functai_waiting")) { job$state <- "waiting"; job$waiting <- out; return(invisible()) }
+    if (inherits(out, "functai_waiting")) { job$state <- "waiting"; job$waiting <- out; finished(job); return(invisible()) }
     job$turn <- lmcc::tool_result(job$turn, c$id, out)
   }
   job$steps <- job$steps + 1L

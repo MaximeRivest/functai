@@ -9,7 +9,7 @@ let
       # lm15's imports
       curl openssl askpass
       # tests and the tidyverse functai pairs with
-      testthat dplyr tidyr purrr roxygen2 httpuv evaluate rpart rpart_plot
+      testthat dplyr tidyr purrr roxygen2 httpuv evaluate rpart rpart_plot DBI RSQLite filelock
       # the manual (_pkgdown.yml)
       pkgdown
       # tidymodels, and the vignettes

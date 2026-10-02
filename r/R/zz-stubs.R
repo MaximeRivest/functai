@@ -11,6 +11,5 @@ tool_done <- function(call, tool, c, n, out) invisible()
 turn_check_stop <- function(run) invisible()
 steps_of <- function(call, turn) NULL
 escalate <- function(core, job, s) job
-stream_offer <- function(t, i, e) invisible()
 check_plugins <- function(x, call = NULL) x
 check_approve <- function(x, call = NULL) x
