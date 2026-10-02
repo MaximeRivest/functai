@@ -75,16 +75,23 @@ function field_def(name, spec, where; default=nothing)
     shape = shape_of(spec; where)
     desc = desc === nothing || isempty(desc) ? nothing : String(desc)
     default === nothing && return FieldDef(String(name), spec, shape, desc)
-    given = as_declared(spec, something(default))
+    written = something(default)
+    computed = written isa ComputedDefault ? written : nothing
+    given = as_declared(spec, computed === nothing ? written : computed.make())
     data = json_form(given)
     data === NOJSON && throw(InterfaceError("interface-malformed", String(name),
         "$where: its default is sent to the model when it is left out, so it needs a JSON form; a $(typeof(given)) has none"))
     data = LMCC.deepcopy_json(data)          # a snapshot: the value given may change later; the default does not
+    # bound as a given value is (programs.md, "Binding"): "5" for an Int is 5; one that does not bind is refused later
+    ok, bound = bind_value(data, LMCC.jobj("name" => String(name), "shape" => data_shape(shape)))
+    ok && (data = LMCC.deepcopy_json(bound))
     haskey(shape, "default") && !same_json(shape["default"], data) &&
         throw(ArgumentError("$where: its shape's default $(LMCC.json_text(shape["default"])) is not its default $(LMCC.json_text(data))"))
     # what is sent is that JSON, never made again from a value; the function's code gets a copy of the value
     # given (a copy calls no constructor), taken now: whether it fits is the interface's check, on the JSON
-    FieldDef(String(name), spec, data_shape(shape), desc, true, data, deepcopy(given))
+    computed === nothing && return FieldDef(String(name), spec, data_shape(shape), desc, true, data, deepcopy(given))
+    FieldDef(String(name), spec, data_shape(shape), desc, true, data, deepcopy(given), computed.code,
+             () -> as_declared(spec, computed.make()))
 end
 shape_of(spec::Union{OneOf,AbstractDict}; where="") = shape_of(spec)
 
@@ -356,8 +363,30 @@ function version(f::AIFunction)
     s = effective(f.own)
     cached(f, (:version, layout_key(s), s[:reasoning], s[:include_name])) do
         r = request_hash(f)
-        LMCC.sha256_of(f.code === nothing ? LMCC.jobj("request" => r) : LMCC.jobj("code" => f.code, "request" => r))
+        doc = f.code === nothing ? LMCC.jobj("request" => r) : LMCC.jobj("code" => f.code, "request" => r)
+        d = defaults_document(f.definition.inputs)
+        d === nothing || (doc["defaults"] = d)
+        LMCC.sha256_of(doc)
     end
+end
+
+"""
+`D` of a version (calls.md, "Versions", "Defaults"): each input that has a
+default, `{"code": text}` when it is written as an expression that is
+neither a literal nor a constant, else `{"value": its JSON}`; `nothing` when
+no input has a default.
+"""
+function defaults_document(inputs)
+    out = JObj()
+    for x in inputs
+        x.optional || continue
+        if x.code !== nothing
+            out[x.name] = LMCC.jobj("code" => x.code)
+        elseif x.default !== nothing || x.optional
+            out[x.name] = LMCC.jobj("value" => LMCC.deepcopy_json(x.default))
+        end
+    end
+    isempty(out) ? nothing : out
 end
 
 """
@@ -403,7 +432,8 @@ function program_of(f::AIFunction)
     p = LMCC.jobj("name" => f.definition.name, "kind" => "ai", "module" => f.module_name, "version" => version(f),
                   "signature" => signature_id(f), "interface" => interface_signature(f), "answer" => answer_name(f))
     f.saved === nothing || (p["saved"] = f.saved)
-    f.file === nothing || (p["file"] = f.file)
+    file = f.module_name == "__main__" ? top_level_file(f.file) : f.file
+    file === nothing || (p["file"] = file)
     f.line === nothing || (p["line"] = f.line)
     p
 end
@@ -509,24 +539,65 @@ The outputs a call's record holds, in its fields' order: the reasoning and
 the declared outputs as read, and the tool calls of the model's last step
 (the field FunctAI adds with tools: calls.md, "Words").
 """
-function recorded_outputs(f::AIFunction, fields, outputs::NamedTuple, turn)
+function recorded_outputs(f::AIFunction, fields, outputs::NamedTuple, turn, asked=nothing)
     out = OrderedDict{String,Any}()
     last_step = turn isa LMCC.Turn && turn.outputs !== nothing ? turn.outputs : JObj()
     for name in fields.outputs
         if haskey(outputs, Symbol(name))
             out[name] = outputs[Symbol(name)]
         elseif name == "calls"
-            out[name] = something(get(last_step, "calls", nothing), Any[])
+            # every tool call the model asked for in the call, across steps (contract/functions.md)
+            out[name] = asked !== nothing ? Any[asked...] : something(get(last_step, "calls", nothing), Any[])
         end
     end
     out
 end
 
+"""
+The inputs bound to the interface (programs.md, "Binding a call's inputs"),
+and the refusal of one that does not bind (`nothing` when all do), and
+whether that refusal is a missing value for a required input (`missing` in,
+`missing` out: the refused call is recorded, and the caller gets `missing`).
+`missing`/`nothing` for an optional input that null does not fit is that
+input left out: its default.
+"""
+function bind_ai_inputs(f::AIFunction, inputs::AbstractDict, s)
+    fields_by = Dict(x["name"] => x for x in interface(f)["inputs"])
+    dropped = dropped_fields(f.own, program_fields(f, s))
+    out = OrderedDict{String,Any}()
+    for x in f.definition.inputs
+        haskey(inputs, x.name) || continue
+        v = inputs[x.name]
+        v isa LeftOut && (out[x.name] = v; continue)
+        field = fields_by[x.name]
+        missing_to_optional(field, v) && (out[x.name] = LeftOut(x); continue)
+        ok, bound = bind_value(v, field)
+        if !ok
+            quoted = !("*" in dropped || x.name in dropped)
+            return (inputs, InterfaceError("interface-input", x.name, "$(f.definition.name): " *
+                                           refusal_message(field, v, "input"; quote_value=quoted)), is_missing_value(v))
+        end
+        out[x.name] = bound
+    end
+    (out, nothing, false)
+end
+
 function predict_inputs(f::AIFunction, inputs::AbstractDict)
-    has_missing(inputs) && return missing
     s = effective(f.own)
     fields = merge(program_fields(f, s), (holds=value_holds(f),))
+    inputs, refusal, gap = bind_ai_inputs(f, inputs, s)
     call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields)
+    if refusal !== nothing
+        # refused before any request, and recorded (programs.md); a missing value for a required input gives missing
+        call.refusal === nothing && (call.refusal = refusal)        # a journal's refusal, set first, stands
+        gap || return run_call(_ -> nothing, call)
+        try
+            run_call(_ -> nothing, call)
+        catch err
+            err === refusal || rethrow()
+        end
+        return missing
+    end
     prediction = Ref{Any}(nothing)
     run_call(call) do call
         r = plan_for(f, s)
@@ -534,7 +605,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
                   f.tools, call, values -> typed_outputs(f, values))
         outputs, turn, responses, reading = run_job(job)
-        call.outputs = recorded_outputs(f, fields, outputs, turn)
+        call.outputs = recorded_outputs(f, fields, outputs, turn, job.asked)
         probs = reading.probabilities
         if !isempty(probs)
             chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
@@ -550,7 +621,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
     prediction[]
 end
 
-(f::AIFunction)(args...; kw...) = (inputs = bind_inputs(f, args, kw); has_missing(inputs) ? missing : predict_inputs(f, inputs).value)
+(f::AIFunction)(args...; kw...) = (p = predict_inputs(f, bind_inputs(f, args, kw)); p === missing ? missing : p.value)
 
 """
     render(f, args...; kw...) -> LM15.Request

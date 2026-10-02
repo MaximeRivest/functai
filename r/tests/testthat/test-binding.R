@@ -32,11 +32,9 @@ test_that("defaults of every kind are sent as they are: an open object's extra m
     list(field = defaults_to(tibble::tibble(a = "x", b = 1L)), json = '{"a":"x","b":1}'),
     list(field = defaults_to("brief", choice("kind", "brief")), json = '"brief"'),
     list(field = defaults_to(2.5), json = "2.5"))
-  # a record holds only the members it names: a default with another is refused, not cut down
-  err <- tryCatch(ai(answer ~ message + extra, "x", extra = defaults_to(tibble::tibble(a = "x", more = 1L), record(a = character())), .lm = "gpt-4.1-mini"),
-                  functai_refusal = function(e) e)
-  expect_identical(err$code, "interface-malformed")
-  expect_match(conditionMessage(err), "no member more is allowed", fixed = TRUE)
+  # a record holds only the members it names: a default is bound as a given value is, so another member is dropped
+  f <- ai(answer ~ message + extra, "x", extra = defaults_to(tibble::tibble(a = "x", more = 1L), record(a = character())), .lm = "gpt-4.1-mini")
+  expect_identical(lmcc::canonical_json(core_of(f)$definition$inputs$extra$shape[["default"]]), '{"a":"x"}')
   for (x in cases) {
     f <- ai(answer ~ message + extra, "x", extra = x$field, .lm = "gpt-4.1-mini")
     dir <- withr::local_tempdir()
@@ -66,26 +64,27 @@ test_that("a default of null is sent, left out or given, and never skips the cal
   expect_sends(read_ai(dir), list(message = "Hi"), bound = list(message = "Hi", tone = NULL))
 })
 
-test_that("a missing value (NA) in an input whose type takes no null makes no call, required or optional", {
+test_that("a missing value (NA) for an optional input takes its default; for a required one the row is refused", {
   r <- ok_router()
   folder <- withr::local_tempdir()
   f <- ai(answer ~ message + tone, "x", tone = defaults_to("kind"), .router = r, .lm = "gpt-4.1-mini", .log_calls = folder)
-  expect_no_warning(expect_identical(f(c("a", "b"), tone = c("brief", NA)), c("ok", NA)))
-  expect_no_warning(expect_identical(f(c("a", NA)), c("ok", NA)))
-  expect_length(r$env$requests, 2L)
-  expect_length(log_lines(folder), 2L)                                  # no record for a call not made
-  expect_identical(nrow(ai_problems()), 0L)                             # nor a failed call
+  # an optional input given NA is left out: it is sent with its default (programs.md, "Binding a call's inputs")
+  expect_identical(f(c("a", "b"), tone = c("brief", NA)), c("ok", "ok"))
+  expect_true(grepl("<tone>\nkind\n</tone>", r$env$requests[[2L]]$messages[[1L]]$parts[[1L]]$text, fixed = TRUE))
+  # a required input given NA: that row is refused before any request, and its call is recorded with the refusal
+  expect_identical(suppressWarnings(f(c("a", NA))), c("ok", NA))
+  expect_length(r$env$requests, 3L)
+  records <- log_lines(folder)
+  expect_length(records, 4L)
+  expect_identical(records[[4L]]$error$code, "interface-input")
   # a table says why a row has no answer
   p <- predict(f, tibble::tibble(message = c("a", NA, "c"), tone = c("brief", "kind", NA)))
-  expect_identical(p$.pred, c("ok", NA, NA))
-  expect_identical(p$.error, c(NA, "no call: input message is missing (NA), and its type takes no null",
-                               "no call: input tone is missing (NA), and its type takes no null"))
-  expect_length(r$env$requests, 3L)
-  # NULL given for an input is null too, which R callers often mean as "the default": said
-  expect_warning(out <- f("a", tone = NULL), "leave `tone` out to send its default")
-  expect_identical(out, NA_character_)
-  expect_length(r$env$requests, 3L)
-  expect_identical(f("a"), "ok")                                        # left out: its default
+  expect_identical(p$.pred, c("ok", NA, "ok"))
+  expect_true(grepl("message", p$.error[[2L]]))
+  expect_length(r$env$requests, 5L)
+  # NULL for an optional input is left out too: its default
+  expect_identical(f("a", tone = NULL), "ok")
+  expect_identical(f("a"), "ok")
 })
 
 test_that("a row refused before any request is refused once, however many samples", {
@@ -152,7 +151,7 @@ test_that("values are checked by every keyword of the vocabulary, and a number i
   expect_false(refused(json_shape(list(type = "number", minimum = 0)), 5L))    # the same where the whole shape is read
   expect_true(refused(choice("a", "b"), "c"))
   obj <- list(type = "object", properties = list(a = list(type = "string")), required = list("a"), additionalProperties = FALSE)
-  expect_true(refused(json_shape(obj), list(list(a = "x", z = 1L))))  # a member the shape does not allow
+  expect_false(refused(json_shape(obj), list(list(a = "x", z = 1L)))) # a member the record does not name: dropped (binding)
   expect_true(refused(json_shape(obj), list(list(z = "x"))))          # a required member missing
   expect_false(refused(json_shape(obj), list(list(a = "x"))))
   expect_true(refused(json_shape(list(const = "yes")), "no"))
@@ -170,7 +169,7 @@ test_that("values are checked by every keyword of the vocabulary, and a number i
   # a value with no JSON form fits no field: refused before any request, not by the writer
   expect_true(refused(double(), Inf))
   expect_true(refused(json_shape(list(type = "object")), list(list(a = -Inf))))
-  expect_length(r$env$requests, 8L)
+  expect_length(r$env$requests, 9L)
 })
 
 test_that("a reply whose value does not fit its type is unreadable: the model is asked again", {

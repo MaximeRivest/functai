@@ -33,42 +33,34 @@
 #' its type. A function that breaks these rules is refused then
 #' (`interface-malformed`), not later by whatever reads it.
 #'
-#' **Values are checked on every call**, by the same rules as the defaults:
-#' a value given that does not fit its field's type (`5` for
-#' `json_shape(list(type = "integer", minimum = 10))`, `2.5` for a whole
-#' number) fails that row before any request (`interface-input`, a
-#' `functai_interface_input` condition naming the `field`), and its call
-#' record says so; a reply whose value does not fit is unreadable, and the
-#' model is asked again. A value given to a text input that is not text is
-#' sent as text. An input left out is sent with its default exactly as the
-#' interface holds it. A value is sent as it is given, and checked so:
-#' nothing is dropped or filled in. A record holds only the members it
-#' names, so a tibble given for a [record()] with a column the record does
-#' not name (an id, an e-mail address) is refused, never sent: select the
-#' record's columns first (`dplyr::select()`, `dplyr::pick()`). A member
-#' the record requires but the value lacks is refused too. An open object
-#' (`json_shape(list(type = "object"))`, or one whose
-#' `additionalProperties` is a shape or `TRUE`) keeps every member given.
+#' **Values are bound on every call** (contract/programs.md, "Binding a
+#' call's inputs"), as every language binds them: a value is converted to
+#' its field's type when the meaning is clear, and refused otherwise. Text
+#' takes a number (`42` is `"42"`), `TRUE`/`FALSE` (`"true"`, `"false"`), a
+#' date (its text), a list or a one-row tibble (JSON indented by two
+#' spaces); a whole number takes `5` or `"5"`, not `2.5`; a number takes
+#' `"2.5"`; `TRUE`/`FALSE` take nothing else. A record keeps only the members
+#' it names: a tibble with more columns than the [record()] names (an id, an
+#' e-mail address) sends the record's columns, and the others are dropped. A
+#' value that does not bind fails that row before any request
+#' (`interface-input`, a `functai_interface_input` condition naming the
+#' `field`, its message quoting the value unless the log drops that field),
+#' and its call record says so; a reply whose value does not fit is
+#' unreadable, and the model is asked again. The call record holds the
+#' bound values. An input left out is sent with its default exactly as the
+#' interface holds it; a default written as a formula (`defaults_to(~
+#' Sys.Date())`) is computed at each call that leaves it out.
 #'
-#' **Missing values.** `NA` (or `NULL`) is JSON's null, never "left out": an
-#' input whose type takes null (an [optional()] type, a [json_shape()] that
-#' allows null) is sent null; in an input whose type takes no null, required
-#' or optional, the row has nothing to send and makes no call: its answer is
-#' `NA`, as with a missing value anywhere in R, and `predict()`'s `.error`
-#' says why. `input = NULL` in a call warns, since R code often means "the
-#' default" by it: leave the input out for that. Inside a record (a row of a
-#' tibble column, or a named list), `NA` is null too, except for a member
-#' the record does not require and whose type takes no null: a tibble cannot
-#' leave a member out, so `NA` there leaves it out, as an answer that leaves
-#' it out comes back `NA`. Nor can a tibble hold a null record: a row of `NA`
-#' given for a record that may be null ([optional()], or a [json_shape()]
-#' that allows null) is null, as a null answer comes back (vctrs's missing
-#' row), when it names only members of the record and a member the record
-#' requires, one value and never null, is `NA`, so the row could be no
-#' record. Any other row is sent as it is: a record of nulls
-#' (`list(child = list(x = NULL))`) stays one, and a row with a column the
-#' record does not name, `NA` or not, is refused before any request, the
-#' message naming that column.
+#' **Missing values.** `NA` (or `NULL`) is JSON's null. An input whose type
+#' takes null (an [optional()] type, a [json_shape()] that allows null) is
+#' sent null. An optional input whose type takes no null is left out: it is
+#' sent with its default, as a table's gap takes the default. A required one
+#' fails that row before any request (`interface-input`): its answer is `NA`,
+#' and `predict()`'s `.error` says why. Inside a record (a row of a tibble
+#' column, or a named list), `NA` is null too, except for a member the record
+#' does not require and whose type takes no null: a tibble cannot leave a
+#' member out, so `NA` there leaves it out, as an answer that leaves it out
+#' comes back `NA`.
 #'
 #' **What the call log keeps** is `.log_content` (see [ai_config()]):
 #' `TRUE`, `FALSE`, `c(transcript = FALSE)`, or the names of the fields it
@@ -154,7 +146,8 @@ ai <- function(.formula, .description = "", ..., .data = NULL, .name = NULL, .to
   core <- list(
     definition = list(name = name, description = .description, inputs = inputs, outputs = outputs),
     own = settings, tools = .tools %||% list(), single = single, columns = columns,
-    module = .defined_in %||% "__main__", state = list(instructions = .instructions, demos = list()), saved = NULL)
+    module = .defined_in %||% "__main__", state = list(instructions = .instructions, demos = list()), saved = NULL,
+    file = if (is.null(.defined_in)) top_level_file() else NULL)
   core <- own_settings(core)
   check_definition(core, call = here)          # an output given a default is refused there, in its turn
   fn <- make_fn(core)
@@ -298,7 +291,10 @@ request_hash <- function(core, inputs = NULL) {
   tryCatch(lmcc::sha256_of(probe_request(core, inputs)), lmcc_refusal = function(e) paste0("refused:", e$code))
 }
 
-version_of <- function(core) lmcc::sha256_of(list(request = request_hash(core)))
+version_of <- function(core) {
+  defaults <- defaults_document(core)
+  lmcc::sha256_of(if (is.null(defaults)) list(request = request_hash(core)) else list(request = request_hash(core), defaults = defaults))
+}
 
 program_of <- function(core, version = NULL) {
   function() {
@@ -307,8 +303,26 @@ program_of <- function(core, version = NULL) {
               signature = signature_id(signature_of(core, s)), interface = interface_signature(interface_of(core)),
               answer = answer_name(core))
     if (!is.null(core$saved)) p$saved <- core$saved
+    if (!is.null(core$file)) p$file <- core$file
     p
   }
+}
+
+# The notebook or script a function defined at the top level is in
+# (calls.md, program.file): the document being knitted (R Markdown, Quarto),
+# the file being source()d, or the script Rscript runs; NULL when none is
+# known (a console), so its calls are not told apart by file.
+top_level_file <- function() {
+  input <- tryCatch(if (isTRUE(getOption("knitr.in.progress")) && requireNamespace("knitr", quietly = TRUE))
+    knitr::current_input(dir = TRUE) else NULL, error = function(e) NULL)
+  if (is_str(input)) return(normalizePath(input, mustWork = FALSE))
+  for (frame in rev(sys.frames())) {
+    f <- tryCatch(get("ofile", envir = frame, inherits = FALSE), error = function(e) NULL)
+    if (is_str(f)) return(normalizePath(f, mustWork = FALSE))
+  }
+  arg <- grep("^--file=", commandArgs(trailingOnly = FALSE), value = TRUE)
+  if (length(arg)) return(normalizePath(sub("^--file=", "", arg[[1L]]), mustWork = FALSE))
+  NULL
 }
 
 route <- function(s) {
@@ -407,7 +421,6 @@ input_rows <- function(core, inputs, n = NULL) {
   given <- inputs[intersect(names(fields), names(inputs))]
   unset <- setdiff(required_inputs(core), names(given))
   if (length(unset)) cli::cli_abort("no value for input{?s} {.field {unset}}", call = NULL)
-  null_given <- names(Filter(is.null, given))
   given <- lapply(given, function(v) if (is.null(v)) NA else v)
   if (length(given)) given <- vctrs::vec_recycle_common(!!!given, .size = n)
   n <- n %||% if (length(given)) vctrs::vec_size_common(!!!given) else 1L
@@ -415,28 +428,47 @@ input_rows <- function(core, inputs, n = NULL) {
   nullable <- vapply(fields[names(given)], takes_null, NA)
   check <- lapply(fields[names(given)], checker)
   write <- lapply(fields[names(given)], json_writer)
-  no_null <- setdiff(null_given, names(nullable)[nullable])
-  if (length(no_null))
-    cli::cli_warn(c("{.code {no_null[[1L]]} = NULL} is JSON's null, which the type of {.field {no_null[[1L]]}} does not take: no call is made, and the answer is NA",
-                    i = if (isTRUE(fields[[no_null[[1L]]]]$optional)) "leave {.arg {no_null[[1L]]}} out to send its default"), call = NULL)
+  shapes <- lapply(fields[names(given)], function(f) data_shape(f$shape))
+  dropped <- dropped_fields(core)                     # their values are never quoted in a message (programs.md)
   missing <- rep(NA_character_, n)
+  left_out <- function(f) if (is.function(f$compute)) default_json(f, f$compute()) else f$shape[["default"]]
   rows <- lapply(seq_len(n), function(i) {
     row <- list()
     for (k in names(fields)) {
       f <- fields[[k]]
-      if (!k %in% names(given)) { row[k] <- list(f$shape[["default"]]); next }
+      if (!k %in% names(given)) { row[k] <- list(left_out(f)); next }
       v <- element(given[[k]], i)
-      if (is_missing(v) && !nullable[[k]]) { missing[[i]] <<- k; return(NULL) }
-      row[k] <- list(write[[k]](v))
+      if (is_missing(v) && !nullable[[k]]) {
+        # a missing value for an optional input is that input left out: its default (programs.md, Binding);
+        # for a required one, the row is refused before any request
+        if (isTRUE(f$optional)) { row[k] <- list(left_out(f)); next }
+        missing[[i]] <<- k
+        return(structure(list(inputs = row, field = k, message = sprintf("%s: a missing value (NA), and its type takes no null", k)),
+                         class = "functai_misfit"))
+      }
+      row[k] <- list(bind_json(write[[k]](v), shapes[[k]]))
     }
     for (k in names(given)) {
       why <- check[[k]](row[[k]], k)
-      if (!is.null(why)) return(structure(list(inputs = row, field = k, message = why), class = "functai_misfit"))
+      if (!is.null(why)) {
+        if (k %in% dropped || "*" %in% dropped)
+          why <- sprintf("%s: its value does not fit %s (the value is not shown: the log drops it)", k, type_label(fields[[k]]))
+        return(structure(list(inputs = row, field = k, message = why), class = "functai_misfit"))
+      }
     }
     if (!length(row)) lmcc::jobj() else row
   })
   attr(rows, "missing") <- missing
   rows
+}
+
+# The fields a log_content layer in effect drops for a call of `core`: an
+# error message never quotes their values (programs.md, "The message").
+dropped_fields <- function(core) {
+  tryCatch({
+    keep <- content_kept(call_fields(core, effective(core$own)), content_layers(core))
+    names(keep)[!unlist(keep)]
+  }, error = function(e) "*")
 }
 
 # A prediction's `.error`: the call's error, or why a row made no call (an

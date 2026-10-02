@@ -1,5 +1,5 @@
 {
- "description": "Only a field's own default is the value it takes, and must fit. A default inside its shape (a member's, as pydantic writes one for a model's defaulted field) is a word, like title: never checked, whatever it holds, and never filled in (the value is checked as given; the program's own types may fill it). It stays in the signature: it is part of the shape, as it is of lmcc's signature.",
+ "description": "Only a field's own default is the value it takes, and must fit. A default inside its shape (a member's, as pydantic writes one for a model's defaulted field) is a word, like title: never checked, whatever it holds, and never filled in (the value is checked as given; the program's own types may fill it). It is left out of the signature, as the field's own is: a record type whose field defaults to today's date must not split a program's records by day. Only the keyword goes: a member named default stays in the signature.",
  "program": "module",
  "interface": {
   "description": "Count an order's parcels.",
@@ -15,6 +15,9 @@
       "count": {
        "type": "integer",
        "default": "none"
+      },
+      "default": {
+       "type": "string"
       }
      },
      "required": [
@@ -33,7 +36,7 @@
   ]
  },
  "expect": {
-  "signature": "sha256:911d74f17f9e4a57e47708e852f34b68bf7b561e70998c810205801640e90e6e"
+  "signature": "sha256:37a8e21efd2b765db8083d9f9bb119516a9aa53103645db7669d6b45c6695f5c"
  },
  "checks": [
   {

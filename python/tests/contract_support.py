@@ -59,8 +59,9 @@ def assert_valid(v: jsonschema.Draft202012Validator, value, where: str = "") -> 
 
 
 def is_stand_in(value) -> bool:
-    """A case's stand-in for a value with no JSON form: exactly {"$type", "$repr"}."""
-    return isinstance(value, dict) and set(value) == {"$type", "$repr"}
+    """A case's stand-in for a value with no JSON form: exactly {"$type", "$repr"}, and "$text" when its type
+    gives it a text of its own (a data frame, a date)."""
+    return isinstance(value, dict) and set(value) in ({"$type", "$repr"}, {"$type", "$repr", "$text"})
 
 
 _classes = {}
@@ -75,9 +76,14 @@ def native(value):
             def rep(self):
                 return self._repr
 
-            cls = _classes[value["$type"]] = type(value["$type"], (), {"__repr__": rep, "__slots__": ("_repr",)})
+            def text(self):                   # its own text, or only the default for any object
+                return self._text if self._text is not None else f"<{type(self).__name__} object at 0x7f>"
+
+            cls = _classes[value["$type"]] = type(value["$type"], (), {"__repr__": rep, "__str__": text,
+                                                                        "__slots__": ("_repr", "_text")})
         obj = cls()
         obj._repr = value["$repr"]
+        obj._text = value.get("$text")
         return obj
     if isinstance(value, dict):
         return {k: native(v) for k, v in value.items()}
@@ -89,7 +95,10 @@ def native(value):
 def as_json(value):
     """Back to the case's JSON: a native value with no JSON form is its stand-in."""
     if type(value).__name__ in _classes and isinstance(value, _classes[type(value).__name__]):
-        return {"$type": type(value).__name__, "$repr": value._repr}
+        out = {"$type": type(value).__name__, "$repr": value._repr}
+        if value._text is not None:
+            out["$text"] = value._text
+        return out
     if isinstance(value, dict):
         return {k: as_json(v) for k, v in value.items()}
     if isinstance(value, (list, tuple)):
@@ -141,12 +150,49 @@ def annotation(shape: dict, name: str, classes: list) -> str:
     return {"string": "str", "integer": "int", "number": "float", "boolean": "bool"}[t]
 
 
+def writable(d: dict) -> bool:
+    """Whether Python annotations can write the definition's shapes: a list of
+    types (``{"type": ["string", "null"]}``) has no annotation of its own
+    (``Optional[str]`` is ``anyOf``); Python meets one in a folder another
+    language saved."""
+    def plain(shape):
+        inner_default = any("default" in x for x in (shape.get("properties") or {}).values())
+        return not isinstance(shape.get("type"), list) and not inner_default and all(
+            plain(x) for k in ("items", "additionalProperties") if isinstance(shape.get(k), dict)
+            for x in [shape[k]]) and all(plain(x) for x in (shape.get("properties") or {}).values()) \
+            and all(plain(x) for x in shape.get("anyOf") or [])
+    return all(plain(f["shape"]) for f in [*d["inputs"], *d["outputs"]])
+
+
+def loaded_function(d: dict):
+    """The definition as a folder another language saved (the contract's rules make its node), loaded."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("contract_rules_saved", CONTRACT / "cases" / "saved.py")
+    import sys
+    sys.path.insert(0, str(CONTRACT / "cases"))
+    try:
+        rules = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(rules)
+    finally:
+        sys.path.remove(str(CONTRACT / "cases"))
+    key = f"shop:{d['name']}"
+    manifest = rules.manifest({key: rules.node(d["name"], d)}, key)
+    manifest["language"] = "typescript"
+    return functai.saved.from_manifest(manifest)
+
+
 def python_function(d: dict):
     """The definition written the way a Python user writes it, then decorated."""
     classes: list = []
     params = []
+    helpers = []
     for f in d["inputs"]:
         default = f" = {f['shape']['default']!r}" if f.get("optional") else ""
+        if "default_code" in f:
+            # a default written as an expression: a function of that name gives the shape's default today
+            called = f["default_code"].split("(")[0]
+            helpers.append(f"def {called}():\n    return {f['shape']['default']!r}\n")
+            default = f" = {f['default_code']}"
         params.append(f"    {f['name']}: {annotation(f['shape'], f['name'], classes)}{default},"
                       + (f"  # {f['desc']}" if f.get("desc") else ""))
     *extras, main = d["outputs"]
@@ -159,7 +205,7 @@ def python_function(d: dict):
     if not body:
         body = ["    ..."]
     returns = annotation(main["shape"], "result", classes)
-    source = "\n\n".join(classes) + "\n\n" + f"def {d['name']}(\n" + "\n".join(params) + \
+    source = "\n\n".join(classes + helpers) + "\n\n" + f"def {d['name']}(\n" + "\n".join(params) + \
         f"\n) -> {returns}:\n" + "\n".join(body) + "\n"
     namespace = {"__name__": "contract_case"}
     # a real file, so inspect finds the source (comments are guidance)

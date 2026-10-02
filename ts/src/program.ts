@@ -82,6 +82,22 @@ export function recordInputs(names: readonly string[], inputs: Readonly<Rec>): R
 /** How a call's body ended: with a value, or with what it threw (which may be anything, `undefined` included). */
 type Outcome<R> = { readonly ok: true; readonly ended: Ended<R> } | { readonly ok: false; readonly error: unknown };
 
+/**
+ * The fields a `logContent` layer in effect drops for a call with these
+ * settings: an error message never quotes their values (programs.md, "The
+ * message"). When unsure, every field.
+ */
+export function droppedFields(fields: CallFields, own: Settings, options: Settings = {}): string[] {
+  try {
+    const layers = layersOf(own, options);
+    const keep = keptFields(fields, layers.map((l) => l.settings.logContent).filter((v) => v !== undefined && v !== null) as never,
+      env()["FUNCTAI_LOG_CONTENT"] ?? null);
+    return Object.keys(keep).filter((n) => getOwn(keep, n) !== true);
+  } catch {
+    return ["*"];
+  }
+}
+
 /** Run one call of a program: its events, its journal's barriers, its record. */
 export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   checkSettings(spec.options, "a call's options");               // a block around one call: what every block may set
@@ -109,6 +125,8 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   // Receivers: observers add up (and a call's are its parent's too); the tree's journal is decided when its outermost call starts.
   const receiverLayers: ReceiverLayer<Observer, unknown>[] = layers.map((l) => ({
     where: l.where, observers: l.settings.observers ?? [],
+    ...(l.settings.programObservers !== undefined && l.settings.programObservers !== null
+      ? { programObservers: l.settings.programObservers } : {}),
     ...(journalAt(l.settings) !== undefined ? { journal: journalAt(l.settings) } : {}),
   }));
   const got = receivers(receiverLayers);

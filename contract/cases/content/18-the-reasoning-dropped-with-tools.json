@@ -1,5 +1,5 @@
 {
- "description": "Dropping the reasoning drops the calls too, for the same reason: every other value is written.",
+ "description": "Dropping the reasoning drops only it: the calls are written, and every other value but what the code returned.",
  "fields": {
   "inputs": [
    "transcript",
@@ -207,8 +207,7 @@
    "omitted": {
     "inputs": [],
     "outputs": [
-     "reasoning",
-     "calls"
+     "reasoning"
     ]
    },
    "inputs": {
@@ -216,10 +215,18 @@
     "question": "Is the build broken for a real reason?"
    },
    "outputs": {
+    "calls": [
+     {
+      "id": "call_1",
+      "name": "ci_log",
+      "input": {
+       "job": 4412
+      }
+     }
+    ],
     "summary": "A flaky upload test fails the build.",
     "result": "no"
    },
-   "returned": "No",
    "probabilities": {
     "summary": {
      "A flaky upload test fails the build.": 0.61

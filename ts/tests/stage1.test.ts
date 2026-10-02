@@ -69,7 +69,14 @@ for (const [name, c] of cases("programs")) {
       assert.equal(fn.interfaceId, c.expect.signature);
       assert.equal(fn.signatureId, c.expect.signature_id);
       for (const b of c.binds) {
-        const s = fn.using({ router: silent as never, retries: 0, apiRetries: 0 }).stream(b.inputs);
+        const given = Object.fromEntries(Object.entries(b.inputs as Rec).map(([k, v]) => [k, native(v)]));
+        if (b.expect.refuses) {
+          // refused before any request (the silent router would say "no model here"), with the input named
+          await assert.rejects(fn.using({ router: silent as never, retries: 0, apiRetries: 0 })(given as never),
+            (err: unknown) => err instanceof InterfaceError && err.code === b.expect.refuses && err.field === b.expect.field);
+          continue;
+        }
+        const s = fn.using({ router: silent as never, retries: 0, apiRetries: 0 }).stream(given as never);
         const events: StreamEvent[] = [];
         for await (const e of s.events()) events.push(e);
         await assert.rejects(s.result, /no model here/);
@@ -90,7 +97,8 @@ for (const [name, c] of cases("programs")) {
         }
         const r = tsModule(c.interface, () => native(check.returned) as never);
         const sample = Object.fromEntries(c.interface.inputs.filter((f: Rec) => !f.optional)
-          .map((f: Rec) => [f.name, f.opaque ? new Map() : f.shape.type === "object" ? { id: 1, name: "a", children: [] } : "x"]));
+          .map((f: Rec) => [f.name, f.opaque ? new Map() : f.shape.type === "object"
+            ? (f.shape.properties ? { id: 1, name: "a", children: [] } : {}) : "x"]));
         let result: Rec;
         try {
           const value = await r(sample);
@@ -115,6 +123,34 @@ for (const [name, c] of cases("programs")) {
         }
         assert.deepEqual(got, x.expect, JSON.stringify(x.interface));
         if (!x.ai && !got.refuses) assert.equal(tsModule(x.interface, () => "").interfaceId, x.expect.signature);   // defining it gives the same
+      }
+      return;
+    }
+    if (c.program === "message") {
+      const { toJson } = await import("../src/values.ts");
+      for (const check of c.checks) {
+        const m = module("program", {
+          description: c.interface.description,
+          input: Object.fromEntries(c.interface.inputs.map((f: Rec) => [f.name, { shape: f.shape }])),
+          output: c.interface.outputs[0].shape,
+          ...(check.log_content !== undefined ? { logContent: check.log_content } : {}),
+        } as never, (() => "ok") as never) as AnyModule;
+        const given = Object.fromEntries(Object.entries(check.inputs as Rec).map(([k, v]) => [k, native(v)]));
+        let message = "";
+        await assert.rejects(m(given), (err: unknown) => {
+          assert.ok(err instanceof InterfaceError && err.code === check.expect.refuses && err.field === check.expect.field);
+          message = (err as Error).message;
+          return true;
+        });
+        const value = check.inputs[check.expect.field];
+        if (check.expect.quotes !== null) {
+          // a stand-in is quoted by the description this language writes for the native value
+          const quote = typeof value === "object" && value !== null && "$repr" in value
+            ? String((toJson(given[check.expect.field])[0] as Rec)["$repr"]) : check.expect.quotes;
+          assert.ok(message.includes(quote), `${message} quotes ${quote}`);
+        } else {
+          for (const part of [JSON.stringify(value), String(value)]) assert.ok(!message.includes(part), `${message} holds ${part}`);
+        }
       }
       return;
     }

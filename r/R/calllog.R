@@ -145,6 +145,11 @@ process_json <- function() {
     the$process <- list(host = info[["nodename"]], pid = Sys.getpid(), user = info[["user"]], language = "r",
                         runtime = paste(R.version$major, R.version$minor, sep = "."),
                         functai = as.character(utils::packageVersion("functai")))
+    # the libraries that build the request and send it (calls.md, process)
+    for (lib in c("lmcc", "lm15")) {
+      v <- tryCatch(as.character(utils::packageVersion(lib)), error = function(e) NULL)
+      if (!is.null(v)) the$process[[lib]] <- v
+    }
   }
   the$process
 }
@@ -251,11 +256,15 @@ later <- function(a, b, key) {
   before(b$id %||% "", a$id %||% "")
 }
 
+# For each call, the ratings that count: each person's latest, none for a
+# withdrawn one. A rating with no `by` (made under an account, which may be
+# shared) counts on its own: it replaces none, none replaces it, and its null
+# verdict withdraws nothing (calls.md, rule 2).
 current_ratings <- function(ratings, by = NULL) {
   latest <- list()
   for (r in ratings) {
     if (!is.null(by) && !identical(r$by, by)) next
-    key <- paste0(r$call, "\u0001", r$by)
+    key <- if (is_str(r$by) && nzchar(r$by)) paste0(r$call, "\u0001by\u0001", r$by) else paste0(r$call, "\u0001rating\u0001", r$id)
     if (is.null(latest[[key]]) || later(r, latest[[key]], "at")) latest[[key]] <- r
   }
   out <- list()
@@ -309,12 +318,14 @@ add_meta <- function(row, meta) {
 }
 
 # Rows with known answers (contract/calls.md, "Rows with known answers").
-rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by = NULL, interface = NULL) {
+rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by = NULL, interface = NULL, file = NULL) {
   calls <- Filter(function(c) is_format(c$functai_call, CALL_FORMATS), calls)
   ratings <- Filter(function(r) is_format(r$functai_rating, RATING_FORMAT), ratings)
   counting <- current_ratings(ratings, by)
   left <- list(other_signature = 0L, no_content = 0L, no_answer = 0L)
-  mine <- Filter(function(c) identical(c$program$name, name) && (is.null(module) || identical(c$program$module, module)), calls)
+  # a program defined at the top level (a notebook, a script) is known by its file too: with a file, a call with none does not match
+  mine <- Filter(function(c) identical(c$program$name, name) && (is.null(module) || identical(c$program$module, module)) &&
+                   (is.null(file) || identical(c$program$file, file)), calls)
   mine <- mine[order(vapply(mine, function(c) paste0(c$started %||% "", "\u0001", c$id %||% ""), ""), method = "radix")]
   rows <- list()
   for (call in mine) {
@@ -332,7 +343,7 @@ rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by
     row <- call$inputs %||% list()
     if (answer %in% names(values)) row[answer] <- list(values[[answer]])
     for (k in setdiff(names(values), answer)) row[k] <- list(values[[k]])
-    row <- add_meta(row, list(call = call$id, version = call$program$version, rating = rating$verdict, rated_by = rating$by,
+    row <- add_meta(row, list(call = call$id, version = call$program$version, rating = rating$verdict, rated_by = rating$by %||% NULL,
                               origin = rating$origin %||% "review", sample = rating$sample, disputed = length(verdicts) > 1L || length(spelled) > 1L))
     rows[[length(rows) + 1L]] <- row
   }
@@ -342,8 +353,10 @@ rated_rows <- function(calls, ratings, name, module = NULL, signature = NULL, by
 # ---------------------------------------------------------------- rating
 
 rating_record <- function(call_id, verdict, answer, outputs, note, reasons, by, origin, sample, settings) {
-  who <- by %||% caller_of(settings)$user %||% process_json()$user
-  rec <- list(functai_rating = RATING_FORMAT, id = new_id(), call = call_id, at = iso(as.numeric(Sys.time())), by = who)
+  # a person when one was named; else the account, which names no one (it may be shared: calls.md, "A rating record")
+  person <- by %||% caller_of(settings)$user
+  rec <- list(functai_rating = RATING_FORMAT, id = new_id(), call = call_id, at = iso(as.numeric(Sys.time())))
+  if (is_str(person) && nzchar(person)) rec$by <- person else rec$account <- process_json()$user %||% "unknown"
   rec["verdict"] <- list(verdict)
   if (!is.null(answer)) rec["answer"] <- list(answer)
   if (length(outputs)) rec$outputs <- outputs

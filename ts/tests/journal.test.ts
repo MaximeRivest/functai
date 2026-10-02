@@ -171,6 +171,7 @@ for (const [name, c] of cases("events", "receivers-")) {
       const stores = new Map<string, SlowStore>();
       const layerSettings = (layer: Rec): Settings => ({
         ...(layer.observers ? { observers: layer.observers.map((n: string) => observers.get(n) ?? observers.set(n, observer(n)).get(n)!) } : {}),
+        ...(layer.program_observers !== undefined ? { programObservers: layer.program_observers } : {}),
         ...("journal" in layer ? {
           journal: layer.journal === null ? null : {
             store: stores.get(layer.journal.name) ?? stores.set(layer.journal.name, new SlowStore()).get(layer.journal.name)!,

@@ -1,0 +1,104 @@
+{
+ "description": "A shape whose type is a list: the sample value is the first non-null type's (calls.md, Versions).",
+ "definition": {
+  "name": "label",
+  "description": "Label a note.",
+  "inputs": [
+   {
+    "name": "note",
+    "shape": {
+     "type": [
+      "string",
+      "null"
+     ]
+    }
+   },
+   {
+    "name": "count",
+    "shape": {
+     "type": [
+      "null",
+      "integer"
+     ]
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: label\n\nLabel a note.",
+   "fields": [
+    {
+     "name": "note",
+     "direction": "input",
+     "shape": {
+      "type": [
+       "string",
+       "null"
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "count",
+     "direction": "input",
+     "shape": {
+      "type": [
+       "null",
+       "integer"
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "note": "example text",
+   "count": 3
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: label\n\nLabel a note.\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<note>\nexample text\n</note>\n<count>\n3\n</count>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:888f8efa7b517bf9c3a4b360865934dc9489e9208de4766d19ff19baac0b4c53",
+  "version": "sha256:b2ced91a1d58dd259afcb225e4a957b15a9d793881239f61314f3f9ac6e2949c",
+  "signature_id": "sha256:8ea9bb04c4cb70d7fc65db25fa52bf407a6d86b8da8acdb4992916ebfb30c22c"
+ }
+}

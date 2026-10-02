@@ -8,6 +8,7 @@
 import * as lmcc from "lmcc";
 import { trimWhite } from "./text.ts";
 import { copyData, getOwn, setOwn, unboxed, writeData } from "./values.ts";
+import { dataShape } from "./interface.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -113,7 +114,8 @@ export function sample(shape: JsonObject): unknown {
     const options = (shape["anyOf"] as JsonObject[]).filter((s) => s["type"] !== "null");
     return options.length ? sample(options[0]!) : null;
   }
-  const t = shape["type"];
+  let t = shape["type"];
+  if (Array.isArray(t)) t = t.find((x) => x !== "null") ?? "null";    // a list of types: the first non-null one (calls.md)
   return typeof t === "string" && Object.hasOwn(BY_TYPE, t) ? copyData(BY_TYPE[t]) : "example text";
 }
 
@@ -129,7 +131,9 @@ export function sampleInputs(sig: lmcc.Signature): Record<string, unknown> {
  * every type name empty, so the shapes decide, not how a language spells types.
  */
 export function signatureId(sig: lmcc.Signature): string {
-  return lmcc.sha256(sig.fields.map((f) => ({ direction: f.direction, name: f.name, purpose: f.purpose || "plain", shape: f.shape, type: "" })));
+  // every default left out, its own and one inside it: a record whose field defaults to today must not split records
+  return lmcc.sha256(sig.fields.map((f) => ({ direction: f.direction, name: f.name, purpose: f.purpose || "plain",
+    shape: dataShape(f.shape as Record<string, unknown>), type: "" })) as lmcc.Json);
 }
 
 /**

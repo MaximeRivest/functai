@@ -64,7 +64,8 @@ const CONTENT_OFF = ("0", "false", "no", "off")
 For each field, whether its value is written (calls.md, "Content"): only
 when no layer drops it (`layers`, closest first; `environment` the value of
 `FUNCTAI_LOG_CONTENT`, or `nothing` when unset), and a field FunctAI added
-only when no field of the call is dropped.
+(reasoning, calls) only when no input or output of the program is dropped
+(it can quote any of them); dropping one added field drops only it.
 """
 function content_keep(fields, layers, environment)
     off = environment !== nothing && lowercase(strip(environment)) in CONTENT_OFF
@@ -72,12 +73,23 @@ function content_keep(fields, layers, environment)
     for name in vcat(fields.inputs, fields.outputs)
         keep[name] = !off && !any(v -> says_drop(v, name), layers)
     end
-    if !all(values(keep))
+    if !all(keep[n] for n in vcat(fields.inputs, fields.outputs) if !(n in fields.added))
         for n in fields.added
             keep[n] = false
         end
     end
     keep
+end
+
+"The fields a `log_content` layer in effect drops for a call: an error message never quotes their values (programs.md)."
+function dropped_fields(own::AbstractDict{Symbol}, fields)
+    try
+        keep = content_keep(fields, content_layers(own), environment_content())
+        String[n for (n, x) in keep if !x]
+    catch err
+        err isa InterruptException && rethrow()
+        ["*"]
+    end
 end
 
 "The `log_content` layers around a program's call, closest first: its own, each enclosing block, `configure!`'s."
@@ -153,7 +165,7 @@ function written_record(rec::AbstractDict, keep::Keep)
             described = JObj(d => Any[n for n in names if k(n)] for (d, names) in v)
             any(!isempty, values(described)) && (out["described"] = described)
         elseif key == "returned"
-            k(rec["program"]["answer"]) && (out["returned"] = LMCC.deepcopy_json(v))
+            nothing                         # code can put any value of the call into what it returns (calls.md, "Content")
         elseif key == "probabilities"
             probabilities = JObj(n => LMCC.deepcopy_json(x) for (n, x) in v if k(n))
             isempty(probabilities) || (out["probabilities"] = probabilities)

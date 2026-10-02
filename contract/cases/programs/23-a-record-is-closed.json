@@ -1,0 +1,158 @@
+{
+ "description": "A record (properties and no additionalProperties) holds only the members it names: an input given more drops them, in the value's order, its members bound by their shapes; a returned record with a member it does not name is refused; a map (additionalProperties) keeps every member, each bound.",
+ "program": "module",
+ "interface": {
+  "description": "Greet a person.",
+  "inputs": [
+   {
+    "name": "row",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "age": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "name"
+     ]
+    }
+   },
+   {
+    "name": "scores",
+    "shape": {
+     "type": "object",
+     "additionalProperties": {
+      "type": "integer"
+     }
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "object",
+     "properties": {
+      "name": {
+       "type": "string"
+      },
+      "age": {
+       "type": "integer"
+      }
+     },
+     "required": [
+      "name",
+      "age"
+     ]
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:1f408a4ebc4726bf17e5fdb3336e89017e42bf2905615b1929d5548609aacd70"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "row": {
+     "name": "Ada",
+     "age": "36",
+     "city": "London"
+    },
+    "scores": {
+     "a": "1",
+     "b": 2
+    }
+   },
+   "expect": {
+    "inputs": {
+     "row": {
+      "name": "Ada",
+      "age": 36
+     },
+     "scores": {
+      "a": 1,
+      "b": 2
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "row": {
+     "city": "Leeds",
+     "age": 7.0,
+     "name": 5
+    },
+    "scores": {}
+   },
+   "expect": {
+    "inputs": {
+     "row": {
+      "age": 7,
+      "name": "5"
+     },
+     "scores": {}
+    }
+   }
+  },
+  {
+   "inputs": {
+    "row": {
+     "name": "Ada"
+    },
+    "scores": {}
+   },
+   "expect": {
+    "inputs": {
+     "row": {
+      "name": "Ada"
+     },
+     "scores": {}
+    }
+   }
+  },
+  {
+   "inputs": {
+    "row": {
+     "name": "Ada",
+     "age": "old"
+    },
+    "scores": {}
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "row"
+   }
+  },
+  {
+   "returned": {
+    "name": "Ada",
+    "age": 36
+   },
+   "expect": {
+    "outputs": {
+     "result": {
+      "name": "Ada",
+      "age": 36
+     }
+    }
+   }
+  },
+  {
+   "returned": {
+    "name": "Ada",
+    "age": 36,
+    "city": "London"
+   },
+   "expect": {
+    "refuses": "interface-output",
+    "field": "result"
+   }
+  }
+ ]
+}

@@ -19,7 +19,7 @@ import copy
 import functions
 import programs
 import schemas
-from common import sha
+from common import no_defaults, sha
 
 LANG = "python"
 
@@ -67,8 +67,28 @@ def node(name: str, d: dict, *, interface: bool = True, **kw) -> dict:
     n = {"kind": "ai", "module": "shop", "name": name}
     if interface:
         n["interface"] = programs.of_definition(d)
+    code = {f["name"]: {"code": f["default_code"]} for f in d["inputs"] if "default_code" in f}
+    if code:
+        n["defaults"] = code                   # saved.md: each input's default that counts by its code
     n["ai"] = ai_node(d, **kw)
     return n
+
+
+def loaded_version(n: dict) -> str:
+    """The version a loaded AI function has (calls.md, Versions): its first probe's request, and each
+    input's default by the node's defaults (its code) or else the interface's value."""
+    version = {"request": n["ai"]["fingerprints"]["requests"][0]}
+    defaults = {}
+    for f in (n.get("interface") or {}).get("inputs", []):
+        if f["name"] in (n.get("defaults") or {}):
+            defaults[f["name"]] = n["defaults"][f["name"]]
+        elif "default" in f["shape"]:
+            defaults[f["name"]] = {"value": f["shape"]["default"]}
+    if defaults:
+        version["defaults"] = defaults
+    if n["ai"].get("body"):
+        return n["ai"]["version"]              # code of its own: the source hash is the saving language's
+    return sha(version)
 
 
 MOOD = functions.DEFINITIONS["01-an-answer-from-a-list"][1]
@@ -126,7 +146,9 @@ def loads(key: str, m: dict) -> dict:
         if differs(n):
             return {"refuses": "saved-differs"}
     identity = [{"direction": f["direction"], "name": f["name"], "purpose": f.get("purpose") or "plain",
-                 "shape": f["shape"], "type": ""} for f in n["ai"]["signature"]["fields"]]
+                 "shape": no_defaults(f["shape"]), "type": ""} for f in n["ai"]["signature"]["fields"]]
+    if "version" in n["ai"] and loaded_version(n) != n["ai"]["version"]:
+        return {"refuses": "saved-differs"}
     return {"loads": {"name": n["name"], "module": n["module"], "version": n["ai"]["version"],
                       "signature_id": sha(identity),
                       "requests": n["ai"]["fingerprints"]["requests"]}}
@@ -252,6 +274,22 @@ def cases() -> dict:
                    "sends": [{"inputs": i, "request_hash": functions.expect(with_sample(reply, {**b}))["request_hash"]}
                              for i, b in (({"message": "Hi"}, {"message": "Hi", "tone": "kind"}),
                                           ({"message": "Hi", "tone": "brief"}, {"message": "Hi", "tone": "brief"}))]}}
+
+    plan = functions.DEFINITIONS["14-a-default-by-its-code"][1]
+    m = manifest({"shop:plan": node("plan", plan)}, "shop:plan")
+    out["17-a-default-by-its-code"] = {
+        "description": "A node whose input's default is written as code (today()) keeps its text in the node's "
+                       "defaults: the loaded function's version counts it by that text, and equals the saved "
+                       "one; a default that counts by its value (tone) is the interface's.",
+        "manifest": m, "node": None, "expect": loads("shop:plan", m)}
+    assert out["17-a-default-by-its-code"]["expect"]["loads"]["version"] == functions.expect(plan)["version"]
+    m = manifest({"shop:plan": node("plan", plan)}, "shop:plan")
+    del m["nodes"]["shop:plan"]["defaults"]
+    out["18-a-default-whose-code-was-not-kept"] = {
+        "description": "The same node without its defaults: the loaded function would count today() by the "
+                       "value it gave when saved, a version other than the saved one: it refuses.",
+        "manifest": m, "node": None, "expect": loads("shop:plan", m)}
+    assert out["18-a-default-whose-code-was-not-kept"]["expect"] == {"refuses": "saved-differs"}
 
     for case in out.values():
         case["expect"]["describe"] = describe(case["manifest"], case["node"])

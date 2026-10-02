@@ -88,13 +88,15 @@ content_layers <- function(core, extra = NULL) {
 }
 
 # For each field, whether its value is written: only when no layer (nor the
-# environment) drops it; an added field only when no field of the call is
-# dropped (it can quote any input, anticipate any output, quote another).
+# environment) drops it; an added field (reasoning, calls) only when no input
+# or output of the program is dropped (it can quote any of them); dropping
+# one added field drops only it.
 content_kept <- function(fields, layers, environment_off = environment_drops_all()) {
   names_ <- c(fields$inputs, fields$outputs)
   keep <- vapply(names_, function(n) !environment_off && !any(vapply(layers, says_drop, NA, name = n)), NA)
   names(keep) <- names_
-  if (!all(keep)) keep[fields$added] <- FALSE
+  own <- setdiff(names_, fields$added)
+  if (!all(keep[own])) keep[fields$added] <- FALSE
   keep
 }
 
@@ -143,7 +145,7 @@ kept_record <- function(rec, fields, keep) {
     described <- lapply(rec$described, function(v) as.list(unlist(v)[unlist(v) %in% names(keep)[keep]]))
     if (any(lengths(described) > 0L)) out$described <- described
   }
-  if (has_key(rec, "returned") && isTRUE(keep[[rec$program$answer]])) out["returned"] <- list(rec$returned)
+  # no `returned`: code can put any value of the call into what it returns (calls.md, "Content")
   if (!is.null(rec$probabilities) && length(p <- kept(rec$probabilities))) out$probabilities <- p
   out["error"] <- list(if (is.null(rec$error)) NULL else rec$error[names(rec$error) %in% ERROR_KEPT])
   out$exchanges <- lapply(rec$exchanges, function(ex) {

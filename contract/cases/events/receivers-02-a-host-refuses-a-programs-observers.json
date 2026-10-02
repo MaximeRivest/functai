@@ -1,0 +1,114 @@
+{
+ "description": "A host layer's program_observers false means the observers set in the program's own settings are given no event; the host's are. It only removes: the program's own true, or a closer host layer's true, does not undo it. It applies to a refused tree's own events too.",
+ "kind": "receivers",
+ "scenarios": [
+  {
+   "layers": [
+    {
+     "where": "own",
+     "observers": [
+      "debug-print"
+     ]
+    },
+    {
+     "where": "configure",
+     "observers": [
+      "telemetry"
+     ],
+     "program_observers": false
+    }
+   ],
+   "expect": {
+    "observers": [
+     "telemetry"
+    ],
+    "journal": null
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "observers": [
+      "debug-print"
+     ],
+     "program_observers": true
+    },
+    {
+     "where": "block",
+     "observers": [
+      "page"
+     ],
+     "program_observers": true
+    },
+    {
+     "where": "configure",
+     "observers": [
+      "telemetry"
+     ],
+     "program_observers": false
+    }
+   ],
+   "expect": {
+    "observers": [
+     "telemetry",
+     "page"
+    ],
+    "journal": null
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "observers": [
+      "debug-print"
+     ]
+    },
+    {
+     "where": "configure",
+     "program_observers": true
+    }
+   ],
+   "expect": {
+    "observers": [
+     "debug-print"
+    ],
+    "journal": null
+   }
+  },
+  {
+   "layers": [
+    {
+     "where": "own",
+     "observers": [
+      "debug-print"
+     ],
+     "journal": {
+      "name": "notes-folder",
+      "mode": "best-effort"
+     }
+    },
+    {
+     "where": "block",
+     "program_observers": false
+    },
+    {
+     "where": "configure",
+     "journal": {
+      "name": "chattering-store",
+      "mode": "required"
+     }
+    }
+   ],
+   "expect": {
+    "refuses": "journal-policy",
+    "observers": [],
+    "journal": {
+     "name": "chattering-store",
+     "mode": "required"
+    }
+   }
+  }
+ ]
+}

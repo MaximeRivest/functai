@@ -21,10 +21,10 @@ import * as lmcc from "lmcc";
 import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { Cancelled } from "./engine.ts";
-import { definedAt, type AnyAIFunction, type CallArgs, type CallOptions } from "./fn.ts";
+import { defaultsDocument, definedAt, type AnyAIFunction, type CallArgs, type CallOptions } from "./fn.ts";
 import { Binder, declareInput, declareOutput, type InputRule, type InputRules } from "./inputs.ts";
-import { checkInputs, checkInterface, checkReturned, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
-import { recordInputs, runCall } from "./program.ts";
+import { checkInputs, checkInterface, checkReturned, dataShape, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
+import { droppedFields, recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
@@ -116,6 +116,10 @@ interface ModuleCore {
   run: (inputs: Rec, context: ModuleContext) => unknown;
   uses: readonly (AnyAIFunction | AnyModule)[];
   own: Settings;
+  /** Inputs whose default is given as a function: its code (calls.md, "Versions", "Defaults"). */
+  defaultCode?: Readonly<Record<string, string>>;
+  /** Its module was taken from its file's name (no `definedIn`): its calls are known by its file too. */
+  topLevel?: boolean;
 }
 
 /** The code and AI versions a module reaches: its own code, and what it uses (their own reach, for modules). */
@@ -136,7 +140,14 @@ function reach(core: ModuleCore): { code: Record<string, string>; ai: Record<str
 function makeModule(core: ModuleCore): AnyModule {
   const { iface, name } = core;
   const interfaceId = interfaceSignature(iface);
-  const version = () => lmcc.sha256({ ...reach(core), interface: iface } as unknown as lmcc.Json);
+  // the interface without its defaults (a computed one must not make a new version each day), and each default by its logic
+  const plain: Interface = {
+    description: iface.description,
+    inputs: iface.inputs.map((f) => ({ ...f, shape: dataShape(f.shape) })),
+    outputs: iface.outputs.map((f) => ({ ...f, shape: dataShape(f.shape) })),
+  };
+  const defaults = defaultsDocument(iface, core.defaultCode);
+  const version = () => lmcc.sha256({ ...reach(core), interface: plain, ...(defaults ? { defaults } : {}) } as unknown as lmcc.Json);
   const answer = iface.outputs[iface.outputs.length - 1]!.name;
   const program = (): calllog.Program => ({
     name, kind: "module", module: core.where, version: version(), interface: interfaceId, answer,
@@ -157,7 +168,7 @@ function makeModule(core: ModuleCore): AnyModule {
     let refused: unknown;
     try {
       given = binder.bind(arg, { fill: false, check: false })[0];
-      inputs = checkInputs(iface, given, name);
+      inputs = checkInputs(iface, given, name, droppedFields(fields, core.own, extra as Settings));
       for (const f of iface.inputs) {                     // a left-out input takes its default as the program declared it (a zod default's own value)
         const fill = core.rules.get(f.name)?.fill;
         if (getOwn(given, f.name) === undefined && fill && Object.hasOwn(inputs, f.name)) {
@@ -184,7 +195,7 @@ function makeModule(core: ModuleCore): AnyModule {
         if (cancelled.aborted) throw new Cancelled();
         const returned = await core.run(values, { signal: cancelled, callId: c.id });
         if (cancelled.aborted) throw new Cancelled();
-        const outputs = checkReturned(iface, returned, name);
+        const outputs = checkReturned(iface, returned, name, droppedFields(fields, core.own, extra as Settings));
         return { value: returned, outputs };
       },
     });
@@ -195,6 +206,8 @@ function makeModule(core: ModuleCore): AnyModule {
     name: { value: name },
     module: { value: core.where },
     interface: { get: () => copyData(iface) },
+    defaultCode: { get: () => ({ ...(core.defaultCode ?? {}) }) },
+    file: { get: () => (core.topLevel ? core.file : undefined) },
     interfaceId: { value: interfaceId },
     version: { get: version },
     uses: { value: core.uses },
@@ -236,9 +249,11 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
     throw new TypeError(`module("${name}", { input, output }, run): declare what it returns: output (one) or outputs (several); t.json() for any JSON, t.opaque() for anything`);
   }
   const rules = new Map<string, InputRule>();
+  const defaultCode: Record<string, string> = {};
   const inputs: InterfaceField[] = Object.entries(spec.input).map(([field, s]) => {
     const declared = declareInput(field, s, `${name}.input.${field}`, "module");
     rules.set(field, declared.rule);
+    if (declared.code !== undefined) setOwn(defaultCode, field, declared.code);
     return declared.field;
   });
   const outputSpecs: [string, FieldSpec][] = spec.outputs ? Object.entries(spec.outputs) : [["result", spec.output as FieldSpec]];
@@ -250,6 +265,6 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
   const where = definedAt(module);
   return makeModule({
     name, where: spec.definedIn ?? where.module ?? "main", file: where.file, line: where.line, iface, rules,
-    run: run as ModuleCore["run"], uses: [...(spec.uses ?? [])], own,
+    run: run as ModuleCore["run"], uses: [...(spec.uses ?? [])], own, defaultCode, topLevel: spec.definedIn === undefined,
   }) as unknown as Module<ModuleArgs<I>, ModuleResult<O, A>>;
 }

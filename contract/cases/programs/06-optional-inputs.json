@@ -1,5 +1,5 @@
 {
- "description": "An optional input left out takes its shape's default; without one it stays left out (never null: the program's own default applies, and the record has no value for it). A given value is checked, null included.",
+ "description": "An optional input left out takes its shape's default; without one it stays left out (the program's own default applies, and the record has no value for it). A given value is bound and checked, null included, except that null given to an optional input null does not fit is that input left out (a table's gap takes the default).",
  "program": "module",
  "interface": {
   "description": "Answer a customer's message, in a tone.",
@@ -109,8 +109,10 @@
     "tone": null
    },
    "expect": {
-    "refuses": "interface-input",
-    "field": "tone"
+    "inputs": {
+     "message": "Hi",
+     "tone": "kind"
+    }
    }
   },
   {

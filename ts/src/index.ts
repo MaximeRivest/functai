@@ -145,12 +145,16 @@ export interface LeftOut {
  * Ready for `evaluate` and the optimizers. Pass `records` to read them from
  * somewhere else than the log folder.
  */
-export function rated(fn: AIFunction | AnyModule | string, opts: { folder?: string; by?: string; since?: Date; records?: readonly Rec[] } = {}): { rows: Rec[]; leftOut: LeftOut } {
+export function rated(fn: AIFunction | AnyModule | string,
+  opts: { folder?: string; by?: string; since?: Date; records?: readonly Rec[]; anyFile?: boolean } = {}): { rows: Rec[]; leftOut: LeftOut } {
   const records = opts.records
     ? [opts.records.filter((r) => "functai_call" in r), opts.records.filter((r) => "functai_rating" in r)] as [Rec[], Rec[]]
     : calllog.read(opts.folder ?? calllog.folderOf(effective({}).logCalls ?? true), { since: opts.since ?? null });
   const key = typeof fn === "string" ? { name: fn }
     : { name: fn.name, module: fn.module, interface: fn.interfaceId, ...("signatureId" in fn ? { signature: (fn as AIFunction).signatureId } : {}) };
-  const [rows, left] = calllog.ratedRows(records[0], records[1], { ...key, by: opts.by });
+  // a program whose module is its file's base name (no definedIn) is known by its file too: two folders' summarize.ts
+  // are two programs; anyFile pools across files (a file that moved)
+  const file = typeof fn === "string" || opts.anyFile ? undefined : (fn as unknown as { file?: string }).file;
+  const [rows, left] = calllog.ratedRows(records[0], records[1], { ...key, ...(file ? { file } : {}), by: opts.by });
   return { rows, leftOut: { otherSignature: left.other_signature, noContent: left.no_content, noAnswer: left.no_answer } };
 }

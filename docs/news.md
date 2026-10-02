@@ -4,6 +4,161 @@
 
 ## Unreleased
 
+Stage 1.1 (`design/09-stage1.1-decisions.md`): decisions on stage 1's open
+questions, and three fixes to how ratings become data.
+
+- **Inputs are bound** (breaking): every call, of an AI function or a
+  module, converts each input to its declared type when the meaning is
+  clear, and refuses it otherwise (`InterfaceError`, `interface-input`,
+  before anything is sent; an AI function's refused call is logged as a
+  module's is). Text takes a number (`42` is `"42"`), `true`/`false`, a
+  list or record (JSON indented by two spaces), or a value whose type has
+  a text of its own (a data frame, a date); `<object at 0x…>` is refused.
+  An integer takes `5.0`, `"5"`; a number takes `"2.5"`; a boolean only
+  `True`/`False`. A record input keeps only the members it declares. A
+  missing value (`None`, `NaN`, pandas' `NA`) for an optional input is
+  that input left out: it takes its default. The call log holds the bound
+  values. A default is bound when the function is defined (`n: int = "5"`
+  is `5`). Outputs are checked as they are, never converted.
+- **Records are closed**: a record type holds only its fields; a model's
+  reply or a module's return with another member does not fit.
+- **Error messages quote the value** at fault (its JSON, cut after 80
+  characters), except a value a `log_content` setting drops.
+- **Defaults count in `fn.version` by what is written**: `day=today()` is
+  one version every day, `tone="kind"` to `"formal"` a new one (every
+  function with a default has a new version once). A saved folder keeps a
+  computed default's code (a node's `defaults`). `program.signature` and
+  `program.interface` leave out every default, one inside a record type
+  included, so a record whose field defaults to today no longer splits a
+  function's ratings.
+- **The call log**: each exchange's `request_hash` is the hash of what it
+  sent (a re-ask's included); with tools, `outputs.calls` holds every tool
+  call of the call, not the last step's (usually empty) list; `returned` is
+  kept only when nothing is dropped; dropping `calls` no longer drops
+  `reasoning` (nor the other way round); `process.lmcc` and `process.lm15`
+  name the libraries that made the record.
+- **`configure(program_observers=False)`**: the observers a program sets
+  for itself get no event; the host's still do.
+- **Ratings**: a rating with no person named (`by=`, or the caller's
+  `user`) is made under the computer's `account`, and is kept on its own:
+  on a shared account, one person's rating no longer replaces another's,
+  and a disagreement shows as `disputed`. A program defined in a notebook
+  or a script is known by its file too (`program.file`: the notebook, not
+  the kernel's cell file), so `rated` no longer pools two notebooks'
+  `summarize`; `rated(fn, any_file=True)` pools across files.
+- A loaded function whose input's shape is a list of types (`["string",
+  "null"]`) no longer crashes when its version is computed.
+
+Stage 1 of the contract (`design/08-stage1-foundations.md`): logs every
+language keeps and reads alike, and programs that say what they take.
+
+- **Interfaces.** Every program has `.interface`, its inputs and outputs
+  as data. A `@module`'s is derived from its function (`Any`, `object`
+  or no annotation: opaque; `functai.JSON`: any JSON; a default makes an
+  input optional; `outputs={...}` declares several; `interface={...}`
+  declares it whole) and checked on every call: `InterfaceError`
+  (`interface-input`, `interface-output`) before its code runs or when it
+  returns. A missing or unknown input is `interface-input` naming it,
+  derived or declared (`InterfaceError` is a `TypeError`, as Python's own
+  wrong arguments are, and a `ValueError`); a value given under a name
+  the interface lacks is never recorded. Interfaces every language would
+  refuse are refused when the program is defined (`interface-malformed`),
+  an AI function's included (an optional input whose default does not
+  fit, or has no JSON form), and so is a module whose annotations name a
+  type not defined yet (define the type first; a type defined earlier in
+  the enclosing function is found). A positional-only parameter (before
+  `/`) is refused where the program is defined, `@ai` or `@module`: a
+  program's inputs are given by name. `@module` keeps the function's
+  parameter and return types for type checkers, as `@ai` does; its `fn`
+  is positional-only. Only modules check their inputs as the interface
+  does (`InterfaceError`); an AI function's wrong arguments are Python's
+  `TypeError`, as before.
+  `Annotated[int, Field(ge=10)]` now puts its constraint in the shape;
+  `x: str = None` is `Optional[str]`. A module's version includes its
+  interface (every module's version changes once).
+- **The call log is format 2** (both formats are read): `program.interface`
+  on every record, `program.signature` for AI functions only, `saw` (the
+  earlier calls a stateful function was shown, by id), `described` (values
+  written as descriptions), `request_hash` on exchanges, `journal`.
+  `functai.calllog.saw` and `check_kept` read what a call saw.
+- **`log_content` per field**: `{"transcript": False}`, `{"*": False,
+  "question": True}`. It only removes: a block's or `configure`'s `False`
+  beats a function's own `True`, `FUNCTAI_LOG_CONTENT=0` beats everything.
+  Dropping any field drops the reasoning and tool calls FunctAI adds, and
+  every request, reply and error message. A misspelt name in a function's
+  own map is `LogContentError`. `@module` takes `log_content`, `log_calls`,
+  `caller`, `observers` and `journal`.
+- **Stream events are format 2**: `tree`, `writer`, `seq`, `after`, `at`
+  on every event (`event.position`), and a `Request` event that begins
+  every request; a stream opened inside a tree shows the tree's numbers.
+- **Observers and journals**: `observers=[...]` get the kept form of every
+  event, each its own copy (they add up over layers, and never slow a
+  call). A list is given each event as it is made, so it is complete when
+  the call returns; a function is given them from a thread that runs
+  only while events wait for it (`functai.flush()` waits until it caught
+  up; at exit FunctAI waits at most 2 seconds for observers and journals
+  to catch up), and nothing holds an observer once its trees have ended,
+  an observer that failed included (it is given no more events).
+  `journal=` keeps whole trees in a store while they run, best effort or
+  `functai.Journal(store, required=True, timeout=30, retries=2,
+  backoff=0.05)`: the call waits at its start, before each tool and at
+  its end, each at most `timeout` (`JournalError` `journal-barrier`, or
+  `journal-end` holding the outcome, with `err.settle()`); closing a
+  stream ends its wait. A store answers `"kept"` or `"duplicate"`; any
+  other answer is a refusal (`functai.Store` says the protocol); a store
+  with `extend` is sent every event through it, what waits as one batch,
+  except a subclass that overrides `append` and not `extend`, which is
+  sent every event through its `append` (`batches = True` or `False` says so outright). A program
+  cannot replace a host's journal (`journal-policy`), and when it names
+  the host's journal again, the host's `timeout`, `retries` and `backoff`
+  apply. An event made after its tree's last one (a call running on in a
+  thread after the outermost call returned) goes to no receiver, with a
+  warning. In a process forked inside a call, calls start a tree of their
+  own, seen by that call's observers and kept in its journal; the tree it
+  was forked from is written only by the process that started it. If an event of a tree cannot be
+  put in its kept form, the kept log stops there (a required journal then
+  refuses) rather than guess. Any observer or journal makes a call
+  watched, so its requests stream (the reply is the same).
+  `functai.MemoryStore` keeps logs by the contract's store rules (an
+  event must pass the event schema); `functai.Follower` follows them, and
+  stops at a format it does not know, when following, resuming or
+  replaying; `follower.forget(tree)` lets a tree go.
+- **Saved folders** carry every program's interface; `functai.describe(path)`
+  reads it without loading; a folder another language wrote loads from
+  its data (`functai.load`, `functai.saved.from_manifest`), optional inputs
+  and their defaults included, bound from the interface as data (an
+  optional input may come before a required one; an input may be named
+  `class`: `fn(**{"class": ...})`). Every manifest is checked against the
+  whole saved schema before anything else (`saved-malformed`; FunctAI
+  carries the contract's schemas and checks them itself), every probe
+  must have its fingerprint, in any folder, before any saved code runs,
+  and `load(..., trust=True)` checks every interface before running saved
+  code and compares what the loaded code accepts with what was saved.
+  `load(path, node=...)` works for Python folders too. A module with
+  `outputs={...}` saves and loads.
+- **A function loaded from data is the function that was saved**: its
+  interface is the one source of its inputs' names, order, requiredness
+  and defaults, for calls, `using` copies, row demos, `map`, `evaluate`,
+  optimizers, `bake` and `vectorize`, so each sends what the original
+  sends; used as another function's tool, its tool schema is its
+  interface's shapes, records whole. `inspect.signature` and `help` show
+  its interface as Python can write it (inputs out of Python's order are
+  keyword-only there, and a name such as `class` is given through `**`,
+  named `inputs`, or `inputs_1`, ... when an input has that name). Its
+  signature is the saved one: `module=` other than its own, and tools,
+  are refused. It has no Python source, so `save` and `check` refuse it
+  (`loaded-from-data`): keep the folder it came from.
+- **What a call saw** is what it was shown: the turns captured when the
+  call starts, as its plan shows them (a turn made for another signature
+  is shown, and recorded, as its values alone), each known by the turn
+  itself and by what it held when its call made it (a turn put in
+  `history` by hand, or changed since, even inside its values, is
+  `{"unrecorded": true}`). The turns shown are copied when the call is
+  prepared (a turn holding a value that cannot be copied, from its JSON
+  form), so changing `history` meanwhile changes nothing it is shown.
+- **A tool's answer that is a record** (a pydantic model, a dataclass)
+  is sent to the model as its JSON, no longer as its Python `str()`.
+
 Breaking (see *Upgrading* in the documentation): the API says what it
 does, and a type checker follows it.
 

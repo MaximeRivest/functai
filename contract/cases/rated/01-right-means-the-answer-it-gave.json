@@ -109,6 +109,7 @@
  "rated": {
   "name": "team",
   "module": "support",
+  "file": null,
   "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
   "by": null
  },

@@ -1,5 +1,5 @@
 {
- "description": "A module's inputs are checked before its code runs: every one given, none it does not have, each fitting its shape.",
+ "description": "A module's inputs are checked before its code runs: every one given, none it does not have, each bound to its shape and then fitting it (3 for text is \"3\"; null for a required text is refused).",
  "program": "module",
  "interface": {
   "description": "Answer a customer's message.",
@@ -46,8 +46,9 @@
     "message": 3
    },
    "expect": {
-    "refuses": "interface-input",
-    "field": "message"
+    "inputs": {
+     "message": "3"
+    }
    }
   },
   {

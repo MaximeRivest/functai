@@ -65,7 +65,8 @@ end
     @test iface["inputs"][3] == Dict("name" => "since", "shape" => Dict(), "opaque" => true, "optional" => true)   # untyped: opaque; its default is Julia code
     @test iface["outputs"] == [Dict("name" => "result", "shape" => Dict("type" => "string"), "type" => "String")]
     @test answer("Hi") == "Hi/kind"
-    err = try answer(3) catch e e end
+    @test answer(3) == "3/kind"                          # bound: a number to text is its text (programs.md)
+    err = try answer(nothing) catch e e end
     @test err isa InterfaceError && err.code == "interface-input" && err.field == "message"
     @program function wrong(x::String)::Int
         "Not a number."

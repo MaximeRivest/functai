@@ -116,7 +116,8 @@ loses its exchanges' messages, then its values (`truncated: true`).
  "saw": [],
  "caller": {"kind": "notebook", "notebook": "/home/maxime/triage.md"},
  "process": {"host": "lambda", "pid": 48213, "user": "maxime",
-             "language": "python", "runtime": "3.13.1", "functai": "1.1.0"}}
+             "language": "python", "runtime": "3.13.1", "functai": "1.1.0",
+             "lmcc": "0.8.5", "lm15": "1.0.1"}}
 ```
 
 | field | meaning |
@@ -132,13 +133,13 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `program.interface` | every program: its interface's signature ([programs.md](programs.md)): lmcc's fingerprint of the interface's inputs and outputs only, each shape without its `default`. Calls with the same `program.interface` record the same data, even when the instruction or a default changed or reasoning was turned on; `rated` pools them. It does not say which calls a program accepts (compare interfaces for that). For an AI function with neither reasoning nor tools it equals `program.signature`. |
 | `program.answer` | the name of the output that is the answer: the last output of the program's interface (`result` unless the program names it). A rating of right or wrong is about this output. |
 | `program.saved` | present when the program was loaded from a saved folder: `sha256:` of that folder's `functai.json`. |
-| `program.file`, `.line` | where the code is, when known. |
+| `program.file`, `.line` | where the code is, when known. For a program defined at its language's top level (`program.module` Python's `__main__`, R's `R_GlobalEnv`, Julia's `Main`, a TypeScript file run directly), `program.file` is the notebook or script the code is in: the notebook itself, never a file a kernel runs its cells from. It then tells two notebooks' programs apart (*Rows with known answers*), and is absent when the language cannot tell (a bare prompt, a kernel that does not give its notebook's path). |
 | `started`, `seconds` | UTC start and wall-clock duration. Every time in the log is RFC 3339 UTC with exactly six fraction digits (`2026-09-26T23:12:03.123456Z`), so times sort as text. |
 | `content` | `true` when every value was recorded; `false` when some or all were not (the `log_content` setting: see *Content*). |
 | `omitted` | present exactly when `content` is false: `{"inputs": [...], "outputs": [...]}`, the names of the fields whose values were not recorded, in the record's order (an output FunctAI added included). When it names every field, the record keeps no value. |
 | `inputs` | each input the program received, named as its interface names it, as JSON (see *Values*); a module's too (never positional names such as `arg0`). An optional input left out takes its shape's `default`, and the record holds that value (an AI function's optional inputs always have one: a model is sent every input). A module's optional input left out with no default in its shape is absent: the program's own default applied, and asking again leaves it out again ([programs.md](programs.md)). When `content` is false: only the inputs recorded, and absent when there are none. |
 | `outputs` | each output the model gave (the fields FunctAI added included), as JSON; `null` when the call failed before an answer. For a module, its outputs by name (`{"result": <what it returned>}` for a module with one output named `result`). When `content` is false: only the outputs recorded (absent when there are none, `null` when the call failed before an answer). |
-| `returned` | an AI function whose code changed the answer before returning it (`return round(answer, 2)`): what it returned. Absent otherwise, and when the answer is not recorded. |
+| `returned` | an AI function whose code changed the answer before returning it (`return round(answer, 2)`): what it returned. Absent otherwise, and when `content` is false (see *Content*). |
 | `sizes` | always: for each input and output, the length in Unicode code points of its canonical JSON (see *Canonical JSON*). |
 | `error` | `null`, or `{"type", "message", "code"?}`: the error the call's program ended with (its outcome). `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, `InterfaceError`, `JournalError`, …), `code` lmcc's refusal code (or FunctAI's) when there is one. When `content` is false it keeps only `type` and `code`: `message` can quote the reply or an input, and a member this contract does not name (a later version's) may hold a value. A call cancelled by closing its stream has `type` `Cancelled`; a call stopped at a required journal's barrier, `JournalError` with code `journal-barrier` ([streaming.md](streaming.md)). A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
 | `model` | the model asked for the answer (the last exchange that got a reply), or `null` when no model was called. |
@@ -146,12 +147,12 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `confidence` | the probability the model gave its own answer (the lowest over the outputs it measured), or `null`. Only baked models and providers that return probabilities measure it. |
 | `probabilities` | `{output: {answer: probability}}` when measured, for the outputs recorded. Absent when none is. |
 | `escalated` | `true` when a first model was unsure and another answered; absent otherwise. |
-| `exchanges` | each model request of this call, in order, including failed attempts (`error`, kept as the call's `error` is) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there. Only when `content` is true: `request` and `response` (lm15's canonical JSON: a request holds every input, a response every output) and `request_hash`, lmcc's hash of the rendered request (kernel §3a, a model step's `request`), which shows a later reader rebuilt the same request (a hash of a short value can be guessed back, so it goes with the values). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
+| `exchanges` | each model request of this call, in order, including failed attempts (`error`, kept as the call's `error` is) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there. Only when `content` is true: `request` and `response` (lm15's canonical JSON: a request holds every input, a response every output) and `request_hash`, lmcc's hash of the request this exchange sent (kernel §3a, a model step's `request`): `"sha256:"` and the SHA-256 of the canonical JSON of that lmcc request (`system`, `messages`, `config`), whatever made it: a render (the first, or a tool step's); a re-ask, whose request is the one it follows with two more `messages`, the reply's message and the correction as a user message of one text part ([functions.md](functions.md), *When the reply cannot be read*); a resend with a larger budget sends the same lmcc request (the budget is lm15's), and has its hash. It shows a later reader rebuilt the same request; a hash of another request would show nothing (a hash of a short value can be guessed back, so it goes with the values). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
 | `saw` | the calls this call was given as context, beyond its inputs and its program's state (see *Saw*). `[]` when none. Always there in format 2. A format-1 record has none: what it saw was not recorded, never "none". |
 | `described` | present when some value the record holds had no JSON form and is written as a description (*Values*): `{"inputs": [...], "outputs": [...]}`, their names. Such a value is not data: it cannot be asked again or shown again. |
 | `journal` | present when the call had a required journal that did not confirm its last event ([streaming.md](streaming.md), *Keeping a log while it is written*): `"refused"` (the journal did not keep it) or `"unknown"` (no answer: it may be kept; the journal's log settles it). The rest of the record is the call's outcome as it was: a call whose value was not confirmed kept is not a failed call. The caller got `JournalError` (code `journal-end`) holding that outcome. |
 | `caller` | who called, as the environment and the program said (see *Caller*). `{}` when nothing did. |
-| `process` | the writing process: `host`, `pid`, `user` (the operating system's), `language`, `runtime` (the language's version), `functai` (the library's version). |
+| `process` | the writing process: `host`, `pid`, `user` (the operating system's), `language`, `runtime` (the language's version), `functai` (the library's version), and, when the language can tell, `lmcc` and `lm15` (the versions of the libraries that built the request and sent it: a version is a fingerprint of what lmcc renders, so when an lmcc update changes every version, the records say why). |
 | `truncated` | `true` when the record was cut to fit 8 MiB. |
 
 **Values.** A value is written as the JSON its type describes (lmcc's
@@ -190,10 +191,14 @@ program it runs to "never write the transcript", and a program can ask
 for less, never for more.
 
 **The fields FunctAI adds** to an AI function (`reasoning`, `calls`) can
-quote any input, anticipate any output, and quote each other (a tool
-call can repeat the reasoning). One is written only when no layer drops
-it and no field of the call is dropped: dropping any field, one FunctAI
-added included, drops them all. A map may name them (`{"reasoning":
+quote any input and anticipate any output. One is written only when no
+layer drops it and no input or output of the program is dropped:
+dropping an input or output drops both. Each is its own field otherwise:
+dropping `calls` drops the tool calls and keeps the reasoning, and
+dropping `reasoning` keeps the tool calls. A reasoning can still say
+what it is about to ask a tool ("I will look up order 1042"): a host
+that drops `calls` to keep what tools are asked out of the log drops
+`reasoning` too, and says so. A map may name them (`{"reasoning":
 false}`); a program's own map that names `tools` refuses, since `tools`
 is not a field.
 
@@ -211,8 +216,10 @@ key are kept for later: kinds of data, not names).
 true and the record is whole. Otherwise `content` is false, `omitted`
 names the fields not written, and the record keeps only the values of
 the fields written: `inputs` and `outputs` restricted to them,
-`returned` only when the answer is written, `probabilities` only for
-written outputs. It keeps no exchange `request`, `response` or
+`probabilities` only for written outputs, and no `returned`: code can
+put any value of the call into what it returns (`return critique, _ai`
+returns an output that may be dropped), so `returned` is kept only when
+nothing is dropped. It keeps no exchange `request`, `response` or
 `request_hash`, and no error `message` (the call's, or any exchange's),
 because each can hold any value of the call (a request holds every input;
 a reply, a model's thinking or an error can quote them). `sizes` always
@@ -383,7 +390,8 @@ adds keys to it for a block of code. Conventional keys:
 | `id` | a UUIDv7. |
 | `call` | the call judged. |
 | `at` | when (the log's time format). |
-| `by` | who: a person, not an account (Python's default is the caller's `user`, else the operating system's). One person's later rating replaces their earlier one for that call. |
+| `by` | who: a person, present only when one was named (the rating's `by`, or the caller's `user`: *Caller*). One person's later rating replaces their earlier one for that call. |
+| `account` | present when no person was named: the operating system's account the rating was made under. An account may be shared (a family, a lab machine), so it names no one: such a rating is kept on its own (*Rows with known answers*, rule 2). A rating has `by` or `account`, not both. |
 | `verdict` | `"right"`: the answer is correct for this input (not "nice": correct). `"wrong"`: it is not. `null`: this person withdraws their rating. |
 | `answer` | with `"wrong"`: what the answer should have been, as JSON in the answer's type. Optional: someone may know an answer is wrong without knowing the right one. |
 | `outputs` | optional: right values for other named outputs, `{name: value}`. |
@@ -398,18 +406,26 @@ with the inputs under their names and the right answer under the output's
 name. Every implementation computes the same rows:
 
 The reader is given the program's `name`, and when it knows them its
-`module`, its current `signature` and `interface` (the values its calls'
-`program.signature` and `program.interface` would have now), and a person
-`by`. It reads records of the formats it knows (1 and 2), and skips the
+`module`, its `file`, its current `signature` and `interface` (the values
+its calls' `program.signature` and `program.interface` would have now),
+and a person `by`. It is given the `file` when the program is defined at
+its language's top level and its file is known (`program.file`): every
+notebook and script is `__main__` in Python, and two notebooks'
+`summarize(text)` are not one program. A reader told to pool across
+files (a notebook that moved) is not given it. It reads records of the formats it knows (1 and 2), and skips the
 others: a record of another format makes no row and is not counted.
 
-1. Take the calls of the program: `program.name` equal, and
-   `program.module` equal when a module is given.
+1. Take the calls of the program: `program.name` equal,
+   `program.module` equal when a module is given, and `program.file`
+   equal when a file is given (a call with no `program.file` does not
+   match then).
 2. For each call, each person's latest rating counts (latest `at`; equal
    times: the larger `id`; lines may be in any order). A `null` verdict
-   removes that person's rating. With `by`, only that person's ratings
-   are read. A call with no counting rating is not rated: no row, not
-   counted.
+   removes that person's rating. A rating with no `by` (made under an
+   `account`) counts on its own: it replaces no rating and no rating
+   replaces it, and its `null` verdict removes nothing. With `by`, only
+   that person's ratings are read. A call with no counting rating is not
+   rated: no row, not counted.
 3. A rated call is left out, and counted under the first of these that
    applies. A signature or an interface is given, and the call matches
    none of them (`other_signature`: its inputs or outputs have changed
@@ -430,7 +446,8 @@ others: a record of another format makes no row and is not counted.
 5. One row per remaining call: the inputs; then the values of the latest
    rating that gives any (the answer under `program.answer`, then the
    other outputs in the rating's order); then `call`, `version` (the
-   call's), `rating` (that rating's verdict), `rated_by`, `origin`
+   call's), `rating` (that rating's verdict), `rated_by` (its `by`, or
+   `null` when it has none), `origin`
    (`"review"` when absent), `sample` (`null` when absent) and
    `disputed`. Only outputs a rating gives are keys. Data keeps its
    names: when an input or output already has one of these names, the
@@ -450,7 +467,8 @@ version before its first call (Python: `fn.version`).
 
 **An AI function:** `{"request": R}` when the model writes the whole
 body, `{"code": C, "request": R}` when code of the function's own runs
-beside the model. The same AI function written in two languages (the same
+beside the model, each with `"defaults": D` when an input has a default
+(*Defaults*, below). The same AI function written in two languages (the same
 instruction, fields, layout, worked examples and tools) therefore has one
 version, and its ratings pool.
 
@@ -460,8 +478,9 @@ version, and its ratings pool.
   canonical JSON. It is the first entry of `fingerprints.requests` in a
   saved program's `functai.json`, so a saved folder names the version it
   holds. The sample input has, for each input field, by its JSON Schema:
-  the first `enum` value; the first non-null option of an `anyOf`;
-  `"example text"` for a string, `3` for an integer, `2.5` for a number,
+  the first `enum` value; the first non-null option of an `anyOf`; for
+  a `type` that is a list, the first non-null type in it (`["string",
+  "null"]` is a string); `"example text"` for a string, `3` for an integer, `2.5` for a number,
   `true` for a boolean, `[]` for an array, `{}` for an object. The fixed
   capabilities are `instruct`, `native_structured_output`,
   `native_function_calling` and `stop_sequences` true;
@@ -475,7 +494,8 @@ version, and its ratings pool.
   `...`, `pass`, and a last `return`, `return _ai` or `return ...`. A
   language whose AI functions have no body (a TypeScript `ai(...)` given
   no function) always has `{"request": R}`. Default values of inputs are
-  not code: the values a call used are its logged inputs.
+  not code: they are `D`, and the values a call used are its logged
+  inputs.
 - `C` is present only when the function runs code of its own, such as
   `return round(_ai, 2)`. It is `"sha256:"` + SHA-256 of the function's source text (UTF-8),
   dedented, without its decorators (the text `functai.save` writes, so a
@@ -488,17 +508,58 @@ version, and its ratings pool.
 The model and its sampling settings are not part of a version: they are
 where a version runs, and the record says which (`model`, exchanges).
 
+**Defaults.** A default is behaviour: changing `tone="kind"` to
+`"formal"` changes what the program does, so it is part of the version.
+It counts by its **logic**, what is written, not by the value it gives
+today: `when=today()` is one version every day, and `when=yesterday()`
+another. `D` is `{input: d}` for each input that has a default, in the
+interface's order, where `d` is:
+
+- `{"code": "<text>"}` when the default is written as an expression that
+  is neither a constant nor a name: a call (`today()`), arithmetic
+  (`3 * 60`), a method (`DEFAULT.lower()`). `<text>` is the expression as
+  the language writes it, normalized by the language so that spacing and
+  line breaks do not count: Python `ast.unparse` of the expression, R
+  `deparse` joined with no separator, Julia `string` of the expression
+  with line-number nodes removed, TypeScript a default given as a
+  function of no arguments, by the expression it returns (after `=>`, or
+  a lone `return`'s), each run of white space one space. A simple call
+  written alike (`today()`) is then the same text in every language;
+- `{"value": <JSON>}` otherwise: a constant (`"kind"`, `5`, `None`, a
+  list of constants), or a name (`DEFAULT_TONE`), which counts by the
+  value it holds: editing `DEFAULT_TONE` elsewhere is a new version.
+
+When a default is computed is the language's: Python computes it once,
+when the function is defined; R, Julia and a TypeScript default given as
+a function compute it at each call that leaves the input out. The
+interface's `default` is the value it gave when the program was defined,
+and a call's record holds the value the call used.
+
+Where the source cannot be read (a function typed at a bare Python
+prompt), a default counts by its value, and the language warns once per
+function. A saved folder keeps each code default's text (a node's
+`defaults`, [saved.md](saved.md)), so a loaded program has the version of
+the one saved. Not seen: a change inside what a default calls (rewriting
+`today`), and a default inside a record type, which counts by the value
+the request carries (the type is defined outside the program). The same
+computed default written differently in two languages (`today()`,
+`Sys.Date()`) gives two versions, as code of a function's own does.
+
 **A module:** `{"code": {key: C}, "ai": {key: version}, "interface": I}`
 over every piece of code the module reaches (the same graph
 `functai.check` and `functai.save` follow): each plain function's,
 class's and the module's own source hash under its `module:name` key,
 each AI function's version under its key, and the module's interface `I`
-as data ([programs.md](programs.md)). Optimizing an AI function inside a
+as data ([programs.md](programs.md)) with every `default` left out, as
+its signature leaves them out, and `"defaults": D` when an input has a
+default (*Defaults*: a computed default must not give the module a new
+version each day). Optimizing an AI function inside a
 module is a new version of the module; so is changing what it declares it
 takes or gives, even where the declaration is not in the code the version
 hashes (a TypeScript module's `input` and `output`). Versions computed
 before 2026-09-28 have no `"interface"`: every module's version changed
-once then.
+once then. Versions computed before 2026-09-30 have no `"defaults"`:
+every program with a default got a new version once then.
 
 ## Canonical JSON
 

@@ -256,9 +256,10 @@ function askedAgain(err: lmcc.Refusal): string {
 async function complete(job: Job, rendered: lmcc.RenderResult, responses: Response[]): Promise<[Response, lmcc.Reading]> {
   const overrides: Rec = {};
   let request = lm15Request(rendered, job.model, configOf(job.settings));
-  // lmcc's hash of the rendered request (a model step's `request`, kernel §3a): every exchange made from it has it,
-  // a re-ask (the reply and the re-ask sentence appended) and a re-send with a larger token budget included, as in Python
-  const requestHash = lmcc.sha256(rendered.request() as lmcc.Json);
+  // lmcc's hash of the request each exchange sends (calls.md, exchanges): the render's; a re-ask's is the one it follows
+  // with the reply's message and the correction appended; a re-send with a larger token budget sends the same lmcc request
+  let asked = rendered.request() as Rec;
+  let requestHash = lmcc.sha256(asked as lmcc.Json);
   const retries = Math.max(0, job.settings.retries);
   for (let attempt = 0; ; attempt++) {
     const response = await send(job, request, requestHash);
@@ -283,10 +284,11 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
         overrides["maxTokens"] = current * 2;
         request = lm15Request(rendered, job.model, configOf(job.settings, overrides as never));
       } else {
-        request = {
-          ...request, messages: [...request.messages, response.message,
-            Message.user(`Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`)],
-        };
+        const correction = `Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`;
+        request = { ...request, messages: [...request.messages, response.message, Message.user(correction)] };
+        asked = { ...asked, messages: [...(asked["messages"] as unknown[]), Message.toJSON(response.message),
+          { role: "user", parts: [{ type: "text", text: correction }] }] };
+        requestHash = lmcc.sha256(asked as lmcc.Json);
       }
       job.call.event("retry", { reason: askedAgain(refusal), wait: null });
     }
@@ -317,17 +319,21 @@ export async function run(job: Job): Promise<Prediction> {
   if (job.tools.length) setOwn(values, "tools", job.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
   let turn = plan.turn(values);
   const responses: Response[] = [];
+  const toolCalls: Rec[] = [];               // every tool call the model asked for, across steps (outputs.calls)
   const steps = Math.max(1, job.settings.maxSteps);
   for (let i = 0; i < steps; i++) {
     const rendered = plan.render(turn, { turns: [...job.past] });
     const [response, reading] = await complete(job, rendered, responses);
     turn = bridge.step(rendered, response);
     const calls = ((reading.values as Rec)["calls"] ?? []) as Array<{ id: string; name: string; input?: unknown }>;
+    toolCalls.push(...(calls as unknown as Rec[]));
     if (!calls.length) {
       turn = turn.finish();
       const outputs: Rec = {};
       for (const [k, v] of entriesOf(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
-      return new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
+      const pred = new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
+      if (job.tools.length) Object.defineProperty(pred, "toolCalls", { value: toolCalls, enumerable: false });
+      return pred;
     }
     for (const c of calls) {
       const asked = job.call.event("tool_call", { id: c.id, name: c.name, input: c.input ?? {} });

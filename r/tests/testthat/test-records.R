@@ -48,9 +48,10 @@ test_that("a tool-using call's record holds `calls` and its size, whole or not",
   rec <- log_lines(folder)[[1L]]
   expect_true(rec$content)
   expect_identical(names(rec$outputs), c("calls", "result"))
-  expect_identical(plain(rec$outputs$calls), "[]")                 # lmcc's finished turn: its last model step's
+  # every tool call the model asked for in the call, across steps (functions.md)
+  expect_identical(plain(rec$outputs$calls), '[{"id":"c1","input":{"order":"A1"},"name":"lookup"}]')
   expect_identical(names(rec$sizes$outputs), c("calls", "result"))
-  expect_identical(rec$sizes$outputs$calls, 2L)
+  expect_identical(rec$sizes$outputs$calls, nchar(plain(rec$outputs$calls)))
   expect_length(rec$exchanges, 2L)
   expect_null(schema_fault(rec, "call.schema.json"))
   f <- update(f, router = replies(), log_content = c(question = FALSE))

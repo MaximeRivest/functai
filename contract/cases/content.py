@@ -61,14 +61,15 @@ def says_drop(v, name: str) -> bool:
 
 def kept(fields: dict, layers: list, environment) -> dict:
     """For each field, whether its value is written: only when no layer drops it,
-    and, for an added field, only when no field of the call is dropped (an added
-    field can quote any input, anticipate any output, and quote another added
-    field)."""
+    and, for an added field, only when no input or output of the program is
+    dropped (an added field can quote any input and anticipate any output).
+    Dropping one added field drops only it (design/09, B8)."""
     env_off = environment is not None and environment.strip().lower() in OFF
     out = {}
     for name in fields["inputs"] + fields["outputs"]:
         out[name] = not env_off and not any(says_drop(layer["log_content"], name) for layer in layers)
-    if not all(out.values()):
+    own = [n for n in fields["inputs"] + fields["outputs"] if n not in fields["added"]]
+    if not all(out[n] for n in own):
         for n in fields["added"]:
             out[n] = False
     return out
@@ -99,8 +100,7 @@ def written(record: dict, fields: dict, keep: dict) -> dict:
         described = {k: [n for n in v if keep[n]] for k, v in record["described"].items()}
         if any(described.values()):
             out["described"] = described
-    if "returned" in record and keep[answer]:
-        out["returned"] = record["returned"]
+    # no "returned": code can put any value of the call into what it returns (calls.md, Content)
     if "probabilities" in record:
         probabilities = {k: v for k, v in record["probabilities"].items() if keep[k]}
         if probabilities:
@@ -221,6 +221,10 @@ def cases() -> dict:
         "08-the-answer-dropped": case(
             "The answer is dropped, so neither what the code returned nor its probabilities are written; the "
             "other output's are. The added reasoning goes too.", [("configure", {"result": False})]),
+        "21-what-the-code-returned-goes-with-any-field": case(
+            "Another output (summary) is dropped and the answer kept: what the code returned is not written "
+            "either, since code can return any value of the call (return summary, _ai). The reasoning goes "
+            "too: it can anticipate any output.", [("own", {"summary": False})]),
         "09-every-field-named": case(
             "A map that drops every field writes the same record as false.",
             [("own", {"transcript": False, "question": False, "reasoning": False, "summary": False,
@@ -243,17 +247,21 @@ def cases() -> dict:
             [("configure", {"*": False, "question": True, "result": True})]),
         "15-the-reasoning-alone": case(
             "The function's own map drops the reasoning FunctAI added, by its name: every other value is "
-            "written; the replies go (they hold the reasoning).", [("own", {"reasoning": False})]),
+            "written but what the code returned (it could hold anything); the replies go (they hold the "
+            "reasoning).", [("own", {"reasoning": False})]),
         "16-a-key-that-is-not-a-name": case(
             "A map key that is neither a field name nor \"*\" refuses wherever it is set (keys of another form "
             "are kept for later).", [("block", {"#private": False})]),
         "17-the-tool-calls-dropped": case(
             "A function with tools and reasoning: FunctAI adds two fields, calls and reasoning. Dropping the "
-            "calls drops the reasoning too (an added field is written only when no field of the call is "
-            "dropped).", [("own", {"calls": False})], fields=TOOLS),
+            "calls drops only them: the reasoning is written (an added field goes with an input or output of "
+            "the program, not with another added field).", [("own", {"calls": False})], fields=TOOLS),
         "18-the-reasoning-dropped-with-tools": case(
-            "Dropping the reasoning drops the calls too, for the same reason: every other value is written.",
-            [("configure", {"reasoning": False})], fields=TOOLS),
+            "Dropping the reasoning drops only it: the calls are written, and every other value but what the "
+            "code returned.", [("configure", {"reasoning": False})], fields=TOOLS),
+        "22-an-input-dropped-with-tools": case(
+            "Dropping an input drops both added fields: the reasoning and the tool calls routinely repeat an "
+            "input word for word.", [("block", {"transcript": False})], fields=TOOLS),
         "19-the-tools-input-is-not-a-field": case(
             "The tools input FunctAI adds to a function's signature is the function's state (its tools, in its "
             "version), not a field of a call: no record holds it, and a function's own map that names it refuses.",

@@ -21,6 +21,7 @@ const SETTING_DOCS = (
     log_content = "what the call log keeps: false (sizes, times and tokens, never values or messages), or a map of fields: (transcript = false,), Dict(\"*\" => false, \"question\" => true); layers only remove",
     observers = "functions (or Channels) given the kept form of every event of the calls in scope: [e -> println(e)]; layers add up",
     journal = "where each call tree's kept log is kept while it is written: a store (best effort), Journal(store; required = true), or false (none)",
+    program_observers = "false (a host's block or configure!): the observers a program sets for itself are given no event; the host's still are. Only removes",
     caller = "who is calling, added to the environment variable `FUNCTAI_CALLER`: Dict(\"kind\" => \"notebook\")",
     concurrency = "calls in flight at once over a column (broadcasting, map, evaluate; default 8)",
 )
@@ -71,6 +72,7 @@ function check_setting(name::Symbol, value)
     name === :caller && !(value isa AbstractDict || value isa NamedTuple) && throw(ArgumentError("caller is a Dict, not $(repr(value))"))
     name === :log_content && content_setting(value)
     name === :observers && !(value isa Union{AbstractVector,Tuple}) && throw(ArgumentError("observers is a list of functions (or Channels), not $(repr(value))"))
+    name === :program_observers && !(value isa Bool) && throw(ArgumentError("program_observers is true or false, not $(repr(value))"))
     name === :journal && journal_setting(value)
     nothing
 end

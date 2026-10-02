@@ -20,14 +20,14 @@ import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { Cancelled, lm15Request, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
 import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
-import { checkInterface, interfaceSignature, type Interface } from "./interface.ts";
+import { checkInputs, checkInterface, interfaceSignature, recordedInputs, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
-import { recordInputs, runCall } from "./program.ts";
+import { droppedFields, recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
 import { JournalError } from "./log.ts";
-import { copyData, entriesOf, recordOf, setOwn, writeData } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, setOwn, writeData } from "./values.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
@@ -280,6 +280,25 @@ interface Core {
   line?: number;
   saved?: string;
   state: { instructions: string | null; demos: Demo[] };
+  /** Inputs whose default is given as a function: its code (calls.md, "Versions", "Defaults"). */
+  defaultCode?: Readonly<Record<string, string>>;
+  /** Its module was taken from its file's name (no `definedIn`): its calls are known by its file too (calls.md, rated). */
+  topLevel?: boolean;
+}
+
+/**
+ * `D` of a version (calls.md, "Versions", "Defaults"): each input that has a
+ * default, in the interface's order, `{ code }` when it is given as a
+ * function, else `{ value }`; undefined when none has one.
+ */
+export function defaultsDocument(iface: Interface, code: Readonly<Record<string, string>> = {}): Rec | undefined {
+  const out: Rec = {};
+  for (const f of iface.inputs) {
+    const c = getOwn(code, f.name);
+    if (c !== undefined) setOwn(out, f.name, { code: c });
+    else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, { value: f.shape["default"] });
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
@@ -308,9 +327,11 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   if (!def || typeof def !== "object" || !def.input || typeof def.input !== "object") throw new TypeError(`ai("${name}", { input: { ... } }): the inputs are required`);
   if (def.output !== undefined && def.outputs !== undefined) throw new TypeError(`${name}: give output (one answer) or outputs (several), not both`);
   const rules = new Map<string, InputRule>();
+  const defaultCode: Record<string, string> = {};
   const inputs = Object.entries(def.input).map(([field, spec]) => {
-    const { field: declared, rule } = declareInput(field, spec, `${name}.input.${field}`, "ai");
+    const { field: declared, rule, code } = declareInput(field, spec, `${name}.input.${field}`, "ai");
     rules.set(field, rule);
+    if (code !== undefined) setOwn(defaultCode, field, code);
     return { name: field, shape: declared.shape, desc: declared.desc ?? null, ...(rule.optional ? { optional: true } : {}) };
   });
   const outputSpecs: [string, FieldSpec][] = def.outputs
@@ -336,6 +357,7 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   const core: Core = {
     definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],
     module: moduleName, file: where.file, line: where.line, state: { instructions: def.instructions ?? null, demos: [] },
+    defaultCode, topLevel: def.definedIn === undefined,
   };
   const fn = make(core) as unknown as AIFunction<Inputs<I>, Outputs<O, A>, Answer<O, A>>;
   if (def.demos) fn.demos = def.demos as Demo[];
@@ -392,7 +414,8 @@ export function make(core: Core): AIFunction {
   /** A call's argument as inputs by name; inputs left out get their default. */
   const bindInputs = (arg: unknown): Rec => binder.bind(arg)[0];
   const parseInputsNow = (arg: unknown): Rec => {
-    const [bound, filled] = binder.bind(arg);
+    const [raw, filled] = binder.bind(arg, { check: false });
+    const bound = checkInputs(core.interface, raw, core.definition.name, droppedFields(fieldsOf(core.interface, sig.signature(definitionNow({}), core.state.instructions)), core.own));
     binder.parse(bound, filled, true);
     return bound;
   };
@@ -453,7 +476,8 @@ export function make(core: Core): AIFunction {
         if (!lmcc.isRefusal(err)) throw err;
         r = `refused:${(err as lmcc.Refusal).code}`;
       }
-      v = lmcc.sha256({ request: r });
+      const defaults = defaultsDocument(core.interface, core.defaultCode);
+      v = lmcc.sha256((defaults ? { request: r, defaults } : { request: r }) as lmcc.Json);
       cache.set(key, v);
     }
     return v;
@@ -494,10 +518,13 @@ export function make(core: Core): AIFunction {
   const recordOutputs = (pred: Prediction, signature: lmcc.Signature): Rec => {
     const all = (pred.turn.outputs ?? {}) as Rec;
     const mine = pred.outputs as Rec;
+    // outputs.calls: every tool call the model asked for in the call, across steps (contract/functions.md)
+    const toolCalls = (pred as unknown as { toolCalls?: Rec[] }).toolCalls;
     const out: Rec = {};
     for (const f of signature.fields) {
       if (f.direction !== "output") continue;
-      if (Object.hasOwn(mine, f.name)) setOwn(out, f.name, mine[f.name]);
+      if (f.purpose === "tools.calls" && toolCalls !== undefined) setOwn(out, f.name, toolCalls);
+      else if (Object.hasOwn(mine, f.name)) setOwn(out, f.name, mine[f.name]);
       else if (Object.hasOwn(all, f.name)) setOwn(out, f.name, all[f.name]);
     }
     return out;
@@ -506,15 +533,32 @@ export function make(core: Core): AIFunction {
   const predict = async (arg: unknown, options: CallOptions = {}, stream?: PredictionStream): Promise<Prediction> => {
     const { signal, ...extra } = options;
     if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
-    const [bound, filled] = binder.bind(arg);
-    // the record's: the values as given (defaults filled), as JSON before a schema's parsing runs (it may change them in place)
-    const given = recordInputs(names, bound);
-    await binder.parse(bound, filled);
     const s = settingsNow(extra);
     const signature = signatureNow(s);
+    const fields = fieldsOf(core.interface, signature);
+    // Inputs are bound to the interface (programs.md, "Binding a call's inputs"), then parsed by their schemas; a refusal
+    // is the call's outcome, recorded, and nothing is sent. The record holds the bound values, as JSON before a schema's
+    // parsing runs (it may change them in place).
+    const [raw, filled] = binder.bind(arg, { check: false });
+    let bound: Rec;
+    let refused: unknown;
+    try {
+      bound = checkInputs(core.interface, raw, core.definition.name, droppedFields(fields, core.own, extra as Settings));
+    } catch (err) {
+      refused = err;
+      bound = recordedInputs(core.interface, raw);
+    }
+    const given = recordInputs(names, bound);
+    if (refused === undefined) {
+      try {
+        await binder.parse(bound, filled);
+      } catch (err) {
+        refused = err;
+      }
+    }
     return runCall<Prediction>({
-      program: () => program(s), fields: fieldsOf(core.interface, signature), own: core.own, options: extra as Settings,
-      settings: s, stream, signal, inputs: given,
+      program: () => program(s), fields, own: core.own, options: extra as Settings,
+      settings: s, stream, signal, inputs: given, ...(refused !== undefined ? { refused } : {}),
       body: async (call) => {
         const { plan, model, router, provider, settings } = planFor(s);
         call.provider = provider;
@@ -571,6 +615,8 @@ export function make(core: Core): AIFunction {
     version: { get: version },
     signatureId: { get: () => sig.signatureId(signatureNow()) },
     interface: { get: () => copyData(core.interface) },
+    defaultCode: { get: () => ({ ...(core.defaultCode ?? {}) }) },
+    file: { get: () => (core.topLevel ? core.file : undefined) },
     interfaceId: { value: interfaceId },
     settings: { get: () => ({ ...core.own }) },
     definition: { get: () => core.definition },

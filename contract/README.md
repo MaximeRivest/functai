@@ -93,12 +93,21 @@ thing it cannot do yet wait for it, and are not failures.
 | `saw/` of kind `shown` | the turn a `saw` entry stands for | every language that replays context (stage 3's conversations, stage 5's `rated` with `earlier`) |
 | `saved/` (`expect.refuses` / `loads`) | loading a saved AI function | every language |
 | `saved/` (`expect.describe`) | describing a saved node without loading it | every language |
-| `programs/` of kind `ai` | an AI function's interface, binding its optional inputs, and refusing one at definition | every language |
-| `programs/` of kinds `module`, `definitions`, `same-data` | a module's interface, its refusals and its checks | every language with modules |
+| `programs/` of kind `ai` | an AI function's interface, binding its inputs, and refusing one at definition | every language |
+| `programs/` of kinds `module`, `definitions`, `same-data`, `message` | a module's interface, binding its inputs, its refusals and its checks; what a refusal's message quotes | every language with modules |
 | `events/` `replay-*`, `follow-*`, `kept-*` | events as data | every language that streams |
 | `events/` `journal-*` | a writer keeping a log in a journal that fails | every language that streams and has journals |
 | `events/` `receivers-*` | which observers and journal a tree gets from the layers around it | every language that streams and has journals |
 | `events/` `store-*` | the rules a store keeps | every language that keeps logs (stage 2), or a store written in any language |
+
+Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
+`14` and `21`, `functions/12`, `content/03`, `14`, `15`, `17` and `18`,
+and `saved/16` expect, and added `programs/22` to `26`, `functions/13` to
+`17`, `content/21` and `22`, `rated/17` to `20`, `saved/17` and `18`, and
+`events/receivers-02`: each language fails them until it binds inputs,
+reads records as closed, counts defaults by their logic, keeps added
+fields apart, keeps ratings under an account apart and knows a
+notebook's program by its file.
 
 Today (2026-09-28): Python, TypeScript and Julia stream and have modules;
 R has neither yet. Every language's harness reads `functions/`,
@@ -117,7 +126,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 
 | code | where | when |
 |---|---|---|
-| `interface-input`, `interface-output` | [programs.md](programs.md) | a module's call given, or returning, what its interface does not take or give (`InterfaceError`) |
+| `interface-input`, `interface-output` | [programs.md](programs.md) | a program's call given an input that does not bind to its interface, or a module returning what its interface does not give (`InterfaceError`) |
 | `interface-malformed` | [programs.md](programs.md) | an interface refused when its program (a module, or an AI function) is defined, or when it is read from a saved folder |
 | `log-content-field` | [calls.md](calls.md) | a `log_content` key that names no field of the program, or is not a name |
 | `saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`, `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface` | [saved.md](saved.md) | loading or describing a saved folder |

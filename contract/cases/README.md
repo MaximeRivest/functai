@@ -68,14 +68,29 @@ Told apart by `"program"`:
   "field"}, "binds": [{"inputs", "expect": {"inputs"}}]}`. Defining the
   AI function gives that interface and signature (the call log's
   `program.interface`), or is refused. Each bind calls it with `inputs`
-  and expects the values it is called with (an optional input left out
-  takes its default).
+  and expects the values it is called with, bound (programs.md,
+  *Binding a call's inputs*: an optional input left out, or given null
+  that null does not fit, takes its default), or `{"refuses":
+  "interface-input", "field"}` with no request sent.
 - `"module"`: `{"interface", "expect": {"signature"}, "checks": [...]}`.
   The harness defines a module with the interface. Each check gives
-  `inputs` (JSON) and expects `{"inputs": what its code gets}` or
+  `inputs` (JSON) and expects `{"inputs": what its code gets}` (bound) or
   `{"refuses": "interface-input", "field"}`; or gives what the code
   `returned` and expects `{"outputs"}` or `{"refuses":
-  "interface-output", "field"}`.
+  "interface-output", "field"}`. An object that is exactly `{"$type",
+  "$repr"}`, or `{"$type", "$repr", "$text"}`, stands for a value with no
+  JSON form: the harness gives the program a native value of its own for
+  it, whose type has no text of its own, or whose own text is `$text` (a
+  data frame, a date).
+- `"message"`: `{"interface", "checks": [{"inputs", "log_content"?,
+  "expect": {"refuses", "field", "quotes"}}]}`. The harness defines a
+  module with the interface (and `log_content` as its own setting) and
+  calls it with `inputs`: it is refused, and the error's message contains
+  `quotes`, or, when `quotes` is null, holds no part of the value at
+  fault (the harness looks for the value's canonical JSON, and for its
+  `$repr`). For a stand-in, `quotes` is its description's `$repr`: a
+  harness whose native value the language describes otherwise looks for
+  that description instead.
 - `"definitions"`: `{"interfaces": [{"interface", "ai"?: true, "expect":
   {"signature"} or {"refuses": "interface-malformed", "field": name or
   null}}]}`. Defining a module with each interface, or reading it from a

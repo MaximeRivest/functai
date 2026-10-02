@@ -76,13 +76,16 @@ export function environmentDrops(environment: string | null | undefined): boolea
 
 /**
  * For each field, whether its value is written: only when no layer drops it,
- * and, for a field FunctAI added, only when no field of the call is dropped.
+ * and, for a field FunctAI added (reasoning, calls), only when no input or
+ * output of the program is dropped (it can quote any of them); dropping one
+ * added field drops only it.
  */
 export function keptFields(fields: CallFields, layers: readonly LogContent[], environment: string | null | undefined): Record<string, boolean> {
   const off = environmentDrops(environment);
   const out: Record<string, boolean> = {};
   for (const name of [...fields.inputs, ...fields.outputs]) setOwn(out, name, !off && !layers.some((v) => drops(v, name)));
-  if (!Object.values(out).every(Boolean)) for (const n of fields.added) setOwn(out, n, false);
+  const own = [...fields.inputs, ...fields.outputs].filter((n) => !fields.added.includes(n));
+  if (!own.every((n) => getOwn(out, n) === true)) for (const n of fields.added) setOwn(out, n, false);
   return out;
 }
 
@@ -109,7 +112,6 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
     }
   }
   const only = (values: Rec) => recordOf(entriesOf(values).filter(([k]) => getOwn(keep, k) === true));
-  const answer = (record["program"] as Rec)["answer"] as string;
   const inputs = only((record["inputs"] ?? {}) as Rec);
   if (Object.keys(inputs).length) out["inputs"] = inputs;
   if (record["outputs"] === null || record["outputs"] === undefined) out["outputs"] = null;
@@ -122,7 +124,7 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
     const described = Object.fromEntries(Object.entries(d).map(([k, v]) => [k, v.filter((n) => getOwn(keep, n) === true)]));
     if (Object.values(described).some((v) => v.length)) out["described"] = described;
   }
-  if ("returned" in record && getOwn(keep, answer) === true) out["returned"] = record["returned"];
+  // no "returned": code can put any value of the call into what it returns (calls.md, "Content")
   if (record["probabilities"]) {
     const p = only(record["probabilities"] as Rec);
     if (Object.keys(p).length) out["probabilities"] = p;

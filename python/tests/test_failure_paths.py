@@ -279,6 +279,7 @@ def test_an_optional_input_before_a_required_one_loads_and_binds_from_data():
     fields[0]["shape"]["default"] = "Hi"
     fields[1].pop("optional")
     fields[1]["shape"].pop("default")
+    refit(m)                                    # its defaults are in its version: what that language saved
     assert validator("saved").is_valid(m)
     reply = saved.from_manifest(m)
     router = FakeRouter(responder=lambda request: XML.format("Hello!"))

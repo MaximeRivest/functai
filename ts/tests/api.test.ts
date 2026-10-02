@@ -81,7 +81,7 @@ test("an input may be left out when its schema allows it: sent as null, or as th
   assert.match(lastText(router), /<tone>\nplain\n<\/tone>/);            // the default, from the schema
   assert.match(lastText(router), /<max>\nnull\n<\/max>/);
   await assert.rejects(f({ text: "hi" } as never), /needs lang/);          // nullable is not optional: give it, null or not
-  await assert.rejects(f({ text: "hi", lang: null, max: "ten" } as never), /input max: .*expected number/i);   // checked by its schema
+  await assert.rejects(f({ text: "hi", lang: null, max: "ten" } as never), /input max: "ten" does not bind to/i);   // bound to its shape first (programs.md)
   // the definition's (and the interface's) shape holds the default an input left out is sent with; the signature does not (functions.md)
   const shape = (n: string) => f.definition.inputs.find((x) => x.name === n)!.shape;
   const sent = (n: string) => f.signature.fields.find((x) => x.name === n)!.shape;

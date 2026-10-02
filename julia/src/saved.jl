@@ -167,7 +167,10 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
         f.direction == "input" && haskey(optional, f.name) || return FieldDef(f.name, spec, JObj(f.shape), desc)
         # the default is the JSON the folder keeps, sent as it is: never read as a type (a loaded function runs no code)
         default = optional[f.name]
-        FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), LMCC.deepcopy_json(default))
+        # a default that counts by its code keeps it (saved.md, a node's defaults): the loaded version counts it so
+        code = get(get(get(n, "defaults", JObj()), f.name, JObj()), "code", nothing)
+        FieldDef(f.name, spec, data_shape(JObj(f.shape)), desc, true, LMCC.deepcopy_json(default), LMCC.deepcopy_json(default),
+                 code === nothing ? nothing : String(code), nothing)
     end
     inputs, outputs = FieldDef[], FieldDef[]
     reasoning = false
@@ -290,8 +293,17 @@ function to_manifest(f::AIFunction)
     LMCC.jobj("functai_saved" => SAVED_FORMAT, "language" => "julia", "entry" => key,
               "created" => Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS") * "+00:00",
               "functai" => string(FUNCTAI_VERSION),
-              "nodes" => LMCC.jobj(key => LMCC.jobj("kind" => "ai", "module" => f.module_name, "name" => f.definition.name,
-                                                    "interface" => LMCC.deepcopy_json(interface(f)), "ai" => ai)))
+              "nodes" => LMCC.jobj(key => saved_node(f, ai)))
+end
+
+"An AI node (saved.md): its interface, the code of each default that counts by it, and its `ai` entry."
+function saved_node(f::AIFunction, ai)
+    node = LMCC.jobj("kind" => "ai", "module" => f.module_name, "name" => f.definition.name,
+                     "interface" => LMCC.deepcopy_json(interface(f)))
+    code = JObj(x.name => LMCC.jobj("code" => x.code) for x in f.definition.inputs if x.code !== nothing)
+    isempty(code) || (node["defaults"] = code)
+    node["ai"] = ai
+    node
 end
 
 """

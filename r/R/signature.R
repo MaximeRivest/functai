@@ -51,9 +51,9 @@ sample_value <- function(shape) {
     opts <- Filter(function(s) !identical(s$type, "null"), shape$anyOf)
     return(if (length(opts)) sample_value(opts[[1L]]) else NULL)
   }
-  # a type that is not one name (a list of them: ["object", "null"]) is no
-  # type calls.md lists: the text, as TypeScript and Julia give
-  t <- shape$type
+  # a list of types: the first non-null one (calls.md, Versions)
+  t <- unlist(shape$type)
+  if (length(t) > 1L) t <- c(setdiff(t, "null"), "null")[[1L]]
   if (!(is.character(t) && length(t) == 1L)) t <- "string"
   switch(t, string = "example text", integer = 3L, number = 2.5, boolean = TRUE,
          array = list(), object = lmcc::jobj(), null = NULL, "example text")
@@ -69,7 +69,7 @@ sample_inputs <- function(sig) {
 # A call's program.signature: lmcc's fingerprint with every type name empty.
 signature_id <- function(sig) {
   lmcc::sha256_of(lapply(lmcc::signature_to_list(sig)$fields, function(f)
-    list(direction = f$direction, name = f$name, purpose = f$purpose %||% "plain", shape = f$shape, type = "")))
+    list(direction = f$direction, name = f$name, purpose = f$purpose %||% "plain", shape = no_defaults(f$shape), type = "")))
 }
 
 # Values as their fields expect them: a non-text value given to a text input

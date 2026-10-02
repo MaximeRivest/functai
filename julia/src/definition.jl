@@ -19,8 +19,24 @@ struct FieldDef
     optional::Bool
     default::Any
     native::Any
+    "A default written as an expression (`today()`): its code, as a version counts it (calls.md, \"Versions\", \"Defaults\")."
+    code::Union{Nothing,String}
+    "It, computed again at each call that leaves the input out, as Julia runs a default; `nothing` for a default that is data."
+    make::Any
 end
-FieldDef(name, spec, shape, desc) = FieldDef(String(name), spec, shape, desc, false, nothing, nothing)
+FieldDef(name, spec, shape, desc) = FieldDef(String(name), spec, shape, desc, false, nothing, nothing, nothing, nothing)
+FieldDef(name, spec, shape, desc, optional, default, native) = FieldDef(name, spec, shape, desc, optional, default, native, nothing, nothing)
+
+"""
+A default written as an expression that is neither a literal nor a constant
+(`day::String = today()`): `code` is the expression's text, which a
+version counts (calls.md, "Versions", "Defaults"), and `make` computes it,
+at each call that leaves the input out, as Julia runs a default.
+"""
+struct ComputedDefault
+    code::String
+    make::Any
+end
 
 """
 An optional input a call left out: its default. Its JSON (`data`, the
@@ -34,7 +50,11 @@ struct LeftOut
     data::Any
     native::Any
 end
-LeftOut(x::FieldDef) = LeftOut(x.default, x.native)
+function LeftOut(x::FieldDef)
+    x.make === nothing && return LeftOut(x.default, x.native)
+    v = x.make()                                    # a computed default: made anew for this call
+    LeftOut(LMCC.deepcopy_json(jsonvalue(v)), v)
+end
 jsonvalue(x::LeftOut) = LMCC.deepcopy_json(x.data)
 
 "The inputs as the function's own code gets them: a default left out is a copy of its value, its own."
@@ -138,6 +158,10 @@ function sample_value(shape::AbstractDict)
         return isempty(options) ? nothing : sample_value(first(options))
     end
     t = get(shape, "type", nothing)
+    if t isa AbstractVector                      # a list of types: the first non-null one (calls.md, Versions)
+        i = findfirst(!=("null"), t)
+        t = i === nothing ? "null" : t[i]
+    end
     t == "string" ? "example text" : t == "integer" ? 3 : t == "number" ? 2.5 : t == "boolean" ? true :
     t == "array" ? Any[] : t == "object" ? JObj() : t == "null" ? nothing : "example text"
 end
@@ -151,7 +175,7 @@ A call's `program.signature` (contract/calls.md): lmcc's fingerprint with every
 type name empty, so the shapes decide, not how a language spells types.
 """
 signature_id(sig::LMCC.Signature) = LMCC.sha256_of(Any[LMCC.jobj("direction" => f.direction, "name" => f.name,
-    "purpose" => isempty(f.purpose) ? "plain" : f.purpose, "shape" => f.shape, "type" => "") for f in sig.fields])
+    "purpose" => isempty(f.purpose) ? "plain" : f.purpose, "shape" => no_defaults(f.shape), "type" => "") for f in sig.fields])
 
 "Values as their fields expect them: JSON, and a non-text value given to a text input written as text."
 function prepare_inputs(sig::LMCC.Signature, values::AbstractDict)

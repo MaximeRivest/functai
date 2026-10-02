@@ -48,7 +48,7 @@ import jsonschema
 
 import functions
 import schemas
-from common import canonical, sha
+from common import SHAPE_LISTS, SHAPE_MAPS, SUBSHAPES, canonical, no_defaults, sha
 
 S, I, N, B = {"type": "string"}, {"type": "integer"}, {"type": "number"}, {"type": "boolean"}
 NULL = {"type": "null"}
@@ -69,8 +69,36 @@ OUTPUT_KEYS = {"name", "shape", "desc", "type", "opaque"}
 
 
 def data_shape(shape: dict) -> dict:
-    """A field's shape without its own ``default``: what its data looks like."""
+    """A field's shape without any ``default``, its own or one inside it: what its data looks like. Only the
+    keyword goes: a member named ``default`` (a key of ``properties``) stays, and so do values inside
+    ``enum``, ``const`` and ``examples``."""
+    return no_defaults(shape)
+
+
+def own_default_out(shape: dict) -> dict:
+    """A field's shape without its own ``default`` (what binding and checking read: a default inside a shape
+    is a word, never checked, and never filled in)."""
     return {k: v for k, v in shape.items() if k != "default"}
+
+
+def closed(shape):
+    """The shape as a draft 2020-12 validator must read it for it to mean what programs.md says: every record
+    (``properties`` and no ``additionalProperties``) given ``additionalProperties: false``."""
+    if not isinstance(shape, dict):
+        return shape
+    out = {}
+    for k, v in shape.items():
+        if k in SUBSHAPES and isinstance(v, dict):
+            out[k] = closed(v)
+        elif k in SHAPE_LISTS and isinstance(v, list):
+            out[k] = [closed(x) for x in v]
+        elif k in SHAPE_MAPS and isinstance(v, dict):
+            out[k] = {n: closed(x) for n, x in v.items()}
+        else:
+            out[k] = v
+    if "properties" in out and "additionalProperties" not in out:
+        out["additionalProperties"] = False
+    return out
 
 
 def signature(interface: dict) -> str:
@@ -93,8 +121,9 @@ def of_definition(d: dict) -> dict:
 
 
 def no_json(value) -> bool:
-    """A case's stand-in for a value with no JSON form."""
-    return isinstance(value, dict) and set(value) == {"$type", "$repr"}
+    """A case's stand-in for a value with no JSON form: {"$type", "$repr"}, and "$text" when its type defines
+    its own text (a data frame, a date), which binding gives a text input."""
+    return isinstance(value, dict) and set(value) in ({"$type", "$repr"}, {"$type", "$repr", "$text"})
 
 
 def is_number(v) -> bool:
@@ -233,6 +262,8 @@ def fits_shape(v, shape: dict, root: dict) -> bool:
                 extra = shape["additionalProperties"]
                 if extra is False or (isinstance(extra, dict) and not fits_shape(x, extra, root)):
                     return False
+            elif "properties" in shape:
+                return False                        # a record is closed: a member it does not name
     return True
 
 
@@ -247,11 +278,147 @@ def fits(value, field: dict) -> bool:
         return True
     if no_json(value):
         return False
-    shape = data_shape(field["shape"])
+    shape = own_default_out(field["shape"])
     got = fits_shape(value, shape, shape)
     if vocabulary_only(shape):
-        assert got == jsonschema.Draft202012Validator(shape).is_valid(value), (value, shape)
+        assert got == jsonschema.Draft202012Validator(closed(shape)).is_valid(value), (value, shape)
     return got
+
+
+# ------------------------------------------------------------------ binding (programs.md, "Binding a call's inputs")
+
+
+NUMBER_TEXT = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
+SPACE = " \t\n\r"                                 # JSON's white space, trimmed around a number's text
+
+
+def text_of(v) -> str:
+    """A JSON value as text: a number as canonical JSON writes it, a boolean ``true``/``false``, an array or
+    object as its JSON indented by two spaces (functions.md, "Worked examples")."""
+    if isinstance(v, bool):
+        return "true" if v else "false"
+    if is_number(v):
+        return canonical(v)
+    return indented(v)
+
+
+def indented(v, level: int = 0) -> str:
+    """JSON with each item and member on a line of its own, two spaces a level, ``": "`` after a key, strings
+    and numbers as canonical JSON writes them, members in the value's order; ``[]`` and ``{}`` when empty."""
+    pad, inner = "  " * level, "  " * (level + 1)
+    if isinstance(v, list):
+        return "[]" if not v else "[\n" + ",\n".join(inner + indented(x, level + 1) for x in v) + "\n" + pad + "]"
+    if isinstance(v, dict):
+        return "{}" if not v else "{\n" + ",\n".join(
+            inner + canonical(k) + ": " + indented(x, level + 1) for k, x in v.items()) + "\n" + pad + "}"
+    return canonical(v)
+
+
+def number_from_text(s: str):
+    """The number a text reads as (JSON's number grammar, white space around it trimmed), or None."""
+    s = s.strip(SPACE)
+    if not NUMBER_TEXT.fullmatch(s):
+        return None
+    if re.fullmatch(r"-?(?:0|[1-9][0-9]*)", s):
+        return int(s)
+    x = float(s)
+    if x != x or x in (float("inf"), float("-inf")):
+        return None
+    return int(x) if x.is_integer() and abs(x) < 2 ** 53 else x
+
+
+REFUSED = object()
+
+
+def convert(v, t: str):
+    """A JSON value (or a stand-in with no JSON form) converted to one JSON type, or REFUSED."""
+    if t == "null":
+        return None if v is None else REFUSED
+    if v is None:
+        return REFUSED
+    if no_json(v):
+        return v["$text"] if t == "string" and "$text" in v else REFUSED
+    if t == "string":
+        return v if isinstance(v, str) else text_of(v)
+    if t == "boolean":
+        return v if isinstance(v, bool) else REFUSED
+    if t in ("integer", "number"):
+        if isinstance(v, bool):
+            return REFUSED
+        x = v if is_number(v) else number_from_text(v) if isinstance(v, str) else None
+        if x is None:
+            return REFUSED
+        if t == "integer":
+            if not float(x).is_integer():
+                return REFUSED
+            return int(x) if isinstance(x, float) else x
+        return x
+    if t == "array":
+        return v if isinstance(v, list) else REFUSED
+    if t == "object":
+        return v if isinstance(v, dict) else REFUSED
+    return REFUSED
+
+
+def bind_shape(v, shape: dict, root: dict):
+    """programs.md, "Binding a call's inputs": the value converted toward the shape where its meaning is
+    clear, else as it is (checking then refuses it)."""
+    if "$ref" in shape:
+        v = bind_shape(v, root["$defs"][REF.fullmatch(shape["$ref"]).group(1)], root)
+    if "anyOf" in shape:
+        if v is None:
+            return None
+        for option in shape["anyOf"]:
+            b = bind_shape(v, option, root)
+            if fits_shape(b, option, root):
+                v = b
+                break
+        else:
+            return bind_shape(v, shape["anyOf"][0], root)
+    if "type" in shape:
+        names = shape["type"] if isinstance(shape["type"], list) else [shape["type"]]
+        if v is None:
+            return None
+        for name in names:
+            if name == "null":
+                continue
+            c = convert(v, name)
+            if c is REFUSED:
+                continue
+            c = descend(c, shape, root)
+            if fits_shape(c, {**shape, "type": name}, root):
+                return c
+        return v
+    return descend(v, shape, root)
+
+
+def descend(v, shape: dict, root: dict):
+    """Items and members bound by their own shapes; a record keeps only the members it names."""
+    if isinstance(v, list) and not no_json(v) and ("items" in shape or "prefixItems" in shape):
+        prefix = shape.get("prefixItems", [])
+        return [bind_shape(x, prefix[i], root) if i < len(prefix) else
+                bind_shape(x, shape["items"], root) if "items" in shape else x for i, x in enumerate(v)]
+    if isinstance(v, dict) and not no_json(v) and ("properties" in shape or "additionalProperties" in shape):
+        props, extra = shape.get("properties", {}), shape.get("additionalProperties")
+        out = {}
+        for k, x in v.items():
+            if k in props:
+                out[k] = bind_shape(x, props[k], root)
+            elif isinstance(extra, dict):
+                out[k] = bind_shape(x, extra, root)
+            elif extra is True or (extra is None and "properties" not in shape):
+                out[k] = x
+            # else: a record (closed) drops a member it does not name
+        return out
+    return v
+
+
+def bind(value, field: dict):
+    """A given input's bound value: an opaque field takes it as it is."""
+    if field.get("opaque"):
+        return value
+    shape = own_default_out(field["shape"])
+    return bind_shape(value, shape, shape)
 
 
 def malformed(interface, *, ai: bool = False):
@@ -291,9 +458,9 @@ def malformed(interface, *, ai: bool = False):
             if f.get("opaque") and shape != {}:
                 return at_fault
             if "default" in shape:
-                ds = data_shape(shape)
+                ds = own_default_out(shape)
                 if not fits_shape(shape["default"], ds, ds):
-                    return at_fault
+                    return at_fault             # data holds a bound default: it fits (programs.md, "Binding")
     return None
 
 
@@ -304,12 +471,15 @@ def check_inputs(interface: dict, given: dict) -> dict:
         return {"refuses": "interface-input", "field": unknown[0]}
     out = {}
     for f in interface["inputs"]:
-        if f["name"] in given:
-            value = given[f["name"]]
+        if f["name"] in given and given[f["name"]] is None and f.get("optional") and not fits(None, f):
+            pass                                    # null to an optional input that null does not fit: left out
+        elif f["name"] in given:
+            value = bind(given[f["name"]], f)
             if not fits(value, f):
                 return {"refuses": "interface-input", "field": f["name"]}
             out[f["name"]] = value
-        elif not f.get("optional"):
+            continue
+        if not f.get("optional"):
             return {"refuses": "interface-input", "field": f["name"]}
         elif "default" in f["shape"]:
             out[f["name"]] = copy.deepcopy(f["shape"]["default"])
@@ -355,6 +525,13 @@ def rerun(case: dict) -> None:
         for x in case["interfaces"]:
             refused = malformed(x["interface"], ai=x.get("ai", False))
             assert (refused or {"signature": signature(x["interface"])}) == x["expect"], x
+    elif kind == "message":
+        for c in case["checks"]:
+            got = check_inputs(case["interface"], c["inputs"])
+            content = c.get("log_content")
+            expect = got | {"quotes": None if dropped(content, got["field"]) else
+                            quoted(c["inputs"][got["field"]])}
+            assert expect == c["expect"], (case["description"], c)
     elif kind == "same-data":
         assert [signature(x) for x in case["interfaces"]] == case["expect"]["signatures"]
         for c in case["checks"]:
@@ -414,8 +591,27 @@ AI_PATTERN = interface("Tag a ticket.", [("code", {"type": "string", "pattern": 
                        [("result", {"oneOf": [S, NULL]}, {})])
 
 
+BINDING = interface("Bind every kind of value.",
+                    [("text", S, {}), ("count", I, {}), ("ratio", N, {}), ("flag", B, {}),
+                     ("ids", {"type": "array", "items": I, "default": []}, {"optional": True}),
+                     ("level", {"enum": [1, 2, 3], "type": "integer", "default": 1}, {"optional": True}),
+                     ("size", {"anyOf": [I, NULL], "default": None}, {"optional": True}),
+                     ("either", {"type": ["integer", "string"], "default": 0}, {"optional": True})],
+                    [("result", S, {})])
+RECORDS = interface("Greet a person.",
+                    [("row", {"type": "object", "properties": {"name": S, "age": I}, "required": ["name"]}, {}),
+                     ("scores", {"type": "object", "additionalProperties": I}, {})],
+                    [("result", {"type": "object", "properties": {"name": S, "age": I},
+                                 "required": ["name", "age"]}, {})])
+NO_JSON_BINDING = interface("Describe a table.",
+                            [("text", S, {}), ("frame", {}, {"opaque": True}),
+                             ("count", {"type": "integer", "default": 1}, {"optional": True})],
+                            [("result", S, {})])
+
+
 NESTED = interface("Count an order's parcels.",
-                   [("order", {"type": "object", "properties": {"id": I, "count": {"type": "integer", "default": "none"}},
+                   [("order", {"type": "object", "properties": {"id": I, "count": {"type": "integer", "default": "none"},
+                                                               "default": S},
                                "required": ["id"]}, {})],
                    [("result", I, {})])
 
@@ -464,6 +660,59 @@ def definitions_case(description, interfaces, ai=()):
     return {"description": description, "program": "definitions", "interfaces": out}
 
 
+QUOTE_LIMIT = 80
+
+
+def quoted(value) -> str:
+    """What an interface-input message quotes (programs.md, The message): the value's canonical JSON, or a
+    value with no JSON form's $repr, cut after 80 code points and ended with an ellipsis when longer."""
+    text = value["$repr"] if no_json(value) else canonical(value)
+    return text if len(text) <= QUOTE_LIMIT else text[:QUOTE_LIMIT] + "\u2026"
+
+
+def dropped(log_content, name: str) -> bool:
+    """Whether one layer's log_content (calls.md, Content) drops a field."""
+    if log_content is False:
+        return True
+    if isinstance(log_content, dict):
+        return log_content.get(name, log_content.get("*", True)) is False
+    return False
+
+
+MESSAGE = interface("Answer a customer's message.",
+                    [("message", S, {}), ("account", I, {})],
+                    [("result", S, {})])
+
+
+def message_case() -> dict:
+    """programs/26: the value at fault is quoted, cut short, unless a layer's log_content drops its field."""
+    secret = "the customer's card ends 4242"
+    long = "x" * 100
+    given = [({"message": "Hi", "account": secret}, None),
+             ({"message": "Hi", "account": long}, None),
+             ({"message": "Hi", "account": secret}, {"account": False}),
+             ({"message": "Hi", "account": secret}, {"*": False, "message": True}),
+             ({"message": "Hi", "account": secret}, False),
+             ({"message": "Hi", "account": secret}, {"message": False}),
+             ({"message": {"$type": "object", "$repr": "<object object at 0x7f>"}, "account": 1}, None)]
+    checks = []
+    for inputs, content in given:
+        got = check_inputs(MESSAGE, inputs)
+        assert "refuses" in got
+        field = got["field"]
+        check = {"inputs": inputs}
+        if content is not None:
+            check["log_content"] = content
+        check["expect"] = got | {"quotes": None if dropped(content, field) else quoted(inputs[field])}
+        checks.append(check)
+    return {"description": "An interface-input message quotes the value at fault: its canonical JSON (a value "
+                           "with no JSON form: its $repr), cut after 80 code points and ended with an ellipsis. "
+                           "When a log_content layer in effect for the call drops the field, it never does "
+                           "(quotes null: the message holds no part of the value). log_content here is the "
+                           "program's own setting; a host's layer drops as well.",
+            "program": "message", "interface": MESSAGE, "checks": checks}
+
+
 def field_with(iface, where, i, **change):
     iface = copy.deepcopy(iface)
     iface[where][i].update(change)
@@ -492,14 +741,16 @@ def cases() -> dict:
             "Tools add a tools input and a calls output to the lmcc signature, not to the interface.", "11-a-tool"),
         "05-a-module-checks-its-inputs": module_case(
             "A module's inputs are checked before its code runs: every one given, none it does not have, "
-            "each fitting its shape.", SUPPORT,
+            "each bound to its shape and then fitting it (3 for text is \"3\"; null for a required text is "
+            "refused).", SUPPORT,
             inputs=[{"message": "Where is my parcel?"}, {}, {"message": 3},
                     {"message": "Hi", "urgent": True}, {"message": None}],
             returned=["It left the depot today.", 42, None]),
         "06-optional-inputs": module_case(
-            "An optional input left out takes its shape's default; without one it stays left out (never null: "
-            "the program's own default applies, and the record has no value for it). A given value is checked, "
-            "null included.", TONE,
+            "An optional input left out takes its shape's default; without one it stays left out (the "
+            "program's own default applies, and the record has no value for it). A given value is bound and "
+            "checked, null included, except that null given to an optional input null does not fit is that "
+            "input left out (a table's gap takes the default).", TONE,
             inputs=[{"message": "Hi"}, {"message": "Hi", "tone": "brief"}, {"message": "Hi", "order": "B-2210"},
                     {"message": "Hi", "order": None}, {"message": "Hi", "tone": None}, {"tone": "brief"}]),
         "07-several-outputs": module_case(
@@ -584,7 +835,7 @@ def cases() -> dict:
                     {"code": "", "tags": ["a"], "order": {"id": 1}},
                     {"code": "é", "tags": [1, 1.0], "order": {"id": 1}},
                     {"code": "éé", "tags": [], "order": {"id": 1}},
-                    {"code": "é", "tags": [], "order": {"id": "1"}}]),
+                    {"code": "é", "tags": [], "order": {"id": "one"}}]),
         "15-which-name-is-named": module_case(
             "When several names are at fault, the first in code-point order is named (a map has no order every "
             "language keeps); unknown names before anything else, then each field in the interface's order.",
@@ -652,9 +903,65 @@ def cases() -> dict:
             "Only a field's own default is the value it takes, and must fit. A default inside its shape (a "
             "member's, as pydantic writes one for a model's defaulted field) is a word, like title: never "
             "checked, whatever it holds, and never filled in (the value is checked as given; the program's own "
-            "types may fill it). It stays in the signature: it is part of the shape, as it is of lmcc's signature.",
+            "types may fill it). It is left out of the signature, as the field's own is: a record type whose "
+            "field defaults to today's date must not split a program's records by day. Only the keyword goes: a "
+            "member named default stays in the signature.",
             NESTED, inputs=[{"order": {"id": 1}}, {"order": {"id": 1, "count": 2}}, {"order": {"id": 1, "count": "none"}}]),
+        "22-binding-converts-when-the-meaning-is-clear": module_case(
+            "Every input is bound before it is checked (programs.md, Binding a call's inputs): text takes a "
+            "number's canonical JSON, true or false, a list or record as JSON indented by two spaces; an "
+            "integer takes a number with no fraction or text that reads as one; a number takes text that reads "
+            "as one; a boolean takes only true and false; items and members are bound by their shapes; a "
+            "choice binds by its type, then matches exactly; anyOf takes the first option the value binds to "
+            "and fits.", BINDING,
+            inputs=[{"text": 42, "count": 5.0, "ratio": "2.5", "flag": True},
+                    {"text": 2.5, "count": " 7 ", "ratio": 3, "flag": False},
+                    {"text": True, "count": "5.0", "ratio": "1e3", "flag": True},
+                    {"text": [1, "a"], "count": 1, "ratio": 1, "flag": True},
+                    {"text": {"b": 1, "a": [True, None]}, "count": 1, "ratio": 1, "flag": True},
+                    {"text": [], "count": 1, "ratio": 1, "flag": True, "ids": ["1", 2.0, " 3"]},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "level": "2"},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "level": "4"},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "size": "12"},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "size": None},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "either": "12"},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "either": True},
+                    {"text": "x", "count": 2.5, "ratio": 1, "flag": True},
+                    {"text": "x", "count": "abc", "ratio": 1, "flag": True},
+                    {"text": "x", "count": True, "ratio": 1, "flag": True},
+                    {"text": "x", "count": 1, "ratio": "two", "flag": True},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": "yes"},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": 1},
+                    {"text": None, "count": 1, "ratio": 1, "flag": True},
+                    {"text": "x", "count": 1, "ratio": 1, "flag": True, "ids": ["1", "x"]}]),
+        "23-a-record-is-closed": module_case(
+            "A record (properties and no additionalProperties) holds only the members it names: an input given "
+            "more drops them, in the value's order, its members bound by their shapes; a returned record with a "
+            "member it does not name is refused; a map (additionalProperties) keeps every member, each bound.",
+            RECORDS,
+            inputs=[{"row": {"name": "Ada", "age": "36", "city": "London"}, "scores": {"a": "1", "b": 2}},
+                    {"row": {"city": "Leeds", "age": 7.0, "name": 5}, "scores": {}},
+                    {"row": {"name": "Ada"}, "scores": {}},
+                    {"row": {"name": "Ada", "age": "old"}, "scores": {}}],
+            returned=[{"name": "Ada", "age": 36}, {"name": "Ada", "age": 36, "city": "London"}]),
+        "24-values-with-no-json-form": module_case(
+            "A value with no JSON form binds to text when its type defines its own text (a data frame, a "
+            "date: $text), and to nothing else; an opaque field takes it as it is. A stand-in {$type, $repr, "
+            "$text?} is a native value the harness makes.", NO_JSON_BINDING,
+            inputs=[{"text": {"$type": "DataFrame", "$repr": "   a\n0  1", "$text": "   a\n0  1"}, "frame": DATAFRAME},
+                    {"text": {"$type": "object", "$repr": "<object object at 0x7f>"}, "frame": DATAFRAME},
+                    {"text": "x", "frame": {"$type": "object", "$repr": "<object object at 0x7f>"}},
+                    {"text": "x", "frame": DATAFRAME, "count": {"$type": "Decimal", "$repr": "Decimal('5')",
+                                                               "$text": "5"}}]),
+        "25-an-ai-function-binds-its-inputs": ai_case(
+            "An AI function's inputs are bound as a module's are, before the request: the record holds the "
+            "bound values, and a value that does not bind is refused (interface-input) and nothing is sent.",
+            "12-an-optional-input",
+            binds=[{"message": 3, "tone": "brief"}, {"message": {"order": "B-1", "items": [1, 2]}},
+                   {"message": "Hi", "tone": None}, {"message": None},
+                   {"message": {"$type": "object", "$repr": "<object object at 0x7f>"}}]),
     }
+    out["26-the-message-quotes-the-value"] = message_case()
     same = [out["01-an-ai-function-is-its-definition"], out["02-several-outputs-keep-their-words"],
             out["13-an-optional-input-of-an-ai-function"]]
     assert all(c["expect"]["signature"] == c["expect"]["signature_id"] for c in same)
@@ -668,7 +975,9 @@ def cases() -> dict:
     assert [c["expect"] for c in nested["checks"]][0] == {"inputs": {"order": {"id": 1}}}
     plain = copy.deepcopy(NESTED)
     del plain["inputs"][0]["shape"]["properties"]["count"]["default"]
-    assert signature(plain) != nested["expect"]["signature"]
+    assert signature(plain) == nested["expect"]["signature"]          # a default inside a shape is out of it
+    del plain["inputs"][0]["shape"]["properties"]["default"]
+    assert signature(plain) != nested["expect"]["signature"]          # a member named default is not a keyword
     refused = [x["expect"].get("refuses") for x in out["11-interfaces-that-are-refused"]["interfaces"]]
     assert refused[0] is None and refused[-1] is None and all(refused[1:-1]), refused
     return out

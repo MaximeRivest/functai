@@ -2,6 +2,41 @@
 
 ## 0.1.0 (unreleased)
 
+Stage 1.1 (design/09-stage1.1-decisions.md):
+
+- **Inputs are bound** (breaking): an AI function's and a module's inputs
+  are converted to their declared type when the meaning is clear (`42` to
+  text is `"42"`, `"5"` to an integer is `5`, a record keeps only its
+  fields), before any schema parses them; otherwise `InterfaceError`
+  (`interface-input`), recorded, and nothing is sent. `null`, `undefined`
+  or `NaN` for an optional input is that input left out. The record holds
+  the bound values (a text input given an array records the text sent).
+  Outputs are checked, never converted. Records are closed.
+- **Error messages quote the value** at fault (cut after 80 characters),
+  except a value a `logContent` setting drops.
+- **Defaults**: a default may be a function of no arguments
+  (`t.string({ default: () => today() })`), computed at each call that
+  leaves the input out; the version counts it by the expression it
+  returns (`today()`, as Python's), every other default by its value, and
+  a saved folder keeps it (a node's `defaults`). Signatures leave out
+  every default. Every function and module with a default gets a new
+  version once.
+- **The call log**: a re-ask's `request_hash` is the hash of what it sent;
+  `outputs.calls` holds every tool call of the call; `returned` is kept
+  only when nothing is dropped; dropping `calls` keeps `reasoning`;
+  `process.lmcc` and `process.lm15`.
+- **`programObservers: false`** (a host's block or `configure`): a
+  program's own observers get no event.
+- **Ratings**: with no person named (`by`, or the caller's `user`), a
+  rating is made under the computer's `account` and kept on its own, so
+  ratings on a shared account no longer replace each other. A program
+  whose module is its file's base name (no `definedIn`) is known by its
+  file too: `rated(fn)` takes only calls from `fn`'s file (two folders'
+  `summarize.ts` are two programs); `rated(fn, { anyFile: true })` pools
+  across files.
+- The sample value of a shape whose type is a list of types is the first
+  non-null one (it was `"example text"` for any list).
+
 Stage 1 of the contract (design/08-stage1-foundations.md):
 
 - **`module(name, { description, input, output | outputs, uses }, run)`**

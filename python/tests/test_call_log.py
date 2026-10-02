@@ -256,11 +256,11 @@ def test_values_without_a_json_form_are_described(fake, log, schemas):
         def __repr__(self):
             return "Opaque(" + "x" * 5000 + ")"
 
-    @ai
-    def echo(thing) -> str:
+    @functai.module(log_calls=log)
+    def echo(thing) -> str:                  # a module's unannotated input takes any value (opaque)
         """Repeat."""
+        return "ok"
 
-    fake("<result>\nok\n</result>")
     echo(Opaque())
     [rec] = valid(schemas, logged(log))
     described = rec["inputs"]["thing"]
@@ -504,7 +504,11 @@ def test_rate_writes_a_rating_next_to_the_call(fake, log, schemas):
     p = team.predict("My parcel never came, refund me.")
     r = functai.rate(p, "wrong", answer="shipping", note="A lost parcel is shipping.", reasons=["wrong team"])
     assert r["verdict"] == "wrong" and r["answer"] == "shipping" and r["call"] == p.call_id
-    assert r["by"] == calllog._process_info()["user"]
+    # no person named: made under this computer's account, which names no one (it may be shared)
+    assert "by" not in r and r["account"] == calllog._process_info()["user"]
+    assert functai.rate(p, "right", by="ana")["by"] == "ana" and "account" not in functai.rate(p, "right", by="ana")
+    with functai.configure(caller={"user": "ben"}):
+        assert functai.rate(p, "right")["by"] == "ben"
     assert functai.rate(p, answer="shipping")["verdict"] == "wrong"           # a correction says wrong
     assert functai.rate(p.call_id, True)["verdict"] == "right"
     assert functai.rate({"call": p.call_id}, None)["verdict"] is None         # withdrawn

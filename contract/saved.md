@@ -48,7 +48,13 @@ with the program's description and its fields' words. Absent in folders
 written before 2026-09-28: a module's interface is then not known, and a
 loader that needs it (to describe, serve or converse with the program)
 refuses `saved-no-interface`; an AI node's is read from its signature
-(*Describing without loading*). An `"ai"` node has `ai`:
+(*Describing without loading*). An `"ai"` or `"module"` node has
+`defaults` when an input's default counts by its code
+([calls.md](calls.md), *Versions*, *Defaults*): `{input: {"code":
+"<text>"}}`, the written expression, so a program loaded in any language
+has the version of the one saved (a default that counts by its value is
+the interface's). Absent when none does, and in folders written before
+2026-09-30. An `"ai"` node has `ai`:
 
 | key | what it is |
 |---|---|
@@ -85,7 +91,9 @@ A loader in a language other than the folder's `language`:
    `template` and `state`, with the node's `name`, and its `module` as
    the call log's `program.module`. Its optional inputs, and the default
    each is sent with when left out, come from the node's `interface`
-   (without one, every input is required).
+   (without one, every input is required); its version counts a default
+   by the node's `defaults` when it names the input, else by the
+   interface's value.
 6. **Checks it sends what was saved**: renders each probe under the probe
    facts and compares the hash with `fingerprints.requests` (the same
    `"refused:<code>"` counts as equal). Any difference refuses

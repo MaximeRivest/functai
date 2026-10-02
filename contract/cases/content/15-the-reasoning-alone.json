@@ -1,5 +1,5 @@
 {
- "description": "The function's own map drops the reasoning FunctAI added, by its name: every other value is written; the replies go (they hold the reasoning).",
+ "description": "The function's own map drops the reasoning FunctAI added, by its name: every other value is written but what the code returned (it could hold anything); the replies go (they hold the reasoning).",
  "fields": {
   "inputs": [
    "transcript",
@@ -206,7 +206,6 @@
     "summary": "A flaky upload test fails the build.",
     "result": "no"
    },
-   "returned": "No",
    "probabilities": {
     "summary": {
      "A flaky upload test fails the build.": 0.61

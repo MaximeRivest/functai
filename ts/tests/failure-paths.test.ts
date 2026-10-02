@@ -430,18 +430,21 @@ test("a refused module input under another name is kept by no record, event, obs
   assert.ok(passes("call", record));
 });
 
-test("a refused input's value is never quoted in the error: it names the field and the kind of value", async () => {
+test("a refused input's value is quoted in the error, unless the log drops its field: then never, nor in a parent's record", async () => {
   const where = folder();
-  const f = module("m", { input: { pin: t.integer() }, output: t.string(), logCalls: where }, () => "x");
+  const quoted = module("m", { input: { pin: t.integer() }, output: t.string(), logCalls: where }, () => "x");
+  const shown = await quoted({ pin: "not-a-number" } as never).then(() => null, (e: unknown) => e);
+  assert.ok(shown instanceof InterfaceError && shown.field === "pin");
+  assert.ok(shown.message.includes('"not-a-number"'), shown.message);       // programs.md, "The message"
+  const f = module("m", { input: { pin: t.integer() }, output: t.string(), logCalls: where, logContent: { pin: false } }, () => "x");
   const err = await f({ pin: "hunter2-not-a-number" } as never).then(() => null, (e: unknown) => e);
   assert.ok(err instanceof InterfaceError && err.field === "pin");
   assert.ok(!err.message.includes("hunter2"), err.message);
-  assert.ok(err.message.includes("a string"), err.message);
   const outer = module("outer", { input: { note: t.string() }, output: t.string(), logCalls: where }, async () => f({ pin: "hunter2" } as never));
   await assert.rejects(outer({ note: "n" }));
   const errors = logged(where).map((r) => r.error);
-  assert.equal(errors.length, 3);
-  assert.ok(!JSON.stringify(errors).includes("hunter2"), "a parent whose content is whole keeps the child's message");
+  assert.equal(errors.length, 4);
+  assert.ok(!JSON.stringify(errors).includes("hunter2"), "a parent whose content is whole keeps the child's message, which never held it");
 });
 
 test("a saved function's own logContent is checked when it is loaded: a misspelt field refuses log-content-field", () => {
@@ -474,12 +477,13 @@ test("a tool loop's record holds every output the model gave, calls included, wi
   await helper(toolReplies(), ran, { logCalls: where })("Where is B-2210?");
   await helper(toolReplies(), ran, { logCalls: where, logContent: { question: false } })("Where is B-2210?");
   const [whole, partial] = logged(where);
-  assert.deepEqual(whole!.outputs, { result: "It is in Leeds, a week late.", calls: [] });
-  assert.equal(whole!.sizes.outputs.calls, 2);
+  // outputs.calls: every tool call the model asked for in the call, across steps (contract/functions.md)
+  assert.deepEqual(whole!.outputs, { result: "It is in Leeds, a week late.", calls: [{ id: "call_1", input: { order: "B-2210" }, name: "lookup_order" }] });
+  assert.equal(whole!.sizes.outputs.calls, lmcc.canonicalJson(whole!.outputs.calls).length);
   assert.ok(passes("call", whole));
   assert.deepEqual(partial!.omitted, { inputs: ["question"], outputs: ["calls"] });
   assert.deepEqual(partial!.outputs, { result: "It is in Leeds, a week late." });
-  assert.equal(partial!.sizes.outputs.calls, 2);
+  assert.equal(partial!.sizes.outputs.calls, whole!.sizes.outputs.calls);
 });
 
 test("a module given inputs it cannot bind (a value alone, two inputs) records the refused call, as any refusal", async () => {
@@ -834,12 +838,15 @@ test("a member named __proto__ inside an input's value is sent as given: every a
   const where = folder();
   const answer: Record<string, string> = { xml: "<result>\nok\n</result>", chat: "[[ ## result ## ]]\nok\n\n[[ ## completed ## ]]", json: '{"result": "ok"}' };
   const values = [JSON.parse('{"__proto__":"v","a":"x"}'), JSON.parse('{"__proto__":{"admin":true},"a":"x"}'), [JSON.parse('{"a":"x","__proto__":"p"}')]];
-  for (const shape of [t.json(), { type: "object" }, t.list(t.object({ a: t.string() }))]) {
+  // each shape given the values that fit it (an AI function's inputs are bound: a list is not an object); a list of maps,
+  // not of records: a record is closed, and drops a member it does not name
+  const pairs: [unknown, unknown[]][] = [[t.json(), values], [{ type: "object" }, values.slice(0, 2)], [t.list({ type: "object" }), [values[2]]]];
+  for (const [shape, fitting] of pairs) {
     for (const adapter of ["xml", "chat", "json"]) {
       const router = new FakeRouter([], () => answer[adapter]!);
       const f = ai("nested", { input: { q: shape }, output: t.string(), adapter, router: router as never, logCalls: where } as never);
       const loaded = fromManifest(lmcc.parseJson(JSON.stringify(toManifest(f)))).using({ router: router as never });
-      for (const q of values) {
+      for (const q of fitting) {
         const before = router.requests.length;
         assert.equal(await f({ q } as never), "ok");
         const request = router.requests.at(-1)!;
@@ -849,8 +856,8 @@ test("a member named __proto__ inside an input's value is sent as given: every a
         assert.deepEqual(router.requests.at(-1), request);
         assert.equal(router.requests.length - before, 2);
       }
-      const d = ai("nested", { input: { q: shape }, output: t.string(), adapter, router: router as never, demos: [{ inputs: { q: values[0] }, outputs: { result: "E" } }] } as never);
-      await d({ q: { a: "y" } } as never);
+      const d = ai("nested", { input: { q: shape }, output: t.string(), adapter, router: router as never, demos: [{ inputs: { q: fitting[0] }, outputs: { result: "E" } }] } as never);
+      await d({ q: Array.isArray(fitting[0]) ? [{ a: "y" }] : { a: "y" } } as never);
       assert.equal(sent(router.requests.at(-1)).split("__proto__").length - 1, 1, "the demo's member is sent: " + sent(router.requests.at(-1)));
     }
   }
@@ -1269,11 +1276,11 @@ test("a journal-end error holds what that caller would have got: the answer for 
   });
 });
 
-test("a re-ask's exchange has the request hash of the rendered request it came from, as every exchange from it", async () => {
+test("a re-ask's exchange has the request hash of what it sent: the request it follows, the reply and the correction", async () => {
   const where = folder();
   await mood(new FakeRouter(["not tags", "<result>\nhappy\n</result>"]), { logCalls: where })("Lovely");
   const [record] = logged(where);
   assert.equal(record!.exchanges.length, 2);
-  assert.equal(record!.exchanges[0].request_hash, record!.exchanges[1].request_hash);
+  assert.notEqual(record!.exchanges[0].request_hash, record!.exchanges[1].request_hash);     // contract/calls.md, exchanges
   assert.notDeepEqual(record!.exchanges[0].request, record!.exchanges[1].request);
 });

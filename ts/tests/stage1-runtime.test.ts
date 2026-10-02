@@ -285,7 +285,7 @@ test("a module checks its inputs and outputs on every call, records a refused ca
   assert.deepEqual(await support("Where is it?"), { feeling: "happy", result: "kind: no order" });
   assert.deepEqual(support.interface.inputs.map((f) => [f.name, f.optional ?? false, f.shape["default"]]),
     [["message", false, undefined], ["tone", true, "kind"], ["order", true, undefined]]);
-  await assert.rejects(support({ message: 3 } as never), (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && e.field === "message");
+  await assert.rejects(support({ message: null } as never), (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && e.field === "message");
   const records = logged(folder);
   const mod = records.filter((r) => r.program.kind === "module");
   assert.deepEqual(mod[0]!.inputs, { message: "Where is it?", tone: "kind" });                   // left out with no default: absent

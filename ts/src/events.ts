@@ -629,6 +629,8 @@ export interface JournalChoice<S = unknown> {
 export interface ReceiverLayer<O = unknown, S = unknown> {
   readonly where: "own" | "block" | "configure";
   readonly observers?: readonly O[];
+  /** A host layer's `false`: the observers of the program's own settings are given nothing (it only removes). */
+  readonly programObservers?: boolean;
   /** Absent: the layer sets none; null: it sets "no journal". */
   readonly journal?: JournalChoice<S> | null;
 }
@@ -662,7 +664,8 @@ function refusedSettings(layers: readonly ReceiverLayer[]): number[] {
  * refused tree's own events go).
  */
 export function receivers<O, S>(layers: readonly ReceiverLayer<O, S>[]): { observers: O[]; journal: JournalChoice<S> | null; refused: boolean } {
-  const observers = [...layers].reverse().flatMap((l) => [...(l.observers ?? [])]);
+  const vetoed = layers.some((l) => l.where !== "own" && l.programObservers === false);
+  const observers = [...layers].reverse().filter((l) => !(vetoed && l.where === "own")).flatMap((l) => [...(l.observers ?? [])]);
   const refused = refusedSettings(layers);
   if (refused.length) {
     const rest = layers.slice(Math.max(...refused) + 1);

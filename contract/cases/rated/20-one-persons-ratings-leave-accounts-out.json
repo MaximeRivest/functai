@@ -1,0 +1,144 @@
+{
+ "description": "With by, only that person's ratings are read: ratings made under an account are no one's.",
+ "records": [
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "I was charged twice for one order."
+   },
+   "outputs": {
+    "result": "billing"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 36
+    },
+    "outputs": {
+     "result": 9
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_call": 1,
+   "id": "01926a8e-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0002-7000-8000-000000000000",
+   "program": {
+    "name": "team",
+    "kind": "ai",
+    "module": "support",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:02:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "message": "My parcel never came."
+   },
+   "outputs": {
+    "result": "shipping"
+   },
+   "sizes": {
+    "inputs": {
+     "message": 23
+    },
+    "outputs": {
+     "result": 10
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.1.0"
+   }
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "ana",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0002-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "account": "maxime",
+   "verdict": "right"
+  }
+ ],
+ "rated": {
+  "name": "team",
+  "module": "support",
+  "file": null,
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "by": "ana"
+ },
+ "expect": {
+  "rows": [
+   {
+    "message": "I was charged twice for one order.",
+    "result": "billing",
+    "call": "01926a8e-0001-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "ana",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}

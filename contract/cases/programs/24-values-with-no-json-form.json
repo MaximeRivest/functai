@@ -1,0 +1,117 @@
+{
+ "description": "A value with no JSON form binds to text when its type defines its own text (a data frame, a date: $text), and to nothing else; an opaque field takes it as it is. A stand-in {$type, $repr, $text?} is a native value the harness makes.",
+ "program": "module",
+ "interface": {
+  "description": "Describe a table.",
+  "inputs": [
+   {
+    "name": "text",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "frame",
+    "shape": {},
+    "opaque": true
+   },
+   {
+    "name": "count",
+    "shape": {
+     "type": "integer",
+     "default": 1
+    },
+    "optional": true
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "expect": {
+  "signature": "sha256:6d703ebc11c6c37d374b36831cf8b89bcf2edb1aa3a157ac738c0b71bb5c8165"
+ },
+ "checks": [
+  {
+   "inputs": {
+    "text": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1",
+     "$text": "   a\n0  1"
+    },
+    "frame": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    }
+   },
+   "expect": {
+    "inputs": {
+     "text": "   a\n0  1",
+     "frame": {
+      "$type": "DataFrame",
+      "$repr": "   a\n0  1"
+     },
+     "count": 1
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": {
+     "$type": "object",
+     "$repr": "<object object at 0x7f>"
+    },
+    "frame": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "text"
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "frame": {
+     "$type": "object",
+     "$repr": "<object object at 0x7f>"
+    }
+   },
+   "expect": {
+    "inputs": {
+     "text": "x",
+     "frame": {
+      "$type": "object",
+      "$repr": "<object object at 0x7f>"
+     },
+     "count": 1
+    }
+   }
+  },
+  {
+   "inputs": {
+    "text": "x",
+    "frame": {
+     "$type": "DataFrame",
+     "$repr": "   a\n0  1"
+    },
+    "count": {
+     "$type": "Decimal",
+     "$repr": "Decimal('5')",
+     "$text": "5"
+    }
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "count"
+   }
+  }
+ ]
+}

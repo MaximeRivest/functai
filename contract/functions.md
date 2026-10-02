@@ -27,7 +27,7 @@ its docstring; TypeScript: `ai({...})`), it comes down to this data:
 |---|---|
 | `name` | the function's name. |
 | `description` | what it does, in words (Python: the docstring). May be empty. |
-| `inputs` | in order, each `{name, shape, desc?, optional?}`: `shape` a JSON Schema (below), `desc` words about it, `optional` true when a caller may leave it out; an optional input's shape has a `default`, the value it is sent with then ([programs.md](programs.md)). |
+| `inputs` | in order, each `{name, shape, desc?, optional?, default_code?}`: `shape` a JSON Schema (below), `desc` words about it, `optional` true when a caller may leave it out; an optional input's shape has a `default`, the value it is sent with then ([programs.md](programs.md)); `default_code`, when that default is written as an expression, is its text as the language normalizes it (it counts in the version instead of the value: [calls.md](calls.md), *Versions*, *Defaults*). |
 | `outputs` | in order, each `{name, shape, desc?}`. The **last is the answer** (`program.answer` in the call log). One output is usually named `result`. |
 | `settings` | the ones that shape the request: `adapter`, `template`, `module`, `include_fn_name_in_instructions`, `capabilities`, `tools`. |
 | `state` | what improving changes: `instructions` (text that replaces the written instruction, or null) and `demos` (worked examples). |
@@ -47,7 +47,9 @@ field of a dataclass as required, in declaration order); optional
 `{"anyOf": [S, {"type": "null"}]}`. The same data type must have the same
 shape in every language: a TypeScript record of a name and an age is the
 shape a Python dataclass `Person(name: str, age: int)` has, with no
-`title`, `$schema` or `additionalProperties: false` added.
+`title`, `$schema` or `additionalProperties: false` added. A record is
+closed all the same ([programs.md](programs.md), *Checking values*): the
+shape says it by having `properties` and no `additionalProperties`.
 
 ## The signature
 
@@ -65,7 +67,9 @@ A definition becomes an lmcc signature (`instructions` and `fields`).
    purpose `reasoning`), unless an input or output is already
    named `reasoning`;
 4. with tools, the output `calls` (purpose `tools.calls`, type
-   `list[ToolCall]`);
+   `list[ToolCall]`); a call's value for it is every tool call the model
+   asked for during the call, in the order asked, across every step (not
+   the last step's list, which is empty when the model answered);
 5. the outputs, each `direction: "output"`, `purpose: "plain"`, **no
    `desc`** (lmcc would show a description instead of a value's format
    hint; output descriptions go into the instruction instead).
@@ -191,7 +195,9 @@ definition's inputs and outputs ([programs.md](programs.md)).
 
 ## The request
 
-For a call, the implementation binds the layout to the signature under
+For a call, the implementation first binds the call's inputs to their
+fields ([programs.md](programs.md), *Binding a call's inputs*: a refusal
+there sends nothing), then binds the layout to the signature under
 the model's capabilities (every refusal fires here, before anything is
 sent), makes the turn from the values (tools: the tool list under
 `tools`), renders it after the worked examples, and hands the result to
@@ -215,7 +221,11 @@ JSON.
   twice the token budget (`max_tokens`, 1024 when none was set), unless
   the provider takes no budget.
 - **A value that does not fit its type** (a choice outside its list, a
-  record missing a field) is an unreadable reply (`parse-value`).
+  record missing a field or holding one it does not name) is an
+  unreadable reply (`parse-value`).
+- **Each request is its own exchange**: a re-ask, a resend with a larger
+  budget and a tool step are each recorded as an exchange, with the
+  `request_hash` of the lmcc request it sent ([calls.md](calls.md)).
 - **A transient provider error** (rate limit, server error, time-out:
   lm15's retryable errors) is re-sent up to `api_retries` times (default
   3), after the provider's `retry_after`, else `min(30, 2^attempt)`

@@ -85,7 +85,8 @@ position: the event before it in the form being read.
   (another writer ended the log).
 
 - "receivers": {"scenarios": [{"layers": [{"where": "own" | "block" |
-  "configure", "observers"?: [names], "journal"?: {"name", "mode":
+  "configure", "observers"?: [names], "program_observers"?: bool,
+  "journal"?: {"name", "mode":
   "required" | "best-effort"} or null}, ...] (closest first), "expect":
   {"observers": [names], "journal": {...} or null} or {"refuses":
   "journal-policy", "observers", "journal"}}]}. Which observers and
@@ -97,7 +98,10 @@ position: the event before it in the form being read.
   required), and no closer layer may replace, weaken or remove a
   required journal. A refused tree's own events go to ``observers`` and
   ``journal``: every layer's observers, and the journal the layers
-  farther out than every refused setting give.
+  farther out than every refused setting give. A host layer's
+  ``program_observers`` false refuses the observers of the program's own
+  setting ("own"); it only removes: a program's true, or a closer host
+  layer's, does not undo it.
 
 Every event here passes schema/event.schema.json (make.py checks), except
 those of a format no reader knows and appends refused event-malformed.
@@ -511,7 +515,9 @@ def receivers(layers: list) -> dict:
     """The observers and the journal a tree gets from the layers around its outermost call, closest first. A
     refused tree's own events (its started, its failed) go to every layer's observers and to the journal the
     layers farther out than every refused setting give."""
-    observers = [o for layer in reversed(layers) for o in layer.get("observers", [])]
+    vetoed = any(layer.get("program_observers") is False for layer in layers if layer["where"] != "own")
+    observers = [o for layer in reversed(layers) if not (vetoed and layer["where"] == "own")
+                 for o in layer.get("observers", [])]
     refused = refused_settings(layers)
     if refused:
         rest = layers[max(refused) + 1:]
@@ -1452,6 +1458,27 @@ def cases() -> dict:
     assert [g["journal"] for g in got[8:13]] == [folder, folder, folder, folder, None]
     assert got[13] == {"refuses": "journal-policy", "observers": ["telemetry", "debug-print"], "journal": folder}
     assert got[14] == {"refuses": "journal-policy", "observers": [], "journal": host}
+    vetoes = [
+        [{"where": "own", "observers": ["debug-print"]}, {"where": "configure", "observers": ["telemetry"],
+                                                          "program_observers": False}],
+        [{"where": "own", "observers": ["debug-print"], "program_observers": True},
+         {"where": "block", "observers": ["page"], "program_observers": True},
+         {"where": "configure", "observers": ["telemetry"], "program_observers": False}],
+        [{"where": "own", "observers": ["debug-print"]}, {"where": "configure", "program_observers": True}],
+        [{"where": "own", "observers": ["debug-print"], "journal": folder},
+         {"where": "block", "program_observers": False}, {"where": "configure", "journal": host}],
+    ]
+    out["receivers-02-a-host-refuses-a-programs-observers"] = {
+        "description": "A host layer's program_observers false means the observers set in the program's own "
+                       "settings are given no event; the host's are. It only removes: the program's own true, or "
+                       "a closer host layer's true, does not undo it. It applies to a refused tree's own events "
+                       "too.",
+        "kind": "receivers",
+        "scenarios": [{"layers": x, "expect": receivers(x)} for x in vetoes]}
+    got = [x["expect"] for x in out["receivers-02-a-host-refuses-a-programs-observers"]["scenarios"]]
+    assert got[0]["observers"] == ["telemetry"] and got[1]["observers"] == ["telemetry", "page"]
+    assert got[2]["observers"] == ["debug-print"]
+    assert got[3] == {"refuses": "journal-policy", "observers": [], "journal": host}
     t = a_tool().events
     out["journal-01-every-event-kept"] = journal_case(
         "A required journal that keeps and acknowledges each event: the call waits at its start, before the "

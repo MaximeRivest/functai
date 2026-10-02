@@ -282,6 +282,8 @@ def _sample(shape: Dict[str, Any]) -> Any:
         options = [s for s in shape["anyOf"] if s.get("type") != "null"]
         return _sample(options[0]) if options else None
     t = shape.get("type")
+    if isinstance(t, list):                  # a list of types: the first non-null one (contract/calls.md)
+        t = next((x for x in t if x != "null"), "null")
     return {"string": "example text", "integer": 3, "number": 2.5, "boolean": True, "array": [],
             "object": {}, "null": None}.get(t, "example text")
 
@@ -385,6 +387,22 @@ def _baked_models(report) -> Dict[str, Any]:
     return out
 
 
+def _default_code_of(program: Any) -> Dict[str, str]:
+    """The inputs whose default counts by its code (contract/saved.md, a node's
+    ``defaults``), among its interface's inputs."""
+    from .interface import default_code
+    saved = getattr(program, "_saved_default_code", None)
+    if saved is not None:
+        code = dict(saved)
+    elif getattr(program, "_loaded", False) or getattr(program, "_declared", False):
+        code = {}
+    else:
+        fn = getattr(program, "__wrapped__", None) or getattr(program, "_fn", None)
+        code = default_code(fn) if fn is not None else {}
+    names = [f["name"] for f in program.interface["inputs"]]
+    return {n: code[n] for n in names if n in code}
+
+
 def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None) -> Dict[str, Any]:
     from .graph import state_to_json
     nodes: Dict[str, Any] = {}
@@ -392,6 +410,9 @@ def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None
         entry: Dict[str, Any] = {"kind": n.kind, "module": n.module, "name": n.name}
         if n.kind in ("ai", "module"):
             entry["interface"] = n.obj.interface
+            code = _default_code_of(n.obj)
+            if code:
+                entry["defaults"] = {name: {"code": text} for name, text in code.items()}
         if n.kind == "ai":
             fn = n.obj
             settings, config = _settings_json(fn, key, n, models)
@@ -1483,6 +1504,7 @@ def _loaded_class():
             self._saved_node = node
             self._saved_interface = copy.deepcopy(interface) if interface is not None else None
             self._saved_id = saved_id
+            self._saved_default_code = {k: v["code"] for k, v in (node.get("defaults") or {}).items()}
             self._data_inputs = _loaded_inputs(node, interface)
             shown = self._saved_interface or {
                 "description": self._saved_core.instructions, "inputs": self._data_inputs,
@@ -1548,7 +1570,7 @@ def _loaded_class():
                                 f"(module {saved_module!r}), and module={wanted!r} would change it")
             self._set("module", wanted)
 
-        def _bind_inputs(self, args, kwargs) -> Dict[str, Any]:
+        def _bind_args(self, args, kwargs) -> Dict[str, Any]:
             return _bind_from_data(self.__name__, self._data_inputs, tuple(args), dict(kwargs))
 
         def _named_inputs(self) -> List[Tuple[str, bool]]:

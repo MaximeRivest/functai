@@ -1,5 +1,5 @@
 {
- "description": "A function with tools and reasoning: FunctAI adds two fields, calls and reasoning. Dropping the calls drops the reasoning too (an added field is written only when no field of the call is dropped).",
+ "description": "A function with tools and reasoning: FunctAI adds two fields, calls and reasoning. Dropping the calls drops only them: the reasoning is written (an added field goes with an input or output of the program, not with another added field).",
  "fields": {
   "inputs": [
    "transcript",
@@ -207,7 +207,6 @@
    "omitted": {
     "inputs": [],
     "outputs": [
-     "reasoning",
      "calls"
     ]
    },
@@ -216,10 +215,10 @@
     "question": "Is the build broken for a real reason?"
    },
    "outputs": {
+    "reasoning": "Ben says the upload test is flaky, so the build is not broken.",
     "summary": "A flaky upload test fails the build.",
     "result": "no"
    },
-   "returned": "No",
    "probabilities": {
     "summary": {
      "A flaky upload test fails the build.": 0.61

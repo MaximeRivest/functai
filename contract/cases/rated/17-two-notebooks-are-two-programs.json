@@ -1,0 +1,208 @@
+{
+ "description": "Every notebook's code is in module __main__: a program defined there is known by its file too. The reader is given the file, and takes only calls with that program.file; a call with no program.file does not match.",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926a8e-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0001-7000-8000-000000000000",
+   "program": {
+    "name": "summarize",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "file": "/home/maxime/legal.md"
+   },
+   "started": "2026-09-26T10:01:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "text": "The lessee shall pay rent monthly."
+   },
+   "outputs": {
+    "result": "Rent is due monthly."
+   },
+   "sizes": {
+    "inputs": {
+     "text": 36
+    },
+    "outputs": {
+     "result": 22
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 2,
+   "id": "01926a8e-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0002-7000-8000-000000000000",
+   "program": {
+    "name": "summarize",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result",
+    "file": "/home/maxime/bedtime.md"
+   },
+   "started": "2026-09-26T10:02:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "text": "Once upon a time a fox found a key."
+   },
+   "outputs": {
+    "result": "A fox finds a key."
+   },
+   "sizes": {
+    "inputs": {
+     "text": 37
+    },
+    "outputs": {
+     "result": 20
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_call": 2,
+   "id": "01926a8e-0003-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926a8e-0003-7000-8000-000000000000",
+   "program": {
+    "name": "summarize",
+    "kind": "ai",
+    "module": "__main__",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "started": "2026-09-26T10:03:00.000000Z",
+   "seconds": 0.4,
+   "content": true,
+   "inputs": {
+    "text": "The parties agree to arbitration."
+   },
+   "outputs": {
+    "result": "Disputes go to arbitration."
+   },
+   "sizes": {
+    "inputs": {
+     "text": 35
+    },
+    "outputs": {
+     "result": 29
+    }
+   },
+   "error": null,
+   "model": "gpt-4.1-mini",
+   "usage": {
+    "input_tokens": 200,
+    "output_tokens": 3
+   },
+   "confidence": null,
+   "exchanges": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 1,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.2.0"
+   },
+   "saw": []
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0001-7000-8000-000000000000",
+   "call": "01926a8e-0001-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0002-7000-8000-000000000000",
+   "call": "01926a8e-0002-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926a90-0003-7000-8000-000000000000",
+   "call": "01926a8e-0003-7000-8000-000000000000",
+   "at": "2026-09-26T10:05:00.000000Z",
+   "by": "maxime",
+   "verdict": "right"
+  }
+ ],
+ "rated": {
+  "name": "summarize",
+  "module": "__main__",
+  "file": "/home/maxime/legal.md",
+  "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+  "by": null
+ },
+ "expect": {
+  "rows": [
+   {
+    "text": "The lessee shall pay rent monthly.",
+    "result": "Rent is due monthly.",
+    "call": "01926a8e-0001-7000-8000-000000000000",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "rating": "right",
+    "rated_by": "maxime",
+    "origin": "review",
+    "sample": null,
+    "disputed": false
+   }
+  ],
+  "left_out": {
+   "other_signature": 0,
+   "no_content": 0,
+   "no_answer": 0
+  }
+ }
+}

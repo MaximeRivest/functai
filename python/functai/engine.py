@@ -440,7 +440,8 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     that send the reader's hint back (a cut reply is re-sent with twice the
     token budget instead)."""
     request = lmcc_lm15.request(rendered, model=model, config=config_of(settings))
-    rendered_hash = lmcc.turn.sha256(rendered.request())
+    asked = rendered.request()
+    rendered_hash = lmcc.turn.sha256(asked)
     retries = max(0, int(settings.get("retries") or 0))
     overrides: Dict[str, Any] = {}
     for attempt in range(retries + 1):
@@ -469,10 +470,14 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 overrides["max_tokens"] = current * 2
                 request = lmcc_lm15.request(rendered, model=model, config=config_of(settings, overrides))
             else:
+                correction = (f"Your reply could not be read: {err.hint}. Reply again, in exactly "
+                              f"the form the instructions give.")
                 request = dataclasses.replace(request, messages=request.messages + (
-                    response.message,
-                    lm15.Message.user(f"Your reply could not be read: {err.hint}. Reply again, in exactly "
-                                      f"the form the instructions give."),))
+                    response.message, lm15.Message.user(correction),))
+                # the exchange's request_hash is the hash of what it sends (contract/calls.md, exchanges)
+                asked = {**asked, "messages": [*asked["messages"], message_to_dict(response.message),
+                                               {"role": "user", "parts": [{"type": "text", "text": correction}]}]}
+                rendered_hash = lmcc.turn.sha256(asked)
             call = calllog.current()
             if call is not None:
                 call.emit("retry", reason=_asked_again(err), wait=None)
@@ -514,6 +519,7 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
         values["tools"] = list(tool_specs)
     turn = plan.turn(values)
     responses: List[Any] = []
+    asked: List[Any] = []                   # every tool call the model asked for, across steps (outputs.calls)
     max_steps = max(1, int(settings.get("max_steps") or 1))
     for _ in range(max_steps):
         rendered = plan.render(turn, turns=list(past))
@@ -534,13 +540,17 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
             return pred
         turn = turn.with_step(_model_step(plan, rendered, response, reading.values))
         calls = reading.values.get("calls") or []
+        asked.extend(calls)
         if not calls:
             turn = turn.finish()
             outputs = {k: coerce(spec.annotations.get(k), v) for k, v in (turn.outputs or {}).items()
                        if k != "calls"}
-            return Prediction(outputs, turn=turn, response=response, responses=responses,
+            pred = Prediction(outputs, turn=turn, response=response, responses=responses,
                               repairs=reading.repairs, attempts=len(responses),
                               probabilities=reading.probabilities, measured_by=reading.measured_by)
+            if spec.tools:
+                object.__setattr__(pred, "tool_calls", list(asked))
+            return pred
         current = calllog.current()
         for call in calls:
             if current is not None:

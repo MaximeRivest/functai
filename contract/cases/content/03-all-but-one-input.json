@@ -207,7 +207,6 @@
     "summary": "A flaky upload test fails the build.",
     "result": "no"
    },
-   "returned": "No",
    "probabilities": {
     "summary": {
      "A flaky upload test fails the build.": 0.61

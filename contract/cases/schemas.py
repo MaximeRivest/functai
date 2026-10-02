@@ -151,13 +151,22 @@ def refusals() -> None:
     r["id"] += "\n"
     bad.append(("a call id with a newline after it", CALL, r))
 
+    base = {"functai_rating": 1, "id": "01926a90-0001-7000-8000-000000000000",
+            "call": "01926a8e-0001-7000-8000-000000000000", "at": "2026-09-26T10:05:00.000000Z", "verdict": "right"}
+    bad.append(("a rating that names a person and an account", RATING, {**base, "by": "ana", "account": "maxime"}))
+    bad.append(("a rating that names neither a person nor an account", RATING, base))
+
     for why, v, value in bad:
         assert not v.is_valid(value), f"the schema accepts {why}"
 
     later = copy.deepcopy(events.a_tool().events[1])
     later.update(kind="approval", asked="May I?")
     del later["request"], later["model"]
-    good = [("a saw entry of a kind a later writer added", SAW_ENTRY, {"summary": "Alex struggles."}),
+    good = [("a rating made under an account", RATING, {**base, "account": "maxime"}),
+            ("a rating by a person", RATING, {**base, "by": "ana"}),
+            ("a record naming the lmcc and lm15 that made it", CALL,
+             {**rec, "process": {**rec["process"], "lmcc": "0.8.5", "lm15": "1.0.1"}}),
+            ("a saw entry of a kind a later writer added", SAW_ENTRY, {"summary": "Alex struggles."}),
             ("an event of a kind a later stage adds", EVENT, later),
             ("a saw entry with a key a later writer added", SAW_ENTRY,
              {"call": rec["id"], "children": "first-layer"})]

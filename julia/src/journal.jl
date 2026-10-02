@@ -110,8 +110,10 @@ every refused setting give, where the refused tree's log goes.
 """
 function receivers(layers)
     busy = OBSERVING[]
+    # a host layer's program_observers = false: the program's own observers are given nothing (it only removes)
+    vetoed = any(l -> l.where !== :own && l.program_observers === false, layers)
     # an observer is not given the calls its own code makes (it would be given them, and make more, without end)
-    observers = Any[o for l in Iterators.reverse(layers) for o in l.observers if !any(x -> x === o, busy)]
+    observers = Any[o for l in Iterators.reverse(layers) if !(vetoed && l.where === :own) for o in l.observers if !any(x -> x === o, busy)]
     refused = refused_layers(layers)
     if !isempty(refused)
         rest = layers[maximum(refused)+1:end]
@@ -146,7 +148,8 @@ end
 "The receiver layers around a program's call, closest first: its own settings, each enclosing block, `configure!`'s."
 function receiver_layers(own::AbstractDict{Symbol})
     layer(where, s) = (where=where, observers=Any[something(get(s, :observers, nothing), Any[])...],
-                       journal=haskey(s, :journal) && s[:journal] !== nothing ? s[:journal] : UNSET)
+                       journal=haskey(s, :journal) && s[:journal] !== nothing ? s[:journal] : UNSET,
+                       program_observers=get(s, :program_observers, nothing))
     global_now = lock(() -> copy(GLOBAL_SETTINGS), SETTINGS_LOCK)
     [layer(:own, own); [layer(:block, b) for b in Iterators.reverse(SCOPED_LAYERS[])]; layer(:configure, global_now)]
 end

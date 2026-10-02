@@ -19,9 +19,17 @@ struct Stand
     desc::Dict{String,Any}
 end
 FunctAI.jsonvalue(::Stand) = throw(FunctAI.NoJSON("a stand-in has no JSON form"))
-is_stand(v) = v isa AbstractDict && Set(keys(v)) == Set(["\$type", "\$repr"])
-native(v) = is_stand(v) ? Stand(Dict{String,Any}(v)) : v
+"A stand-in whose type gives it a text of its own (a data frame, a date): the case's `\$text`."
+struct StandText
+    desc::Dict{String,Any}
+end
+FunctAI.jsonvalue(::StandText) = throw(FunctAI.NoJSON("a stand-in has no JSON form"))
+Base.print(io::IO, s::StandText) = print(io, s.desc["\$text"])
+Base.show(io::IO, s::StandText) = print(io, s.desc["\$repr"])
+is_stand(v) = v isa AbstractDict && (Set(keys(v)) == Set(["\$type", "\$repr"]) || Set(keys(v)) == Set(["\$type", "\$repr", "\$text"]))
+native(v) = is_stand(v) ? (haskey(v, "\$text") ? StandText(Dict{String,Any}(v)) : Stand(Dict{String,Any}(v))) : v
 back(v::Stand) = v.desc
+back(v::StandText) = v.desc
 back(v::AbstractDict) = Dict{String,Any}(String(k) => back(x) for (k, x) in v)
 back(v::NamedTuple) = Dict{String,Any}(String(k) => back(x) for (k, x) in pairs(v))
 back(v::AbstractVector) = Any[back(x) for x in v]
@@ -47,7 +55,10 @@ end
 
 "Valid inputs for a module, to call it for what it returns."
 valid_inputs(iface) = Dict{String,Any}(f["name"] => get(f, "opaque", false) === true ? Stand(Dict{String,Any}("\$type" => "X", "\$repr" => "x")) :
-                                       FunctAI.sample_value(f["shape"]) for f in iface["inputs"] if get(f, "optional", false) !== true)
+                                       sample_of(f["shape"]) for f in iface["inputs"] if get(f, "optional", false) !== true)
+"A value that fits a shape: a record holds its required members."
+sample_of(shape) = get(shape, "type", nothing) == "object" && haskey(shape, "properties") ?
+    Dict{String,Any}(k => sample_of(shape["properties"][k]) for k in get(shape, "required", Any[])) : FunctAI.sample_value(shape)
 
 "A function with the case's fields: its inputs, its outputs, reasoning and tools when FunctAI adds those fields."
 function content_function(fields; own...)
@@ -108,9 +119,10 @@ function call_under_probe(f, inputs)
             g(; (Symbol(k) => v for (k, v) in inputs)...)
         end
     catch err
-        err isa LMCC.Refusal || rethrow()
+        err isa Union{LMCC.Refusal,InterfaceError} || rethrow()        # a refused input: recorded, nothing sent
     end
-    (request=only(router.requests), record=only(first(FunctAI.read_log(dir))))
+    recs = first(FunctAI.read_log(dir))
+    (request=isempty(router.requests) ? nothing : only(router.requests), requests=length(router.requests), record=only(recs))
 end
 
 "A contract definition, written the way a Julia user writes it without the macro (an optional input: `defaults`)."
@@ -124,7 +136,9 @@ function julia_function(d)
     f = AIFunction(d["name"], d["description"];
                    inputs=[Symbol(x["name"]) => field(x) for x in d["inputs"]],
                    outputs=[Symbol(x["name"]) => field(x) for x in d["outputs"]],
-                   defaults=[Symbol(x["name"]) => x["shape"]["default"] for x in d["inputs"] if get(x, "optional", false) === true],
+                   # a default written as code (`today()`): computed, giving the shape's default today
+                   defaults=[Symbol(x["name"]) => (haskey(x, "default_code") ? FunctAI.ComputedDefault(x["default_code"], (v -> () -> v)(x["shape"]["default"])) :
+                                                   x["shape"]["default"]) for x in d["inputs"] if get(x, "optional", false) === true],
                    tools, instructions=d["state"]["instructions"], settings...)
     isempty(d["state"]["demos"]) ? f : with_demos(f, d["state"]["demos"])
 end
@@ -171,7 +185,7 @@ end
     q = c["rated"]
     rows, left = FunctAI.rated_rows(recs, ratings; name=q["name"], module_name=get(q, "module", nothing),
                                     signature=get(q, "signature", nothing), interface=get(q, "interface", nothing),
-                                    by=get(q, "by", nothing))
+                                    by=get(q, "by", nothing), file=get(q, "file", nothing))
     @test LMCC.json_text(rows) == LMCC.json_text(c["expect"]["rows"])
     @test LMCC.canonical_json(left) == LMCC.canonical_json(c["expect"]["left_out"])
 end
@@ -220,8 +234,15 @@ end
             @test FunctAI.interface_signature(f) == c["expect"]["signature"]
             @test signature_id(f) == c["expect"]["signature_id"]
             for b in c["binds"]
+                given = Dict{String,Any}(k => native(v) for (k, v) in b["inputs"])
+                got = call_under_probe(f, given)
+                if haskey(b["expect"], "refuses")
+                    # refused before any request, and recorded (programs.md, "Binding a call's inputs")
+                    @test got.requests == 0 && got.record["error"]["code"] == b["expect"]["refuses"]
+                    continue
+                end
                 # called with these inputs, the values it is called with: the ones its record holds
-                @test same(Dict("inputs" => call_under_probe(f, b["inputs"]).record["inputs"]), b["expect"])
+                @test same(Dict("inputs" => got.record["inputs"]), b["expect"])
             end
         end
     elseif kind == "module"
@@ -260,6 +281,23 @@ end
                 err = refusal_of(() -> AIProgram("m", (; kw...) -> nothing; interface=x["interface"]))
                 @test haskey(x["expect"], "refuses") ?
                       err isa InterfaceError && err.code == x["expect"]["refuses"] && err.field == x["expect"]["field"] : err === nothing
+            end
+        end
+    elseif kind == "message"
+        for check in c["checks"]
+            own = haskey(check, "log_content") ? (log_content=check["log_content"],) : (;)
+            p = AIProgram("m", (; kw...) -> "ok"; interface=c["interface"])
+            given = Dict{String,Any}(k => native(v) for (k, v) in check["inputs"])
+            err = refusal_of(() -> with_settings(() -> p(; (Symbol(k) => v for (k, v) in given)...); own...))
+            @test err isa InterfaceError && err.code == check["expect"]["refuses"] && err.field == check["expect"]["field"]
+            msg = sprint(showerror, err)
+            value = check["inputs"][check["expect"]["field"]]
+            if check["expect"]["quotes"] !== nothing
+                # a stand-in is quoted as this language shows the harness's native value
+                quote_ = is_stand(value) ? first(sprint(show, given[check["expect"]["field"]]), 80) : check["expect"]["quotes"]
+                @test occursin(quote_, msg)
+            else
+                @test !occursin(LMCC.canonical_json(value), msg) && !occursin(string(value), msg)
             end
         end
     elseif kind == "same-data"

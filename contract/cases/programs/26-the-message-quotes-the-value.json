@@ -1,0 +1,122 @@
+{
+ "description": "An interface-input message quotes the value at fault: its canonical JSON (a value with no JSON form: its $repr), cut after 80 code points and ended with an ellipsis. When a log_content layer in effect for the call drops the field, it never does (quotes null: the message holds no part of the value). log_content here is the program's own setting; a host's layer drops as well.",
+ "program": "message",
+ "interface": {
+  "description": "Answer a customer's message.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "account",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ]
+ },
+ "checks": [
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "the customer's card ends 4242"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": "\"the customer's card ends 4242\""
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": "\"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx…"
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "the customer's card ends 4242"
+   },
+   "log_content": {
+    "account": false
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": null
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "the customer's card ends 4242"
+   },
+   "log_content": {
+    "*": false,
+    "message": true
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": null
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "the customer's card ends 4242"
+   },
+   "log_content": false,
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": null
+   }
+  },
+  {
+   "inputs": {
+    "message": "Hi",
+    "account": "the customer's card ends 4242"
+   },
+   "log_content": {
+    "message": false
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "account",
+    "quotes": "\"the customer's card ends 4242\""
+   }
+  },
+  {
+   "inputs": {
+    "message": {
+     "$type": "object",
+     "$repr": "<object object at 0x7f>"
+    },
+    "account": 1
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "message",
+    "quotes": "<object object at 0x7f>"
+   }
+  }
+ ]
+}

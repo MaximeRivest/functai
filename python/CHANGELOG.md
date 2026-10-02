@@ -2,6 +2,51 @@
 
 ## Unreleased
 
+Stage 1.1 (`design/09-stage1.1-decisions.md`): decisions on stage 1's open
+questions, and three fixes to how ratings become data.
+
+- **Inputs are bound** (breaking): every call, of an AI function or a
+  module, converts each input to its declared type when the meaning is
+  clear, and refuses it otherwise (`InterfaceError`, `interface-input`,
+  before anything is sent; an AI function's refused call is logged as a
+  module's is). Text takes a number (`42` is `"42"`), `true`/`false`, a
+  list or record (JSON indented by two spaces), or a value whose type has
+  a text of its own (a data frame, a date); `<object at 0x…>` is refused.
+  An integer takes `5.0`, `"5"`; a number takes `"2.5"`; a boolean only
+  `True`/`False`. A record input keeps only the members it declares. A
+  missing value (`None`, `NaN`, pandas' `NA`) for an optional input is
+  that input left out: it takes its default. The call log holds the bound
+  values. A default is bound when the function is defined (`n: int = "5"`
+  is `5`). Outputs are checked as they are, never converted.
+- **Records are closed**: a record type holds only its fields; a model's
+  reply or a module's return with another member does not fit.
+- **Error messages quote the value** at fault (its JSON, cut after 80
+  characters), except a value a `log_content` setting drops.
+- **Defaults count in `fn.version` by what is written**: `day=today()` is
+  one version every day, `tone="kind"` to `"formal"` a new one (every
+  function with a default has a new version once). A saved folder keeps a
+  computed default's code (a node's `defaults`). `program.signature` and
+  `program.interface` leave out every default, one inside a record type
+  included, so a record whose field defaults to today no longer splits a
+  function's ratings.
+- **The call log**: each exchange's `request_hash` is the hash of what it
+  sent (a re-ask's included); with tools, `outputs.calls` holds every tool
+  call of the call, not the last step's (usually empty) list; `returned` is
+  kept only when nothing is dropped; dropping `calls` no longer drops
+  `reasoning` (nor the other way round); `process.lmcc` and `process.lm15`
+  name the libraries that made the record.
+- **`configure(program_observers=False)`**: the observers a program sets
+  for itself get no event; the host's still do.
+- **Ratings**: a rating with no person named (`by=`, or the caller's
+  `user`) is made under the computer's `account`, and is kept on its own:
+  on a shared account, one person's rating no longer replaces another's,
+  and a disagreement shows as `disputed`. A program defined in a notebook
+  or a script is known by its file too (`program.file`: the notebook, not
+  the kernel's cell file), so `rated` no longer pools two notebooks'
+  `summarize`; `rated(fn, any_file=True)` pools across files.
+- A loaded function whose input's shape is a list of types (`["string",
+  "null"]`) no longer crashes when its version is computed.
+
 Stage 1 of the contract (`design/08-stage1-foundations.md`): logs every
 language keeps and reads alike, and programs that say what they take.
 

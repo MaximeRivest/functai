@@ -251,7 +251,12 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
   else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
   else if (typeof raw === "object" && raw !== null && !Array.isArray(raw)) {
     try {
-      shape = copyData(raw) as JsonObject;
+      // a default given as a function (computed at each call: calls.md, "Versions", "Defaults") is kept as it is
+      const computed = typeof (raw as Record<string, unknown>)["default"] === "function" ? (raw as Record<string, unknown>)["default"] : undefined;
+      if (computed !== undefined) {
+        const { default: _d, ...data } = raw as Record<string, unknown>;
+        shape = { ...(copyData(data) as JsonObject), default: computed as never };
+      } else shape = copyData(raw) as JsonObject;
     } catch {
       return refuse("a shape is JSON Schema: plain data");
     }

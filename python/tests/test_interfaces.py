@@ -69,7 +69,7 @@ def test_a_module_checks_its_inputs_and_outputs_and_the_log_says_so(fake, tmp_pa
 
     assert triage("charged twice") == "billing"
     with pytest.raises(functai.InterfaceError) as err:
-        triage(ticket=3)
+        triage(ticket=None)                          # 3 would bind to "3"; a missing value does not
     assert (err.value.code, err.value.field) == ("interface-input", "ticket")
     with pytest.raises(functai.InterfaceError) as err:
         triage("where is it?")
