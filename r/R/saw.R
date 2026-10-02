@@ -102,3 +102,28 @@ read_saw <- function(records, call) {
   }
   list(saw = entries, keeps = list(ok = TRUE))
 }
+
+# The turn a saw entry stands for, shown again (calls.md, "The turn an entry
+# stands for"): every field in `without` taken out of its inputs, outputs and
+# each model step's outputs; a model step whose outputs held one loses its
+# recorded message (it would show the field); without `steps`, its inputs and
+# outputs only. With steps, leaving out the field that holds a step's tool
+# calls is refused (turn-invalid): tool steps would answer no call.
+shown_turn <- function(turn, entry) {
+  left <- unlist(entry$without)
+  drop <- function(x) { x <- x %||% list(); x <- x[!names(x) %in% left]; if (length(x)) x else lmcc::jobj() }
+  out <- list(signature = turn$signature, inputs = drop(turn$inputs))
+  if (isTRUE(entry$steps)) {
+    calls_fields <- unique(unlist(lapply(turn$steps, function(st) st$calls_field)))
+    if (any(calls_fields %in% left)) return(list(refuses = "turn-invalid"))
+    out$steps <- lapply(turn$steps, function(st) {
+      if (!identical(st$kind, "model")) return(st)
+      held <- any(names(st$outputs) %in% left)
+      st$outputs <- drop(st$outputs)
+      if (held) st$message <- NULL
+      st
+    })
+  } else out$steps <- list()
+  out["outputs"] <- list(if (is.null(turn$outputs)) NULL else drop(turn$outputs))
+  list(slot = entry$slot %||% "turns", turn = out)
+}

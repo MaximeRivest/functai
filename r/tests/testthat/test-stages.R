@@ -321,3 +321,10 @@ test_that("random_search, instruction_search and compare search and measure", {
   })
   expect_gte(length(inspect_history(3L)), 1L)
 })
+
+for (name in names(Filter(function(c) identical(c$kind, "shown"), stage_cases("saw")))) {
+  test_that(paste("saw case", name, "(shown)"), {
+    c <- stage_cases("saw")[[name]]
+    expect_identical(plain(shown_turn(c$turn, c$entry)), plain(c$expect))
+  })
+}
