@@ -145,6 +145,43 @@
             "then": {"properties": {"error": {"not": {"required": ["message"]}}}},
             "else": {}
           }
+        },
+        {
+          "description": "tools.md: a call made inside a tool (started), and a tool call and its result, carry the tool call's number in its call.",
+          "properties": {"invocation": {"type": "integer", "minimum": 1}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "approval"}}},
+          "then": {
+            "description": "tools.md: a tool call waits for a person's answer.",
+            "required": ["id", "invocation", "name", "effects", "path", "to"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "input": {},
+              "effects": {"enum": ["reads", "changes", null]},
+              "path": {"type": "string", "minLength": 1},
+              "to": {"enum": ["owner", "caller"]}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["input"]}},
+            "else": {"required": ["input"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "approved"}}},
+          "then": {
+            "description": "tools.md: the answer to an approval.",
+            "required": ["id", "invocation", "verdict", "by"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "verdict": {"enum": ["yes", "no"]},
+              "by": {"type": ["string", "null"]},
+              "reason": {"type": ["string", "null"]}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["reason"]}}
+          }
         }
       ]
     },
