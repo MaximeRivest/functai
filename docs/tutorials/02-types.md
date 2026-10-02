@@ -123,10 +123,10 @@ counted.filter(col.true_count.is_na()).select(col.note, col.true_count, col.coun
 │ str                                                                ┆ i64        ┆ i64   │
 ╞════════════════════════════════════════════════════════════════════╪════════════╪═══════╡
 │ Mallards, a few of them, dabbling near the reeds.                  ┆ null       ┆ 3     │
-│ Crows, a whole noisy flock, going to roost in the oaks.            ┆ null       ┆ -1    │
+│ Crows, a whole noisy flock, going to roost in the oaks.            ┆ null       ┆ 0     │
 │ Red-winged blackbirds everywhere on the cattails, singing.         ┆ null       ┆ 0     │
 │ Several song sparrows hopping in the brush pile, picking at seeds. ┆ null       ┆ 3     │
-│ Lots of crows mobbing a hawk and cawing like crazy.                ┆ null       ┆ -1    │
+│ Lots of crows mobbing a hawk and cawing like crazy.                ┆ null       ┆ 1     │
 │ Several Canada geese flying low over the field, honking.           ┆ null       ┆ 3     │
 │ Chickadees, a few, flying from the hedge into the woods.           ┆ null       ┆ 3     │
 └────────────────────────────────────────────────────────────────────┴────────────┴───────┘
@@ -346,13 +346,13 @@ checked.summarize(
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────┬───────┬───────────┐
-│ species ┆ count ┆ behaviour │
-│ ---     ┆ ---   ┆ ---       │
-│ f64     ┆ f64   ┆ f64       │
-╞═════════╪═══════╪═══════════╡
-│ 1.0     ┆ 1.0   ┆ 0.966667  │
-└─────────┴───────┴───────────┘
+┌──────────┬───────┬───────────┐
+│ species  ┆ count ┆ behaviour │
+│ ---      ┆ ---   ┆ ---       │
+│ f64      ┆ f64   ┆ f64       │
+╞══════════╪═══════╪═══════════╡
+│ 0.983333 ┆ 1.0   ┆ 0.966667  │
+└──────────┴───────┴───────────┘
 ```
 
 And look at what it got wrong, because that's where you learn whether to
@@ -366,13 +366,14 @@ print(checked.filter(~((col.count == col.count_key) | (col.count.is_na() & col.c
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 0 of 0 rows
-┌─────────────┬─────────┬──────┐
-│ species_key ┆ species ┆ note │
-│ ---         ┆ ---     ┆ ---  │
-│ str         ┆ str     ┆ str  │
-╞═════════════╪═════════╪══════╡
-└─────────────┴─────────┴──────┘
+# dpyr dataframe · source: polars · showing 1 of 1 rows
+┌──────────────┬─────────┬──────────────────────────────────────────────────────┐
+│ species_key  ┆ species ┆ note                                                 │
+│ ---          ┆ ---     ┆ ---                                                  │
+│ str          ┆ str     ┆ str                                                  │
+╞══════════════╪═════════╪══════════════════════════════════════════════════════╡
+│ barn swallow ┆ other   ┆ ~25 swallows perched on the wire over the boardwalk. │
+└──────────────┴─────────┴──────────────────────────────────────────────────────┘
 # dpyr dataframe · source: polars · showing 2 of 2 rows
 ┌───────────────┬───────────┬──────────────────────────────────────────────────────────────────────┐
 │ behaviour_key ┆ behaviour ┆ note                                                                 │
@@ -418,7 +419,7 @@ plt.ylabel("")
 plt.show()
 ```
 
-![plot](../_assets/generated/5f1dce6a4ece7f67.png)
+![plot](../_assets/generated/ae71eb3c1b4b166d.png)
 
 ## Records inside, lists
 
@@ -502,11 +503,11 @@ notes.slice_head(n=3).mutate(**starved.unpack(col.note, errors="null")).select(c
 ```
 
 ```output
-/home/maxime/Projects/.pi-worktrees/functai-docs/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.species() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
+/home/maxime/Projects/functai/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.species() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
   col = run(node, df)
-/home/maxime/Projects/.pi-worktrees/functai-docs/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.count() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
+/home/maxime/Projects/functai/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.count() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
   col = run(node, df)
-/home/maxime/Projects/.pi-worktrees/functai-docs/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.behaviour() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
+/home/maxime/Projects/functai/python/.venv/lib/python3.13/site-packages/dpyr/rows.py:435: UserWarning: survey.behaviour() failed on 3 of 3 rows (row 0: Refusal: [parse-truncated] the provider cut the reply at its length limit; reader 'json_object' cannot tell which outputs ended before it (json_object: reply contains no JSON object (not a JSON object)); the model spent 16 of its 16 output tokens thinking; raise max_tokens (it was 16) or ask for less); those rows are missing
   col = run(node, df)
 # dpyr dataframe · source: polars · showing 3 of 3 rows
 ┌────────────────────────────────────────────────────────────────────────────┬─────────┬───────┐
@@ -564,7 +565,7 @@ functai.calls(folder=log_folder).left_join(prices, on=col.model).summarize(
 │ ---   ┆ ---    ┆ ---       │
 │ i64   ┆ i64    ┆ f64       │
 ╞═══════╪════════╪═══════════╡
-│ 262   ┆ 13     ┆ 0.0107814 │
+│ 262   ┆ 13     ┆ 0.0107315 │
 └───────┴────────┴───────────┘
 ```
 
