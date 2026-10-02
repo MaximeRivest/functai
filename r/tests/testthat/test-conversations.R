@@ -119,3 +119,40 @@ test_that("a program's conversation gives its code the conversation so far", {
   expect_identical(seen[[2L]][[1L]]$result, "echo 1")
   expect_identical(msg_count(r$env$requests[[2L]]), 1L)        # the helper remembers nothing unless told
 })
+
+test_that("compaction folds older turns into a summary the next turns are shown", {
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("answer %d", i)))
+  summaries <- list()
+  summarize <- function(earlier, rows) { summaries[[length(summaries) + 1L]] <<- rows; sprintf("summary of %d turns", length(rows[[1L]])) }
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(tutor, "long", plugins = list(compaction(keep = 1L, every = 2L, summarize = summarize)))
+    for (i in 1:4) chat(sprintf("q%d", i))
+  })
+  expect_length(summaries, 1L)                                       # after the third turn: 3 open >= 1 + 2
+  last <- r$env$requests[[4L]]
+  d <- lmcc::lm15_plain(lm15::as_dict(last))
+  expect_match(paste(unlist(d$system), collapse = " "), "summary of 2 turns", fixed = TRUE)
+  expect_identical(length(d$messages), 3L)                          # only the turn after the summary, then the question
+})
+
+test_that("delegate() hands work to another program, which remembers on its branch", {
+  research <- ai(reply ~ question, "Look things up.", .name = "research")
+  asked <- 0L
+  r <- fake_router(responder = function(request, i) {
+    text <- paste(unlist(lmcc::lm15_plain(lm15::as_dict(request))$system), collapse = " ")
+    if (grepl("Look things up", text)) { asked <<- asked + 1L; return(reply_text(sprintf("found %d (%d messages)", asked, msg_count(request)))) }
+    msgs <- lmcc::lm15_plain(lm15::as_dict(request))$messages
+    last <- msgs[[length(msgs)]]
+    if (any(vapply(last$parts, function(p) identical(p$type, "tool_result"), NA))) reply_text("done")
+    else list(calls = list(list(id = paste0("c", i), name = "research", input = list(question = "where?"))))
+  })
+  assistant <- ai(reply ~ request, "Help.", .name = "assistant", .tools = list(delegate(research, "Research a question.")))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(assistant, "work")
+    chat("first"); chat("second")
+  })
+  expect_identical(asked, 2L)
+  helper_requests <- Filter(function(q) grepl("Look things up", paste(unlist(lmcc::lm15_plain(lm15::as_dict(q))$system), collapse = " ")), r$env$requests)
+  expect_identical(msg_count(helper_requests[[2L]]), 3L)            # it remembered its first question
+})

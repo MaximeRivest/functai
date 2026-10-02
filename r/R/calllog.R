@@ -95,9 +95,9 @@ start_call <- function(program, settings, inputs, fields, keep, own = list(), la
   call$core <- core
   # a conversation's turn takes the first call of its program: the turn's id, minted before the call
   starting <- the$turn_starting
-  own_turn <- is.null(parent) && !is.null(core) && !is.null(starting) && !starting$root_taken &&
+  own_turn <- !is.null(core) && !is.null(starting) && !starting$root_taken &&
     identical(program_core_of(starting$program)$definition$name, core$definition$name)
-  if (own_turn) { starting$root_taken <- TRUE; id <- starting$turn; later <- starting$later }
+  if (own_turn) { starting$root_taken <- TRUE; id <- starting$turn; if (is.null(parent)) later <- starting$later }
   call$id <- id %||% new_id()
   call$parent <- if (is.null(parent)) the$remote_parent else parent$id
   call$root <- if (is.null(parent)) call$id else parent$root

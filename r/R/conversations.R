@@ -774,7 +774,7 @@ attach_turn <- function(call, core) {
   call$changes <- c(call$changes, run$context$changes)
   if (identical(core$kind, "module")) call$saw <- run$context$module_saw %||% list()
   events <- run$store$events
-  if (!is.null(events)) {
+  if (!is.null(events) && is.null(call$up)) {
     t <- call$tree
     t$sinks[[length(t$sinks) + 1L]] <- function(e) tryCatch(events$append(e), error = function(err)
       warn_once(paste0("conversation-events:", conditionMessage(err)), sprintf("a turn's events could not be kept in its store (%s); the turn goes on, and its records are kept", conditionMessage(err))))
