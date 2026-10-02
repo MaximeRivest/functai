@@ -45,7 +45,7 @@ call's record, so a rated call is asked again as it was.
    \code{request} \tab a provider request is about to be sent \tab returns another lm15 request \cr
    \code{tool_call} \tab a tool is about to run \tab \code{inputs}, \code{block}; or \code{\link[=ai_ask]{ai_ask()}} a person \cr
    \code{tool_result} \tab a tool ran \tab \code{output} \cr
-   \code{turn_end} \tab a turn ended (hears only; may \code{\link[=remember]{remember()}} entries) \tab  \cr
+   \code{turn_end} \tab a turn ended (hears only; may \code{\link[=keep_entry]{keep_entry()}} entries) \tab  \cr
 }
 
 

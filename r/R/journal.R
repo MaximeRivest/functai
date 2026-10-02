@@ -153,8 +153,12 @@ unix_of <- function(text) {
 
 tree_required <- function(t) !is.null(t$journal) && isTRUE(t$journal$required)
 tree_watched <- function(t) length(t$streams) > 0L || !is.null(t$journal) || length(t$sinks) > 0L || length(unlist(t$observers, recursive = FALSE)) > 0L
-# whether a live reader wants the text piece by piece (a stream, an observer, a journal)
-wants_pieces <- function(call) !is.null(call$tree) && tree_watched(call$tree)
+# whether a live reader wants the text piece by piece (a stream, an observer, a journal); a conversation
+# store's own copy of the log does not ask for it (streaming.md, "Streaming is asked for by a live reader")
+wants_pieces <- function(call) {
+  t <- call$tree
+  !is.null(t) && (length(t$streams) > 0L || !is.null(t$journal) || length(unlist(t$observers, recursive = FALSE)) > 0L)
+}
 
 BARRIER_KINDS <- c("started", "tool_call", "done", "failed")
 

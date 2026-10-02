@@ -30,7 +30,7 @@ plugin_error <- function(code, message, plugin = NULL, hook = NULL) {
 #' | `request` | a provider request is about to be sent | returns another lm15 request |
 #' | `tool_call` | a tool is about to run | `inputs`, `block`; or [ai_ask()] a person |
 #' | `tool_result` | a tool ran | `output` |
-#' | `turn_end` | a turn ended (hears only; may [remember()] entries) | |
+#' | `turn_end` | a turn ended (hears only; may [keep_entry()] entries) | |
 #'
 #' Plugins are set as settings: an AI function's or a program's own
 #' (`.plugins`), a conversation's, a block's (`with_ai_config(plugins = )`),

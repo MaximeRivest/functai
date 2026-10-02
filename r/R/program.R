@@ -403,3 +403,10 @@ print.functai_program <- function(x, ...) {
 
 #' @export
 ai_interface.functai_program <- function(x, ...) structure(program_interface(program_core(x)), class = "functai_interface")
+
+#' @export
+update.functai_program <- function(object, ...) {
+  core <- program_core(object)
+  core$own <- set_all(core$own, check_settings(list(...)))
+  make_program(core)
+}

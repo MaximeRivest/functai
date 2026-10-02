@@ -137,7 +137,7 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
   exchange(call, job$model, job$sent %||% job$request, response, started, seconds, request_hash = job$sent_hash,
            cached = cached, streamed = streamed, first_delta = first_delta)
   if (!cached && !isTRUE(job$replayed)) reply_note(job, response)          # a stored turn keeps every reply
-  if (!streamed && wants_pieces(call)) show_whole(job, response)
+  if (!streamed && (wants_pieces(call) || length(call$tree$sinks))) show_whole(job, response)
   job$responses[[length(job$responses) + 1L]] <- response
   reading <- tryCatch({ r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r },
                       lmcc_refusal = function(e) e)
@@ -324,7 +324,10 @@ run_jobs <- function(jobs, router, concurrency) {
   # a live reader watching the only call in flight sees its text piece by piece; a column goes
   # through the pool, and each reply is shown whole (one piece per field)
   alone <- length(jobs) == 1L
-  if (!pooled || alone) {
+  # a live reader watching the only call in flight streams it from the provider; any other call goes
+  # through the pool, which lets a running conversation turn renew its lease and see a stop while it waits
+  stream_alone <- alone && streams_live(jobs[[1L]]$call) && can_stream(router)
+  if (!pooled || stream_alone) {
     repeat {                                   # one at a time: fakes, custom transports, a watched call
       ready <- Filter(function(j) j$not_before <= now(), pending())
       if (!length(ready)) {
@@ -350,10 +353,13 @@ run_jobs <- function(jobs, router, concurrency) {
     if (length(plan$wire$body)) curl::handle_setopt(h, postfields = plan$wire$body)
     curl::handle_setheaders(h, .list = plan$wire$headers)
     job$in_flight <- TRUE
+    job$handle <- h
     in_flight <<- in_flight + 1L
     finish <- function(response, err = NULL) {
+      if (!isTRUE(job$in_flight)) return(invisible())         # cancelled meanwhile
       in_flight <<- in_flight - 1L
       job$in_flight <- FALSE
+      job$handle <- NULL
       tryCatch(if (is.null(err)) on_response(job, response, started, now() - started) else on_error(job, err, started, now() - started),
                functai_turn_waiting = function(w) { job$state <- "waiting"; job$waiting <- w; finished(job) },
                error = function(e) fail(job, e))
@@ -380,9 +386,20 @@ run_jobs <- function(jobs, router, concurrency) {
       submit(ready[[1L]])
     }
   }
+  # every second while requests are in flight: a conversation turn's heartbeat (its lease renewed, a stop
+  # asked from another process), and a call cancelled meanwhile stopped where it is
+  tick <- function() for (job in queue$jobs) if (isTRUE(job$in_flight)) {
+    if (!is.null(job$call$turn_run)) turn_check_stop(job$call$turn_run)
+    if (call_cancelled(job$call)) {
+      curl::multi_cancel(job$handle)
+      in_flight <<- in_flight - 1L
+      job$in_flight <- FALSE; job$handle <- NULL
+      on_error(job, cancelled_error(), job$call$started %||% now(), 0)
+    }
+  }
   repeat {
     fill()
-    if (in_flight > 0L) { curl::multi_run(pool = pool); next }
+    if (in_flight > 0L) { curl::multi_run(timeout = 1, pool = pool); tick(); next }
     waiting <- pending()
     if (!length(waiting)) break
     Sys.sleep(max(0, min(vapply(waiting, function(j) j$not_before, 0)) - now()))
@@ -422,6 +439,7 @@ stream_job <- function(job, router, started) {
   reads_thinking <- any(vapply(lmcc::signature_to_list(job$plan$signature)$fields, function(f) identical(f$purpose, "reasoning"), NA))
   response <- tryCatch({
     stream_one(router, job$sent, function(e) {
+      if (!is.null(call$turn_run)) turn_check_stop(call$turn_run)
       if (call_cancelled(call)) stop(cancelled_error())
       events[[length(events) + 1L]] <<- e
       ev <- lmcc::lm15_plain(e)
