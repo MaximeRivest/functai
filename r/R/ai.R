@@ -407,7 +407,10 @@ run_rows <- function(core, rows, extra = list()) {
     err <- refused[[i]]
     if (is.null(err) && identical(job$state, "waiting")) { waiting <<- waiting %||% job$waiting; call$ended <- TRUE; return(list(waiting = TRUE, call = call$id)) }
     if (is.null(err) && identical(job$state, "done")) {
-      job <- escalate(core, job, s)
+      escalated <- tryCatch(escalate(core, job, s), error = identity)
+      if (inherits(escalated, "error")) err <- escalated else job <- escalated
+    }
+    if (is.null(err) && identical(job$state, "done")) {
       call$outputs <- job$outputs
       call$probabilities <- job$probabilities
       call$confidence <- confidence_of(job$outputs, job$probabilities)

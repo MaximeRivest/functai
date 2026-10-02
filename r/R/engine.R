@@ -15,6 +15,7 @@ new_job <- function(plan, past, inputs, settings, model, tools, call, core = NUL
   job <- new.env(parent = emptyenv())
   job$plan <- plan; job$past <- past; job$settings <- settings; job$model <- model; job$tools <- tools; job$call <- call
   job$core <- core
+  job$inputs <- inputs
   job$state <- "send"; job$not_before <- 0; job$retries <- 0L; job$api_retries <- 0L; job$steps <- 1L
   job$responses <- list(); job$overrides <- list(); job$tool_calls <- list()
   values <- prepare_inputs(plan$signature, inputs)

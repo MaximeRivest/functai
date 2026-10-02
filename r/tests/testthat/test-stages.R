@@ -276,3 +276,23 @@ test_that("a function runs on a baked student served elsewhere, as it was traine
   path <- export_examples(file.path(folder, "ex.jsonl"), f, rows, derived = list(guidance = "section"))
   expect_true(file.exists(paste0(path, ".meta.json")))
 })
+
+test_that("a first model less sure than escalate_below has another answer instead", {
+  team <- ai(team ~ message, "Which team?", team = choice("billing", "shipping"))
+  sure <- function(p) structure(list(), class = "unused")
+  first <- function(request, i) {
+    model <- lmcc::lm15_plain(lm15::as_dict(request))$model
+    if (identical(model, "gpt-4.1")) return("<result>\nshipping\n</result>")
+    "<result>\nbilling\n</result>"
+  }
+  r <- fake_router(responder = first)
+  logs <- withr::local_tempdir()
+  local_mocked_bindings(confidence_of = function(outputs, probabilities) 0.6)
+  got <- with_ai_config(team("Where is my parcel?"), lm = "gpt-4.1-mini", router = r, escalate_to = "gpt-4.1", log_calls = logs)
+  expect_identical(as.character(got), "shipping")
+  rec <- log_lines(logs)[[1L]]
+  expect_true(isTRUE(rec$escalated))
+  expect_length(rec$exchanges, 2L)
+  local_mocked_bindings(confidence_of = function(outputs, probabilities) NULL)
+  expect_error(with_ai_config(team("x"), lm = "gpt-4.1-mini", router = r, escalate_to = "gpt-4.1"), "measures its confidence")
+})
