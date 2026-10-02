@@ -72,6 +72,11 @@ def sentiment(text: str) -> str:
 sentiment("The update broke my favourite feature.")
 ```
 
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+'negative'
+```
+
 ``_ai`` in the body: ``reasoning: str = _ai`` is one more output, written
 before the answer (its comment describes it); a bare ``_ai`` is the
 answer, and plain Python runs on it.
@@ -87,6 +92,10 @@ p = solve.predict("3 pencils cost $1.20. How much do 10 cost?")
 p.result, p.reasoning
 ```
 
+```output
+(4.0, 'First, find the cost of one pencil by dividing the total cost by the number of pencils: $1.20 ÷ 3 = $0.40 per pencil.\n\nNext, find the cost of 10 pencils by multiplying the cost per pencil by 10: $0.40 × 10 = $4.00.')
+```
+
 Settings in the decorator:
 
 ```python
@@ -96,4 +105,8 @@ def headline(article: str) -> str:
     ...
 
 headline("The council voted to turn the old rail yard into a park with a pool.")
+```
+
+```output
+'Council Converts Rail Yard into Park with Pool'
 ```

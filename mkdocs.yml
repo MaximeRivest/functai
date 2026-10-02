@@ -74,6 +74,7 @@ nav:
               - articles/tables.md
           - Ship:
               - articles/saving.md
+              - articles/serving.md
               - articles/baking.md
               - articles/call-log.md
           - Toolbox:

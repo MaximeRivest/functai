@@ -19,10 +19,22 @@ inside it). Another output is an attribute: ``turn.reasoning``.
 
 | Name | Description |
 | --- | --- |
+| `conversation` | The id of the conversation it belongs to. |
+| `error` | How a failed turn failed (``{"type", "code", "message"}``); None otherwise. |
+| `id` | The turn's id, which is also the id of its call in the call log (``call``). |
+| `inputs` | The turn's inputs, by name, as they were recorded (a copy). |
 | `made_by` | A merge: the program that made it (its rating goes there). |
+| `model` | The model that answered (or, before the end, the one the turn was asked to use). |
+| `outputs` | Every output by name (``result``, ``reasoning``...), once the turn is done; ``{}`` before. |
+| `parent` | The id of the turn this one continues (None for a conversation's first turn). |
 | `reads` | A merge: the turns it was made from. |
+| `request_id` | The ``request_id`` the turn was sent with, if any: the same id sent again is this turn, not a new one. |
 | `result` | The answer (as the program's code returned it), typed; None until done. |
 | `saw` | The earlier turns this turn was shown, in order. |
+| `state` | Where the turn is: ``running``, ``waiting`` (for a person's answer), ``interrupted`` (its |
+| `unfinished` | Tools that started and have no result: the process stopped while they ran, so they |
+| `usage` | Tokens, summed over every model call inside the turn (a module's helpers and tool loops |
+| `waiting` | The tool calls the turn waits for a person to approve (``functai.Approval``); ``[]`` |
 
 ## Methods
 

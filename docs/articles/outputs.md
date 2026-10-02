@@ -108,8 +108,8 @@ print(improved)
 ```
 
 ```output
-The text is too informal and vague, lacking specific details and polite tone which can come across as rude.
-The text is too informal and vague, lacking specific details and polite tone which can come across as rude.
+The text is too informal and vague, lacking specific details and polite tone which can come across as rude or demanding.
+The text is too informal and vague, lacking specific details and polite tone which can come across as rude or demanding.
 ```
 
 Or return a record (a dataclass), which names each part; see

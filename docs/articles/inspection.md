@@ -31,7 +31,7 @@ summarize("FunctAI lets developers write typed functions whose body is a model c
 ```
 
 ```output
-'FunctAI benefits developers by allowing them to write typed functions with model calls, enabling them to focus on logic rather than crafting prompt strings.'
+'FunctAI benefits developers by allowing them to write typed functions with model calls as the body, enabling them to focus on logic rather than crafting prompt strings.'
 ```
 
 ## The last calls: `phistory`
@@ -41,7 +41,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:38:03] summarize → gpt-4.1-mini
+[2026-10-02T09:57:59] summarize → gpt-4.1-mini
 
 System message:
 
@@ -68,10 +68,10 @@ benefits
 Response:
 
 <result>
-FunctAI benefits developers by allowing them to write typed functions with model calls, enabling them to focus on logic rather than crafting prompt strings.
+FunctAI benefits developers by allowing them to write typed functions with model calls as the body, enabling them to focus on logic rather than crafting prompt strings.
 </result>
 
-(finish: stop; tokens in 83, out 35)
+(finish: stop; tokens in 83, out 38)
 ```
 
 `phistory(3)` shows the last three calls. `functai.inspect_history(3)`

@@ -33,6 +33,7 @@ import functai
 from functai import *
 ```
 
-```python
+```{.python .no-run}
+# not run: the teacher answers every row (Make it better runs one)
 taught = functai.bootstrap_few_shot(team, train, teacher="gpt-6-sol", expected="category")
 ```

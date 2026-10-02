@@ -31,9 +31,18 @@ the same in async code (an ``async def`` AI function is awaited directly).
 
 | Name | Description |
 | --- | --- |
+| `adapter` | How values are written into the prompt and read back: a name (``"xml"``, ``"chat"``, |
+| `debug` | Whether each call prints what it sends and what comes back. |
+| `demos` | The worked examples sent before every call (input and answer pairs), usually chosen by |
 | `instructions` | The instruction the model gets: an optimized one, or the one written from the code. |
 | `interface` | What a caller gives and gets, as data (contract/programs.md): the |
+| `lm` | The model this function's own settings name (``@ai(lm=...)``, ``fn.lm = ...``); None when it |
+| `module` | How the model answers: ``"predict"`` (the default) or ``"cot"`` (it writes its reasoning |
+| `optimizer` | The optimizer ``fn.opt(rows)`` uses when none is given (default: ``BootstrapFewShot``). |
 | `signature` | The lmcc signature: inputs, outputs, instruction. |
+| `temperature` | The sampling temperature this function's own settings name; None when it uses the one |
+| `template` | The chat template the function writes its conversation with |
+| `tools` | The tools the model may call (a copy of the list). Setting it replaces them. |
 | `trials` | What the search that made this copy tried (``GEPA``'s candidates, |
 | `version` | The function's version: a fingerprint of what it sends besides its inputs. |
 
@@ -42,11 +51,13 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | Name | Description |
 | --- | --- |
 | [acall](#functai.FunctAIFunc.acall) | ``await fn.acall(...)``: the answer, in async code. The call runs in a |
-| [apredict](#functai.FunctAIFunc.apredict) | ``await fn.apredict(...)``: ``predict`` in async code. |
+| [apredict](#functai.FunctAIFunc.apredict) | ``await fn.apredict(...)``: ``predict`` in async code (every output, the usage and the |
 | [bake](#functai.FunctAIFunc.bake) | Train weights that answer this function; returns the baked model. |
 | [conversation](#functai.FunctAIFunc.conversation) | A conversation with this function: each call a turn that sees the |
 | [explain](#functai.FunctAIFunc.explain) | How calls are laid out for the current model: adapter, reader, transports, formats. |
-| [freeze](#functai.FunctAIFunc.freeze) | Stop further automatic instruction refinement. |
+| [freeze](#functai.FunctAIFunc.freeze) | Stop automatic instruction refinement for this function, now. |
+| [load](#functai.FunctAIFunc.load) | Read an instruction and demos written by ``fn.save(path)`` and use them, in place. |
+| [load_state](#functai.FunctAIFunc.load_state) | Use this instruction and these demos (a ``ProgramState``, or its dict from |
 | [map](#functai.FunctAIFunc.map) | Run on every row of a table, and return the run table. |
 | [opt](#functai.FunctAIFunc.opt) | An improved copy: its instruction and worked examples chosen from rows |
 | [optimization_runs](#functai.FunctAIFunc.optimization_runs) | How this function was improved, oldest first: the optimizer, the |
@@ -56,6 +67,7 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | [save](#functai.FunctAIFunc.save) | Write the instruction and demos to a JSON file (``load`` reads it back). |
 | [state](#functai.FunctAIFunc.state) | The instruction and demos in use. |
 | [stream](#functai.FunctAIFunc.stream) | Call the function and watch the answer being written. |
+| [to_dspy](#functai.FunctAIFunc.to_dspy) | Removed: FunctAI no longer runs on DSPy, so there is no DSPy program to give. |
 | [unpack](#functai.FunctAIFunc.unpack) | One column per field of the answer, to spread into a table. |
 | [using](#functai.FunctAIFunc.using) | A copy of this function with other settings or another layout. |
 | [vectorize](#functai.FunctAIFunc.vectorize) | This function as a column expression, with options. |
@@ -75,7 +87,8 @@ worker thread, so the event loop is free while the model answers.
 FunctAIFunc.apredict(*args, **kwargs)
 ```
 
-``await fn.apredict(...)``: ``predict`` in async code.
+``await fn.apredict(...)``: ``predict`` in async code (every output, the usage and the
+call's id), run in a worker thread so the event loop is free while the model answers.
 
 ### bake { #functai.FunctAIFunc.bake }
 
@@ -140,6 +153,11 @@ chat("What is 1/2 + 1/3?")
 [t.inputs["message"] for t in chat.turns[-1].saw]
 ```
 
+```output
+functai: no model chosen, so using gpt-4.1-mini (environment ($OPENAI_API_KEY)). Choose one with functai.configure(lm=...).
+["Hi, I'm Alex."]
+```
+
 ### explain { #functai.FunctAIFunc.explain }
 
 ```{.python .no-run}
@@ -154,7 +172,33 @@ How calls are laid out for the current model: adapter, reader, transports, forma
 FunctAIFunc.freeze()
 ```
 
-Stop further automatic instruction refinement.
+Stop automatic instruction refinement for this function, now.
+
+Only matters when refinement was turned on
+(``@ai(instruction_autorefine_calls=n)``): the first ``n`` calls then
+ask a model to rewrite the instruction from what it saw. ``freeze()``
+keeps the instruction as it is from here on, which you want before
+evaluating, saving or comparing versions. It changes the function in
+place and returns it.
+
+### load { #functai.FunctAIFunc.load }
+
+```{.python .no-run}
+FunctAIFunc.load(path)
+```
+
+Read an instruction and demos written by ``fn.save(path)`` and use them, in place.
+Returns the function. (To save a whole program with everything it depends on:
+``functai.save``.)
+
+### load_state { #functai.FunctAIFunc.load_state }
+
+```{.python .no-run}
+FunctAIFunc.load_state(state)
+```
+
+Use this instruction and these demos (a ``ProgramState``, or its dict from
+``state().to_dict()``), in place. Returns the function.
 
 ### map { #functai.FunctAIFunc.map }
 
@@ -408,6 +452,19 @@ for event in s.events():
         print(event.text, end="", flush=True)
 s.result
 ```
+
+### to_dspy { #functai.FunctAIFunc.to_dspy }
+
+```{.python .no-run}
+FunctAIFunc.to_dspy(deepcopy=False)
+```
+
+Removed: FunctAI no longer runs on DSPy, so there is no DSPy program to give.
+
+Always raises ``NotImplementedError``. What an optimizer found is
+``fn.state()`` (the instruction and the worked examples), which
+``fn.save(path)`` writes as JSON; a whole program, with everything it
+depends on, is saved with ``functai.save``.
 
 ### unpack { #functai.FunctAIFunc.unpack }
 

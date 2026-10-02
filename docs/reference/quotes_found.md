@@ -42,3 +42,7 @@ from functai import *
 source = "The parcel left Leeds on Monday. It was delayed by snow."
 functai.quotes_found(source, ["“It was delayed by snow”", "It was lost"])
 ```
+
+```output
+[True, False]
+```

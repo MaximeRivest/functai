@@ -101,28 +101,28 @@ looked_up
 
 ```output
 Hi, my order A-1042 still hasn't arrived and it's been three weeks. 
-  -> Your order is in transit and has been held at the Montreal depot since September 8. I’m sorry it hasn’t arrived yet. 
+  -> Your order is in transit and has been held at the Montreal depot since September 8. I’m sorry it’s taking so long. 
 
 Tracking for C-3319 hasn't moved since Monday. 
-  -> Your order was delivered and left with a neighbour at 14 Elm Street on September 20. 
+  -> Your order C-3319 is marked as delivered and was left with a neighbour at 14 Elm Street on September 20. 
 
 Order c3319 was delivered to my neighbour's address instead of mine. 
   -> Could you please provide your order number in the format of a letter, a dash, and four digits (for example, A-1042)? 
 
 My parcel says delivered but it's not here. Order A-1299. 
-  -> The courier’s photo shows your parcel at the side door. The order system lists it as delivered on September 22. 
+  -> The courier’s photo shows your parcel at the side door. It was marked delivered on September 22. 
 
 When will order B-2417 ship? It says 'processing' for a week. 
-  -> Your order is processing and waiting for stock. The system says it ships October 2. 
+  -> Your order is processing while it waits for stock, and it’s scheduled to ship October 2. 
 
 Order #A-1350 is two weeks late. Any news? 
-  -> Your order is in transit and delayed by the carrier. The new estimated delivery date is September 30. 
+  -> Your order is in transit but delayed by the carrier. The new estimated delivery date is September 30. 
 
 Can I change the delivery address for order C-3480? It hasn't shipped yet. 
-  -> Yes, since order C-3480 hasn’t shipped yet, the delivery address can still be changed. 
+  -> Yes, the address can still be changed because order C-3480 hasn’t shipped yet. 
 
 Where is my order Z-9999? 
-  -> I couldn’t find an order with number Z-9999. Please check the number and send it again. 
+  -> I couldn’t find an order with number Z-9999. Please double-check the order number and send it to me again. 
 
 Hi, where's my parcel? It's been ages. 
   -> I’m sorry it’s taking so long. Could you share your order number so I can check where your parcel is? 
@@ -176,15 +176,15 @@ functai.calls(where_is, folder=log_folder).select(col.message, col.seconds, col.
 │ ---                                                                        ┆ ---      ┆ ---          ┆ ---          │
 │ str                                                                        ┆ f64      ┆ i64          ┆ i64          │
 ╞════════════════════════════════════════════════════════════════════════════╪══════════╪══════════════╪══════════════╡
-│ Hi, my order A-1042 still hasn't arrived and it's been three weeks.        ┆ 4.045424 ┆ 340          ┆ 398          │
-│ Tracking for C-3319 hasn't moved since Monday.                             ┆ 3.189276 ┆ 332          ┆ 409          │
-│ Order c3319 was delivered to my neighbour's address instead of mine.       ┆ 1.737133 ┆ 146          ┆ 227          │
-│ My parcel says delivered but it's not here. Order A-1299.                  ┆ 3.290793 ┆ 341          ┆ 396          │
-│ When will order B-2417 ship? It says 'processing' for a week.              ┆ 3.302832 ┆ 340          ┆ 389          │
-│ Order #A-1350 is two weeks late. Any news?                                 ┆ 2.893913 ┆ 335          ┆ 406          │
-│ Can I change the delivery address for order C-3480? It hasn't shipped yet. ┆ 3.081853 ┆ 343          ┆ 449          │
-│ Where is my order Z-9999?                                                  ┆ 2.892411 ┆ 319          ┆ 393          │
-│ Hi, where's my parcel? It's been ages.                                     ┆ 1.784169 ┆ 142          ┆ 190          │
+│ Hi, my order A-1042 still hasn't arrived and it's been three weeks.        ┆ 4.142781 ┆ 340          ┆ 398          │
+│ Tracking for C-3319 hasn't moved since Monday.                             ┆ 2.736256 ┆ 332          ┆ 421          │
+│ Order c3319 was delivered to my neighbour's address instead of mine.       ┆ 1.778535 ┆ 146          ┆ 215          │
+│ My parcel says delivered but it's not here. Order A-1299.                  ┆ 3.22679  ┆ 341          ┆ 393          │
+│ When will order B-2417 ship? It says 'processing' for a week.              ┆ 4.694891 ┆ 340          ┆ 424          │
+│ Order #A-1350 is two weeks late. Any news?                                 ┆ 5.558458 ┆ 335          ┆ 387          │
+│ Can I change the delivery address for order C-3480? It hasn't shipped yet. ┆ 2.85773  ┆ 343          ┆ 424          │
+│ Where is my order Z-9999?                                                  ┆ 2.500639 ┆ 319          ┆ 376          │
+│ Hi, where's my parcel? It's been ages.                                     ┆ 1.728046 ┆ 142          ┆ 191          │
 └────────────────────────────────────────────────────────────────────────────┴──────────┴──────────────┴──────────────┘
 ```
 
@@ -285,13 +285,13 @@ functai.compare(functai.evaluate(team, reviewed, num_threads=8),
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬──────────┬───────┬──────────┬───────────┬────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before   ┆ after ┆ diff     ┆ low       ┆ high   ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---      ┆ ---   ┆ ---      ┆ ---       ┆ ---    ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64      ┆ f64   ┆ f64      ┆ f64       ┆ f64    ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪══════════╪═══════╪══════════╪═══════════╪════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.966667 ┆ 1.0   ┆ 0.033333 ┆ -0.034833 ┆ 0.1015 ┆ 1      ┆ 0     ┆ 29   ┆ 30  │
-└─────────────┴──────────┴───────┴──────────┴───────────┴────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬──────┬─────┬──────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff ┆ low ┆ high ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ --- ┆ ---  ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64 ┆ f64  ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪══════╪═════╪══════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 1.0    ┆ 1.0   ┆ 0.0  ┆ 0.0 ┆ 0.0  ┆ 0      ┆ 0     ┆ 30   ┆ 30  │
+└─────────────┴────────┴───────┴──────┴─────┴──────┴────────┴───────┴──────┴─────┘
 ```
 
 They can also teach it: `team.opt(reviewed)` gives a copy whose worked
@@ -351,9 +351,9 @@ functai.check(team_rules)
 team_rules  AI function (message: str → Literal['shipping', 'billing', 'product', 'account'])  [__main__]
 └── Literal  (stdlib)
 
-requirements: functai @ file:///home/maxime/Projects/functai/python
+requirements: functai @ file:///home/maxime/Projects/.pi-worktrees/functai-docs/python
 
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python), lmcc (/home/maxime/Projects/lmcc/python)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/.pi-worktrees/functai-docs/python), lmcc (/home/maxime/Projects/.pi-worktrees/lmcc/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
 
@@ -414,7 +414,7 @@ functai.calls(folder=log_folder).summarize(
 │ ---   ┆ ---      │
 │ i64   ┆ f64      │
 ╞═══════╪══════════╡
-│ 100   ┆ 0.002883 │
+│ 100   ┆ 0.002826 │
 └───────┴──────────┘
 ```
 

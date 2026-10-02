@@ -39,6 +39,9 @@ rat:
 [Ship it: save, verify, load](saving.md)
 : A program and everything it depends on, in a folder, proven to run elsewhere.
 
+[Serve it over HTTP](serving.md)
+: A program as a web service; a served program used from Python like a local one.
+
 [Bake it into a small model](baking.md)
 : Train a small model to answer a function; send the unsure cases to a big one.
 
@@ -57,13 +60,16 @@ rat:
 : Think first, return several values, get everything with `predict`.
 
 [Watch it being written](streaming.md)
-: The answer as the model writes it, in a notebook, a script or a web app.
+: The answer as the model writes it; what an outside caller may see; every event, kept as it happens.
 
 [Tools](tools.md)
-: Let the model call your Python functions.
+: Let the model call your Python functions; a person approves the ones that change things.
 
 [Memory](memory.md)
-: Functions that remember the conversation.
+: Conversations: turns that remember each other, branches, stopping, helpers that remember.
+
+[Plugins](plugins.md)
+: Change what programs do without changing them, every change on record.
 
 [Multi-step programs](modules.md)
 : Plain Python calling several AI functions, measured and saved as one.
@@ -85,5 +91,5 @@ rat:
 [When the model gets it wrong](reliability.md)
 : Repairs, retries, provider errors, the reply cache.
 
-[Upgrading from 0.x](upgrading.md)
-: What changed in 1.0.
+[Upgrading](upgrading.md)
+: From 1.1 to the next release, and from 0.x to 1.0.

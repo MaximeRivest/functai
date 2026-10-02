@@ -42,7 +42,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-27T20:12:28] team → gpt-4.1-mini
+[2026-10-02T10:03:03] team → gpt-4.1-mini
 
 System message:
 
@@ -120,7 +120,7 @@ routed.select(col.message, col.team)
 │ str                                                                 ┆ str      │
 ╞═════════════════════════════════════════════════════════════════════╪══════════╡
 │ Hi, my order A-1042 still hasn't arrived and it's been three weeks. ┆ shipping │
-│ The mug arrived in pieces.                                          ┆ product  │
+│ The mug arrived in pieces.                                          ┆ shipping │
 │ I was charged twice for order B-2210, please fix this.              ┆ billing  │
 │ How do I change the email on my account?                            ┆ account  │
 │ The kettle lid doesn't close properly anymore after a month of use. ┆ product  │
@@ -145,10 +145,10 @@ routed.count(col.team)
 │ ---      ┆ --- │
 │ str      ┆ i64 │
 ╞══════════╪═════╡
-│ account  ┆ 18  │
-│ billing  ┆ 17  │
-│ product  ┆ 25  │
-│ shipping ┆ 20  │
+│ account  ┆ 19  │
+│ billing  ┆ 15  │
+│ product  ┆ 24  │
+│ shipping ┆ 22  │
 └──────────┴─────┘
 ```
 
@@ -166,7 +166,7 @@ before
 ```
 
 ```output
-Evaluation(team, 80 examples: exact_match 0.91 [0.83, 0.96])
+Evaluation(team, 80 examples: exact_match 0.90 [0.81, 0.95])
 ```
 
 The score is the share of messages it got right. The two numbers in brackets are the range the true score is probably in: with 80 messages, it can't be pinned down more tightly than that.
@@ -179,20 +179,21 @@ misses.select(col.message, col.category, col.pred_result)
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 7 of 7 rows
-┌────────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
-│ message                                                            ┆ category ┆ pred_result │
-│ ---                                                                ┆ ---      ┆ ---         │
-│ str                                                                ┆ str      ┆ str         │
-╞════════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
-│ You sent me a blue rug but I ordered the green one (order A-1187). ┆ shipping ┆ product     │
-│ Refund the blender please, it stopped working after two days.      ┆ billing  ┆ product     │
-│ I want a refund for the chair, it wobbles no matter what I do.     ┆ billing  ┆ product     │
-│ Money back please, the knife set is not as sharp as advertised.    ┆ billing  ┆ product     │
-│ The duvet shrank in the wash, I'd like my money back.              ┆ billing  ┆ product     │
-│ Refund please: the towels are much thinner than in the photos.     ┆ billing  ┆ product     │
-│ Return the headphones and give me a refund please.                 ┆ billing  ┆ shipping    │
-└────────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
+# dpyr dataframe · source: polars · showing 8 of 8 rows
+┌─────────────────────────────────────────────────────────────────┬──────────┬─────────────┐
+│ message                                                         ┆ category ┆ pred_result │
+│ ---                                                             ┆ ---      ┆ ---         │
+│ str                                                             ┆ str      ┆ str         │
+╞═════════════════════════════════════════════════════════════════╪══════════╪═════════════╡
+│ Refund the blender please, it stopped working after two days.   ┆ billing  ┆ product     │
+│ I want a refund for the chair, it wobbles no matter what I do.  ┆ billing  ┆ product     │
+│ Money back please, the knife set is not as sharp as advertised. ┆ billing  ┆ product     │
+│ The duvet shrank in the wash, I'd like my money back.           ┆ billing  ┆ product     │
+│ Refund please: the towels are much thinner than in the photos.  ┆ billing  ┆ product     │
+│ Package arrived but the bowl inside was in three pieces.        ┆ shipping ┆ product     │
+│ The teapot spout was chipped when it arrived. Order b2610.      ┆ shipping ┆ product     │
+│ Return the headphones and give me a refund please.              ┆ billing  ┆ shipping    │
+└─────────────────────────────────────────────────────────────────┴──────────┴─────────────┘
 ```
 
 Read them. They aren't random: **requests for money back** went to whatever they were about, when this shop sends them all to *billing*; and **the wrong item delivered** went to *product*, when this shop sends anything wrong with a delivery to *shipping* (the carrier pays). Those are house rules. No model can guess them.
@@ -219,13 +220,13 @@ functai.compare(before, after)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬────────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff   ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---    ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64    ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.9125 ┆ 0.975 ┆ 0.0625 ┆ -0.002248 ┆ 0.127248 ┆ 6      ┆ 1     ┆ 73   ┆ 80  │
-└─────────────┴────────┴───────┴────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬───────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff  ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---   ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64   ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪═══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.9    ┆ 0.975 ┆ 0.075 ┆ 0.006204 ┆ 0.143796 ┆ 7      ┆ 1     ┆ 72   ┆ 80  │
+└─────────────┴────────┴───────┴───────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 `compare` lines up the two runs message by message. `better` and `worse` count the messages that changed; `low` and `high` bound the improvement. When that range doesn't include 0, the change is real, not luck.
@@ -317,13 +318,13 @@ functai.compare(after, small)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬────────┬───────┬──────┬───────────┬───────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before ┆ after ┆ diff ┆ low       ┆ high      ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---    ┆ ---   ┆ ---  ┆ ---       ┆ ---       ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64    ┆ f64   ┆ f64  ┆ f64       ┆ f64       ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪════════╪═══════╪══════╪═══════════╪═══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.975  ┆ 0.875 ┆ -0.1 ┆ -0.175943 ┆ -0.024057 ┆ 1      ┆ 9     ┆ 70   ┆ 80  │
-└─────────────┴────────┴───────┴──────┴───────────┴───────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬────────┬───────┬────────┬───────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before ┆ after ┆ diff   ┆ low       ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---    ┆ ---   ┆ ---    ┆ ---       ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64    ┆ f64   ┆ f64    ┆ f64       ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪════════╪═══════╪════════╪═══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.975  ┆ 0.9   ┆ -0.075 ┆ -0.152374 ┆ 0.002374 ┆ 2      ┆ 8     ┆ 70   ┆ 80  │
+└─────────────┴────────┴───────┴────────┴───────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 The small model got 9 messages wrong that the bigger one got right, and 1 the other way round: 10 points worse, between −18 and −2. That range doesn't include 0, so it really is worse; for routing, where a wrong team costs someone's time, the bigger model is worth it. [Make it cheaper](articles/cheaper.md) compares four models side by side.
@@ -342,9 +343,9 @@ functai.save(team, "support_router/", overwrite=True)
 team  AI function (message: str → Literal['shipping', 'billing', 'product', 'account'])  [__main__]
 └── Literal  (stdlib)
 
-requirements: functai @ file:///home/maxime/Projects/functai/python
+requirements: functai @ file:///home/maxime/Projects/.pi-worktrees/functai-docs/python
 
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python), lmcc (/home/maxime/Projects/lmcc/python)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/.pi-worktrees/functai-docs/python), lmcc (/home/maxime/Projects/.pi-worktrees/lmcc/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
 

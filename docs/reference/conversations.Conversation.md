@@ -56,7 +56,7 @@ send that is repeated (a double click) one turn.
 | [predict](#functai.conversations.Conversation.predict) | One turn of an AI function: the whole call (``p.turn`` is the lmcc |
 | [remember](#functai.conversations.Conversation.remember) | Keep a plugin's entry in this conversation, at a turn (it then |
 | [render](#functai.conversations.Conversation.render) | The exact request the next turn would send (nothing is sent or |
-| [stop](#functai.conversations.Conversation.stop) | Stop a running turn, wherever it runs. |
+| [stop](#functai.conversations.Conversation.stop) | Stop a running turn, wherever it runs: in this process or another |
 | [stream](#functai.conversations.Conversation.stream) | One turn, watched while it is made (a ``Stream``, with ``.turn``, |
 | [turn](#functai.conversations.Conversation.turn) | One turn, by its id (or a Turn). |
 
@@ -135,7 +135,12 @@ the memory the conversation gives it (inputs: the helper's).
 conversations.Conversation.stop(turn)
 ```
 
-Stop a running turn, wherever it runs.
+Stop a running turn, wherever it runs: in this process or another
+one that opened the same store. The turn ends ``stopped`` within
+about a second (its stream raises ``functai.Cancelled``). A turn that
+waits for an approval, or was interrupted, has nothing running it:
+stopping it ends it ``abandoned``. A turn that already ended is left
+as it is.
 
 ### stream { #functai.conversations.Conversation.stream }
 

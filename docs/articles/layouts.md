@@ -39,7 +39,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:38:05] summarize → gpt-4.1-mini
+[2026-10-02T09:58:02] summarize → gpt-4.1-mini
 
 System message:
 
@@ -87,7 +87,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:38:06] summarize → gpt-4.1-mini
+[2026-10-02T09:58:05] summarize → gpt-4.1-mini
 
 System message:
 
@@ -169,7 +169,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:38:08] rate → gpt-4.1-mini
+[2026-10-02T09:58:07] rate → gpt-4.1-mini
 
 System message:
 

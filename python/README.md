@@ -156,6 +156,13 @@ can be kept on disk (`configure(cache_replies="disk")`), so a long
 rows that keep their earlier turns (`functai.rated`), for `evaluate` and
 the optimizers.
 
+Each has its page: [Memory](https://maximerivest.github.io/functai/articles/memory.html),
+[Tools](https://maximerivest.github.io/functai/articles/tools.html),
+[Plugins](https://maximerivest.github.io/functai/articles/plugins.html),
+[Serve it over HTTP](https://maximerivest.github.io/functai/articles/serving.html),
+[Big tables](https://maximerivest.github.io/functai/articles/tables.html#long-runs)
+and [Watch it being written](https://maximerivest.github.io/functai/articles/streaming.html).
+
 ## Documentation
 
 **[maximerivest.github.io/functai](https://maximerivest.github.io/functai/python.html)**, with three ways in:

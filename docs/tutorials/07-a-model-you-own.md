@@ -48,7 +48,7 @@ functai.configure(lm="gpt-6-luna", log_calls=log_folder)
 ```
 
 ```output
-configure(lm='gpt-6-luna', log_calls='/tmp/tmp0e_w_vy1')
+configure(lm='gpt-6-luna', log_calls='/tmp/tmpnlx1lqco')
 ```
 
 ## The questions
@@ -138,7 +138,7 @@ ev_luna.table.summarize(seconds_each=col.seconds.median(),
 │ ---          ┆ ---              │
 │ f64          ┆ f64              │
 ╞══════════════╪══════════════════╡
-│ 1.15583      ┆ 0.075929         │
+│ 1.628349     ┆ 0.075085         │
 └──────────────┴──────────────────┘
 ```
 
@@ -165,21 +165,21 @@ print(people.report)
 ```output
 Baked intent: jhu-clsp/ettin-encoder-17m (16.9M parameters)
   trained on 9,003 rows (the data's labels), validated on 1,000, tested on 1,000 labeled rows
-  training: 6 passes (best 6), 36 s on cuda:1 (bf16), inputs up to 56 tokens
+  training: 6 passes (best 6), 279 s on cpu (fp32), inputs up to 56 tokens
 
   on the test rows            student                 
   accuracy                    91.1% (89.2%–92.7%)     
-  top-3                       96.7%
-  calibration error (ECE)     0.025 (was 0.050; temperature 1.74)
+  top-3                       97.1%
+  calibration error (ECE)     0.020 (was 0.051; temperature 1.66)
 
   answering only when sure:  most confident share → accuracy (confidence at the cut)
-      50% → 99.8%  (≥ 0.98)
-      80% → 98.0%  (≥ 0.86)
-      90% → 95.3%  (≥ 0.65)
-     100% → 91.1%  (≥ 0.15)
-    for 95% accuracy: escalate_below=0.61 keeps 91% of rows
+      50% → 99.6%  (≥ 0.99)
+      80% → 98.1%  (≥ 0.89)
+      90% → 96.3%  (≥ 0.68)
+     100% → 91.1%  (≥ 0.12)
+    for 95% accuracy: escalate_below=0.59 keeps 93% of rows
 
-  speed on cuda:1: 16,122 rows/s batched (tokenizing included), 4.8 ms for one row
+  speed on cpu: 2,434 rows/s batched (tokenizing included), 3.6 ms for one row
 ```
 
 Read the report top to bottom: what it was trained on and how long it
@@ -199,7 +199,7 @@ p.result, round(p.confidence, 3)
 ```
 
 ```output
-('card_arrival', 0.99)
+('card_arrival', 0.989)
 ```
 
 On the same 300 questions:
@@ -219,13 +219,13 @@ functai.compare(ev_luna, ev_fast)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────────┬──────────┬──────────┬──────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
-│ metric      ┆ before   ┆ after    ┆ diff ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
-│ ---         ┆ ---      ┆ ---      ┆ ---  ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
-│ str         ┆ f64      ┆ f64      ┆ f64  ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
-╞═════════════╪══════════╪══════════╪══════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
-│ exact_match ┆ 0.813333 ┆ 0.893333 ┆ 0.08 ┆ 0.032581 ┆ 0.127419 ┆ 39     ┆ 15    ┆ 246  ┆ 300 │
-└─────────────┴──────────┴──────────┴──────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
+┌─────────────┬──────────┬──────────┬──────────┬──────────┬──────────┬────────┬───────┬──────┬─────┐
+│ metric      ┆ before   ┆ after    ┆ diff     ┆ low      ┆ high     ┆ better ┆ worse ┆ same ┆ n   │
+│ ---         ┆ ---      ┆ ---      ┆ ---      ┆ ---      ┆ ---      ┆ ---    ┆ ---   ┆ ---  ┆ --- │
+│ str         ┆ f64      ┆ f64      ┆ f64      ┆ f64      ┆ f64      ┆ i64    ┆ i64   ┆ i64  ┆ i64 │
+╞═════════════╪══════════╪══════════╪══════════╪══════════╪══════════╪════════╪═══════╪══════╪═════╡
+│ exact_match ┆ 0.813333 ┆ 0.886667 ┆ 0.073333 ┆ 0.026692 ┆ 0.119975 ┆ 37     ┆ 15    ┆ 248  ┆ 300 │
+└─────────────┴──────────┴──────────┴──────────┴──────────┴──────────┴────────┴───────┴──────┴─────┘
 ```
 
 The paired comparison says whether your own model is clearly worse,
@@ -254,26 +254,26 @@ print(taught.report)
 ```output
 Baked intent: jhu-clsp/ettin-encoder-17m (16.9M parameters)
   trained on 1,800 rows (teacher (hard)), validated on 200, tested on 500 labeled rows
-  training: 30 passes (best 28), 37 s on cuda:1 (bf16), inputs up to 56 tokens
+  training: 6 passes (best 4), 58 s on cpu (fp32), inputs up to 56 tokens
 
   on the test rows            student                 teacher (gpt-6-luna)
-  accuracy                    72.6% (68.5%–76.3%)     87.6%
-  top-3                       87.2%
-  calibration error (ECE)     0.078 (was 0.190; temperature 1.99)
-  agrees with the teacher     77.2%
+  accuracy                    71.0% (66.9%–74.8%)     86.2%
+  top-3                       85.6%
+  calibration error (ECE)     0.057 (was 0.130; temperature 1.48)
+  agrees with the teacher     74.0%
 
   answering only when sure:  most confident share → accuracy (confidence at the cut)
-      50% → 92.8%  (≥ 0.88)
-      80% → 84.2%  (≥ 0.56)
-      90% → 78.4%  (≥ 0.39)
-     100% → 72.6%  (≥ 0.16)
-    for 95% accuracy: escalate_below=0.94 keeps 38% of rows
+      50% → 86.8%  (≥ 0.79)
+      80% → 79.0%  (≥ 0.46)
+      90% → 76.0%  (≥ 0.33)
+     100% → 71.0%  (≥ 0.11)
+    for 95% accuracy: escalate_below=0.98 keeps 9% of rows
 
-  speed on cuda:1: 11,977 rows/s batched (tokenizing included), 4.7 ms for one row
-  teacher labels: 2,000 rows from gpt-6-luna in 172 s (508 tokens a row, $0.15)
-  break-even in time against the teacher: after 2,430 rows
+  speed on cpu: 1,644 rows/s batched (tokenizing included), 3.7 ms for one row
+  teacher labels: 2,000 rows from gpt-6-luna in 234 s (507 tokens a row, $0.15)
+  break-even in time against the teacher: after 2,514 rows
 
-  note: result: the student (72.6%) is below its teacher (87.6%); trained on teacher labels, it can at best match it. Human labels lifted the same kind of student from 77% to 91.5% on banking77: label more rows by hand, or use a stronger teacher
+  note: result: the student (71.0%) is below its teacher (86.2%); trained on teacher labels, it can at best match it. Human labels lifted the same kind of student from 77% to 91.5% on banking77: label more rows by hand, or use a stronger teacher
 ```
 
 With `compare_teacher=True` (it costs a teacher pass over the test rows,
@@ -295,7 +295,7 @@ cut
 ```
 
 ```output
-{'threshold': 0.6097557957281937, 'share': 0.914, 'accuracy': 0.9507658643326039}
+{'threshold': 0.5874377718045757, 'share': 0.93, 'accuracy': 0.9505376344086022}
 ```
 
 ```python
@@ -307,7 +307,7 @@ ev_careful, f"{escalated} of {len(ev_careful)} asked gpt-6-luna"
 ```
 
 ```output
-(Evaluation(intent, 300 examples: exact_match 0.91 [0.87, 0.93]), '28 of 300 asked gpt-6-luna')
+(Evaluation(intent, 300 examples: exact_match 0.92 [0.88, 0.94]), '27 of 300 asked gpt-6-luna')
 ```
 
 ```python
@@ -326,8 +326,8 @@ read([{"setup": name, **ev.summary.collect().to_dicts()[0]} for name, ev in [
 │ str                                ┆ f64      ┆ f64      ┆ f64      │
 ╞════════════════════════════════════╪══════════╪══════════╪══════════╡
 │ gpt-6-luna on everything           ┆ 0.813333 ┆ 0.765381 ┆ 0.853363 │
-│ your model alone                   ┆ 0.893333 ┆ 0.853297 ┆ 0.923424 │
-│ your model, gpt-6-luna when unsure ┆ 0.906667 ┆ 0.868415 ┆ 0.934636 │
+│ your model alone                   ┆ 0.886667 ┆ 0.845801 ┆ 0.917755 │
+│ your model, gpt-6-luna when unsure ┆ 0.916667 ┆ 0.879878 ┆ 0.942919 │
 └────────────────────────────────────┴──────────┴──────────┴──────────┘
 ```
 
@@ -369,13 +369,13 @@ functai.calls(folder=log_folder).summarize(
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌───────┬─────────┐
-│ calls ┆ dollars │
-│ ---   ┆ ---     │
-│ i64   ┆ f64     │
-╞═══════╪═════════╡
-│ 3402  ┆ 0.21506 │
-└───────┴─────────┘
+┌───────┬───────────┐
+│ calls ┆ dollars   │
+│ ---   ┆ ---       │
+│ i64   ┆ f64       │
+╞═══════╪═══════════╡
+│ 3402  ┆ 0.2148021 │
+└───────┴───────────┘
 ```
 
 The training itself cost only electricity: a minute of GPU.

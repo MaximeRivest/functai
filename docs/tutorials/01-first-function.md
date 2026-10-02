@@ -61,7 +61,7 @@ functai.configure(lm="gpt-6-luna", log_calls=log_folder)
 ```
 
 ```output
-configure(lm='gpt-6-luna', log_calls='/tmp/tmp76ikb1gg')
+configure(lm='gpt-6-luna', log_calls='/tmp/tmp_b6chi1w')
 ```
 
 `functai.configure()` sets choices for the whole session:
@@ -238,7 +238,7 @@ plt.ylabel("the team the model chose")
 plt.show()
 ```
 
-![plot](../_assets/generated/68a8420e6274c559.png)
+![plot](../_assets/generated/fe660e5b57b77bc3.png)
 
 ## Was it right?
 
@@ -257,7 +257,7 @@ answered.summarize(right=(col.guess == col.category).sum(), n=n(),
 │ ---   ┆ --- ┆ ---      │
 │ i64   ┆ i64 ┆ f64      │
 ╞═══════╪═════╪══════════╡
-│ 78    ┆ 80  ┆ 0.975    │
+│ 79    ┆ 80  ┆ 0.9875   │
 └───────┴─────┴──────────┘
 ```
 
@@ -269,15 +269,14 @@ answered.filter(col.guess != col.category).select(col.category, col.guess, col.m
 ```
 
 ```output
-# dpyr dataframe · source: polars · showing 2 of 2 rows
-┌──────────┬──────────┬────────────────────────────────────────────────────────────┐
-│ category ┆ guess    ┆ message                                                    │
-│ ---      ┆ ---      ┆ ---                                                        │
-│ str      ┆ str      ┆ str                                                        │
-╞══════════╪══════════╪════════════════════════════════════════════════════════════╡
-│ billing  ┆ shipping ┆ Why was I charged for shipping when my order was over $50? │
-│ billing  ┆ product  ┆ The duvet shrank in the wash, I'd like my money back.      │
-└──────────┴──────────┴────────────────────────────────────────────────────────────┘
+# dpyr dataframe · source: polars · showing 1 of 1 rows
+┌──────────┬─────────┬───────────────────────────────────────────────────────┐
+│ category ┆ guess   ┆ message                                               │
+│ ---      ┆ ---     ┆ ---                                                   │
+│ str      ┆ str     ┆ str                                                   │
+╞══════════╪═════════╪═══════════════════════════════════════════════════════╡
+│ billing  ┆ product ┆ The duvet shrank in the wash, I'd like my money back. │
+└──────────┴─────────┴───────────────────────────────────────────────────────┘
 ```
 
 Read them next to the shop's house rules (they're in the docstring of
@@ -325,7 +324,7 @@ answered.summarize(without_rules=(col.guess == col.category).mean(),
 │ ---           ┆ ---        │
 │ f64           ┆ f64        │
 ╞═══════════════╪════════════╡
-│ 0.975         ┆ 1.0        │
+│ 0.9875        ┆ 1.0        │
 └───────────────┴────────────┘
 ```
 
@@ -382,16 +381,16 @@ log.select(col.model, col.seconds, col.input_tokens, col.output_tokens, col.tota
 │ ---        ┆ ---      ┆ ---          ┆ ---           ┆ ---          │
 │ str        ┆ f64      ┆ i64          ┆ i64           ┆ i64          │
 ╞════════════╪══════════╪══════════════╪═══════════════╪══════════════╡
-│ gpt-6-luna ┆ 0.827873 ┆ 63           ┆ 25            ┆ 88           │
-│ gpt-6-luna ┆ 0.929804 ┆ 68           ┆ 26            ┆ 94           │
-│ gpt-6-luna ┆ 1.129156 ┆ 57           ┆ 31            ┆ 88           │
-│ gpt-6-luna ┆ 1.342417 ┆ 66           ┆ 26            ┆ 92           │
-│ gpt-6-luna ┆ 1.180546 ┆ 61           ┆ 26            ┆ 87           │
-│ gpt-6-luna ┆ 1.162027 ┆ 64           ┆ 42            ┆ 106          │
-│ gpt-6-luna ┆ 1.14584  ┆ 64           ┆ 51            ┆ 115          │
-│ gpt-6-luna ┆ 0.94984  ┆ 62           ┆ 26            ┆ 88           │
-│ gpt-6-luna ┆ 0.978058 ┆ 62           ┆ 26            ┆ 88           │
-│ gpt-6-luna ┆ 1.151087 ┆ 67           ┆ 38            ┆ 105          │
+│ gpt-6-luna ┆ 2.774708 ┆ 63           ┆ 25            ┆ 88           │
+│ gpt-6-luna ┆ 1.600112 ┆ 68           ┆ 26            ┆ 94           │
+│ gpt-6-luna ┆ 1.412417 ┆ 57           ┆ 37            ┆ 94           │
+│ gpt-6-luna ┆ 4.96695  ┆ 184          ┆ 57            ┆ 241          │
+│ gpt-6-luna ┆ 1.174667 ┆ 61           ┆ 26            ┆ 87           │
+│ gpt-6-luna ┆ 1.229735 ┆ 64           ┆ 31            ┆ 95           │
+│ gpt-6-luna ┆ 1.199035 ┆ 64           ┆ 46            ┆ 110          │
+│ gpt-6-luna ┆ 1.365693 ┆ 62           ┆ 26            ┆ 88           │
+│ gpt-6-luna ┆ 1.210217 ┆ 62           ┆ 26            ┆ 88           │
+│ gpt-6-luna ┆ 1.451203 ┆ 67           ┆ 47            ┆ 114          │
 └────────────┴──────────┴──────────────┴───────────────┴──────────────┘
 ```
 
@@ -422,7 +421,7 @@ log.left_join(prices, on=col.model).summarize(
 │ ---   ┆ ---      │
 │ i64   ┆ f64      │
 ╞═══════╪══════════╡
-│ 163   ┆ 0.004896 │
+│ 163   ┆ 0.004969 │
 └───────┴──────────┘
 ```
 

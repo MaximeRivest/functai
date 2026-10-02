@@ -31,7 +31,7 @@ story.stream("a lighthouse keeper's cat").show()
 ```
 
 ```output
-Every evening, the lighthouse keeper's cat would perch on the windowsill, watching the waves crash against the rocks below. One stormy night, the cat's sharp eyes noticed a ship struggling in the dark, and it began meowing loudly to alert the keeper. Guided by the cat's urgent calls, the keeper lit the beacon just in time to guide the ship safely to shore. From that day on, the cat was hailed as the lighthouse's silent guardian, forever watching over the sea.
+Every evening, the lighthouse keeper's cat would curl up by the warm lantern, watching the waves crash below. One stormy night, the cat's sharp eyes noticed a ship struggling against the fierce winds. It meowed loudly, alerting the keeper to adjust the light just in time to guide the vessel safely to shore. From that day on, the cat was known as the lighthouse's silent guardian, watching over both sea and land.
 ```
 
 `.show()` prints the answer as it arrives and waits for the end. In a
@@ -46,7 +46,7 @@ len(pieces), "".join(pieces)[:60]
 ```
 
 ```output
-(80, 'Every morning, the old kettle on the stove would sing a chee')
+(81, 'Every morning, the old kettle on the stove would sing a chee')
 ```
 
 ## The same call
@@ -61,7 +61,7 @@ s.result
 ```
 
 ```output
-'Every morning, the old kettle on the stove would sing a cheerful tune as it boiled water. Its melodic whistle brought joy to the entire kitchen, waking everyone with a smile. One day, the family discovered that the kettle’s song changed with the weather, humming softly on rainy days and loudly on sunny ones. From then on, the singing kettle became their magical weather forecast and a beloved morning companion.'
+'Every morning, the old kettle on the stove would sing a cheerful tune as it boiled water. Its melodic whistle brought joy to the entire kitchen, waking everyone with a smile. One day, the family discovered that the kettle’s song changed with the weather, humming softly on rainy days and loudly on sunny ones. From then on, the singing kettle became their magical weather forecast and a beloved member of the household.'
 ```
 
 `s.result` waits for the end and gives what `story(...)` returns (or
@@ -89,8 +89,7 @@ solve.stream("3 pencils cost $1.20. How much do 10 cost?").show()
 ```
 
 ```output
-reasoning: First, find the cost of one pencil by dividing the total cost by the number of pencils: $1.20 ÷ 3 = $0.40 per pencil.  
-Then, multiply the cost per pencil by 10 to find the cost of 10 pencils: $0.40 × 10 = $4.00.
+reasoning: First, find the cost of one pencil by dividing the total cost by the number of pencils: $1.20 ÷ 3 = $0.40 per pencil. Then, multiply the cost per pencil by 10 to find the cost of 10 pencils: $0.40 × 10 = $4.00.
 result: 4.00
 ```
 
@@ -110,8 +109,9 @@ for event in s.events():
 
 ```output
 started
+request
 done
-{'reasoning': (54, ['The', ' train', ' leaves', ' at', ' 3', ':']), 'result': (1, ['95'])}
+{'reasoning': (49, ['The', ' train', ' leaves', ' at', ' 3', ':']), 'result': (1, ['95'])}
 ```
 
 | `kind` | what happened |
@@ -146,7 +146,7 @@ assistant.stream("Should I pack a coat for Oslo or for Lima?").show()
 ← Light snow, -2C.
 → get_weather(city='Lima')
 ← Cloudy, 18C.
-You should pack a coat for Oslo, where the weather is light snow and around -2°C. In Lima, the weather is cloudy and much warmer at about 18°C, so a coat is not necessary there.
+Oslo currently has light snow and a temperature of -2°C, so you should definitely pack a coat for Oslo. Lima, on the other hand, is cloudy with a mild temperature of 18°C, so a coat is not necessary there.
 ```
 
 ## Records and lists, filling in
@@ -181,12 +181,11 @@ s.result
 
 ```output
 [{}]
-[{'name': 'Ada', 'city': ''}]
-[{'name': 'Ada', 'city': 'London'}, {'name': ''}]
-[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Ar'}]
-[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': ''}]
-[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': 'Alan', 'city': 'Manchester'}]
-[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': 'Alan', 'city': 'Manchester'}, {'name': 'K'}]
+[{'name': 'Ada', 'city': 'London'}, {}]
+[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}]
+[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': 'Alan'}]
+[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': 'Alan', 'city': 'Manchester'}, {}]
+[{'name': 'Ada', 'city': 'London'}, {'name': 'Grace', 'city': 'Arlington'}, {'name': 'Alan', 'city': 'Manchester'}, {'name': 'Kurt', 'city': None}]
 [Person(name='Ada', city='London'), Person(name='Grace', city='Arlington'), Person(name='Alan', city='Manchester'), Person(name='Kurt', city=None)]
 ```
 
@@ -229,9 +228,9 @@ blurb.stream("tide pools").show()
 
 ```output
 ▸ draft
-Tide pools are fascinating coastal ecosystems found in the rocky intertidal zones where seawater collects during low tide. These pools create unique habitats that support a diverse array of marine life, including sea stars, anemones, crabs, and small fish. The organisms living in tide pools have adapted to survive the fluctuating conditions of temperature, salinity, and oxygen levels caused by the changing tides. Tide pools offer valuable opportunities for scientific study and environmental education, allowing people to observe marine biodiversity up close and understand the delicate balance of coastal ecosystems.
+Tide pools are fascinating coastal ecosystems found in the rocky intertidal zones where seawater collects during low tide. These pools serve as temporary habitats for a diverse array of marine life, including sea stars, anemones, crabs, and small fish. The unique conditions of tide pools, such as fluctuating water levels, temperature, and salinity, create a challenging environment that supports specially adapted organisms. Exploring tide pools offers valuable insights into marine biodiversity and the delicate balance of coastal ecosystems.
 ▸ shorten
-Tide pools are unique coastal habitats supporting diverse marine life.
+Tide pools are diverse, temporary coastal habitats with unique marine life.
 ```
 
 `s.text_of(shorten)` gives one function's answer as it is written, and
@@ -287,6 +286,120 @@ browser tab closes and the server cancels its task), the call stops. The
 events are a written contract
 ([`contract/streaming.md`](https://github.com/maximerivest/functai/blob/master/contract/streaming.md)),
 the same for FunctAI in other languages.
+
+## What a caller may see
+
+The events above are the **full** view: everything, values included. Two
+narrower views are made from them, event by event:
+
+- **kept**: what may be written down, as the `log_content` settings allow
+  (a field kept out of the log is kept out of these events too);
+- **outside**: what someone who only sees the program's boundary may see,
+  a customer of a [served program](serving.md), say: the program's answer
+  and its text as it is written, approvals addressed to them, and the end.
+  Never a helper's answer, a tool call or its result, a model's thinking,
+  why a request was retried, or an error's message.
+
+A module's answer is usually one of its helpers' answers. `answer_from`
+says which, so the outside view shows that text being written, as the
+module's own:
+
+```python
+from typing import Literal
+
+@ai
+def topic(message: str) -> Literal["billing", "shipping", "other"]:
+    """What the message is about."""
+    ...
+
+@ai
+def answer(message: str, topic: str) -> str:
+    """Answer the customer in one short sentence."""
+    ...
+
+@module(answer_from=answer)
+def support(message: str) -> str:
+    return answer(message, topic(message))
+
+s = support.stream("Where is my parcel B-2210?")
+s.result
+full = [(e.kind, e.function) for e in s.events() if e.kind != "text"]
+outside = [(e["kind"], e["function"]) for e in s.events(view="outside") if e["kind"] != "text"]
+full, outside
+```
+
+```output
+([('started', 'support'), ('started', 'topic'), ('request', 'topic'), ('done', 'topic'), ('started', 'answer'), ('request', 'answer'), ('done', 'answer'), ('done', 'support')], [('started', 'support'), ('request', 'support'), ('request', 'support'), ('done', 'support')])
+```
+
+A view's events are the contract's JSON, ready to send to a browser.
+
+## Every event, kept as it happens
+
+A stream is one call, watched by whoever made it. To see every call a
+process makes (a dashboard, an audit trail), give **observers**: each
+gets every event of every call tree, in the kept view, as plain dicts.
+A list collects them; a function is called with each, in a thread of its
+own, so a slow observer never slows a call:
+
+```python
+seen = []
+with functai.configure(observers=[seen]):
+    support("I was charged twice for order B-2210.")
+len(seen), sorted({e["kind"] for e in seen})
+```
+
+```output
+(31, ['done', 'request', 'started', 'text'])
+```
+
+`functai.flush()` waits until every function observer has caught up,
+and every best-effort journal has written what it was given (at exit,
+FunctAI waits for them at most two seconds).
+
+A **journal** keeps whole call trees in a store while they run, so
+another process can follow a call, or find what a crashed one did.
+`functai.MemoryStore` is a store in this process's memory; any object
+that keeps events by the contract's rules is one too (`functai.Store`
+says what it must do):
+
+```python
+store = functai.MemoryStore()
+with functai.configure(journal=store):
+    support("The kettle lid doesn't close.")
+functai.flush()                          # a best-effort journal writes in the background
+tree = store.trees()[-1]
+[e["kind"] for e in store.read(tree, None) if e["kind"] != "text"]
+```
+
+```output
+['started', 'started', 'request', 'done', 'started', 'request', 'done', 'done']
+```
+
+A journal is **best effort** by default: if the store fails, FunctAI
+warns once and the call goes on. `functai.Journal(store, required=True)`
+makes the call wait until the store has confirmed what happened so far,
+at three moments: when it starts, before each tool runs, and before it
+returns. If the store does not confirm, the call stops before the code or
+the tool runs (`JournalError`, `journal-barrier`), or the caller is told
+the end was not confirmed (`journal-end`, which still holds the call's
+outcome). A program cannot replace or remove the journal its host set
+(`journal-policy`).
+
+A reader that follows a log, live or later, is a `functai.Follower`: it
+takes events in any order and from any source (duplicates, a writer that
+took over after a crash), and keeps each tree's state:
+
+```python
+follower = functai.Follower()
+for event in store.read(tree, None):
+    follower.receive(event)
+follower.state(tree)["finished"], [c["fields"] for c in follower.state(tree)["calls"].values()]
+```
+
+```output
+(True, [{}, {'result': 'other'}, {'result': 'Please check if there is any obstruction or misalignment preventing the lid from closing properly.'}])
+```
 
 ## What streams, and what doesn't
 

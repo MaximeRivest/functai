@@ -84,16 +84,17 @@ handle  @module  [__main__]
     └── tool lookup_order  function  [__main__]
         └── ORDERS = {'A-1042': 'stuck at carrier', 'B-221...
 
-requirements: functai @ file:///home/maxime/Projects/functai/python
+requirements: functai @ file:///home/maxime/Projects/.pi-worktrees/functai-docs/python
 
-! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/functai/python)
+! local-install  requirements: installed from folders on this machine: functai (/home/maxime/Projects/.pi-worktrees/functai-docs/python), lmcc (/home/maxime/Projects/.pi-worktrees/lmcc/python)
     fix: the saved program loads where those folders exist; publish them, or install released versions, to load it anywhere
 ```
 
-> **Why this page shows `local-install`** This site is built from functai's development copy, installed from a
-> folder, so `check` warns that the saved program needs that folder. It
-> is the warning you would get for any package of yours installed that
-> way. With functai installed from PyPI, the requirement reads
+> **Why this page shows `local-install`** This site is built from the
+> development copies of functai and lmcc, installed from folders, so
+> `check` warns that the saved program needs those folders. It is the
+> warning you would get for any package of yours installed that way.
+> With functai installed from PyPI, the requirement reads
 > `functai==<version>` and there is no warning.
 
 `check` follows every name the code reaches: AI functions and modules
@@ -182,7 +183,7 @@ loaded("My toaster order B-2210 never arrived??")
 ```
 
 ```output
-Handled(priority=<Priority.URGENT: 'urgent'>, reply='Your toaster order B-2210 has been delivered. Please check if it might have been received by someone else at your address or left in a safe place. Let me know if you need any further assistance!')
+Handled(priority=<Priority.URGENT: 'urgent'>, reply="Your toaster order B-2210 shows as delivered. Could you please check around your delivery area or with neighbors? Let me know if you still can't find it, and I'll help you further.")
 ```
 
 `load` checks before it runs anything: file hashes (catching accidental

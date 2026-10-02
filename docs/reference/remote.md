@@ -1,3 +1,10 @@
+---
+rat:
+  project: ../../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # remote { #functai.remote }
 
 `remote`
@@ -20,7 +27,7 @@ call as its ``parent``, so the two logs make one call tree.
 | Name | Description |
 | --- | --- |
 | [RemoteError](#functai.remote.RemoteError) | The server answered with an error: ``code`` is its code (or |
-| [RemoteProgram](#functai.remote.RemoteProgram) | A served program, called like a local one. Built by ``functai.remote``. |
+| [RemoteProgram](#functai.remote.RemoteProgram) | A program served elsewhere, called like a local one. Built by |
 | [RemoteStream](#functai.remote.RemoteStream) | A served call's events (the outside view), read as they arrive: |
 
 ### RemoteError { #functai.remote.RemoteError }
@@ -38,7 +45,21 @@ The server answered with an error: ``code`` is its code (or
 remote.RemoteProgram(url, *, key=None, timeout=120.0)
 ```
 
-A served program, called like a local one. Built by ``functai.remote``.
+A program served elsewhere, called like a local one. Built by
+``functai.remote(url, key=...)``.
+
+Its inputs and outputs are the served program's (read from the server's
+``/interface``): inputs are checked here before anything is sent
+(``InterfaceError``). It is called, mapped over a table (``.map``),
+evaluated (``functai.evaluate``) and streamed (``.stream``: the
+server's outside view) as a local program is. Each call is logged here,
+as a program of kind ``"remote"``, and on the server, whose record names
+this call as its parent.
+
+``url``: where it is served; ``version``: the served program's version.
+A served program's conversations are kept by its server: talk to them
+over HTTP (``POST <url>/conversations/<id>/turns``). The tokens a call
+used are in the server's log, not here.
 
 #### Attributes
 
@@ -98,3 +119,27 @@ A program served elsewhere (``functai serve``), used like a local one.
 | Name   | Type          | Description                                                                                                                       |
 |--------|---------------|-----------------------------------------------------------------------------------------------------------------------------------|
 |        | RemoteProgram | Called with the program's inputs; ``.map``, ``evaluate``, ``.stream`` work as for a local program; its calls are logged here too. |
+
+#### Raises {.doc-section .doc-section-raises}
+
+| Name   | Type        | Description                                                                                                                                                      |
+|--------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+|        | RemoteError | The server refused (``code`` ``remote-401`` for a wrong key...) or answered something that is not a FunctAI program. ``from functai.remote import RemoteError``. |
+
+#### See Also {.doc-section .doc-section-see-also}
+
+- [`serve`](serve.md): serve a program.
+
+#### Examples {.doc-section .doc-section-examples}
+
+```python
+import functai
+from functai import *
+```
+
+```{.python .no-run}
+# not run: it needs a served program (the guide Serve it over HTTP runs one)
+team = functai.remote("https://example.org/team", key=os.environ["TEAM_KEY"])
+team("I was charged twice for order B-2210.")
+team.map(tickets, threads=8)
+```

@@ -59,8 +59,40 @@ print(long.entries("compaction", "summary")[-1]["data"]["text"])
 ```
 
 ```output
-The user asked about the fractions 1/2 and 1/3. It was explained that 1/2 represents one part out of two equal parts of a whole and is equivalent to 0.5 in decimal form. For 1/3, it was explained that it represents one part out of three equal parts of a whole and is approximately equal to 0.333 in decimal form. No further questions or open points remain.
+The user asked about the fractions 1/2 and 1/3. It was explained that 1/2 represents one part out of two equal parts of a whole and is equivalent to 0.5 in decimal form. For 1/3, it was explained that it represents one part out of three equal parts of a whole and is approximately equal to 0.333 in decimal form. No further questions or decisions were made.
 ```
+
+## Handing work to another program
+
+`functai.delegate(program)` makes another program a tool: the assistant
+hands it part of the work. Inside a conversation, the helper answers in a
+conversation of its own, which follows the branch that asked, so asked
+again later on that branch it remembers what it was asked before.
+
+```python
+@ai
+def glossary(term: str) -> str:
+    """Define the term in one short sentence a ten-year-old understands."""
+    ...
+
+@ai(tools=[functai.delegate(glossary, description="A definition a child understands.")])
+def helper(message: str) -> str:
+    """You help a student with fractions. Look up any word they may not know first."""
+    ...
+
+kid = helper.conversation("kid")
+print(kid("What does denominator mean?"))
+print(kid.turns[-1].tree())
+```
+
+```output
+The denominator is the bottom number in a fraction that shows how many equal parts the whole is divided into.
+helper
+└─ glossary
+```
+
+The helper's calls are in the turn's call tree, under the tool call that
+asked, so its answers are on record and can be rated like any other.
 
 ## Asking first
 
@@ -91,4 +123,7 @@ earlier turns and the summary it was shown; how a host shaped the call (a
 mode, a model) comes from the plugins of the process that evaluates, so an
 improved instruction is what gets measured.
 
-See `python/examples/plugins/` for six real extensions written as plugins.
+A plugin can live in its own file, which defines `plugin`:
+`functai.load_plugin("plugins/brief.py")` loads it (it runs the file, so
+load only code you trust). See `python/examples/plugins/` for six real
+extensions written as plugins.

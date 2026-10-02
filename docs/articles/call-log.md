@@ -67,10 +67,10 @@ functai.calls(team).select("message", "pred_result", "seconds", "input_tokens")
 │ ---                                            ┆ ---         ┆ ---      ┆ ---          │
 │ str                                            ┆ str         ┆ f64      ┆ i64          │
 ╞════════════════════════════════════════════════╪═════════════╪══════════╪══════════════╡
-│ I was charged twice for one order.             ┆ billing     ┆ 0.839297 ┆ 58           │
-│ The chair arrived with a snapped leg.          ┆ product     ┆ 0.738893 ┆ 58           │
-│ The kettle's handle came off on the first day. ┆ product     ┆ 0.833738 ┆ 61           │
-│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.806049 ┆ 61           │
+│ I was charged twice for one order.             ┆ billing     ┆ 0.877846 ┆ 58           │
+│ The chair arrived with a snapped leg.          ┆ product     ┆ 1.079286 ┆ 58           │
+│ The kettle's handle came off on the first day. ┆ product     ┆ 0.750674 ┆ 61           │
+│ Tracking has said 'in transit' for two weeks.  ┆ shipping    ┆ 0.796156 ┆ 61           │
 └────────────────────────────────────────────────┴─────────────┴──────────┴──────────────┘
 ```
 
@@ -99,7 +99,7 @@ functai.rate(p, "wrong", answer="shipping", note="Broken on the way is shipping:
 ```
 
 ```output
-{'functai_rating': 1, 'id': '01a0e50d-3ecf-74ff-8257-8dde7cf3e08c', 'call': '01a0e50d-3518-71d0-82cf-a15369a31a26', 'at': '2026-09-27T22:47:25.647250Z', 'by': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
+{'functai_rating': 1, 'id': '01a0fce6-6994-72d6-858a-dc9448b3d153', 'call': '01a0fce6-6685-7630-bf31-e59b200eba54', 'at': '2026-10-02T13:55:53.876946Z', 'account': 'maxime', 'verdict': 'wrong', 'answer': 'shipping', 'note': 'Broken on the way is shipping: the carrier pays.'}
 ```
 
 **Right means correct for this input, not "nice".** A wrong answer can
@@ -182,9 +182,9 @@ draw.select("message", "pred_result", "call")
 │ ---                                      ┆ ---         ┆ ---                                  │
 │ str                                      ┆ str         ┆ str                                  │
 ╞══════════════════════════════════════════╪═════════════╪══════════════════════════════════════╡
-│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0e50d-5bfa-71cb-b553-ff2466b5cec9 │
-│ I was charged twice for one order.       ┆ billing     ┆ 01a0e50d-26db-75f9-9e59-cd40df9887bd │
-│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0e50d-2a22-742b-9359-43b2cb7605fb │
+│ My order came but the screen is cracked. ┆ shipping    ┆ 01a0fce6-911d-75e4-bcdb-9b76c32a194a │
+│ I was charged twice for one order.       ┆ billing     ┆ 01a0fce6-5737-725c-8ae6-d2336c5599fa │
+│ The chair arrived with a snapped leg.    ┆ product     ┆ 01a0fce6-5aa5-7708-9eff-d433a6c316a9 │
 └──────────────────────────────────────────┴─────────────┴──────────────────────────────────────┘
 ```
 
@@ -256,13 +256,13 @@ functai.calls(team).select("message", "caller").slice_tail(n=1)
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌────────────────────┬─────────────────────────────────────────────────────────────────────────────────────────────┐
-│ message            ┆ caller                                                                                      │
-│ ---                ┆ ---                                                                                         │
-│ str                ┆ str                                                                                         │
-╞════════════════════╪═════════════════════════════════════════════════════════════════════════════════════════════╡
-│ Where is my order? ┆ {"conversation":"pi:--home-maxime-Projects-functai--/2026-09-27T17-03-03-706Z_01a0e3d1-f81… │
-└────────────────────┴─────────────────────────────────────────────────────────────────────────────────────────────┘
+┌────────────────────┬───────────────────────────────────┐
+│ message            ┆ caller                            │
+│ ---                ┆ ---                               │
+│ str                ┆ str                               │
+╞════════════════════╪═══════════════════════════════════╡
+│ Where is my order? ┆ {"kind":"script","user":"maxime"} │
+└────────────────────┴───────────────────────────────────┘
 ```
 
 Programs that may see secrets (a clipboard helper sees passwords) keep
@@ -280,13 +280,13 @@ functai.calls(fix_grammar).select("seconds", "input_tokens", "output_tokens", "m
 
 ```output
 # dpyr dataframe · source: polars · showing 1 of 1 rows
-┌─────────┬──────────────┬───────────────┬──────────────┐
-│ seconds ┆ input_tokens ┆ output_tokens ┆ model        │
-│ ---     ┆ ---          ┆ ---           ┆ ---          │
-│ f64     ┆ i64          ┆ i64           ┆ str          │
-╞═════════╪══════════════╪═══════════════╪══════════════╡
-│ 0.83077 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
-└─────────┴──────────────┴───────────────┴──────────────┘
+┌──────────┬──────────────┬───────────────┬──────────────┐
+│ seconds  ┆ input_tokens ┆ output_tokens ┆ model        │
+│ ---      ┆ ---          ┆ ---           ┆ ---          │
+│ f64      ┆ i64          ┆ i64           ┆ str          │
+╞══════════╪══════════════╪═══════════════╪══════════════╡
+│ 0.875936 ┆ 55           ┆ 13            ┆ gpt-4.1-mini │
+└──────────┴──────────────┴───────────────┴──────────────┘
 ```
 
 `log_calls=False` on a function keeps it out of the log altogether.
@@ -310,7 +310,22 @@ last = json.loads(sorted(folder.rglob("*.jsonl"))[-1].read_text().splitlines()[-
 ```
 
 ```output
-{'program': {'name': 'fix_grammar', 'kind': 'ai', 'module': '__main__', 'version': 'sha256:48485b5298ac7491dcaa9bbbd5e792d640f9d829e6131b8e597a7682023d519c', 'signature': 'sha256:0553dbe4a0c5e2004a138dff3be56e6e622a792fb34c20493475c9c6c2044fa8', 'answer': 'result', 'file': '<rat-cell-15>', 'line': 1}, 'content': False, 'sizes': {'inputs': {'text': 27}, 'outputs': {'result': 29}}, 'model': 'gpt-4.1-mini', 'usage': {'input_tokens': 55, 'output_tokens': 13, 'total_tokens': 68, 'cache_read_tokens': 0, 'cache_write_tokens': 0, 'reasoning_tokens': 0}}
+{'program': {'name': 'fix_grammar', 'kind': 'ai', 'module': '__main__', 'version': 'sha256:48485b5298ac7491dcaa9bbbd5e792d640f9d829e6131b8e597a7682023d519c', 'signature': 'sha256:0553dbe4a0c5e2004a138dff3be56e6e622a792fb34c20493475c9c6c2044fa8', 'interface': 'sha256:0553dbe4a0c5e2004a138dff3be56e6e622a792fb34c20493475c9c6c2044fa8', 'answer': 'result', 'line': 1}, 'content': False, 'sizes': {'inputs': {'text': 27}, 'outputs': {'result': 29}}, 'model': 'gpt-4.1-mini', 'usage': {'input_tokens': 55, 'output_tokens': 13, 'total_tokens': 68, 'cache_read_tokens': 0, 'cache_write_tokens': 0, 'reasoning_tokens': 0}}
 ```
 
-The log only grows. To keep it small, delete old day folders.
+## Keeping it small
+
+The log only grows, one folder per day. `prune_calls` deletes the day
+folders older than a time, and first keeps what your ratings need: every
+rated call, the calls of its tree (a module's steps), the earlier turns it
+was shown, and their ratings are copied into one file at the top of the
+log, which every reader reads. So `rated(...)` gives the same rows after
+pruning as before.
+
+```{.python .no-run}
+functai.prune_calls("90d")                    # day folders older than 90 days go
+functai.prune_calls("12w", keep_rated=False)  # rated calls go too
+```
+
+It returns how many day folders and calls it deleted, and how many calls
+it kept (`{"days", "calls", "kept"}`). `folder=` prunes another log.

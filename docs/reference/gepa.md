@@ -40,7 +40,8 @@ import functai
 from functai import *
 ```
 
-```python
+```{.python .no-run}
+# not run: a search asks the teacher many times (Make it better runs one)
 better = functai.gepa(team.using(lm="gpt-5.4-nano"), train, teacher="gpt-6-sol", expected="category")
 better.instructions
 functai.evaluate(better, test, expected="category")

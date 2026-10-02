@@ -57,7 +57,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:36:40] sentiment → gpt-4.1-mini
+[2026-10-02T09:55:42] sentiment → gpt-4.1-mini
 
 System message:
 
@@ -206,7 +206,7 @@ print(functai.phistory())
 ```
 
 ```output
-[2026-09-26T17:36:44] is_urgent → gpt-4.1-mini
+[2026-10-02T09:55:47] is_urgent → gpt-4.1-mini
 
 System message:
 
@@ -267,7 +267,7 @@ headline("The city council voted on Tuesday to turn the old rail yard into a par
 ```
 
 ```output
-'City Council Approves Old Rail Yard Park Plan'
+'City Council Approves Old Rail Yard Park Project'
 ```
 
 Settings can also be given for the whole program with `configure()`, for
