@@ -636,10 +636,22 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         sig = changed ? with_instruction(base, join([something(shaped.instruction, base.instructions); shaped.sections], "\n\n")) : nothing
         changed && check_placed(f, shaped.settings)
         offered = shaped.tools === nothing ? f.tools : AITool[t for t in f.tools if t.name in shaped.tools]
-        r = plan_for(f, shaped.settings; sig)
-        call.provider = r.provider
-        job = Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
-                  r.router, r.model, offered, call, values -> typed_outputs(f, values))
+        lm = get(shaped.settings, :lm, nothing)
+        job = if lm isa BakedModel
+            # a baked student reads its calls as it was trained: its signature and layout, no worked examples
+            changed && throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction, and it runs on a baked " *
+                                         "model, which reads only the message it was trained on: the change would not reach it"))
+            e = entry_for(lm, f)
+            plan = student_plan(e)
+            call.provider = "functai-baked-lm"
+            Job(f.definition.name, plan, shown_turns(call, f, plan), student_inputs(e, base, inputs), shaped.settings,
+                BakedRouter(lm), lm.model, AITool[], call, values -> typed_outputs(f, values))
+        else
+            r = plan_for(f, shaped.settings; sig)
+            call.provider = r.provider
+            Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
+                r.router, r.model, offered, call, values -> typed_outputs(f, values))
+        end
         outputs, turn, responses, reading = run_job(job)
         call.lmcc = try
             LMCC.turn_to_dict(turn)
@@ -673,6 +685,14 @@ paid): the instruction, the worked examples, the layout, the model.
 """
 function render(f::AIFunction, args...; kw...)
     s = effective(f.own)
+    lm = setting(s, :lm)
+    if lm isa BakedModel                    # a baked student: its signature and layout, no worked examples
+        e = entry_for(lm, f)
+        plan = student_plan(e)
+        values = prepare_inputs(plan.signature, student_inputs(e, signature_now(f, s), bind_inputs(f, args, kw)))
+        return LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=rendering_turns(f, plan)); model=lm.model,
+                                 config=config_of(s))
+    end
     r = plan_for(f, s)
     plan = r.plan
     values = prepare_inputs(plan.signature, bind_inputs(f, args, kw))
@@ -761,9 +781,35 @@ with one warning (see `problems()`); when every call fails, the first
 error is thrown.
 """
 function call_each(f::Function, argtuples::AbstractArray; each=f)
-    n = effective(f isa AIFunction ? f.own : Dict{Symbol,Any}())[:concurrency]
+    s = effective(f isa AIFunction ? f.own : Dict{Symbol,Any}())
+    n = s[:concurrency]
     items = vec(collect(argtuples))
-    results, errors = run_concurrently(t -> each(t...), items, n)
+    bar = progress_line(string(nameof(f)), length(items), get(s, :progress, nothing))
+    work = if bar === nothing
+        t -> each(t...)
+    else
+        function (t)
+            try
+                v = if each === f && f isa AIFunction
+                    # the prediction, for its tokens; the value is what calling returns
+                    p = predict_inputs(f, bind_inputs(f, t, ()))
+                    p === missing ? missing : (tick!(bar, p); p.value)
+                else
+                    each(t...)
+                end
+                tick!(bar, nothing)
+                v
+            catch
+                tick!(bar, nothing; failed=true)
+                rethrow()
+            end
+        end
+    end
+    results, errors = try
+        run_concurrently(work, items, n)
+    finally
+        bar === nothing || done!(bar)
+    end
     failed = findall(!isnothing, errors)
     for i in failed
         results[i] = missing
@@ -779,6 +825,60 @@ function call_each(f::Function, argtuples::AbstractArray; each=f)
     end
     reshape(map(identity, results), size(argtuples))   # map(identity) narrows the element type
 end
+
+# ------------------------------------------------------------------ a progress line (stage 1.2)
+
+"A progress line on stderr while a column runs: rows done, failures, tokens, time left."
+mutable struct ProgressLine
+    name::String
+    total::Int
+    done::Int
+    failed::Int
+    tokens::Int
+    started::Float64
+    shown::Float64
+    lock::ReentrantLock
+    io::IO
+end
+
+"""
+A progress line for `total` rows, or `nothing`: on when the `progress`
+setting says so, else when stderr is a terminal (or a notebook), and only
+for more than one row.
+"""
+function progress_line(name, total, setting)
+    total > 1 || return nothing
+    on = setting === nothing ? (stderr isa Base.TTY || isdefined(Main, :IJulia)) : setting === true
+    on || return nothing
+    ProgressLine(name, total, 0, 0, 0, time(), 0.0, ReentrantLock(), stderr)
+end
+
+function tick!(b::ProgressLine, p; failed::Bool=false)
+    lock(b.lock) do
+        if p isa Prediction
+            for r in p.responses
+                u = usage_of(r)
+                b.tokens += get(u, "total_tokens", get(u, "input_tokens", 0) + get(u, "output_tokens", 0))
+            end
+            return
+        end
+        b.done += 1
+        failed && (b.failed += 1)
+        now = time()
+        (now - b.shown >= 0.2 || b.done == b.total) && (b.shown = now; show_line(b))
+    end
+end
+
+function show_line(b::ProgressLine)
+    elapsed = time() - b.started
+    left = b.done == 0 ? "" : (r = round(Int, elapsed / b.done * (b.total - b.done)); r > 0 ? ", ~$(duration_text(r)) left" : "")
+    tokens = b.tokens == 0 ? "" : ", $(b.tokens >= 10_000 ? "$(round(b.tokens / 1000; digits=1))k" : b.tokens) tokens"
+    failed = b.failed == 0 ? "" : ", $(b.failed) failed"
+    print(b.io, "\r\e[K", b.name, ": ", b.done, "/", b.total, " rows", failed, tokens, left)
+    flush(b.io)
+end
+duration_text(s) = s >= 3600 ? "$(s ÷ 3600)h$(lpad((s % 3600) ÷ 60, 2, '0'))m" : s >= 60 ? "$(s ÷ 60)m$(lpad(s % 60, 2, '0'))s" : "$(s)s"
+done!(b::ProgressLine) = lock(() -> (show_line(b); println(b.io)), b.lock)
 
 broadcast_args(args) = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...))
 

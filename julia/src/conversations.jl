@@ -1874,3 +1874,31 @@ function replaying(thunk, row::AbstractDict, program)
           row_meta(row, "sections") !== nothing && !isempty(row_meta(row, "sections"))
     has ? with(thunk, REPLAYING => RowReplay(row, program)) : thunk()
 end
+
+"""
+    FunctAI.call_tree(turn) -> String
+
+The calls inside a turn, as an indented tree (from its store's kept log):
+the program, its helpers, the calls their tools made, and how each ended.
+"""
+function call_tree(t::Turn)
+    calls = calls_in(t)
+    kids = Dict{Any,Vector{Any}}()
+    for c in calls
+        push!(get!(() -> Any[], kids, c.call == t.id ? nothing : c.parent), c)
+    end
+    lines = String[]
+    function walk(c, prefix, last_child, top)
+        mark = top ? "" : (last_child ? "└─ " : "├─ ")
+        state = c.ended == "done" ? "" : " [$(something(c.ended, "running"))]"
+        push!(lines, prefix * mark * c.function * state)
+        children = get(kids, c.call, Any[])
+        for (i, k) in enumerate(children)
+            walk(k, prefix * (top ? "" : (last_child ? "   " : "│  ")), i == length(children), false)
+        end
+    end
+    for root in get(kids, nothing, Any[])
+        walk(root, "", true, true)
+    end
+    join(lines, "\n")
+end

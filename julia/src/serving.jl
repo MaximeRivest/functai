@@ -489,3 +489,109 @@ function remote(url::AbstractString; key=nothing, timeout::Real=120.0)
                   remote=(url=base, key=key, timeout=Float64(timeout), version=String(described["version"]), kind=kind))
     p
 end
+
+"""
+A served call's events (the server's outside view), read as they arrive:
+iterate it for the answer's text, [`eachevent`](@ref) for every event,
+`fetch` for the value. Not logged here (its calls are logged by the server).
+"""
+mutable struct RemoteStream
+    events::Vector{Event}
+    cond::Threads.Condition
+    finished::Bool
+    value::Any
+    error::Any
+    task::Any
+end
+
+function remote_stream(p::AIProgram, args, kw)
+    r = p.remote
+    bound = p.binder(args...; kw...)
+    refusal = binding_refusal(p, bound)
+    refusal === nothing || throw(refusal)
+    checked = check_inputs(p.interface, bound.given)
+    body = LMCC.json_text(LMCC.jobj("inputs" => JObj(k => logvalue(v) for (k, v) in checked)))
+    headers = Pair{String,String}["accept" => "text/event-stream", "content-type" => "application/json"]
+    r.key === nothing || push!(headers, "authorization" => "Bearer $(r.key)")
+    s = RemoteStream(Event[], Threads.Condition(), false, nothing, nothing, nothing)
+    pipe = Base.BufferStream()
+    s.task = Threads.@spawn try
+        sender = Threads.@spawn try
+            resp = HTTP.post(r.url * "/stream", headers, body; response_stream=pipe, status_exception=false,
+                             readtimeout=round(Int, r.timeout), retry=false)
+            resp.status >= 400 && lock(() -> (s.error = RemoteError("remote-$(resp.status)", "$(r.url)/stream answered $(resp.status)",
+                                                                    resp.status, "")), s.cond)
+        finally
+            close(pipe)
+        end
+        data = String[]
+        while !eof(pipe)
+            line = rstrip(readline(pipe), '\r')
+            if startswith(line, "data:")
+                push!(data, lstrip(line[6:end]))
+            elseif isempty(line) && !isempty(data)
+                e = Event(LMCC.parse_json(join(data, "\n")))
+                empty!(data)
+                lock(s.cond) do
+                    push!(s.events, e)
+                    if e.call == e.tree && e.kind === :done
+                        s.value = datum(e, "value")
+                    elseif e.call == e.tree && e.kind === :failed
+                        s.error = datum(e, "error")
+                    end
+                    notify(s.cond)
+                end
+            end
+        end
+        wait(sender)
+    catch err
+        lock(() -> (s.error = unwrap(err)), s.cond)
+    finally
+        lock(() -> (s.finished = true; notify(s.cond)), s.cond)
+    end
+    s
+end
+
+function eachevent(s::RemoteStream)
+    Channel{Event}() do ch
+        i = 1
+        while true
+            e = lock(s.cond) do
+                while i > length(s.events) && !s.finished
+                    wait(s.cond)
+                end
+                i > length(s.events) ? nothing : s.events[i]
+            end
+            e === nothing && return
+            put!(ch, e)
+            i += 1
+        end
+    end
+end
+Base.IteratorSize(::Type{RemoteStream}) = Base.SizeUnknown()
+Base.eltype(::Type{RemoteStream}) = String
+function Base.iterate(s::RemoteStream, i::Int=1)
+    while true
+        e = lock(s.cond) do
+            while i > length(s.events) && !s.finished
+                wait(s.cond)
+            end
+            i > length(s.events) ? nothing : s.events[i]
+        end
+        e === nothing && return nothing
+        i += 1
+        e.kind === :text && datum(e, "answer") === true && e.call == e.tree && return (datum(e, "text"), i)
+    end
+end
+function Base.fetch(s::RemoteStream)
+    lock(s.cond) do
+        while !s.finished
+            wait(s.cond)
+        end
+    end
+    s.error isa Exception && throw(s.error)
+    s.error === nothing || throw(RemoteError(String(something(get(s.error, "code", nothing), "remote-failed")),
+                                             "the served call failed ($(get(s.error, "type", "")))", 0, String(get(s.error, "type", ""))))
+    s.value
+end
+Base.show(io::IO, s::RemoteStream) = print(io, "RemoteStream(", s.finished ? "finished" : "running", ", ", length(s.events), " events)")

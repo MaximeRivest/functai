@@ -99,7 +99,7 @@ end
 ```
 """
 LM15.stream(f::AIFunction, args...; kw...) = (inputs = bind_inputs(f, args, kw); start_stream(() -> predict_inputs(f, inputs)))
-LM15.stream(p::AIProgram, args...; kw...) = start_stream(() -> p(args...; kw...))
+LM15.stream(p::AIProgram, args...; kw...) = p.remote === nothing ? start_stream(() -> p(args...; kw...)) : remote_stream(p, args, kw)
 function LM15.stream(on_piece::Function, f::Union{AIFunction,AIProgram}, args...; kw...)
     s = LM15.stream(f, args...; kw...)
     try

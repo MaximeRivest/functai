@@ -161,3 +161,34 @@ end
     end
     @test ran[] == expect["ran"]
 end
+
+"A contract definition as a Julia AI function (as contract.jl writes one)."
+function baked_case_function(d)
+    field(x) = get(x, "desc", nothing) === nothing ? x["shape"] : x["shape"] => x["desc"]
+    settings = Dict{Symbol,Any}()
+    haskey(d["settings"], "adapter") && (settings[:adapter] = d["settings"]["adapter"])
+    get(d["settings"], "module", nothing) == "cot" && (settings[:reasoning] = true)
+    AIFunction(d["name"], d["description"]; inputs=[Symbol(x["name"]) => field(x) for x in d["inputs"]],
+               outputs=[Symbol(x["name"]) => field(x) for x in d["outputs"]], instructions=d["state"]["instructions"], settings...)
+end
+function signature_without_type(sig)
+    data = LMCC.signature_to_dict(sig)
+    Dict("instructions" => data["instructions"],
+         "fields" => [Dict(k => v for (k, v) in merge(Dict{String,Any}("purpose" => "plain"), x) if k != "type" && v !== nothing) for x in data["fields"]])
+end
+
+@testset "baked case $name" for (name, c) in cases("baked")
+    f = baked_case_function(c["definition"])
+    rows = [merge(Dict{String,Any}(r["inputs"]), Dict{String,Any}(r["outputs"])) for r in c["rows"]]
+    b = c["bake"]
+    e = FunctAI.bake_entry(f; fixed=something(get(b, "fixed", nothing), Dict()), derived=something(get(b, "derived", nothing), Dict()),
+                           reasoning=get(b, "reasoning", false) === true, rows)
+    want = c["expect"]
+    @test same(signature_without_type(e.signature), Dict("instructions" => want["signature"]["instructions"],
+                                                "fields" => [merge(Dict{String,Any}("purpose" => "plain"), x) for x in want["signature"]["fields"]]))
+    @test same(e.fixed, want["fixed"]) && same(e.derived, want["derived"])
+    for (r, ex) in zip(c["rows"], want["examples"])
+        msgs, reply = FunctAI.student_messages(e, merge(Dict{String,Any}(r["inputs"]), Dict{String,Any}(k => v for (k, v) in something(get(b, "fixed", nothing), Dict()))), r["outputs"])
+        @test same(Any[msgs..., Dict("role" => "assistant", "content" => reply)], ex["messages"])
+    end
+end
