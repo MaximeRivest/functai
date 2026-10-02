@@ -4,6 +4,74 @@
 
 ## functai 0.1.0 (unreleased)
 
+### Stages 1.2 to 5, and plugins (Python's, `design/10-stages-1.2-to-5-python.md`)
+
+R now passes every contract case Python's harness reads: `events/`,
+`programs/` of every kind, `views/`, `replies/`, `conversations/`,
+`tools/`, `context/`, `plugins/`, `baked/` and `saw/` of kind `shown`; and
+`tools/crosslang.py` checks it against Python on conversations, the disk
+reply cache and serving.
+
+* **Call trees as events** (`contract/streaming.md`): every call shows what
+  it does (`started`, `request`, `text`, `thinking`, `tool_call`,
+  `tool_result`, `retry`, `done`, `failed`, `approval`, `approved`), in one
+  log per tree. `ai_stream()` watches a call while it is made (a call alone
+  in flight is streamed from the provider), and `stop_stream()` cancels it.
+  `observers` and `journal` (`ai_journal()`, best effort or required, with
+  its three barriers and `journal-end`, `settle()`) keep each tree's kept
+  form while it is written, across layers by the contract's policy
+  (`journal-policy`, `journal-scope`, `program_observers`). `memory_store()`
+  keeps logs by a store's rules; `follower()` follows them across writers;
+  `outside_view()` is what a served program's caller sees.
+* **Programs** (`ai_program()`): your own code around AI functions, declared
+  with a formula and a codebook like `ai()`, called as one call whose steps
+  are the AI functions it calls; inputs bound and checked before the code
+  runs (`interface-input`), outputs when it returns (`interface-output`);
+  `opaque()` for any R value. Its version follows its code, the AI
+  functions and programs it names, and its interface.
+* **The reply cache** (`cache_replies`): in memory, or the SQLite file every
+  language shares (`"disk"`), one flight per key in a session and across
+  processes; `replicate`; a progress line over a column (`progress`);
+  `quotes_found()`; `prune_calls()` keeping what ratings need (every reader
+  now reads the log folder's top-level files, and the record of a call's
+  highest writer).
+* **Conversations** (`ai_conversation()`): turns kept in a store
+  (`memory_conversations()`, `folder_store()`: Python's and Julia's files),
+  branches (`continue_from()`), what each turn is shown (`all_turns()`,
+  `last_turns()`, `without`), queueing, leases, `stop_turn()` from any
+  process, `request_id`, `earlier()` in a program's turn, helpers that
+  `remember()`, `turn_events()` from the store, `ai_render()` of the next
+  turn.
+* **Tools that ask first**: `ai_tool(.effects = "reads" | "changes")`;
+  `approve` (a function, `"changes"`, `"all"`, names or paths); a turn waits
+  (`functai_waiting`), saved, and `approve()`/`deny()` from any process
+  resume it paying for no model answer twice and running no tool twice
+  (`resume_turn()` with `results`/`rerun` for a tool that may have run;
+  `abandon_turn()`); a plain call refuses `approval-required`.
+* **Plugins** (`ai_plugin()`, `on_hook()`, `ai_change()`): seven hooks, every
+  change recorded in the call's record; the approval plugin, `compaction()`
+  and `delegate()` written with them; `keep_entry()`/`entries()`;
+  `load_plugin()`.
+* **Serving** (`ai_serve()`, `ai_service()`, `serve_request()`): the
+  contract's routes on httpuv, keys compared in constant time, approvals to
+  the owner or the caller; `ai_remote()` uses a program served by any
+  language, one call tree across the two logs.
+* **Rows that keep their context**: `rated()` of a conversation's turns gives
+  `earlier`, `conversation` (and `helpers`, `sections`), counts `no_context`;
+  `evaluate()`, `predict()` and the optimizers ask such rows again with
+  them, and never use one as a worked example.
+* **Baking's language-neutral half**: `bake_examples()` and
+  `export_examples()` write the conversations every trainer reads (the
+  contract's baked cases); `baked()` runs a student trained anywhere,
+  served by an OpenAI-compatible server, as it was trained
+  (`baked-changed`, `baked-fixed`, `baked-derived`).
+* **Escalation** (`escalate_to`, `escalate_below`) to another model or AI
+  function when the first is unsure; `random_search()`,
+  `instruction_search()`, `compare()`; `inspect_history()`/`phistory()`;
+  `ai_login()`, `ai_logins()`, `ai_logout()`.
+* Times in the log are rounded to the microsecond (they were truncated:
+  `.010000` could be written `.009999`).
+
 * **A reply cut off at the token limit** (`contract/functions.md`): it is sent again
   with twice `max_tokens` only when one was set. Without one it already had the
   model's whole limit (lm15's default, or the provider's own), and the old re-send
