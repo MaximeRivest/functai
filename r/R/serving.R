@@ -307,7 +307,7 @@ serve_conversation <- function(s, method, cid, rest, data, headers, parent) {
     in_service(s, parent, {
       if (verdict == "yes") approve(t, inv, resume = FALSE) else deny(t, inv, reason = data$reason, resume = FALSE)
       again <- ai_turn(chat, t$id)
-      if (!length(again$waiting)) later::later(function() tryCatch(in_service(s, parent, resume_turn(again)), error = function(e) NULL))
+      if (!length(again$waiting)) { rlang::check_installed("later"); later::later(function() tryCatch(in_service(s, parent, resume_turn(again)), error = function(e) NULL)) }
     })
     return(json_reply(202L, list(turn = t$id, verdict = verdict)))
   }

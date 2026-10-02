@@ -43,6 +43,9 @@ see it stream).}
 \item{interface}{A program's interface, as data (\code{\link[=ai_interface]{ai_interface()}}'s form).}
 
 \item{name}{The program's name.}
+
+\item{ai}{Whether the interface is an AI function's (its shapes may carry
+lmcc's other keywords).}
 }
 \value{
 A program (class \code{functai_program}), a function.

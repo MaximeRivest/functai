@@ -88,6 +88,8 @@ opaque <- function() { f <- new_field(lmcc::jobj(), "opaque"); f$opaque <- TRUE;
 #' @rdname ai_program
 #' @param interface A program's interface, as data ([ai_interface()]'s form).
 #' @param name The program's name.
+#' @param ai Whether the interface is an AI function's (its shapes may carry
+#'   lmcc's other keywords).
 #' @export
 program_from_interface <- function(interface, .body, name = "program", .defined_in = NULL, ai = FALSE) {
   core <- list(kind = "module", interface = json_normal(interface), own = list(), body = .body, module = .defined_in %||% "__main__")
