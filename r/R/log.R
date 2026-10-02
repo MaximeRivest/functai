@@ -107,7 +107,7 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
 #' are calls whose inputs the log did not keep (`no_content`, `log_content`),
 #' and rated calls that give no answer (`no_answer`: a right verdict on an
 #' answer that was not kept). Reads every language's log, formats 1 and 2.
-#' @param fn An AI function.
+#' @param fn An AI function, or a program.
 #' @param by Only this person's ratings.
 #' @param folder The log folder.
 #' @param since Only calls and ratings from this time on.
@@ -119,13 +119,14 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
 #'   `left_out`: the counts.
 #' @export
 rated <- function(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE) {
-  core <- core_of(fn)
+  is_ai <- inherits(fn, "functai_fn")
+  core <- if (is_ai) core_of(fn) else program_core(fn)
   log <- read_log(log_folder(folder), since)
   # a function defined at the top level is known by its file too: two notebooks' summarize are two programs
   file <- if (isTRUE(any_file) || !identical(core$module, "__main__")) NULL else core$file
   out <- rated_rows(log$calls, log$ratings, name = core$definition$name, module = core$module,
-                    signature = signature_id(signature_of(core, effective(core$own))),
-                    interface = interface_signature(interface_of(core)), by = by, file = file)
+                    signature = if (is_ai) signature_id(signature_of(core, effective(core$own))),
+                    interface = interface_signature(if (is_ai) interface_of(core) else program_interface(core)), by = by, file = file)
   ctx <- with_context(out$rows, log$calls)
   rows <- ctx$rows
   out$left_out$no_context <- ctx$dropped

@@ -7,7 +7,7 @@
 rated(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE)
 }
 \arguments{
-\item{fn}{An AI function.}
+\item{fn}{An AI function, or a program.}
 
 \item{by}{Only this person's ratings.}
 

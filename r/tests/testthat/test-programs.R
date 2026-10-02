@@ -180,3 +180,21 @@ test_that("stop_stream() cancels the call it watches", {
   expect_identical(s$events[[length(s$events)]]$kind, "failed")
   expect_identical(s$events[[length(s$events)]]$error$type, "Cancelled")
 })
+
+test_that("a program is predicted, evaluated and rated like an AI function", {
+  folder <- withr::local_tempdir()
+  team <- ai(team ~ message, "Which team?", team = choice("billing", "shipping"))
+  route <- ai_program(team ~ message, "Route a message.", function(message) as.character(team(message)), .name = "route")
+  r <- fake_router(responder = function(request, i) if (grepl("parcel", last_text(request))) "<result>\nshipping\n</result>" else "<result>\nbilling\n</result>")
+  data <- tibble::tibble(message = c("Charged twice", "Where is my parcel?"), team = c("billing", "billing"))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, log_calls = folder, {
+    p <- predict(route, data)
+    expect_identical(p$.pred, c("billing", "shipping"))
+    ev <- evaluate(route, data)
+    expect_equal(ev$score, 0.5)
+  })
+  rate(p$.call[[2L]], "wrong", answer = "billing", folder = folder)
+  rows <- rated(route, folder = folder)
+  expect_identical(rows$team, "billing")
+  expect_identical(rows$message, "Where is my parcel?")
+})

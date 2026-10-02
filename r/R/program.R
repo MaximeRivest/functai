@@ -410,3 +410,32 @@ update.functai_program <- function(object, ...) {
   core$own <- set_all(core$own, check_settings(list(...)))
   make_program(core)
 }
+
+#' Predictions of a program for a data frame
+#'
+#' One call of the program per row of `new_data` (its columns named like the
+#' program's inputs), as for an AI function: `.pred` (one output) or
+#' `.pred_<output>`, then `.call` (the call's id, for [rate()]) and `.error`.
+#' `augment()` adds them to `new_data`; [evaluate()] scores them.
+#' @param object,x A program.
+#' @param new_data A data frame.
+#' @param ... Settings for these calls.
+#' @return A tibble.
+#' @export
+predict.functai_program <- function(object, new_data, ...) {
+  core <- program_core(object)
+  extra <- check_settings(list(...))
+  ins <- intersect(names(core$definition$inputs), names(new_data))
+  given <- lapply(as.list(new_data)[ins], identity)
+  results <- lapply(seq_len(nrow(new_data)), function(i) rlang::inject(with_ai_config(run_program_row(core, given, i), !!!extra)))
+  out <- program_answers(core, results)
+  out <- if (core$single) tibble::tibble(.pred = out) else stats::setNames(out, paste0(".pred_", names(out)))
+  out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
+  out$.error <- vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), "")
+  out
+}
+
+#' @rdname predict.functai_program
+#' @method augment functai_program
+#' @export
+augment.functai_program <- function(x, new_data, ...) tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(new_data), predict.functai_program(x, new_data, ...)))
