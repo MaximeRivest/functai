@@ -99,6 +99,7 @@ reference:
     contents:
       - ai_program
       - opaque
+      - predict.functai_program
       - ai_stream
   - title: Conversations
     desc: Calls that remember each other, kept in a store; tools that ask a person first.
