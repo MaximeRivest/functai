@@ -154,14 +154,62 @@
             "lm15": {"type": "string", "minLength": 1}
           }
         },
-        "truncated": {"const": true}
+        "truncated": {"const": true},
+        "steps": {
+          "description": "calls.md, Saw (stage 5): an AI function's call that ran tools, or was made in a conversation, keeps its turn's steps (lmcc kernel 3a, a turn's steps as JSON), so it can be shown again with them. Only when content is true.",
+          "type": "array",
+          "items": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["model", "tool"]}}}
+        },
+        "invocation": {
+          "description": "tools.md: a call made while a tool ran, the number of that tool call within the call that asked for it (1, 2, ... across every step).",
+          "type": "integer", "minimum": 1
+        },
+        "conversation": {
+          "description": "conversations.md: the call that is a conversation's turn: the conversation, the turn (this call's id) and the turn it continues.",
+          "type": "object",
+          "required": ["id", "turn", "parent"],
+          "properties": {
+            "id": {"type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,199}$"},
+            "turn": {"$ref": "#/$defs/uuid"},
+            "parent": {"oneOf": [{"$ref": "#/$defs/uuid"}, {"type": "null"}]}
+          },
+          "additionalProperties": false
+        },
+        "writer": {
+          "description": "tools.md, Resuming: a call continued by a later writer (a resumed turn); a reader takes, for one id, the record of the highest writer.",
+          "type": "integer", "minimum": 2
+        },
+        "changes": {
+          "description": "plugins.md, Records: each change plugins made to the call, in order; when content is not whole, without what it changed.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["plugin", "version", "hook"],
+            "properties": {
+              "plugin": {"type": "string", "minLength": 1},
+              "version": {"type": "string"},
+              "hook": {"enum": ["turn_start", "context", "before_call", "request", "tool_call", "tool_result"]},
+              "change": {"type": "object"}
+            }
+          }
+        },
+        "sections": {
+          "description": "plugins.md, Records: the sections the call's conversation's context hooks gave it. Only when content is true.",
+          "type": "array", "items": {"type": "string"}
+        },
+        "replayable": {
+          "description": "plugins.md, Records: false when a request hook replaced a provider request.",
+          "const": false
+        }
       },
       "allOf": [
         {
           "if": {"properties": {"content": {"const": false}}},
           "then": {
             "required": ["omitted"],
+            "not": {"anyOf": [{"required": ["steps"]}, {"required": ["sections"]}]},
             "properties": {
+              "changes": {"items": {"not": {"required": ["change"]}}},
               "error": {"oneOf": [{"type": "null"}, {"type": "object", "not": {"required": ["message"]}}]},
               "exchanges": {
                 "items": {
@@ -190,7 +238,7 @@
       "required": ["name", "kind", "module", "version", "interface", "answer"],
       "properties": {
         "name": {"type": "string", "minLength": 1},
-        "kind": {"enum": ["ai", "module"]},
+        "kind": {"enum": ["ai", "module", "remote"]},
         "module": {"type": "string"},
         "version": {"$ref": "#/$defs/sha256"},
         "signature": {"$ref": "#/$defs/sha256"},
@@ -198,11 +246,21 @@
         "answer": {"type": "string", "minLength": 1},
         "saved": {"$ref": "#/$defs/sha256"},
         "file": {"type": "string"},
-        "line": {"type": "integer", "minimum": 0}
+        "line": {"type": "integer", "minimum": 0},
+        "remote": {"description": "serving.md: a program served elsewhere, called here: where it is served.", "type": "string", "minLength": 1}
       },
-      "if": {"properties": {"kind": {"const": "ai"}}},
-      "then": {"required": ["signature"]},
-      "else": {"not": {"required": ["signature"]}}
+      "allOf": [
+        {
+          "if": {"properties": {"kind": {"const": "ai"}}},
+          "then": {"required": ["signature"]},
+          "else": {"not": {"required": ["signature"]}}
+        },
+        {
+          "if": {"properties": {"kind": {"const": "remote"}}},
+          "then": {"required": ["remote"]},
+          "else": {"not": {"required": ["remote"]}}
+        }
+      ]
     },
     "omitted": {
       "type": "object",

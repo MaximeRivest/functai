@@ -828,11 +828,14 @@ class FunctAIFunc(Generic[P, R]):
         '''
         inputs = self._bind_inputs(args, kwargs)
         spec, s = self._spec(), self._effective()
+        base = spec.signature.instructions
+        spec, s, _offered, specs = self._shaped(inputs, spec, s)          # what the call's hooks would make of it
         plan, _router, model, route = self._plan_for(spec, s)
+        _check_placed(self, plan, base, spec, s)
         s = models.adjust(s, route)
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
-            values["tools"] = list(self._tool_specs)
+            values["tools"] = list(specs)
         rendered = plan.render(plan.turn(values), turns=self._past(plan, spec, s))
         import lmcc_lm15
         return lmcc_lm15.request(rendered, model=model, config=engine.config_of(s))
@@ -955,8 +958,31 @@ class FunctAIFunc(Generic[P, R]):
         object.__setattr__(second, "first", pred)
         return second, model, plan
 
+    def _shaped(self, inputs: Dict[str, Any], spec: Spec, s: Dict[str, Any], call: Any = None):
+        """(spec, settings, tools) as the ``before_call`` hooks leave them
+        (contract/plugins.md): the instruction with the sections added, the
+        model and settings changed, the tools offered."""
+        from . import plugins
+        shaped = plugins.before_call(self, inputs, s, call)
+        if call is not None:
+            call.changes.extend(shaped.applied.items)
+            call.sections = list(shaped.context_sections)   # what it was shown of its conversation (replayed)
+        if shaped.instruction is not None or shaped.sections:
+            sig = spec.signature
+            base = shaped.instruction if shaped.instruction is not None else sig.instructions
+            spec = dataclasses.replace(spec, signature=dataclasses.replace(
+                sig, instructions="\n\n".join([base, *shaped.sections])))
+        offered = [t for t in self._tools if shaped.tools is None or getattr(t, "__name__", None) in shaped.tools]
+        specs = [sp for sp in self._tool_specs if shaped.tools is None or sp.name in shaped.tools]
+        return spec, shaped.settings, offered, specs
+
     def _call_model(self, inputs: Dict[str, Any], spec: Spec, s: Dict[str, Any]):
+        call = calllog.current()
+        base = spec.signature.instructions
+        spec, s, offered, specs = self._shaped(inputs, spec, s, call if call is not None and call.program is self
+                                               else None)
         plan, router, model, route = self._plan_for(spec, s)
+        _check_placed(self, plan, base, spec, s)
         rec = engine.RECORDING.get()
         if rec is not None and s.get("lm") is not None:
             rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
@@ -965,8 +991,8 @@ class FunctAIFunc(Generic[P, R]):
         calllog.route(route.provider)
         past = self._past(plan, spec, s)
         pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
-                          router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},
-                          tool_specs=self._tool_specs)
+                          router=router, model=model, tools={t.__name__: t for t in offered if callable(t)},
+                          tool_specs=specs)
         return pred, model, plan
 
     @overload
@@ -1482,6 +1508,47 @@ class FunctAIFunc(Generic[P, R]):
                 warnings.warn(f"[functai] {self.__name__}: instruction refinement failed ({exc})")
             return
         self._state = dataclasses.replace(self._state, instructions=text)
+
+
+def _places_instruction(nodes: Any) -> bool:
+    """Whether compiled template nodes write ``{instruction}`` anywhere (in a
+    loop or a condition included)."""
+    if isinstance(nodes, (list, tuple)):
+        return any(_places_instruction(n) for n in nodes)
+    if getattr(nodes, "path", None) == "instruction":
+        return True
+    if dataclasses.is_dataclass(nodes):
+        return any(_places_instruction(getattr(nodes, f.name)) for f in dataclasses.fields(nodes)
+                   if isinstance(getattr(nodes, f.name), (list, tuple)) or dataclasses.is_dataclass(
+                       getattr(nodes, f.name)))
+    return False
+
+
+def _check_placed(fn: "FunctAIFunc", plan: Any, base: str, spec: Spec, settings: Dict[str, Any]) -> None:
+    """Refuse a call whose plugins changed the instruction (sections, a
+    replacement, a conversation's summary) when it would not reach the model:
+    a layout that never writes the instruction, or a baked model (it reads
+    the message it was trained on, no instruction). Sent anyway, the record
+    would say the model was told what it never was (contract/plugins.md)."""
+    if spec.signature.instructions == base:
+        return
+    from .plugins import PluginError
+    if is_baked(settings.get("lm")):
+        raise PluginError("plugin-change", f"{fn.__name__}: plugins changed its instruction (sections, a summary of "
+                                           f"earlier turns, or a replacement), and it runs on a baked model, which "
+                                           f"reads only the message it was trained on: the change would not reach "
+                                           f"it. Run it without those plugins, or on a model that reads instructions.")
+    try:
+        compiled = plan.adapter.compiled_messages()
+    except Exception:  # noqa: BLE001 — a layout that is not a template: lmcc places the instruction itself
+        return
+    if any(nodes is not None and _places_instruction(nodes) for _msg, nodes in compiled):
+        return
+    raise PluginError("plugin-change", f"{fn.__name__}: plugins changed its instruction (sections, a summary of "
+                                       f"earlier turns, or a replacement), and its layout never writes "
+                                       f"{{instruction}}, so the change would not be sent. Put {{instruction}} in "
+                                       f"its template (system(\"{{instruction}}\"), ...), or use plugins that do "
+                                       f"not change the instruction with it.")
 
 
 def _check_baked_signature(fn: "FunctAIFunc", spec: Spec, baked: Any) -> None:

@@ -1,0 +1,57 @@
+{
+ "description": "sections accumulate; the instruction, the model and the tools are the last change's; settings merge",
+ "kind": "combine",
+ "hook": "before_call",
+ "start": {
+  "instruction": "Answer.",
+  "lm": "gpt-4.1-mini",
+  "tools": [
+   "read",
+   "write"
+  ],
+  "sections": [],
+  "settings": {}
+ },
+ "changes": [
+  {
+   "sections": [
+    "A."
+   ],
+   "lm": "m1"
+  },
+  null,
+  {
+   "sections": [
+    "B."
+   ],
+   "settings": {
+    "temperature": 0.2
+   }
+  },
+  {
+   "instruction": "Be a pirate.",
+   "tools": [
+    "read"
+   ],
+   "settings": {
+    "max_tokens": 50
+   }
+  }
+ ],
+ "expect": {
+  "instruction": "Be a pirate.",
+  "lm": "m1",
+  "tools": [
+   "read"
+  ],
+  "sections": [
+   "A.",
+   "B."
+  ],
+  "settings": {
+   "temperature": 0.2,
+   "max_tokens": 50
+  },
+  "ran": 4
+ }
+}

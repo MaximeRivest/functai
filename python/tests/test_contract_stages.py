@@ -118,3 +118,98 @@ def test_rows_that_keep_their_context(path):
     else:
         got = calllog.earlier_of(case["call"], case["records"])
         assert {k: got[k] for k in ("earlier", "conversation")} == expect
+
+
+# ------------------------------------------------------------------ plugins (contract/plugins.md)
+
+
+@pytest.mark.parametrize("path", [p for p in cases("plugins") if p.stem.startswith("order")], ids=lambda p: p.stem)
+def test_plugin_order(path):
+    from functai import plugins
+    case = load(path)
+    made = {}
+    layers = []
+    for layer in case["layers"]:
+        exts = [made.setdefault(n, plugins.Plugin(n)) for n in layer["plugins"]]
+        settings = {"plugins": exts}
+        if layer["where"] == "configure" and not case["program_plugins"]:
+            settings["program_plugins"] = False
+        layers.append((layer["where"], settings))
+    assert [p.name for p in plugins.in_order(layers)] == case["expect"]["order"]
+
+
+def _handlers(changes, ran):
+    import functai
+    out = []
+    for i, c in enumerate(changes):
+        def handler(event, c=c):
+            ran.append(1)
+            return None if c is None else functai.Change(**c)
+        p = functai.Plugin(f"p{i}")
+        out.append((p, handler))
+    return out
+
+
+@pytest.mark.parametrize("path", [p for p in cases("plugins") if p.stem.startswith("combine")], ids=lambda p: p.stem)
+def test_plugin_changes_combine(path, fake):
+    import types
+    import functai
+    from functai import ai, plugins, tools as _tools
+    case = load(path)
+    hook, start, expect = case["hook"], case["start"], case["expect"]
+    ran = []
+    made = _handlers(case["changes"], ran)
+    for p, h in made:
+        p.on(hook, h)
+    fake("x")
+    functai.configure(plugins=[p for p, _h in made])
+
+    def read(x: str) -> str:
+        """Read."""
+
+    def write(x: str) -> str:
+        """Write."""
+
+    @ai(tools=[read, write])
+    def f(x: str) -> str:
+        """Answer."""
+
+    if hook == "before_call":
+        shaped = plugins.before_call(f, {"x": "1"}, {"lm": start["lm"]}, None)
+        assert shaped.sections == expect["sections"] and shaped.settings["lm"] == expect["lm"]
+        assert {k: shaped.settings[k] for k in expect["settings"]} == expect["settings"]
+        assert shaped.tools == expect["tools"] and shaped.instruction == expect["instruction"]
+    elif hook == "context":
+        from functai.conversations import describe
+        store = functai.MemoryConversations()
+        recs = [{**describe(f), "version": "v"}]
+        parent = None
+        for t in start["keep"]:
+            recs += [{"functai_conversation": 1, "kind": "turn", "at": "2026-09-30T10:00:00.000000Z", "turn": t,
+                      "parent": parent, "program": "v", "inputs": {"x": t}},
+                     {"functai_conversation": 1, "kind": "ended", "at": "2026-09-30T10:00:00.000000Z", "turn": t,
+                      "state": "done", "outputs": {"result": "r", "photo": "P", "notes": "N"}}]
+            parent = t
+        store.append("c", recs)
+        chat = f.conversation("c", store=store)
+        picked, without, sections, _changes, _rec = chat._shown(chat._read(), parent, {}, None)
+        assert [st.id for st in picked] == expect["keep"] and sections == expect["sections"]
+        assert without == expect["without"]
+    elif hook == "turn_start":
+        @ai
+        def g(message: str, tone: str) -> str:
+            """G."""
+        got, _changes = g.conversation()._turn_start(dict(start["inputs"]), {})
+        assert got == expect["inputs"]
+    else:
+        call = types.SimpleNamespace(program=f, changes=[], function="f", turn_run=None, path="f#1", streams=[])
+        approval = _tools.Approval("c", 1, "t1", "send", dict(start.get("inputs") or {}), "changes", "f/send", "f#1")
+        if hook == "tool_call":
+            got, refused = plugins.tool_call(call, approval, {})
+            if "block" in expect:
+                assert got is None and expect["block"] in refused
+            else:
+                assert got == expect["inputs"]
+        else:
+            assert plugins.tool_result(call, approval, {}, start["output"]) == expect["output"]
+    assert len(ran) == expect["ran"]

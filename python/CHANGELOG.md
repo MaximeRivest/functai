@@ -2,6 +2,38 @@
 
 ## Unreleased
 
+**Plugins** (`design/11-plugins.md`, `contract/plugins.md`): hooks over
+turns, context, calls, requests and tools, whose changes are data and
+recorded, so rated calls are still asked again as they were.
+
+- `functai.Plugin("name", version=...)` with seven hooks: `turn_start`
+  (a turn's inputs), `context` (which earlier turns are shown, fields left
+  out, sections), `before_call` (instruction, sections, model, settings,
+  tools offered), `request` (the escape hatch: the call is then not
+  replayable), `tool_call` (change the input, block, or `tool.ask()` a
+  person), `tool_result`, `turn_end` (hears; may keep entries). A handler
+  returns `functai.Change(...)` or None.
+- `plugins=[...]` in `configure`, a block, `@ai`, `@module`, a
+  conversation or one turn; the program's own run first, the host's last;
+  `program_plugins=False` lets a host drop a program's own.
+  `functai.load_plugin(path)` reads one from a file.
+- Records keep each change (`changes`), the sections a call's conversation
+  gave it (`sections`), and `replayable: false` after a request was
+  replaced; a turn keeps what its context hooks showed it, and resuming
+  shows exactly that. Rated rows carry `sections`; evaluating asks them
+  again with their conversation, shaped by the evaluating process's
+  plugins, never by recorded ones.
+- Conversations keep plugins' **entries** per branch: `chat.remember(...)`,
+  `chat.entries(...)`.
+- **Approval is a plugin** (`approve=` drives it); any plugin may ask a
+  person, and approvals name the plugin that asked (`plugin`, `question`).
+- Built-ins: `functai.compaction(keep=20, every=10)` (a rolling summary per
+  branch) and `functai.delegate(program)` (a tool that runs another program
+  in its own conversation, per branch).
+- `examples/plugins/`: six real Pi and Chattering extensions as plugins.
+
+## Stages 1.2 to 5 (merged, unreleased)
+
 Stages 1.2 to 5 (`design/10-stages-1.2-to-5-python.md`), in Python first;
 the contract says each (`contract/replies.md`, `conversations.md`,
 `tools.md`, `serving.md`, and additions to `streaming.md` and `calls.md`).

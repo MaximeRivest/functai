@@ -1,7 +1,18 @@
 # Approval { #functai.Approval }
 
 ```{.python .no-run}
-Approval(call, invocation, id, name, input, effects, path, site='')
+Approval(
+    call,
+    invocation,
+    id,
+    name,
+    input,
+    effects,
+    path,
+    site='',
+    plugin='approval',
+    question=None,
+)
 ```
 
 One tool call waiting for a person's answer.

@@ -114,6 +114,15 @@ def test_a_baked_model_reads_its_own_layout_whatever_the_function_says(baked):
     assert functai.inspect_history(1)[0].request.messages[-1].parts[0].text == "The book was great."
 
 
+def test_a_baked_model_refuses_plugins_that_change_the_instruction(baked):
+    mark = functai.Plugin("mark")
+    mark.before_call(lambda call: functai.Change(sections=["Be kind."]))
+    with functai.configure(plugins=[mark]):
+        with pytest.raises(functai.PluginError) as err:
+            sentiment.using(lm=baked)("The pizza was amazing.")     # it reads only the message it was trained on
+    assert err.value.code == "plugin-change" and "baked" in str(err.value)
+
+
 def test_hidden_reasoning_is_not_asked_of_a_head(tmp_path, baked):
     # thoughtful has module="cot": on a head model it answers without a reasoning output
     assert thoughtful.using(lm=baked)("The movie was great.") == "positive"

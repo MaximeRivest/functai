@@ -399,8 +399,10 @@ def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept
                 kept_out = {k: v for k, v in value.items() if kept.get(k, False)}
                 if kept_out:
                     out["outputs"] = kept_out
-        elif key in ("returned", "steps"):
-            pass                          # code can return any value, steps hold every value: kept only when whole
+        elif key in ("returned", "steps", "sections"):
+            pass                          # each can hold any value of the call (a summary quotes the turns): only whole
+        elif key == "changes":
+            out["changes"] = [{k: v for k, v in c.items() if k != "change"} for c in value]   # who, not what
         elif key == "probabilities":
             kept_p = {k: v for k, v in value.items() if kept.get(k, False)}
             if kept_p:
@@ -521,7 +523,7 @@ class Call:
                  "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
                  "journal_status", "context", "pid", "path", "names", "invocation", "invocations", "conversation",
-                 "writer", "turn_run", "bound", "__weakref__")
+                 "writer", "turn_run", "bound", "changes", "replayable", "sections", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"], id: Optional[str] = None):
         self.id = id or new_id()
@@ -570,6 +572,9 @@ class Call:
         self.writer: Optional[int] = None                    # a call continued by a later writer (resumed)
         self.turn_run: Any = None                            # the conversation turn it runs in (conversations)
         self.bound: Optional[Dict[str, Any]] = None          # its inputs as bound (for a helper's memory)
+        self.changes: List[Dict[str, Any]] = []              # what plugins changed (contract/plugins.md)
+        self.replayable = True                               # False: a plugin replaced a provider request
+        self.sections: List[str] = []                        # text the instruction was given beyond its own
 
     # ----- what sees it
 
@@ -1315,6 +1320,12 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
         rec["conversation"] = dict(call.conversation)
     if call.writer is not None and call.writer > 1:
         rec["writer"] = call.writer
+    if call.sections:
+        rec["sections"] = list(call.sections)
+    if call.changes:
+        rec["changes"] = copy.deepcopy(call.changes)
+    if not call.replayable:
+        rec["replayable"] = False
     if call.journal_status is not None:
         rec["journal"] = call.journal_status
     rec["caller"] = dict(target.caller) if target is not None else {}
@@ -1731,12 +1742,12 @@ def _needs_context(rec: Optional[Mapping[str, Any]], by_id: Mapping[str, Any]) -
     for a module, a call inside it (a helper that remembers)."""
     if rec is None:
         return False
-    if rec.get("saw") or rec.get("conversation"):
+    if rec.get("saw") or rec.get("conversation") or rec.get("sections"):
         return True
     if (rec.get("program") or {}).get("kind") != "module":
         return False
-    return any(c.get("root") == rec.get("root") and c.get("saw") and _under(c, rec.get("id"), by_id)
-               for c in by_id.values())
+    return any(c.get("root") == rec.get("root") and (c.get("saw") or c.get("sections"))
+               and _under(c, rec.get("id"), by_id) for c in by_id.values())
 
 
 def _meta(row: Mapping[str, Any], key: str) -> Any:
@@ -1916,14 +1927,19 @@ def earlier_of(call: str, records: Any) -> Dict[str, Any]:
         earlier = [_turn_of(by_id[e["call"]], e) for e in saw(call, by_id)]
     out: Dict[str, Any] = {"earlier": earlier,
                            "conversation": (rec.get("conversation") or {}).get("id")}
+    if rec.get("sections"):
+        out["sections"] = list(rec["sections"])            # what plugins added to its instruction
     if (rec.get("program") or {}).get("kind") == "module":
         inside = [c for c in by_id.values() if c.get("root") == rec.get("root") and c.get("id") != call
-                  and _under(c, call, by_id) and c.get("saw")]
+                  and _under(c, call, by_id) and (c.get("saw") or c.get("sections"))]
         helpers = []
         for c in sorted(inside, key=lambda c: _order(c, "started")):
             check_kept(c["id"], by_id)
-            helpers.append({"program": (c.get("program") or {}).get("name"), "call": c["id"],
-                            "earlier": [_turn_of(by_id[e["call"]], e) for e in saw(c["id"], by_id)]})
+            helper = {"program": (c.get("program") or {}).get("name"), "call": c["id"],
+                      "earlier": [_turn_of(by_id[e["call"]], e) for e in saw(c["id"], by_id)]}
+            if c.get("sections"):
+                helper["sections"] = list(c["sections"])
+            helpers.append(helper)
         out["helpers"] = helpers
     return out
 
@@ -2241,10 +2257,10 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
         raise ValueError(f"no rated calls of {name} in {root}" + (f" ({'; '.join(dropped)})" if dropped else ""))
     if dropped:
         _warn_once(("rated", name, tuple(left.items())), f"{name}: rated calls left out: " + "; ".join(dropped))
-    extra = [k for k in ("earlier", "conversation", "helpers") if any(k in r for r in rows)]
+    extra = [k for k in ("earlier", "conversation", "helpers", "sections") if any(k in r for r in rows)]
     meta = list(dict.fromkeys(k for r in rows for k in list(r)[-(_META + len(extra)):]))   # each row ends with them
-    first = ["earlier", "conversation", "helpers", "rating", "rated_by", "origin", "disputed", "sample", "version",
-             "call"]
+    first = ["earlier", "conversation", "helpers", "sections", "rating", "rated_by", "origin", "disputed", "sample",
+             "version", "call"]
     meta.sort(key=lambda k: first.index(k.lstrip("_")))
     names = [k for k in dict.fromkeys(k for r in rows for k in r) if k not in meta] + meta
     return _dpyr().read(_tabular(names, [{k: _cell(v) for k, v in r.items()} for r in rows]))

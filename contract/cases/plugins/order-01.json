@@ -1,0 +1,42 @@
+{
+ "description": "the program's own first, the process's last; a plugin set twice runs once, in its outermost layer",
+ "kind": "order",
+ "layers": [
+  {
+   "where": "own",
+   "plugins": [
+    "mine",
+    "host-mode"
+   ]
+  },
+  {
+   "where": "block",
+   "plugins": [
+    "conversation"
+   ]
+  },
+  {
+   "where": "block",
+   "plugins": [
+    "outer-block"
+   ]
+  },
+  {
+   "where": "configure",
+   "plugins": [
+    "host-mode",
+    "audit"
+   ]
+  }
+ ],
+ "program_plugins": true,
+ "expect": {
+  "order": [
+   "mine",
+   "conversation",
+   "outer-block",
+   "host-mode",
+   "audit"
+  ]
+ }
+}

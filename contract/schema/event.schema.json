@@ -161,10 +161,12 @@
               "input": {},
               "effects": {"enum": ["reads", "changes", null]},
               "path": {"type": "string", "minLength": 1},
-              "to": {"enum": ["owner", "caller"]}
+              "to": {"enum": ["owner", "caller"]},
+              "plugin": {"type": "string", "minLength": 1},
+              "question": {"type": "string"}
             },
             "if": {"required": ["content"]},
-            "then": {"not": {"required": ["input"]}},
+            "then": {"not": {"anyOf": [{"required": ["input"]}, {"required": ["question"]}]}},
             "else": {"required": ["input"]}
           }
         },
@@ -177,7 +179,8 @@
               "id": {"type": "string", "minLength": 1},
               "verdict": {"enum": ["yes", "no"]},
               "by": {"type": ["string", "null"]},
-              "reason": {"type": ["string", "null"]}
+              "reason": {"type": ["string", "null"]},
+              "plugin": {"type": "string", "minLength": 1}
             },
             "if": {"required": ["content"]},
             "then": {"not": {"required": ["reason"]}}

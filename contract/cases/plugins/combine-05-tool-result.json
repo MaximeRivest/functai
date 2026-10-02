@@ -1,0 +1,18 @@
+{
+ "description": "the output is the last change's",
+ "kind": "combine",
+ "hook": "tool_result",
+ "start": {
+  "output": "raw"
+ },
+ "changes": [
+  {
+   "output": "raw (checked)"
+  },
+  null
+ ],
+ "expect": {
+  "output": "raw (checked)",
+  "ran": 2
+ }
+}

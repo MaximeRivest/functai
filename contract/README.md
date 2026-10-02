@@ -23,6 +23,7 @@ by another; they meet only here.
 | [`conversations.md`](conversations.md) | conversations: their records, a turn's state, where a new turn goes, what a turn is shown, helpers' memory, stopping, leases, stores | `cases/conversations/` |
 | [`tools.md`](tools.md) | tools' effects, approval rules and paths, waiting turns, keeping what may have happened, resuming a turn | `cases/tools/` |
 | [`serving.md`](serving.md) | serving a program over HTTP, and using it from elsewhere (`remote`) | |
+| [`plugins.md`](plugins.md) | plugins: hooks over turns, context, calls, requests and tools; changes as data and recorded; order; entries; the built-in approval, compaction and delegation | `cases/plugins/` |
 
 `schema/` holds JSON Schemas (draft 2020-12) for a call record, a rating
 record, a stream event, a program's interface, a saved manifest and a
@@ -109,10 +110,12 @@ thing it cannot do yet wait for it, and are not failures.
 | `tools/` | which tool calls a rule asks about; the refusal the model sees | every language with approvals |
 | `views/` | the outside view | every language that serves programs or shows views |
 | `context/` | a rated call's earlier turns, as a row keeps them | every language whose `rated` gives `earlier` |
+| `plugins/` | the order plugins run in, and how their changes combine | every language with plugins |
 
 Stages 1.2 to 5 (2026-09-30) were built in Python first
 (`../design/10-stages-1.2-to-5-python.md`): only Python's harness reads
-`replies/`, `conversations/`, `tools/`, `views/` and `context/` today, and
+`replies/`, `conversations/`, `tools/`, `views/`, `context/` and `plugins/`
+today (plugins since 2026-10-02), and
 the other languages take them with each stage.
 
 Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
@@ -152,6 +155,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `turn-waiting` | [tools.md](tools.md) | a turn stopped to wait for a person's answer (`Waiting`) |
 | `approval-required` | [tools.md](tools.md) | a tool call a rule asks about, and nobody to ask (a plain call) |
 | `serve-opaque`, `serve-keys` | [serving.md](serving.md) | a program that cannot be served as asked |
+| `plugin-api`, `plugin-hook`, `plugin-name`, `plugin-change`, `plugin-failed`, `plugin-load` | [plugins.md](plugins.md) | a plugin refused, or failed (`PluginError`) |
 
 Each rule of "Rows with known answers" was broken on purpose in the
 Python implementation (thirteen breaks: the earliest rating instead of

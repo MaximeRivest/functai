@@ -23,6 +23,8 @@ API:
              chat.turns, chat.continue_from(turn), chat.render(...), turn.approve()); all_turns, last_turns,
              remember, earlier(); FolderStore
 - Tools:     @tool(effects="reads"|"changes"); approve=ask or "changes"; Waiting, ApprovalError
+- Plugins:   Plugin(name, version=...) with hooks (turn_start, context, before_call, request, tool_call,
+             tool_result, turn_end) returning Change(...); configure(plugins=[...]); compaction(), delegate()
 - Serving:   serve(program), Service; remote(url, key=...)
 - Long runs: configure(cache_replies="disk"), replicate=; fn.map(rows, threads=8) (a progress line; run again to
              resume); quotes_found(text, quotes); prune_calls(older_than="90d"); split(rows, by="conversation")
@@ -66,6 +68,8 @@ from .streaming import Cancelled, Stream
 from .conversations import Conversation, Turn, all_turns, earlier, last_turns, remember
 from .stores import FolderStore, MemoryConversations
 from .tools import Approval, Tool, tool
+from .plugins import Change, Plugin, PluginError, load_plugin
+from .builtins import compaction, delegate
 from .serving import Service, serve
 from .remote import RemoteProgram, remote
 from .judges import quotes_found
@@ -108,6 +112,7 @@ __all__ = [
     "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "Conversation", "Turn", "all_turns", "last_turns", "remember", "earlier", "FolderStore", "MemoryConversations",
     "tool", "Tool", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",
+    "Plugin", "Change", "PluginError", "load_plugin", "compaction", "delegate",
     "Service", "serve", "remote", "RemoteProgram", "quotes_found", "prune_calls", "split",
     "labeled_few_shot", "bootstrap_few_shot", "gepa",
     "Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch", "InstructionSearch", "GEPA",

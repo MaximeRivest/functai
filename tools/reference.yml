@@ -88,6 +88,16 @@ quartodoc:
     - FolderStore
     - Waiting
     - ConversationError
+  - title: Plugins
+    desc: Hooks over turns, context, calls, requests and tools; every change is data and recorded.
+      Approval, compaction and delegation are plugins too.
+    contents:
+    - Plugin
+    - Change
+    - PluginError
+    - load_plugin
+    - compaction
+    - delegate
   - title: Tools that ask first
     desc: Tools say what they do to the world; a person can be asked before they run.
     contents:

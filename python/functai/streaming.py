@@ -264,10 +264,12 @@ class Approval(Event):
     effects: Optional[str]
     path: str
     to: str = "owner"
+    plugin: str = "approval"          # which plugin asks
+    question: Optional[str] = _optional()   # why, when it says
     kind = "approval"
 
     def _dropped(self, name, keep, program):
-        return name == "input"
+        return name in ("input", "question")
 
     def _json(self, name, value, keep=None):
         return calllog.to_json(value)[0] if name == "input" else value
@@ -282,6 +284,7 @@ class Approved(Event):
     verdict: str
     by: Optional[str] = None
     reason: Optional[str] = _optional()
+    plugin: str = "approval"
     kind = "approved"
 
     def _dropped(self, name, keep, program):

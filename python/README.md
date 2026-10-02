@@ -101,7 +101,7 @@ only `append` is sent every event through its `append`. At exit, FunctAI waits a
 seconds for observers and journals to catch up. In a process forked
 inside a call, calls start a tree of their own.
 
-## Conversations, tools that ask first, serving
+## Conversations, plugins, tools that ask first, serving
 
 A conversation is a program's calls that remember each other. The
 function is unchanged; the memory is the conversation's, kept where you
@@ -130,6 +130,23 @@ try:
 except functai.Waiting as w:
     ...                                                 # later, anywhere: w.turn.approve(w.approvals[0])
 ```
+
+Plugins change what programs do through a few hooks, and every change is
+recorded as data, so a rated answer is still asked again as it was:
+
+```python
+review = functai.Plugin("review-mode", version="1.0.0")
+
+@review.before_call
+def careful(call):
+    return functai.Change(sections=["Only point out problems."], tools=["read_file"])
+
+chat = assistant.conversation("work", plugins=[review, functai.compaction(keep=20)])
+```
+
+Approval is one of them; long conversations are summarized by
+`functai.compaction`; `functai.delegate(program)` hands work to another
+program in a conversation of its own.
 
 A program is served with `functai serve saved/ --keys keys.txt` (or
 `functai.serve(program)`), to callers who see only its boundary; on

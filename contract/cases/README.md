@@ -269,3 +269,16 @@ log); `expect.events` is the view.
 `records` (call records) and `call` (a rated call's id); `expect` is
 `{"earlier", "conversation"}`, or `{"refuses": code}` when the log
 cannot show its earlier turns again.
+
+## plugins/ (../plugins.md, *Order*)
+
+- `kind: "order"`: `layers` (closest first, each `{"where": "own" |
+  "block" | "configure", "plugins": [names]}`) and `program_plugins`
+  (false: the configure layer refuses the program's own); `expect.order`
+  is the names in the order their handlers run.
+- `kind: "combine"`: `hook`, `start` (the state before any handler:
+  `sections`, `instruction`, `lm`, `tools`, `settings`; `keep`,
+  `without`; `inputs`; `output`), `changes` (what each handler returns, in
+  order, or null); `expect` is the state after them, and `ran`, how many
+  handlers ran (a block ends `tool_call`). A harness builds one plugin per
+  handler, in order, in one layer.
