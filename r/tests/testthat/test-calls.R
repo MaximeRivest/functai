@@ -216,7 +216,7 @@ test_that("every call is a line in the log; ratings make rows with known answers
   expect_identical(nrow(rows), 2L)
   expect_s3_class(rows$mood, "factor")                        # the answer's column is the formula's name
   expect_setequal(as.character(rows$mood), c("unhappy", "mixed"))
-  expect_identical(attr(rows, "left_out"), list(other_signature = 0L, no_content = 0L, no_answer = 0L))
+  expect_identical(attr(rows, "left_out"), list(other_signature = 0L, no_content = 0L, no_answer = 0L, no_context = 0L))
 })
 
 test_that("log_content = FALSE keeps sizes and tokens, never values; a failed call records its error", {
