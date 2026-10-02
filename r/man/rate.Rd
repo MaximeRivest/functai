@@ -26,7 +26,10 @@ your earlier rating. Default: \code{"wrong"} when \code{answer} is given.}
 
 \item{note, reasons}{Why, in a sentence, and short tags.}
 
-\item{by}{Who is judging (default: the caller's \code{user}, else this computer's account).}
+\item{by}{Who is judging: a person (default: the caller's \code{user}). With
+no person named, the rating is made under this computer's account,
+which may be shared: it is kept on its own, and never replaces nor is
+replaced by another rating.}
 
 \item{origin}{\code{"review"} (someone judged it) or \code{"edit"} (someone changed the output while using it).}
 

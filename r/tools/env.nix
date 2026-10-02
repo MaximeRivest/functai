@@ -5,7 +5,7 @@ let
   R = pkgs.rWrapper.override {
     packages = with pkgs.rPackages; [
       # functai's imports
-      rlang vctrs tibble cli generics withr jsonlite
+      rlang vctrs tibble cli generics withr jsonlite utf8
       # lm15's imports
       curl openssl askpass
       # tests and the tidyverse functai pairs with

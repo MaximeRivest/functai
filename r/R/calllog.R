@@ -256,12 +256,17 @@ finish_call <- function(call, error = NULL) {
 
 read_log <- function(folder = NULL, since = NULL) {
   root <- normalizePath(path.expand(folder %||% folder_of(TRUE)), mustWork = FALSE)
-  cutoff <- if (is.null(since)) "" else iso(as.numeric(as.POSIXct(since)))
+  cutoff <- if (is.null(since)) "" else iso(time_since(since))
   calls <- list(); ratings <- list()
   if (!dir.exists(root)) return(list(calls = calls, ratings = ratings))
+  # the files at the top (what prune_calls() kept), then each day's
+  files <- sort(list.files(root, pattern = "\\.jsonl$", full.names = TRUE), method = "radix")
   for (day in sort(list.files(root), method = "radix")) {
     if (!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", day) || (nzchar(cutoff) && before(day, substr(cutoff, 1, 10)))) next
-    for (f in sort(list.files(file.path(root, day), pattern = "\\.jsonl$", full.names = TRUE), method = "radix")) {
+    files <- c(files, sort(list.files(file.path(root, day), pattern = "\\.jsonl$", full.names = TRUE), method = "radix"))
+  }
+  {
+    for (f in files) {
       lines <- tryCatch(readLines(f, warn = FALSE, encoding = "UTF-8"), error = function(e) character(0))
       for (line in lines) {
         if (!nzchar(trimws(line))) next
@@ -272,7 +277,89 @@ read_log <- function(folder = NULL, since = NULL) {
       }
     }
   }
-  list(calls = calls, ratings = ratings)
+  list(calls = highest_writer(calls), ratings = ratings)
+}
+
+# For one id, the record of the highest writer (a resumed turn's call is
+# written again by its later writer: calls.md, `writer`).
+highest_writer <- function(calls) {
+  if (!length(calls)) return(calls)
+  ids <- vapply(calls, function(c) as.character(c$id %||% ""), "")
+  if (!anyDuplicated(ids)) return(calls)
+  w <- vapply(calls, function(c) as.numeric(c$writer %||% 1), 0)
+  keep <- vapply(seq_along(calls), function(i) { same <- which(ids == ids[[i]]); i == same[which.max(w[same])] }, NA)
+  calls[keep]
+}
+
+# A time from `since`: a date or date-time, or text like "90d", "12h", "2w".
+time_since <- function(x) {
+  if (inherits(x, c("Date", "POSIXt"))) return(as.numeric(as.POSIXct(x, tz = "UTC")))
+  if (is.character(x) && length(x) == 1L) {
+    m <- regmatches(x, regexec("^\\s*([0-9]+)\\s*([hdw])\\s*$", x))[[1L]]
+    if (length(m)) return(as.numeric(Sys.time()) - as.numeric(m[[2L]]) * c(h = 3600, d = 86400, w = 604800)[[m[[3L]]]])
+    t <- suppressWarnings(as.POSIXct(x, tz = "UTC", tryFormats = c("%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M:%OS", "%Y-%m-%d")))
+    if (!is.na(t)) return(as.numeric(t))
+  }
+  if (is.numeric(x)) return(as.numeric(x))
+  cli::cli_abort("a time is a date, a date-time, or text like {.val 2026-09-20}, {.val 90d}, {.val 12h}, {.val 2w}")
+}
+
+#' Make the call log smaller, keeping what ratings need
+#'
+#' Deletes the log's day folders older than `older_than` (the log is kept
+#' small by deleting whole days: contract/calls.md, *The folder*). Before a
+#' day goes, every rated call in it is kept: the call, every call of its tree
+#' (a program's steps), every call its `saw` names (the earlier turns a row
+#' asks again) and their ratings are copied into one file at the folder's
+#' top level, which every language's reader reads. A row of [rated()] made
+#' before pruning is the same after.
+#' @param older_than Day folders before this go: `"90d"`, `"12w"`, a date.
+#' @param folder The log folder (default: the one calls are logged to here).
+#' @param keep_rated `FALSE` deletes rated calls too.
+#' @return Counts, invisibly: `days` deleted, `calls` deleted, `kept`.
+#' @export
+prune_calls <- function(older_than = "90d", folder = NULL, keep_rated = TRUE) {
+  root <- normalizePath(path.expand(log_folder(folder) %||% cli::cli_abort("no log folder: pass {.arg folder}")), mustWork = FALSE)
+  first <- substr(iso(time_since(older_than)), 1L, 10L)
+  none <- list(days = 0L, calls = 0L, kept = 0L)
+  if (!dir.exists(root)) return(invisible(none))
+  days <- Filter(function(d) grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", d) && before(d, first) && dir.exists(file.path(root, d)), sort(list.files(root), method = "radix"))
+  if (!length(days)) return(invisible(none))
+  log <- read_log(root)
+  by_id <- stats::setNames(log$calls, vapply(log$calls, function(c) as.character(c$id %||% ""), ""))
+  old <- list()
+  for (d in days) for (f in list.files(file.path(root, d), pattern = "\\.jsonl$", full.names = TRUE))
+    for (line in readLines(f, warn = FALSE, encoding = "UTF-8")) {
+      rec <- tryCatch(lmcc::parse_json(line), error = function(e) NULL)
+      if (is.list(rec) && !is.null(names(rec))) old[[length(old) + 1L]] <- rec
+    }
+  keep <- character(0)
+  if (keep_rated) {
+    rated <- unique(vapply(log$ratings, function(r) as.character(r$call %||% ""), ""))
+    trees <- unique(unlist(lapply(rated, function(id) by_id[[id]]$root)))
+    keep <- names(by_id)[names(by_id) %in% rated | vapply(by_id, function(c) isTRUE(c$root %in% trees), NA)]
+    todo <- keep
+    while (length(todo)) {
+      c <- by_id[[todo[[1L]]]]; todo <- todo[-1L]
+      for (entry in c$saw %||% list()) for (k in c("call", "saw_of")) {
+        id <- entry[[k]]
+        if (is_str(id) && !is.null(by_id[[id]]) && !id %in% keep) { keep <- c(keep, id); todo <- c(todo, id) }
+      }
+    }
+  }
+  kept <- Filter(function(r) (!is.null(r$functai_call) && isTRUE(r$id %in% keep)) || (!is.null(r$functai_rating) && isTRUE(r$call %in% keep)), old)
+  if (length(kept)) {
+    host <- gsub("[^A-Za-z0-9_.-]", "_", Sys.info()[["nodename"]])
+    path <- file.path(root, sprintf("kept-%s-%d-%s.jsonl", host, Sys.getpid(), paste(format(openssl::rand_bytes(3)), collapse = "")))
+    con <- file(path, open = "wb")
+    writeBin(charToRaw(enc2utf8(paste0(vapply(kept, lmcc::json_text, ""), "\n", collapse = ""))), con)
+    close(con)
+    Sys.chmod(path, "0600")
+  }
+  for (d in days) unlink(file.path(root, d), recursive = TRUE)
+  n_old <- sum(vapply(old, function(r) !is.null(r$functai_call), NA))
+  n_kept <- sum(vapply(kept, function(r) !is.null(r$functai_call), NA))
+  invisible(list(days = length(days), calls = n_old - n_kept, kept = n_kept))
 }
 
 # A record of a format this reader knows (a record of another format is

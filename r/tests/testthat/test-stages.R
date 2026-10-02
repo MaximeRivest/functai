@@ -58,3 +58,23 @@ test_that("an unreadable reply is never kept; a call whose log drops a field is 
   with_ai_config(lm = "gpt-4.1-mini", router = r, cache_replies = db, expect_identical(g("xyz"), 4L))
   expect_identical(store$size(), 1L)
 })
+
+test_that("quotes_found() checks a judge's evidence, word for word", {
+  source <- "The parcel left Leeds on Monday. It was delayed by snow\u2014badly."
+  expect_identical(quotes_found(source, c("\u201cIt was delayed by snow-badly.\u201d", "it  was DELAYED", "It was lost", "")), c(TRUE, TRUE, FALSE, FALSE))
+})
+
+test_that("prune_calls() deletes old days and keeps what ratings need", {
+  folder <- withr::local_tempdir()
+  f <- ai(reply ~ message, "Answer.")
+  r <- fake_router(responder = function(request, i) "<result>\nok\n</result>")
+  out <- with_ai_config(augment(f, tibble::tibble(message = c("a", "b"))), lm = "gpt-4.1-mini", router = r, log_calls = folder)
+  rate(out$.call[[1L]], "right", folder = folder)
+  day <- list.files(folder)
+  file.rename(file.path(folder, day), file.path(folder, "2020-01-01"))
+  before_rows <- rated(f, folder = folder)
+  got <- prune_calls("1d", folder = folder)
+  expect_identical(got$days, 1L); expect_identical(got$kept, 1L); expect_identical(got$calls, 1L)
+  expect_false(dir.exists(file.path(folder, "2020-01-01")))
+  expect_identical(rated(f, folder = folder), before_rows)
+})

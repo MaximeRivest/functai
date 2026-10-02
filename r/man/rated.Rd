@@ -4,7 +4,7 @@
 \alias{rated}
 \title{Rows with known answers, from people's ratings}
 \usage{
-rated(fn, by = NULL, folder = NULL, since = NULL)
+rated(fn, by = NULL, folder = NULL, since = NULL, any_file = FALSE)
 }
 \arguments{
 \item{fn}{An AI function.}
@@ -14,6 +14,10 @@ rated(fn, by = NULL, folder = NULL, since = NULL)
 \item{folder}{The log folder.}
 
 \item{since}{Only calls and ratings from this time on.}
+
+\item{any_file}{A function defined in a notebook or a script is known by
+its file too, so two notebooks' \code{summarize} are two programs. \code{TRUE}
+takes its calls from any file (a notebook that moved).}
 }
 \value{
 A tibble: the inputs, the outputs, then \code{call}, \code{version},
