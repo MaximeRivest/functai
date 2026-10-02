@@ -543,3 +543,41 @@ def test_what_plugins_write_passes_the_schemas(fake, tmp_path):
     for rec in recs:
         assert_valid(call, rec, rec["program"]["name"])
     assert any(r.get("sections") for r in recs) and any(r.get("changes") for r in recs)
+
+
+@pytest.mark.parametrize("adapter", [None, "xml", "chat", "json"])
+def test_every_built_in_layout_sends_plugin_sections(fake, adapter):
+    fake("unused")
+    mark = Plugin("mark")
+    mark.before_call(lambda call: Change(sections=["SECTION-MARK"]))
+    fn = tutor.using(adapter=adapter) if adapter else tutor
+    with functai.configure(plugins=[mark]):
+        request = fn.render("hi")                    # exactly what a call would send
+    assert "SECTION-MARK" in str(request)
+
+
+def test_a_template_that_never_writes_the_instruction_refuses_a_changed_one(fake):
+    from functai import system, user
+    r = fake(responder=lambda req: "Paris")
+    mark = Plugin("mark")
+    mark.before_call(lambda call: Change(sections=["SECTION-MARK"]))
+
+    @ai(template=[system("You answer capitals."), user("{country}")])
+    def capital(country: str) -> str:
+        """Capital."""
+
+    with functai.configure(plugins=[mark]):
+        with pytest.raises(PluginError) as err:
+            capital("France")                         # never sent without what its record would claim
+        assert err.value.code == "plugin-change" and "{instruction}" in str(err.value) and not r.requests
+        with pytest.raises(PluginError):
+            capital.render("France")
+    assert capital("France") == "Paris"               # without plugins: the template as written
+
+    @ai(template=[system("You answer capitals. {instruction}"), user("{country}")])
+    def placed(country: str) -> str:
+        """Capital."""
+
+    with functai.configure(plugins=[mark]):
+        placed("France")
+    assert "SECTION-MARK" in str(r.requests[-1].system)

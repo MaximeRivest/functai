@@ -74,6 +74,31 @@ handlers see what the program's did, and have the last word.
   setting drives ([tools.md](tools.md)), runs after every other handler,
   on the input they left: a host's rule judges what will run.
 
+## Plugins and layouts
+
+Plugins work on data before lmcc lays a call out (its layout: an adapter
+or a template, [functions.md](functions.md)), and on the provider request
+after (`request`). They never read or write the layout itself, with these
+consequences:
+
+- `instruction` and `sections` change the instruction lmcc is given, and
+  land where the layout writes `{instruction}` (the system message, for
+  the built-in layouts). A layout that never writes it (a template without
+  `{instruction}`), or a baked model (it reads only the message it was
+  trained on), would drop them while the record says they were sent: the
+  call refuses `plugin-change` instead, before anything is sent. A
+  template that writes `{instruction}` gets them there.
+- Earlier turns (`keep`, `without`) are written by the layout's turn slot,
+  as lmcc writes any turn; a layout with no turn slot refuses them
+  (lmcc's `turns-unplaced`), as it does without plugins.
+- `tools` changes the tools the request offers; how they are offered is the
+  layout's.
+- The program's version is computed without plugins: they change calls,
+  not programs.
+- Sections change the start of the request: a provider's prompt cache keeps
+  its prefix only while they stay the same (compaction changes its summary
+  every `every` turns, not every turn).
+
 ## When a handler fails
 
 - A handler of a hook that changes things that raises stops the call

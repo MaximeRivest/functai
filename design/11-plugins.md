@@ -79,7 +79,16 @@ real plugin needs it.
     (provider-specific settings), and every lm15 setting is a FunctAI
     setting by the same name. *Rejected:* dropping lm15's setting (breaks a
     documented field); one name meaning two things by the value's type.
-11. **API version 1, and the contract's cases.** A plugin says which API it
+11. **Plugins are orthogonal to lmcc's layouts, except where the
+    instruction lands.** They change data before the layout and the request
+    after it. A changed instruction goes where the layout writes
+    `{instruction}`; a template that never writes it, or a baked model
+    (which reads only its trained message), refuses the call
+    (`plugin-change`) rather than drop the change while the record claims
+    it was sent. *Rejected:* injecting a system message into a hand-written
+    template (it breaks the template's promise that what is written is what
+    is sent); dropping silently (it breaks the log's promise).
+12. **API version 1, and the contract's cases.** A plugin says which API it
     targets; FunctAI refuses one it does not implement rather than run it
     wrongly. Adding a hook or a field is not a new version; changing what one
     means is.
