@@ -9,13 +9,22 @@
 #'   (text, described) or a type.
 #' @param .name The tool's name, as the model sees it. Default: the name
 #'   `.fn` is given by (`ai_tool(lookup_order, ...)` is `lookup_order`).
+#' @param .effects What it does to the world: `"reads"` (it only looks: a
+#'   search, a lookup) or `"changes"` (it writes, sends or pays). Left out, it
+#'   is unknown, which every approval rule treats as `"changes"`: forgetting
+#'   to declare is safe. An AI function given as a tool reads, unless one of
+#'   its own tools changes things or declares nothing.
 #' @return A tool, for `ai(..., .tools = list(...))`.
 #' @examples
 #' orders <- c("A-1042" = "stuck at the carrier since Monday")
 #' lookup_order <- function(order) if (order %in% names(orders)) orders[[order]] else "unknown order"
 #' ai_tool(lookup_order, "Look up where an order is.", order = "a letter, a dash and four digits")
 #' @export
-ai_tool <- function(.fn, .description = "", ..., .name = NULL) {
+ai_tool <- function(.fn, .description = "", ..., .name = NULL, .effects = NULL) {
+  if (!is.null(.effects) && !(is_str(.effects) && .effects %in% c("reads", "changes")))
+    cli::cli_abort("{.arg .effects} is {.val reads} or {.val changes} (or left out: unknown, which counts as changes)")
+  if (is.null(.effects) && inherits(.fn, "functai_fn"))
+    .effects <- if (all(vapply(core_of(.fn)$tools, function(t) identical(t$effects, "reads"), NA))) "reads" else NULL
   if (!is.function(.fn)) cli::cli_abort("{.arg .fn} is the R function the tool runs")
   given <- substitute(.fn)
   name <- .name %||% if (is.symbol(given)) as.character(given) else
@@ -29,11 +38,12 @@ ai_tool <- function(.fn, .description = "", ..., .name = NULL) {
   # no additionalProperties: Gemini refuses the keyword in function declarations
   params <- list(type = "object", properties = if (length(inputs)) lapply(inputs, described_shape) else lmcc::jobj(),
                  required = as.list(args))
-  structure(list(name = name, description = .description, parameters = params, fn = .fn), class = "functai_tool")
+  structure(list(name = name, description = .description, parameters = params, fn = .fn, effects = .effects), class = "functai_tool")
 }
 
 #' @export
 print.functai_tool <- function(x, ...) {
-  cat(sprintf("<ai tool> %s(%s): %s\n", x$name, paste(names(x$parameters$properties), collapse = ", "), x$description))
+  cat(sprintf("<ai tool> %s(%s): %s%s\n", x$name, paste(names(x$parameters$properties), collapse = ", "), x$description,
+              if (is.null(x$effects)) "" else sprintf(" [%s]", x$effects)))
   invisible(x)
 }

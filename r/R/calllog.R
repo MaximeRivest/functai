@@ -88,10 +88,16 @@ size_of <- function(v) nchar(lmcc::canonical_json(v), type = "chars")
 # `keep` whether each one's value is written, `own` the program's own settings
 # (its layer of observers and journal). It joins the tree of the call it runs
 # inside, or starts one (runtime.R, open_call()).
-start_call <- function(program, settings, inputs, fields, keep, own = list(), later = NULL, id = NULL) {
+start_call <- function(program, settings, inputs, fields, keep, own = list(), later = NULL, id = NULL, core = NULL) {
   call <- new.env(parent = emptyenv())
   parent <- the$current
   if (!is.null(parent) && isTRUE(parent$ended)) parent <- NULL
+  call$core <- core
+  # a conversation's turn takes the first call of its program: the turn's id, minted before the call
+  starting <- the$turn_starting
+  own_turn <- is.null(parent) && !is.null(core) && !is.null(starting) && !starting$root_taken &&
+    identical(program_core_of(starting$program)$definition$name, core$definition$name)
+  if (own_turn) { starting$root_taken <- TRUE; id <- starting$turn; later <- starting$later }
   call$id <- id %||% new_id()
   call$parent <- if (is.null(parent)) the$remote_parent else parent$id
   call$root <- if (is.null(parent)) call$id else parent$root
@@ -109,7 +115,10 @@ start_call <- function(program, settings, inputs, fields, keep, own = list(), la
   call$caller <- caller_of(settings)
   call$inputs <- if (length(inputs)) inputs else lmcc::jobj()
   call$later <- later
-  open_call(call, own)
+  call <- open_call(call, own)
+  call$turn_run <- if (own_turn) starting else if (!is.null(call$up)) call$up$turn_run else NULL
+  if (own_turn) attach_turn(call, core)
+  call
 }
 
 # One request and its reply (or error). `request_hash`: lmcc's hash of the

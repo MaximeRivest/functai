@@ -344,7 +344,7 @@ run_program_row <- function(core, given, i, own_extra = list()) {
   row <- program_row(core, given, i, dropped)
   misfit <- inherits(row, "functai_misfit")
   program <- function() program_json(core)
-  call <- start_call(program, s, if (misfit) row$inputs else row, fields, keep, own = core$own)
+  call <- start_call(program, s, if (misfit) row$inputs else row, fields, keep, own = core$own, core = core)
   call$described <- if (misfit) NULL else attr(row, "described")
   if (!core$single) call$keep_events$holds <- names(core$definition$outputs)
   call$tree$keeps[[call$id]] <- call$keep_events
@@ -361,7 +361,7 @@ run_program_row <- function(core, given, i, own_extra = list()) {
     call$done_value <- if (core$single) checked$outputs[[1L]] else checked$outputs
     value
   })), error = identity)
-  if (inherits(out, "functai_waiting")) stop(out)
+  if (inherits(out, "functai_turn_waiting")) stop(out)
   if (inherits(out, "condition")) return(list(error = out, call = call$id))
   list(outputs = call$outputs, value = out$value, call = call$id)
 }

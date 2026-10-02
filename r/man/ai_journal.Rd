@@ -7,7 +7,7 @@
 ai_journal(store, required = FALSE, retries = 2L)
 }
 \arguments{
-\item{store}{A store: \code{\link[lm15:memory_store]{memory_store()}}, or a list of \code{append}, \code{claim}
+\item{store}{A store: \code{\link[=memory_store]{memory_store()}}, or a list of \code{append}, \code{claim}
 and \code{read} functions.}
 
 \item{required}{Whether calls wait for it (see above).}
@@ -21,7 +21,7 @@ A journal.
 \description{
 A journal keeps the kept form of every call tree whose outermost call
 starts where it is set (\code{ai_config(journal = ...)}, \code{with_ai_config(..., journal = ...)}, or an AI function's own \code{.journal}), in a store
-(\code{\link[lm15:memory_store]{memory_store()}}, or one of your own). \strong{Best effort} (the default)
+(\code{\link[=memory_store]{memory_store()}}, or one of your own). \strong{Best effort} (the default)
 never stops a call: a store that fails is warned about once, and events it
 did not answer are sent again with the next one. \strong{Required} makes the
 call wait until its start, each tool call that changes things, and its

@@ -358,7 +358,7 @@ run_rows <- function(core, rows, extra = list()) {
   for (i in seq_along(rows)) {
     if (is.null(rows[[i]])) next
     misfit <- inherits(rows[[i]], "functai_misfit")
-    call <- start_call(program, s, if (misfit) rows[[i]]$inputs else rows[[i]], fields, keep, own = core$own)
+    call <- start_call(program, s, if (misfit) rows[[i]]$inputs else rows[[i]], fields, keep, own = core$own, core = core)
     if (!core$single) call$keep_events$holds <- plain_outputs
     call$tree$keeps[[call$id]] <- call$keep_events
     call$provider <- r$provider
@@ -395,6 +395,7 @@ run_rows <- function(core, rows, extra = list()) {
       call$confidence <- confidence_of(job$outputs, job$probabilities)
       call$done_value <- if (core$single) job$outputs[["result"]] else job$outputs[intersect(plain_outputs, names(job$outputs))]
       call$steps <- steps_of(call, job$turn)
+      call$lmcc <- tryCatch(lmcc::turn_to_list(job$turn), error = function(e) NULL)
     } else if (is.null(err)) err <- job$error
     ending <- call_end(call, err)
     if (is.null(ending)) list(outputs = job$outputs, call = call$id, model = job$model, turn = job$turn, probabilities = job$probabilities)
@@ -708,6 +709,7 @@ ai_signature_id <- function(fn) { core <- core_of(fn); signature_id(signature_of
 #' @rdname ai_version
 #' @export
 ai_render <- function(fn, ...) {
+  if (inherits(fn, "functai_conversation")) return(render_turn(fn, ...))
   core <- core_of(fn)
   s <- effective(core$own)
   r <- route(s)
@@ -716,9 +718,15 @@ ai_render <- function(fn, ...) {
   row <- input_rows(core, named_inputs(core, list(...)))[[1L]]
   if (inherits(row, "functai_misfit")) stop(misfit_error(core, row))
   if (is.null(row)) cli::cli_abort("an input is missing (NA), and its type takes no null: this call would send nothing")
+  r_ <- the$rendering
+  if (!is.null(r_) && identical(r_$core$definition$name, core$definition$name) && length(r_$sections)) {
+    sig <- lmcc::signature_to_list(plan$signature); sig$instructions <- paste(c(sig$instructions, r_$sections), collapse = "\n\n")
+    plan <- rebind_plan(plan, lmcc::signature_from_list(sig))
+  }
   values <- prepare_inputs(plan$signature, row)
   if (length(core$tools)) values$tools <- tool_specs(core)
   turns <- past_turns(core, plan)
+  if (!is.null(r_) && identical(r_$core$definition$name, core$definition$name)) turns <- c(turns, shown_as(plan, core, r_$turns, r_$ids)$shown)
   plain_lm15(lmcc::lm15_request(lmcc::render(plan, values, if (length(turns)) turns else NULL), r$model, config_of(s)))
 }
 

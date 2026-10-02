@@ -183,8 +183,8 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     return(invisible())
   }
   for (c in calls) {
-    out <- tryCatch(tool_step(job, c), functai_waiting = function(w) w)
-    if (inherits(out, "functai_waiting")) { job$state <- "waiting"; job$waiting <- out; finished(job); return(invisible()) }
+    out <- tryCatch(tool_step(job, c), functai_turn_waiting = function(w) w)
+    if (inherits(out, "functai_turn_waiting")) { job$state <- "waiting"; job$waiting <- out; finished(job); return(invisible()) }
     job$turn <- lmcc::tool_result(job$turn, c$id, out)
   }
   job$steps <- job$steps + 1L
@@ -243,7 +243,7 @@ tool_output <- function(job, tool, c, n) {
   old <- list(current = the$current, invocation = the$invocation)
   the$current <- call; the$invocation <- n
   on.exit({ the$current <- old$current; the$invocation <- old$invocation })
-  out <- tryCatch(do.call(tool$fn, gate$input %||% list()), functai_waiting = function(w) stop(w), error = function(e) {
+  out <- tryCatch(do.call(tool$fn, gate$input %||% list()), functai_turn_waiting = function(w) stop(w), error = function(e) {
     if (identical(job$settings$tool_errors, "raise")) stop(e)
     sprintf("error: %s: %s", class(e)[[1L]], conditionMessage(e))
   })
@@ -354,7 +354,7 @@ run_jobs <- function(jobs, router, concurrency) {
       in_flight <<- in_flight - 1L
       job$in_flight <- FALSE
       tryCatch(if (is.null(err)) on_response(job, response, started, now() - started) else on_error(job, err, started, now() - started),
-               functai_waiting = function(w) { job$state <- "waiting"; job$waiting <- w },
+               functai_turn_waiting = function(w) { job$state <- "waiting"; job$waiting <- w; finished(job) },
                error = function(e) fail(job, e))
       fill()
     }
@@ -406,7 +406,7 @@ send_job <- function(job, router, stream = FALSE) {
   response <- tryCatch(send_one(router, job$sent), error = identity)
   seconds <- as.numeric(Sys.time()) - started
   tryCatch(if (inherits(response, "error")) on_error(job, response, started, seconds) else on_response(job, response, started, seconds),
-           functai_waiting = function(w) { job$state <- "waiting"; job$waiting <- w },
+           functai_turn_waiting = function(w) { job$state <- "waiting"; job$waiting <- w; finished(job) },
            error = function(e) fail(job, e))
 }
 
@@ -440,6 +440,6 @@ stream_job <- function(job, router, started) {
   seconds <- as.numeric(Sys.time()) - started
   tryCatch(if (inherits(response, "error")) on_error(job, response, started, seconds, streamed = TRUE)
            else on_response(job, response, started, seconds, streamed = TRUE, first_delta = first),
-           functai_waiting = function(w) { job$state <- "waiting"; job$waiting <- w },
+           functai_turn_waiting = function(w) { job$state <- "waiting"; job$waiting <- w; finished(job) },
            error = function(e) fail(job, e))
 }

@@ -91,7 +91,7 @@ call_end <- function(call, err = NULL) {
   status <- if (withhold) confirmation(t, terminal) else "confirmed"
   unconfirmed <- withhold && status != "confirmed"
   if (unconfirmed) call$journal_word <- if (status == "refused") "refused" else "unknown"
-  if (!is.null(call$on_end)) call$on_end(call, err)
+  turn_call_ended(call, err)
   finish_call(call, err)
   if (unconfirmed) return(end_error(t, status, terminal, if (is.null(err)) list(done = done_value(call)) else list(failed = err)))
   if (withhold && !is.null(terminal)) deliver(t, terminal)
@@ -110,9 +110,9 @@ run_call <- function(call, body) {
   on.exit(the$current <- old)
   err <- call_begin(call)
   if (is.null(err)) {
-    out <- tryCatch(list(value = body(call)), functai_waiting = function(w) w, error = identity,
+    out <- tryCatch(list(value = body(call)), functai_turn_waiting = function(w) w, error = identity,
                     interrupt = function(e) cancelled_error())
-    if (inherits(out, "functai_waiting")) {
+    if (inherits(out, "functai_turn_waiting")) {
       # a turn stopped to wait for a person: nothing ended; its log stays unfinished, for the process that resumes it
       call$ended <- TRUE
       stop(out)
@@ -154,4 +154,14 @@ call_cancelled <- function(call) {
 check_cancelled <- function(call) {
   if (!is.null(call$turn_run)) turn_check_stop(call$turn_run)
   if (call_cancelled(call)) stop(cancelled_error())
+}
+
+# A call's lmcc steps, kept when it ran tools or was made in a conversation
+# (calls.md, `steps`): what showing it again with its steps reads.
+steps_of <- function(call, turn) {
+  if (is.null(turn)) return(NULL)
+  d <- tryCatch(lmcc::turn_to_list(turn), error = function(e) NULL)
+  if (is.null(d)) return(NULL)
+  ran_tools <- any(vapply(d$steps %||% list(), function(st) identical(st$kind, "tool"), NA))
+  if (ran_tools || !is.null(call$turn_run)) d$steps else NULL
 }
