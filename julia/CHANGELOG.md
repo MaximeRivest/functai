@@ -1,5 +1,71 @@
 # FunctAI.jl changelog
 
+## Unreleased: stages 1.2 to 5, plugins, and baking's examples (Python's, 2026-10-02)
+
+Julia catches up with Python's stages 1.2 to 5 and plugins
+(`design/10-stages-1.2-to-5-python.md`, `contract/replies.md`,
+`conversations.md`, `tools.md`, `serving.md`, `plugins.md`): every case
+of `replies/`, `conversations/`, `tools/`, `views/`, `context/`,
+`plugins/` and `baked/` passes, and `tools/crosslang.py` checks Julia
+against Python on real output (a conversation Python starts and Julia
+continues, a reply Python keeps on disk and Julia reads, a program Python
+serves and Julia calls).
+
+- **The reply cache**: `cache_replies = true` (memory), `:disk` (one
+  SQLite file every process and language shares), a path, a `Dict` or a
+  `ReplyStore`. Only replies that were read are kept; one flight per
+  request, across processes; `replicate = n`; a call whose `log_content`
+  drops a field is never written to disk. A long run resumes by being run
+  again. `FunctAI.clear_cache`.
+- **A progress line** over a column (rows, failures, tokens, time left),
+  on when stderr is a terminal; `progress = true/false`.
+- **Conversations**: `conversation(f, id; store, context, remembers,
+  sends, earlier_without, settings...)`, called like its program (and
+  `predict`, `stream`). Turns saved before they run, branches
+  (`continue_from`, `merge!`, `FunctAI.head!`), every earlier turn shown by
+  default (`last_turns(n)`, `without`), queueing, `request_id`, stopping
+  from any process (`stop!`), leases, `MemoryConversations` and
+  `FolderStore` (Python's files), helpers that remember only when told
+  (`remember`), `earlier()`, nested conversations refused unless declared,
+  and the refusals (`conversation-content`, `-opaque`, `-signature`,
+  `-busy`, `-nested`).
+- **Tools that ask first**: `tool(f; effects = :reads | :changes)`, AI
+  functions and programs as tools, `approve` (a function, or a rule),
+  waiting turns (`Waiting`), `approve!`/`deny!` on a turn (from any
+  process) or a stream, `ApprovalError` for a plain call, `resume!`
+  (replies and tool results reused; `results`, `rerun`), `abandon!`, tool
+  invocations, a required journal's barrier only before tools that change
+  things, a resumed turn's log continued by a later writer.
+- **Plugins**: `Plugin(name; version, hooks...)`, `on!`, `Change`, the
+  seven hooks, their order across layers (`program_plugins = false`),
+  changes recorded (`changes`, `sections`, `replayable`), entries
+  (`FunctAI.remember!`, `FunctAI.entries`), `load_plugin` (a Julia file),
+  and the built-ins `compaction` and `delegate`; `approve` is the
+  `approval` plugin.
+- **Views and serving**: the outside view (`FunctAI.outside`,
+  `eachevent(turn; view = :outside)`), `@program answer_from = f`;
+  `serve(program; keys, store, lm, approvals)` on HTTP.jl (every route of
+  `contract/serving.md`), `FunctAI.Service`/`handle`, and `remote(url;
+  key)`: a served program (any language's) called, broadcast, evaluated
+  and streamed here, one call tree across two logs.
+- **Learning from conversations**: records keep `steps`, `conversation`,
+  `invocation`, `writer`; `rated` gives `earlier`, `conversation`,
+  `helpers`, `sections` (and takes a `@program`); `evaluate` and the
+  optimizers ask such rows again with their context, never as worked
+  examples; `train_test` (Python's `split`); `FunctAI.earlier_of`.
+- **Long runs**: `prune_calls`, `quotes_found`, `escalate_to` /
+  `escalate_below` (a model, a baked student or an AI function answers when
+  the first is unsure), `inspect_history`, `phistory`.
+- **Baking, the language-neutral half**: `FunctAI.bake_examples` and
+  `export_examples` (the contract's training conversations, fixed and
+  derived inputs), `FunctAI.baked(folder; url)` (a student trained anywhere,
+  called through an OpenAI-compatible server with the messages it learned),
+  `BakeError`. Training stays in Python's `bake` or any trainer.
+- `FunctAIError`, the supertype of every coded error; `ConversationError`,
+  `PluginError`, `ServeError`, `RemoteError`.
+- New dependencies: SQLite.jl (the disk cache), HTTP.jl (already under
+  lm15; now FunctAI's own, for serving and `remote`).
+
 
 ## Unreleased: stage 1.1 (design/09-stage1.1-decisions.md)
 

@@ -323,7 +323,7 @@ function complete_once(job::Job, rendered, responses)
                 calls = get(reading.values, "calls", nothing)
                 asks_tools = calls isa AbstractVector && !isempty(calls)   # a tool step: the answer comes later
                 typed = asks_tools ? nothing : job.typed(reading.values)
-                flight === nothing || keep!(flight, response)        # only a reply that was read is kept
+                flight === nothing || keep_flight!(flight, response) # only a reply that was read is kept
                 return (response, reading, typed)
             catch err
                 err isa LMCC.Refusal || rethrow()

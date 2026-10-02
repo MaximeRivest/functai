@@ -351,7 +351,7 @@ mutable struct Flight
     hit::Any
     ended::Bool
 end
-function keep!(f::Flight, response)
+function keep_flight!(f::Flight, response)
     f.hit === nothing || return
     try
         keep_reply!(f.store, f.key, response)

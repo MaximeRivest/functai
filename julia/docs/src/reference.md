@@ -132,9 +132,105 @@ FunctAI.describe
 LoadRefused
 ```
 
+## Conversations
+
+```@docs
+conversation
+Conversation
+Turn
+turns
+FunctAI.turn
+FunctAI.head
+FunctAI.head!
+continue_from
+all_turns
+last_turns
+remember
+earlier
+render(::Conversation, ::Vararg)
+predict(::Conversation, ::Vararg)
+stream(::Conversation, ::Vararg)
+merge!(::Conversation, ::AbstractVector, ::AIFunction)
+wait_turn
+stop!
+FunctAI.calls_in
+FunctAI.call_tree
+MemoryConversations
+FolderStore
+FunctAI.ConversationStore
+FunctAI.append_records!
+FunctAI.read_records
+```
+
+## Tools that ask first
+
+```@docs
+Approval
+approve!
+deny!
+resume!
+abandon!
+Waiting
+ApprovalError
+```
+
+## Plugins
+
+```@docs
+Plugin
+on!
+Change
+load_plugin
+compaction
+delegate
+FunctAI.ask
+FunctAI.entries
+FunctAI.remember!
+PluginError
+```
+
+## Serving and remote programs
+
+```@docs
+serve
+remote
+FunctAI.Service
+FunctAI.handle
+FunctAI.outside
+FunctAI.RemoteError
+```
+
+## Long runs
+
+```@docs
+FunctAI.clear_cache
+FunctAI.reply_key
+FunctAI.ReplyStore
+FunctAI.MemoryReplies
+FunctAI.DiskReplies
+quotes_found
+prune_calls
+train_test
+FunctAI.earlier_of
+inspect_history
+phistory
+```
+
+## Baking
+
+```@docs
+FunctAI.bake_examples
+FunctAI.export_examples
+FunctAI.bake_entry
+FunctAI.baked
+FunctAI.BakeError
+```
+
 ## Errors
 
 ```@docs
+FunctAIError
+ConversationError
 StepLimit
 ```
 

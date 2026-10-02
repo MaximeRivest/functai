@@ -26,6 +26,16 @@ Julia refuses to guess when two packages loaded with `using` export different fu
 ## Not in Julia yet
 
 - **Saving code of your own or tools** from Julia (a saved folder carries no Julia code yet).
-- **The reply cache, stateful memory, escalation** (`escalate_to`; a [`@program`](@ref) does it by hand), **votes** (R's `samples`), and **baking** (training your own model).
+- **Training** (a head or a generative student). Julia writes the training examples every trainer reads, byte for byte Python's (`FunctAI.bake_examples`, `export_examples`), and calls a student trained anywhere through the server that serves it (`FunctAI.baked`); Python's `bake` (here, on Tinker, on Prime) or any trainer does the training. A baked *head* (a classifier) runs only in Python.
+- **Votes** (R's `samples`).
 - **Probabilities per class from `AIModel`**: predictions are deterministic. Calibrated probabilities come from a model that measures them (TypeSafe's Jev): `predict(f, x).probabilities`.
-- **A program's version** follows the AI functions and programs it names, not plain Julia functions it calls.
+- **A program's own settings**: a `@program` takes no settings of its own (`plugins`, `log_content`, …); set them around its calls (`with_settings`) or on the AI functions it calls.
+- **A program's version** follows the AI functions and programs it names (globals of its module, and the ones it captured where it was written), not plain Julia functions it calls.
+
+## By design, for the stages Python built first
+
+- **`train_test`** is Python's `functai.split` (`split` is Base's).
+- **`merge!(chat, branches, judge)`** is Python's `chat.merge(...)`; `turns(chat; all = true)` its `chat.all_turns()`; `approve!`, `deny!`, `resume!`, `abandon!`, `stop!` its turn methods; `on!(f, plugin, hook)` its decorators. A conversation's turn is `FunctAI.turn(chat, id)` (`turn` is LM15's export).
+- **A baked student is called through a server** (vLLM's OpenAI-compatible chat endpoint, with the student's chat template and thinking off), not in this process: Julia has no Hugging Face tokenizer with chat templates. The messages are the ones it was trained on, so the tokens are too, when the server serves the baked folder's tokenizer.
+- **Refusals of a bake carry codes** (`baked-fixed`, `baked-derived`, `baked-changed`, `baked-format`, `bake-rows`): Python's `BakeError` says the same in its message.
+- **A served program runs on HTTP.jl** (`serve`); the same routes, keys, views and errors as Python's.

@@ -112,12 +112,17 @@ thing it cannot do yet wait for it, and are not failures.
 | `views/` | the outside view | every language that serves programs or shows views |
 | `context/` | a rated call's earlier turns, as a row keeps them | every language whose `rated` gives `earlier` |
 | `plugins/` | the order plugins run in, and how their changes combine | every language with plugins |
+| `baked/` | what a generative student is trained on and called with: its signature, the hashes of fixed and derived inputs, the conversations | every language that writes training examples or calls baked students |
 
 Stages 1.2 to 5 (2026-09-30) were built in Python first
-(`../design/10-stages-1.2-to-5-python.md`): only Python's harness reads
-`replies/`, `conversations/`, `tools/`, `views/`, `context/` and `plugins/`
-today (plugins since 2026-10-02), and
-the other languages take them with each stage.
+(`../design/10-stages-1.2-to-5-python.md`), then in Julia (2026-10-02):
+Python's and Julia's harnesses read `replies/`, `conversations/`,
+`tools/`, `views/`, `context/`, `plugins/` and `baked/`; TypeScript and R
+take them with each stage. `../tools/crosslang.py` checks the two against
+each other on real output: a conversation Python starts in a folder store
+and Julia continues (and Python reads back), a reply Python keeps in the
+disk cache and Julia reads, a program Python serves and Julia calls with
+`remote`.
 
 Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
 `14` and `21`, `functions/12`, `content/03`, `14`, `15`, `17` and `18`,

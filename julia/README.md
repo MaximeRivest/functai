@@ -239,6 +239,73 @@ cannot change (a computed default is refused when the function is
 defined). A call ends once every call made inside it has, at every depth;
 `FunctAI.detached` starts work meant to outlive it.
 
+## Conversations
+
+```julia
+chat = conversation(tutor, "alex"; store = "tutoring/")   # the same line tomorrow reopens it
+chat("Hi, I'm Alex.")
+chat("What is 1/2 + 1/3?")                     # sees the first turn
+last(turns(chat)).saw                          # the earlier turns an answer was based on
+again = continue_from(chat, turns(chat)[1])    # a branch: nothing is ever deleted
+```
+
+Memory belongs to the conversation, never to the function. Every earlier
+turn is shown by default (`context = last_turns(10)` for fewer); each turn
+is saved before its call starts, records what it was shown, and can be
+stopped from any process (`stop!`). A program's helpers remember only what
+the conversation says (`remembers = Dict(answer => :conversation)`), and
+`FunctAI.earlier()` is the conversation so far, as data. Rated turns are
+asked again with their earlier turns by `evaluate` and the optimizers. A
+folder store is the files Python's writes: a conversation started there
+continues here.
+
+## Tools that ask first
+
+```julia
+@ai tools = [tool(read_note; effects = :reads), tool(write_note; effects = :changes)] function gardener(request::String)::String
+    "Tend the notes."
+end
+chat = conversation(gardener, "notes"; store = "chats/", approve = :changes)
+chat("Merge groceries.md into todo.md.")       # throws Waiting: the turn is saved, waiting for a person
+approve!(last(turns(chat)))                    # from any process: the turn goes on, paying for nothing twice
+```
+
+`approve` is a function (asked at once) or a rule a person answers later
+(`:changes`, `:all`, tool names, approval paths). A refusal is an answer
+the model sees. A turn that stopped goes on with every model reply and
+tool result it had; a tool that may have run when a process died is never
+run again on its own.
+
+## Plugins
+
+```julia
+guard = Plugin("no-deletes"; tool_call = t -> t.name == "delete_file" ? Change(block = "not here") : nothing)
+FunctAI.configure!(plugins = [guard])
+chat = conversation(tutor, "alex"; plugins = [compaction(keep = 20)])   # a summary instead of the oldest turns
+```
+
+Seven hooks (`turn_start`, `context`, `before_call`, `request`,
+`tool_call`, `tool_result`, `turn_end`), whose changes are data, recorded
+in each call's record, so a rated call is asked again as it was.
+`approve`, `compaction` and `delegate` (another program as a tool) are
+plugins written with the same hooks.
+
+## Serving, and long runs
+
+```julia
+server = serve(team; port = 8080, keys = "keys.txt", block = false)   # interface, calls, streams, conversations
+team2 = remote("http://lambda:8080"; key = ENV["TEAM_KEY"])            # a served program (any language's), used here
+FunctAI.configure!(cache_replies = :disk)      # replies kept across runs: a long run resumes by running it again
+FunctAI.prune_calls("90d")                     # a smaller log, keeping what ratings need
+quotes_found(source, verdict.quotes)           # a judge's evidence, checked
+```
+
+Callers see only the program's boundary (the outside view). The disk
+cache is the SQLite file Python uses. `escalate_to` has another model
+answer when the first is unsure; `FunctAI.bake_examples` writes the
+training examples every trainer reads, and `FunctAI.baked(folder; url)`
+calls a student trained anywhere.
+
 ## Saving
 
 ```julia
@@ -302,10 +369,10 @@ TypeScript and R load what Julia saves; Python does not yet.
   both loaded, bring one in with `import` (tutorial 7 does). `FunctAI.save`,
   `load` and `login` are not exported (FileIO's names), nor is `ai"…"`
   (PromptingTools.jl's): `@ai` reads it from your code.
-- **Not yet**: the reply cache, stateful memory, escalation to another
-  model (a `@program` does it by hand), and baking (training your own
-  weights). The [home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four
-  languages.
+- **Not yet**: training your own weights (Julia writes the examples and
+  calls a trained student; Python's `bake` or any trainer trains), a
+  `@program`'s own settings, and saving code of your own. The manual's
+  *Where Julia differs* lists every difference.
 
 ## Developing
 
