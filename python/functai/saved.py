@@ -535,6 +535,7 @@ def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
     from . import engine
     recorded = []
     routes: Dict[str, Any] = {}
+    default_lm = None
     for inputs in inputs_list:
         rec: Dict[str, Any] = {"exchanges": [], "routes": routes}
         token = engine.RECORDING.set(rec)
@@ -542,9 +543,13 @@ def _record(program: Any, inputs_list: List[Dict[str, Any]]) -> Dict[str, Any]:
             output = program(**inputs)
         finally:
             engine.RECORDING.reset(token)
+        default_lm = default_lm or rec.get("default_lm")
         recorded.append({"inputs": lmcc.turn.to_json(inputs, where="run inputs"), "output": _output_json(output),
                          "exchanges": rec["exchanges"]})
-    return {"settings": _global_settings(), "routes": routes, "recordings": recorded}
+    settings = _global_settings()
+    if default_lm is not None and "lm" not in settings:
+        settings["lm"] = default_lm          # picked by default when saving: a replay has no logins to pick with
+    return {"settings": settings, "routes": routes, "recordings": recorded}
 
 
 # problems no ``allow`` accepts: the folder could not be loaded at all

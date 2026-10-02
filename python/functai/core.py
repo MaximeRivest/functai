@@ -1002,6 +1002,10 @@ class FunctAIFunc(Generic[P, R]):
         if rec is not None and s.get("lm") is not None:
             rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
                 [route.provider, route.model, model]
+        elif rec is not None:
+            # no model configured: the one picked by default answered, and a replay must ask for it too
+            rec["routes"][model] = [route.provider, route.model, model]
+            rec.setdefault("default_lm", model)
         s = models.adjust(s, route)
         calllog.route(route.provider)
         past = self._past(plan, spec, s)
