@@ -1,0 +1,101 @@
+{
+ "description": "The chat layout (DSPy's sections), two outputs in one reply.",
+ "definition": {
+  "name": "triage",
+  "description": "Read the ticket.",
+  "inputs": [
+   {
+    "name": "ticket",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "summary",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "one sentence"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    },
+    "desc": "minutes to fix"
+   }
+  ],
+  "settings": {
+   "adapter": "Chat"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "bake": {},
+ "rows": [
+  {
+   "inputs": {
+    "ticket": "The login page is down."
+   },
+   "outputs": {
+    "summary": "Login is down.",
+    "result": 30
+   }
+  }
+ ],
+ "expect": {
+  "signature": {
+   "instructions": "Function: triage\n\nRead the ticket.\n\nOutput guidance:\n- summary: one sentence\n- result: minutes to fix",
+   "fields": [
+    {
+     "name": "ticket",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "summary",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "fixed": {},
+  "derived": {},
+  "examples": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: triage\n\nRead the ticket.\n\nOutput guidance:\n- summary: one sentence\n- result: minutes to fix\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## summary ## ]]\n...\n\n[[ ## result ## ]]\n(integer)\n\n[[ ## completed ## ]]"
+     },
+     {
+      "role": "user",
+      "content": "[[ ## ticket ## ]]\nThe login page is down.\n\n"
+     },
+     {
+      "role": "assistant",
+      "content": "[[ ## summary ## ]]\nLogin is down.\n\n[[ ## result ## ]]\n30\n\n[[ ## completed ## ]]"
+     }
+    ]
+   }
+  ]
+ }
+}

@@ -64,13 +64,97 @@ fast.predict("...").probabilities           # {'result': {'card_arrival': 0.93, 
 
 ## Two kinds of student
 
-| | `method="head"` (default) | `method="sft"` |
+`method="auto"` (the default) picks the head whenever it can answer.
+
+| | `method="head"` | `method="sft"` (a generative student) |
 |---|---|---|
 | for | a fixed set of answers: `Literal`, `Enum`, `bool`, a dataclass of them | any output: text, numbers, records |
-| model | an encoder (Ettin, ModernBERT), or a decoder with a new answer layer | a small chat model (Qwen3.5-0.8B) |
-| reads | the input alone, no prompt | the function's full prompt, in its layout |
+| model | an encoder (Ettin, ModernBERT), or a decoder with a new answer layer | a small chat model (Qwen3.5 0.8B to 9B, or any chat model by name) |
+| reads | the input alone, no prompt | the function's prompt, in its layout, token for token |
 | gives | a calibrated probability for every answer | the reply, read back into your types |
-| speed (one 3090) | 16,000–43,000 rows/s | 12 rows/s in-process, 82 rows/s with `baked.serve()` (vLLM) |
+| trains | here, in seconds to minutes, even on a CPU | here (TRL, every free GPU), on Tinker, on Prime Intellect, or anywhere (`where="export"`) |
+
+## Generative students
+
+```{.python .no-run}
+print(summarize.bake(rows, plan_only=True))   # what it would do: nothing runs, nothing is spent
+baked = summarize.bake(rows)                  # do it
+fast = summarize.using(lm=baked)
+```
+
+The plan says everything before anything is spent:
+
+```
+bake summarize → Qwen/Qwen3.5-2B (2.3B parameters, sft, LoRA r32, bf16)
+  rows       4,704 train, 96 validation, 200 test · 1,200 answered by claude-sonnet-5 ≈ $3.10
+  tokens     9.4M per pass (prompts 1,612 median / 4,108 p99; answers 220 / 610)
+  longest    4,890 tokens · fits the student's context (262,144)
+  where      here: RTX 4090, length-grouped 16k-token batches · ≈ 52 min · fits (11.2 / 24 GB)
+             tinker: ≈ $7.00 (9.4M training tokens at $0.74/M)
+             prime: not logged in to Prime (prime login)
+  training   2 pass(es), about 1,180 steps, lr 5.2e-04 (warmup, constant, decay), replies up to 763 tokens
+  kernels    flash attention ✓  flash-linear-attention ✓  causal-conv1d ✗
+  run        ~/.cache/functai/bakes/summarize-qwen3.5-2b-here-7f3a2c91d0e4
+```
+
+**What it trains on.** The examples are the exact requests the
+function's layout writes, tokenized with the student's own chat template,
+and the reply the layout writes for the right answer; the loss is on the
+reply only. The same tokens are what `summarize.using(lm=baked)` sends,
+in-process, through vLLM or on Tinker: training and use cannot drift.
+Rows without an answer are answered by a teacher (`teacher=`, default
+the function's own model), priced in the plan first.
+
+**Where it trains.** `where="auto"`: here when a GPU here can train the
+student; else a service you have set up (a `TINKER_API_KEY`, a Prime
+login with hosted training); with several, the cheapest; with none, it
+stops and says what each place lacks. `where="tinker"`, a list in order
+of preference, or `functai.configure(bake_where=...)` once, decide it
+yourself.
+
+**Long runs.** A bake is a folder and a process of its own: it outlives
+the notebook that started it, writes its loss curve as it goes
+(`metrics.jsonl`), keeps checkpoints, and resumes from the last one.
+
+```{.python .no-run}
+run = summarize.bake(rows, wait=False)     # returns at once
+run.metrics()                              # the curve so far
+run.stop(); run.resume(); baked = run.wait()
+functai.bake.runs()                        # every run here
+run.checkpoint(1200)                       # any checkpoint as a model
+```
+
+Running the same bake again resumes it (or finds it done).
+
+**Judging.** Exact match measures nothing on open text, so a generative
+student is scored with your metric or an AI judge (`metric=`, anything
+`evaluate` takes); without one, the report gives readability (the share
+of replies its layout reads back) and samples to read.
+`functai.bake.judge(baked, fn, rows, metric=...)` does it later.
+
+**One student, several functions.** `functai.bake.bake({extract: rows1,
+summarize: rows2})`, or a whole program: `functai.bake.bake(pipeline,
+inputs, teacher="claude-opus-5.5")` runs it with the teacher and keeps
+every AI call inside as an example of its function.
+
+**Inputs that never change.** `fixed={"style_guide": GUIDE}` leaves a
+long constant input out of every example and every call; a call with
+another value is refused, because the student never learned to read it.
+`derived={"guidance": "section_name"}` does the same for an input decided
+by another one.
+
+**Bring your own trainer.** `functai.bake.examples(fn, rows,
+student=...)` gives the training conversations as a table (`messages`
+for any tool, `input_ids` with `answer_start` for the exact tokens);
+`where="export"` writes them with a TRL script and an Axolotl config; and
+`functai.bake.adopt(folder, fn, examples=ex)` takes the trained model
+back, after checking that its chat template writes the tokens it was
+trained on.
+
+**Where it runs.** `baked.on("transformers")` (in this process, the
+default), `baked.on("vllm")` (a server started here),
+`baked.on("tinker")`, or `baked.on("http://host:8000/v1")` for any
+OpenAI-compatible server already serving it.
 
 ## Where the labels come from
 
@@ -118,14 +202,15 @@ against 92% for Opus on everything.
   then cosine, early stopping on held-out rows, and a fitted temperature
   so confidences mean what they say. Everything is overridable.
 - The GPU with the most free memory is used; memory held by other
-  programs is never taken. A chat model that doesn't fit is trained as a
-  LoRA adapter, merged into the saved weights.
+  programs is never taken. A generative student is trained as a LoRA
+  adapter (4-bit base weights when 16-bit ones do not fit), merged into
+  standard 16-bit weights when saved.
 - A baked model is a folder: `baked.save(folder)`,
   `functai.bake.load(folder)`. [`functai.save(program)`](saving.md) copies
   a program's baked weights along, and `verify` checks they answer the
   same in a fresh environment.
 
-## Prime Intellect
+## Prime Intellect environments
 
 For reinforcement learning or distillation on Prime Intellect's hosted
 training, `functai.bake.prime.env_package(fn, rows, folder, name=...)`

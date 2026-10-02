@@ -2,55 +2,81 @@
 
 ```{.python .no-run}
 bake.bake(
-    fn,
-    data,
+    what,
+    data=None,
     *,
-    student='jhu-clsp/ettin-encoder-17m',
-    method='head',
+    method='auto',
+    student=None,
     teacher=None,
     labels='auto',
+    where='auto',
     test=None,
-    holdout=0.1,
-    validation=0.1,
-    epochs=None,
-    lr=None,
-    batch_size=32,
-    max_length=None,
-    device=None,
-    seed=0,
-    num_threads=16,
+    metric=None,
+    report=True,
+    compare_teacher=False,
+    wait=True,
+    plan_only=False,
     path=None,
-    compare_teacher=True,
-    prices=None,
+    run_folder=None,
+    fixed=None,
+    derived=None,
+    layout=None,
+    reasoning=False,
+    tags=None,
+    weights=None,
+    functions=None,
+    name=None,
+    validation=None,
+    holdout=None,
+    num_threads=16,
     local_files_only=False,
     log=True,
-    **method_options,
+    seed=0,
+    **training,
 )
 ```
 
-Train weights that answer ``fn``; returns the baked model (see ``Baked``).
+Train weights that answer an AI function (or several); returns the baked model.
 
-- ``data``: rows (a list of dicts, or any table ``dpyr.read`` takes). Input
-  columns are named like the parameters; a column named like an output is a
-  label (a ``<output>__probs`` column of ``{answer: p}`` is a soft label).
-- ``teacher``: a model name or AI function that labels rows without labels
-  (all rows with ``labels="teacher"``). Its probabilities are used when it
-  gives them (Jev does), else its answers.
-- ``labels``: ``"auto"`` (the data's labels, the teacher's for the rest),
-  ``"data"`` (only rows with labels), ``"teacher"`` (the teacher's for every
-  training row; the data's labels are then used only to test).
-- ``test``: rows with labels to measure on; else ``holdout`` of the labeled
-  rows is set aside (at least 50, at most 2,000).
-- ``validation``: share of the training rows kept to stop training at the
-  best pass and to fit the temperature (at least 32, at most 1,000).
-- ``student``: a Hugging Face model id or local path. Ettin-17M trained in
-  46 s to 91.5% on banking77 with human labels (2026-09-25).
-- ``epochs``, ``lr``, ``batch_size``, ``max_length``, ``seed``: training
-  settings (defaults as measured best per model size).
-- ``device``: default the GPU with the most free memory if it has room,
-  else the CPU; memory held by other programs is never taken.
-- ``path``: where the model is written (default under ~/.cache/functai/baked).
-- ``compare_teacher``: also run the teacher on the test rows, to report its
-  accuracy next to the student's (the "teacher-limited" check).
-- ``prices``: ``{"teacher": (dollars per M input tokens, per M output tokens),
-  "gpu_per_hour": dollars}`` to report money and break-even.
+``what`` and ``data``:
+
+- ``fn, rows``: one function; rows are dicts (or any table ``dpyr.read``
+  takes) with the inputs under the parameters' names and, when known, the
+  answers under the outputs' names (``result`` for the return value).
+- ``{fn: rows, fn2: rows2}``: one student for several functions, each
+  called through its own layout.
+- ``program, rows``: a ``@module``; it runs on each row (with ``teacher``
+  answering every AI call inside it), and every call becomes an example
+  of its function (``functions=`` keeps some).
+- ``examples``: made by ``functai.bake.examples`` (or a file of them).
+
+The main choices (all decided from the data when left out; ``plan_only=True``
+prints the plan and spends nothing):
+
+- ``method``: ``"head"``, ``"sft"``, or ``"auto"`` (a head when every
+  output is finite and nothing asks for a generative student).
+- ``student``: a Hugging Face model id or folder.
+- ``teacher``: answers the rows without answers: a model name, an AI
+  function, or ``{fn: teacher}``; default each function's own model.
+  ``labels="teacher"`` asks it for every row; ``"data"`` uses only rows
+  with answers.
+- ``where``: ``"here"``, ``"tinker"``, ``"prime"``, ``"export"``, a list in
+  order of preference, or a ``Trainer``; ``"auto"``: here when this machine
+  can train it, else the cheapest service set up
+  (``configure(bake_where=...)`` sets a preference once).
+- ``fixed={"input": value}``: an input with one value in every row, left
+  out of the student's prompt; a call with another value is refused.
+  ``derived={"input": "other input"}``: an input decided by another, left
+  out too.
+- ``test``: rows to judge on (else a share of the rows with answers is set
+  aside); ``metric``: how to score them (anything ``evaluate`` takes; an
+  AI judge for open text); ``report=False`` skips judging.
+- ``wait=False``: return the ``Run`` at once (a folder and a process that
+  outlive this one); running the same bake again resumes it.
+- training settings: ``lora`` (True/False), ``lora_rank``, ``lr``,
+  ``epochs``, ``batch`` (examples per step), ``quantize="4bit"``,
+  ``packing``, ``devices``, ``liger``, ``max_new_tokens``, ``merge``
+  (merge the adapter into the weights; default True), ``report_to``
+  (["wandb"], ...).
+- for a head: ``epochs``, ``lr``, ``batch_size``, ``max_length``,
+  ``device``, ``prices``, ``holdout``, ``validation`` as before.

@@ -1,0 +1,66 @@
+{
+ "$schema": "https://json-schema.org/draft/2020-12/schema",
+ "$id": "https://github.com/maximerivest/functai/contract/schema/baked.schema.json",
+ "title": "baked.json, format 2 (contract/baked.md)",
+ "type": "object",
+ "required": ["functai_baked", "kind", "name", "student", "functions", "weights", "hashes"],
+ "properties": {
+  "functai_baked": {"const": 2},
+  "kind": {"enum": ["head", "generative"]},
+  "name": {"type": "string", "minLength": 1},
+  "student": {"type": "string", "minLength": 1},
+  "created": {"type": "string"},
+  "functions": {
+   "type": "array", "minItems": 1,
+   "items": {
+    "type": "object",
+    "required": ["name", "fingerprint", "signature", "layout", "outputs", "fixed", "derived"],
+    "properties": {
+     "name": {"type": "string", "minLength": 1},
+     "fingerprint": {"type": "string"},
+     "signature": {"type": "object", "required": ["instructions", "fields"]},
+     "layout": {"type": "object", "required": ["name", "template"]},
+     "outputs": {"type": "array", "items": {"type": "string"}},
+     "reasoning": {"type": "boolean"},
+     "fixed": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"}},
+     "derived": {"type": "object", "additionalProperties": {
+      "type": "object", "required": ["from", "values"],
+      "properties": {"from": {"type": "string"},
+                     "values": {"type": "object", "additionalProperties": {"type": "string",
+                                                                           "pattern": "^sha256:[0-9a-f]{64}$"}}}}},
+     "capabilities": {"type": "object", "additionalProperties": {"type": "boolean"}}
+    }
+   }
+  },
+  "weights": {
+   "type": "object", "required": ["form"],
+   "properties": {
+    "form": {"enum": ["merged", "lora", "remote"]},
+    "base": {"type": "string"},
+    "path": {"type": "string"},
+    "adapter": {"type": "string"},
+    "service": {"type": "string"},
+    "uri": {"type": "string"}
+   },
+   "allOf": [
+    {"if": {"properties": {"form": {"const": "merged"}}}, "then": {"required": ["path"]}},
+    {"if": {"properties": {"form": {"const": "lora"}}}, "then": {"required": ["adapter", "base"]}},
+    {"if": {"properties": {"form": {"const": "remote"}}}, "then": {"required": ["service", "uri", "base"]}}
+   ]
+  },
+  "template": {
+   "type": "object", "required": ["sha256", "kwargs", "end", "stop_token_ids"],
+   "properties": {"sha256": {"type": "string"}, "kwargs": {"type": "object"}, "end": {"type": "string"},
+                  "stop_token_ids": {"type": "array", "items": {"type": "integer"}}}
+  },
+  "generation": {"type": "object", "properties": {"max_new_tokens": {"type": "integer", "minimum": 1},
+                                                  "max_model_len": {"type": "integer", "minimum": 1}}},
+  "head": {"type": "object", "required": ["architecture", "fields", "max_length", "temperatures"]},
+  "hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
+  "sizes": {"type": "object", "additionalProperties": {"type": "integer"}}
+ },
+ "allOf": [
+  {"if": {"properties": {"kind": {"const": "generative"}}}, "then": {"required": ["template", "generation"]}},
+  {"if": {"properties": {"kind": {"const": "head"}}}, "then": {"required": ["head"]}}
+ ]
+}

@@ -1,19 +1,32 @@
 """Bake an AI function into weights you own.
 
-    baked = classify.bake(rows, student="jhu-clsp/ettin-encoder-17m")   # human labels in the rows
-    baked = classify.bake(rows, teacher="jev-latest")                    # a teacher labels them
-    print(baked.report)
-    fast = classify.using(lm=baked)                                      # the same function, on the weights
-    safe = classify.using(lm=baked, escalate_to="claude-opus-5.5",       # unsure rows go to a big model
-                          escalate_below=baked.report.threshold(0.95)["threshold"])
+    baked = summarize.bake(rows)                 # decided from the data, the function and the machine
+    fast = summarize.using(lm=baked)             # the same function, on the weights
+    print(summarize.bake(rows, plan_only=True))  # what it would do, how long, what it costs: nothing spent
 
-``method="head"`` (the default) trains a classifier for functions whose outputs
-have a fixed set of answers (Literal, Enum, bool): the input goes in, a
-probability for every answer comes out; no prompt, no generation.
-``method="sft"`` trains a small chat model to write the function's answers in a
-fixed layout, for open outputs (see ``functai.bake.sft``).
+Two kinds of model:
 
-Needs PyTorch and transformers: ``pip install "functai[bake]"``.
+- a **head** (``method="head"``) for functions whose every output has a fixed
+  set of answers (Literal, Enum, bool): a small encoder reads the input and
+  gives a probability for every answer. Trains in seconds, even on a CPU.
+- a **generative student** (``method="sft"``) for everything else: a small chat
+  model trained on the exact requests the function's layout writes, the loss
+  on the reply only. It trains here (TRL, PEFT, every free GPU), on Tinker,
+  on Prime Intellect, or anywhere else (``where="export"``).
+
+``method="auto"`` (the default) picks the head when it can answer.
+
+The layers, each usable alone:
+
+    functai.bake.examples(fn, rows, student=...)   the training conversations (a table every trainer reads)
+    functai.bake.plan(fn, rows)                    what a bake would do, decided, nothing spent
+    functai.bake.bake(fn, rows, wait=False)        a Run: a folder and a process you can leave
+    functai.bake.runs() / run(folder)              every run here; reattach
+    functai.bake.judge(baked, fn, rows, metric=)   evaluate the student with any metric or AI judge
+    functai.bake.adopt(folder, fn, examples=)      a model trained elsewhere, checked and used
+    baked.on("vllm" | "tinker" | url)              where the weights answer
+
+Training here needs ``pip install "functai[bake]"``; on Tinker, ``"functai[tinker]"``.
 """
 
 from __future__ import annotations
@@ -29,7 +42,40 @@ from .baked import Baked, is_baked, load
 from .examples import BakeError, HeadField, answer_key, distribution, field_value, one_hot  # noqa: F401
 from .report import BakeReport, FieldScores
 
-__all__ = ["bake", "Baked", "load", "BakeError", "BakeReport", "is_baked"]
+__all__ = ["bake", "examples", "plan", "adopt", "judge", "runs", "run", "Baked", "load", "BakeError", "BakeReport",
+           "is_baked", "Examples", "Plan", "Run"]
+
+
+def __getattr__(name: str):
+    # the classes load on first use: importing functai never imports PyTorch or the trainers
+    if name == "Plan":
+        from .planning import Plan
+        return Plan
+    if name == "Run":
+        from .running import Run
+        return Run
+    if name == "Examples":
+        from .dataset import Examples
+        return Examples
+    raise AttributeError(name)
+
+
+def plan(what: Any, data: Any = None, **options):
+    """What ``bake(what, data, **options)`` would do, decided, with nothing spent
+    (a generative bake; see ``functai.bake.planning``)."""
+    return bake(what, data, method="sft", plan_only=True, **options)
+
+
+def runs(home: Any = None):
+    """Every bake run on this machine (``~/.cache/functai/bakes``), newest first."""
+    from .running import runs as _runs
+    return _runs(home)
+
+
+def run(folder: Any):
+    """The run in ``folder`` (reattach after a restart)."""
+    from .running import Run
+    return Run(folder)
 
 
 def _say(log: Optional[Callable[[str], None]]) -> Callable[[str], None]:
@@ -139,14 +185,14 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
     return targets, info
 
 
-def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: str = "head",
-         teacher: Any = None, labels: str = "auto", test: Any = None, holdout: float = 0.1,
-         validation: float = 0.1, epochs: Optional[int] = None, lr: Optional[float] = None,
-         batch_size: int = 32, max_length: Optional[int] = None, device: Optional[str] = None, seed: int = 0,
-         num_threads: int = 16, path: "str | Path | None" = None, compare_teacher: bool = True,
-         prices: Optional[Dict[str, Any]] = None, local_files_only: bool = False,
-         log: Any = True, **method_options) -> Baked:
-    """Train weights that answer ``fn``; returns the baked model (see ``Baked``).
+def bake_head(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m",
+              teacher: Any = None, labels: str = "auto", test: Any = None, holdout: float = 0.1,
+              validation: float = 0.1, epochs: Optional[int] = None, lr: Optional[float] = None,
+              batch_size: int = 32, max_length: Optional[int] = None, device: Optional[str] = None, seed: int = 0,
+              num_threads: int = 16, path: "str | Path | None" = None, compare_teacher: bool = False,
+              prices: Optional[Dict[str, Any]] = None, local_files_only: bool = False,
+              log: Any = True) -> Baked:
+    """A head model for ``fn`` (``bake(..., method="head")``); returns the baked model.
 
     - ``data``: rows (a list of dicts, or any table ``dpyr.read`` takes). Input
       columns are named like the parameters; a column named like an output is a
@@ -174,16 +220,6 @@ def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: 
       "gpu_per_hour": dollars}`` to report money and break-even.
     """
     say = _say(log)
-    if method == "sft":
-        from . import sft
-        return sft.bake(fn, data, student=student, teacher=teacher, labels=labels, test=test, holdout=holdout,
-                        validation=validation, epochs=epochs, lr=lr, batch_size=batch_size, device=device,
-                        seed=seed, num_threads=num_threads, path=path, local_files_only=local_files_only,
-                        log=say, **method_options)
-    if method != "head":
-        raise BakeError(f"method is 'head' or 'sft', not {method!r}")
-    if method_options:
-        raise TypeError(f"bake(method='head') does not take {sorted(method_options)}")
     if labels not in ("auto", "data", "teacher"):
         raise BakeError(f"labels is 'auto', 'data' or 'teacher', not {labels!r}")
     if fn._tools:
@@ -424,10 +460,16 @@ def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: 
     model.to("cpu")
     model.save(str(out))
     tokenizer.save_pretrained(str(out / "tokenizer"))
+    from .examples import CAPABILITIES as HEAD_CAPABILITIES
     write_meta(out, {
-        "name": fn.__name__, "kind": "head", "student": student, "architecture": architecture, "decoder": decoder,
-        "fields": [f.to_dict() for f in fields], "layout": layout.dump(), "signature": signature_to_dict(signature),
-        "fingerprint": signature_fingerprint(signature), "max_length": max_len, "temperatures": temps,
+        "name": fn.__name__, "kind": "head", "student": student,
+        "functions": [{"name": fn.__name__, "fingerprint": signature_fingerprint(signature),
+                       "signature": signature_to_dict(signature), "layout": layout.dump(),
+                       "outputs": [f.name for f in fields], "reasoning": False, "fixed": {}, "derived": {},
+                       "capabilities": dict(HEAD_CAPABILITIES)}],
+        "head": {"architecture": architecture, "decoder": decoder, "fields": [f.to_dict() for f in fields],
+                 "max_length": max_len, "temperatures": temps},
+        "weights": {"form": "merged", "base": student, "path": "model"},
         "parameters": n_params, "data": data_fingerprint(train_texts, train_t), "report": report.to_dict(),
     })
     say(f"saved to {out}")
@@ -435,3 +477,252 @@ def bake(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m", method: 
     baked._model, baked._tokenizer = model.to(dev).eval(), tokenizer
     baked._report = report
     return baked
+
+
+# ------------------------------------------------------------------ the one entry point
+
+
+_SFT_ONLY = ("fixed", "derived", "layout", "reasoning", "tags", "weights", "functions", "where")
+
+
+def _all_finite(fn) -> bool:
+    from .examples import head_fields
+    if fn._tools:
+        return False
+    try:
+        head_fields(fn._variant_spec(reasoning=False, tools=False))
+        return True
+    except BakeError:
+        return False
+
+
+def bake(what: Any, data: Any = None, *, method: str = "auto", student: Optional[str] = None, teacher: Any = None,
+         labels: str = "auto", where: Any = "auto", test: Any = None, metric: Any = None, report: bool = True,
+         compare_teacher: bool = False, wait: bool = True, plan_only: bool = False,
+         path: "str | Path | None" = None, run_folder: "str | Path | None" = None, fixed: Optional[Dict[str, Any]] = None,
+         derived: Optional[Dict[str, str]] = None, layout: Any = None, reasoning: bool = False,
+         tags: Optional[str] = None, weights: Optional[str] = None, functions: Optional[Sequence[Any]] = None,
+         name: Optional[str] = None, validation: Optional[float] = None, holdout: Optional[float] = None,
+         num_threads: int = 16, local_files_only: bool = False, log: Any = True, seed: int = 0, **training):
+    """Train weights that answer an AI function (or several); returns the baked model.
+
+    ``what`` and ``data``:
+
+    - ``fn, rows``: one function; rows are dicts (or any table ``dpyr.read``
+      takes) with the inputs under the parameters' names and, when known, the
+      answers under the outputs' names (``result`` for the return value).
+    - ``{fn: rows, fn2: rows2}``: one student for several functions, each
+      called through its own layout.
+    - ``program, rows``: a ``@module``; it runs on each row (with ``teacher``
+      answering every AI call inside it), and every call becomes an example
+      of its function (``functions=`` keeps some).
+    - ``examples``: made by ``functai.bake.examples`` (or a file of them).
+
+    The main choices (all decided from the data when left out; ``plan_only=True``
+    prints the plan and spends nothing):
+
+    - ``method``: ``"head"``, ``"sft"``, or ``"auto"`` (a head when every
+      output is finite and nothing asks for a generative student).
+    - ``student``: a Hugging Face model id or folder.
+    - ``teacher``: answers the rows without answers: a model name, an AI
+      function, or ``{fn: teacher}``; default each function's own model.
+      ``labels="teacher"`` asks it for every row; ``"data"`` uses only rows
+      with answers.
+    - ``where``: ``"here"``, ``"tinker"``, ``"prime"``, ``"export"``, a list in
+      order of preference, or a ``Trainer``; ``"auto"``: here when this machine
+      can train it, else the cheapest service set up
+      (``configure(bake_where=...)`` sets a preference once).
+    - ``fixed={"input": value}``: an input with one value in every row, left
+      out of the student's prompt; a call with another value is refused.
+      ``derived={"input": "other input"}``: an input decided by another, left
+      out too.
+    - ``test``: rows to judge on (else a share of the rows with answers is set
+      aside); ``metric``: how to score them (anything ``evaluate`` takes; an
+      AI judge for open text); ``report=False`` skips judging.
+    - ``wait=False``: return the ``Run`` at once (a folder and a process that
+      outlive this one); running the same bake again resumes it.
+    - training settings: ``lora`` (True/False), ``lora_rank``, ``lr``,
+      ``epochs``, ``batch`` (examples per step), ``quantize="4bit"``,
+      ``packing``, ``devices``, ``liger``, ``max_new_tokens``, ``merge``
+      (merge the adapter into the weights; default True), ``report_to``
+      (["wandb"], ...).
+    - for a head: ``epochs``, ``lr``, ``batch_size``, ``max_length``,
+      ``device``, ``prices``, ``holdout``, ``validation`` as before.
+    """
+    from ..core import FunctAIFunc
+    single = isinstance(what, FunctAIFunc)
+    sft_asked = any(v not in (None, False, "auto") for v in (fixed, derived, layout, tags, weights, functions)) or \
+        reasoning or (where not in ("auto", None, "here")) or plan_only or not wait
+    if method == "auto":
+        method = "head" if single and _all_finite(what) and not sft_asked and not training.get("lora") else "sft"
+    if method == "head":
+        if not single:
+            raise BakeError("a head model answers one function: bake(fn, rows, method='head')")
+        extra = {k: v for k, v in {"fixed": fixed, "derived": derived, "layout": layout, "tags": tags,
+                                   "weights": weights, "functions": functions}.items() if v}
+        if extra or where not in ("auto", None, "here") or plan_only or not wait:
+            raise BakeError(f"a head model trains here, in seconds; {sorted(extra) or ['where/plan_only/wait']} "
+                            f"apply to generative students (method='sft')")
+        head_opts = {k: training.pop(k) for k in ("epochs", "lr", "batch_size", "max_length", "device", "prices")
+                     if k in training}
+        if training:
+            raise TypeError(f"bake(method='head') does not take {sorted(training)}")
+        return bake_head(what, data, student=student or "jhu-clsp/ettin-encoder-17m", teacher=teacher, labels=labels,
+                         test=test, holdout=0.1 if holdout is None else holdout,
+                         validation=0.1 if validation is None else validation, seed=seed, num_threads=num_threads,
+                         path=path, compare_teacher=compare_teacher, local_files_only=local_files_only, log=log,
+                         **head_opts)
+    if method != "sft":
+        raise BakeError(f"method is 'auto', 'head' or 'sft', not {method!r}")
+    from .planning import TRAINING_OPTIONS, Plan
+    unknown = set(training) - set(TRAINING_OPTIONS) - {"merge", "inline"}
+    if unknown:
+        raise TypeError(f"bake() does not take {sorted(unknown)}; training settings: "
+                        f"{sorted(set(TRAINING_OPTIONS) | {'merge'})}")
+    opts = dict(student=student, teacher=teacher, labels=labels, where=where, test=test, metric=metric, report=report,
+                compare_teacher=compare_teacher, wait=wait, plan_only=plan_only, path=path, run_folder=run_folder,
+                fixed=fixed, derived=derived, layout=layout, reasoning=reasoning, tags=tags, weights=weights,
+                functions=functions, name=name, num_threads=num_threads, local_files_only=local_files_only, log=log,
+                seed=seed, validation=0.02 if validation is None else validation,
+                holdout=0.05 if holdout is None else holdout, **training)
+    p = Plan(what, data, opts).decide()
+    if plan_only:
+        return p
+    _say(log)(str(p))
+    return p.run()
+
+
+def examples(what: Any, data: Any = None, *, student: Optional[str] = None, teacher: Any = None,
+             labels: str = "auto", fixed: Optional[Dict[str, Any]] = None, derived: Optional[Dict[str, str]] = None,
+             layout: Any = None, reasoning: bool = False, tags: Optional[str] = None, weights: Optional[str] = None,
+             functions: Optional[Sequence[Any]] = None, validation: float = 0.02, seed: int = 0,
+             num_threads: int = 16, local_files_only: bool = False, log: Any = True):
+    """The training conversations for an AI function (or several, or a
+    program), as functai will call the student: a table every trainer reads
+    (see ``functai.bake.dataset``). With ``student=``, each row also carries the
+    exact tokens under that student's chat template (``input_ids``) and where
+    the reply starts. Rows without answers are answered by ``teacher`` (default
+    each function's own model; the cost is said before it is spent)."""
+    from .dataset import make
+    from .planning import Plan, _money
+    from .sources import label, teacher_estimate
+    p = Plan(what, data, dict(teacher=teacher, labels=labels, fixed=fixed, derived=derived, layout=layout,
+                              reasoning=reasoning, tags=tags, weights=weights, functions=functions, report=False,
+                              num_threads=num_threads, local_files_only=local_files_only, log=log, seed=seed))
+    say = _say(log)
+    if p.examples is not None:
+        return p.examples
+    info: Dict[str, Any] = {"program": p.program_info}
+    if p.to_label:
+        c = teacher_estimate(p.to_label, teacher)
+        say(f"asking {c['teacher']} for {len(p.to_label):,} answers (prompts ≈ {_money(c['dollars'])}, plus the "
+            f"answers)")
+        info["labeling"] = label(p.items, teacher, num_threads=num_threads, log=say)
+    tok = tpl = None
+    if student:
+        from .template import describe, load_tokenizer
+        tok = load_tokenizer(student, local_files_only=local_files_only)
+        tpl = describe(tok)
+    return make(p.items, tokenizer=tok, template=tpl, student=student, validation=validation, seed=seed, info=info,
+                log=say)
+
+
+def judge(baked, fn: Any, rows: Any = None, **options):
+    """Measure a generative student on test rows (see ``functai.bake.judge``)."""
+    from .judging import judge as _judge
+    return _judge(baked, fn, rows, **options)
+
+
+def adopt(folder: "str | Path", fn: Any, *, examples: Any = None, student: Optional[str] = None,
+          path: "str | Path | None" = None, layout: Any = None, fixed: Optional[Dict[str, Any]] = None,
+          derived: Optional[Dict[str, str]] = None, reasoning: bool = False, name: Optional[str] = None,
+          max_new_tokens: Optional[int] = None) -> Baked:
+    """A model trained elsewhere (TRL, Axolotl, Unsloth, by hand), as a baked
+    model functai calls through the function's layout.
+
+    ``folder``: a Hugging Face model folder, or a LoRA adapter folder (its base
+    named in ``adapter_config.json``, or ``student=``). ``fn``: the AI function
+    (or a list of them) it answers. ``examples``: the examples it was trained
+    on (``functai.bake.examples(..., student=...)``, or their file): their
+    layouts are used, and their tokens are checked against the folder's chat
+    template, so a model trained on other tokens is refused. Without examples,
+    the function's own layout is used and nothing can be checked."""
+    import json
+    import os
+    import shutil
+    from .baked import default_home, write_meta
+    from .dataset import Examples
+    from .functions import Entry
+    from .template import describe, example_ids, load_tokenizer
+    src = Path(folder).expanduser().resolve()
+    if not src.is_dir():
+        raise BakeError(f"{src} is not a folder")
+    fns = list(fn) if isinstance(fn, (list, tuple)) else [fn]
+    adapter = (src / "adapter_config.json").exists()
+    base = student
+    if adapter and base is None:
+        base = json.loads((src / "adapter_config.json").read_text()).get("base_model_name_or_path")
+    if adapter and not base:
+        raise BakeError("the adapter does not name its base model: pass student=")
+    ex = Examples.load(examples) if isinstance(examples, (str, Path)) else examples
+    entries: Dict[str, Entry] = {}
+    for f in fns:
+        if ex is not None and f.__name__ in (ex.entries or {}):
+            e = ex.entries[f.__name__]
+            entry = e if isinstance(e, Entry) else Entry.from_meta(e)
+            entry.check(f._variant_spec(reasoning=entry.reasoning, tools=False))
+        else:
+            names = [n for n, _r in f._named_inputs()]
+            entry = Entry.build(f, layout=layout, reasoning=reasoning,
+                                fixed={k: v for k, v in (fixed or {}).items() if k in names},
+                                derived={k: v for k, v in (derived or {}).items() if k in names})
+        entries[f.__name__] = entry
+    tok_src = src if (src / "tokenizer_config.json").exists() else (base or src)
+    tok = load_tokenizer(str(tok_src))
+    tpl = describe(tok)
+    notes = []
+    if ex is not None and ex.tokenized:
+        sample = [r for r in ex.rows if r["function"] in entries][:50]
+        bad = 0
+        for r in sample:
+            msgs = r["messages"]
+            ids, start = example_ids(tok, msgs[:-1], msgs[-1]["content"], tpl.kwargs, tpl)
+            if list(ids) != list(r["input_ids"]) or start != r["answer_start"]:
+                bad += 1
+        if bad:
+            raise BakeError(f"{bad} of {len(sample)} examples tokenize differently with this folder's chat template "
+                            f"than they were trained on: the model would be called with other tokens than it "
+                            f"learned. Adopt it with the tokenizer it was trained with")
+    else:
+        notes.append("adopted without its training examples: the tokens it learned could not be checked")
+    name = name or "+".join(sorted(entries))
+    out = Path(path).expanduser().resolve() if path else default_home() / f"{name}-{src.name}-adopted"
+    if out.exists() and any(out.iterdir()):
+        raise FileExistsError(f"{out} exists and is not empty")
+    out.mkdir(parents=True, exist_ok=True)
+
+    def link(a, b):
+        try:
+            os.link(a, b)
+        except OSError:
+            shutil.copy2(a, b)
+    if adapter:
+        shutil.copytree(src, out / "adapter", copy_function=link)
+        weights = {"form": "lora", "base": base, "adapter": "adapter", "from": str(src)}
+    else:
+        shutil.copytree(src, out / "model", copy_function=link)
+        weights = {"form": "merged", "base": base or str(src), "path": "model", "from": str(src)}
+    tok.save_pretrained(str(out / "tokenizer"))
+    s = ex.stats() if ex is not None and ex.tokenized else {}
+    new = max_new_tokens or (int(s["answer"]["max"] * 1.25) if s else 2048)
+    from .students import info as student_info
+    try:
+        ctx = student_info(base or str(src)).context
+    except Exception:  # noqa: BLE001
+        ctx = None
+    model_len = int(min(ctx or 10 ** 9, (s.get("longest", 0) + new) if s else (ctx or 32768)))
+    write_meta(out, {"kind": "generative", "name": name, "student": base or str(src),
+                     "functions": [e.to_meta() for e in entries.values()], "weights": weights,
+                     "template": tpl.to_dict(), "generation": {"max_new_tokens": new, "max_model_len": model_len},
+                     "run": {"where": "adopted", "from": str(src)}, "notes": notes})
+    return Baked(out)

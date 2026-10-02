@@ -1,0 +1,142 @@
+{
+ "description": "A derived input is left out too; the table maps each source value's hash to its value's hash.",
+ "definition": {
+  "name": "rewrite",
+  "description": "Rewrite the section.",
+  "inputs": [
+   {
+    "name": "section",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "text",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "guidance",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "bake": {
+  "derived": {
+   "guidance": "section"
+  }
+ },
+ "rows": [
+  {
+   "inputs": {
+    "section": "methods",
+    "text": "We did X.",
+    "guidance": "Keep every number."
+   },
+   "outputs": {
+    "result": "We did X, carefully."
+   }
+  },
+  {
+   "inputs": {
+    "section": "results",
+    "text": "Y rose.",
+    "guidance": "Keep every table."
+   },
+   "outputs": {
+    "result": "Y went up."
+   }
+  }
+ ],
+ "expect": {
+  "signature": {
+   "instructions": "Function: rewrite\n\nRewrite the section.",
+   "fields": [
+    {
+     "name": "section",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "text",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "fixed": {},
+  "derived": {
+   "guidance": {
+    "from": "section",
+    "values": {
+     "sha256:b18ed63fa15a31367ffa234b4f42b207d283f51dd79bc38f75008efc93c10665": "sha256:dbd8fe3fa374ad0f4d4db8ea4e95b785ab93d8f81f2d6abdbd6c1bce6e4214a5",
+     "sha256:06fff8a06f801e4d5e65ee3606498626584196fca6923e90893a6a368dbf60c3": "sha256:935213aa269377370b14cb0c63ca5bd80ca96beffe68e004f10ab4feb2d3b429"
+    }
+   }
+  },
+  "examples": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: rewrite\n\nRewrite the section.\n\nReply in exactly this form:\n<result>\n...\n</result>\n"
+     },
+     {
+      "role": "user",
+      "content": "<section>\nmethods\n</section>\n<text>\nWe did X.\n</text>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<result>\nWe did X, carefully.\n</result>"
+     }
+    ]
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: rewrite\n\nRewrite the section.\n\nReply in exactly this form:\n<result>\n...\n</result>\n"
+     },
+     {
+      "role": "user",
+      "content": "<section>\nresults\n</section>\n<text>\nY rose.\n</text>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<result>\nY went up.\n</result>"
+     }
+    ]
+   }
+  ]
+ }
+}

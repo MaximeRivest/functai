@@ -247,7 +247,7 @@ labels thrown away:
 unlabelled = train.select(col.text).slice_sample(n=2000, seed=1)
 
 taught = intent.bake(unlabelled, teacher="gpt-6-luna", test=labelled_test.slice_head(n=500),
-                     prices={"teacher": (0.10, 0.50)}, log=False)
+                     compare_teacher=True, prices={"teacher": (0.10, 0.50)}, log=False)
 print(taught.report)
 ```
 
@@ -276,8 +276,9 @@ Baked intent: jhu-clsp/ettin-encoder-17m (16.9M parameters)
   note: result: the student (72.6%) is below its teacher (87.6%); trained on teacher labels, it can at best match it. Human labels lifted the same kind of student from 77% to 91.5% on banking77: label more rows by hand, or use a stronger teacher
 ```
 
-The report now shows the teacher next to the student, on the same test
-rows, and what the labels cost. It also says the thing to remember: a
+With `compare_teacher=True` (it costs a teacher pass over the test rows,
+so it is off unless asked), the report shows the teacher next to the
+student, on the same test rows, and what the labels cost. It also says the thing to remember: a
 student trained on a teacher's labels can at best match the teacher,
 and usually lands a little below it. People's labels, when you have
 them, are worth more than any teacher's.

@@ -138,3 +138,12 @@ class BakeReport:
         return "\n".join(lines)
 
     __str__ = __repr__
+
+
+def load_report(d: Dict[str, Any]):
+    """A report from baked.json: a head model's or a generative student's."""
+    if d.get("kind") == "generative":
+        from .judging import StudentReport
+        return StudentReport.from_dict(d)
+    d = {k: v for k, v in d.items() if k != "kind"}
+    return BakeReport.from_dict(d)

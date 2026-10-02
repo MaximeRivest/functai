@@ -299,8 +299,9 @@ def probe_plan(fn, spec, settings: Dict[str, Any]) -> Tuple[Any, List[Any]]:
     from . import adapters
     baked = settings.get("lm") if _is_baked(settings.get("lm")) else None
     if baked is not None:      # the layout and facts the weights were trained with
-        plan = adapters.bind(adapters.Layout(adapter=baked.layout), spec.signature, baked.capabilities,
-                             baked.provider)
+        entry = baked.entry_for(fn, spec)
+        plan = adapters.bind(adapters.Layout(adapter=entry.layout), baked.call_signature(fn, spec),
+                             baked.capabilities, baked.provider)
     else:
         plan = adapters.bind(fn._layout(settings), spec.signature, PROBE_CAPABILITIES, "probe")
     return plan, fn._past(plan, spec, settings, context=False)
@@ -309,6 +310,9 @@ def probe_plan(fn, spec, settings: Dict[str, Any]) -> Tuple[Any, List[Any]]:
 def probe_request(fn, spec, plan, past, inputs: Dict[str, Any]) -> Dict[str, Any]:
     """The request an AI function renders for ``inputs`` (lmcc.Refusal when it cannot)."""
     from . import engine
+    lm = fn._effective().get("lm")
+    if _is_baked(lm):        # the inputs the weights read (probe values are made up: not checked)
+        spec, inputs = lm.reduce(fn, spec, inputs, check=False)
     values = engine.prepare_inputs(spec, inputs)
     if spec.tools:
         values["tools"] = list(fn._tool_specs)
@@ -837,7 +841,7 @@ def _baked_model(package: str, manifest: Dict[str, Any], name: str):
                 raise LoadRefused(f"the baked model {name!r} is referenced, not copied", [f"{path} does not exist"])
             if _sha256((path / "baked.json").read_bytes()) != info["baked_json"]:
                 raise LoadRefused(f"the baked model {name!r} changed since saving", [f"{path}/baked.json"])
-        _models_loaded[key] = Baked(path)
+        _models_loaded[key] = Baked(path, check="full")
     return _models_loaded[key]
 
 
