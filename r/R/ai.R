@@ -427,11 +427,11 @@ run_rows <- function(core, rows, extra = list()) {
 }
 
 # A progress line over a column's calls (cli's progress bar: shown when the
-# run lasts more than two seconds in an interactive session, or always with
-# `progress = TRUE`): rows done, failed, tokens, time left. A long run with a
+# run lasts more than two seconds in an interactive session, always with
+# `progress = TRUE`, never with `FALSE`): rows done, failed, tokens, time left. A long run with a
 # disk reply cache resumes by being run again.
 progress_line <- function(core, jobs, setting, envir = parent.frame()) {
-  if (isFALSE(setting) || length(jobs) < 2L) return(invisible())
+  if (isFALSE(setting) || length(jobs) < 2L || (is.null(setting) && !interactive())) return(invisible())
   if (isTRUE(setting)) withr::local_options(cli.progress_show_after = 0, .local_envir = envir)
   envir$pl_failed <- 0L; envir$pl_tokens <- 0
   bar <- cli::cli_progress_bar(total = length(jobs), clear = FALSE, .envir = envir,
