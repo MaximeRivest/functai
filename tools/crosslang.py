@@ -14,6 +14,12 @@ between them, on real output of both:
    function and rates one into one folder. Every record passes the
    contract's schemas, and every language's `rated` gives the same rows,
    including the others' calls and ratings.
+4. Stages 1.2 to 5, between the languages that have them (Python and
+   Julia): a conversation Python starts in a folder store, Julia continues
+   and Python reads back (and `rated` gives the Julia turn's earlier
+   turns); a reply Python keeps in the disk cache answers Julia's identical
+   request with no model call; a program Python serves, Julia calls with
+   `remote`, one call tree across two languages' logs.
 
 R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
 julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
@@ -75,6 +81,10 @@ def solve(problem: str,  # a word problem, in English
 def rounded(x: float) -> float:
     """Double it."""
     return round(_ai, 2)
+
+@ai(lm="gpt-4.1-mini")
+def tutor(message: str) -> str:
+    """Tutor."""
 '''
 
 NAMES = ["mood", "mood_taught", "person", "solve", "rounded"]
@@ -119,6 +129,21 @@ def main() -> int:
         shop.mood.predict("Late, but fine.")
         functai.rate(p1, "right", by="ana")
 
+    # 4a. Python starts a conversation in a folder, keeps a reply in a disk cache, and serves mood
+    tutor_router = FakeRouter(responder=lambda req: f"<result>\npython {len(req.messages)}\n</result>")
+    with functai.configure(lm="gpt-4.1-mini", client=tutor_router, log_calls=str(log)):
+        chat = shop.tutor.conversation("lesson", store=str(work / "conversations"))
+        chat("Hi, I'm Alex.")
+        chat("What is 1/2 + 1/3?")
+    cache = work / "replies.sqlite"
+    with functai.configure(lm="gpt-4.1-mini", client=router, cache_replies=str(cache)):
+        shop.mood("Kept for later.")
+    served_router = FakeRouter(responder=lambda req: "<result>\nmixed\n</result>")
+    # the server's threads run outside any block: its settings are the process's, while it serves
+    functai.configure(lm="gpt-4.1-mini", client=served_router, log_calls=str(log))
+    server = functai.serve(shop.mood, port=0, block=False)
+    (work / "served.json").write_text(json.dumps({"url": f"http://127.0.0.1:{server.server_address[1]}"}))
+
     # 2, 1 and 3b in TypeScript
     node = subprocess.run(
         ["node", "--conditions=functai-source", "tools/crosslang.ts", str(work)],
@@ -145,6 +170,27 @@ def main() -> int:
         print(jl.stderr, file=sys.stderr)
         return 1
 
+    server.shutdown()
+    functai.configure(lm=None, client=None, log_calls=None)
+
+    # 4b. Python reads what Julia did: the conversation's third turn, the served call's parent
+    with functai.configure(log_calls=str(log)):
+        chat = shop.tutor.conversation("lesson", store=str(work / "conversations"))
+        turns = chat.turns
+        assert [t.state for t in turns] == ["done", "done", "done"], turns
+        assert [t.id for t in turns[2].saw] == [turns[0].id, turns[1].id], turns[2].saw
+        assert turns[2].result == "julia 5", turns[2].result
+        rows = functai.rated(shop.tutor).collect().to_dicts()
+        assert len(rows) == 1 and [e["inputs"]["message"] for e in rows[0]["earlier"]] == ["Hi, I'm Alex.", "What is 1/2 + 1/3?"], rows
+    print("  ok    a conversation Python started in a folder, Julia continued; Python reads Julia's turn and what it saw, "
+          "and rated gives its earlier turns")
+    calls_, _ = calllog.read(log)
+    remote_calls = {c["id"]: c for c in calls_ if (c.get("program") or {}).get("kind") == "remote"}
+    served = [c for c in calls_ if c.get("parent") in remote_calls]
+    assert remote_calls and served and served[0]["process"]["language"] == "python", (remote_calls, served)
+    assert next(iter(remote_calls.values()))["process"]["language"] == "julia"
+    print("  ok    a program Python serves, Julia calls with remote: one call tree across the two languages' logs")
+
     # 3c. every record passes the schemas; Python's rated sees the other languages' calls and ratings
     s = schemas()
     calls_, ratings = calllog.read(log)
@@ -164,7 +210,7 @@ def main() -> int:
     julia_rows = json.loads((work / "julia-rated.json").read_text())
     assert len(rows) == 4, rows                                   # one rated in each language
     assert {r["rated_by"] for r in rows} == {"ana", "ben", "cleo", "dana"}
-    assert rows == julia_rows, (rows, julia_rows)
+    assert rows == [r for r in julia_rows], (rows, julia_rows)
     assert rows[:3] == r_rows, (rows, r_rows)                     # R read the log before Julia wrote to it
     assert rows[:2] == ts_rows, (rows, ts_rows)                   # TypeScript read it before R did
     print(f"  ok    one log, four languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
