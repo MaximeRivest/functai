@@ -360,7 +360,8 @@ run_rows <- function(core, rows, extra = list()) {
     past <- past_turns(core, plan)
   }
   version <- version_of(core)
-  program <- program_of(core, version)
+  program_json_once <- program_of(core, version)()          # one program object for every row of the batch
+  program <- function() program_json_once
   fields <- call_fields(core, s)
   keep <- content_kept(fields, content_layers(core, extra$log_content))
   plain_outputs <- names(core$definition$outputs)

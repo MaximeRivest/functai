@@ -174,8 +174,8 @@ compare <- function(before, after) {
 #' @return A list (`inspect_history()`); `phistory()` prints and returns it invisibly.
 #' @export
 inspect_history <- function(n = 1L) {
-  h <- the$history %||% list()
-  utils::tail(h, n)
+  h <- utils::tail(the$history %||% list(), n)
+  lapply(h, function(x) { x$request <- plain_lm15(x$request); if (!is.null(x$response)) x$response <- plain_lm15(x$response); x })
 }
 
 #' @rdname inspect_history
@@ -197,8 +197,9 @@ remember_history <- function(call) {
   ex <- Filter(function(e) !is.null(e$response) || !is.null(e$error), call$exchanges)
   if (!length(ex)) return(invisible())
   last <- ex[[length(ex)]]
+  # kept as they are, and turned into JSON only when someone reads them
   the$history <- utils::tail(c(the$history, list(list(name = call$name, call = call$id, model = last$model,
-                                                       request = plain_lm15(last$request), response = if (!is.null(last$response)) plain_lm15(last$response)))), 200L)
+                                                       request = last$request, response = last$response))), 200L)
   invisible()
 }
 

@@ -332,6 +332,7 @@ call_program <- function(core, inputs, extra = list()) {
   sizes <- vapply(setdiff(names(given), ".unknown"), function(k) if (isTRUE(fields[[k]]$opaque)) 1L else value_size(given[[k]]), 1L)
   n <- if (length(sizes)) max(sizes) else 1L
   if (any(sizes != 1L & sizes != n)) cli::cli_abort("inputs of different lengths: {.field {names(sizes)}} have {sizes} values")
+  core$program_json_cache <- program_json(core)              # one program object for every row
   results <- lapply(seq_len(n), function(i) run_program_row(core, given, i))
   report_errors(core, results, effective(core$own)$on_error %||% "warn")
   program_answers(core, results)
@@ -346,7 +347,8 @@ run_program_row <- function(core, given, i, own_extra = list()) {
   dropped <- names(keep)[!keep]
   row <- program_row(core, given, i, dropped)
   misfit <- inherits(row, "functai_misfit")
-  program <- function() program_json(core)
+  pj <- core$program_json_cache %||% program_json(core)
+  program <- function() pj
   call <- start_call(program, s, if (misfit) row$inputs else row, fields, keep, own = core$own, core = core)
   call$described <- if (misfit) NULL else attr(row, "described")
   if (!core$single) call$keep_events$holds <- names(core$definition$outputs)
