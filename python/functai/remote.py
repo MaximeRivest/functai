@@ -94,6 +94,12 @@ class RemoteProgram(FunctAIModule):
         super().__init__(call, interface=described["interface"])
         self.__name__ = described["name"]
 
+    def _check_definition(self) -> None:
+        """The server's interface, checked as its kind's: an AI function's
+        shapes may carry lmcc's keywords, which a module's check refuses."""
+        from . import interface as _interface
+        _interface.check(self._interface, ai=self._described.get("kind") == "ai", program=self.__name__)
+
     @property
     def url(self) -> str:
         return self._url

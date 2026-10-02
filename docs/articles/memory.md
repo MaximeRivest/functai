@@ -30,8 +30,16 @@ alex = chat.conversation("alex")
 alex("Hello, my name is Alex and I live in Montréal.")
 ```
 
+```output
+'Hello Alex! How can I assist you today?'
+```
+
 ```python
 alex("What's my name, and what's a good thing to do in my city in winter?")
+```
+
+```output
+"Your name is Alex. In Montréal during winter, a great activity is visiting the Montréal Botanical Garden's winter light displays or enjoying ice skating at Parc La Fontaine."
 ```
 
 ## What each answer was based on
@@ -44,11 +52,21 @@ exactly as it was:
 [t.inputs["message"] for t in alex.turns[-1].saw]
 ```
 
+```output
+['Hello, my name is Alex and I live in Montréal.']
+```
+
 `render` shows the exact request the next turn would send, and sends
 nothing:
 
 ```python
 print(alex.render("And in summer?").messages[0].parts[0].text)
+```
+
+```output
+<message>
+Hello, my name is Alex and I live in Montréal.
+</message>
 ```
 
 ## Trying another path
@@ -60,6 +78,10 @@ turn: the new turn is a branch, and both paths are kept.
 other = alex.continue_from(alex.turns[0])
 other("What's the weather like there in July?")
 len(alex.turns), len(other.turns)
+```
+
+```output
+(2, 2)
 ```
 
 ## Keeping it
@@ -77,6 +99,10 @@ tutor("Remember: my favourite colour is green.")
 
 again = chat.conversation("alex", store=folder)     # tomorrow
 again("What's my favourite colour?")
+```
+
+```output
+'Your favourite colour is green.'
 ```
 
 A store is a folder (files, locked so several processes can share it), or

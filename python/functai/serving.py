@@ -46,7 +46,7 @@ from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Iterator, List, Mapping, Optional, Union
 
 from . import calllog
-from .errors import ConversationError, FunctAIError, InterfaceError, ServeError, Waiting
+from .errors import ConversationError, FunctAIError, InterfaceError, ServeError
 
 FORMAT = 1
 MAX_BODY = 16 * 1024 * 1024          # bytes a request may send
@@ -329,9 +329,10 @@ class Service:
             with self._context(parent):
                 s = chat.stream(request_id=data.get("request_id"), **inputs)
             if data.get("wait"):
+                from .streaming import Cancelled
                 try:
                     s.result
-                except (Waiting, BaseException):  # noqa: BLE001 — the turn's state says it
+                except (Exception, Cancelled):  # noqa: BLE001 — the turn's state says how it went
                     pass
             t = s.turn
             return _json(201, {**self._turn_json(t), "conversation": cid})

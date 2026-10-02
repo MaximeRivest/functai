@@ -450,3 +450,66 @@ def test_a_module_turn_records_what_it_was_shown(support_model, tmp_path):
     assert calllog.saw(last["id"], recs) == [{"call": chat.turns[0].id}, {"call": chat.turns[1].id}]
     assert chat.turns[-1].tree().splitlines() == ["support", "├─ topic", "└─ answer"]
     assert [c.function for c in chat.turns[-1].find(topic)] == ["topic"]
+
+
+# ------------------------------------------------------------------ found in review
+
+
+def test_an_old_stop_does_not_stop_a_resumed_turn(echo, tmp_path):
+    chat = tutor.conversation("old-stop", store=tmp_path)
+    chat("first")
+    dead = calllog.new_id()
+    past = calllog._iso(time.time() - 60)
+    chat.store.append("old-stop", [
+        {"functai_conversation": 1, "kind": "turn", "at": past, "turn": dead, "parent": chat.turns[-1].id,
+         "program": chat.turns[-1]._st.record["program"], "inputs": {"message": "lost"}},
+        {"functai_conversation": 1, "kind": "lease", "at": past, "turn": dead, "holder": "gone:1:x",
+         "until": past, "attempt": 1},
+        {"functai_conversation": 1, "kind": "stop", "at": past, "turn": dead}])   # asked while it ran, never seen
+    echo.responder = lambda req: (time.sleep(0.6), XML.format("resumed"))[1]    # longer than the stop's poll
+    assert chat.turn(dead).resume() == "resumed" and chat.turn(dead).state == "done"
+
+
+def test_a_process_whose_turn_was_taken_over_stops(fake, tmp_path):
+    gate = threading.Event()
+    fake(responder=lambda req: (gate.wait(5), XML.format("late"))[1])
+    s = tutor.conversation("taken", store=tmp_path).stream("hi")
+    tid = s.turn.id
+    store = stores.store_for(tmp_path)
+    store.append("taken", [{"functai_conversation": 1, "kind": "lease", "at": calllog._iso(time.time()), "turn": tid,
+                            "holder": "other:2:y", "until": calllog._iso(time.time() + 30), "attempt": 2}])
+    time.sleep(0.6)
+    gate.set()
+    with pytest.raises(functai.Cancelled):
+        s.result
+
+
+def test_stopping_a_waiting_turn_ends_it(fake):
+    import lm15
+
+    @functai.tool(effects="changes")
+    def send(text: str) -> str:
+        """Send."""
+        return "sent"
+
+    @ai(tools=[send])
+    def clerk(message: str) -> str:
+        """Help."""
+
+    fake(lm15.Response(id="r", model="m", message=lm15.Message.assistant(
+        [lm15.ToolCallPart(id="c1", name="send", input={"text": "x"})]), finish_reason="tool_call",
+        usage=lm15.Usage(input_tokens=1, output_tokens=1, total_tokens=2)))
+    chat = clerk.conversation(approve="changes")
+    with pytest.raises(functai.Waiting):
+        chat("go")
+    chat.stop(chat.turns[-1])
+    assert chat.turns[-1].state == "abandoned"
+    chat.stop(chat.turns[-1])                                               # an ended turn: nothing to do
+
+
+def test_a_rule_set_after_opening_still_holds(echo, tmp_path):
+    chat = tutor.conversation("later-rule", store=tmp_path)
+    with functai.configure(log_content=False):
+        with pytest.raises(functai.ConversationError) as err:
+            chat("secret")
+    assert err.value.code == "conversation-content" and chat.all_turns() == []

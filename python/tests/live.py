@@ -65,7 +65,7 @@ def pirate(text: str) -> str:
     """Summarize in 10 words."""
 
 
-@ai(stateful=True)
+@ai
 def chat(message: str) -> str:
     """A friendly assistant that remembers the conversation."""
 
@@ -83,6 +83,38 @@ def sentiment_score(text: str) -> float:
 
 
 DOC = "INVOICE\nVendor: TechCorp Inc.\nInvoice #: INV-2025-101\nItems: 5x Laptops, 2x Monitors\nTotal: $5600.00"
+
+
+@functai.tool(effects="changes")
+def send_note(text: str) -> str:
+    """Send a short note to the team."""
+    return "sent"
+
+
+@ai(tools=[send_note])
+def notifier(request: str) -> str:
+    """Do what the user asks, using the tool when it helps. Say what you did."""
+
+
+def _cached_twice(model: str) -> str:
+    """The same request twice through a disk cache: the second is not sent."""
+    import tempfile
+    with functai.configure(cache_replies=tempfile.mkdtemp()):
+        first = summarize("A disk cache keeps replies across runs.")
+        n = len(functai.inspect_history(500))
+        second = summarize("A disk cache keeps replies across runs.")
+        assert first == second and functai.inspect_history(1)[0].cached, "the second reply was not from the cache"
+        return f"{first!r} (cached after {n} records)"
+
+
+def _approval() -> str:
+    """A turn waits for a person's yes, then goes on."""
+    chat = notifier.conversation(approve="changes")
+    try:
+        chat("Send the team a note saying the build is green.")
+    except functai.Waiting as w:
+        return w.turn.approve()
+    raise AssertionError("the model did not call the tool, so nothing waited")
 
 
 def run(model: str) -> list:
@@ -105,8 +137,10 @@ def run(model: str) -> list:
     check("cot", lambda: (solve.predict("Ana buys 7 pens at 3 each and pays with 50. How much change?").result))
     check("tools", lambda: weather("What's the weather in Montreal?"))
     check("pirate template", lambda: pirate("Foundation models are now mature enough for real-world use."))
-    chat.reset()
-    check("stateful", lambda: (chat("Hi, my name is Alex."), chat("What is my name?"))[1])
+    conversation = chat.conversation()
+    check("conversation", lambda: (conversation("Hi, my name is Alex."), conversation("What is my name?"))[1])
+    check("disk cache", lambda: _cached_twice(model))
+    check("approval", lambda: _approval())
     check("chat adapter", lambda: categorize("The new phone has a faster chip."))
     check("post-processing", lambda: sentiment_score("I think FunctAI is amazing!"))
     return failures

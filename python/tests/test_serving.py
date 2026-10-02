@@ -236,3 +236,22 @@ def test_a_remote_program_is_a_program_again(model, tmp_path):
     assert mine and mine[0]["program"]["remote"] == url
     served = {r["parent"] for r in recs if r["program"]["name"] == "support" and r["program"]["kind"] == "module"}
     assert {r["id"] for r in mine} <= served                               # the server's call names the caller's
+
+
+def test_a_served_ai_function_with_lmcc_keywords_is_remote_too(fake):
+    from pydantic import BaseModel, Field
+
+    class Order(BaseModel):
+        code: str = Field(pattern=r"^B-\d+$")
+
+    @ai
+    def parse(text: str) -> Order:
+        """The order the text names."""
+
+    fake(responder=lambda req: XML.format('{"code": "B-1"}'))
+    server = functai.serve(parse, port=0, block=False)
+    try:
+        remote = functai.remote(f"http://127.0.0.1:{server.server_address[1]}")
+        assert remote("order B-1") == {"code": "B-1"}
+    finally:
+        server.shutdown()

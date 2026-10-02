@@ -391,6 +391,8 @@ class _TurnRun:
         self.helper_calls: List[Dict[str, Any]] = []   # remembered helpers' calls made in this turn so far
         self.usage: Dict[str, int] = {}
         self.later = later
+        self.start_seq = 0                              # the records before this run's own lease: older stops are not its
+        self.holder = _holder()
         self.lock = threading.Lock()
         self.durable = conv._durable()
         r = replay or {}
@@ -1291,6 +1293,7 @@ class Conversation:
     def _send(self, inputs: Dict[str, Any], settings: Dict[str, Any], request_id: Optional[str],
               passive: bool = False) -> "TurnStream":
         self._check_nested()
+        self._check_content()                         # a host's rule set since the conversation was opened holds too
         values = self._bound_json(inputs)             # refused before anything is recorded
         turn_settings = {**self.settings, **settings}
         while True:
@@ -1316,7 +1319,7 @@ class Conversation:
                     recs.append(rec)
                     recs.append(self._lease(tid, 1))
                     try:
-                        self._append(recs, expect=log.n)
+                        start_seq = self._append(recs, expect=log.n)
                     except ConversationError as exc:
                         if exc.code != "store-conflict":
                             raise
@@ -1326,6 +1329,7 @@ class Conversation:
                     break
             self._wait(0.25)                          # a turn before it is running: queue behind it
         run = _TurnRun(self, tid, attempt=1, context=context)
+        run.start_seq = start_seq
         return self._start(run, inputs, turn_settings, passive=passive)
 
     def _parent_for(self, log: _Log) -> Any:
@@ -1455,7 +1459,7 @@ class Conversation:
                                                 f"resume(rerun=[{inv}])", turn=tid)
                 attempt = st.attempt + 1
                 try:
-                    self._append([*given, self._lease(tid, attempt)], expect=log.n)
+                    start_seq = self._append([*given, self._lease(tid, attempt)], expect=log.n)
                 except ConversationError as exc:
                     if exc.code == "store-conflict":
                         continue
@@ -1478,6 +1482,7 @@ class Conversation:
         replay = {"replies": [r for r in st.replies], "tools": list(st.tools),
                   "answers": list(st.answers), "waiting_seq": (st.waiting or {}).get("seq", 0)}
         run = _TurnRun(self, tid, attempt=attempt, context=self._context(log, st.parent), replay=replay, later=later)
+        run.start_seq = start_seq
         inputs = copy.deepcopy(st.record.get("inputs") or {})
         settings = dict(self.settings)
         if (st.record.get("settings") or {}).get("lm"):
@@ -1489,6 +1494,12 @@ class Conversation:
     def stop(self, turn: Any) -> None:
         """Stop a running turn, wherever it runs."""
         tid = self._turn_id(turn)
+        state = self._read().turns[tid].state()
+        if state in ("waiting", "interrupted"):
+            Turn(self, self._read().turns[tid]).abandon()      # nothing runs it: stopping it is ending it
+            return
+        if state != "running":
+            return                                            # it ended already
         self._append([{"functai_conversation": FORMAT, "kind": "stop", "at": _iso(), "turn": tid}])
         with _RUNNING_LOCK:
             hit = _RUNNING.get(tid)
@@ -1674,9 +1685,11 @@ class TurnStream(Stream):
         super()._receive(event, call)
 
     def _heartbeat(self) -> None:
-        """Renew the turn's lease, and look for a stop from another process."""
+        """Renew the turn's lease, look for a stop from another process, and
+        stop when another process took the turn over (its lease ran out here:
+        a store that failed, a process that stalled)."""
         renewed = time.monotonic()
-        seen = 0
+        seen = self._run.start_seq
         while not self._done:
             time.sleep(POLL)
             if self._done:
@@ -1684,8 +1697,13 @@ class TurnStream(Stream):
             try:
                 recs = self._conv.store.read(self._conv.id, seen)
                 seen += len(recs)
-                if any(r.get("kind") == "stop" and r.get("turn") == self.turn_id for r in recs):
+                mine = [r for r in recs if r.get("turn") == self.turn_id]
+                if any(r.get("kind") == "stop" for r in mine):
                     self._stop_seen = True
+                    self.close()
+                if any(r.get("kind") == "lease" and int(r.get("attempt") or 1) > self._run.attempt for r in mine):
+                    calllog._warn_once(("lease-lost", self.turn_id), f"turn {self.turn_id} was taken over by another "
+                                                                     f"process (its lease ran out here): this one stops")
                     self.close()
                 if time.monotonic() - renewed >= RENEW:
                     renewed = time.monotonic()
