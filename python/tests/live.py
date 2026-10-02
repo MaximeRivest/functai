@@ -117,6 +117,48 @@ def _approval() -> str:
     raise AssertionError("the model did not call the tool, so nothing waited")
 
 
+def _plugin_sections() -> str:
+    """A plugin's section reaches the model and is recorded as a change."""
+    shout = functai.Plugin("shout")
+    shout.before_call(lambda call: functai.Change(sections=["Answer in CAPITAL LETTERS only."]))
+    with functai.configure(plugins=[shout]):
+        out = summarize("Plugins change calls through hooks, as data.")
+    assert out == out.upper(), out
+    return out
+
+
+def _compaction() -> str:
+    """A long conversation is summarized, and the summary keeps the facts."""
+    chat = chat_fn.conversation(plugins=[functai.compaction(keep=1, every=2)])
+    chat("My name is Alex and my cat is called Miso.")
+    chat("I live in Montréal.")
+    chat("I like fractions.")
+    summary = chat.entries("compaction", "summary")[-1]["data"]["text"]
+    assert "Miso" in summary, summary
+    answer = chat("What is my cat called?")
+    assert "Miso" in answer, answer
+    return answer
+
+
+@ai
+def lookup(question: str) -> str:
+    """Answer the question about our shop: it opens at 9 and closes at 17, Monday to Saturday."""
+
+
+@ai(tools=[functai.delegate(lookup, name="shop_facts")])
+def front_desk(request: str) -> str:
+    """Answer the customer. Ask shop_facts for anything about the shop."""
+
+
+def _delegation() -> str:
+    answer = front_desk.conversation()("When do you close on Saturday?")
+    assert "17" in answer or "5" in answer, answer
+    return answer
+
+
+chat_fn = chat
+
+
 def run(model: str) -> list:
     failures = []
     functai.configure(lm=model, max_tokens=2000, temperature=0)
@@ -141,6 +183,9 @@ def run(model: str) -> list:
     check("conversation", lambda: (conversation("Hi, my name is Alex."), conversation("What is my name?"))[1])
     check("disk cache", lambda: _cached_twice(model))
     check("approval", lambda: _approval())
+    check("plugin sections", lambda: _plugin_sections())
+    check("compaction", lambda: _compaction())
+    check("delegation", lambda: _delegation())
     check("chat adapter", lambda: categorize("The new phone has a faster chip."))
     check("post-processing", lambda: sentiment_score("I think FunctAI is amazing!"))
     return failures

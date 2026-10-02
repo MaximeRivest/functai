@@ -166,8 +166,8 @@ class _TurnState:
         """The approvals the turn waits for that have no answer yet."""
         if self.waiting is None:
             return []
-        done = {(a.get("site"), a.get("invocation")) for a in self.answers if a["seq"] > self.waiting["seq"]}
-        return [a for a in self.waiting.get("approvals", []) if (a.get("site"), a.get("invocation")) not in done]
+        done = {_akey(a) for a in self.answers if a["seq"] > self.waiting["seq"]}
+        return [a for a in self.waiting.get("approvals", []) if _akey(a) not in done]
 
     def unfinished(self) -> List[Dict[str, Any]]:
         """Tools that started and have no result in the records: they may have run."""
@@ -181,6 +181,12 @@ class _TurnState:
         return list(started.values())
 
 
+def _akey(a: Mapping[str, Any]) -> Tuple[Any, int, str]:
+    """Which question an approval record answers: the asking call's site, the
+    tool call's invocation, and the plugin that asked."""
+    return (a.get("site"), int(a.get("invocation") or 0), a.get("plugin") or "approval")
+
+
 class _Log:
     """A conversation's records, applied in order (read again incrementally)."""
 
@@ -191,6 +197,7 @@ class _Log:
         self.head: Optional[str] = None
         self.request_ids: Dict[str, str] = {}
         self.programs: Dict[str, Dict[str, Any]] = {}
+        self.entries: List[Dict[str, Any]] = []
         self.stops_seen = 0
 
     def apply(self, records: Sequence[Dict[str, Any]]) -> None:
@@ -201,6 +208,9 @@ class _Log:
             kind = r.get("kind")
             if kind == "program":
                 self.programs.setdefault(r.get("version"), r)
+                continue
+            if kind == "entry":
+                self.entries.append(r)
                 continue
             tid = r.get("turn")
             if kind == "turn":
@@ -392,6 +402,7 @@ class _TurnRun:
         self.usage: Dict[str, int] = {}
         self.later = later
         self.start_seq = 0                              # the records before this run's own lease: older stops are not its
+        self.settings: Dict[str, Any] = {}             # the turn's settings (the conversation's and its own)
         self.holder = _holder()
         self.lock = threading.Lock()
         self.durable = conv._durable()
@@ -411,11 +422,11 @@ class _TurnRun:
                 self.unfinished.pop(k, None)
             elif t.get("state") == "started" and k not in self.tools:
                 self.unfinished[k] = t
-        self.answers: Dict[Tuple[str, int], Tuple[bool, Optional[str], Optional[str], bool]] = {}
+        self.answers: Dict[Tuple[Any, int, str], Tuple[bool, Optional[str], Optional[str], bool]] = {}
         last_wait = r.get("waiting_seq", 0)
         for a in r.get("answers", []):
-            self.answers[(a.get("site"), int(a.get("invocation") or 0))] = (
-                a.get("verdict") == "yes", a.get("reason"), a.get("by"), a.get("seq", 0) > last_wait)
+            self.answers[_akey(a)] = (a.get("verdict") == "yes", a.get("reason"), a.get("by"),
+                                      a.get("seq", 0) > last_wait)
 
     # ----- calllog's side
 
@@ -552,12 +563,13 @@ class _TurnRun:
                             "id": approval.id, "name": approval.name, "state": "done", "output": output}])
 
     def recorded_approval(self, call: Any, approval: Any) -> Optional[Tuple[bool, Optional[str], Optional[str], bool]]:
-        return self.answers.get((call.path, approval.invocation))
+        return self.answers.get((call.path, approval.invocation, approval.plugin))
 
     def note_approval(self, call: Any, approval: Any, allowed: bool, reason: Optional[str], by: Optional[str]) -> None:
         self.conv._append([{"functai_conversation": FORMAT, "kind": "approval", "at": _iso(), "turn": self.turn,
                             "site": call.path, "invocation": approval.invocation, "path": approval.path,
-                            "verdict": "yes" if allowed else "no", "by": by, "reason": reason}])
+                            "plugin": approval.plugin, "verdict": "yes" if allowed else "no", "by": by,
+                            "reason": reason}])
 
     def pause(self, call: Any, approval: Any) -> None:
         raise TurnWaiting(dataclasses.replace(approval, site=call.path))
@@ -566,6 +578,7 @@ class _TurnRun:
         """The turn's own call: its record says which conversation and turn it is."""
         self.root = call
         call.conversation = {"id": self.conv.id, "turn": self.turn, "parent": self.context.get("parent")}
+        call.changes.extend(copy.deepcopy(self.context.get("changes") or []))
 
 
 # hooks the engine calls (engine._complete)
@@ -664,6 +677,24 @@ def context_for(program: Any) -> Optional[Tuple[List[Any], List[str], Optional[C
     if rendering is not None and rendering[0] is program:
         return rendering[1]
     return None
+
+
+def sections_for(program: Any, call: Any) -> List[str]:
+    """The instruction sections a call is given before its own ``before_call``
+    hooks: its turn's (the conversation's context hooks gave them), a row's
+    asked again, or, rendering, the next turn's."""
+    replay = _REPLAY.get()
+    if replay is not None and call is not None:
+        return replay.sections_for(program, call)
+    if call is None:
+        rendering = _RENDERING.get()
+        if rendering is not None and rendering[0] is program:
+            return list(rendering[2] if len(rendering) > 2 else [])
+        return []
+    run = getattr(call, "turn_run", None)
+    if run is not None and call.id == run.turn:
+        return list(run.context.get("sections") or [])
+    return []
 
 
 def module_saw(program: Any) -> Optional[List[Dict[str, Any]]]:
@@ -810,8 +841,7 @@ class Turn:
     @property
     def waiting(self) -> List[Any]:
         from .tools import Approval
-        return [Approval(a["call"], int(a["invocation"]), a["id"], a["name"], a.get("input"), a.get("effects"),
-                         a.get("path") or a["name"], site=a.get("site", "")) for a in self._st.unanswered()]
+        return [Approval.from_dict(a) for a in self._st.unanswered()]
 
     @property
     def unfinished(self) -> List[Dict[str, Any]]:
@@ -877,14 +907,17 @@ class Turn:
             inv = getattr(approval, "invocation", approval.get("invocation") if isinstance(approval, Mapping)
                           else approval)
             site = getattr(approval, "site", None) or (approval.get("site") if isinstance(approval, Mapping) else None)
-            match = [a for a in waiting if int(a["invocation"]) == int(inv) and (site is None or a.get("site") == site)]
+            ext = getattr(approval, "plugin", None) or (approval.get("plugin") if isinstance(approval, Mapping)
+                                                           else None)
+            match = [a for a in waiting if int(a["invocation"]) == int(inv) and (site is None or a.get("site") == site)
+                     and (ext is None or (a.get("plugin") or "approval") == ext)]
             if not match:
                 raise ConversationError("turn-state", f"turn {self.id} waits for no approval {approval!r}", turn=self.id)
             target = match[0]
         self._conv._append([{"functai_conversation": FORMAT, "kind": "approval", "at": _iso(), "turn": self.id,
                              "site": target.get("site"), "invocation": target["invocation"],
-                             "path": target.get("path"), "verdict": "yes" if allowed else "no", "by": by,
-                             "reason": reason}])
+                             "path": target.get("path"), "plugin": target.get("plugin") or "approval",
+                             "verdict": "yes" if allowed else "no", "by": by, "reason": reason}])
         self._st = self._conv._read().turns[self.id]
         if resume and not self._st.unanswered():
             return self.resume()
@@ -1055,7 +1088,7 @@ class Conversation:
 
     def __init__(self, program: Any, id: Optional[str] = None, *, store: Any = None, context: Optional[Context] = None,
                  earlier_without: Iterable[str] = (), remembers: Optional[Mapping[Any, Any]] = None,
-                 sends: str = "queue", _head: Any = _FOLLOW, **settings: Any):
+                 sends: str = "queue", _head: Any = _FOLLOW, _delegated: bool = False, **settings: Any):
         from .config import check
         from .core import FunctAIFunc
         from .module import FunctAIModule
@@ -1079,6 +1112,7 @@ class Conversation:
             self._remembers[k] = _memory(v)
         self._check_remembers()
         self._head = _head
+        self._delegated = _delegated                  # a delegate's own conversation, inside the turn that asked
         self._exact = False                           # continue_from(turn): after that very turn
         self._log = _Log()
         self._log_lock = threading.Lock()
@@ -1266,7 +1300,7 @@ class Conversation:
         call = calllog.current()
         if call is not None and call.turn_run is not None:
             outer = call.turn_run
-        if outer is None or outer.conv.id == self.id and outer.conv.store is self.store:
+        if outer is None or outer.conv.id == self.id and outer.conv.store is self.store or self._delegated:
             return
         declared = outer.conv._remembers
         if any((k is self or k is self.program) and v == "own" for k, v in declared.items()):
@@ -1294,8 +1328,9 @@ class Conversation:
               passive: bool = False) -> "TurnStream":
         self._check_nested()
         self._check_content()                         # a host's rule set since the conversation was opened holds too
-        values = self._bound_json(inputs)             # refused before anything is recorded
         turn_settings = {**self.settings, **settings}
+        inputs, start_changes = self._turn_start(inputs, turn_settings)
+        values = self._bound_json(inputs)             # refused before anything is recorded
         while True:
             with self._send_lock:
                 log = self._read()
@@ -1305,7 +1340,8 @@ class Conversation:
                 if parent is not _BUSY:
                     _check_signature(self.program, log, log.branch(parent), self.earlier_without)
                     tid = calllog.new_id()
-                    context = self._context(log, parent)
+                    context = self._context(log, parent, turn_settings)
+                    context["changes"] = [*start_changes, *context["changes"]]
                     desc = describe(self.program)
                     recs: List[Dict[str, Any]] = []
                     if desc["version"] not in log.programs:
@@ -1316,6 +1352,10 @@ class Conversation:
                         rec["request_id"] = str(request_id)
                     if isinstance(turn_settings.get("lm"), str):
                         rec["settings"] = {"lm": turn_settings["lm"]}
+                    if context["recorded"] is not None:
+                        rec["context"] = context["recorded"]
+                    if context["changes"]:
+                        rec["changes"] = context["changes"]
                     recs.append(rec)
                     recs.append(self._lease(tid, 1))
                     try:
@@ -1329,8 +1369,55 @@ class Conversation:
                     break
             self._wait(0.25)                          # a turn before it is running: queue behind it
         run = _TurnRun(self, tid, attempt=1, context=context)
+        run.settings = dict(turn_settings)
         run.start_seq = start_seq
         return self._start(run, inputs, turn_settings, passive=passive)
+
+    def _turn_start(self, inputs: Dict[str, Any], settings: Mapping[str, Any]
+                    ) -> Tuple[Dict[str, Any], List[Dict[str, Any]]]:
+        """The ``turn_start`` hooks: the turn's inputs as they leave them."""
+        from . import plugins
+        exts = plugins.around(self.program, [("block", settings)])
+        if not any(e.handlers.get("turn_start") for e in exts):
+            return inputs, []
+        log = self._read()
+        event = plugins.TurnStart(dict(inputs), self.id, self._view_head(log), self.program)
+        applied = plugins.Applied()
+        names = {f["name"] for f in self.program.interface["inputs"]}
+
+        def apply(c: "plugins.Change") -> None:
+            unknown = sorted(set(c.inputs) - names)
+            if unknown:
+                raise ValueError(f"{self.program.__name__} has no input {unknown[0]!r}")
+            event.inputs.update(c.inputs)
+
+        plugins.run("turn_start", exts, event, applied, apply)
+        return event.inputs, applied.items
+
+    def _turn_end(self, run: "_TurnRun", outcome: Dict[str, Any]) -> None:
+        """The ``turn_end`` hooks (they hear; they may keep entries at the
+        turn). Run before the turn's end is recorded, so the next turn, which
+        waits for that end, sees what they kept. One that fails is reported,
+        and changes nothing of the turn."""
+        from . import plugins
+        settings = {**self.settings, **(run.settings or {})}
+        exts = plugins.around(self.program, [("block", settings)])
+        if not any(e.handlers.get("turn_end") for e in exts):
+            return
+        log = self._read()
+        st = log.turns[run.turn]
+        event = plugins.TurnEnd(run.turn, outcome["state"], dict(st.record.get("inputs") or {}),
+                                   dict(outcome.get("outputs") or {}), self, st.parent)
+        for ext in exts:
+            for fn in ext.handlers.get("turn_end", ()):
+                event._ext = ext
+                try:
+                    fn(event)
+                except Exception as exc:  # noqa: BLE001 — a hook that only hears never changes the turn
+                    calllog._warn_once(("turn_end", ext.name, type(exc).__name__),
+                                       f"plugin {ext.name} failed in turn_end ({type(exc).__name__}: {exc})")
+                finally:
+                    event._ext = None
 
     def _parent_for(self, log: _Log) -> Any:
         """The turn a new turn continues from, or ``_BUSY`` while it must wait."""
@@ -1358,14 +1445,76 @@ class Conversation:
         return {"functai_conversation": FORMAT, "kind": "lease", "at": _iso(), "turn": tid, "holder": _holder(),
                 "until": _iso(_now() + LEASE), "attempt": attempt}
 
-    def _context(self, log: _Log, parent: Optional[str]) -> Dict[str, Any]:
-        """What the turn after ``parent`` is shown: the done turns of the branch,
-        picked by the context rule, each as the lmcc turn it was (with its
-        steps), the rule's ``without`` fields taken out; the ``saw`` entries;
-        the rows ``earlier()`` gives."""
-        from .core import FunctAIFunc
+    def _shown(self, log: _Log, parent: Optional[str], settings: Mapping[str, Any],
+               fixed: Optional[Mapping[str, Any]]) -> Tuple[List["_TurnState"], Dict[str, List[str]], List[str],
+                                                         List[Dict[str, Any]], Optional[Dict[str, Any]]]:
+        """(the earlier turns shown, fields left out of each, sections, the
+        changes made, the context to record): the conversation's rule picks
+        among the done turns of the branch, then the ``context`` hooks change
+        it (contract/plugins.md). ``fixed``: the context a turn recorded
+        when it was made (resuming it shows exactly that)."""
+        from . import plugins
         done = [st for st in log.branch(parent) if st.state() == "done"]
+        if fixed is not None:
+            by_id = {st.id: st for st in done}
+            picked = [by_id[t] for t in fixed.get("turns", []) if t in by_id]
+            without = {k: list(v) for k, v in (fixed.get("without") or {}).items()}
+            return picked, without, list(fixed.get("sections") or []), [], None
         picked = self.context.pick(done)
+        rule = list(self.context.without)
+        without: Dict[str, List[str]] = {}
+        for st in picked:
+            fields = set(st.record.get("inputs") or {}) | set(((st.ended or {}).get("outputs") or {}))
+            gone = sorted(fields & set(rule))
+            if gone:
+                without[st.id] = gone
+        exts = plugins.around(self.program, [("block", settings)])
+        if not any(e.handlers.get("context") for e in exts):
+            return picked, without, [], [], None
+        event = plugins.Context([plugins.ShownTurn(st.id, dict(st.record.get("inputs") or {}),
+                                                         dict((st.ended or {}).get("outputs") or {}),
+                                                         tuple(without.get(st.id, ()))) for st in picked],
+                                   [], self, parent, self.program)
+        applied = plugins.Applied()
+        state = {"picked": picked}
+        branch_done = {st.id: st for st in done}
+
+        def apply(c: "plugins.Change") -> None:
+            if c.keep is not None:
+                ids = list(c.keep)
+                unknown = [i for i in ids if i not in branch_done]
+                if unknown:
+                    raise ValueError(f"keep names {unknown[0]}, which is not a done turn of this branch")
+                state["picked"] = [st for st in done if st.id in set(ids)]
+                event.turns = [t for t in event.turns if t.id in set(ids)] + [
+                    plugins.ShownTurn(i, dict(branch_done[i].record.get("inputs") or {}),
+                                         dict((branch_done[i].ended or {}).get("outputs") or {}))
+                    for i in ids if i not in {t.id for t in event.turns}]
+            if c.without is not None:
+                targets = c.without if isinstance(c.without, Mapping) else {st.id: list(c.without)
+                                                                            for st in state["picked"]}
+                for tid, names in targets.items():
+                    if isinstance(names, str) or not all(isinstance(n, str) for n in names):
+                        raise TypeError("without names fields: a list of names, or {turn id: [names]}")
+                    without[tid] = sorted(set(without.get(tid, [])) | set(names))
+            if c.sections is not None:
+                event.sections.extend(plugins._texts(c.sections))
+
+        plugins.run("context", exts, event, applied, apply)
+        picked = state["picked"]
+        without = {k: v for k, v in without.items() if k in {st.id for st in picked}}
+        recorded = {"turns": [st.id for st in picked], "without": without, "sections": list(event.sections)}
+        return picked, without, list(event.sections), applied.items, recorded
+
+    def _context(self, log: _Log, parent: Optional[str], settings: Optional[Mapping[str, Any]] = None,
+                 fixed: Optional[Mapping[str, Any]] = None) -> Dict[str, Any]:
+        """What the turn after ``parent`` is shown: the earlier turns
+        (``_shown``), each as the lmcc turn it was (with its steps), the fields
+        left out taken out; the sections; the ``saw`` entries; the rows
+        ``earlier()`` gives; the changes plugins made, and the context to
+        record with the turn."""
+        from .core import FunctAIFunc
+        picked, without, sections, changes, recorded = self._shown(log, parent, settings or self.settings, fixed)
         turns: List[Any] = []
         ids: List[str] = []
         rows: List[Dict[str, Any]] = []
@@ -1376,7 +1525,7 @@ class Conversation:
             ended = st.ended or {}
             outputs = ended.get("outputs") or {}
             row = {**(st.record.get("inputs") or {}), **outputs}
-            rows.append({k: v for k, v in row.items() if k not in self.context.without})
+            rows.append({k: v for k, v in row.items() if k not in set(without.get(st.id, ()))})
             if not is_ai:
                 ids.append(st.id)
                 continue
@@ -1385,7 +1534,7 @@ class Conversation:
                 t = _fit(self.program, copy.deepcopy(ended["lmcc"]))
             else:
                 t = {"inputs": st.record.get("inputs") or {}, "outputs": outputs}
-            t, gone = _without(t, self.context.without)
+            t, gone = _without(t, without.get(st.id, ()))
             if gone:
                 dropped[st.id] = gone
             turns.append(t)
@@ -1403,11 +1552,36 @@ class Conversation:
                 out.append(e)
             return _compress(out, parent, saw_records)
 
+        base = {"rows": rows, "parent": parent, "sections": sections, "changes": changes, "recorded": recorded}
         if not is_ai:
             entries = finish([{"call": i} for i in ids])
-            return {"turns": [], "ids": [], "finish": lambda _e: entries, "rows": rows, "parent": parent,
-                    "module_saw": entries}
-        return {"turns": turns, "ids": ids, "finish": finish, "rows": rows, "parent": parent}
+            return {**base, "turns": [], "ids": [], "finish": lambda _e: entries, "module_saw": entries}
+        return {**base, "turns": turns, "ids": ids, "finish": finish}
+
+    # ----- plugin entries
+
+    def remember(self, plugin: str, kind: str, data: Any, *, turn: Optional[str] = None) -> None:
+        """Keep a plugin's entry in this conversation, at a turn (it then
+        belongs to the branches through that turn): what the plugin needs
+        later, never shown to the model by itself (a summary is shown when a
+        ``context`` hook makes it a section)."""
+        if not isinstance(kind, str) or not kind:
+            raise TypeError("an entry's kind is a name")
+        rec = {"functai_conversation": FORMAT, "kind": "entry", "at": _iso(), "plugin": plugin,
+               "entry": kind, "data": _json(data)}
+        if turn is not None:
+            rec["turn"] = turn
+        self._append([rec])
+
+    def entries(self, plugin: str, kind: str, *, branch: Optional[str] = None) -> List[Dict[str, Any]]:
+        """A plugin's entries of a kind on the branch through ``branch``
+        (default: this view's head), oldest first: ``{"turn", "data", "at"}``."""
+        log = self._read()
+        through = branch if branch is not None else self._view_head(log)
+        on = {st.id for st in log.branch(through)}
+        return [{"turn": e.get("turn"), "data": copy.deepcopy(e.get("data")), "at": e.get("at")}
+                for e in log.entries if e.get("plugin") == plugin and e.get("entry") == kind
+                and (e.get("turn") is None or e.get("turn") in on)]
 
     # ----- running a turn
 
@@ -1481,7 +1655,10 @@ class Conversation:
                 later = None
         replay = {"replies": [r for r in st.replies], "tools": list(st.tools),
                   "answers": list(st.answers), "waiting_seq": (st.waiting or {}).get("seq", 0)}
-        run = _TurnRun(self, tid, attempt=attempt, context=self._context(log, st.parent), replay=replay, later=later)
+        fixed = st.record.get("context")              # what the turn was shown when it was made (context hooks ran)
+        run = _TurnRun(self, tid, attempt=attempt, context=self._context(log, st.parent, self.settings, fixed),
+                       replay=replay, later=later)
+        run.context["changes"] = []                     # the turn's own changes are on its first record
         run.start_seq = start_seq
         inputs = copy.deepcopy(st.record.get("inputs") or {})
         settings = dict(self.settings)
@@ -1526,8 +1703,8 @@ class Conversation:
         if not isinstance(self.program, FunctAIFunc):
             raise TypeError(f"{self.program.__name__} is a module: render the request one of its helpers would get, "
                             f"chat.render(..., call=helper)")
-        ctx = self._context(log, parent)
-        token = _RENDERING.set((self.program, (ctx["turns"], ctx["ids"], None)))
+        ctx = self._context(log, parent, self.settings)
+        token = _RENDERING.set((self.program, (ctx["turns"], ctx["ids"], None), ctx["sections"]))
         try:
             return self.program.render(*args, **kwargs)
         finally:
@@ -1763,6 +1940,7 @@ class TurnStream(Stream):
                 rec["state"] = "failed"
                 rec["error"] = {"type": type(exc).__name__, "message": calllog.safe_str(exc)}
                 error = exc
+        conv._turn_end(run, rec)                      # before the end is recorded: the next turn sees what it keeps
         try:
             conv._append([rec])
         except Exception as exc:  # noqa: BLE001 — the turn's end not kept: its lease runs out (interrupted)
@@ -1883,8 +2061,10 @@ class _Replay:
         self.program = program
         self.earlier = list(row.get("earlier") or [])
         self.helpers = list(row.get("helpers") or [])
+        self.sections = list(row.get("sections") or [])
         self.call = _meta(row, "call")
         self.lock = threading.Lock()
+        self.helper_sections: Dict[str, List[str]] = {}       # a helper call → the sections its original had
 
     def _turn(self, program: Any, t: Mapping[str, Any]) -> Dict[str, Any]:
         signature = calllog.signature_id(program._spec().signature)
@@ -1907,6 +2087,7 @@ class _Replay:
             if i is None:
                 return None
             h = self.helpers.pop(i)
+            self.helper_sections[call.id] = list(h.get("sections") or [])
         turns = [self._turn(program, t) for t in h.get("earlier") or []]
         if not turns:
             return None
@@ -1915,6 +2096,12 @@ class _Replay:
 
     def module_saw(self) -> List[Dict[str, Any]]:
         return [{"saw_of": self.call}] if self.call and self.earlier else []
+
+    def sections_for(self, program: Any, call: Any) -> List[str]:
+        if call.parent_call is None and program is self.program:
+            return list(self.sections)
+        with self.lock:
+            return list(self.helper_sections.get(call.id, []))
 
     def rows(self) -> List[Dict[str, Any]]:
         return [{**(t.get("inputs") or {}), **(t.get("outputs") or {})} for t in self.earlier]
@@ -1925,7 +2112,8 @@ class replaying:
     replaying(row, program): program(...)``); a row with none changes nothing."""
 
     def __init__(self, row: Mapping[str, Any], program: Any):
-        self.replay = _Replay(row, program) if (row.get("earlier") or row.get("helpers")) else None
+        self.replay = _Replay(row, program) if (row.get("earlier") or row.get("helpers") or row.get("sections")) \
+            else None
 
     def __enter__(self) -> None:
         self.token = _REPLAY.set(self.replay) if self.replay is not None else None

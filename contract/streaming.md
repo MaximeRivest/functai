@@ -70,8 +70,8 @@ call log's id) and that call's program (`function`, the program's name).
 | `thinking` | a piece of the model's own thinking that no output reads | `text` |
 | `tool_call` | the model asked for a tool, and the request is complete | `id` (the call's id, as lmcc names it: the provider's, or one lmcc assigned), `name`, `input`, `invocation` (its number among the call's tool calls: [tools.md](tools.md)) |
 | `tool_result` | the tool ran (or a person refused it: the refusal is its output) | `id`, `name`, `output` (text, as the model sees it), `invocation` |
-| `approval` | a tool call waits for a person's answer ([tools.md](tools.md)) | `id`, `invocation`, `name`, `input`, `effects`, `path`, `to` (`owner` or `caller`) |
-| `approved` | the answer | `id`, `invocation`, `verdict` (`yes`, `no`), `by`, `reason`? |
+| `approval` | a tool call waits for a person's answer ([tools.md](tools.md)) | `id`, `invocation`, `name`, `input`, `effects`, `path`, `to` (`owner` or `caller`), `plugin`, `question`? |
+| `approved` | the answer | `id`, `invocation`, `verdict` (`yes`, `no`), `by`, `reason`?, `plugin` |
 | `retry` | the model is asked again for this call's answer | `reason` (a sentence), `wait` (seconds before asking, or null) |
 | `done` | the call ended with a value | `value`: what the call returned, as JSON (an AI function's answer, as its code returned it; a module's output, or its outputs by name when it has several). A value with no JSON form is described as in the call log. |
 | `failed` | the call ended with an error | `error` `{"type", "message", "code"?}` as in the call log |

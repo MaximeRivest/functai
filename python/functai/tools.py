@@ -114,7 +114,7 @@ def effects_of(fn: Any) -> Optional[str]:
     if isinstance(fn, FunctAIFunc):
         inner = [effects_of(t) for t in fn.tools]
         return "reads" if all(e == "reads" for e in inner) else None
-    return None
+    return None                          # a module's own code may do anything: it reads only when it says so
 
 
 def check_approve(value: Any) -> None:
@@ -149,16 +149,23 @@ class Approval:
     effects: Optional[str]
     path: str
     site: str = ""          # the asking call's place in its tree ("support#1/answer#1"): what resuming finds it by
+    plugin: str = "approval"     # which plugin asks (a tool call may be asked about by several)
+    question: Optional[str] = None  # why it asks, in a sentence, when it says
 
     def to_dict(self) -> Dict[str, Any]:
         from .calllog import to_json
-        return {"call": self.call, "invocation": self.invocation, "id": self.id, "name": self.name,
-                "input": to_json(self.input)[0], "effects": self.effects, "path": self.path, "site": self.site}
+        out = {"call": self.call, "invocation": self.invocation, "id": self.id, "name": self.name,
+               "input": to_json(self.input)[0], "effects": self.effects, "path": self.path, "site": self.site,
+               "plugin": self.plugin}
+        if self.question:
+            out["question"] = self.question
+        return out
 
     @classmethod
     def from_dict(cls, d: Dict[str, Any]) -> "Approval":
         return cls(d["call"], int(d["invocation"]), d["id"], d["name"], d.get("input"), d.get("effects"),
-                   d.get("path") or d["name"], d.get("site", ""))
+                   d.get("path") or d["name"], d.get("site", ""), d.get("plugin") or "approval",
+                   d.get("question"))
 
 
 def path_of(call: Any, name: str) -> str:
@@ -209,18 +216,18 @@ def denial(reason: Optional[str]) -> str:
 class _Pending:
     def __init__(self) -> None:
         self.cond = threading.Condition()
-        self.answers: Dict[Tuple[str, int], Tuple[bool, Optional[str], Optional[str]]] = {}
-        self.asked: Dict[Tuple[str, int], Approval] = {}
+        self.answers: Dict[Tuple[str, int, str], Tuple[bool, Optional[str], Optional[str]]] = {}
+        self.asked: Dict[Tuple[str, int, str], Approval] = {}
 
 
 PENDING = _Pending()
 
 
 def answer(call: str, invocation: int, allowed: bool, *, reason: Optional[str] = None,
-           by: Optional[str] = None) -> None:
+           by: Optional[str] = None, plugin: str = "approval") -> None:
     """Answer an approval a call of this process waits for."""
     with PENDING.cond:
-        PENDING.answers[(call, int(invocation))] = (bool(allowed), reason, by)
+        PENDING.answers[(call, int(invocation), plugin)] = (bool(allowed), reason, by)
         PENDING.cond.notify_all()
 
 
@@ -230,7 +237,7 @@ def waiting_in_process() -> List[Approval]:
 
 
 def _wait_here(call: Any, approval: Approval) -> Tuple[bool, Optional[str], Optional[str]]:
-    key = (approval.call, approval.invocation)
+    key = (approval.call, approval.invocation, approval.plugin)
     with PENDING.cond:
         PENDING.asked[key] = approval
         try:
@@ -242,15 +249,14 @@ def _wait_here(call: Any, approval: Approval) -> Tuple[bool, Optional[str], Opti
             PENDING.asked.pop(key, None)
 
 
-def decide(call: Any, approval: Approval, settings: Dict[str, Any]) -> Tuple[bool, Optional[str], Optional[str]]:
-    """Whether a tool call may run: (allowed, reason refused, by whom). Asks
-    as the ``approve`` setting says; a call being resumed takes the answer
-    recorded for it. Emits ``approval`` and ``approved`` when a person is
-    asked. May raise ``ApprovalError`` (nobody can be asked), or stop the
-    turn to wait (a conversation)."""
-    rule = settings.get("approve")
-    if not asks(rule, approval):
-        return True, None, None
+def ask_person(call: Any, approval: Approval, decide: Optional[Callable[[Any], Any]] = None
+               ) -> Tuple[bool, Optional[str], Optional[str]]:
+    """Ask whether a tool call may run (a plugin's ``tool.ask``):
+    (allowed, reason refused, by whom). ``decide`` answers in place of a
+    person. A call being resumed takes the answer recorded for it. Emits
+    ``approval`` then ``approved``. Otherwise: in a conversation the turn
+    waits (it raises: the turn is saved as waiting); on a stream the call
+    waits for an answer here; a plain call refuses ``approval-required``."""
     run = getattr(call, "turn_run", None)
     if run is not None:
         known = run.recorded_approval(call, approval)
@@ -259,16 +265,17 @@ def decide(call: Any, approval: Approval, settings: Dict[str, Any]) -> Tuple[boo
             if fresh:                                 # answered while the turn waited: the log says so now
                 from .conversations import frontier
                 frontier()
-                call.emit("approved", id=approval.id, invocation=approval.invocation,
+                call.emit("approved", id=approval.id, invocation=approval.invocation, plugin=approval.plugin,
                           verdict="yes" if allowed else "no", by=by, reason=reason)
             return allowed, reason, by
     from . import conversations
     conversations.frontier()
     to = conversations.approvals_to()
     call.emit("approval", id=approval.id, invocation=approval.invocation, name=approval.name, input=approval.input,
-              effects=approval.effects, path=approval.path, to=to)
-    if callable(rule):
-        allowed, reason = verdict_of(rule(approval))
+              effects=approval.effects, path=approval.path, to=to, plugin=approval.plugin,
+              question=approval.question)
+    if decide is not None:
+        allowed, reason = verdict_of(decide(approval))
         by = None
     elif run is not None:
         run.pause(call, approval)                     # raises: the turn waits, saved
@@ -277,14 +284,14 @@ def decide(call: Any, approval: Approval, settings: Dict[str, Any]) -> Tuple[boo
         allowed, reason, by = _wait_here(call, approval)
     else:
         from .errors import ApprovalError
-        raise ApprovalError(f"{approval.path}: this tool call needs a person's answer (approve={rule!r}), and a "
-                            f"plain call has nobody to ask. Give approve= a function, stream the call and answer "
+        raise ApprovalError(f"{approval.path}: this tool call needs a person's answer ({approval.plugin}), and "
+                            f"a plain call has nobody to ask. Give approve= a function, stream the call and answer "
                             f"with s.approve(...), or use a conversation, where the turn waits.", approval=approval)
-    call.emit("approved", id=approval.id, invocation=approval.invocation, verdict="yes" if allowed else "no",
-              by=by, reason=reason)
+    call.emit("approved", id=approval.id, invocation=approval.invocation, plugin=approval.plugin,
+              verdict="yes" if allowed else "no", by=by, reason=reason)
     if run is not None:
         run.note_approval(call, approval, allowed, reason, by)
     return allowed, reason, by
 
 
-__all__ = ["tool", "Tool", "Approval", "effects_of", "asks", "check_approve", "decide", "denial", "EFFECTS"]
+__all__ = ["tool", "Tool", "Approval", "effects_of", "asks", "check_approve", "ask_person", "denial", "EFFECTS"]

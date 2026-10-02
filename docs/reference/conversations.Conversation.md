@@ -11,6 +11,7 @@ conversations.Conversation(
     remembers=None,
     sends='queue',
     _head=_FOLLOW,
+    _delegated=False,
     **settings,
 )
 ```
@@ -50,8 +51,10 @@ send that is repeated (a double click) one turn.
 | --- | --- |
 | [all_turns](#functai.conversations.Conversation.all_turns) | Every turn of every branch, in the order they were made. |
 | [continue_from](#functai.conversations.Conversation.continue_from) | This conversation, continuing after ``turn`` (a Turn, its id, or its |
+| [entries](#functai.conversations.Conversation.entries) | A plugin's entries of a kind on the branch through ``branch`` |
 | [merge](#functai.conversations.Conversation.merge) | A turn after this conversation's head made from several branches by |
 | [predict](#functai.conversations.Conversation.predict) | One turn of an AI function: the whole call (``p.turn`` is the lmcc |
+| [remember](#functai.conversations.Conversation.remember) | Keep a plugin's entry in this conversation, at a turn (it then |
 | [render](#functai.conversations.Conversation.render) | The exact request the next turn would send (nothing is sent or |
 | [stop](#functai.conversations.Conversation.stop) | Stop a running turn, wherever it runs. |
 | [stream](#functai.conversations.Conversation.stream) | One turn, watched while it is made (a ``Stream``, with ``.turn``, |
@@ -74,6 +77,15 @@ conversations.Conversation.continue_from(turn)
 This conversation, continuing after ``turn`` (a Turn, its id, or its
 index in ``turns``): the next turn is a new branch. Nothing is deleted.
 
+### entries { #functai.conversations.Conversation.entries }
+
+```{.python .no-run}
+conversations.Conversation.entries(plugin, kind, *, branch=None)
+```
+
+A plugin's entries of a kind on the branch through ``branch``
+(default: this view's head), oldest first: ``{"turn", "data", "at"}``.
+
 ### merge { #functai.conversations.Conversation.merge }
 
 ```{.python .no-run}
@@ -95,6 +107,17 @@ conversations.Conversation.predict(*args, request_id=None, **kwargs)
 
 One turn of an AI function: the whole call (``p.turn`` is the lmcc
 turn; ``p.call_id`` the turn's id).
+
+### remember { #functai.conversations.Conversation.remember }
+
+```{.python .no-run}
+conversations.Conversation.remember(plugin, kind, data, *, turn=None)
+```
+
+Keep a plugin's entry in this conversation, at a turn (it then
+belongs to the branches through that turn): what the plugin needs
+later, never shown to the model by itself (a summary is shown when a
+``context`` hook makes it a section).
 
 ### render { #functai.conversations.Conversation.render }
 

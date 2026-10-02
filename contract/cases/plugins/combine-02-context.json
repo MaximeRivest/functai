@@ -1,0 +1,56 @@
+{
+ "description": "keep replaces the turns shown; without adds fields to leave out",
+ "kind": "combine",
+ "hook": "context",
+ "start": {
+  "keep": [
+   "t1",
+   "t2",
+   "t3"
+  ],
+  "without": {},
+  "sections": []
+ },
+ "changes": [
+  {
+   "without": [
+    "photo"
+   ]
+  },
+  {
+   "keep": [
+    "t2",
+    "t3"
+   ],
+   "sections": [
+    "Summary."
+   ]
+  },
+  {
+   "without": {
+    "t3": [
+     "notes"
+    ]
+   }
+  }
+ ],
+ "expect": {
+  "keep": [
+   "t2",
+   "t3"
+  ],
+  "without": {
+   "t2": [
+    "photo"
+   ],
+   "t3": [
+    "notes",
+    "photo"
+   ]
+  },
+  "sections": [
+   "Summary."
+  ],
+  "ran": 3
+ }
+}

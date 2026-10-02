@@ -409,7 +409,12 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     from . import conversations, replies
     call = calllog.current()
     cancelled = call.check if call is not None else None
+    from . import plugins
     for attempt in range(retries + 1):
+        # the escape hatch: a plugin may replace the provider request; no one can rebuild that request, so
+        # its exchange has no request_hash and the call is not replayable
+        request, replaced = plugins.request(request, call, function)
+        sent_hash = None if replaced else rendered_hash
         # a reply already known: the turn being resumed recorded it, or the reply cache kept it
         hit = conversations.recorded_reply(request, settings)
         flight = replies.begin(settings, request, cancelled) if hit is None else None
@@ -417,7 +422,7 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
             if hit is None and flight is not None:
                 hit = flight.reply
             response = send(router, request, function=function, model=model, settings=settings, plan=plan,
-                            request_hash=rendered_hash, hit=hit)
+                            request_hash=sent_hash, hit=hit)
             responses.append(response)
             conversations.note_reply(request, response, settings)    # a stored turn keeps every reply
             try:
@@ -537,11 +542,13 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
 
 
 def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings: Dict[str, Any]) -> str:
-    """One tool call of the call in progress (contract/tools.md): numbered
-    (its invocation), shown, asked about when ``approve`` says so, kept
-    before and after it runs when it changes things (a stored turn, a
-    required journal), run, and its result shown. A refusal is the result."""
-    from . import tools as _tools
+    """One tool call of the call in progress (contract/tools.md,
+    contract/plugins.md): numbered (its invocation), shown, given to the
+    ``tool_call`` hooks (which may change its input, block it, or ask a
+    person: ``approve=`` is one of them), kept before and after it runs when
+    it changes things (a stored turn, a required journal), run, its result
+    given to the ``tool_result`` hooks, and shown."""
+    from . import plugins, tools as _tools
     errors = settings.get("tool_errors") or "report"
     if current is None:
         return run_tool(tools, call, errors=errors)
@@ -552,9 +559,9 @@ def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings
     event = current.emit("tool_call", id=call.id, name=call.name, input=call.input, invocation=n)
     approval = _tools.Approval(current.id, n, call.id, call.name, call.input, effects,
                                _tools.path_of(current, call.name), current.path)
-    allowed, reason, _by = _tools.decide(current, approval, settings)
-    if not allowed:
-        output = _tools.denial(reason)
+    tool_input, refused = plugins.tool_call(current, approval, settings)
+    if refused is not None:
+        output = refused
     else:
         run = current.turn_run
         known = run.recorded_tool(current, approval) if run is not None else None
@@ -567,12 +574,15 @@ def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings
                 # a required journal keeps the request before a tool that changes things runs
                 calllog.tool_barrier(event.seq if event is not None else None)
                 if run is not None:
-                    run.tool_started(current, approval)
+                    run.tool_started(current, dataclasses.replace(approval, input=tool_input))
+            asked = ToolCall(call.id, call.name, tool_input) if tool_input is not call.input else call
             token = calllog.INVOCATION.set(n)
             try:
-                output = run_tool(tools, call, errors=errors)
+                output = run_tool(tools, asked, errors=errors)
             finally:
                 calllog.INVOCATION.reset(token)
+            # the result as the model is shown it; a turn resumed later reuses it, hooks and all
+            output = plugins.tool_result(current, approval, tool_input, output)
             if run is not None:
                 run.tool_done(current, approval, output)
     current.emit("tool_result", id=call.id, name=call.name, output=output, invocation=n)

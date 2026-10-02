@@ -1,0 +1,30 @@
+{
+ "description": "inputs are replaced by name, in order",
+ "kind": "combine",
+ "hook": "turn_start",
+ "start": {
+  "inputs": {
+   "message": "  hi  ",
+   "tone": "kind"
+  }
+ },
+ "changes": [
+  {
+   "inputs": {
+    "message": "hi"
+   }
+  },
+  {
+   "inputs": {
+    "message": "hi @notes"
+   }
+  }
+ ],
+ "expect": {
+  "inputs": {
+   "message": "hi @notes",
+   "tone": "kind"
+  },
+  "ran": 2
+ }
+}

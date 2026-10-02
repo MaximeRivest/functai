@@ -17,6 +17,12 @@ own tools changes things or declares nothing.
 
 ## Approval
 
+Approval is a plugin ([plugins.md](plugins.md)): the built-in `approval`
+plugin's `tool_call` hook, which runs after every other plugin's, on the
+input they left. Any plugin's `tool_call` may ask a person the same way
+(*Who answers*), with a question of its own; a tool call may then be asked
+about by several plugins, each question addressed by the plugin's name.
+
 The setting `approve` (in every layer where settings are: a program, a
 block, the process, a conversation, one turn) is:
 
@@ -37,11 +43,12 @@ replies); `tool_call` and `tool_result` events carry it, and so does every
 call a tool makes (its `started` event and its record: `invocation`).
 
 When a person is asked, the call's log shows `approval` (the tool call's
-`id`, `invocation`, `name`, `input`, `effects`, `path`, and `to`: whom it is
-addressed to, `owner` or `caller`), then, once answered, `approved`
-(`verdict` `yes` or `no`, `by`, `reason`). The kept form drops an
-approval's `input` and an answer's `reason` when the call's content is
-not whole ([streaming.md](streaming.md)).
+`id`, `invocation`, `name`, `input`, `effects`, `path`, `to`: whom it is
+addressed to, `owner` or `caller`, `plugin`: which plugin asks, and
+`question`, its reason, when it gives one), then, once answered,
+`approved` (`verdict` `yes` or `no`, `by`, `reason`, `plugin`). The kept
+form drops an approval's `input` and `question` and an answer's `reason`
+when the call's content is not whole ([streaming.md](streaming.md)).
 
 **A refusal is an answer the model sees**: the tool's result is `The
 person did not allow this call.`, then ` Reason: ` and the reason when
@@ -87,7 +94,11 @@ and the same earlier turns:
   not go on until a person says what it returned (`given`, with its
   output) or asks it to run again (`rerun`); it refuses `turn-unfinished`
   otherwise. A tool is never run again on its own.
-- an approval finds its answer in the `approval` records.
+- an approval finds its answer in the `approval` records (by site,
+  invocation and plugin).
+- a tool's result is recorded as the model was shown it, after the
+  `tool_result` hooks: replayed, it is shown again as it was, with no hook
+  run again.
 
 The log goes on as a later writer's ([streaming.md](streaming.md),
 *Continuing a log*): the process claims the turn's log from the store and

@@ -828,11 +828,12 @@ class FunctAIFunc(Generic[P, R]):
         '''
         inputs = self._bind_inputs(args, kwargs)
         spec, s = self._spec(), self._effective()
+        spec, s, _offered, specs = self._shaped(inputs, spec, s)          # what the call's hooks would make of it
         plan, _router, model, route = self._plan_for(spec, s)
         s = models.adjust(s, route)
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
-            values["tools"] = list(self._tool_specs)
+            values["tools"] = list(specs)
         rendered = plan.render(plan.turn(values), turns=self._past(plan, spec, s))
         import lmcc_lm15
         return lmcc_lm15.request(rendered, model=model, config=engine.config_of(s))
@@ -955,7 +956,28 @@ class FunctAIFunc(Generic[P, R]):
         object.__setattr__(second, "first", pred)
         return second, model, plan
 
+    def _shaped(self, inputs: Dict[str, Any], spec: Spec, s: Dict[str, Any], call: Any = None):
+        """(spec, settings, tools) as the ``before_call`` hooks leave them
+        (contract/plugins.md): the instruction with the sections added, the
+        model and settings changed, the tools offered."""
+        from . import plugins
+        shaped = plugins.before_call(self, inputs, s, call)
+        if call is not None:
+            call.changes.extend(shaped.applied.items)
+            call.sections = list(shaped.context_sections)   # what it was shown of its conversation (replayed)
+        if shaped.instruction is not None or shaped.sections:
+            sig = spec.signature
+            base = shaped.instruction if shaped.instruction is not None else sig.instructions
+            spec = dataclasses.replace(spec, signature=dataclasses.replace(
+                sig, instructions="\n\n".join([base, *shaped.sections])))
+        offered = [t for t in self._tools if shaped.tools is None or getattr(t, "__name__", None) in shaped.tools]
+        specs = [sp for sp in self._tool_specs if shaped.tools is None or sp.name in shaped.tools]
+        return spec, shaped.settings, offered, specs
+
     def _call_model(self, inputs: Dict[str, Any], spec: Spec, s: Dict[str, Any]):
+        call = calllog.current()
+        spec, s, offered, specs = self._shaped(inputs, spec, s, call if call is not None and call.program is self
+                                               else None)
         plan, router, model, route = self._plan_for(spec, s)
         rec = engine.RECORDING.get()
         if rec is not None and s.get("lm") is not None:
@@ -965,8 +987,8 @@ class FunctAIFunc(Generic[P, R]):
         calllog.route(route.provider)
         past = self._past(plan, spec, s)
         pred = engine.run(function=self.__name__, plan=plan, spec=spec, inputs=inputs, past=past, settings=s,
-                          router=router, model=model, tools={t.__name__: t for t in self._tools if callable(t)},
-                          tool_specs=self._tool_specs)
+                          router=router, model=model, tools={t.__name__: t for t in offered if callable(t)},
+                          tool_specs=specs)
         return pred, model, plan
 
     @overload

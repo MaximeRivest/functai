@@ -64,8 +64,8 @@ KEYS = {"started": ("parent", "root", "program", "inputs", "content", "omitted",
         "tool_result": ("id", "name", "output", "content", "invocation"),
         "retry": ("reason", "wait", "content"), "done": ("value", "content"), "failed": ("error", "content"),
         # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
-        "approval": ("id", "invocation", "name", "input", "effects", "path", "to", "content"),
-        "approved": ("id", "invocation", "verdict", "by", "reason", "content")}
+        "approval": ("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
+        "approved": ("id", "invocation", "verdict", "by", "reason", "plugin", "content")}
 ERROR_KEYS = ("type", "message", "code")
 PROGRAM_KEYS = ("name", "kind", "module", "version", "signature", "interface", "answer", "saved", "file", "line")
 SAW_KEYS = frozenset({"call", "steps", "without", "slot", "saw_of"})
@@ -246,6 +246,7 @@ def kept_event(event: Mapping[str, Any], keep: Mapping[str, Mapping[str, bool]],
         return None
     if kind in ("tool_call", "approval"):
         out.pop("input", None)
+        out.pop("question", None)
     elif kind == "approved":
         out.pop("reason", None)
     elif kind == "tool_result":

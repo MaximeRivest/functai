@@ -88,6 +88,10 @@ DEFAULTS: Dict[str, Any] = {
     "program_observers": None, # False (a host's block or configure): a program's own observers get no event;
                                 # only removes: a program cannot turn it back on
 
+    # plugins (contract/plugins.md): they add up over the layers; the program's own run first, the host's last
+    "plugins": None,           # [functai.Plugin or a file defining one, ...]
+    "program_plugins": None,   # False (a host's block or configure): a program's own plugins do not run
+
     # debug
     "debug": False,
 }
@@ -144,6 +148,11 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
         if settings.get("approve") is not None:
             from . import tools
             tools.check_approve(settings["approve"])
+        if settings.get("plugins") is not None:
+            from . import plugins
+            settings = {**settings, "plugins": plugins.check_setting(settings["plugins"])}
+        if settings.get("program_plugins") not in (None, True, False):
+            raise TypeError(f"program_plugins is True or False, not {settings['program_plugins']!r}")
         if settings.get("program_observers") not in (None, True, False):
             raise TypeError(f"program_observers is True or False, not {settings['program_observers']!r}")
         if settings.get("observers") is not None or settings.get("journal") is not None:

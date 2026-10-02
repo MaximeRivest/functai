@@ -29,7 +29,7 @@ R = TypeVar("R", covariant=True)
 
 # The settings a module takes for itself: where its calls go and what is kept
 # of them. Model settings belong to the AI functions it calls (or to a block).
-MODULE_SETTINGS = ("log_calls", "log_content", "caller", "observers", "journal", "approve")
+MODULE_SETTINGS = ("log_calls", "log_content", "caller", "observers", "journal", "approve", "plugins")
 
 
 def _reachable_ai_functions(fn: Callable[..., Any]) -> List[FunctAIFunc]:

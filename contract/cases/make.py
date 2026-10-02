@@ -12,6 +12,7 @@ implementation's output:
     replies/, conversations/, tools/, views/, context/
                  ../replies.md, ../conversations.md, ../tools.md, ../streaming.md "Views",
                  ../calls.md "Rows that keep their context"   (stages.py)
+    plugins/     ../plugins.md, "Order"                      (plugins.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -30,6 +31,7 @@ sys.path.insert(0, str(HERE))
 import content  # noqa: E402
 import events  # noqa: E402
 import functions  # noqa: E402
+import plugins  # noqa: E402
 import programs  # noqa: E402
 import rated  # noqa: E402
 import saved  # noqa: E402
@@ -130,4 +132,5 @@ if __name__ == "__main__":
         + write("saw", saw.cases()) + write("events", events.cases())
     for folder, made in stages.cases().items():
         n += write(folder, made)
+    n += write("plugins", plugins.cases())
     print(f"{n} cases written")

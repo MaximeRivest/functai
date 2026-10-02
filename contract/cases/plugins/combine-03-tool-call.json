@@ -1,0 +1,34 @@
+{
+ "description": "inputs merge; the first block ends the hook: later handlers do not run",
+ "kind": "combine",
+ "hook": "tool_call",
+ "start": {
+  "inputs": {
+   "to": "ana",
+   "text": "hi"
+  }
+ },
+ "changes": [
+  {
+   "inputs": {
+    "to": "team"
+   }
+  },
+  {
+   "block": "not today"
+  },
+  {
+   "inputs": {
+    "to": "everyone"
+   }
+  }
+ ],
+ "expect": {
+  "inputs": {
+   "to": "team",
+   "text": "hi"
+  },
+  "block": "not today",
+  "ran": 2
+ }
+}

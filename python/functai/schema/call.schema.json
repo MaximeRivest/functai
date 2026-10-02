@@ -178,6 +178,28 @@
         "writer": {
           "description": "tools.md, Resuming: a call continued by a later writer (a resumed turn); a reader takes, for one id, the record of the highest writer.",
           "type": "integer", "minimum": 2
+        },
+        "changes": {
+          "description": "plugins.md, Records: each change plugins made to the call, in order; when content is not whole, without what it changed.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["plugin", "version", "hook"],
+            "properties": {
+              "plugin": {"type": "string", "minLength": 1},
+              "version": {"type": "string"},
+              "hook": {"enum": ["turn_start", "context", "before_call", "request", "tool_call", "tool_result"]},
+              "change": {"type": "object"}
+            }
+          }
+        },
+        "sections": {
+          "description": "plugins.md, Records: the sections the call's conversation's context hooks gave it. Only when content is true.",
+          "type": "array", "items": {"type": "string"}
+        },
+        "replayable": {
+          "description": "plugins.md, Records: false when a request hook replaced a provider request.",
+          "const": false
         }
       },
       "allOf": [
@@ -185,8 +207,9 @@
           "if": {"properties": {"content": {"const": false}}},
           "then": {
             "required": ["omitted"],
-            "not": {"required": ["steps"]},
+            "not": {"anyOf": [{"required": ["steps"]}, {"required": ["sections"]}]},
             "properties": {
+              "changes": {"items": {"not": {"required": ["change"]}}},
               "error": {"oneOf": [{"type": "null"}, {"type": "object", "not": {"required": ["message"]}}]},
               "exchanges": {
                 "items": {

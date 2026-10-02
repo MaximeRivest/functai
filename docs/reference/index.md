@@ -103,6 +103,19 @@ A program's calls that remember each other, kept in a store; branches, what the 
 | [Waiting](Waiting.md#functai.Waiting) | A turn stopped to wait for a person's answer (code ``turn-waiting``): |
 | [ConversationError](ConversationError.md#functai.ConversationError) | A conversation, or one of its turns, refused what was asked |
 
+## Plugins
+
+Hooks over turns, context, calls, requests and tools; every change is data and recorded. Approval, compaction and delegation are plugins too.
+
+| | |
+| --- | --- |
+| [Plugin](Plugin.md#functai.Plugin) | A named, versioned set of hooks. |
+| [Change](Change.md#functai.Change) | What a hook changes. Each hook accepts some fields (HOOKS); a field it |
+| [PluginError](PluginError.md#functai.PluginError) | A plugin refused or failed (contract/plugins.md). ``code`` is one |
+| [load_plugin](load_plugin.md#functai.load_plugin) | A plugin from a Python file that defines ``plugin`` (an |
+| [compaction](compaction.md#functai.compaction) | Keep a long conversation short: older turns are folded into a summary. |
+| [delegate](delegate.md#functai.delegate) | Another program as a tool: an assistant hands part of its work to it. |
+
 ## Tools that ask first
 
 Tools say what they do to the world; a person can be asked before they run.

@@ -83,6 +83,7 @@ nav:
               - articles/streaming.md
               - articles/tools.md
               - articles/memory.md
+              - articles/plugins.md
               - articles/modules.md
               - articles/layouts.md
               - articles/models.md

@@ -34,11 +34,12 @@ format or a kind it does not know, and keys it does not know.
 | kind | written | keys |
 |---|---|---|
 | `program` | before the first turn of a program version | `version`, `name`, `program_kind`, `module`, `signature` (AI functions), `interface` (whole), `fields` (each field's `name`, `direction`, `purpose`, `shape` without defaults), `answer`: what a reader needs to show that version's turns. Keyed by the version, never by the interface's signature alone. |
-| `turn` | when a turn is sent, before its call | `turn`, `parent` (a turn, or null), `program` (its version), `inputs` (bound, as the call record holds them), `request_id`?, `settings`? (`lm` when the turn chose one), `reads`? and `made_by`? (a merge) |
+| `turn` | when a turn is sent, before its call | `turn`, `parent` (a turn, or null), `program` (its version), `inputs` (bound, as the call record holds them, after the `turn_start` hooks), `request_id`?, `settings`? (`lm` when the turn chose one), `reads`? and `made_by`? (a merge), `context`? (what it was shown, when a `context` hook ran) and `changes`? ([plugins.md](plugins.md), *Records*) |
 | `lease` | with the `turn` record, then every 10 seconds while it runs, and when a process resumes it | `turn`, `holder` (`<host>:<pid>:<random>`), `until` (the lease's end, 30 seconds on), `attempt` (1, then one more for each resumption) |
 | `ended` | when the turn's call ends | `turn`, `state` (`done`, `failed`, `stopped`, `abandoned`), `outputs` (done: every output, the fields FunctAI adds included), `value` (what the code returned), `lmcc` (an AI function: the lmcc turn its call made, with its steps), `saw`, `error`, `model`, `usage` (tokens, summed over every call inside), `seconds`, `attempt` |
 | `waiting` | when the turn stops to wait for a person ([tools.md](tools.md)) | `turn`, `approvals`, `saw`, `attempt` |
-| `approval` | a person's answer | `turn`, `site`, `invocation`, `path`, `verdict` (`yes`, `no`), `by`, `reason` |
+| `approval` | a person's answer | `turn`, `site`, `invocation`, `plugin` (the plugin that asked; absent: `approval`), `path`, `verdict` (`yes`, `no`), `by`, `reason` |
+| `entry` | a plugin keeps something ([plugins.md](plugins.md), *Entries*) | `plugin`, `entry` (its kind), `data`, `turn`? (its branches; absent: every branch) |
 | `tool` | before a tool that changes things runs (`started`), after a tool ran (`done`), or when a person says what a tool that may have run did (`given`) or asks it to run again (`rerun`) | `turn`, `site`, `invocation`, `id`, `name`, `state`, `input`? (started), `effects`?, `output` (done, given) |
 | `reply` | each model reply of a turn that can be resumed (a module's, or an AI function's with tools) | `turn`, `key` ([replies.md](replies.md)), `response` (lm15's canonical JSON), `attempt` |
 | `call` | when a helper the conversation remembers ends a call in a turn | `turn`, `call`, `site`, `program` (`name`, `module`, `signature`), `lmcc`, `saw`, `attempt` |
@@ -61,7 +62,7 @@ From its records, in order:
   turn ended.
 
 A turn's **unanswered** approvals are those of its last `waiting` record
-that no later `approval` names (by `site` and `invocation`). Its
+that no later `approval` names (by `site`, `invocation` and `plugin`). Its
 **unfinished** tools are those whose last `tool` record for a `site` and
 `invocation` is `started`: they may have run.
 
@@ -94,7 +95,11 @@ that no later `approval` names (by `site` and `invocation`). Its
 A turn is shown the turns of its branch before it that ended `done`,
 picked by the conversation's **context rule**: every one (the default),
 or the last *n*; each without the fields the rule's `without` names (a
-bulky input, left out of earlier turns). The turn's call records them in
+bulky input, left out of earlier turns). Then the `context` hooks of its
+plugins may change which turns are shown, leave out more fields, and add
+sections to the instruction ([plugins.md](plugins.md)); when one ran, the
+turn records what it was shown (`context`), and resuming it shows exactly
+that. The turn's call records them in
 its `saw` ([calls.md](calls.md), *Saw*):
 
 - an AI function's earlier turn made for the same `program.signature` is

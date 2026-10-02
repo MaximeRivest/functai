@@ -1,0 +1,41 @@
+{
+ "description": "a host layer's program_plugins false drops the program's own",
+ "kind": "order",
+ "layers": [
+  {
+   "where": "own",
+   "plugins": [
+    "mine",
+    "host-mode"
+   ]
+  },
+  {
+   "where": "block",
+   "plugins": [
+    "conversation"
+   ]
+  },
+  {
+   "where": "block",
+   "plugins": [
+    "outer-block"
+   ]
+  },
+  {
+   "where": "configure",
+   "plugins": [
+    "host-mode",
+    "audit"
+   ]
+  }
+ ],
+ "program_plugins": false,
+ "expect": {
+  "order": [
+   "conversation",
+   "outer-block",
+   "host-mode",
+   "audit"
+  ]
+ }
+}

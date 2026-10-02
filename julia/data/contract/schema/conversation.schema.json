@@ -54,6 +54,18 @@
           "request_id": {"type": "string"},
           "settings": {"type": "object", "properties": {"lm": {"type": "string"}}},
           "reads": {"type": "array", "items": {"$ref": "call.schema.json#/$defs/uuid"}},
+          "context": {
+            "description": "plugins.md, Records: what the turn was shown when a context hook ran; resuming shows exactly that.",
+            "type": "object",
+            "required": ["turns", "without", "sections"],
+            "properties": {
+              "turns": {"type": "array", "items": {"$ref": "call.schema.json#/$defs/uuid"}},
+              "without": {"type": "object", "additionalProperties": {"type": "array", "items": {"type": "string"}}},
+              "sections": {"type": "array", "items": {"type": "string"}}
+            },
+            "additionalProperties": false
+          },
+          "changes": {"$ref": "call.schema.json#/$defs/format2/properties/changes"},
           "made_by": {
             "type": "object",
             "required": ["name", "version", "call"],
@@ -107,6 +119,7 @@
           "site": {"type": "string"},
           "invocation": {"type": "integer", "minimum": 1},
           "path": {"type": ["string", "null"]},
+          "plugin": {"type": "string", "minLength": 1},
           "verdict": {"enum": ["yes", "no"]},
           "by": {"type": ["string", "null"]},
           "reason": {"type": ["string", "null"]}
@@ -157,6 +170,19 @@
     {
       "if": {"properties": {"kind": {"enum": ["stop", "head"]}}},
       "then": {"required": ["turn"]}
+    },
+    {
+      "if": {"properties": {"kind": {"const": "entry"}}},
+      "then": {
+        "description": "plugins.md, Entries: what a plugin keeps in a conversation, at a turn (its branches) or for every branch.",
+        "required": ["plugin", "entry", "data"],
+        "properties": {
+          "plugin": {"type": "string", "minLength": 1},
+          "entry": {"type": "string", "minLength": 1},
+          "data": {},
+          "turn": {"$ref": "call.schema.json#/$defs/uuid"}
+        }
+      }
     }
   ],
   "$defs": {
@@ -171,7 +197,9 @@
         "input": {},
         "effects": {"enum": ["reads", "changes", null]},
         "path": {"type": "string", "minLength": 1},
-        "site": {"type": "string"}
+        "site": {"type": "string"},
+        "plugin": {"type": "string", "minLength": 1},
+        "question": {"type": "string"}
       }
     }
   }

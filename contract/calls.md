@@ -157,6 +157,9 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `steps` | present when the call is an AI function's that ran tools or was made in a conversation, and `content` is true: its lmcc turn's steps (kernel §3a: each `{"kind": "model", "outputs", "message"?, "request"?, "calls_field"?}` or `{"kind": "tool", "id", "name", "output", "children"?}`), what showing it again with its steps reads (*Saw*). |
 | `invocation` | a call made while a tool ran: the number of that tool call among the tool calls of the call that asked for it ([tools.md](tools.md)). |
 | `conversation` | a conversation's turn: `{"id", "turn", "parent"}`, the conversation, this call's id (the turn's), and the turn it continues ([conversations.md](conversations.md)). |
+| `changes` | present when plugins changed the call: each change, in order, `{"plugin", "version", "hook", "change"}` ([plugins.md](plugins.md), *Records*); when `content` is false, without `change`. |
+| `sections` | present when the call's conversation's `context` hooks gave it sections (a summary of earlier turns): them, in order. Only when `content` is true. |
+| `replayable` | `false` when a plugin replaced a provider request: that exchange has no `request_hash`. |
 | `writer` | a call continued by a later writer (a resumed turn: [tools.md](tools.md)): that writer's number. A reader that meets several records of one `id` takes the one of the highest `writer` (absent: 1). |
 
 **Values.** A value is written as the JSON its type describes (lmcc's
@@ -473,6 +476,8 @@ row carries them, so it can be asked again as it was
   values without the entry's `without`; with the entry's `steps`, also
   `steps` (the record's) and `signature` (its `program.signature`);
 - `conversation`: its record's `conversation.id`, or null;
+- `sections`: its record's `sections` (what its conversation's `context`
+  hooks gave it), when it has any; a helper entry has its own;
 - for a module's call, `helpers`: each call inside it that was shown
   earlier turns, in the order they started, as `{"program", "call",
   "earlier"}`.
@@ -486,8 +491,10 @@ program was shown earlier turns: the rows of a program never in a
 conversation are as before.
 
 Asking such a row again (evaluating, optimizing) shows the program's own
-call the row's `earlier` turns, and each helper call the `earlier` of the
-next helper entry of its name; the new call's `saw` is `[{"saw_of":
+call the row's `earlier` turns and `sections`, and each helper call the
+`earlier` and `sections` of the next helper entry of its name; how the host
+shaped the original call (its `before_call` and `request` changes) is not
+given back ([plugins.md](plugins.md), *Asking a turn again*); the new call's `saw` is `[{"saw_of":
 <the rated call>}]` (for a helper, its original call), and nothing is
 written to any conversation. An optimizer measures with such rows and
 never shows one as a worked example (a worked example is one turn placed
@@ -628,7 +635,8 @@ new format, not an edit of format 1:
 
 Later additions to format 2, each optional and skipped by a reader that
 does not know it: `steps`, `invocation`, `conversation`, `writer`
-(2026-09-30), `program.kind` `"remote"` with `program.remote`.
+(2026-09-30), `program.kind` `"remote"` with `program.remote`; `changes`,
+`sections`, `replayable` (2026-10-02, [plugins.md](plugins.md)).
 
 A reader reads both formats. A format-1 record is read as it always was:
 `content: false` means no value, no `saw` means not recorded, and it has
