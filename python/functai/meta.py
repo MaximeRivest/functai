@@ -3,7 +3,7 @@ propose instruction candidates for optimizers, synthesize training examples.
 
 They are ordinary functai functions, so ``phistory()`` shows their prompts too.
 Their own settings are fixed (tags layout, no memory) so a global
-``configure(stateful=True, adapter=...)`` does not change how they work.
+``configure(adapter=...)`` does not change how they work.
 """
 
 from __future__ import annotations
@@ -16,7 +16,7 @@ from .docments import get_source
 
 # Not cached: they sample (temperature 1) to propose something new, and a cached
 # reply would propose the same thing again.
-_FIXED = dict(adapter="xml", stateful=False, module="predict", include_fn_name_in_instructions=False,
+_FIXED = dict(adapter="xml", module="predict", include_fn_name_in_instructions=False,
               autocompile=False, autoinstruct=False, instruction_autorefine_calls=0, cache_replies=False)
 
 

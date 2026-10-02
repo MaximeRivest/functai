@@ -399,8 +399,8 @@ def restrict(record: Dict[str, Any], inputs: List[str], outputs: List[str], kept
                 kept_out = {k: v for k, v in value.items() if kept.get(k, False)}
                 if kept_out:
                     out["outputs"] = kept_out
-        elif key == "returned":
-            pass                          # code can return any value of the call: kept only when nothing is dropped
+        elif key in ("returned", "steps"):
+            pass                          # code can return any value, steps hold every value: kept only when whole
         elif key == "probabilities":
             kept_p = {k: v for k, v in value.items() if kept.get(k, False)}
             if kept_p:
@@ -520,10 +520,11 @@ class Call:
     __slots__ = ("id", "parent", "parent_call", "root", "program", "function", "started", "t0", "target",
                  "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
-                 "journal_status", "context", "pid", "__weakref__")
+                 "journal_status", "context", "pid", "path", "names", "invocation", "invocations", "conversation",
+                 "writer", "turn_run", "bound", "__weakref__")
 
-    def __init__(self, program: Any, parent: Optional["Call"]):
-        self.id = new_id()
+    def __init__(self, program: Any, parent: Optional["Call"], id: Optional[str] = None):
+        self.id = id or new_id()
         self.parent = parent.id if parent is not None else None
         self.parent_call = parent
         self.root = parent.root if parent is not None else self.id
@@ -552,8 +553,23 @@ class Call:
         self.answers_for: Optional[str] = None               # an escalation: this call answers for its parent
         self.delegating = False
         self.journal_status: Optional[str] = None
-        self.context: Any = None                             # what the program shows as earlier turns (stateful)
+        self.context: Any = None                             # what the program shows as earlier turns
         self.pid = os.getpid()                               # the process whose tree it is in
+        # where it is in its tree, by names and by order: "support/answer#1" (resuming a turn finds what a
+        # call did before by it: contract/tools.md); names: how many children of each name it started
+        self.names: Dict[str, int] = {}
+        if parent is not None:
+            with _id_lock:
+                n = parent.names[self.function] = parent.names.get(self.function, 0) + 1
+            self.path = f"{parent.path}/{self.function}#{n}"
+        else:
+            self.path = f"{self.function}#1"
+        self.invocation: Optional[int] = None                # made inside a tool: that tool call's number
+        self.invocations = 0                                 # the tool calls this call made so far
+        self.conversation: Optional[Dict[str, Any]] = None   # a conversation's turn: its record's conversation
+        self.writer: Optional[int] = None                    # a call continued by a later writer (resumed)
+        self.turn_run: Any = None                            # the conversation turn it runs in (conversations)
+        self.bound: Optional[Dict[str, Any]] = None          # its inputs as bound (for a helper's memory)
 
     # ----- what sees it
 
@@ -561,6 +577,16 @@ class Call:
     def watched(self) -> bool:
         """Does anything see this call's events (a stream, an observer, a journal)?"""
         return bool(self.streams or self.observers) or (self.log is not None and self.log.journal is not None)
+
+    @property
+    def wants_pieces(self) -> bool:
+        """Does anything watch this call live, so its replies are streamed and
+        shown piece by piece? A stream read for its result only (a conversation's
+        turn called plainly) and a conversation store's own copy do not: their
+        replies arrive whole, and are shown as one piece per field."""
+        return any(not getattr(s, "_passive", False) for s in self.streams) \
+            or any(not getattr(o, "_passive", False) for o in self.observers) \
+            or (self.log is not None and self.log.journal is not None)
 
     def emit(self, kind: str, **fields: Any) -> Any:
         """Number one event of this call in its tree's log, and hand it on."""
@@ -570,6 +596,8 @@ class Call:
 
     def request(self, model: Optional[str]) -> None:
         """The call begins a request to a model (every exchange is one)."""
+        if self.log is not None and self.log.replaying:
+            return                                    # a resumed turn replaying a request it made before
         self.requests += 1
         self.emit("request", request=self.requests, model=model)
 
@@ -597,6 +625,11 @@ class Call:
 
 
 _CURRENT: ContextVar[Optional[Call]] = ContextVar("functai_call", default=None)
+# A call made while a tool runs: the number of that tool call in its call (engine.run sets it).
+INVOCATION: ContextVar[Optional[int]] = ContextVar("functai_invocation", default=None)
+# The call of another process a served call is made for (the caller's ``FunctAI-Parent``): the outermost
+# call's ``parent`` (contract/serving.md). Taken by the first outermost call made under it.
+REMOTE_PARENT: ContextVar[Optional[List[str]]] = ContextVar("functai_remote_parent", default=None)
 # The stream whose call is started in this context (functai.streaming), or None.
 WATCH: ContextVar[Any] = ContextVar("functai_watch", default=None)
 
@@ -626,7 +659,15 @@ def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tupl
         if forked_from is not None and eventlog.closest_journal(layers) is eventlog._ABSENT \
                 and forked_from.log is not None:
             journal = forked_from.log.journal
-        call.log = eventlog.TreeLog(call.id, journal=journal, at_start=eventlog.LayersAtStart.of(layers))
+        later = call.turn_run.later_writer(call) if call.turn_run is not None else None
+        if later is not None:                     # a turn resumed: this process continues its log
+            call.writer = later["writer"]
+            call.log = eventlog.TreeLog(call.id, journal=journal, at_start=eventlog.LayersAtStart.of(layers),
+                                        writer=later["writer"], after=later["after"], at=later.get("at", ""))
+            call.log.replaying = True
+            call.requests = later.get("requests", 0)
+        else:
+            call.log = eventlog.TreeLog(call.id, journal=journal, at_start=eventlog.LayersAtStart.of(layers))
         refusal = got.refused
     else:
         call.log = parent.log
@@ -649,6 +690,10 @@ def _receivers(call: Call, parent: Optional[Call], watch: Any, layers: List[Tupl
     for o in got.observers:
         if not any(o is x for x in observers):
             observers.append(o)
+    if parent is None and call.turn_run is not None:
+        sink = call.turn_run.events_sink(call)    # the conversation's store keeps the turn's kept log
+        if sink is not None:
+            observers.append(sink)
     call.observers = observers
     if watch is not None and watch.root is None:
         watch.root = call.id
@@ -685,7 +730,18 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
         watch.check()                             # a closed stream starts no new call
     if parent is not None:
         parent.check()
-    call = Call(program, parent)
+    from . import conversations
+    turn_run = conversations.running(parent)
+    call = Call(program, parent, id=turn_run.call_id_for(program, parent) if turn_run is not None else None)
+    call.turn_run = turn_run
+    if turn_run is not None and call.id == turn_run.turn:
+        turn_run.attach(call)
+    if parent is None:
+        remote = REMOTE_PARENT.get()
+        if remote:
+            call.parent = remote.pop()               # the caller's call, in another process's log
+    else:
+        call.invocation = INVOCATION.get()
     refusal: Optional[BaseException] = None
     try:
         call.target = _target(settings)
@@ -718,7 +774,8 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     try:
         try:
             call.emit("started", parent=call.parent, root=call.root, program=call.info,
-                      inputs=copy.deepcopy(call.inputs or {}), content=True, saw=copy.deepcopy(list(call.saw)))
+                      inputs=copy.deepcopy(call.inputs or {}), content=True, saw=copy.deepcopy(list(call.saw)),
+                      invocation=call.invocation)
             if refusal is not None:
                 raise refusal
             if parent is None and call.log.required and call.log.barrier(call.cancelled) != "confirmed":
@@ -730,10 +787,17 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
         finally:
             _CURRENT.reset(token)
         journal_error = None
-        if call.pid == os.getpid():
+        if call.pid == os.getpid() and getattr(error, "code", None) == "turn-waiting" \
+                and not isinstance(error, Exception):
+            # a turn stopped to wait for a person: nothing ended; its log stays unfinished, for the process that
+            # resumes it (contract/tools.md), and no record says the call failed
+            pass
+        elif call.pid == os.getpid():
             journal_error = _end(call, value, error)
             if call.target is not None:
                 _finish(call, returned=value, error=error)
+            if call.turn_run is not None:
+                call.turn_run.call_ended(call, value, error)
         else:
             _warn_once(("forked-end", call.function), f"{call.function} was called in process {call.pid} and ends in a "
                                                 f"process forked inside it ({os.getpid()}): its end, events and "
@@ -764,6 +828,7 @@ def _prepare(call: Call, program: Any, layers: List[Tuple[str, Dict[str, Any]]],
     except (TypeError, InterfaceError):           # wrong arguments: the call itself says so
         bound = {}
     names = set(ins)
+    call.bound = {k: v for k, v in bound.items() if k in names}
     values = {k: json_value(v) for k, v in bound.items() if k in names}
     call.inputs = {k: v for k, (v, _n, _d) in values.items()}
     call.sizes = {k: n for k, (_v, n, _d) in values.items()}
@@ -772,7 +837,9 @@ def _prepare(call: Call, program: Any, layers: List[Tuple[str, Dict[str, Any]]],
     call.answer = call.info.get("answer")
     saw = getattr(program, "_saw", None)
     if callable(saw):
-        call.saw, call.context = saw()
+        from .conversations import preparing
+        with preparing(call):
+            call.saw, call.context = saw()
 
 
 def _end(call: Call, value: Any, error: Optional[BaseException]) -> Optional[BaseException]:
@@ -1036,10 +1103,15 @@ def program_info(program: Any) -> Dict[str, Any]:
     loaded = getattr(program, "_loaded", False)
     if loaded:                                        # an AI function built from a saved manifest's data
         module, saved_id = getattr(fn, "__module__", None) or "__main__", getattr(program, "_saved_id", None)
-    info: Dict[str, Any] = {"name": program.__name__, "kind": "ai" if is_ai else "module", "module": module}
+    remote = getattr(program, "_url", None) if not is_ai and hasattr(program, "_described") else None
+    info: Dict[str, Any] = {"name": program.__name__, "kind": "ai" if is_ai else "remote" if remote else "module",
+                            "module": module}
     interface = program.interface
     if is_ai:
         info["version"], info["signature"], _answer = ai_facts(program)
+    elif remote:
+        info["version"] = program.version          # the served program's, as its server says
+        info["remote"] = remote
     else:
         info["version"] = module_version(program)
     info["interface"] = signature(interface)
@@ -1047,7 +1119,7 @@ def program_info(program: Any) -> Dict[str, Any]:
     if saved_id:
         info["saved"] = saved_id
     code = getattr(fn, "__code__", None)
-    if code is not None and not loaded:
+    if code is not None and not loaded and not remote:
         where = top_level_file(code.co_filename) if module == "__main__" else code.co_filename
         if where:
             info["file"] = where
@@ -1233,7 +1305,16 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
     if pred is not None and getattr(pred, "escalated", False):
         rec["escalated"] = True
     rec["exchanges"] = [_exchange_record(ex) for ex in call.exchanges]
+    steps = _steps_of(call)
+    if steps is not None:
+        rec["steps"] = steps
     rec["saw"] = list(call.saw)
+    if call.invocation is not None:
+        rec["invocation"] = call.invocation
+    if call.conversation is not None:
+        rec["conversation"] = dict(call.conversation)
+    if call.writer is not None and call.writer > 1:
+        rec["writer"] = call.writer
     if call.journal_status is not None:
         rec["journal"] = call.journal_status
     rec["caller"] = dict(target.caller) if target is not None else {}
@@ -1241,6 +1322,25 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
     ins, outs, _added = call.fields
     outs = list(outs) + [k for k in (outputs or {}) if k not in outs]       # a name no field has: not kept
     return restrict(rec, list(ins), outs, call.kept)
+
+
+def _steps_of(call: Call) -> Optional[List[Dict[str, Any]]]:
+    """An AI function's call that may be shown again with its steps keeps
+    them (lmcc's turn steps as JSON): one that ran tools, or one made in a
+    conversation (contract/calls.md, *Saw*). Showing it again reads them;
+    none is rebuilt from replies. None for any other call."""
+    from .core import FunctAIFunc
+    pred = call.pred
+    turn = getattr(pred, "turn", None) if pred is not None else None
+    if not isinstance(call.program, FunctAIFunc) or turn is None or not getattr(turn, "steps", None):
+        return None
+    ran_tools = any(getattr(st, "kind", None) == "tool" for st in turn.steps)
+    if not ran_tools and call.turn_run is None:
+        return None
+    try:
+        return json.loads(canonical(turn.to_dict()["steps"]))
+    except Exception:  # noqa: BLE001 — steps with no JSON form are not kept
+        return None
 
 
 def _line(rec: Dict[str, Any]) -> bytes:
@@ -1252,6 +1352,7 @@ def _line(rec: Dict[str, Any]) -> bytes:
         return data
     rec = {**rec, "truncated": True,
            "exchanges": [{k: v for k, v in ex.items() if k not in ("request", "response")} for ex in rec["exchanges"]]}
+    rec.pop("steps", None)
     data = dump(rec)
     if len(data) <= MAX_LINE:
         return data
@@ -1398,7 +1499,111 @@ def read(folder: Any = None, *, since: Any = None) -> Tuple[List[Dict[str, Any]]
                 calls.append(rec)
             elif rec.get("functai_rating") == RATING_FORMAT and rec.get("at", "") >= cutoff:
                 ratings.append(rec)
-    return calls, ratings
+    return _latest_writers(calls), ratings
+
+
+def _latest_writers(calls: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """One record per call: a call continued by a later writer (a resumed
+    turn) is the record of its highest ``writer`` (contract/calls.md)."""
+    best: Dict[Any, Dict[str, Any]] = {}
+    order: List[Any] = []
+    for c in calls:
+        cid = c.get("id")
+        if cid not in best:
+            order.append(cid)
+            best[cid] = c
+        elif int(c.get("writer") or 1) >= int(best[cid].get("writer") or 1):
+            best[cid] = c
+    return [best[i] for i in order]
+
+
+def prune_calls(older_than: Any = "90d", *, folder: Any = None, keep_rated: bool = True) -> Dict[str, int]:
+    '''Delete the call log's day folders older than a time, keeping what
+    ratings need.
+
+    Keeping a log small is deleting whole day folders (contract/calls.md,
+    *The folder*). Before a day goes, every rated call in it is kept: the
+    call, every call of its tree (a module's helpers), every call its
+    ``saw`` names (the earlier turns a row replays) and their ratings are
+    copied into one file at the folder's top level
+    (``kept-<host>-<pid>-<hex>.jsonl``), which every reader reads. A row of
+    ``rated`` made before pruning is made the same after.
+
+    Parameters
+    ----------
+    older_than : text, timedelta or date
+        Day folders before this go: ``"90d"``, ``"12w"``, a date.
+    folder : str or path, optional
+        The log folder (default: the one calls are logged to here).
+    keep_rated : bool
+        False deletes rated calls too.
+
+    Returns
+    -------
+    dict
+        ``{"days": folders deleted, "calls": calls deleted, "kept": calls kept}``.
+    '''
+    import shutil
+    root = reading_folder(folder)
+    start = _since(older_than)
+    if start is None:
+        raise ValueError("older_than is a time: '90d', a date, a timedelta")
+    first = start.astimezone(_dt.timezone.utc).strftime("%Y-%m-%d")
+    if not root.is_dir():
+        return {"days": 0, "calls": 0, "kept": 0}
+    old_days = sorted(p for p in root.iterdir() if p.is_dir() and _DAY.match(p.name) and p.name < first)
+    if not old_days:
+        return {"days": 0, "calls": 0, "kept": 0}
+    everything, ratings = read(root)
+    by_id = {c.get("id"): c for c in everything}
+    in_old: set = set()
+    old_lines: List[Dict[str, Any]] = []
+    for day in old_days:
+        for path in sorted(day.glob("*.jsonl")):
+            for raw in path.read_bytes().split(b"\n"):
+                try:
+                    rec = json.loads(raw)
+                except ValueError:
+                    continue
+                if isinstance(rec, dict):
+                    old_lines.append(rec)
+                    if "functai_call" in rec:
+                        in_old.add(rec.get("id"))
+    keep: set = set()
+    if keep_rated:
+        rated = {r.get("call") for r in ratings}
+        trees = {by_id[c].get("root") for c in rated if c in by_id}
+        keep = {cid for cid, c in by_id.items() if cid in rated or c.get("root") in trees}
+        todo = list(keep)
+        while todo:                                    # every call a kept call's saw names, and theirs
+            c = by_id.get(todo.pop())
+            for entry in (c or {}).get("saw") or []:
+                if not isinstance(entry, Mapping):
+                    continue
+                for key in ("call", "saw_of"):
+                    cid = entry.get(key)
+                    if cid in by_id and cid not in keep:
+                        keep.add(cid)
+                        todo.append(cid)
+    kept_lines = [r for r in old_lines if ("functai_call" in r and r.get("id") in keep)
+                  or ("functai_rating" in r and r.get("call") in keep)]
+    if kept_lines:
+        host = re.sub(r"[^A-Za-z0-9_.-]", "_", socket.gethostname()) or "host"
+        path = root / f"kept-{host}-{os.getpid()}-{secrets.token_hex(3)}.jsonl"
+        data = b"".join((json.dumps(r, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8")
+                        for r in kept_lines)
+        fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            view = memoryview(data)
+            while view:
+                view = view[os.write(fd, view):]
+            os.fsync(fd)
+        finally:
+            os.close(fd)
+    for day in old_days:
+        shutil.rmtree(day)
+    kept_calls = sum(1 for r in kept_lines if "functai_call" in r)
+    return {"days": len(old_days), "calls": len(in_old) - len(in_old & keep), "kept": kept_calls}
 
 
 def _order(rec: Dict[str, Any], time_key: str) -> Tuple[str, str]:
@@ -1491,6 +1696,55 @@ def _inputs_are_data(call: Mapping[str, Any]) -> bool:
     if "inputs" not in call and (call.get("sizes") or {}).get("inputs") and call.get("content") is True:
         return False                            # a record cut to fit (truncated) keeps no values
     return True
+
+
+def with_context(rows: List[Dict[str, Any]], calls: Iterable[Dict[str, Any]]) -> Tuple[List[Dict[str, Any]], int]:
+    """Rows of calls that were shown earlier turns (a conversation), each with
+    ``earlier``, ``conversation`` (and ``helpers`` for a module's), and how many
+    rows were left out because the log cannot show those turns again. When
+    no row was shown any, the rows are as they were."""
+    by_id = _by_id(list(calls))
+    needs = [r for r in rows if _needs_context(by_id.get(_meta(r, "call")), by_id)]
+    if not needs:
+        return rows, 0
+    out, dropped = [], 0
+    for r in rows:
+        try:
+            ctx = earlier_of(_meta(r, "call"), by_id)
+        except SawError:
+            dropped += 1
+            continue
+        row = {k: v for k, v in r.items()}
+        # the context goes before the rating's columns: rebuild the order (data, context, meta)
+        data = list(row)[:-_META]
+        meta_keys = list(row)[-_META:]
+        rebuilt = {k: row[k] for k in data}
+        _add_meta(rebuilt, {k: v for k, v in ctx.items()})
+        for k in meta_keys:
+            rebuilt[k] = row[k]
+        out.append(rebuilt)
+    return out, dropped
+
+
+def _needs_context(rec: Optional[Mapping[str, Any]], by_id: Mapping[str, Any]) -> bool:
+    """Whether a rated call was shown anything before its inputs: itself, or,
+    for a module, a call inside it (a helper that remembers)."""
+    if rec is None:
+        return False
+    if rec.get("saw") or rec.get("conversation"):
+        return True
+    if (rec.get("program") or {}).get("kind") != "module":
+        return False
+    return any(c.get("root") == rec.get("root") and c.get("saw") and _under(c, rec.get("id"), by_id)
+               for c in by_id.values())
+
+
+def _meta(row: Mapping[str, Any], key: str) -> Any:
+    """A column ``rated_rows`` added, under its name or with underscores in front."""
+    for k in reversed(list(row)):
+        if k.lstrip("_") == key:
+            return row[k]
+    return None
 
 
 def rated_rows(calls: Iterable[Dict[str, Any]], ratings: Iterable[Dict[str, Any]], *, name: str,
@@ -1622,6 +1876,126 @@ def _shows_again(rec: Mapping[str, Any], entry: Mapping[str, Any]) -> bool:
     if rec.get("functai_call") == 1 or not isinstance(omitted, Mapping):
         return False
     return not ((set(omitted.get("inputs") or []) | set(omitted.get("outputs") or [])) - left_out)
+
+
+# ------------------------------------------------------------------ rows that keep their context (stage 5)
+
+
+def _turn_of(rec: Mapping[str, Any], entry: Mapping[str, Any]) -> Dict[str, Any]:
+    """The turn a ``saw`` entry stands for, as data: the record's inputs and
+    outputs without the entry's ``without``; with ``steps``, the record's
+    steps and its ``program.signature`` (contract/calls.md, *Saw*)."""
+    left_out = set(entry.get("without") or [])
+    out: Dict[str, Any] = {
+        "inputs": {k: v for k, v in (rec.get("inputs") or {}).items() if k not in left_out},
+        "outputs": {k: v for k, v in (rec.get("outputs") or {}).items() if k not in left_out}}
+    if entry.get("steps"):
+        if not isinstance(rec.get("steps"), list):
+            raise SawError("not-kept", rec.get("id"), f"call {rec.get('id')} was shown with its steps, and its "
+                                                      f"record does not keep them")
+        out["steps"] = copy.deepcopy(rec["steps"])
+        out["signature"] = (rec.get("program") or {}).get("signature")
+    return out
+
+
+def earlier_of(call: str, records: Any) -> Dict[str, Any]:
+    """What a rated call was shown before its own inputs, as data a row
+    carries (contract/calls.md, *Rows that keep their context*):
+    ``earlier`` (the turns it was shown, in order), ``conversation`` (its
+    conversation's id, or None) and, for a module's call, ``helpers`` (each
+    call inside it that was shown earlier turns, in the order they started:
+    ``{"program", "earlier"}``). Raises ``SawError`` when the log cannot
+    show them again (never a part)."""
+    by_id = _by_id(records)
+    rec = by_id.get(call)
+    if rec is None:
+        raise SawError("missing-call", call, f"call {call} is not in the log")
+    earlier = []
+    if rec.get("saw"):
+        check_kept(call, by_id)
+        earlier = [_turn_of(by_id[e["call"]], e) for e in saw(call, by_id)]
+    out: Dict[str, Any] = {"earlier": earlier,
+                           "conversation": (rec.get("conversation") or {}).get("id")}
+    if (rec.get("program") or {}).get("kind") == "module":
+        inside = [c for c in by_id.values() if c.get("root") == rec.get("root") and c.get("id") != call
+                  and _under(c, call, by_id) and c.get("saw")]
+        helpers = []
+        for c in sorted(inside, key=lambda c: _order(c, "started")):
+            check_kept(c["id"], by_id)
+            helpers.append({"program": (c.get("program") or {}).get("name"), "call": c["id"],
+                            "earlier": [_turn_of(by_id[e["call"]], e) for e in saw(c["id"], by_id)]})
+        out["helpers"] = helpers
+    return out
+
+
+def _under(rec: Mapping[str, Any], ancestor: str, by_id: Mapping[str, Any]) -> bool:
+    seen = set()
+    parent = rec.get("parent")
+    while parent is not None and parent not in seen:
+        if parent == ancestor:
+            return True
+        seen.add(parent)
+        parent = (by_id.get(parent) or {}).get("parent")
+    return False
+
+
+def split(rows: Any, *, by: str = "conversation", test: float = 0.2, seed: int = 0) -> Tuple[Any, Any]:
+    '''Two tables, with every group of rows on one side: ``train, test =
+    functai.split(functai.rated(tutor))``.
+
+    Turns of one conversation depend on each other: a test row whose
+    conversation is also in the training rows measures memory, not the
+    program. A row with no group (``conversation`` null) is a group of its own.
+
+    Parameters
+    ----------
+    rows : table or list of dict
+    by : str
+        The column that names each row's group (default ``conversation``).
+    test : float
+        The share of groups in the test side (at least one group each side
+        when there are two or more).
+    seed : int
+
+    Returns
+    -------
+    (train, test)
+        Of the same kind as ``rows`` (dpyr tables, or lists).
+    '''
+    import random
+    from .evaluation import rows_of
+    as_list = isinstance(rows, list)
+    items = rows_of(rows)
+    if not 0 < test < 1:
+        raise ValueError(f"test is a share between 0 and 1, not {test!r}")
+    groups: List[Any] = []
+    key_of = []
+    for i, r in enumerate(items):
+        if by not in r:
+            raise ValueError(f"the rows have no column {by!r}")
+        g = r[by] if r[by] is not None else ("__row__", i)
+        key_of.append(g)
+        if g not in groups:
+            groups.append(g)
+    random.Random(seed).shuffle(groups)
+    n_test = max(1, round(len(groups) * test)) if len(groups) > 1 else 0
+    n_test = min(n_test, len(groups) - 1) if len(groups) > 1 else 0
+    held = set(map(_hashable, groups[:n_test]))
+    train = [r for r, g in zip(items, key_of) if _hashable(g) not in held]
+    tested = [r for r, g in zip(items, key_of) if _hashable(g) in held]
+    if as_list:
+        return train, tested
+    from .evaluation import _dpyr, _tabular
+    names = list(dict.fromkeys(k for r in items for k in r))
+    return _dpyr().read(_tabular(names, train)), _dpyr().read(_tabular(names, tested))
+
+
+def _hashable(v: Any) -> Any:
+    try:
+        hash(v)
+        return v
+    except TypeError:
+        return canonical(v)
 
 
 # ------------------------------------------------------------------ the public functions
@@ -1857,16 +2231,20 @@ def rated(program: Any, *, folder: Any = None, by: Optional[str] = None, since: 
     found, ratings = read(root, since=since)
     rows, left = rated_rows(found, ratings, name=name, module=module, signature=signature, by=by,
                             interface=interface, file=file)
+    rows, left["no_context"] = with_context(rows, found)
     reasons = {"no_answer": "marked wrong without the right answer",
                "other_signature": "made when its inputs or outputs were different",
-               "no_content": "logged without their values"}
+               "no_content": "logged without their values",
+               "no_context": "shown earlier turns the log cannot show again"}
     dropped = [f"{n} {reasons[k]}" for k, n in left.items() if n]
     if not rows:
         raise ValueError(f"no rated calls of {name} in {root}" + (f" ({'; '.join(dropped)})" if dropped else ""))
     if dropped:
         _warn_once(("rated", name, tuple(left.items())), f"{name}: rated calls left out: " + "; ".join(dropped))
-    meta = list(dict.fromkeys(k for r in rows for k in list(r)[-_META:]))          # each row ends with them
-    first = ["rating", "rated_by", "origin", "disputed", "sample", "version", "call"]
+    extra = [k for k in ("earlier", "conversation", "helpers") if any(k in r for r in rows)]
+    meta = list(dict.fromkeys(k for r in rows for k in list(r)[-(_META + len(extra)):]))   # each row ends with them
+    first = ["earlier", "conversation", "helpers", "rating", "rated_by", "origin", "disputed", "sample", "version",
+             "call"]
     meta.sort(key=lambda k: first.index(k.lstrip("_")))
     names = [k for k in dict.fromkeys(k for r in rows for k in r) if k not in meta] + meta
     return _dpyr().read(_tabular(names, [{k: _cell(v) for k, v in r.items()} for r in rows]))
@@ -2001,4 +2379,4 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     return rec
 
 
-__all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept"]
+__all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept", "prune_calls"]

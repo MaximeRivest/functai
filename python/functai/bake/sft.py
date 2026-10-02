@@ -196,7 +196,7 @@ def bake(fn, data: Any, *, student: str, teacher: Any = None, labels: str = "aut
     if not tokenizer.chat_template:
         raise BakeError(f"{student} has no chat template; use an instruct/chat model")
     kwargs = template_kwargs(tokenizer)
-    demos = fn._past(plan, spec, {**s, "stateful": False})
+    demos = fn._past(plan, spec, s, context=False)
 
     def encode_row(i: int) -> Tuple[List[int], int]:
         from .. import engine

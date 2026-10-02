@@ -68,14 +68,17 @@ call log's id) and that call's program (`function`, the program's name).
 | `request` | the call begins a request to a model | `request` (its number: `1` for the call's first request, one more for each further one), `model` (the model asked, as the call log's exchange names it, or null) |
 | `text` | a piece of an output's text is written | `field`, `answer` (true when the field is the answer), `text` |
 | `thinking` | a piece of the model's own thinking that no output reads | `text` |
-| `tool_call` | the model asked for a tool, and the request is complete | `id` (the call's id, as lmcc names it: the provider's, or one lmcc assigned), `name`, `input` |
-| `tool_result` | the tool ran | `id`, `name`, `output` (text, as the model sees it) |
+| `tool_call` | the model asked for a tool, and the request is complete | `id` (the call's id, as lmcc names it: the provider's, or one lmcc assigned), `name`, `input`, `invocation` (its number among the call's tool calls: [tools.md](tools.md)) |
+| `tool_result` | the tool ran (or a person refused it: the refusal is its output) | `id`, `name`, `output` (text, as the model sees it), `invocation` |
+| `approval` | a tool call waits for a person's answer ([tools.md](tools.md)) | `id`, `invocation`, `name`, `input`, `effects`, `path`, `to` (`owner` or `caller`) |
+| `approved` | the answer | `id`, `invocation`, `verdict` (`yes`, `no`), `by`, `reason`? |
 | `retry` | the model is asked again for this call's answer | `reason` (a sentence), `wait` (seconds before asking, or null) |
 | `done` | the call ended with a value | `value`: what the call returned, as JSON (an AI function's answer, as its code returned it; a module's output, or its outputs by name when it has several). A value with no JSON form is described as in the call log. |
 | `failed` | the call ended with an error | `error` `{"type", "message", "code"?}` as in the call log |
 
-A later stage may add kinds (an approval, stage 4) and keys; what a
-reader does with what it does not know is in *Formats*.
+A `started` event of a call made while a tool ran has that tool call's
+`invocation`. A later stage may add kinds and keys; what a reader does
+with what it does not know is in *Formats*.
 
 Laws:
 
@@ -256,9 +259,7 @@ above. The writer knows its own events, so its kept form keeps them.
 
 ## Views
 
-A view is what one kind of reader may see of a log: the owner sees the
-whole log; a caller who sees only a program's boundary sees less (stage
-3 names the views and who chooses them). A view:
+A view is what one kind of reader may see of a log. A view:
 
 - keeps each event's `writer` and `seq`, and sets `after` to the
   position of the event before it in the view;
@@ -271,11 +272,37 @@ whole log; a caller who sees only a program's boundary sees less (stage
   never invents one; like the kept form, it leaves out what it does not
   know.
 
-Whether a view may show an event of a call inside a module as the
-module's own (a child's field as the module's answer while it is written,
-or an approval three calls down as the boundary's) is stage 3's: until
-then, a view that shows only the module shows its `started`, then its
-`done`.
+Three views are named:
+
+- **`full`**: every event and value (only the process running the tree
+  has it);
+- **`kept`**: the kept form (*The kept form*);
+- **`outside`**: a caller who sees only the program's boundary (a served
+  program's customer, [serving.md](serving.md)). Of the outermost call:
+  its `started` with its program object without `file` and `line`; for
+  an AI function, its `request`s, its `retry`s without their reason
+  (`content: false`), and its answer's `text` (never another field's);
+  its `done`; its `failed` with the error's `type` and `code` only
+  (`content: false`). Of every call: an `approval` addressed to the
+  caller (`to: "caller"`) and its `approved`, re-addressed to the
+  outermost call (`call`, `function`). Nothing else: no helper's answer,
+  tool call or result, thinking, or reason for a retry (they can quote
+  a helper's reply or a tool's input).
+
+**A module's answer as it is written.** A module may say which AI function
+it calls answers for it (Python `@module(answer_from=answer)`). The
+outside view then shows that function's answer text as the module's:
+each such `text` re-addressed to the module (`call`, `function`, and
+`field` the module's answer), and each `started`, `request` and `retry`
+of such a call shown as a `request` of the module (numbered from 1 in the
+view, `model` null), so a second call of it empties the first's text. A
+module that names none shows its `started`, then its `done`.
+`cases/views/` pin the outside view.
+
+A view is made from its form's first event: a reader that resumes a view
+after an event reads the form again from its start, and is given what
+follows that event in the view (`event-unknown` when the view has no such
+event).
 
 **Retention is not disclosure.** The kept form is about what may be
 *kept*. Sending events live to a reader the host allows (a page, a
@@ -390,11 +417,9 @@ so refuses: the call inside raises `JournalError` with code
 call that fails, and the code around it gets the error.
 
 A journal is the watching log, under `log_content`. It is not a
-conversation's memory (what later turns are shown: stage 2's
-conversation store, under its own setting), nor the checkpoint a waiting
-turn resumes from (the model's steps as lmcc keeps them, provider
-thinking and tool outputs as parts, what each tool was given: stage 4's,
-under its own retention). A kept `tool_call` has no `input` when content
+conversation's memory (what later turns are shown: its store's records,
+[conversations.md](conversations.md)), nor what a waiting turn resumes
+from (its `reply` and `tool` records, [tools.md](tools.md)). A kept `tool_call` has no `input` when content
 is not whole, and a kept `thinking` is gone: resuming a model from the
 events alone would be a guess. Each of the three is its own record.
 
@@ -423,7 +448,9 @@ events alone would be a guess. Each of the three is its own record.
 - **Required** (the host asks for it): the call waits, until every event
   up to it is confirmed, at three **barriers**: after its outermost
   call's `started` (before any code or request runs); after each
-  `tool_call` (before that tool runs); and after the outermost call's
+  `tool_call` of a tool that changes things or declares nothing (before
+  that tool runs: [tools.md](tools.md); a tool that only reads runs
+  without waiting); and after the outermost call's
   `done` or `failed` (before the call returns or raises). Calls inside
   the tree have no start or end barrier of their own: the tree's are
   enough, since appends are in order.
@@ -505,12 +532,13 @@ Every form of the log, from then on, is the kept log up to the claimed
 event, then the later writer's events (*Where each form can be read*).
 Readers following the log across the change rewind to the event it
 names, or find they lost events (*Following a log*). The call record the
-later writer writes holds its own exchanges (law 8); how a call's record
-joins what each writer did, when the earlier writer also wrote a line
-for it, is stage 4's. Who may claim a log (a lease), when a writer
-counts as stopped, what the later writer does with calls that were
-running (a tool that may have run), and how a log is ended by someone
-other than a writer are stage 2's and stage 4's.
+later writer writes holds its own exchanges (law 8), with the same `id`
+and its `writer`; when the earlier writer also wrote a line for the call,
+a reader takes the record of the highest writer ([calls.md](calls.md)). Who may claim a conversation's turn (a
+lease), when its writer counts as stopped, and what the later writer does
+with calls that were running (a tool that may have run, what it holds
+back while replaying) are in [conversations.md](conversations.md) and
+[tools.md](tools.md).
 
 ## The rules a store keeps
 
@@ -572,8 +600,16 @@ and the call ends with the error `Cancelled` (in the call log too).
 Stopping a request does not promise the provider stops generating or
 billing at once. A stream nobody closes runs to its end, like a call.
 Only the process running a call can close its stream; a reader of a kept
-log that stops reading (a page closed) changes nothing. Stopping a call
-from another process is stage 2's.
+log that stops reading (a page closed) changes nothing. A conversation's
+turn is stopped from any process by its store's `stop` record
+([conversations.md](conversations.md)).
+
+**Streaming is asked for by a live reader.** A call's requests are
+streamed (and shown piece by piece) when a stream reads it live, an
+observer or a journal keeps its events. A stream read only for its result
+(a conversation's turn called plainly) and a conversation store's own
+copy of the log do not ask for it: their replies arrive whole, and are
+shown as one piece per field (law 6).
 
 ## The answer so far
 

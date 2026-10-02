@@ -9,7 +9,7 @@ in Chattering and run it. New to FunctAI? Start with the
 |---|---|
 | [typing_and_extraction](typing_and_extraction/) | types in and out: lists, dicts, `Enum`, `Literal`, dataclasses, pydantic models, several outputs, post-processing |
 | [docments_flexiclass](docments_flexiclass/) | comments are prompts: on parameters, the return line, class fields and `_ai` outputs; plain classes as types |
-| [claide_code](claide_code/) | a terminal assistant: a shell tool with an allow-list, and memory (`stateful=True`) |
+| [claide_code](claide_code/) | a terminal assistant: a shell tool with an allow-list, and memory (a conversation) |
 | [local_simple_rag_agent](local_simple_rag_agent/) | an agent that reads the web, a fact checker in a `@module`, and the same agent on a local model |
 | [graph_rag](graph_rag/) | a knowledge graph built chunk by chunk with pydantic models, drawn and queried |
 | [modules](modules/) | a multi-hop fact checker as one `@module`: evaluated, optimized, run on a table |

@@ -1,0 +1,22 @@
+{
+ "description": "The key of the first answer to a request: sha256 of the canonical JSON of functai_reply, the request, replicate.",
+ "kind": "key",
+ "request": {
+  "model": "gpt-4.1-mini",
+  "messages": [
+   {
+    "role": "user",
+    "parts": [
+     {
+      "type": "text",
+      "text": "Chile"
+     }
+    ]
+   }
+  ]
+ },
+ "replicate": 0,
+ "expect": {
+  "key": "sha256:0c3e176df6314579b085c38791143c3a80293e47cc86b9abc71c0afba9ed814f"
+ }
+}

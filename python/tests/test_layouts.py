@@ -73,16 +73,16 @@ def test_template_errors_surface_at_definition():
 
 
 def test_demos_and_memory_go_where_turns_is(fake):
-    @ai(template=[system("{instruction}"), user("Q: {q}")], stateful=True,
-        examples=[("2+2", "4")])
+    @ai(template=[system("{instruction}"), user("Q: {q}")], examples=[("2+2", "4")])
     def calc(q: str) -> str:
         """Compute."""
 
     r = fake("6", "8")
-    calc("3+3")
+    chat = calc.conversation()
+    chat("3+3")
     assert r.roles(0) == ["user", "assistant", "user"]
     assert [p.text for m in r.requests[0].messages for p in m.parts] == ["Q: 2+2", "4", "Q: 3+3"]
-    calc("4+4")
+    chat("4+4")
     assert [p.text for m in r.requests[1].messages for p in m.parts] == ["Q: 2+2", "4", "Q: 3+3", "6", "Q: 4+4"]
 
 
@@ -242,15 +242,19 @@ def test_the_step_limit(fake):
 # ------------------------------------------------------------------ memory
 
 
-def test_stateful_functions_remember_within_a_window(fake):
-    @ai(stateful=True, state_window=2)
+def test_a_conversation_shows_the_last_turns_its_rule_keeps(fake):
+    @ai
     def chat(message: str) -> str:
         """A friendly assistant."""
 
     r = fake(responder=lambda req: "<result>\nok\n</result>")
-    chat("Hello, I am Alex."); chat("What is my name?"); chat("And again?")
+    c = chat.conversation(context=functai.last_turns(2))
+    c("Hello, I am Alex."); c("What is my name?"); c("And again?"); c("Once more?")
     assert r.roles(1) == ["user", "assistant", "user"]
     assert "Hello, I am Alex." in r.requests[1].messages[0].parts[0].text
-    assert len(r.requests[2].messages) == 5 and len(chat.history) == 2
-    chat.reset()
-    assert chat.history == []
+    assert len(r.requests[2].messages) == 5 and len(r.requests[3].messages) == 5
+    assert "Hello, I am Alex." not in "".join(p.text for m in r.requests[3].messages for p in m.parts
+                                              if getattr(p, "text", None))
+    assert len(c.turns) == 4                          # every turn is kept; the rule decides what is shown
+    chat("alone")                                     # the function itself remembers nothing
+    assert len(r.requests[4].messages) == 1

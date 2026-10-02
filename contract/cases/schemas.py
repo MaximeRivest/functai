@@ -42,6 +42,7 @@ def validator(name: str, pointer: str = "") -> jsonschema.Draft202012Validator:
 
 CALL, RATING, EVENT, SAVED = validator("call"), validator("rating"), validator("event"), validator("saved")
 INTERFACE = validator("interface")
+CONVERSATION = validator("conversation")
 SAW_ENTRY = validator("call", "/$defs/saw_entry")
 
 
@@ -160,7 +161,7 @@ def refusals() -> None:
         assert not v.is_valid(value), f"the schema accepts {why}"
 
     later = copy.deepcopy(events.a_tool().events[1])
-    later.update(kind="approval", asked="May I?")
+    later.update(kind="handoff", asked="May a person take over?")
     del later["request"], later["model"]
     good = [("a rating made under an account", RATING, {**base, "account": "maxime"}),
             ("a rating by a person", RATING, {**base, "by": "ana"}),

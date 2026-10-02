@@ -127,7 +127,7 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `parent` | the call this one ran inside (a module, a tool, an escalation), or `null`. The parent's line comes *after* its children's: lines are written when calls end. A parent that was not logged (its program had `log_calls=False`) leaves a dangling id; read it as a root. |
 | `root` | the outermost call of the tree (its own `id` when `parent` is null). |
 | `program.name`, `.module` | what was called: the function's name and the code module it was defined in (`__main__` for a notebook or script; for a program loaded from a saved folder, the module it was saved from). |
-| `program.kind` | `"ai"` or `"module"`. |
+| `program.kind` | `"ai"`, `"module"`, or `"remote"` (a program served elsewhere, called here: [serving.md](serving.md); `program.remote` says where, `program.version` is the served program's). |
 | `program.version` | see *Versions*. |
 | `program.signature` | AI functions only: lmcc's signature fingerprint (kernel §3a: its fields' directions, names, purposes, shapes and type names, in order; not the prose) computed with every type name empty (`"type": ""`). The JSON shapes decide, not how one language spells a type (`str`, `string`, `character`), so the same function in two languages has one signature. It includes the fields FunctAI adds (`reasoning`, the tool fields). A module has none. |
 | `program.interface` | every program: its interface's signature ([programs.md](programs.md)): lmcc's fingerprint of the interface's inputs and outputs only, each shape without its `default`. Calls with the same `program.interface` record the same data, even when the instruction or a default changed or reasoning was turned on; `rated` pools them. It does not say which calls a program accepts (compare interfaces for that). For an AI function with neither reasoning nor tools it equals `program.signature`. |
@@ -154,6 +154,10 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `caller` | who called, as the environment and the program said (see *Caller*). `{}` when nothing did. |
 | `process` | the writing process: `host`, `pid`, `user` (the operating system's), `language`, `runtime` (the language's version), `functai` (the library's version), and, when the language can tell, `lmcc` and `lm15` (the versions of the libraries that built the request and sent it: a version is a fingerprint of what lmcc renders, so when an lmcc update changes every version, the records say why). |
 | `truncated` | `true` when the record was cut to fit 8 MiB. |
+| `steps` | present when the call is an AI function's that ran tools or was made in a conversation, and `content` is true: its lmcc turn's steps (kernel §3a: each `{"kind": "model", "outputs", "message"?, "request"?, "calls_field"?}` or `{"kind": "tool", "id", "name", "output", "children"?}`), what showing it again with its steps reads (*Saw*). |
+| `invocation` | a call made while a tool ran: the number of that tool call among the tool calls of the call that asked for it ([tools.md](tools.md)). |
+| `conversation` | a conversation's turn: `{"id", "turn", "parent"}`, the conversation, this call's id (the turn's), and the turn it continues ([conversations.md](conversations.md)). |
+| `writer` | a call continued by a later writer (a resumed turn: [tools.md](tools.md)): that writer's number. A reader that meets several records of one `id` takes the one of the highest `writer` (absent: 1). |
 
 **Values.** A value is written as the JSON its type describes (lmcc's
 `to_json`): a dataclass or pydantic model is an object, an enum its
@@ -235,9 +239,9 @@ dropped value was (a password's length, for one).
 **What it is about.** `log_content` decides what is kept for watching:
 the call log, and the kept form of stream events ([streaming.md](streaming.md)).
 It does not decide what a reader allowed to see a value is sent live
-(that is a view), nor what a conversation keeps to go on (stage 2 gives
-conversation stores their own setting, and must refuse, not forget, when
-the two cannot both hold).
+(that is a view), nor what a conversation keeps to go on: a
+conversation whose store keeps records refuses a program whose content a
+layer drops, rather than forgets ([conversations.md](conversations.md)).
 
 `cases/content/*.json` pin the layers and the record.
 
@@ -306,21 +310,19 @@ inputs, its outputs and each of its model steps' outputs.
   written from its values (the recorded message would show the field).
   An entry whose `without` names the field that holds a step's tool calls
   is refused `turn-invalid` (lmcc's word): the turn would be invalid.
-- How a record's exchanges become those steps is **not fixed yet**, and
-  no reader may guess it: which exchanges become model steps (failed
-  attempts, a reply that could not be read and the retry after it,
-  escalation to another model, replies from the cache); how each step's
-  outputs are read from its reply (with the plan of the call's version);
-  how tool steps are read from the next request; which lmcc `replay`
-  mode writes them. Stage 5 (`rated` with earlier turns) fixes it, and a
-  replay that rebuilds a request checks it against the exchange's
-  `request_hash`. Until then a reader shows calls without steps only.
+- **The steps are the record's own** (stage 5): a record that may be
+  shown again with its steps keeps them, as lmcc's turn steps (`steps`,
+  *A call record*): an AI function's call that ran tools, or was made in
+  a conversation. Showing a call with its steps reads them; none is
+  rebuilt from the exchanges (which would need every language to agree
+  on how retries, the reply cache and escalation become steps). A record
+  shown with `steps` that keeps none cannot be shown again (`not-kept`).
 - A module's call (its record has no `program.signature`) is not shown
-  by this recipe: how a module's turn is shown (a conversation with a
-  module, vignette 11's outer turns) is stage 3's, and until then a
-  reader shows only AI functions' calls. What a module's call saw, and
-  whether the log keeps it (*Reading it*, *Knowing is not replaying*),
-  are read as for any call.
+  as a turn of a model: a module's turn in a conversation is given the
+  conversation so far as data ([conversations.md](conversations.md),
+  `earlier()`), its entries naming the earlier turns without steps. What
+  a module's call saw, and whether the log keeps it (*Reading it*,
+  *Knowing is not replaying*), are read as for any call.
 
 `cases/saw/12`, `13` and `16` pin the turn, starting from the turn a
 record stands for.
@@ -459,6 +461,41 @@ others: a record of another format makes no row and is not counted.
 
 `cases/rated/*.json` pin these rules.
 
+## Rows that keep their context
+
+A rated call that was shown earlier turns (its `saw` is not empty: a
+conversation's turn, a helper that remembers) answered after them. Its
+row carries them, so it can be asked again as it was
+(`cases/context/` pin these rules):
+
+- `earlier`: the turns it was shown, in order (`saw` read with `saw_of`
+  expanded), each `{"inputs", "outputs"}`: the shown call's record's
+  values without the entry's `without`; with the entry's `steps`, also
+  `steps` (the record's) and `signature` (its `program.signature`);
+- `conversation`: its record's `conversation.id`, or null;
+- for a module's call, `helpers`: each call inside it that was shown
+  earlier turns, in the order they started, as `{"program", "call",
+  "earlier"}`.
+
+A row is made only when the log keeps what showing its turns again
+needs (*Knowing is not replaying*), and, for an entry with `steps`, the
+record's `steps`; otherwise the rated call is left out and counted
+`no_context` (never a row with some of its turns). A reader adds these
+keys (after the data, before the rating's) only when some row of the
+program was shown earlier turns: the rows of a program never in a
+conversation are as before.
+
+Asking such a row again (evaluating, optimizing) shows the program's own
+call the row's `earlier` turns, and each helper call the `earlier` of the
+next helper entry of its name; the new call's `saw` is `[{"saw_of":
+<the rated call>}]` (for a helper, its original call), and nothing is
+written to any conversation. An optimizer measures with such rows and
+never shows one as a worked example (a worked example is one turn placed
+before the question).
+
+A reader asked to keep conversations apart (Python `functai.split(rows,
+by="conversation")`) keeps every row of one conversation on one side.
+
 ## Versions
 
 A version is `"sha256:"` and the hex SHA-256 of the canonical JSON of a
@@ -588,6 +625,10 @@ new format, not an edit of format 1:
   `content` is false.
 - `described`, naming values written as descriptions; `journal`, when a
   required journal did not confirm the call's end.
+
+Later additions to format 2, each optional and skipped by a reader that
+does not know it: `steps`, `invocation`, `conversation`, `writer`
+(2026-09-30), `program.kind` `"remote"` with `program.remote`.
 
 A reader reads both formats. A format-1 record is read as it always was:
 `content: false` means no value, no `saw` means not recorded, and it has

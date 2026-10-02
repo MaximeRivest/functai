@@ -8,7 +8,7 @@ rat:
 # load { #functai.load }
 
 ```{.python .no-run}
-load(path, *, trust=False, check_env='refuse')
+load(path, *, trust=False, check_env='refuse', node=None)
 ```
 
 Load a saved program, ready to call.
@@ -17,12 +17,17 @@ Checks before running anything: the files' hashes (catching accidental
 edits) and the packages this environment has. After loading, checks that
 every AI function renders the same requests as when it was saved.
 
+A folder written in another language (TypeScript, R, Julia) holds no
+Python code: its AI functions load from ``functai.json`` alone, as data
+(``from_manifest``), and need no ``trust``.
+
 ## Parameters {.doc-section .doc-section-parameters}
 
 | Name      | Type        | Description                                                                                                                               | Default    |
 |-----------|-------------|-------------------------------------------------------------------------------------------------------------------------------------------|------------|
 | path      | str or path | The saved folder.                                                                                                                         | _required_ |
 | trust     | bool        | Must be True: loading runs the saved code. The hashes catch accidents, not someone who edits both the code and ``functai.json``.          | `False`    |
+| node      | str         | The program to load, by key (``"module:name"``); the entry by default. For a folder of another language, an AI function.                  | `None`     |
 | check_env | str         | ``"refuse"`` (default) refuses on version or request differences; ``"warn"`` loads anyway, with warnings. Missing packages always refuse. | `'refuse'` |
 
 ## Returns {.doc-section .doc-section-returns}

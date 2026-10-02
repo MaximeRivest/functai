@@ -101,6 +101,44 @@ only `append` is sent every event through its `append`. At exit, FunctAI waits a
 seconds for observers and journals to catch up. In a process forked
 inside a call, calls start a tree of their own.
 
+## Conversations, tools that ask first, serving
+
+A conversation is a program's calls that remember each other. The
+function is unchanged; the memory is the conversation's, kept where you
+say, and nothing in it is ever deleted:
+
+```python
+chat = tutor.conversation("alex", store="tutoring/")   # the same line tomorrow opens it again
+chat("Hi, I'm Alex.")
+chat("What is 1/2 + 1/3?")
+chat.turns[-1].saw                                      # what that answer was based on
+chat.render("Why can't I add the bottoms?")             # the next request, nothing sent
+other = chat.continue_from(chat.turns[0])               # a branch
+```
+
+A tool says what it does to the world, and a person can be asked before it
+runs: at once, or later, from any process (the turn waits, saved, and goes
+on without paying for a model answer twice):
+
+```python
+@functai.tool(effects="changes")
+def refund(order: str, amount: float) -> str: ...
+
+chat = assistant.conversation(customer, store=STORE, approve="changes")
+try:
+    chat("Refund my late parcel, please.")
+except functai.Waiting as w:
+    ...                                                 # later, anywhere: w.turn.approve(w.approvals[0])
+```
+
+A program is served with `functai serve saved/ --keys keys.txt` (or
+`functai.serve(program)`), to callers who see only its boundary; on
+their side, `functai.remote(url, key=...)` is a program again. Replies
+can be kept on disk (`configure(cache_replies="disk")`), so a long
+`fn.map(rows, threads=8)` resumes by being run again. Rated turns become
+rows that keep their earlier turns (`functai.rated`), for `evaluate` and
+the optimizers.
+
 ## Documentation
 
 **[maximerivest.github.io/functai](https://maximerivest.github.io/functai/python.html)**, with three ways in:

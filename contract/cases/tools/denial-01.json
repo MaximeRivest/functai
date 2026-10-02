@@ -1,0 +1,8 @@
+{
+ "description": "What the model is shown when a person refuses a tool call.",
+ "kind": "denial",
+ "reason": null,
+ "expect": {
+  "output": "The person did not allow this call."
+ }
+}

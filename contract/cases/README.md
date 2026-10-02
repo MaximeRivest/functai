@@ -226,3 +226,46 @@ a whole, both numbers. The file name's first word is the `"kind"`:
   journal". Journals are the same when name and mode are. Observers are
   listed outermost first. A refused scenario's `observers` and `journal`
   are where the refused tree's `started` and `failed` go.
+
+## replies/ (../replies.md)
+
+`kind: "key"`: `request` (lm15's canonical JSON of a request) and
+`replicate`; `expect.key` is the reply cache's key.
+
+## conversations/ (../conversations.md)
+
+Every case holds `records` (a conversation's records, with their `seq`)
+and `now` (the time a turn's lease is compared with).
+
+- `kind: "state"`: `expect.states` (each turn's state), `expect.head`,
+  `expect.next` (where a turn sent now goes, with `sends: "queue"`, by a
+  conversation opened by id: `{"parent": turn or null}`, `{"waits":
+  turn}`, or `{"refuses": code}`), `expect.waiting` (each waiting turn's
+  unanswered invocations) and `expect.unfinished` (each turn's tools that
+  may have run, by invocation).
+- `kind: "context"`: `parent` (the turn a new turn continues) and `rule`
+  (`{"last": n or null, "without"?: [names]}`); `expect.saw` is the new
+  turn's `saw` entries, `expect.rows` what `earlier()` gives. The
+  records' program is the harness's own AI function with one input
+  `message` and one output `result` (a harness sets the `program`
+  record's `signature` to its function's).
+
+## tools/ (../tools.md)
+
+- `kind: "asks"`: `rule` (null, `"changes"`, `"all"`, `"function"`: a
+  function is given, or a list) and `approvals` (`{"name", "path",
+  "effects"}`); `expect.asks`, one boolean per approval.
+- `kind: "denial"`: `reason` (or null); `expect.output` is the tool
+  result the model is shown.
+
+## views/ (../streaming.md, *Views*)
+
+`kind: "view"`: `view` (`"outside"`), `answer_from` (the name of the AI
+function whose answer is the module's, or null) and `events` (a whole
+log); `expect.events` is the view.
+
+## context/ (../calls.md, *Rows that keep their context*)
+
+`records` (call records) and `call` (a rated call's id); `expect` is
+`{"earlier", "conversation"}`, or `{"refuses": code}` when the log
+cannot show its earlier turns again.

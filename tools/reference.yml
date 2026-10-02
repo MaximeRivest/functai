@@ -75,6 +75,32 @@ quartodoc:
     contents:
     - Stream
     - Cancelled
+  - title: Conversations
+    desc: A program's calls that remember each other, kept in a store; branches, what the
+      model sees, and helpers' memory inside a module.
+    contents:
+    - conversations.Conversation
+    - conversations.Turn
+    - last_turns
+    - all_turns
+    - remember
+    - earlier
+    - FolderStore
+    - Waiting
+    - ConversationError
+  - title: Tools that ask first
+    desc: Tools say what they do to the world; a person can be asked before they run.
+    contents:
+    - tool
+    - Approval
+    - ApprovalError
+  - title: Serving
+    desc: Serve a program over HTTP to callers who see only its boundary; use a served
+      program like a local one.
+    contents:
+    - serve
+    - Service
+    - remote
   - title: The call log
     desc: Keep every call on disk, mark answers right or wrong, and turn the corrections
       into rows with known answers.
@@ -82,6 +108,12 @@ quartodoc:
     - calls
     - rate
     - rated
+    - split
+    - prune_calls
+  - title: Long runs
+    desc: Replies kept on disk, and a check on a judge's evidence.
+    contents:
+    - quotes_found
   - title: Baking into weights
     desc: Train a small model that answers an AI function, then run the same function
       on it.

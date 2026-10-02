@@ -18,10 +18,15 @@ by another; they meet only here.
 | [`scores.md`](scores.md) | whether an answer is right, the score and its 95% range | `cases/scores/` |
 | [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares; its signature; which are refused; checking values against it | `cases/programs/` |
 | [`saved.md`](saved.md) | a saved program's manifest, and loading its AI functions in another language | `cases/saved/` |
-| [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views, keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps | `cases/events/` |
+| [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views (`full`, `kept`, `outside`), keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps | `cases/events/`, `cases/views/` |
+| [`replies.md`](replies.md) | the reply cache: its key, what is kept, one flight per request, its file | `cases/replies/` |
+| [`conversations.md`](conversations.md) | conversations: their records, a turn's state, where a new turn goes, what a turn is shown, helpers' memory, stopping, leases, stores | `cases/conversations/` |
+| [`tools.md`](tools.md) | tools' effects, approval rules and paths, waiting turns, keeping what may have happened, resuming a turn | `cases/tools/` |
+| [`serving.md`](serving.md) | serving a program over HTTP, and using it from elsewhere (`remote`) | |
 
 `schema/` holds JSON Schemas (draft 2020-12) for a call record, a rating
-record, a stream event, a program's interface and a saved manifest.
+record, a stream event, a program's interface, a saved manifest and a
+conversation's record.
 Every record, event and manifest an implementation writes must pass them,
 and every one in the cases does (`make.py` checks each against its schema
 as it writes it, and checks that the schemas refuse what must never be
@@ -99,6 +104,16 @@ thing it cannot do yet wait for it, and are not failures.
 | `events/` `journal-*` | a writer keeping a log in a journal that fails | every language that streams and has journals |
 | `events/` `receivers-*` | which observers and journal a tree gets from the layers around it | every language that streams and has journals |
 | `events/` `store-*` | the rules a store keeps | every language that keeps logs (stage 2), or a store written in any language |
+| `replies/` | the reply cache's key | every language with a reply cache kept on disk |
+| `conversations/` | a turn's state, the head, where a new turn goes, what a turn is shown | every language with conversations |
+| `tools/` | which tool calls a rule asks about; the refusal the model sees | every language with approvals |
+| `views/` | the outside view | every language that serves programs or shows views |
+| `context/` | a rated call's earlier turns, as a row keeps them | every language whose `rated` gives `earlier` |
+
+Stages 1.2 to 5 (2026-09-30) were built in Python first
+(`../design/10-stages-1.2-to-5-python.md`): only Python's harness reads
+`replies/`, `conversations/`, `tools/`, `views/` and `context/` today, and
+the other languages take them with each stage.
 
 Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
 `14` and `21`, `functions/12`, `content/03`, `14`, `15`, `17` and `18`,
@@ -133,6 +148,10 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `not-recorded`, `missing-call`, `unknown-key`, `saw-cycle`, `not-kept`, `turn-invalid` (lmcc's word) | [calls.md](calls.md), *Saw* | what a call saw cannot be known, or shown again |
 | `journal-policy`, `journal-scope`, `journal-barrier`, `journal-end` | [streaming.md](streaming.md) | the codes of `JournalError`: a tree whose layers break the journal policy (a program's own setting replacing or removing a host's journal; any closer layer replacing, weakening or removing a required one), refused before it runs; a required journal set only inside a tree, refused when the call inside starts; a call stopped at a required journal's barrier; a call whose end the journal did not confirm |
 | `event-malformed`, `event-conflict`, `event-gap`, `event-after-end`, `event-start`, `event-unknown` | [streaming.md](streaming.md) | a store refusing an append, a claim or a read |
+| `conversation-id`, `conversation-content`, `conversation-opaque`, `conversation-signature`, `conversation-busy`, `conversation-nested`, `turn-unknown`, `turn-state`, `turn-unfinished`, `store-conflict` | [conversations.md](conversations.md) | a conversation or a turn refusing what was asked |
+| `turn-waiting` | [tools.md](tools.md) | a turn stopped to wait for a person's answer (`Waiting`) |
+| `approval-required` | [tools.md](tools.md) | a tool call a rule asks about, and nobody to ask (a plain call) |
+| `serve-opaque`, `serve-keys` | [serving.md](serving.md) | a program that cannot be served as asked |
 
 Each rule of "Rows with known answers" was broken on purpose in the
 Python implementation (thirteen breaks: the earliest rating instead of

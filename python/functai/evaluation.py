@@ -27,6 +27,7 @@ import json
 import math
 import os
 import secrets
+import threading
 import time
 import typing
 import warnings
@@ -98,11 +99,14 @@ class _Target:
             self.single = True
         elif isinstance(program, FunctAIModule):
             self.predictors = program.ai_functions()
-            named = [(n, p.default is inspect.Parameter.empty)
-                     for n, p in inspect.signature(program._fn).parameters.items() if p.kind not in kinds]
+            if getattr(program, "_declared", False):       # its interface, given as data: its inputs by name
+                named = [(f["name"], not f.get("optional")) for f in program.interface["inputs"]]
+            else:
+                named = [(n, p.default is inspect.Parameter.empty)
+                         for n, p in inspect.signature(program._fn).parameters.items() if p.kind not in kinds]
             self.single = False
             self.call_defaults = {**program._opt_call_defaults, **self.call_defaults}
-            if not self.predictors:
+            if not self.predictors and not hasattr(program, "_described"):     # a remote program answers itself
                 raise ValueError(f"@module {program.__name__} calls no @ai function")
         else:
             raise TypeError(f"expected an @ai function or a @module, not {type(program).__name__}")
@@ -152,10 +156,12 @@ class _Target:
                 raise ValueError(f"row {missing[0]} has no {name!r}, which {self.name} needs")
 
     def run(self, row: Mapping[str, Any]) -> Prediction:
+        from .conversations import replaying
         inputs = self.inputs_of(row)
-        if self.single:
-            return self.program._invoke((), inputs, full=True)
-        return Prediction({"result": self.program(**{**self.call_defaults, **inputs})})
+        with replaying(row, self.program):        # a row from a conversation: asked with its earlier turns
+            if self.single:
+                return self.program._invoke((), inputs, full=True)
+            return Prediction({"result": self.program(**{**self.call_defaults, **inputs})})
 
 
 @contextlib.contextmanager
@@ -180,6 +186,73 @@ def tracing() -> Iterator[List[Tuple[FunctAIFunc, Prediction]]]:
         yield trace
     finally:
         _TRACE.reset(token)
+
+
+class Progress:
+    """A line on stderr, updated in place: rows done, errors, tokens, time
+    left (``map(..., progress=True)``)."""
+
+    def __init__(self, total: int, name: str, *, stream: Any = None):
+        import sys
+        self.total = total
+        self.name = name
+        self.out = stream or sys.stderr
+        self.done = 0
+        self.errors = 0
+        self.tokens = 0
+        self.t0 = time.perf_counter()
+        self.shown = 0.0
+        self.lock = threading.Lock()
+
+    def step(self, run: "RowRun") -> None:
+        with self.lock:
+            self.done += 1
+            self.errors += run.error is not None
+            self.tokens += int(run.usage.get("total_tokens") or 0)
+            now = time.perf_counter()
+            if now - self.shown >= 0.2 or self.done == self.total:
+                self.shown = now
+                self._write()
+
+    def line(self) -> str:
+        elapsed = time.perf_counter() - self.t0
+        left = elapsed / self.done * (self.total - self.done) if self.done else None
+        parts = [f"{self.name}: {self.done}/{self.total} rows"]
+        if self.errors:
+            parts.append(f"{self.errors} error{'s' if self.errors != 1 else ''}")
+        parts.append(f"{self.tokens:,} tokens")
+        parts.append(f"{_duration(elapsed)} so far" if self.done == self.total or left is None
+                     else f"about {_duration(left)} left")
+        return " · ".join(parts)
+
+    def _write(self) -> None:
+        try:
+            self.out.write("\r" + self.line() + ("\n" if self.done == self.total else ""))
+            self.out.flush()
+        except Exception:  # noqa: BLE001 — a progress line never fails a run
+            pass
+
+
+def _duration(seconds: float) -> str:
+    s = int(round(seconds))
+    if s < 60:
+        return f"{s}s"
+    if s < 3600:
+        return f"{s // 60}m{s % 60:02d}s"
+    return f"{s // 3600}h{(s % 3600) // 60:02d}m"
+
+
+def show_progress(setting: Any) -> bool:
+    """``progress=None``: on when stderr is a terminal, or in a notebook."""
+    if setting is not None:
+        return bool(setting)
+    import sys
+    try:
+        if sys.stderr.isatty():
+            return True
+    except Exception:  # noqa: BLE001
+        pass
+    return "ipykernel" in sys.modules
 
 
 def parallel(fn: Callable, items: Sequence[Any], num_threads: int) -> List[Any]:
@@ -718,7 +791,8 @@ def _check_names(target: _Target, rows: Sequence[Mapping[str, Any]], metrics: Se
 
 def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = None, num_threads: int = 1,
              max_errors: Optional[int] = None, log: "str | os.PathLike | None" = None,
-             call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None) -> Evaluation:
+             call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None,
+             threads: Optional[int] = None, progress: Optional[bool] = False) -> Evaluation:
     '''Run a program on rows with known answers, and score it.
 
     Every row runs (in parallel with ``num_threads``); a row that fails
@@ -747,8 +821,12 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
         an AI function acting as a judge, or several of these in a list or a
         dict ``{name: metric}``. Default: exact match on the outputs the data
         has columns for (case and spacing ignored).
-    num_threads : int
-        How many rows run at once.
+    num_threads, threads : int
+        How many rows run at once (``threads`` is the same, by the name
+        ``map`` and ``vectorize`` use).
+    progress : bool, optional
+        A line on stderr, updated as rows finish (None: when stderr is a
+        terminal or in a notebook). Off by default here.
     max_errors : int, optional
         Stop and raise when more rows than this fail.
     log : folder, optional
@@ -788,6 +866,8 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
     ev.table.filter(col.exact_match == 0).select(col.message, col.category, col.pred_result)
     ```
     '''
+    if threads is not None:
+        num_threads = threads
     target = _Target(program, call_defaults=call_defaults)
     rows = rows_of(data)
     target.check(rows)
@@ -798,10 +878,13 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
     row_metrics = [m for m in metrics if m.fn is not None]
 
     run_id = _new_run_id(target.name)
+    meter = Progress(len(rows), target.name) if show_progress(progress) else None
 
     def one(row: Dict[str, Any]) -> Tuple[RowRun, Dict[str, Optional[float]]]:
         with with_states(states):
             run = run_row(target, row)
+        if meter is not None:
+            meter.step(run)
         vals: Dict[str, Optional[float]] = {}
         for m in row_metrics:
             try:

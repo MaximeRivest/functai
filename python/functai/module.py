@@ -29,7 +29,7 @@ R = TypeVar("R", covariant=True)
 
 # The settings a module takes for itself: where its calls go and what is kept
 # of them. Model settings belong to the AI functions it calls (or to a block).
-MODULE_SETTINGS = ("log_calls", "log_content", "caller", "observers", "journal")
+MODULE_SETTINGS = ("log_calls", "log_content", "caller", "observers", "journal", "approve")
 
 
 def _reachable_ai_functions(fn: Callable[..., Any]) -> List[FunctAIFunc]:
@@ -55,7 +55,8 @@ class FunctAIModule(Generic[P, R]):
     (``InterfaceError``, which is also a ``TypeError``)."""
 
     def __init__(self, fn: Callable[P, R], *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-                 outputs: Optional[Mapping[str, Any]] = None, _namespace: Optional[Dict[str, Any]] = None,
+                 outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None,
+                 _namespace: Optional[Dict[str, Any]] = None,
                  _output_fields: Optional[List[Dict[str, Any]]] = None, **settings: Any):
         if not callable(fn):
             raise TypeError("@module must wrap a callable function")
@@ -65,7 +66,10 @@ class FunctAIModule(Generic[P, R]):
         self.__doc__ = fn.__doc__
         self.__wrapped__ = fn
         self._globals = getattr(fn, "__globals__", {})
-        self.history: List[Any] = []
+        # the AI function whose answer, as it is written, is this module's (contract/streaming.md, *Views*)
+        if answer_from is not None and not isinstance(answer_from, FunctAIFunc):
+            raise TypeError(f"@module on {self.__name__}: answer_from is an AI function it calls")
+        self._answer_from = answer_from
         self._opt_call_defaults: Dict[str, Any] = {}
         self._vectorized: Dict[Any, Any] = {}
         # the improved states of the AI functions it calls, for an improved copy
@@ -152,6 +156,14 @@ class FunctAIModule(Generic[P, R]):
         return annotation one output, ``result`` (``outputs={...}`` declares
         several). Or declared whole with ``interface={...}``."""
         return copy.deepcopy(self._derive())
+
+    def _saw(self) -> Tuple[List[Dict[str, Any]], Any]:
+        """What a call is given as the conversation so far (its ``saw``): the
+        earlier turns of the conversation it answers in, or of the row being
+        asked again; ``[]`` otherwise."""
+        from .conversations import module_saw
+        found = module_saw(self)
+        return (found or []), None
 
     def _fields(self) -> Tuple[List[str], List[str], List[str]]:
         iface = self._derive()
@@ -284,7 +296,7 @@ class FunctAIModule(Generic[P, R]):
         copy = object.__new__(FunctAIModule)
         copy.__dict__.update(self.__dict__)
         copy._states = {**self._states, **states}
-        copy.history, copy._vectorized = [], {}
+        copy._vectorized = {}
         return copy
 
     def __call__(self, *args: P.args, **kwargs: P.kwargs) -> R:
@@ -363,11 +375,14 @@ class FunctAIModule(Generic[P, R]):
 
     # ----- optimization -----
 
-    def map(self, data: Any, *, num_threads: int = 1, call_defaults: Optional[Dict[str, Any]] = None):
+    def map(self, data: Any, *, threads: Optional[int] = None, num_threads: Optional[int] = None,
+            call_defaults: Optional[Dict[str, Any]] = None, progress: Optional[bool] = None):
         """Run on every row of a table; returns the rows with ``pred_result``
         (what the module returned) as a dpyr dataframe. See ``FunctAIFunc.map``."""
-        from .evaluation import evaluate
-        return evaluate(self, data, (), num_threads=num_threads, call_defaults=call_defaults).table
+        from .evaluation import evaluate, show_progress
+        n = threads if threads is not None else num_threads if num_threads is not None else 1
+        return evaluate(self, data, (), num_threads=n, call_defaults=call_defaults,
+                        progress=show_progress(progress)).table
 
     def opt(self, data: Any, *, metric: Any = None, optimizer: Any = None,
             call_defaults: Optional[Dict[str, Any]] = None, valset: Any = None,
@@ -405,10 +420,16 @@ class FunctAIModule(Generic[P, R]):
                                   for name, state in (data.get("functions") or {}).items() if name in fns})
 
     def _invoke_original(self, *args, **kwargs):
-        out = self._fn(*args, **kwargs)
-        self.history.append({"args": args, "kwargs": kwargs, "output": out})
-        del self.history[:-100]
-        return out
+        return self._fn(*args, **kwargs)
+
+    def conversation(self, id: Optional[str] = None, *, store: Any = None, context: Any = None,
+                     remembers: Optional[Mapping[Any, Any]] = None, sends: str = "queue", **settings: Any) -> Any:
+        """A conversation with this module: each call a turn, kept in ``store``;
+        ``remembers={helper: "conversation"}`` gives a helper its own earlier
+        calls (helpers remember nothing otherwise); ``functai.earlier()`` in
+        its code is the conversation so far. See ``functai.conversations.Conversation``."""
+        from .conversations import Conversation
+        return Conversation(self, id, store=store, context=context, remembers=remembers, sends=sends, **settings)
 
 
 def _refuse_positional_only(signature: inspect.Signature, where: str) -> None:
@@ -426,7 +447,7 @@ def module(fn: Callable[P, R], /) -> FunctAIModule[P, R]: ...
 
 @overload
 def module(fn: None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-           outputs: Optional[Mapping[str, Any]] = None, **settings: Any
+           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, **settings: Any
            ) -> Callable[[Callable[P, R]], FunctAIModule[P, R]]:
     ...
 
@@ -447,7 +468,7 @@ def _caller_namespace(depth: int) -> Optional[Dict[str, Any]]:
 
 
 def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-           outputs: Optional[Mapping[str, Any]] = None, **settings: Any) -> Any:
+           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, **settings: Any) -> Any:
     '''Make a Python function that calls AI functions into one program.
 
     The body is ordinary Python: loops, ifs, helpers, several AI functions.
@@ -476,6 +497,10 @@ def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), inter
     interface : dict, optional
         The whole interface as data (contract/programs.md), instead of
         deriving it; the code is then called with the inputs by keyword.
+    answer_from : AI function, optional
+        The AI function whose answer, as it is written, is this module's
+        answer: a view that shows only the module's boundary (a served
+        program's caller) shows that text as the module's.
     log_calls, log_content, caller, observers, journal
         The call log and receiver settings, for this module's calls (as for
         ``@ai``). ``log_content={"transcript": False}`` keeps an input out of
@@ -515,7 +540,7 @@ def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), inter
     if fn is None:
         def decorate(real_fn: Callable[..., Any]) -> FunctAIModule:
             return FunctAIModule(real_fn, requires=requires, interface=interface, outputs=outputs,
-                                 _namespace=_caller_namespace(1), **settings)
+                                 answer_from=answer_from, _namespace=_caller_namespace(1), **settings)
         return decorate
-    return FunctAIModule(fn, requires=requires, interface=interface, outputs=outputs,
+    return FunctAIModule(fn, requires=requires, interface=interface, outputs=outputs, answer_from=answer_from,
                          _namespace=_caller_namespace(1), **settings)

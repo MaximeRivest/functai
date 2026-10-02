@@ -57,6 +57,11 @@ def _envelope(**kw: Any) -> Any:
     return dataclasses.field(kw_only=True, **kw)
 
 
+def _optional() -> Any:
+    """A key written only when it has a value (a tool invocation's number)."""
+    return dataclasses.field(default=None, kw_only=True, metadata={"omit_none": True})
+
+
 @dataclasses.dataclass(frozen=True)
 class Event:
     """Something that happened in a call tree (contract/streaming.md): ``call``
@@ -97,6 +102,8 @@ class Event:
         for f in dataclasses.fields(self):
             if f.name in _ENVELOPE or not f.metadata.get("json", True):
                 continue
+            if f.metadata.get("omit_none") and getattr(self, f.name) is None:
+                continue
             if not content and self._dropped(f.name, keep or {}, program):
                 continue
             out[f.name] = self._json(f.name, getattr(self, f.name), None if content else (keep or {}))
@@ -125,6 +132,7 @@ class Started(Event):
     program: Optional[Dict[str, Any]] = None
     content: bool = True
     saw: Any = ()
+    invocation: Optional[int] = _optional()      # a call made inside a tool: that tool call's number in its call
     kind = "started"
 
     def _json(self, name, value, keep=None):
@@ -175,10 +183,13 @@ class Thinking(Event):
 
 @dataclasses.dataclass(frozen=True)
 class ToolCall(Event):
-    """The model asked for a tool (shown once the request is complete)."""
+    """The model asked for a tool (shown once the request is complete).
+    ``invocation``: its number among the call's tool calls (1, 2, … across
+    every step: lmcc's ids repeat across replies)."""
     id: str
     name: str
     input: Any
+    invocation: Optional[int] = _optional()
     kind = "tool_call"
 
     def _dropped(self, name, keep, program):
@@ -194,6 +205,7 @@ class ToolResult(Event):
     id: str
     name: str
     output: str
+    invocation: Optional[int] = _optional()
     kind = "tool_result"
 
     def _dropped(self, name, keep, program):
@@ -238,7 +250,46 @@ class Failed(Event):
         return calllog._error(value, keep is None) if name == "error" else value
 
 
-_KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed)}
+@dataclasses.dataclass(frozen=True)
+class Approval(Event):
+    """A tool call waits for a person's answer (contract/tools.md): ``id`` and
+    ``invocation`` name the tool call, ``input`` what the model asked it,
+    ``effects`` what the tool says it does, ``path`` its approval path
+    (``support/answer/refund``), ``to`` who is asked (``"owner"`` or
+    ``"caller"``)."""
+    id: str
+    invocation: int
+    name: str
+    input: Any
+    effects: Optional[str]
+    path: str
+    to: str = "owner"
+    kind = "approval"
+
+    def _dropped(self, name, keep, program):
+        return name == "input"
+
+    def _json(self, name, value, keep=None):
+        return calllog.to_json(value)[0] if name == "input" else value
+
+
+@dataclasses.dataclass(frozen=True)
+class Approved(Event):
+    """The answer to an approval: ``verdict`` ``"yes"`` or ``"no"``, ``by``
+    whom (or null), and ``reason`` (a refusal's, told to the model)."""
+    id: str
+    invocation: int
+    verdict: str
+    by: Optional[str] = None
+    reason: Optional[str] = _optional()
+    kind = "approved"
+
+    def _dropped(self, name, keep, program):
+        return name == "reason"
+
+
+_KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed,
+                               Approval, Approved)}
 
 
 def make_event(kind: str, **fields: Any) -> Event:
@@ -623,6 +674,7 @@ class Stream:
         self._root: Optional[str] = None
         self._answers_for: Dict[str, str] = {}
         self._programs: Dict[str, Any] = {}              # call → its program
+        self._keeps: Dict[str, Any] = {}                 # call → (which fields its log keeps, its program object)
         self._answer_names: Dict[str, Optional[str]] = {}   # call → the name of its answer
         self._fields: Dict[str, Dict[str, List[str]]] = {}  # call → its fields' pieces in its latest request
         self._value: Any = _NOTHING
@@ -670,6 +722,7 @@ class Stream:
                 if self._root is None:
                     self._root = event.call
                 self._programs[event.call] = call.program
+                self._keeps[event.call] = (call.keep, call.info)
                 self._answer_names[event.call] = call.answer if call.answer is not None else (
                     call.program._spec().main if hasattr(call.program, "_spec") else None)
                 self._fields[event.call] = {}
@@ -715,14 +768,50 @@ class Stream:
                             f"Iterate s.events(), or s.text_of(fn) for one AI function's answer")
         return self._cursor(lambda e: e.text if self._is_answer_text(e) else _NOTHING)
 
-    def events(self) -> "_Cursor":
+    def events(self, view: Optional[str] = None) -> "_Cursor":
         """Every event of the call and of the calls inside it, in order:
         ``Started``, ``Request``, ``Text``, ``Thinking``, ``ToolCall``,
-        ``ToolResult``, ``Retry``, ``Done``, ``Failed`` (``functai.streaming``).
-        Works with ``for`` and ``async for``; each event has ``.kind``,
-        ``.position`` (its place in its tree's log) and ``.to_dict()`` (the
-        contract's JSON, format 2)."""
-        return self._cursor(lambda e: e)
+        ``ToolResult``, ``Retry``, ``Done``, ``Failed``, ``Approval``,
+        ``Approved`` (``functai.streaming``). Works with ``for`` and ``async
+        for``; each event has ``.kind``, ``.position`` (its place in its
+        tree's log) and ``.to_dict()`` (the contract's JSON, format 2).
+
+        ``view``: the events as one kind of reader may see them, as the
+        contract's JSON (what a server sends): ``"kept"`` (what
+        ``log_content`` lets be kept) or ``"outside"`` (a caller who sees
+        only the program's boundary: its answer's text, approvals addressed
+        to it, its end). See ``functai.views``."""
+        if view is None or view == "full":
+            return self._cursor(lambda e: e)
+        from . import eventlog, views
+        v = views.View(view, answer_from=getattr(self.program, "_answer_from", None))
+
+        def keep(e: Event) -> Any:
+            if view == "kept":
+                held = self._keeps.get(e.call)
+                if held is None or held[0] is None:
+                    return _NOTHING
+                data = e.to_dict(content=eventlog.whole(held[0]), keep=held[0], program=held[1])
+                data = eventlog.kept_event(data, held[0], held[1])
+                if data is None:
+                    return _NOTHING
+            else:
+                data = e.to_dict()
+            shown = v.apply(data)
+            return _NOTHING if shown is None else shown
+        return self._cursor(keep)
+
+    def approve(self, approval: Any = None, *, by: Optional[str] = None) -> None:
+        """Say yes to a tool call this stream's call waits for (``approve`` is
+        a rule and no function answers: the call waits here). ``approval``:
+        an ``Approval`` event, its invocation number, or None for the only one."""
+        from .conversations import _answer_here
+        _answer_here(self, approval, True, None, by)
+
+    def deny(self, approval: Any = None, reason: Optional[str] = None, *, by: Optional[str] = None) -> None:
+        """Say no: the model is told the person did not allow it (and why)."""
+        from .conversations import _answer_here
+        _answer_here(self, approval, False, reason, by)
 
     def text_of(self, fn: Any) -> "_Cursor":
         """The answer's text of every call of ``fn`` inside this stream, as it
@@ -1032,4 +1121,4 @@ def stream(program: Any, args: tuple, kwargs: Dict[str, Any]) -> Stream:
 
 
 __all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "ToolCall", "ToolResult",
-           "Retry", "Done", "Failed", "partial_json"]
+           "Retry", "Done", "Failed", "Approval", "Approved", "partial_json"]

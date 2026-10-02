@@ -1,0 +1,29 @@
+{
+ "description": "Which tool calls this rule asks a person about (a function is asked what \"changes\" asks; a tool that says nothing counts as \"changes\"; a list names tools or approval paths, or path endings).",
+ "kind": "asks",
+ "rule": "function",
+ "approvals": [
+  {
+   "name": "refund",
+   "path": "support/answer/refund",
+   "effects": "changes"
+  },
+  {
+   "name": "order_status",
+   "path": "support/answer/order_status",
+   "effects": "reads"
+  },
+  {
+   "name": "send_email",
+   "path": "support/send_email",
+   "effects": null
+  }
+ ],
+ "expect": {
+  "asks": [
+   true,
+   false,
+   true
+  ]
+ }
+}

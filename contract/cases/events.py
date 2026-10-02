@@ -934,7 +934,7 @@ def a_later_kind(events: list, index: int, **extra) -> list:
     for k in list(e):
         if k not in ENVELOPE:
             del e[k]
-    e.update(kind="approval", asked="May I cancel order B-2210?", **extra)
+    e.update(kind="handoff", asked="May a person take over order B-2210?", **extra)
     out = copy.deepcopy(events[:index]) + [e] + copy.deepcopy(events[index:])
     for i, x in enumerate(out):
         x["seq"] = i + 1

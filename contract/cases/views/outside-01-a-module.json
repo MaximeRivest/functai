@@ -1,0 +1,423 @@
+{
+ "description": "A module's boundary: its start (the program named without its file), its end, and an approval addressed to the caller. Its helpers' answers, thinking and tool calls are never shown.",
+ "kind": "view",
+ "view": "outside",
+ "answer_from": null,
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "support",
+   "parent": null,
+   "root": "01926d00-0064-7000-8000-000000000000",
+   "program": {
+    "name": "support",
+    "kind": "module",
+    "module": "shop",
+    "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result",
+    "file": "/srv/shop/support.py",
+    "line": 12
+   },
+   "inputs": {
+    "message": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0065-7000-8000-000000000000",
+   "function": "topic",
+   "parent": "01926d00-0064-7000-8000-000000000000",
+   "root": "01926d00-0064-7000-8000-000000000000",
+   "program": {
+    "name": "topic",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210?"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0065-7000-8000-000000000000",
+   "function": "topic",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "thinking",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0065-7000-8000-000000000000",
+   "function": "topic",
+   "text": "shipping, surely"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0065-7000-8000-000000000000",
+   "function": "topic",
+   "field": "result",
+   "answer": true,
+   "text": "shipping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0065-7000-8000-000000000000",
+   "function": "topic",
+   "value": "shipping"
+  },
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "parent": "01926d00-0064-7000-8000-000000000000",
+   "root": "01926d00-0064-7000-8000-000000000000",
+   "program": {
+    "name": "answer",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "signature": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "answer": "result"
+   },
+   "inputs": {
+    "message": "Where is B-2210?",
+    "topic": "shipping"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": {
+    "writer": 1,
+    "seq": 8
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "id": "c1",
+   "name": "refund",
+   "input": {
+    "order": "B-2210"
+   },
+   "invocation": 1
+  },
+  {
+   "functai_event": 2,
+   "kind": "approval",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 10,
+   "after": {
+    "writer": 1,
+    "seq": 9
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "id": "c1",
+   "invocation": 1,
+   "name": "refund",
+   "input": {
+    "order": "B-2210"
+   },
+   "effects": "changes",
+   "path": "support/answer/refund",
+   "to": "caller"
+  },
+  {
+   "functai_event": 2,
+   "kind": "approved",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 11,
+   "after": {
+    "writer": 1,
+    "seq": 10
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "id": "c1",
+   "invocation": 1,
+   "verdict": "yes",
+   "by": "ana",
+   "reason": null
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 12,
+   "after": {
+    "writer": 1,
+    "seq": 11
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "id": "c1",
+   "name": "refund",
+   "output": "refunded",
+   "invocation": 1
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 13,
+   "after": {
+    "writer": 1,
+    "seq": 12
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 14,
+   "after": {
+    "writer": 1,
+    "seq": 13
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "field": "result",
+   "answer": true,
+   "text": "Refunded: "
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 15,
+   "after": {
+    "writer": 1,
+    "seq": 14
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "field": "result",
+   "answer": true,
+   "text": "it is in Leeds."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 16,
+   "after": {
+    "writer": 1,
+    "seq": 15
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0066-7000-8000-000000000000",
+   "function": "answer",
+   "value": "Refunded: it is in Leeds."
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 17,
+   "after": {
+    "writer": 1,
+    "seq": 16
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "support",
+   "value": "Refunded: it is in Leeds."
+  }
+ ],
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "support",
+    "parent": null,
+    "root": "01926d00-0064-7000-8000-000000000000",
+    "program": {
+     "name": "support",
+     "kind": "module",
+     "module": "shop",
+     "version": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "interface": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "answer": "result"
+    },
+    "inputs": {
+     "message": "Where is B-2210?"
+    },
+    "content": true,
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "approval",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 10,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "support",
+    "id": "c1",
+    "invocation": 1,
+    "name": "refund",
+    "input": {
+     "order": "B-2210"
+    },
+    "effects": "changes",
+    "path": "support/answer/refund",
+    "to": "caller"
+   },
+   {
+    "functai_event": 2,
+    "kind": "approved",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 11,
+    "after": {
+     "writer": 1,
+     "seq": 10
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "support",
+    "id": "c1",
+    "invocation": 1,
+    "verdict": "yes",
+    "by": "ana",
+    "reason": null
+   },
+   {
+    "functai_event": 2,
+    "kind": "done",
+    "tree": "01926d00-0064-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 17,
+    "after": {
+     "writer": 1,
+     "seq": 11
+    },
+    "at": "2026-09-30T10:00:00.000000Z",
+    "call": "01926d00-0064-7000-8000-000000000000",
+    "function": "support",
+    "value": "Refunded: it is in Leeds."
+   }
+  ]
+ }
+}

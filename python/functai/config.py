@@ -45,16 +45,19 @@ DEFAULTS: Dict[str, Any] = {
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
     "on_unreadable": "raise",   # "raise" | "record": keep an unreadable reply as a turn with no values
                                 # (prediction.refusal says why); for rollouts that must go on
-    "cache_replies": False,     # True: reuse the reply to an identical request (in memory; unreadable replies are not kept); lm15's `cache` is prompt caching
+    "cache_replies": False,     # True (memory) | "disk" | a folder or .sqlite path | an object with get/put: reuse the
+                                # reply to an identical request (only replies that were read are kept; one flight per
+                                # request). lm15's `cache` is prompt caching, another thing
+    "replicate": 0,             # the n-th independent answer to the same request: part of the reply cache's key
 
     # escalation: when the model is less sure than escalate_below (its probability for
     # its own answer), escalate_to answers instead (a model name, a baked model, an AI function)
     "escalate_to": None,
     "escalate_below": None,     # default 0.9 when escalate_to is set
 
-    # memory
-    "stateful": False,
-    "state_window": 5,
+    # tools that ask first (contract/tools.md): None (never ask) | a function given each Approval (True, False,
+    # or a reason to refuse) | a rule: "changes", "all", or a list of tool names and approval paths
+    "approve": None,
 
     # prompt cosmetics
     "include_fn_name_in_instructions": True,
@@ -132,6 +135,15 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
                 or settings.get("caller") is not None:
             from . import calllog
             calllog.check_settings(settings)
+        if settings.get("cache_replies") is not None:
+            from . import replies
+            replies.check_setting(settings["cache_replies"])
+        rep = settings.get("replicate")
+        if rep is not None and (not isinstance(rep, int) or isinstance(rep, bool) or rep < 0):
+            raise ValueError(f"replicate is a whole number of at least 0, not {rep!r}")
+        if settings.get("approve") is not None:
+            from . import tools
+            tools.check_approve(settings["approve"])
         if settings.get("program_observers") not in (None, True, False):
             raise TypeError(f"program_observers is True or False, not {settings['program_observers']!r}")
         if settings.get("observers") is not None or settings.get("journal") is not None:
@@ -180,8 +192,9 @@ class configure:
     **settings
         Any setting ``@ai`` takes: ``lm``, ``temperature``, ``max_tokens``,
         ``api_key``, ``base_url``, ``auth``, ``client``, ``adapter``,
-        ``module``, ``tools``, ``max_steps``, ``stateful``, ``retries``,
-        ``api_retries``, ``cache_replies``, ``teacher_lm``, ``debug``...
+        ``module``, ``tools``, ``max_steps``, ``approve``, ``retries``,
+        ``api_retries``, ``cache_replies`` (``"disk"`` keeps replies across runs), ``replicate``,
+        ``teacher_lm``, ``debug``...
         An unknown setting raises ``TypeError``. The call log:
         ``log_calls`` (``True``, or a folder: keep every call),
         ``log_content`` (``False``, or ``{"transcript": False}``: what the

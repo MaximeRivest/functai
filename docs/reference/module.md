@@ -12,7 +12,7 @@ rat:
 ``@module``: a plain Python function that calls @ai functions, optimized as one program.
 
     @module
-    def research(claim: str, hops: int = 2):
+    def research(claim: str, hops: int = 2) -> list[str]:
         facts = []
         for _ in range(hops):
             query = generate_query(claim, facts)
@@ -20,6 +20,7 @@ rat:
         return facts
 
     better = research.opt(rows, metric=...)   # a copy with generate_query and append_notes tuned together
+    research.interface                        # what it takes and gives, as data (checked on every call)
 
 The metric sees ``Prediction(result=<what the module returned>)``.
 
@@ -27,26 +28,44 @@ The metric sees ``Prediction(result=<what the module returned>)``.
 
 | Name | Description |
 | --- | --- |
-| [FunctAIModule](#functai.module.FunctAIModule) | Callable wrapper for an orchestrator function that calls @ai functions. |
+| [FunctAIModule](#functai.module.FunctAIModule) | A Python function that calls AI functions, as one program: called, |
 
 ### FunctAIModule { #functai.module.FunctAIModule }
 
 ```{.python .no-run}
-module.FunctAIModule(fn, *, requires=())
+module.FunctAIModule(
+    fn,
+    *,
+    requires=(),
+    interface=None,
+    outputs=None,
+    answer_from=None,
+    _namespace=None,
+    _output_fields=None,
+    **settings,
+)
 ```
 
-Callable wrapper for an orchestrator function that calls @ai functions.
+A Python function that calls AI functions, as one program: called,
+streamed, evaluated, optimized and saved as a whole. Build with ``@module``.
+
+Its ``interface`` (what it takes and gives, as data) is derived and
+checked when it is defined, and every call is checked against it: its
+inputs before its code runs, its outputs when it returns
+(``InterfaceError``, which is also a ``TypeError``).
 
 #### Attributes
 
 | Name | Description |
 | --- | --- |
+| `interface` | What the module takes and gives, as data (contract/programs.md). |
 | `version` | The module's version: a fingerprint of its code and its AI functions. |
 
 #### Methods
 
 | Name | Description |
 | --- | --- |
+| [conversation](#functai.module.FunctAIModule.conversation) | A conversation with this module: each call a turn, kept in ``store``; |
 | [load](#functai.module.FunctAIModule.load) | A copy running with the states a ``save`` wrote. |
 | [map](#functai.module.FunctAIModule.map) | Run on every row of a table; returns the rows with ``pred_result`` |
 | [named_ai_functions](#functai.module.FunctAIModule.named_ai_functions) | Every @ai function this module reaches: called by name, under another |
@@ -55,6 +74,25 @@ Callable wrapper for an orchestrator function that calls @ai functions.
 | [state](#functai.module.FunctAIModule.state) | The instruction and demos each AI function runs with in this module, by name. |
 | [stream](#functai.module.FunctAIModule.stream) | Call the module and watch every AI function it calls, as it works. |
 | [vectorize](#functai.module.FunctAIModule.vectorize) | This module as a dpyr row function (see ``FunctAIFunc.vectorize``); |
+
+##### conversation { #functai.module.FunctAIModule.conversation }
+
+```{.python .no-run}
+module.FunctAIModule.conversation(
+    id=None,
+    *,
+    store=None,
+    context=None,
+    remembers=None,
+    sends='queue',
+    **settings,
+)
+```
+
+A conversation with this module: each call a turn, kept in ``store``;
+``remembers={helper: "conversation"}`` gives a helper its own earlier
+calls (helpers remember nothing otherwise); ``functai.earlier()`` in
+its code is the conversation so far. See ``functai.conversations.Conversation``.
 
 ##### load { #functai.module.FunctAIModule.load }
 
@@ -67,7 +105,14 @@ A copy running with the states a ``save`` wrote.
 ##### map { #functai.module.FunctAIModule.map }
 
 ```{.python .no-run}
-module.FunctAIModule.map(data, *, num_threads=1, call_defaults=None)
+module.FunctAIModule.map(
+    data,
+    *,
+    threads=None,
+    num_threads=None,
+    call_defaults=None,
+    progress=None,
+)
 ```
 
 Run on every row of a table; returns the rows with ``pred_result``
@@ -151,7 +196,16 @@ its column type is the module's return annotation, or ``dtype``.
 ### module { #functai.module.module }
 
 ```{.python .no-run}
-module.module(fn=None, *, requires=())
+module.module(
+    fn=None,
+    /,
+    *,
+    requires=(),
+    interface=None,
+    outputs=None,
+    answer_from=None,
+    **settings,
+)
 ```
 
 Make a Python function that calls AI functions into one program.
@@ -161,11 +215,28 @@ As a module it can be evaluated, optimized (each AI function inside
 learns from the runs the metric accepts), run on a table, and saved as
 one program. Use it bare (``@module``) or with requirements.
 
+Its interface (``blurb.interface``) is derived from the function and
+checked when the module is defined (a type its annotations name must be
+defined by then), and every call is checked against it: inputs before
+the code runs, outputs when it returns (``InterfaceError``, a
+``TypeError``: a missing or unknown input names the field). ``Any``,
+``object`` or no annotation is an opaque field (any value, never
+checked, for data frames and the like); ``functai.JSON`` is any JSON
+value; a parameter with a default is optional.
+
 #### Parameters {.doc-section .doc-section-parameters}
 
-| Name     | Type        | Description                                                                                                | Default   |
-|----------|-------------|------------------------------------------------------------------------------------------------------------|-----------|
-| requires | list of str | Packages the program needs that functai cannot see from the code (``["numpy>=2"]``), for ``functai.save``. | `()`      |
+| Name        | Type        | Description                                                                                                                                                                        | Default    |
+|-------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| requires    | list of str | Packages the program needs that functai cannot see from the code (``["numpy>=2"]``), for ``functai.save``.                                                                         | `()`       |
+| outputs     | dict        | Several outputs, by name and type: ``outputs={"team": str, "minutes": int, "result": Reply}``; the code returns a dict of them. The last is the answer.                            | `None`     |
+| interface   | dict        | The whole interface as data (contract/programs.md), instead of deriving it; the code is then called with the inputs by keyword.                                                    | `None`     |
+| answer_from | AI function | The AI function whose answer, as it is written, is this module's answer: a view that shows only the module's boundary (a served program's caller) shows that text as the module's. | `None`     |
+| log_calls   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
+| log_content |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
+| caller      |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
+| observers   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
+| journal     |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
 
 #### Returns {.doc-section .doc-section-returns}
 

@@ -55,12 +55,17 @@ from typing import (Any, Callable, Deque, Dict, Iterable, List, Literal, Optiona
 from .errors import EventRefused, JournalError
 
 FORMAT = 2
-KINDS = ("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed")
+KINDS = ("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed",
+         "approval", "approved")
 ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
-KEYS = {"started": ("parent", "root", "program", "inputs", "content", "omitted", "saw"),
+KEYS = {"started": ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"),
         "request": ("request", "model"), "text": ("field", "answer", "text"), "thinking": ("text",),
-        "tool_call": ("id", "name", "input", "content"), "tool_result": ("id", "name", "output", "content"),
-        "retry": ("reason", "wait", "content"), "done": ("value", "content"), "failed": ("error", "content")}
+        "tool_call": ("id", "name", "input", "content", "invocation"),
+        "tool_result": ("id", "name", "output", "content", "invocation"),
+        "retry": ("reason", "wait", "content"), "done": ("value", "content"), "failed": ("error", "content"),
+        # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
+        "approval": ("id", "invocation", "name", "input", "effects", "path", "to", "content"),
+        "approved": ("id", "invocation", "verdict", "by", "reason", "content")}
 ERROR_KEYS = ("type", "message", "code")
 PROGRAM_KEYS = ("name", "kind", "module", "version", "signature", "interface", "answer", "saved", "file", "line")
 SAW_KEYS = frozenset({"call", "steps", "without", "slot", "saw_of"})
@@ -239,8 +244,10 @@ def kept_event(event: Mapping[str, Any], keep: Mapping[str, Mapping[str, bool]],
         return out if outs.get(event["field"], False) else None
     if kind == "thinking":
         return None
-    if kind == "tool_call":
+    if kind in ("tool_call", "approval"):
         out.pop("input", None)
+    elif kind == "approved":
+        out.pop("reason", None)
     elif kind == "tool_result":
         out.pop("output", None)
     elif kind == "retry":
@@ -483,6 +490,42 @@ def takes_batches(store: Any) -> bool:
     return owner("extend") <= owner("append")
 
 
+def apply_append(logs: Dict[str, List[Dict[str, Any]]], writers: Dict[str, int], e: Any,
+                 tree: Optional[str] = None) -> Answer:
+    """One append by the rules every store keeps (streaming.md, *The rules a
+    store keeps*), on ``logs`` (tree → its kept events) and ``writers`` (tree
+    → the last writer number given): ``"kept"`` (appended to ``logs``),
+    ``"duplicate"``, or ``EventRefused``. A store that keeps logs elsewhere
+    (files) loads the log, applies this, and writes what it appended."""
+    if not _is_event(e) or (tree is not None and e["tree"] != tree):
+        raise EventRefused("event-malformed", "not an event of format 2 of this log (it does not pass the "
+                                              "event schema)")
+    after = e["after"]
+    if after is not None and (e["seq"] <= after["seq"] or after["writer"] > e["writer"]):
+        raise EventRefused("event-malformed", f"event {position(e)} comes after {after}, which cannot be")
+    log = logs.setdefault(e["tree"], [])
+    if log and e["writer"] != writers.get(e["tree"], 1):
+        raise EventRefused("event-conflict", f"writer {e['writer']} does not have this log (writer "
+                                             f"{writers.get(e['tree'], 1)} does)")
+    from .calllog import canonical
+    for kept in log:
+        if kept["seq"] == e["seq"]:
+            if canonical(kept) == canonical(e):
+                return "duplicate"
+            raise EventRefused("event-conflict", f"seq {e['seq']} is kept, and holds another event")
+    if _finished(log, e["tree"]):
+        raise EventRefused("event-after-end", "the log is finished")
+    last = position(log[-1]) if log else None
+    if not _same(after, last):
+        if (after["seq"] if after else 0) > (last["seq"] if last else 0):
+            raise EventRefused("event-gap", f"events are missing before {position(e)} (the last kept is {last})")
+        raise EventRefused("event-conflict", f"the log went on another way (the last kept is {last})")
+    if not log and (e["kind"] != "started" or e["call"] != e["tree"] or e["writer"] != 1):
+        raise EventRefused("event-start", "a log starts with its outermost call's started, from writer 1")
+    log.append(copy.deepcopy(dict(e)))
+    return "kept"
+
+
 # The memory stores of this process, by identity, each held weakly (an entry goes with its store; a store
 # need not be hashable, and two equal stores are two stores): a forked child gives each fresh locks.
 _memory_stores: Dict[int, "weakref.ref[MemoryStore]"] = {}
@@ -529,33 +572,7 @@ class MemoryStore:
 
     def _append(self, logs: Dict[str, List[Dict[str, Any]]], writers: Dict[str, int], e: Any,
                 tree: Optional[str] = None) -> Answer:
-        if not _is_event(e) or (tree is not None and e["tree"] != tree):
-            raise EventRefused("event-malformed", "not an event of format 2 of this log (it does not pass the "
-                                                  "event schema)")
-        after = e["after"]
-        if after is not None and (e["seq"] <= after["seq"] or after["writer"] > e["writer"]):
-            raise EventRefused("event-malformed", f"event {position(e)} comes after {after}, which cannot be")
-        log = logs.setdefault(e["tree"], [])
-        if log and e["writer"] != writers.get(e["tree"], 1):
-            raise EventRefused("event-conflict", f"writer {e['writer']} does not have this log (writer "
-                                                 f"{writers.get(e['tree'], 1)} does)")
-        from .calllog import canonical
-        for kept in log:
-            if kept["seq"] == e["seq"]:
-                if canonical(kept) == canonical(e):
-                    return "duplicate"
-                raise EventRefused("event-conflict", f"seq {e['seq']} is kept, and holds another event")
-        if _finished(log, e["tree"]):
-            raise EventRefused("event-after-end", "the log is finished")
-        last = position(log[-1]) if log else None
-        if not _same(after, last):
-            if (after["seq"] if after else 0) > (last["seq"] if last else 0):
-                raise EventRefused("event-gap", f"events are missing before {position(e)} (the last kept is {last})")
-            raise EventRefused("event-conflict", f"the log went on another way (the last kept is {last})")
-        if not log and (e["kind"] != "started" or e["call"] != e["tree"] or e["writer"] != 1):
-            raise EventRefused("event-start", "a log starts with its outermost call's started, from writer 1")
-        log.append(copy.deepcopy(dict(e)))
-        return "kept"
+        return apply_append(logs, writers, e, tree)
 
     def append(self, event: Mapping[str, Any]) -> Answer:
         with self._lock:
@@ -1286,13 +1303,16 @@ class TreeLog:
     from the child)."""
 
     def __init__(self, tree: str, *, journal: Optional[Journal] = None, writer: int = 1,
-                 at_start: Optional[LayersAtStart] = None):
+                 at_start: Optional[LayersAtStart] = None, after: Optional[Mapping[str, int]] = None,
+                 at: str = ""):
         self.tree = tree
         self.pid = os.getpid()
         self.writer = writer
-        self.seq = 0
-        self.last: Optional[Dict[str, int]] = None
-        self.at = ""
+        # a later writer (contract/streaming.md, *Continuing a log*) numbers on from the last kept event
+        self.start_after: Optional[Dict[str, int]] = dict(after) if after is not None else None
+        self.seq = int(after["seq"]) if after is not None else 0
+        self.last: Optional[Dict[str, int]] = dict(after) if after is not None else None
+        self.at = at
         self.lock = threading.RLock()
         self.journal = journal
         self.at_start = at_start or LayersAtStart(frozenset(), _ABSENT)
@@ -1302,6 +1322,10 @@ class TreeLog:
         self.kept_stopped: Optional[str] = None
         self.ended = False                                        # the outermost call's last event was made
         self.closed = False
+        # a resumed turn replays what it did before: its events are held back until it does something new
+        # (contract/tools.md, *Resuming*); the calls it started meanwhile, still open, are shown from then on
+        self.replaying = False
+        self.held: Dict[str, Tuple[Any, Dict[str, Any]]] = {}
         if journal is not None:
             self.sender = JournalWriter(journal, name=tree[:8], on_problem=self._journal_problem)
 
@@ -1319,6 +1343,19 @@ class TreeLog:
         readers once the journal confirmed it (a required journal's last event)."""
         if self.foreign:
             return None
+        if self.replaying:
+            with self.lock:
+                if self.replaying:
+                    if kind == "started":
+                        self.held[call.id] = (call, fields)
+                        return None
+                    if kind in ("done", "failed") and call.id == self.tree:
+                        self.frontier()
+                    elif kind in ("done", "failed"):
+                        self.held.pop(call.id, None)
+                        return None
+                    else:
+                        return None
         with self.lock:
             if self.ended:
                 # a call still running after its tree's last event (a detached thread): the log is finished,
@@ -1344,6 +1381,19 @@ class TreeLog:
             self._deliver(call, event, journal_only=hold)
             return event
 
+    def frontier(self) -> None:
+        """A resumed turn does something it had not done: the calls it started
+        while replaying and that are still open are shown from here (the
+        outermost call's start is in the log already)."""
+        with self.lock:
+            if not self.replaying:
+                return
+            self.replaying = False
+            held, self.held = self.held, {}
+        for cid, (call, fields) in held.items():
+            if cid != self.tree:
+                self.emit(call, "started", **fields)
+
     def _kept(self, call: Any, event: Any) -> Any:
         """The event's kept form (None: the kept form has no such event;
         ``_FAULT``: it could not be made, and the kept form stops)."""
@@ -1368,7 +1418,7 @@ class TreeLog:
         if not readers_only and self.sender is not None:
             kept = self._kept(call, event)
             if kept is not None and kept is not _FAULT:
-                kept["after"] = self.links.get(id(self.sender))
+                kept["after"] = self.links.get(id(self.sender), self.start_after)
                 self.links[id(self.sender)] = position(kept)
                 self.sender.send(kept)
         if journal_only:
@@ -1376,8 +1426,8 @@ class TreeLog:
         pos = {"writer": event.writer, "seq": event.seq}
         for stream in call.streams:
             key = id(stream)
-            linked = event if _same(event.after, self.links.get(key)) else \
-                dataclasses.replace(event, after=self.links.get(key))
+            linked = event if _same(event.after, self.links.get(key, self.start_after)) else \
+                dataclasses.replace(event, after=self.links.get(key, self.start_after))
             self.links[key] = pos
             try:
                 stream._receive(linked, call)
@@ -1392,7 +1442,7 @@ class TreeLog:
             for o in call.observers:
                 key = id(o)
                 mine = copy.deepcopy(kept)
-                mine["after"] = self.links.get(key)
+                mine["after"] = self.links.get(key, self.start_after)
                 self.links[key] = position(mine)
                 if _is_list(o):
                     o.append(mine)
@@ -1454,6 +1504,6 @@ def _warn_once(key: Any, message: str) -> None:
     warn(key, message)
 
 
-__all__ = ["Replay", "replay", "read_after", "kept_form", "kept_event", "relink", "position", "Follower",
+__all__ = ["apply_append", "Replay", "replay", "read_after", "kept_form", "kept_event", "relink", "position", "Follower",
            "Store", "MemoryStore", "settle", "Journal", "JournalWriter", "receivers", "Receivers", "TreeLog",
            "flush", "drain", "Received", "Answer", "Status", "Settled"]

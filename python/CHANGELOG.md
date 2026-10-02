@@ -2,6 +2,69 @@
 
 ## Unreleased
 
+Stages 1.2 to 5 (`design/10-stages-1.2-to-5-python.md`), in Python first;
+the contract says each (`contract/replies.md`, `conversations.md`,
+`tools.md`, `serving.md`, and additions to `streaming.md` and `calls.md`).
+
+- **Conversations** (breaking: `stateful=`, `state_window=`, `fn.history`,
+  `fn.reset()` and `module.history` are gone). `chat = fn.conversation(
+  "alex", store="tutoring/")` is called like the function; each call is a
+  turn that sees the earlier ones (every one by default, or
+  `context=functai.last_turns(10)`, with `without=[...]` for bulky inputs).
+  `chat.turns`, `turn.saw`, `chat.render(...)` (the next request, nothing
+  sent), `chat.continue_from(turn)` (a branch: nothing is ever deleted),
+  `chat.merge(branches, fn)`. A turn is saved before its call starts
+  (`chat.stream(...).turn`), a `request_id` sent twice is one turn, two
+  sends at once queue (`sends="refuse"` or `"branch"`), a turn is stopped
+  from any process (`chat.stop(turn)`), and a turn whose process died is
+  `interrupted` (a lease), and can be resumed. Stores: this process's
+  memory (default), a folder (`functai.FolderStore`, locked across
+  processes), or any object with `append` and `read`. A stored
+  conversation refuses a program whose `log_content` drops a field
+  (`conversation-content`), and one whose outputs changed
+  (`conversation-signature`; `earlier_without=["reasoning"]` goes on after
+  turning reasoning on).
+- **Helpers inside a module's turn** remember nothing unless told:
+  `support.conversation(id, remembers={answer: "conversation"})`
+  (`"turn"`, `functai.remember("conversation", steps=True)`).
+  `functai.earlier()` is the conversation so far, as data. A conversation
+  used inside another's turn is refused unless declared (`"own"`).
+- **Tools that ask first**: `@functai.tool(effects="reads" | "changes")`;
+  `approve=` a function (asked at once) or a rule (`"changes"`, `"all"`,
+  tool names or approval paths such as `"support/answer/refund"`). A
+  refusal is shown to the model. In a conversation, a rule makes the turn
+  wait (`functai.Waiting`), and `turn.approve()` / `turn.deny()` from any
+  process resume it: every model reply and tool result it had is reused,
+  so nothing is paid for or run twice; a tool that may have run when a
+  process died is never run again on its own (`turn.resume(results=...)`
+  or `rerun=[...]`). On a stream, `s.approve()` / `s.deny()`. Tool calls
+  are numbered (`invocation`), and so are the calls a tool makes. A
+  required journal waits only before tools that change things.
+- **Views and serving**: `s.events(view="outside")` is what a caller who
+  sees only the program's boundary may see; `@module(answer_from=fn)` shows
+  a helper's answer as the module's while it is written.
+  `functai.serve(program, keys=...)` and `functai serve folder/ --lm ...`
+  serve a program (interface, OpenAPI, calls, streams, conversations,
+  approvals); `functai.Service(program).asgi` mounts it in another app.
+  `functai.remote(url, key=...)` is a served program used like a local
+  one (logged here, `program.kind` `"remote"`; the served call names the
+  caller's as its parent).
+- **Long runs**: `cache_replies="disk"` (or a path) keeps replies in one
+  SQLite file across runs and processes; only replies that were read are
+  kept; one flight per request; `replicate=n` asks for another answer to
+  the same request. `fn.map(rows, threads=8)` shows a progress line and,
+  with the disk cache, resumes by being run again. `functai.quotes_found(
+  text, quotes)` checks a judge's evidence. `functai.prune_calls("90d")`
+  deletes old day folders and keeps what ratings need.
+- **Learning from conversations**: `functai.rated(tutor)` gives a rated
+  turn's `earlier` turns and its `conversation` (a module's row also its
+  helpers' memory); `evaluate` and the optimizers ask each such row again
+  with them (optimizers never show one as a worked example);
+  `functai.split(rows, by="conversation")`. A record keeps its turn's
+  `steps` when it ran tools or was made in a conversation.
+
+## Stage 1.1 (unreleased)
+
 Stage 1.1 (`design/09-stage1.1-decisions.md`): decisions on stage 1's open
 questions, and three fixes to how ratings become data.
 
