@@ -709,7 +709,9 @@ class FunctAIFunc(Generic[P, R]):
         if instructions is None:
             instructions = self._current_state().instructions
         baked = s.get("lm") if is_baked(s.get("lm")) else None
-        cot = _module_name(s.get("module")) == "cot" and (baked is None or bool(baked.meta.get("reasoning")))
+        trained = None if baked is None else baked.entries.get(self.__name__) or (
+            next(iter(baked.entries.values())) if len(baked.entries) == 1 else None)
+        cot = _module_name(s.get("module")) == "cot" and (baked is None or bool(trained and trained.reasoning))
         key = (instructions, bool(s.get("include_fn_name_in_instructions")), cot, bool(self._tools))
         spec = self._spec_cache.get(key)
         if spec is None:
@@ -745,18 +747,22 @@ class FunctAIFunc(Generic[P, R]):
         router, model, route = models.resolve(settings)
         caps = models.model_capabilities(settings, route)
         baked = settings.get("lm") if is_baked(settings.get("lm")) else None
+        signature = spec.signature
         if baked is not None:
             # A baked model reads its inputs through the layout it was trained on,
-            # whatever this function's own adapter or template says.
-            _check_baked_signature(self, spec, baked)
-            layout = adapters.Layout(adapter=baked.layout)
+            # whatever this function's own adapter or template says, and without
+            # the inputs it was trained to leave out.
+            entry = baked.entry_for(self, spec)
+            layout = adapters.Layout(adapter=entry.layout)
+            signature = baked.call_signature(self, spec)
         else:
             layout = self._layout(settings)
         key = (layout.key(), json.dumps(caps, sort_keys=True), spec.signature.instructions,
-               spec.reasoning, spec.tools, route.provider)
+               spec.reasoning, spec.tools, route.provider,
+               None if baked is None else (str(baked.path), lmcc.signature_fingerprint(signature)))
         plan = self._plan_cache.get(key)
         if plan is None:
-            plan = adapters.bind(layout, spec.signature, caps, route.provider)
+            plan = adapters.bind(layout, signature, caps, route.provider)
             with self._lock:
                 if len(self._plan_cache) > 64:
                     self._plan_cache.clear()
@@ -775,7 +781,12 @@ class FunctAIFunc(Generic[P, R]):
               ) -> List[lmcc.Turn]:
         """The turns placed before the call's own: the worked examples, then
         (``context``) what the call is shown as earlier turns."""
-        past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos) if t is not None]
+        lm = settings.get("lm")
+        if is_baked(lm) and lm.kind != "head":
+            past = []      # a student is trained and called without worked examples (functai.bake.functions)
+        else:
+            past = [t for t in (engine.fit_turn(plan, spec, d) for d in self._current_state().demos)
+                    if t is not None]
         if not context:
             return past
         call = calllog.current()
@@ -832,6 +843,8 @@ class FunctAIFunc(Generic[P, R]):
         spec, s, _offered, specs = self._shaped(inputs, spec, s)          # what the call's hooks would make of it
         plan, _router, model, route = self._plan_for(spec, s)
         _check_placed(self, plan, base, spec, s)
+        if is_baked(s.get("lm")):
+            spec, inputs = s["lm"].reduce(self, spec, inputs)
         s = models.adjust(s, route)
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
@@ -983,6 +996,8 @@ class FunctAIFunc(Generic[P, R]):
                                                else None)
         plan, router, model, route = self._plan_for(spec, s)
         _check_placed(self, plan, base, spec, s)
+        if is_baked(s.get("lm")):
+            spec, inputs = s["lm"].reduce(self, spec, inputs)
         rec = engine.RECORDING.get()
         if rec is not None and s.get("lm") is not None:
             rec["routes"][models.model_string(s["lm"]) if isinstance(s["lm"], str) else model] = \
@@ -1549,24 +1564,6 @@ def _check_placed(fn: "FunctAIFunc", plan: Any, base: str, spec: Spec, settings:
                                        f"{{instruction}}, so the change would not be sent. Put {{instruction}} in "
                                        f"its template (system(\"{{instruction}}\"), ...), or use plugins that do "
                                        f"not change the instruction with it.")
-
-
-def _check_baked_signature(fn: "FunctAIFunc", spec: Spec, baked: Any) -> None:
-    """A baked model answers the signature it was trained for, or refuses."""
-    from .bake.examples import BakeError, head_fields, head_signature
-    if baked.kind == "head":
-        try:
-            signature = head_signature(spec, head_fields(spec))
-        except BakeError as exc:
-            raise BakeError(f"{fn.__name__} cannot run on the baked model {baked.name!r}: {exc}") from None
-    else:
-        signature = spec.signature
-    if lmcc.signature_fingerprint(signature) != baked.fingerprint:
-        was = {f.name: (f.direction, f.type) for f in baked.signature.fields}
-        now = {f.name: (f.direction, f.type) for f in signature.fields}
-        diff = sorted(set(was.items()) ^ set(now.items()))
-        raise BakeError(f"{fn.__name__} has changed since {baked.name!r} was baked (inputs, outputs or their "
-                        f"answers differ: {diff[:6]}); bake it again")
 
 
 # ──────────────────────────────────────────────────────────────────────────────

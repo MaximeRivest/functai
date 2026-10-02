@@ -11,6 +11,8 @@ import {
   StepLimit, t, tool, toManifest, withSettings, type StreamEvent,
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
+import { Message, Response } from "@lm15/lm15";
+import type * as lmcc from "lmcc";
 
 // the tests read no settings from the environment they run in (an agent's caller, a log folder)
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
@@ -61,6 +63,46 @@ test("an unreadable reply is asked again once, with lmcc's hint", async () => {
   const again = router.requests[1]!.messages;
   assert.equal(again.length, 3);
   assert.match(text(again[2]!), /^Your reply could not be read: .*\. Reply again, in exactly the form the instructions give\.$/s);
+});
+
+// functions.md, "When the reply cannot be read": a cut reply, all thinking and no answer.
+function cutOffReply(request: { model: string }, adaptations: unknown[] = []): Response {
+  return new Response({
+    model: request.model, message: Message.assistant([{ type: "thinking", text: "still thinking" }] as never), finishReason: "length",
+    usage: { inputTokens: 3, outputTokens: 900, totalTokens: 903, reasoningTokens: 900 }, adaptations: adaptations as never,
+  });
+}
+
+test("a cut-off reply with a set budget is sent again with twice it", async () => {
+  const router = new FakeRouter([], (req) => cutOffReply(req));
+  const mood = ai("mood", { ...moodDef, router, maxTokens: 500, retries: 2 });
+  await assert.rejects(mood("Broke."), (e: lmcc.Refusal) => {
+    assert.equal(e.code, "parse-truncated");
+    assert.ok(e.hint.endsWith("; the model spent 900 of its 900 output tokens thinking; raise maxTokens (it was 2000) or ask for less"), e.hint);
+    return true;
+  });
+  assert.deepEqual(router.requests.map((r) => r.config?.maxTokens), [500, 1000, 2000]);
+});
+
+test("a cut-off reply without a budget is not sent again, and says what lm15 did", async () => {
+  // The old rule re-sent it with 2048 after a reply that had 128000.
+  const notes = [
+    { field: "config.max_tokens", action: "defaulted", reason: "the Messages API requires max_tokens and none was set; the model's output ceiling was used", applied: 128000 },
+    { field: "config.reasoning.thinking_budget", action: "dropped", reason: "budget_tokens is rejected by the API", asked: 32000 },
+  ];
+  const router = new FakeRouter([], (req) => cutOffReply(req, notes));
+  const mood = ai("mood", { ...moodDef, router, retries: 2 });
+  await assert.rejects(mood("Broke."), (e: lmcc.Refusal) => {
+    assert.ok(e.hint.endsWith("; the model spent 900 of its 900 output tokens thinking; no maxTokens was set, and lm15 sent 128000, "
+      + "the most it knows this model to allow: lower the reasoning effort or ask for less "
+      + "(lm15 adapted the request: config.reasoning.thinking_budget dropped: budget_tokens is rejected by the API)"), e.hint);
+    return true;
+  });
+  assert.equal(router.requests.length, 1);
+  const own = new FakeRouter([], (req) => cutOffReply(req));
+  await assert.rejects(ai("mood", { ...moodDef, router: own, retries: 2 })("Broke."), (e: lmcc.Refusal) =>
+    e.hint.endsWith("; no maxTokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less"));
+  assert.equal(own.requests.length, 1);
 });
 
 test("a value outside its type is unreadable too; with retries: 0 the refusal is the error", async () => {

@@ -206,6 +206,34 @@ end
     @test r.requests[2].config.max_tokens == 200
 end
 
+# functions.md, "When the reply cannot be read": a cut reply, all thinking and no answer.
+cut_off_reply(req; adaptations=()) = LM15.Response(; model=req.model, finish_reason="length",
+    message=LM15.Message(; role="assistant", parts=(LM15.ThinkingPart(; text="still thinking"),)),
+    usage=LM15.Usage(; input_tokens=3, output_tokens=900, reasoning_tokens=900), adaptations=Tuple(adaptations))
+
+@testset "a cut-off reply: twice a set budget, never a guessed one; the refusal says what happened" begin
+    r = FakeRouter(; responder=(req, i) -> cut_off_reply(req))
+    err = try using_fake(() -> mood("x"), r; max_tokens=500, retries=2) catch e e end
+    @test [q.config.max_tokens for q in r.requests] == [500, 1000, 2000]
+    @test err isa LMCC.Refusal && endswith(err.hint,
+        "; the model spent 900 of its 900 output tokens thinking; raise max_tokens (it was 2000) or ask for less")
+    # no budget: the reply had the most the call allows; the old rule re-sent it with 2048 after 128000
+    notes = (LM15.Adaptation(; field="config.max_tokens", action="defaulted",
+                             reason="the Messages API requires max_tokens and none was set; the model's output ceiling was used", applied=128000),
+             LM15.Adaptation(; field="config.reasoning.thinking_budget", action="dropped",
+                             reason="budget_tokens is rejected by the API", asked=32000))
+    r = FakeRouter(; responder=(req, i) -> cut_off_reply(req; adaptations=notes))
+    err = try using_fake(() -> mood("x"), r; retries=2) catch e e end
+    @test length(r.requests) == 1
+    @test endswith(err.hint, "; the model spent 900 of its 900 output tokens thinking; no max_tokens was set, and lm15 sent 128000, " *
+        "the most it knows this model to allow: lower the reasoning effort or ask for less " *
+        "(lm15 adapted the request: config.reasoning.thinking_budget dropped: budget_tokens is rejected by the API)")
+    r = FakeRouter(; responder=(req, i) -> cut_off_reply(req))
+    err = try using_fake(() -> mood("x"), r; retries=2) catch e e end
+    @test length(r.requests) == 1
+    @test endswith(err.hint, "; no max_tokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less")
+end
+
 @testset "a transient provider error is sent again" begin
     r = fake(LM15.RateLimitError("slow down"; retry_after=0.01), xml(:result => "happy"))
     @test using_fake(() -> mood("x"), r) === happy

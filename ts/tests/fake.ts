@@ -2,7 +2,7 @@
 
 import { Message, Request, Response, responseToEvents, streamDelta, streamEnd, streamStart, toolCall, type StreamEvent } from "@lm15/lm15";
 
-export type Reply = string | { text?: string; calls?: { id: string; name: string; input: Record<string, unknown> }[]; finish?: string };
+export type Reply = string | Response | { text?: string; calls?: { id: string; name: string; input: Record<string, unknown> }[]; finish?: string };
 
 export class FakeRouter {
   readonly requests: Request[] = [];
@@ -29,6 +29,7 @@ export class FakeRouter {
     this.requests.push(request);
     const r = this.responder ? this.responder(request, i) : this.replies.shift();
     if (r === undefined) throw new Error("the fake router has no more replies");
+    if (r instanceof Response) return r;    // a reply built whole (usage, adaptations)
     const spec = typeof r === "string" ? { text: r } : r;
     const parts = [
       ...(spec.text !== undefined ? [{ type: "text", text: spec.text }] : []),

@@ -1,0 +1,95 @@
+{
+ "description": "With reasoning kept (module cot, bake reasoning=True), the reasoning output is written in the reply the student learns.",
+ "definition": {
+  "name": "solve",
+  "description": "Solve the word problem.",
+  "inputs": [
+   {
+    "name": "problem",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "number"
+    }
+   }
+  ],
+  "settings": {
+   "module": "cot"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "bake": {
+  "reasoning": true
+ },
+ "rows": [
+  {
+   "inputs": {
+    "problem": "Two apples and three more?"
+   },
+   "outputs": {
+    "reasoning": "2 + 3 = 5.",
+    "result": 5
+   }
+  }
+ ],
+ "expect": {
+  "signature": {
+   "instructions": "Function: solve\n\nSolve the word problem.",
+   "fields": [
+    {
+     "name": "problem",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "reasoning",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "reasoning"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "number"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "fixed": {},
+  "derived": {},
+  "examples": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: solve\n\nSolve the word problem.\n\nReply in exactly this form:\n<reasoning>\n...\n</reasoning>\n<result>\n(number)\n</result>\n\n\nReason step by step in the 'reasoning' section before writing any other section."
+     },
+     {
+      "role": "user",
+      "content": "<problem>\nTwo apples and three more?\n</problem>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<reasoning>\n2 + 3 = 5.\n</reasoning>\n<result>\n5\n</result>"
+     }
+    ]
+   }
+  ]
+ }
+}

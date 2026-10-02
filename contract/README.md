@@ -18,6 +18,7 @@ by another; they meet only here.
 | [`scores.md`](scores.md) | whether an answer is right, the score and its 95% range | `cases/scores/` |
 | [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares; its signature; which are refused; checking values against it | `cases/programs/` |
 | [`saved.md`](saved.md) | a saved program's manifest, and loading its AI functions in another language | `cases/saved/` |
+| [`baked.md`](baked.md) | a baked model: what a generative student is trained on and called with (its signature without the inputs left out, its layout, the conversations), the examples table, the folder (`baked.json` format 2) | `cases/baked/` |
 | [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views (`full`, `kept`, `outside`), keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps | `cases/events/`, `cases/views/` |
 | [`replies.md`](replies.md) | the reply cache: its key, what is kept, one flight per request, its file | `cases/replies/` |
 | [`conversations.md`](conversations.md) | conversations: their records, a turn's state, where a new turn goes, what a turn is shown, helpers' memory, stopping, leases, stores | `cases/conversations/` |
@@ -26,8 +27,8 @@ by another; they meet only here.
 | [`plugins.md`](plugins.md) | plugins: hooks over turns, context, calls, requests and tools; changes as data and recorded; order; entries; the built-in approval, compaction and delegation | `cases/plugins/` |
 
 `schema/` holds JSON Schemas (draft 2020-12) for a call record, a rating
-record, a stream event, a program's interface, a saved manifest and a
-conversation's record.
+record, a stream event, a program's interface, a saved manifest, a
+conversation's record and a baked model's `baked.json`.
 Every record, event and manifest an implementation writes must pass them,
 and every one in the cases does (`make.py` checks each against its schema
 as it writes it, and checks that the schemas refuse what must never be

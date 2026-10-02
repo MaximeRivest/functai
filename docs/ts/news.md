@@ -4,6 +4,14 @@
 
 ## 0.1.0 (unreleased)
 
+- **A reply cut off at the token limit** (`contract/functions.md`): it is sent again
+  with twice `maxTokens` only when one was set. Without one it already had the
+  model's whole limit (lm15's default, or the provider's own), and the old re-send
+  with 2048 (a guessed 1024, doubled) only shrank it: it now raises at once. The
+  refusal's hint says how many tokens went to thinking, what the limit was and
+  whether it can be raised, and what lm15 changed in the request (a dropped
+  thinking budget, the usual reason `thinking_budget` does not bound the thinking).
+
 Stage 1.1 (design/09-stage1.1-decisions.md):
 
 - **Inputs are bound** (breaking): an AI function's and a module's inputs

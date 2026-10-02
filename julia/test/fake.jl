@@ -24,6 +24,7 @@ function reply!(r::FakeRouter, request)
     spec = r.responder === nothing ? (isempty(r.replies) ? error("the fake router has no more replies") : popfirst!(r.replies)) :
            r.responder(request, i)
     spec isa Exception && throw(spec)
+    spec isa LM15.Response && return spec          # a reply built whole (usage, adaptations)
     spec = spec isa AbstractString ? (text=spec,) : spec
     parts = Any[]
     haskey(spec, :text) && push!(parts, LM15.TextPart(; text=spec.text))

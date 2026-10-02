@@ -52,12 +52,33 @@ functai = "functai.__main__:main"
 data = [
     "dpyr>=1.10",
 ]
-# baking functions into weights you own: training, running and serving models
+# baking functions into weights you own: training here (TRL, PEFT, Accelerate),
+# running and serving the trained models. TRL is pinned to the minor version
+# bake was tested with: its trainer's options move between minor versions.
 bake = [
     "torch>=2.4",
     "transformers>=4.57",
     "safetensors>=0.4",
-    "peft>=0.13",
+    "peft>=0.17",
+    "accelerate>=1.4",
+    "datasets>=4.7",
+    "trl>=1.14,<1.15",
+    "bitsandbytes>=0.45; sys_platform != 'darwin'",
+]
+# training and running on Tinker (Thinking Machines): its SDK and a tokenizer,
+# no PyTorch, so a laptop without a GPU can bake through it
+tinker = [
+    "tinker>=0.31,<0.32",
+    "transformers>=4.57",
+    "pyarrow>=15",
+]
+# kernels that make training here faster: packed examples with flash attention
+# (a hub kernel, nothing to compile), linear-attention layers (Qwen3.5) and
+# Liger's fused losses. CUDA only; bake works without them, slower.
+fast = [
+    "kernels>=0.16,<0.17; sys_platform == 'linux'",
+    "flash-linear-attention>=0.4; sys_platform == 'linux'",
+    "liger-kernel>=0.6; sys_platform == 'linux'",
 ]
 # reinforcement learning and distillation on Prime Intellect (functai_verifiers,
 # functai_rows): verifiers' v1 API, which changes between its dev releases, so

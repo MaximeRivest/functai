@@ -162,8 +162,14 @@ Train a small model that answers an AI function, then run the same function on i
 
 | | |
 | --- | --- |
-| [bake.bake](bake.bake.md#functai.bake.bake) | Train weights that answer ``fn``; returns the baked model (see ``Baked``). |
-| [bake.Baked](bake.Baked.md#functai.bake.Baked) | A model trained for one AI function (see the module docstring). |
+| [bake.bake](bake.bake.md#functai.bake.bake) | Train weights that answer an AI function (or several); returns the baked model. |
+| [bake.examples](bake.examples.md#functai.bake.examples) | From an AI function and rows of data to training examples. |
+| [bake.plan](bake.plan.md#functai.bake.plan) | What ``bake(what, data, **options)`` would do, decided, with nothing spent |
+| [bake.adopt](bake.adopt.md#functai.bake.adopt) | A model trained elsewhere (TRL, Axolotl, Unsloth, by hand), as a baked |
+| [bake.judge](bake.judge.md#functai.bake.judge) | Measure a generative student on test rows (see ``functai.bake.judge``). |
+| [bake.runs](bake.runs.md#functai.bake.runs) | Every bake run on this machine (``~/.cache/functai/bakes``), newest first. |
+| [bake.run](bake.run.md#functai.bake.run) | The run in ``folder`` (reattach after a restart). |
+| [bake.Baked](bake.Baked.md#functai.bake.Baked) | A model trained for one or more AI functions (see the module docstring). |
 | [bake.BakeReport](bake.BakeReport.md#functai.bake.BakeReport) |  |
 | [bake.load](bake.load.md#functai.bake.load) | A baked model from its folder (its file hashes are checked). |
 

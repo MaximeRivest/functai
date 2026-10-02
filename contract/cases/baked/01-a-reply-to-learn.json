@@ -1,0 +1,106 @@
+{
+ "description": "The student reads the call as the layout writes it, with no worked examples, and learns the layout's reply for the row's answer (written from values).",
+ "definition": {
+  "name": "capital",
+  "description": "The country's capital city.",
+  "inputs": [
+   {
+    "name": "country",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "bake": {},
+ "rows": [
+  {
+   "inputs": {
+    "country": "Peru"
+   },
+   "outputs": {
+    "result": "Lima"
+   }
+  },
+  {
+   "inputs": {
+    "country": "Kenya"
+   },
+   "outputs": {
+    "result": "Nairobi"
+   }
+  }
+ ],
+ "expect": {
+  "signature": {
+   "instructions": "Function: capital\n\nThe country's capital city.",
+   "fields": [
+    {
+     "name": "country",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "fixed": {},
+  "derived": {},
+  "examples": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: capital\n\nThe country's capital city.\n\nReply in exactly this form:\n<result>\n...\n</result>\n"
+     },
+     {
+      "role": "user",
+      "content": "<country>\nPeru\n</country>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<result>\nLima\n</result>"
+     }
+    ]
+   },
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: capital\n\nThe country's capital city.\n\nReply in exactly this form:\n<result>\n...\n</result>\n"
+     },
+     {
+      "role": "user",
+      "content": "<country>\nKenya\n</country>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<result>\nNairobi\n</result>"
+     }
+    ]
+   }
+  ]
+ }
+}

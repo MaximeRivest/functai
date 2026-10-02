@@ -16,7 +16,7 @@ tells you when it did.
 |---|---|---|
 | a slightly misspelled reply (`<Result>` for `<result>`, `**answer**`) | reads it anyway, by one rule, and lists the repair in `prediction.repairs` | always on |
 | a reply it can't read | asks again once, with a hint of what was expected | `retries=1`; `retries=0` raises `lmcc.Refusal` |
-| a reply cut off at the token limit | sends it again with twice the budget | automatic |
+| a reply cut off at the token limit | sends it again with twice the budget when you set one; without one the reply already had the model's whole limit, so it raises at once, saying how much went to thinking | `max_tokens`, `retries` |
 | a provider error: rate limit, 5xx, timeout | sends it again, waiting longer each time | `api_retries=3` |
 | a login that expired | raises `LoginRequired` with the command to type; never switches to a paid key | – |
 | a tool loop that doesn't finish | raises `StepLimit` | `max_steps=8` |
@@ -33,6 +33,22 @@ was expected). The usual fixes, in order:
    free text, a comment on the field.
 3. Try the `"json"` layout on a model with structured output, where the
    provider enforces the form.
+
+A reply cut off at the token limit (code `parse-truncated`) says why in its
+hint: how many of the tokens went to thinking, what the limit was and
+whether it can be raised, and what lm15 changed in your request. For
+example, on Claude Opus with `reasoning="max"` and no `max_tokens`:
+
+```text
+the provider cut the reply at its length limit before field 'result'; the model
+spent 128000 of its 128000 output tokens thinking; no max_tokens was set, and lm15
+sent 128000, the most it knows this model to allow: lower the reasoning effort or
+ask for less (lm15 adapted the request: config.reasoning.thinking_budget dropped: ...)
+```
+
+Here raising `max_tokens` can't help: Claude's newer models take no thinking
+budget, so the model can think until the limit. Lower the effort (`xhigh`,
+`high`) or ask for less.
 
 ## The reply cache
 

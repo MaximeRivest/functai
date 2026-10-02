@@ -1251,7 +1251,8 @@ def check(program: Any, *, include: Iterable[str] = (), requires: Iterable[str] 
     # requirements: the runtime, every package reached, and what was declared
     reqs: Dict[str, Requirement] = {}
     baked_models = [b for n in a.nodes.values() for b in n.baked.values()]
-    runtime = list(BAKED_RUNTIME) if baked_models else []
+    runtime = sorted({r for b in baked_models for r in (b.requirements() if hasattr(b, "requirements")
+                                                         else BAKED_RUNTIME)})
     for dist in runtime:
         if requirement_of(dist) is None:
             a.problem("missing-package", "requirements", f"a baked model needs {dist}, which is not installed here",

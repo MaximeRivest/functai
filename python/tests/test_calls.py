@@ -5,6 +5,7 @@ import enum
 import threading
 from typing import List, Literal, Optional, Tuple
 
+import lm15
 import lmcc
 import pytest
 
@@ -406,6 +407,63 @@ def test_an_unreadable_reply_is_asked_again_once(fake):
     pred = f.predict("x")
     assert pred.result == 3 and pred.attempts == 2
     assert "could not be read" in r.user(1)
+
+
+def _cut_off_reply(request, *, adaptations=()):
+    """A reply the provider cut at its length limit: all thinking, no answer."""
+    return lm15.Response(id="r", model=request.model, finish_reason="length",
+                         message=lm15.Message.assistant([lm15.ThinkingPart("still thinking")]),
+                         usage=lm15.Usage(input_tokens=3, output_tokens=900, total_tokens=903, reasoning_tokens=900),
+                         adaptations=tuple(adaptations))
+
+
+def test_a_cut_off_reply_with_a_set_budget_is_sent_again_with_twice_it(fake):
+    # functions.md: re-sent with twice max_tokens, up to `retries` times, when a budget was set.
+    r = fake(responder=_cut_off_reply)
+
+    @ai(max_tokens=500, retries=2)
+    def f(x: str) -> str: ...
+    with pytest.raises(lmcc.Refusal) as err:
+        f("x")
+    assert [q.config.max_tokens for q in r.requests] == [500, 1000, 2000]
+    assert err.value.code == "parse-truncated"
+    assert err.value.hint.endswith("; the model spent 900 of its 900 output tokens thinking; "
+                                   "raise max_tokens (it was 2000) or ask for less")
+
+
+def test_a_cut_off_reply_without_a_budget_is_not_sent_again(fake):
+    # No max_tokens: the reply already had the most the call allows (lm15's default for the
+    # model). The old rule re-sent it with 2048, far less than the 128000 it had.
+    lm15_default = lm15.Adaptation(field="config.max_tokens", action="defaulted",
+                                   reason="the Messages API requires max_tokens and none was set; "
+                                          "the model's output ceiling was used", applied=128000)
+    dropped = lm15.Adaptation(field="config.reasoning.thinking_budget", action="dropped",
+                              reason="budget_tokens is rejected by the API", asked=32000)
+    r = fake(responder=lambda q: _cut_off_reply(q, adaptations=(lm15_default, dropped)))
+
+    @ai(retries=2)
+    def f(x: str) -> str: ...
+    with pytest.raises(lmcc.Refusal) as err:
+        f("x")
+    assert len(r.requests) == 1
+    assert "raise max_tokens" not in err.value.hint.split("; the model spent")[1]
+    assert err.value.hint.endswith(
+        "; the model spent 900 of its 900 output tokens thinking; no max_tokens was set, and lm15 sent 128000, "
+        "the most it knows this model to allow: lower the reasoning effort or ask for less "
+        "(lm15 adapted the request: config.reasoning.thinking_budget dropped: budget_tokens is rejected by the API)")
+
+
+def test_a_cut_off_reply_at_the_providers_own_maximum_is_not_sent_again(fake):
+    # A provider whose max_tokens field is optional (OpenAI, Gemini) used its own maximum.
+    r = fake(responder=_cut_off_reply)
+
+    @ai(retries=2)
+    def f(x: str) -> str: ...
+    with pytest.raises(lmcc.Refusal) as err:
+        f("x")
+    assert len(r.requests) == 1
+    assert err.value.hint.endswith("; no max_tokens was set, so the provider used its own maximum: "
+                                   "lower the reasoning effort or ask for less")
 
 
 def test_retries_zero_raises_the_refusal(fake):

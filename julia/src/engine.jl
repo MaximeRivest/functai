@@ -244,6 +244,38 @@ asked_again(r::LMCC.Refusal) = r.code == "parse-truncated" ?
 
 unreadable(r::LMCC.Refusal) = startswith(r.code, "parse-") || r.code == "format-read-error"
 
+const LMCC_TRUNCATED_ADVICE = "; raise max_tokens or ask for less"
+
+"""
+    cut_off(refusal, response, limit) -> LMCC.Refusal
+
+A `parse-truncated` refusal that says what happened (functions.md, "When the reply cannot be
+read"): how much went to thinking, whose limit it was and whether it can be raised, and what
+lm15 changed in the request. `limit`: the `max_tokens` this request set, or `nothing`.
+"""
+function cut_off(r::LMCC.Refusal, response, limit)
+    hint = endswith(r.hint, LMCC_TRUNCATED_ADVICE) ? r.hint[1:end-length(LMCC_TRUNCATED_ADVICE)] : r.hint
+    thought = something(response.usage.reasoning_tokens, 0)
+    total = something(response.usage.output_tokens, 0)
+    if thought > 0
+        hint *= total >= thought ? "; the model spent $thought of its $total output tokens thinking" :
+                                   "; the model spent $thought tokens thinking"
+    end
+    notes = response.adaptations
+    i = findfirst(a -> a.field == "config.max_tokens" && a.action == "defaulted", notes)
+    if limit !== nothing
+        hint *= "; raise max_tokens (it was $limit) or ask for less"
+    elseif i !== nothing
+        hint *= "; no max_tokens was set, and lm15 sent $(notes[i].applied), the most it knows this model to allow: " *
+                "lower the reasoning effort or ask for less"
+    else
+        hint *= "; no max_tokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less"
+    end
+    other = ["$(a.field) $(a.action): $(a.reason)" for a in notes if a.field != "config.max_tokens"]
+    isempty(other) || (hint *= " (lm15 adapted the request: " * join(other, "; ") * ")")
+    return LMCC.Refusal(r.code, hint; fix=r.fix, partial=r.partial)
+end
+
 "One model call; after an unreadable reply, up to `retries` follow-ups that send the reader's hint back."
 function complete_once(job::Job, rendered, responses)
     s = job.settings
@@ -265,15 +297,14 @@ function complete_once(job::Job, rendered, responses)
         catch err
             err isa LMCC.Refusal || rethrow()
             refusal = err
-            thought = response.usage.reasoning_tokens
-            if refusal.code == "parse-truncated" && thought !== nothing && thought > 0
-                refusal = LMCC.Refusal(refusal.code, "$(refusal.hint) (the model spent $thought of its tokens thinking first; raise max_tokens)";
-                                       fix=refusal.fix, partial=refusal.partial)
-            end
+            # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
+            limit = something(budget, setting(s, :max_tokens), Some(nothing))
+            refusal.code == "parse-truncated" && (refusal = cut_off(refusal, response, limit))
             (attempt < retries && unreadable(refusal)) || throw(refusal)
+            refusal.code == "parse-truncated" && limit === nothing && throw(refusal)   # nothing larger to give
             if refusal.code == "parse-truncated"
                 # asked again from the start, with a larger budget: the first request's messages, and its hash
-                budget = 2 * something(budget, setting(s, :max_tokens), 1024)
+                budget = 2 * limit
                 request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))
                 rendered_request, request_hash = first_rendered, first_hash
             else

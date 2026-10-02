@@ -129,6 +129,12 @@ quartodoc:
       on it.
     contents:
     - bake.bake
+    - bake.examples
+    - bake.plan
+    - bake.adopt
+    - bake.judge
+    - bake.runs
+    - bake.run
     - bake.Baked
     - bake.BakeReport
     - bake.load

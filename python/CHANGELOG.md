@@ -2,6 +2,66 @@
 
 ## Unreleased
 
+- **Baking, rebuilt** (`design/12-bake.md`, `contract/baked.md`). Bake had no
+  users, so nothing of the old generative API is kept.
+  - **One line, decided from the data.** `fn.bake(rows)` picks a head model
+    when every output is finite, else a generative student; the student
+    (Qwen3.5 4B, 2B or 0.8B: the largest that trains where it is going
+    within a day), LoRA's rank, the learning rate (Thinking Machines' fitted
+    rule), the passes, the batch size by tokens, the lengths (no more 4,096
+    caps) and the schedule (warmup, constant, decay: checkpoints before the
+    decay are fair points of a quality-against-data curve).
+  - **The plan before anything runs.** `fn.bake(rows, plan_only=True)` (or
+    `functai.bake.plan`) prints the rows, tokens, student, where it trains,
+    how long, what the teacher's answers and a service would cost, and which
+    kernels are missing; nothing is spent.
+  - **Where it trains.** `where="here"` trains with TRL's `SFTTrainer` on
+    functai's own tokens: 16-bit weights (4-bit base weights, QLoRA, when
+    those do not fit), batches built by tokens (packed without padding when
+    a flash-attention kernel and an all-attention model allow it; grouped by
+    length otherwise, as for Qwen3.5, whose linear-attention layers would
+    carry state across packed examples), every free GPU through `torchrun`,
+    the loss on answer tokens only. `where="tinker"` trains on Tinker with
+    the same tokens and exact per-example weights, without PyTorch here.
+    `where="prime"` dispatches Prime Intellect's hosted SFT. `where="export"`
+    writes the examples with a TRL script and an Axolotl config. `"auto"`:
+    here when a GPU here can train it, else the cheapest service set up;
+    `configure(bake_where=...)` sets a preference.
+  - **Runs you can leave.** A bake is a folder and a process of its own:
+    `metrics.jsonl` as it goes, checkpoints, `run.stop()`/`resume()`,
+    `functai.bake.runs()`, any checkpoint as a model; an out-of-memory first
+    batch retries smaller; running the same bake again resumes it.
+  - **What is trained is what is called.** Examples are the exact requests
+    the layout writes, tokenized with the student's template; the call sends
+    the same tokens (in-process, vLLM's completions endpoint, Tinker's
+    sampler). `functai.bake.examples(fn, rows, student=...)` is that table
+    for any trainer; `functai.bake.adopt(folder, fn, examples=...)` takes a
+    model trained elsewhere after checking its template writes those tokens.
+  - **Several functions, a whole program, fixed inputs.** `bake({f: rows,
+    g: rows})`; `bake(program, inputs, teacher=...)` keeps every AI call
+    inside as an example; `fixed={"input": value}` and
+    `derived={"input": "other"}` leave inputs out of every example and
+    call, and refuse calls the student never learned. `tags=` and
+    `weights=` columns.
+  - **Judged with your metric.** Open answers are scored with `metric=`
+    (any `evaluate` metric or AI judge), else readability and samples; the
+    teacher is no longer re-run on the test rows unless asked
+    (`compare_teacher=True`, now off by default for heads too).
+  - `baked.on("transformers" | "vllm" | "tinker" | url)`; `baked.download()`
+    brings Tinker weights here. `baked.json` is format 2 (one entry per
+    function); format 1 folders are refused with the advice to bake again.
+  - Extras: `functai[bake]` adds TRL (pinned to 1.14), Accelerate, datasets
+    and bitsandbytes; `functai[tinker]` and `functai[fast]` (flash-attention
+    hub kernel, flash-linear-attention, Liger) are new.
+
+- **A reply cut off at the token limit** (`contract/functions.md`): it is sent again
+  with twice `max_tokens` only when one was set. Without one it already had the
+  model's whole limit (lm15's default, or the provider's own), and the old re-send
+  with 2048 (a guessed 1024, doubled) only shrank it: it now raises at once. The
+  refusal's hint says how many tokens went to thinking, what the limit was and
+  whether it can be raised, and what lm15 changed in the request (a dropped
+  thinking budget, the usual reason `thinking_budget` does not bound the thinking).
+
 **Plugins** (`design/11-plugins.md`, `contract/plugins.md`): hooks over
 turns, context, calls, requests and tools, whose changes are data and
 recorded, so rated calls are still asked again as they were.

@@ -13,6 +13,7 @@ implementation's output:
                  ../replies.md, ../conversations.md, ../tools.md, ../streaming.md "Views",
                  ../calls.md "Rows that keep their context"   (stages.py)
     plugins/     ../plugins.md, "Order"                      (plugins.py)
+    baked/       ../baked.md, "The examples"                 (baked.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -28,6 +29,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import baked  # noqa: E402
 import content  # noqa: E402
 import events  # noqa: E402
 import functions  # noqa: E402
@@ -133,4 +135,5 @@ if __name__ == "__main__":
     for folder, made in stages.cases().items():
         n += write(folder, made)
     n += write("plugins", plugins.cases())
+    n += write("baked", baked.cases())
     print(f"{n} cases written")

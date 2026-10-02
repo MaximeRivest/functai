@@ -241,3 +241,30 @@ def test_a_folder_of_another_language_loads_from_its_data(tmp_path, fake):
     assert reply("Hi") == "Hello!"
     assert "<tone>\nkind\n</tone>" in router.user()               # the default, from the interface
     assert functai.describe(tmp_path)["inputs"][1]["optional"] is True
+
+
+# ------------------------------------------------------------------ baked models (baked.md)
+
+
+@pytest.mark.parametrize("path", case_files("baked"), ids=lambda p: p.stem)
+def test_baked_case(path):
+    from functai.bake.functions import Entry
+    from functai.bake.sources import from_rows
+    case = load(path)
+    fn = python_function(case["definition"])
+    rows = [{**r["inputs"], **r["outputs"]} for r in case["rows"]]
+    b = case["bake"]
+    entry = Entry.build(fn, fixed=b.get("fixed"), derived=b.get("derived"), reasoning=bool(b.get("reasoning")),
+                        rows=rows)
+    want = case["expect"]
+    assert without_type(entry.signature) == {
+        "instructions": want["signature"]["instructions"],
+        "fields": [{**f, "purpose": f.get("purpose", "plain")} for f in want["signature"]["fields"]]}
+    assert entry.fixed == want["fixed"] and entry.derived == want["derived"]
+    for item, ex in zip(from_rows(entry, rows), want["examples"]):
+        msgs, reply = entry.messages(item.inputs, item.outputs)
+        assert msgs + [{"role": "assistant", "content": reply}] == ex["messages"]
+
+
+def test_the_contract_has_baked_cases():
+    assert len(case_files("baked")) >= 5

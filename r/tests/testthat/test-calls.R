@@ -77,6 +77,36 @@ test_that("an unreadable reply is asked again once, in the contract's words", {
   expect_match(last_text(r$env$requests[[2L]]), "^Your reply could not be read: .*\\. Reply again, in exactly the form the instructions give\\.$")
 })
 
+# functions.md, "When the reply cannot be read": a cut reply, all thinking and no answer.
+cut_off_reply <- function(request, adaptations = list()) {
+  r <- lm15::response(request$model, lm15::message_assistant(list(lm15::thinking_part("still thinking"))), "length",
+                      usage = lm15::usage(input_tokens = 3L, output_tokens = 900L, total_tokens = 903L, reasoning_tokens = 900L))
+  if (length(adaptations)) r["adaptations"] <- list(adaptations)
+  r
+}
+
+test_that("a cut-off reply: twice a set budget, never a guessed one; the refusal says what happened", {
+  r <- fake_router(responder = function(req, i) cut_off_reply(req))
+  err <- tryCatch(mood_of(r, .max_tokens = 500L, .retries = 2L)("x"), lmcc_refusal = identity)
+  expect_identical(vapply(r$env$requests, function(q) as.integer(lmcc::lm15_plain(lm15::as_dict(q))$config$max_tokens), 1L), c(500L, 1000L, 2000L))
+  expect_true(endsWith(err$hint, "; the model spent 900 of its 900 output tokens thinking; raise max_tokens (it was 2000) or ask for less"))
+  # no budget: the reply had the most the call allows; the old rule re-sent it with 2048 after 128000
+  notes <- list(
+    lm15::adaptation("config.max_tokens", "defaulted",
+                     "the Messages API requires max_tokens and none was set; the model's output ceiling was used", applied = 128000L),
+    lm15::adaptation("config.reasoning.thinking_budget", "dropped", "budget_tokens is rejected by the API", asked = 32000L))
+  r <- fake_router(responder = function(req, i) cut_off_reply(req, notes))
+  err <- tryCatch(mood_of(r, .retries = 2L)("x"), lmcc_refusal = identity)
+  expect_length(r$env$requests, 1L)
+  expect_true(endsWith(err$hint, paste0("; the model spent 900 of its 900 output tokens thinking; no max_tokens was set, and lm15 sent 128000, ",
+    "the most it knows this model to allow: lower the reasoning effort or ask for less ",
+    "(lm15 adapted the request: config.reasoning.thinking_budget dropped: budget_tokens is rejected by the API)")))
+  r <- fake_router(responder = function(req, i) cut_off_reply(req))
+  err <- tryCatch(mood_of(r, .retries = 2L)("x"), lmcc_refusal = identity)
+  expect_length(r$env$requests, 1L)
+  expect_true(endsWith(err$hint, "; no max_tokens was set, so the provider used its own maximum: lower the reasoning effort or ask for less"))
+})
+
 test_that("a value outside its type is unreadable too; one failing row is an error, many are NA and a warning", {
   r <- fake_router(list("<result>\nfurious\n</result>", "<result>\nunhappy\n</result>"))
   expect_identical(as.character(mood_of(r)("x")), "unhappy")

@@ -92,6 +92,10 @@ DEFAULTS: Dict[str, Any] = {
     "plugins": None,           # [functai.Plugin or a file defining one, ...]
     "program_plugins": None,   # False (a host's block or configure): a program's own plugins do not run
 
+    # baking (functai.bake): where training happens when bake() is not told:
+    # "here", "tinker", "prime", "export", or a list in order of preference
+    "bake_where": None,
+
     # debug
     "debug": False,
 }

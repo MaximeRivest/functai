@@ -34,6 +34,14 @@
   non-null one.
 ## 0.1.0 (unreleased)
 
+- **A reply cut off at the token limit** (`contract/functions.md`): it is sent again
+  with twice `max_tokens` only when one was set. Without one it already had the
+  model's whole limit (lm15's default, or the provider's own), and the old re-send
+  with 2048 (a guessed 1024, doubled) only shrank it: it now raises at once. The
+  refusal's hint says how many tokens went to thinking, what the limit was and
+  whether it can be raised, and what lm15 changed in the request (a dropped
+  thinking budget, the usual reason `thinking_budget` does not bound the thinking).
+
 ### Stage 1 foundations (contract at c1e5063, design/08)
 
 - **The call log is format 2**, and both formats are read. Records carry

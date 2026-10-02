@@ -1,24 +1,30 @@
-"""A baked model: weights trained for one AI function, the layout they read,
-and the answers they give. It is also an lm15-style client, so functai calls
-it like any provider:
+"""A baked model: weights trained to answer one or more AI functions, the
+layout each function's calls are written in, and where the weights run.
+It is also an lm15-style client, so functai calls it like any provider:
 
-    fast = classify.using(lm=baked)
-    fast("my card never arrived")               # the Literal answer
-    fast.predict("...").probabilities         # {"result": {"card_arrival": 0.93, ...}}
+    fast = summarize.using(lm=baked)
+    fast("...")                          # the function, on the weights
+    baked.on("vllm")                     # serve them for throughput
 
 On disk it is a folder:
 
-    baked.json          what it answers (fields and their keys), the input
-                        layout (an lmcc artifact) and signature it was trained
-                        for, the temperature per field, the training settings,
-                        the data fingerprint, the report, file hashes
-    model/              Hugging Face weights (safetensors)
-    heads.safetensors   the answer layers, when the function has several outputs
+    baked.json          what it answers: per function, its signature, layout,
+                        and the inputs left out (fixed and derived); the
+                        weights' form and base; the chat template; the run
+                        that made it; the report; file hashes
+    model/              Hugging Face weights (safetensors), merged when trained
+                        with LoRA: a standard folder for vLLM, TGI, transformers
+    adapter/            the LoRA adapter alone (when trained with LoRA)
     tokenizer/
+    heads.safetensors   a head model's answer layers, when it has several outputs
+
+Weights trained on a service and not yet brought here are a ``tinker://``
+address in ``baked.json`` (``baked.download()`` brings them here).
 """
 
 from __future__ import annotations
 
+import dataclasses
 import datetime as _dt
 import hashlib
 import json
@@ -33,8 +39,9 @@ import lm15
 import lmcc
 
 from .examples import CAPABILITIES, BakeError, HeadField, input_plan, request_text
+from .functions import Entry
 
-FORMAT = 1
+FORMAT = 2
 PROVIDER = "functai-baked"          # a head model: answers judgments (like Jev)
 PROVIDER_LM = "functai-baked-lm"    # a generative student: answers in its trained layout
 METHOD = "provider_classification"  # lm15's word for a classifier's distribution over declared answers
@@ -51,6 +58,29 @@ def _sha256_file(path: Path) -> str:
 def hash_folder(root: Path) -> Dict[str, str]:
     return {p.relative_to(root).as_posix(): _sha256_file(p)
             for p in sorted(root.rglob("*")) if p.is_file() and p.name != "baked.json"}
+
+
+QUICK = 64 << 20
+
+
+def _changed(root: Path, meta: Dict[str, Any], *, full: bool) -> List[str]:
+    """Files that differ from their recorded hashes. Quick (the default when
+    loading): every small file hashed, large ones (weights) checked by size;
+    ``full``: every byte hashed (``functai.verify``, and saved programs)."""
+    sizes = meta.get("sizes", {})
+    out = []
+    for rel, digest in meta.get("hashes", {}).items():
+        p = root / rel
+        if not p.exists():
+            out.append(rel)
+            continue
+        size = p.stat().st_size
+        if not full and size > QUICK and rel in sizes:
+            if size != sizes[rel]:
+                out.append(rel)
+        elif _sha256_file(p) != digest:
+            out.append(rel)
+    return out
 
 
 def default_home() -> Path:
@@ -106,33 +136,35 @@ class _Batcher:
 
 
 class Baked:
-    """A model trained for one AI function (see the module docstring)."""
+    """A model trained for one or more AI functions (see the module docstring)."""
 
     __functai_baked__ = True
 
-    def __init__(self, path: "str | os.PathLike[str]", *, device: Optional[str] = None, check: bool = True):
+    def __init__(self, path: "str | os.PathLike[str]", *, device: Optional[str] = None, check: Any = True):
         self.path = Path(path).expanduser().resolve()
         try:
             self.meta = json.loads((self.path / "baked.json").read_text())
         except FileNotFoundError:
             raise BakeError(f"{self.path} is not a baked model (no baked.json)") from None
-        if self.meta.get("functai_baked") != FORMAT:
-            raise BakeError(f"{self.path}: unknown baked format {self.meta.get('functai_baked')!r}")
+        fmt = self.meta.get("functai_baked")
+        if fmt != FORMAT:
+            raise BakeError(f"{self.path}: baked format {fmt!r}; this functai reads format {FORMAT} "
+                            f"(bake it again)" if fmt == 1 else f"{self.path}: unknown baked format {fmt!r}")
         if check:
-            changed = [rel for rel, digest in self.meta.get("hashes", {}).items()
-                       if not (self.path / rel).exists() or _sha256_file(self.path / rel) != digest]
+            changed = _changed(self.path, self.meta, full=check == "full")
             if changed:
                 raise BakeError(f"{self.path}: files changed since baking: {changed[:5]}")
         self.kind: str = self.meta["kind"]
-        self.fields = [HeadField.from_dict(d) for d in self.meta.get("fields", [])]
+        self.entries: Dict[str, Entry] = {d["name"]: Entry.from_meta(d) for d in self.meta["functions"]}
+        head = self.meta.get("head") or {}
+        self.fields = [HeadField.from_dict(d) for d in head.get("fields", [])]
         self._device = device
         self._model = None
         self._tokenizer = None
         self._lock = threading.Lock()
-        self._batcher = _Batcher(self._run_texts if self.kind == "head" else self._generate, max_batch=64)
-        self._server = None
+        self._batcher = _Batcher(self._run_texts, max_batch=64) if self.kind == "head" else None
+        self._runner = None
         self._report = None
-        self.endpoint: Optional[str] = None       # generative students served elsewhere (serve())
 
     # ---- identity
 
@@ -153,32 +185,95 @@ class Baked:
         return self.meta["student"]
 
     @property
+    def functions(self) -> List[str]:
+        return list(self.entries)
+
+    def _only(self) -> Entry:
+        if len(self.entries) != 1:
+            raise BakeError(f"{self.name} answers several functions ({self.functions}); ask for one: "
+                            f"baked.entries[name]")
+        return next(iter(self.entries.values()))
+
+    @property
     def layout(self) -> Dict[str, Any]:
-        """The lmcc adapter artifact the model reads its inputs through."""
-        return self.meta["layout"]
+        """The lmcc adapter artifact its function's calls are written in (one function)."""
+        return self._only().layout
 
     @property
     def signature(self) -> lmcc.SignatureCore:
-        return lmcc.signature_from_dict(self.meta["signature"])
+        """What the student reads (one function)."""
+        return self._only().signature
 
     @property
     def fingerprint(self) -> str:
-        return self.meta["fingerprint"]
+        return self._only().fingerprint
 
     @property
     def capabilities(self) -> Dict[str, bool]:
-        return dict(CAPABILITIES) if self.kind == "head" else dict(self.meta.get("capabilities", {"instruct": True}))
+        if self.kind == "head":
+            return dict(CAPABILITIES)
+        return dict(next(iter(self.entries.values())).capabilities)
+
+    @property
+    def template(self):
+        from .template import Template
+        return Template.from_dict(self.meta["template"])
 
     @property
     def report(self):
-        from .report import BakeReport
         if self._report is None and self.meta.get("report"):
-            self._report = BakeReport.from_dict(self.meta["report"])
+            from .report import load_report
+            self._report = load_report(self.meta["report"])
         return self._report
 
     def __repr__(self) -> str:
-        what = ", ".join(f"{f.name} ({len(f.keys)} answers)" for f in self.fields) or self.kind
-        return f"<Baked {self.name}: {self.student} → {what} | {self.path}>"
+        if self.kind == "head":
+            what = ", ".join(f"{f.name} ({len(f.keys)} answers)" for f in self.fields)
+        else:
+            what = ", ".join(self.functions)
+        w = self.meta.get("weights", {})
+        where = w.get("uri") if w.get("form") == "remote" else str(self.path)
+        return f"<Baked {self.name}: {self.student} → {what} | {where}>"
+
+    # ---- which function, and how its calls are laid out
+
+    def entry_for(self, fn, spec) -> Entry:
+        """The entry for ``fn`` (refused when the model was not trained for it,
+        or when it changed since)."""
+        entry = self.entries.get(fn.__name__)
+        if entry is None and len(self.entries) == 1:
+            entry = next(iter(self.entries.values()))       # one function: its name may differ; its signature may not
+        if entry is None:
+            import lmcc as _lmcc
+            fp = _lmcc.signature_fingerprint(spec.signature)
+            entry = next((e for e in self.entries.values() if e.fingerprint == fp), None)
+        if entry is None:
+            raise BakeError(f"the baked model {self.name!r} was not trained for {fn.__name__} "
+                            f"(it answers {self.functions})")
+        if self.kind == "head":
+            from .examples import head_fields, head_signature
+            try:
+                signature = head_signature(spec, head_fields(spec))
+            except BakeError as exc:
+                raise BakeError(f"{fn.__name__} cannot run on the baked model {self.name!r}: {exc}") from None
+            entry.check(dataclasses.replace(spec, signature=signature))
+        else:
+            entry.check(spec)
+        return entry
+
+    def call_signature(self, fn, spec) -> lmcc.SignatureCore:
+        """The signature ``fn``'s calls bind on this model: what the student reads."""
+        entry = self.entry_for(fn, spec)
+        if self.kind == "head":
+            return spec.signature          # the judgment layout reads the function's own outputs
+        return entry.student_spec(spec).signature
+
+    def reduce(self, fn, spec, inputs, *, check: bool = True):
+        """(spec, inputs) as the student reads them (fixed and derived inputs left
+        out, after checking their values)."""
+        if self.kind == "head":
+            return spec, dict(inputs)
+        return self.entry_for(fn, spec).reduce(spec, inputs, check=check)
 
     # ---- running
 
@@ -186,9 +281,73 @@ class Baked:
     def device(self) -> str:
         if self._device is None:
             from .heads import choose_device
-            size = sum(p.stat().st_size for p in (self.path / "model").rglob("*.safetensors"))
-            self._device = choose_device(None, need_gb=size / 2 ** 30 * 1.5 + 0.5)
+            size = sum(p.stat().st_size for p in (self.path / "model").rglob("*.safetensors")) \
+                if (self.path / "model").exists() else 0
+            self._device = choose_device(None, need_gb=size / 2 ** 30 * 1.3 + 0.5)
         return self._device
+
+    def tokenizer(self):
+        if self._tokenizer is None:
+            with self._lock:
+                if self._tokenizer is None:
+                    from .template import load_tokenizer
+                    local = self.path / "tokenizer"
+                    tok = load_tokenizer(str(local) if local.exists() else self.student)
+                    if self.kind != "head":
+                        import hashlib as _h
+                        got = "sha256:" + _h.sha256((tok.chat_template or "").encode()).hexdigest()
+                        if got != self.template.sha256:
+                            raise BakeError(f"{self.name}: the tokenizer's chat template is not the one it was "
+                                            f"trained with")
+                    self._tokenizer = tok
+        return self._tokenizer
+
+    def on(self, where: Any = None, **options) -> "Baked":
+        """Run on ``where``: ``"transformers"`` (in this process), ``"vllm"`` (a
+        server started here), ``"tinker"``, or an OpenAI-compatible URL. Returns
+        the model."""
+        if self.kind == "head":
+            raise BakeError("a head model runs in-process at full speed; on() is for generative students")
+        from . import runners
+        old, self._runner = self._runner, runners.make(self, where, **options)
+        if old is not None and old is not self._runner:
+            old.close()
+        return self
+
+    @property
+    def runner(self):
+        if self._runner is None:
+            with self._lock:
+                if self._runner is None:
+                    from . import runners
+                    self._runner = runners.make(self)
+        return self._runner
+
+    def serve(self, **options) -> str:
+        """Serve with vLLM and send calls there; returns the endpoint."""
+        self.on("vllm", **options)
+        return self._runner.url
+
+    @property
+    def endpoint(self) -> Optional[str]:
+        return getattr(self._runner, "url", None)
+
+    def stop(self) -> None:
+        """Stop a server this model started (``serve()``/``on("vllm")``); calls run in-process again."""
+        if self._runner is not None:
+            self._runner.close()
+        self._runner = None
+
+    def download(self, path: "str | os.PathLike[str] | None" = None) -> "Baked":
+        """Bring weights trained on a service here (merged into a standard
+        folder). Returns the model, loaded from its folder."""
+        w = self.meta["weights"]
+        if w.get("form") != "remote":
+            return self
+        from .trainers import trainer
+        return trainer(w["service"]).download(self, Path(path).expanduser().resolve() if path else self.path)
+
+    # ---- the head path
 
     def _ensure(self) -> None:
         if self._model is not None:
@@ -196,56 +355,22 @@ class Baked:
         with self._lock:
             if self._model is not None:
                 return
-            if self.kind == "head":
-                from . import heads
-                self._model, self._tokenizer = heads.load(
-                    str(self.path), self.meta["architecture"], [len(f.keys) for f in self.fields],
-                    decoder=self.meta.get("decoder", False), device=self.device)
-            else:
-                from . import sft
-                self._model, self._tokenizer = sft.load(str(self.path), self.device)
+            from . import heads
+            head = self.meta["head"]
+            self._model, self._tokenizer = heads.load(
+                str(self.path), head["architecture"], [len(f.keys) for f in self.fields],
+                decoder=head.get("decoder", False), device=self.device)
 
     def _run_texts(self, texts: Sequence[str]) -> List[Any]:
         self._ensure()
-        if self.kind != "head":
-            from . import sft
-            return sft.generate(self, texts)
         from . import heads
         from .metrics import softmax
-        ids, _cut = heads.encode(self._tokenizer, texts, self.meta["max_length"])
+        head = self.meta["head"]
+        ids, _cut = heads.encode(self._tokenizer, texts, head["max_length"])
         zs = heads.logits(self._model, self._tokenizer, ids, self.device)
-        temps = self.meta["temperatures"]
-        out = []
-        for r in range(len(texts)):
-            out.append({f.name: dict(zip(f.keys, softmax(zs[i][r], temps[i]))) for i, f in enumerate(self.fields)})
-        return out
-
-    def _generate(self, items: Sequence[Any]) -> List[str]:
-        from . import sft
-        return sft.generate_batch(self, items)
-
-    def serve(self, **options) -> str:
-        """Serve a generative student with vLLM and send calls there (see ``sft.serve``)."""
-        if self.kind == "head":
-            raise BakeError("serve() is for generative students; a head model runs in-process at full speed")
-        from . import sft
-        return sft.serve(self, **options)
-
-    def stop(self) -> None:
-        """Stop the vLLM server ``serve()`` started; calls run in-process again."""
-        if self._server is not None:
-            import signal
-            try:
-                os.killpg(self._server.pid, signal.SIGTERM)
-                self._server.wait(timeout=60)
-            except ProcessLookupError:
-                pass
-            except Exception:  # noqa: BLE001 — it did not stop in time
-                try:
-                    os.killpg(self._server.pid, signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-        self._server, self.endpoint = None, None
+        temps = head["temperatures"]
+        return [{f.name: dict(zip(f.keys, softmax(zs[i][r], temps[i]))) for i, f in enumerate(self.fields)}
+                for r in range(len(texts))]
 
     def probabilities(self, texts: Sequence[str]) -> List[Dict[str, Dict[str, float]]]:
         """Per text, the probability of every answer, per field (texts as the layout writes them)."""
@@ -256,11 +381,12 @@ class Baked:
     def texts(self, rows: Sequence[Dict[str, Any]]) -> List[str]:
         """The input text the model reads for each row of inputs (written by its layout)."""
         from .. import engine
-        plan = input_plan(self.signature, lmcc.load(self.layout))
+        entry = self._only()
+        plan = input_plan(entry.signature, lmcc.load(entry.layout))
         out = []
         for row in rows:
             values = {}
-            for f in self.signature.inputs:
+            for f in entry.signature.inputs:
                 if f.name not in row:
                     raise BakeError(f"a row lacks the input {f.name!r}")
                 v = row[f.name]
@@ -272,8 +398,9 @@ class Baked:
         return out
 
     def predict(self, rows: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """Answers for many rows at once (the fast path for big tables): per row,
-        each field's answer, its probability, and the full distribution."""
+        """A head model's answers for many rows at once (the fast path for big
+        tables): per row, each field's answer, its probability, and the full
+        distribution."""
         dists = self.probabilities(self.texts(rows))
         out = []
         for d in dists:
@@ -294,8 +421,7 @@ class Baked:
 
     def complete(self, request: Any) -> Any:
         if self.kind != "head":
-            from . import sft
-            return sft.complete(self, request)
+            return self.runner.complete(request)
         from .examples import nest
         text = request_text(request)
         dist = self._batcher.submit(text)
@@ -309,6 +435,13 @@ class Baked:
                              usage=lm15.Usage(input_tokens=n, output_tokens=0, total_tokens=n))
 
     # ---- files
+
+    def requirements(self) -> List[str]:
+        """The packages running it needs here."""
+        w = self.meta.get("weights", {})
+        if w.get("form") == "remote" and w.get("service") == "tinker":
+            return ["tinker", "transformers"]
+        return ["torch", "transformers", "safetensors"] + (["peft"] if w.get("form") == "lora" else [])
 
     def save(self, path: "str | os.PathLike[str]", *, overwrite: bool = False) -> "Baked":
         """Copy the model to ``path``; returns it loaded from there."""
@@ -329,7 +462,10 @@ def write_meta(path: Path, meta: Dict[str, Any]) -> None:
     meta["functai_baked"] = FORMAT
     meta.setdefault("created", _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"))
     meta["hashes"] = hash_folder(path)
-    (path / "baked.json").write_text(json.dumps(meta, indent=1, ensure_ascii=False, default=str) + "\n")
+    meta["sizes"] = {rel: (path / rel).stat().st_size for rel in meta["hashes"]}
+    tmp = path / "baked.json.tmp"
+    tmp.write_text(json.dumps(meta, indent=1, ensure_ascii=False, default=str) + "\n")
+    tmp.replace(path / "baked.json")
 
 
 def is_baked(obj: Any) -> bool:
@@ -341,4 +477,4 @@ def load(path: "str | os.PathLike[str]", *, device: Optional[str] = None) -> Bak
     return Baked(path, device=device)
 
 
-__all__ = ["Baked", "load", "is_baked", "PROVIDER", "PROVIDER_LM"]
+__all__ = ["Baked", "load", "is_baked", "write_meta", "default_home", "PROVIDER", "PROVIDER_LM", "FORMAT"]

@@ -1,0 +1,95 @@
+{
+ "description": "A fixed input is left out of the student's signature and of every message; its value's hash is kept.",
+ "definition": {
+  "name": "reply",
+  "description": "Answer the customer.",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "guide",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "bake": {
+  "fixed": {
+   "guide": "Write like a friendly librarian: short sentences, no jargon, never more than three of them."
+  }
+ },
+ "rows": [
+  {
+   "inputs": {
+    "message": "Where is my order?",
+    "guide": "Write like a friendly librarian: short sentences, no jargon, never more than three of them."
+   },
+   "outputs": {
+    "result": "On its way."
+   }
+  }
+ ],
+ "expect": {
+  "signature": {
+   "instructions": "Function: reply\n\nAnswer the customer.",
+   "fields": [
+    {
+     "name": "message",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "fixed": {
+   "guide": "sha256:8b48fae736a0226cc6c255a75bdef407d69bc1c1cba64cb738480efd0bec3819"
+  },
+  "derived": {},
+  "examples": [
+   {
+    "messages": [
+     {
+      "role": "system",
+      "content": "Function: reply\n\nAnswer the customer.\n\nReply in exactly this form:\n<result>\n...\n</result>\n"
+     },
+     {
+      "role": "user",
+      "content": "<message>\nWhere is my order?\n</message>\n"
+     },
+     {
+      "role": "assistant",
+      "content": "<result>\nOn its way.\n</result>"
+     }
+    ]
+   }
+  ]
+ }
+}
