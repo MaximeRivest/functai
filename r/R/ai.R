@@ -337,7 +337,10 @@ route <- function(s) {
 
 # ---------------------------------------------------------------- running rows
 
-# Run one call per row. `rows`: a list of JSON input lists (NULL: skip the row).
+# Run one call per row. `rows`: a list of JSON input lists (NULL: skip the
+# row; a `functai_misfit`: refused before any request). Each row is a call of
+# its own (a tree of its own, or a step of the call it runs inside): its
+# `started`, its requests, its `done` or `failed` and its record.
 run_rows <- function(core, rows, extra = list()) {
   s <- effective(set_all(core$own, extra))
   r <- route(s)
@@ -350,42 +353,54 @@ run_rows <- function(core, rows, extra = list()) {
   program <- program_of(core, version)
   fields <- call_fields(core, s)
   keep <- content_kept(fields, content_layers(core, extra$log_content))
-  jobs <- list(); calls <- vector("list", length(rows))
+  plain_outputs <- names(core$definition$outputs)
+  jobs <- list(); calls <- vector("list", length(rows)); refused <- vector("list", length(rows))
   for (i in seq_along(rows)) {
     if (is.null(rows[[i]])) next
-    if (inherits(rows[[i]], "functai_misfit")) {                   # refused before any request
-      call <- start_call(program, s, rows[[i]]$inputs, fields, keep)
-      calls[[i]] <- call
-      next
-    }
-    call <- start_call(program, s, rows[[i]], fields, keep)
+    misfit <- inherits(rows[[i]], "functai_misfit")
+    call <- start_call(program, s, if (misfit) rows[[i]]$inputs else rows[[i]], fields, keep, own = core$own)
+    if (!core$single) call$keep_events$holds <- plain_outputs
+    call$tree$keeps[[call$id]] <- call$keep_events
     call$provider <- r$provider
+    call$core <- core
     calls[[i]] <- call
-    job <- tryCatch(new_job(plan, past, rows[[i]], s, r$model, core$tools, call), error = identity)
-    if (inherits(job, "error")) { e <- job; job <- new.env(); job$state <- "failed"; job$error <- e }
-    job$call <- call
+    err <- call_begin(call)
+    if (is.null(err) && misfit) err <- misfit_error(core, rows[[i]])
+    if (is.null(err)) {
+      hooked <- tryCatch(before_call_hooks(core, call, s, rows[[i]], plan, past), error = identity)
+      if (inherits(hooked, "error")) err <- hooked
+    }
+    if (!is.null(err)) { refused[[i]] <- err; next }
+    job <- tryCatch(new_job(hooked$plan %||% plan, hooked$past %||% past, rows[[i]], hooked$settings %||% s, hooked$model %||% r$model,
+                            hooked$tools %||% core$tools, call, core), error = identity)
+    if (inherits(job, "error")) { e <- job; job <- new.env(); job$state <- "failed"; job$error <- e; job$call <- call }
+    job$escalation <- s$escalate_to
     jobs[[as.character(i)]] <- job
   }
+  old <- the$current
   run_jobs(unname(jobs), r$router, s$concurrency)
-  lapply(seq_along(rows), function(i) {
-    if (inherits(rows[[i]], "functai_misfit")) {
-      err <- misfit_error(core, rows[[i]])
-      finish_call(calls[[i]], err)
-      return(list(error = err, call = calls[[i]]$id, model = NULL))
-    }
+  the$current <- old
+  waiting <- NULL
+  out <- lapply(seq_along(rows), function(i) {
+    call <- calls[[i]]
+    if (is.null(call)) return(list(skipped = TRUE))
     job <- jobs[[as.character(i)]]
-    if (is.null(job)) return(list(skipped = TRUE))
-    if (identical(job$state, "done")) {
-      job$call$outputs <- job$outputs
-      job$call$probabilities <- job$probabilities
-      job$call$confidence <- confidence_of(job$outputs, job$probabilities)
-      finish_call(job$call)
-      list(outputs = job$outputs, call = job$call$id, model = r$model, turn = job$turn, probabilities = job$probabilities)
-    } else {
-      finish_call(job$call, job$error)
-      list(error = job$error, call = job$call$id, model = r$model)
-    }
+    err <- refused[[i]]
+    if (is.null(err) && identical(job$state, "waiting")) { waiting <<- waiting %||% job$waiting; call$ended <- TRUE; return(list(waiting = TRUE, call = call$id)) }
+    if (is.null(err) && identical(job$state, "done")) {
+      job <- escalate(core, job, s)
+      call$outputs <- job$outputs
+      call$probabilities <- job$probabilities
+      call$confidence <- confidence_of(job$outputs, job$probabilities)
+      call$done_value <- if (core$single) job$outputs[["result"]] else job$outputs[intersect(plain_outputs, names(job$outputs))]
+      call$steps <- steps_of(call, job$turn)
+    } else if (is.null(err)) err <- job$error
+    ending <- call_end(call, err)
+    if (is.null(ending)) list(outputs = job$outputs, call = call$id, model = job$model, turn = job$turn, probabilities = job$probabilities)
+    else list(error = ending, call = call$id, model = if (!is.null(job)) job$model else NULL)
   })
+  if (!is.null(waiting)) stop(waiting)
+  out
 }
 
 # How sure the model was (contract/calls.md, `confidence`): the probability it

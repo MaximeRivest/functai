@@ -6,7 +6,8 @@ DEFAULTS <- list(retries = 1L, api_retries = 3L, max_steps = 8L, tool_errors = "
 
 SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "seed", "config", "adapter", "template",
               "module", "include_fn_name", "capabilities", "retries", "api_retries", "max_steps", "tool_errors",
-              "log_calls", "log_content", "caller", "concurrency", "on_error")
+              "log_calls", "log_content", "caller", "concurrency", "on_error", "observers", "journal", "program_observers",
+              "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below")
 
 check_settings <- function(s, call = rlang::caller_env()) {
   twice <- unique(names(s)[duplicated(names(s))])
@@ -14,6 +15,21 @@ check_settings <- function(s, call = rlang::caller_env()) {
   bad <- setdiff(names(s), SETTINGS)
   if (length(bad)) cli::cli_abort(c("unknown setting{?s}: {.val {bad}}", i = "settings are {.val {SETTINGS}}"))
   if ("log_content" %in% names(s)) s["log_content"] <- list(normalize_log_content(s$log_content, call = call))
+  if ("journal" %in% names(s)) s["journal"] <- list(journal_setting(s$journal))
+  if ("observers" %in% names(s)) {
+    o <- s$observers
+    if (is.function(o)) o <- list(o)
+    if (!is.null(o) && (!is.list(o) || !all(vapply(o, is.function, NA))))
+      cli::cli_abort("{.arg observers} is a list of functions, each given every event as it is made", call = call)
+    s["observers"] <- list(o)
+  }
+  if ("program_observers" %in% names(s) && !is.null(s$program_observers) && !rlang::is_bool(s$program_observers))
+    cli::cli_abort("{.arg program_observers} is TRUE or FALSE", call = call)
+  if ("cache_replies" %in% names(s) && !is.null(s$cache_replies) && !isTRUE(s$cache_replies) && !isFALSE(s$cache_replies)) reply_store(s$cache_replies)
+  if ("replicate" %in% names(s) && !is.null(s$replicate) && !(is_num(s$replicate) && s$replicate >= 0 && s$replicate == round(s$replicate)))
+    cli::cli_abort("{.arg replicate} is a whole number from 0: the n-th independent answer to the same request", call = call)
+  if ("plugins" %in% names(s)) s["plugins"] <- list(check_plugins(s$plugins, call = call))
+  if ("approve" %in% names(s)) s["approve"] <- list(check_approve(s$approve, call = call))
   s
 }
 
@@ -81,15 +97,17 @@ local_ai_config <- function(..., .local_envir = parent.frame()) {
 # A block's settings: each replaces the one outside it, except log_content,
 # which is one more layer that can only remove (content.R).
 enter_block <- function(s) {
-  old <- list(scoped = the$scoped, blocks = the$content_blocks)
+  old <- list(scoped = the$scoped, blocks = the$content_blocks, layers = the$blocks)
   the$scoped <- set_all(old$scoped, s[names(s) != "log_content"])
   if ("log_content" %in% names(s)) the$content_blocks <- c(old$blocks, list(s$log_content))
+  the$blocks <- c(old$layers, list(s))          # each block's own settings, for what adds up or holds across layers
   old
 }
 
 leave_block <- function(old) {
   the$scoped <- old$scoped
   the$content_blocks <- old$blocks
+  the$blocks <- old$layers
 }
 
 # `base` with each of `new`'s settings replacing its own (not merged into it).

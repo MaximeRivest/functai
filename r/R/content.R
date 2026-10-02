@@ -121,7 +121,8 @@ check_own_content <- function(core, call = NULL) {
 # whole is rebuilt from what may be kept (an error keeps its type and code,
 # never a member this contract does not name).
 ALWAYS_KEPT <- c("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
-                 "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
+                 "confidence", "caller", "process", "saw", "escalated", "truncated", "journal", "invocation",
+                 "conversation", "replayable", "writer")
 ERROR_KEPT <- c("type", "code")
 
 # The record as written: the whole record when every field is kept, else
@@ -131,6 +132,7 @@ kept_record <- function(rec, fields, keep) {
   out <- list()
   for (k in names(rec)) {
     if (k %in% ALWAYS_KEPT) out[k] <- list(rec[[k]])
+    if (k == "changes") out$changes <- lapply(rec$changes, function(ch) ch[names(ch) != "change"])   # its plugin and hook, not what it changed
     if (k == "content") {
       out$content <- FALSE
       out$omitted <- list(inputs = as.list(fields$inputs[!keep[fields$inputs]]), outputs = as.list(fields$outputs[!keep[fields$outputs]]))
