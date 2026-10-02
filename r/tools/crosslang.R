@@ -43,3 +43,30 @@ log <- functai:::read_log(file.path(work, "log"))
 rows <- functai:::rated_rows(log$calls, log$ratings, name = "mood", module = "shop", signature = ai_signature_id(mood),
                              interface = functai:::interface_signature(unclass(ai_interface(mood))))$rows
 writeLines(lmcc::json_text(rows), file.path(work, "r-rated.json"))
+
+# 4. stages 1.2 to 5 with Python: continue Python's conversation, answer from
+# Python's disk cache, call Python's server
+tutor <- ai(result ~ message, "Tutor.", .name = "tutor", .defined_in = "shop", .lm = "gpt-4.1-mini")
+echo <- list(resolve = function(model) list(provider = "openai", model = model),
+             complete = function(request) {
+               n <- length(lmcc::lm15_plain(lm15::as_dict(request))$messages)
+               lm15::response(request$model, lm15::message_assistant(sprintf("<result>\nr %d\n</result>", n)), "stop",
+                              usage = lm15::usage(input_tokens = 10L, output_tokens = 5L, total_tokens = 15L))
+             })
+chat <- ai_conversation(tutor, "lesson-r", store = file.path(work, "conversations"))
+answer <- with_ai_config(chat("Is it 5/6?"), router = echo, log_calls = file.path(work, "log"))
+stopifnot_eq(answer, "r 5", "the third turn saw both of Python's")
+rate(ai_turn(chat)$id, "right", by = "ana", folder = file.path(work, "log"))
+say("a conversation Python started in a folder continues here: the third turn saw Python's two")
+
+no_calls <- list(resolve = function(model) list(provider = "openai", model = model),
+                 complete = function(request) stop("r: the request should have been answered from Python's disk cache"))
+kept <- with_ai_config(update(mood, router = no_calls)("Kept for later."), cache_replies = file.path(work, "replies.sqlite"))
+stopifnot_eq(as.character(kept), "unhappy", "the cached reply")
+say("a reply Python kept in the disk cache answers the same request here, with no model call")
+
+served <- read_json(file.path(work, "served.json"))
+far <- ai_remote(served$url)
+got <- with_ai_config(far("I was charged twice."), log_calls = file.path(work, "log"))
+stopifnot_eq(as.character(got), "mixed", "the served answer")
+say("a program Python serves is called here with ai_remote (logged here, kind remote)")
