@@ -161,6 +161,7 @@ mutable struct Call
     sections::Vector{String}            # what its conversation's context hooks gave its instruction
     steps::Any                          # its lmcc turn's steps, when its record keeps them (or nothing)
     lmcc::Any                           # an AI function's lmcc turn, as JSON, once it answered (a helper's memory)
+    escalated::Bool                     # its first model was not sure enough: another answered (escalate_to)
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
@@ -177,8 +178,67 @@ function exchange!(call::Call, model, request, response, started, seconds; cache
                    first_delta=nothing, request_hash=nothing)
     push!(call.exchanges, Exchange(model, call.provider, started, seconds, cached, request, response, error, streamed,
                                    first_delta, request_hash))
+    remember_exchange(call.name, model, request, response, cached, error, started)
     nothing
 end
+
+# ------------------------------------------------------------------ the last requests, in this process
+
+const HISTORY = Any[]
+const HISTORY_LOCK = ReentrantLock()
+const HISTORY_SIZE = 500
+
+function remember_exchange(name, model, request, response, cached, error, started)
+    lock(HISTORY_LOCK) do
+        push!(HISTORY, (function_name=String(name), model=String(model), request=request, response=response, cached=cached,
+                        error=error === nothing ? nothing : "$(error_type(unwrap(error))): $(error_message(unwrap(error)))", time=started))
+        length(HISTORY) > HISTORY_SIZE && popfirst!(HISTORY)
+    end
+end
+
+"""
+    inspect_history(n = 1) -> Vector
+
+The last `n` requests FunctAI sent (or answered from its cache), oldest
+first: `(function_name, model, request, response, cached, error, time)`
+each, with lm15's request and response (exactly what went to the provider and
+what came back; `response` is `nothing` when the provider failed). The last
+500 are kept, in this process only; [`phistory`](@ref) prints them. For every
+call, kept on disk: the call log (`log_calls = true`, [`calls`](@ref)).
+"""
+inspect_history(n::Integer=1) = lock(() -> n <= 0 ? Any[] : HISTORY[max(1, end - n + 1):end], HISTORY_LOCK)
+
+"""
+    phistory(n = 1)
+
+The last `n` model calls as readable text: every message sent, the reply,
+its finish reason and tokens (a `FunctAI.History` that prints itself).
+"""
+phistory(n::Integer=1) = History(inspect_history(n))
+
+struct History
+    items::Vector{Any}
+end
+function Base.show(io::IO, ::MIME"text/plain", h::History)
+    isempty(h.items) && return print(io, "(no model calls yet)")
+    for (i, x) in enumerate(h.items)
+        i > 1 && println(io, "\n", "─"^60, "\n")
+        printstyled(io, "[", Dates.format(Dates.unix2datetime(x.time), dateformat"yyyy-mm-ddTHH:MM:SS"), "] ", x.function_name, " → ", x.model,
+                    x.cached ? " (from cache)" : "", "\n"; color=:light_black)
+        show(io, MIME"text/plain"(), Prompt(x.request))
+        println(io)
+        if x.response !== nothing
+            printstyled(io, "reply\n"; bold=true, color=:magenta)
+            println(io, join(p isa LM15.TextPart ? p.text : "($(p.type))" for p in x.response.message.parts))
+            u = x.response.usage
+            printstyled(io, "(finish: ", x.response.finish_reason, "; tokens in ", something(u.input_tokens, "?"), ", out ",
+                        something(u.output_tokens, "?"), ")"; color=:light_black)
+        elseif x.error !== nothing
+            printstyled(io, "error: ", x.error; color=:red)
+        end
+    end
+end
+Base.show(io::IO, h::History) = print(io, "History(", length(h.items), " calls)")
 
 """
 Start a call of a program: an id, its parent (the call it runs inside), the
@@ -289,7 +349,7 @@ function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{S
                 Exchange[], nothing, JObj(), JObj(), String[], nothing, nothing, false, nothing, nothing,
                 later === nothing ? 0 : later.requests, parent, 0, false, false,
                 fn, site, Dict{String,Int}(), invocation, 0, turn_run, nothing, later === nothing ? nothing : later.writer,
-                Any[], nothing, Any[], true, String[], nothing, nothing)
+                Any[], nothing, Any[], true, String[], nothing, nothing, false)
     for (k, v) in inputs
         data, described = logvalue_described(v)
         call.inputs[String(k)] = data
@@ -463,6 +523,7 @@ function call_record(call::Call; error=nothing, journal=nothing)
     rec["usage"] = usage
     rec["confidence"] = call.confidence
     rec["exchanges"] = Any[exchange_json(e, true) for e in call.exchanges]
+    call.escalated && (rec["escalated"] = true)
     call.steps === nothing || (rec["steps"] = LMCC.deepcopy_json(call.steps))
     rec["saw"] = LMCC.deepcopy_json(call.saw)
     call.invocation === nothing || (rec["invocation"] = call.invocation)

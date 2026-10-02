@@ -104,7 +104,7 @@ export conversation, Conversation, Turn, turns, continue_from, all_turns, last_t
 export approve!, deny!, resume!, abandon!, stop!, wait_turn, MemoryConversations, FolderStore
 export Plugin, Change, on!, load_plugin, compaction, delegate, Approval
 export Waiting, ApprovalError, ConversationError, PluginError, FunctAIError
-export serve, remote, quotes_found, prune_calls, train_test
+export serve, remote, quotes_found, prune_calls, train_test, inspect_history, phistory
 
 # observers and journal writers work off the calls' tasks: give them a moment when Julia exits
 __init__() = atexit(() -> (drain(2.0); EXITING[] = true; nothing))

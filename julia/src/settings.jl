@@ -30,6 +30,8 @@ const SETTING_DOCS = (
     approve = "ask before tools run: a function (asked at once; answers true, false or a reason), :changes (tools that change things or say nothing), :all, or tool names and approval paths (\"support/answer/refund\"); a person answers later",
     plugins = "plugins around calls: [Plugin(...), \"plugins/modes.jl\"]; the program's own run first, the host's last",
     program_plugins = "false (a host's block or configure!): the plugins a program sets for itself do not run. Only removes",
+    escalate_to = "when the model is less sure of its answer than escalate_below, another answers instead: a model name, a baked model, or an AI function (needs a model that measures its confidence)",
+    escalate_below = "the confidence under which escalate_to answers (default 0.9)",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
@@ -86,6 +88,9 @@ function check_setting(name::Symbol, value)
     name === :approve && approve_setting(value)
     name === :plugins && plugins_setting(value)
     name in (:program_plugins, :progress) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
+    name === :escalate_to && !(value isa Union{AbstractString,BakedModel,AIFunction}) &&
+        throw(ArgumentError("escalate_to is a model name, a baked model, or an AI function, not $(repr(value))"))
+    name === :escalate_below && !(value isa Real && 0 < value <= 1) && throw(ArgumentError("escalate_below is a probability in (0, 1], not $(repr(value))"))
     nothing
 end
 

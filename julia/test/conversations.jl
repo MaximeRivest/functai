@@ -507,3 +507,48 @@ end
     @test quotes_found(source, "the PARCEL   left leeds")
     @test !quotes_found(source, "")
 end
+
+@enum Feeling feeling_good feeling_bad
+@ai function feeling(review::String)::Feeling
+    "How does the customer feel?"
+end
+"A TypeSafe-style reply: the answer as data, with the model's probability for each answer."
+function measured(answer, p)
+    (req, i) -> LM15.Response(; model=req.model, message=LM15.Message(; role="assistant", parts=(LM15.data(Dict("result" => answer);
+        probabilities=Dict("result" => Dict("feeling_good" => p, "feeling_bad" => 1 - p)), method="provider_classification"),)),
+        finish_reason="stop", usage=LM15.Usage(; input_tokens=3, output_tokens=1))
+end
+
+@testset "escalation: a model not sure enough has another answer" begin
+    dir = mktempdir()
+    sure = FakeRouter(; responder=measured("feeling_good", 0.97), provider="typesafe")
+    @test with_settings(() -> feeling("fine"); router=sure, lm="typesafe:jev-latest", escalate_to="gpt-4.1-mini") === feeling_good
+    @test length(sure.requests) == 1
+    unsure = FakeRouter(; responder=(req, i) -> i == 0 ? measured("feeling_good", 0.55)(req, i) : xmlr(:result => "feeling_bad"))
+    unsure.provider = "typesafe"
+    got = with_settings(router=unsure, lm="typesafe:jev-latest", escalate_to="openai:gpt-4.1-mini", log_calls=dir) do
+        feeling("it broke, but support was quick")
+    end
+    @test got === feeling_bad && length(unsure.requests) == 2 && endswith(unsure.requests[2].model, "gpt-4.1-mini")
+    rec = only(FunctAI.read_log(dir)[1])
+    @test rec["escalated"] == true && length(rec["exchanges"]) == 2
+    # an AI function as the target: a call of its own, inside this one
+    @ai function careful_feeling(review::String)::Feeling
+        "How does the customer feel? Read carefully."
+    end
+    r2 = FakeRouter(; responder=(req, i) -> i == 0 ? measured("feeling_good", 0.5)(req, i) : xmlr(:result => "feeling_bad"))
+    r2.provider = "typesafe"
+    @test with_settings(() -> feeling("hm"); router=r2, lm="typesafe:jev-latest", escalate_to=configure(careful_feeling; lm="openai:gpt-4.1-mini")) === feeling_bad
+    # no probabilities: escalation cannot decide, and says so
+    plain = FakeRouter(Any[xmlr(:result => "feeling_good")])
+    @test (try with_settings(() -> feeling("x"); router=plain, lm="gpt-4.1-mini", escalate_to="gpt-4.1") catch e; e end) isa ArgumentError
+end
+
+@testset "the last requests, in this process" begin
+    r = FakeRouter(Any[xmlr(:result => "Lima")])
+    with_settings(() -> tutor("capital of Peru?"); router=r, lm=GPT)
+    h = only(inspect_history(1))
+    @test h.function_name == "tutor" && h.model == GPT && h.request isa LM15.Request && h.response isa LM15.Response
+    text = sprint(show, MIME"text/plain"(), phistory(1))
+    @test occursin("capital of Peru?", text) && occursin("Lima", text)
+end

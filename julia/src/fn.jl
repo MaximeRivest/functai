@@ -636,23 +636,60 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         sig = changed ? with_instruction(base, join([something(shaped.instruction, base.instructions); shaped.sections], "\n\n")) : nothing
         changed && check_placed(f, shaped.settings)
         offered = shaped.tools === nothing ? f.tools : AITool[t for t in f.tools if t.name in shaped.tools]
-        lm = get(shaped.settings, :lm, nothing)
-        job = if lm isa BakedModel
-            # a baked student reads its calls as it was trained: its signature and layout, no worked examples
-            changed && throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction, and it runs on a baked " *
-                                         "model, which reads only the message it was trained on: the change would not reach it"))
-            e = entry_for(lm, f)
-            plan = student_plan(e)
-            call.provider = "functai-baked-lm"
-            Job(f.definition.name, plan, shown_turns(call, f, plan), student_inputs(e, base, inputs), shaped.settings,
-                BakedRouter(lm), lm.model, AITool[], call, values -> typed_outputs(f, values))
-        else
-            r = plan_for(f, shaped.settings; sig)
-            call.provider = r.provider
-            Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
-                r.router, r.model, offered, call, values -> typed_outputs(f, values))
+        make_job(settings) = begin
+            lm = get(settings, :lm, nothing)
+            if lm isa BakedModel
+                # a baked student reads its calls as it was trained: its signature and layout, no worked examples
+                changed && throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction, and it runs on a " *
+                                             "baked model, which reads only the message it was trained on: the change would not reach it"))
+                e = entry_for(lm, f)
+                plan = student_plan(e)
+                call.provider = "functai-baked-lm"
+                Job(f.definition.name, plan, shown_turns(call, f, plan), student_inputs(e, base, inputs), settings,
+                    BakedRouter(lm), lm.model, AITool[], call, values -> typed_outputs(f, values))
+            else
+                r = plan_for(f, settings; sig)
+                call.provider = r.provider
+                Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
+                    r.router, r.model, offered, call, values -> typed_outputs(f, values))
+            end
         end
+        job = make_job(shaped.settings)
         outputs, turn, responses, reading = run_job(job)
+        probs = reading.probabilities
+        repairs = reading.repairs
+        confidence = answer_confidence(probs, outputs)
+        # escalation: a first model less sure than escalate_below has another model (or AI function) answer instead
+        target = escalation_target(f, shaped.settings)
+        if target !== nothing
+            confidence === nothing && throw(ArgumentError("$(f.definition.name): escalate_to needs a first model that measures its " *
+                "confidence (a baked model, TypeSafe's Jev, or probabilities = :required); $(job.model) gave no probabilities"))
+            threshold = Float64(something(get(shaped.settings, :escalate_below, nothing), 0.9))
+            if confidence < threshold
+                who = target isa AIFunction ? target.definition.name : target isa BakedModel ? target.model : String(target)
+                emit_retry(call, "the first model was $(round(Int, 100confidence))% sure (less than $(round(Int, 100threshold))%); " *
+                                 "$who answers instead", nothing)
+                call.escalated = true
+                if target isa AIFunction
+                    # the target follows its own escalate_to (a longer chain), never one around this call
+                    p2 = with(ESCALATING => true) do
+                        predict_inputs(target, with_defaults(target, OrderedDict{String,Any}(k => v for (k, v) in inputs if k in input_names(target))))
+                    end
+                    p2 === missing && throw(ArgumentError("$(target.definition.name) answered nothing"))
+                    outputs = NamedTuple{Tuple(Symbol(x.name) for x in f.definition.outputs)}(Tuple(p2.outputs[Symbol(x.name)] for x in f.definition.outputs))
+                    turn, responses, probs, repairs = p2.turn, p2.responses, getfield(p2, :probabilities), p2.repairs
+                    confidence = answer_confidence(probs, outputs)
+                else
+                    second = copy(shaped.settings)
+                    second[:lm] = target
+                    delete!(second, :escalate_to)
+                    job = make_job(second)
+                    outputs, turn, responses, reading = run_job(job)
+                    probs, repairs = reading.probabilities, reading.repairs
+                    confidence = answer_confidence(probs, outputs)
+                end
+            end
+        end
         call.lmcc = try
             LMCC.turn_to_dict(turn)
         catch
@@ -660,16 +697,11 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         end
         call.steps = steps_of(call, turn)
         call.outputs = recorded_outputs(f, fields, outputs, turn, job.asked)
-        probs = reading.probabilities
-        if !isempty(probs)
-            chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
-            chosen = filter(!isnothing, chosen)
-            isempty(chosen) || (call.confidence = minimum(chosen))
-        end
+        call.confidence = confidence
         value = value_of(f, inputs, outputs)
         call.returned = f.body === nothing ? outputs[Symbol(answer_name(f))] : value
         call.has_returned = true
-        prediction[] = Prediction(value, outputs, answer_name(f), call.id, turn, responses, reading.repairs, probs)
+        prediction[] = Prediction(value, outputs, answer_name(f), call.id, turn, responses, repairs, probs)
         value
     end
     prediction[]
@@ -717,6 +749,18 @@ function steps_of(call::Call, turn)
         nothing
     end
 end
+
+"A model's probability for its own answers (the least of the outputs it measured), or `nothing` when it measures none."
+function answer_confidence(probs, outputs)
+    isempty(probs) && return nothing
+    chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
+    chosen = filter(!isnothing, chosen)
+    isempty(chosen) ? nothing : minimum(chosen)
+end
+
+"Internal: an escalation target answering; it follows only its own `escalate_to`."
+const ESCALATING = ScopedValue(false)
+escalation_target(f::AIFunction, s) = ESCALATING[] ? get(f.own, :escalate_to, nothing) : get(s, :escalate_to, nothing)
 
 """
     configure(f; settings...)
