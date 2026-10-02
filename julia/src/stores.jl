@@ -214,11 +214,13 @@ struct FolderEvents <: EventStore
     folder::String
     durable::Bool
     files::Dict{String,JSONLines}
+    events::Dict{String,Vector{Event}}      # each log's events read so far (each line checked once, when first read)
+    events_read::Dict{String,Int}           # how many of its lines they come from
     guard::ReentrantLock
 end
 function FolderEvents(folder::AbstractString; durable::Bool=false)
     mkpath(folder; mode=0o700)
-    FolderEvents(abspath(folder), durable, Dict{String,JSONLines}(), ReentrantLock())
+    FolderEvents(abspath(folder), durable, Dict{String,JSONLines}(), Dict{String,Vector{Event}}(), Dict{String,Int}(), ReentrantLock())
 end
 Base.show(io::IO, s::FolderEvents) = print(io, "FolderEvents(", repr(s.folder), ")")
 
@@ -227,8 +229,23 @@ function tree_file(s::FolderEvents, tree::AbstractString, ext)
     joinpath(s.folder, "$tree.$ext")
 end
 tree_lines(s::FolderEvents, tree) = lock(() -> get!(() -> JSONLines(tree_file(s, tree, "jsonl")), s.files, String(tree)), s.guard)
+"A log's events (a copy), its new lines read and checked once: a store appended to event by event reads each line once."
 function tree_events(s::FolderEvents, tree)
-    Event[Event(x) for x in load!(tree_lines(s, tree)) if x isa AbstractDict && !haskey(x, "unreadable")]
+    lines = tree_lines(s, tree)
+    lock(lines.lock) do
+        items = load!(lines)
+        seen = get!(() -> Event[], s.events, String(tree))
+        read_upto = get(s.events_read, String(tree), 0)
+        if read_upto > length(items)              # the file was replaced: read it all again
+            empty!(seen)
+            read_upto = 0
+        end
+        for x in items[read_upto+1:end]
+            x isa AbstractDict && !haskey(x, "unreadable") && push!(seen, Event(x))
+        end
+        s.events_read[String(tree)] = length(items)
+        copy(seen)
+    end
 end
 function tree_writer(s::FolderEvents, tree)
     p = tree_file(s, tree, "writer")

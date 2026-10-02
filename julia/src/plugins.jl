@@ -95,8 +95,7 @@ function on!(f, p::Plugin, hook)
     h = Symbol(hook)
     haskey(HOOKS, h) || throw(PluginError("plugin-hook", "$(p.name): there is no hook $(repr(hook)); hooks: " *
                                           join(keys(HOOKS), ", "); plugin=p.name, hook=string(hook)))
-    f isa Union{Function,Base.Callable} || applicable(f, nothing) ||
-        throw(ArgumentError("$(p.name).$h: a handler is a function of one event"))
+    (f isa Base.Callable || !isempty(methods(f))) || throw(ArgumentError("$(p.name).$h: a handler is a function of one event"))
     push!(get!(() -> Any[], p.handlers, h), f)
     p
 end
