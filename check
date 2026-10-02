@@ -44,13 +44,10 @@ step "2/6 python"
 (cd python && HF_HUB_OFFLINE="${HF_HUB_OFFLINE:-1}" .venv/bin/python -m pytest -q -p no:cacheprovider)
 
 step "3/6 typescript"
-if [ ! -d ts/node_modules ]; then
-  # lmcc's TypeScript kernel is not on npm yet: ts/package.json links ../../lmcc/ts
-  if [ ! -f ../lmcc/ts/package.json ]; then
-    echo "ts/ needs lmcc checked out next to this repository (../lmcc), until lmcc is published to npm" >&2
-    exit 1
-  fi
-  (cd ts && npm install --no-audit --no-fund)
+# ts/node_modules as package-lock.json says (lmcc and lm15 from npm): installed
+# again when the lock file is newer than the last install
+if [ ! -f ts/node_modules/.package-lock.json ] || [ ts/package-lock.json -nt ts/node_modules/.package-lock.json ]; then
+  (cd ts && npm ci --no-audit --no-fund)
 fi
 (cd ts && npx tsc --noEmit && npm test --silent 2>&1 | grep -E '^ℹ (tests|pass|fail)|^✖' ; exit "${PIPESTATUS[0]}")
 

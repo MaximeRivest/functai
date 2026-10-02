@@ -2,7 +2,7 @@
  * functai for TypeScript against real models (costs cents). Not run by `npm test`.
  *
  *     set -a; source ~/Projects/lm15-dev/.env; set +a
- *     node --conditions=functai-source --conditions=lmcc-source tools/live.ts [model ...]
+ *     node --conditions=functai-source tools/live.ts [model ...]
  */
 import { ai, evaluate, t, tool } from "../src/index.ts";
 

@@ -121,7 +121,7 @@ def main() -> int:
 
     # 2, 1 and 3b in TypeScript
     node = subprocess.run(
-        ["node", "--conditions=functai-source", "--conditions=lmcc-source", "tools/crosslang.ts", str(work)],
+        ["node", "--conditions=functai-source", "tools/crosslang.ts", str(work)],
         cwd=ROOT / "ts", capture_output=True, text=True)
     print(node.stdout, end="")
     if node.returncode != 0:

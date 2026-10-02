@@ -137,7 +137,10 @@ Stage 1 of the contract (design/08-stage1-foundations.md):
   recorded as `{"$type": "Object", ...}`). An array's hole, or
   `undefined`, in a recorded value is `null` (an `undefined` made the
   whole value a description).
-- **functai needs lmcc with decision D-58** (commit `3492090` or later):
+- **lmcc comes from npm** (`lmcc` ^0.8.5), no longer from a checkout of
+  lmcc beside this repository: `npm install functai` installs everything
+  it needs.
+- **functai needs lmcc with decision D-58** (lmcc 0.8.5 or later):
   it refuses to start on an lmcc without its helpers (lmcc 0.8.4 as
   published on npm). The workarounds for the older kernel are gone: values
   are ordinary objects again, and nothing is refused for its names.

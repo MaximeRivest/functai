@@ -44,7 +44,7 @@ python/.venv/bin/python tools/docs.py generate  # reference, examples, news page
 python/.venv/bin/python tools/docs.py run [PAGE ...]   # run notebooks (needs model keys; costs cents)
 python/.venv/bin/python tools/docs.py manuals   # TypeScript's, R's and Julia's manuals (after r/check)
 python/.venv/bin/python tools/docs.py site      # build the website into site/, with the manuals built so far
-cd ts && npm install && npm test                # TypeScript (needs ../lmcc checked out: lmcc is not on npm yet)
+cd ts && npm ci && npm test                     # TypeScript (lmcc and lm15 from npm)
 cd ts && node tools/generate.ts                 # after changing contract/layouts, models.json or unicode/
 r/check                                         # R (needs ../lmcc and ../lm15-dev checked out; R from nixpkgs if not on PATH)
 julia/check                                     # Julia (needs ../lmcc and ../lm15-dev checked out; Julia from nixpkgs if not on PATH)
@@ -56,7 +56,7 @@ python/.venv/bin/python contract/cases/make.py  # after changing a rule: rewrite
 
 Live runs (real models, costs cents): `cd python && .venv/bin/python
 tests/live.py`; `cd ts && node --conditions=functai-source
---conditions=lmcc-source tools/live.ts`; `R_LIBS=r/.lib Rscript r/tools/live.R`; `julia --project=julia
+tools/live.ts`; `R_LIBS=r/.lib Rscript r/tools/live.R`; `julia --project=julia
 julia/tools/live.jl`.
 
 Model keys for live runs: `set -a; source ~/Projects/lm15-dev/.env; set +a`
