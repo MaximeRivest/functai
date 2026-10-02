@@ -110,7 +110,11 @@ end
 """
 One call being made: its id, its parent, the tree's log it is in, which of
 its fields the log keeps, its exchanges; a line in the log when it ends, if
-logging is on.
+logging is on. Its `site` is its place in its tree by names and order
+(`support#1/answer#1`: what resuming a turn finds what it did before by),
+its `invocation` the tool call it was made in, and what it was shown
+(`saw`), what plugins changed of it (`changes`, `sections`), and the turn of
+a conversation it runs in (`turn_run`).
 """
 mutable struct Call
     const id::String
@@ -142,6 +146,22 @@ mutable struct Call
     open::Int                           # calls made inside it that have started and not ended (on its tree's lock)
     ended::Bool                         # its end is numbered: no call attaches to it any more (on its tree's lock)
     released::Bool                      # its parent no longer waits for it
+    const fn::Any                       # the program called (an AIFunction, an AIProgram, a remote program), or nothing
+    const site::String                  # its place in its tree, by names and order: "support#1/answer#1"
+    names::Dict{String,Int}             # how many calls of each name it started (on its tree's lock)
+    const invocation::Union{Nothing,Int}  # made while a tool ran: that tool call's number in its call
+    invocations::Int                    # the tool calls it made so far (1, 2, … across every step)
+    const turn_run::Any                 # the conversation's turn it runs in, or nothing
+    conversation::Union{Nothing,JObj}   # a turn's own call: {"id", "turn", "parent"}
+    writer::Union{Nothing,Int}          # a call continued by a later writer (a resumed turn): its number
+    saw::Vector{Any}                    # what it was shown, as the call log's saw entries
+    context::Any                        # the earlier turns it is shown (an AI function's), as they are shown
+    changes::Vector{Any}                # what plugins changed of it, in order
+    replayable::Bool                    # false: a plugin replaced a provider request
+    sections::Vector{String}            # what its conversation's context hooks gave its instruction
+    steps::Any                          # its lmcc turn's steps, when its record keeps them (or nothing)
+    lmcc::Any                           # an AI function's lmcc turn, as JSON, once it answered (a helper's memory)
+    escalated::Bool                     # its first model was not sure enough: another answered (escalate_to)
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
@@ -158,8 +178,67 @@ function exchange!(call::Call, model, request, response, started, seconds; cache
                    first_delta=nothing, request_hash=nothing)
     push!(call.exchanges, Exchange(model, call.provider, started, seconds, cached, request, response, error, streamed,
                                    first_delta, request_hash))
+    remember_exchange(call.name, model, request, response, cached, error, started)
     nothing
 end
+
+# ------------------------------------------------------------------ the last requests, in this process
+
+const HISTORY = Any[]
+const HISTORY_LOCK = ReentrantLock()
+const HISTORY_SIZE = 500
+
+function remember_exchange(name, model, request, response, cached, error, started)
+    lock(HISTORY_LOCK) do
+        push!(HISTORY, (function_name=String(name), model=String(model), request=request, response=response, cached=cached,
+                        error=error === nothing ? nothing : "$(error_type(unwrap(error))): $(error_message(unwrap(error)))", time=started))
+        length(HISTORY) > HISTORY_SIZE && popfirst!(HISTORY)
+    end
+end
+
+"""
+    inspect_history(n = 1) -> Vector
+
+The last `n` requests FunctAI sent (or answered from its cache), oldest
+first: `(function_name, model, request, response, cached, error, time)`
+each, with lm15's request and response (exactly what went to the provider and
+what came back; `response` is `nothing` when the provider failed). The last
+500 are kept, in this process only; [`phistory`](@ref) prints them. For every
+call, kept on disk: the call log (`log_calls = true`, [`calls`](@ref)).
+"""
+inspect_history(n::Integer=1) = lock(() -> n <= 0 ? Any[] : HISTORY[max(1, end - n + 1):end], HISTORY_LOCK)
+
+"""
+    phistory(n = 1)
+
+The last `n` model calls as readable text: every message sent, the reply,
+its finish reason and tokens (a `FunctAI.History` that prints itself).
+"""
+phistory(n::Integer=1) = History(inspect_history(n))
+
+struct History
+    items::Vector{Any}
+end
+function Base.show(io::IO, ::MIME"text/plain", h::History)
+    isempty(h.items) && return print(io, "(no model calls yet)")
+    for (i, x) in enumerate(h.items)
+        i > 1 && println(io, "\n", "─"^60, "\n")
+        printstyled(io, "[", Dates.format(Dates.unix2datetime(x.time), dateformat"yyyy-mm-ddTHH:MM:SS"), "] ", x.function_name, " → ", x.model,
+                    x.cached ? " (from cache)" : "", "\n"; color=:light_black)
+        show(io, MIME"text/plain"(), Prompt(x.request))
+        println(io)
+        if x.response !== nothing
+            printstyled(io, "reply\n"; bold=true, color=:magenta)
+            println(io, join(p isa LM15.TextPart ? p.text : "($(p.type))" for p in x.response.message.parts))
+            u = x.response.usage
+            printstyled(io, "(finish: ", x.response.finish_reason, "; tokens in ", something(u.input_tokens, "?"), ", out ",
+                        something(u.output_tokens, "?"), ")"; color=:light_black)
+        elseif x.error !== nothing
+            printstyled(io, "error: ", x.error; color=:red)
+        end
+    end
+end
+Base.show(io::IO, h::History) = print(io, "History(", length(h.items), " calls)")
 
 """
 Start a call of a program: an id, its parent (the call it runs inside), the
@@ -173,7 +252,7 @@ for) starts a tree of its own: its parent's end was numbered after every
 call inside it had ended, and nothing joins a call after its end.
 """
 function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
-                    inputs::AbstractDict, fields)
+                    inputs::AbstractDict, fields; fn=nothing)
     parent = CURRENT_CALL[]
     check_cancelled(parent)
     if parent !== nothing
@@ -187,7 +266,7 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
         end
     end
     try
-        new_call(parent, program, name, s, own, inputs, fields)
+        new_call(parent, program, name, s, own, inputs, fields, fn)
     catch
         # it never runs: the tree does not wait for it
         parent === nothing || lock(() -> (parent.open -= 1; notify(parent.tree.cond)), parent.tree.lock)
@@ -195,23 +274,53 @@ function start_call(program::JObj, name::AbstractString, s::AbstractDict{Symbol}
     end
 end
 
+"""
+Internal: the conversation turn a call started now runs in (conversations.jl
+sets it while a turn's call starts), and the number of the tool call a call
+is made in (set while a tool runs), and the call of another process a served
+call is made for (the caller's `FunctAI-Parent` header: the outermost call's
+`parent`, contract/serving.md).
+"""
+const TURN_STARTING = ScopedValue{Any}(nothing)
+const TOOL_INVOCATION = ScopedValue{Union{Nothing,Int}}(nothing)
+const REMOTE_PARENT = ScopedValue{Union{Nothing,String}}(nothing)
+
+"""
+The turn a call made now runs in, and whether the call is that turn's own
+(its id is then the turn's, minted before the call): the turn starting in
+this context, for the first call of its program; else its parent's.
+"""
+function turn_of_call(parent, fn)
+    starting = TURN_STARTING[]
+    if starting !== nothing && !starting.root_taken[] && fn === starting.program
+        starting.root_taken[] = true
+        return (starting, true)
+    end
+    parent !== nothing && return (parent.turn_run, false)
+    (nothing, false)
+end
+
 function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{Symbol}, own::AbstractDict{Symbol},
-                  inputs::AbstractDict, fields)
+                  inputs::AbstractDict, fields, fn=nothing)
     folder = nothing
     try
         folder = folder_of(setting(s, :log_calls))
     catch err
         warn_once("start:$(typeof(err))", "calls are not logged: $(sprint(showerror, err))")
     end
+    turn_run, own_turn = turn_of_call(parent, fn)
     scripted = parent === nothing ? SCRIPTED[] : nothing
-    id = scripted === nothing ? new_id() : String(scripted.id)
+    id = own_turn ? String(turn_run.turn) : scripted === nothing ? new_id() : String(scripted.id)
     layers = receiver_layers(own)
     got = receivers(layers)
     refusal = nothing
+    later = own_turn && parent === nothing ? turn_run.later : nothing
     if parent === nothing
         got.refused && (refusal = JournalError("journal-policy",
             "a setting replaces or removes the journal a host layer set, or weakens a required one: the tree does not run"))
-        tree = scripted === nothing ? TreeLog(id, got.journal) : TreeLog(id, got.journal; clock=scripted.clock, tap=scripted.tap)
+        tree = scripted !== nothing ? TreeLog(id, got.journal; clock=scripted.clock, tap=scripted.tap) :
+               later !== nothing ? TreeLog(id, got.journal; later) : TreeLog(id, got.journal)
+        own_turn && add_sink!(tree, turn_run, later)
     else
         tree = parent.tree
         mine = chosen_journal(layers)
@@ -226,20 +335,33 @@ function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{S
     keep = Keep(fields, content_keep(fields, content_layers(own), environment_content()))
     opening = STREAM_OPENING[]
     watchers = parent === nothing ? Any[] : copy(parent.watchers)
-    call = Call(id, parent === nothing ? nothing : parent.id, parent === nothing ? id : parent.root, time(), program, String(name),
-                folder, caller_of(s), tree, fields, keep, got.observers, watchers, refusal, Exchange[], nothing, JObj(), JObj(),
-                String[], nothing, nothing, false, nothing, nothing, 0, parent, 0, false, false)
+    site = if parent === nothing
+        "$name#1"
+    else
+        n = lock(tree.lock) do
+            parent.names[String(name)] = get(parent.names, String(name), 0) + 1
+        end
+        "$(parent.site)/$name#$n"
+    end
+    invocation = parent === nothing ? nothing : TOOL_INVOCATION[]
+    call = Call(id, parent === nothing ? something(REMOTE_PARENT[], Some(nothing)) : parent.id, parent === nothing ? id : parent.root,
+                time(), program, String(name), folder, caller_of(s), tree, fields, keep, got.observers, watchers, refusal,
+                Exchange[], nothing, JObj(), JObj(), String[], nothing, nothing, false, nothing, nothing,
+                later === nothing ? 0 : later.requests, parent, 0, false, false,
+                fn, site, Dict{String,Int}(), invocation, 0, turn_run, nothing, later === nothing ? nothing : later.writer,
+                Any[], nothing, Any[], true, String[], nothing, nothing, false)
     for (k, v) in inputs
         data, described = logvalue_described(v)
         call.inputs[String(k)] = data
         call.sizes[String(k)] = jsonsize(data)
         described && push!(call.described, String(k))
     end
+    own_turn && attach_turn!(turn_run, call)
     lock(tree.lock) do
         tree.keeps[id] = keep
         tree.observers[id] = got.observers
         if opening !== nothing && opening.outer === nothing
-            attach!(opening, tree, id)
+            attach!(opening, tree, id, program)
             push!(call.watchers, opening)
         end
     end
@@ -254,6 +376,26 @@ check_cancelled(::Nothing) = nothing
 
 "Whether anyone receives this call's events: a stream, its observers, the tree's journal."
 watched(call::Call) = watched(call.tree, call.observers)
+
+"""
+Whether anyone watches this call live, so its replies are streamed from the
+provider and shown piece by piece: a stream read for its result only (a
+conversation's turn called plainly) and a conversation store's own copy do
+not; their replies arrive whole, and are shown as one piece per field.
+"""
+wants_pieces(call::Call) = any(s -> !s.passive, call.tree.streams) || call.tree.journal !== nothing || !isempty(call.observers)
+
+"Tokens summed over a call's own exchanges (integers only)."
+function own_usage(call::Call)
+    usage = JObj()
+    for e in call.exchanges
+        e.response === nothing && continue
+        for (k, v) in usage_of(e.response)
+            usage[k] = get(usage, k, 0) + v
+        end
+    end
+    usage
+end
 
 "Make one of this call's events and give it to its readers."
 function emit!(call::Call, kind::Symbol, data::JObj; kw...)
@@ -381,7 +523,15 @@ function call_record(call::Call; error=nothing, journal=nothing)
     rec["usage"] = usage
     rec["confidence"] = call.confidence
     rec["exchanges"] = Any[exchange_json(e, true) for e in call.exchanges]
-    rec["saw"] = Any[]
+    call.escalated && (rec["escalated"] = true)
+    call.steps === nothing || (rec["steps"] = LMCC.deepcopy_json(call.steps))
+    rec["saw"] = LMCC.deepcopy_json(call.saw)
+    call.invocation === nothing || (rec["invocation"] = call.invocation)
+    call.conversation === nothing || (rec["conversation"] = copy(call.conversation))
+    call.writer !== nothing && call.writer > 1 && (rec["writer"] = call.writer)
+    isempty(call.sections) || (rec["sections"] = Any[call.sections...])
+    isempty(call.changes) || (rec["changes"] = LMCC.deepcopy_json(call.changes))
+    call.replayable || (rec["replayable"] = false)
     journal === nothing || (rec["journal"] = journal)
     rec["caller"] = copy(call.caller)
     rec["process"] = process_json()
@@ -441,7 +591,12 @@ end
 
 # ------------------------------------------------------------------ reading
 
-"`(calls, ratings)` logged in a folder, as the Dicts of their lines (a partial or unknown line is skipped)."
+"""
+`(calls, ratings)` logged in a folder, as the Dicts of their lines (a partial
+or unknown line is skipped): the day folders' files, and the files at the
+folder's top level (what `prune_calls` kept). A call continued by a later
+writer (a resumed turn) is the record of its highest `writer`.
+"""
 function read_log(folder=nothing; since=nothing)
     root = folder === nothing ? folder_of(true) : expand(folder)
     cutoff = since === nothing ? "" : since isa AbstractString ? String(since) :
@@ -449,34 +604,54 @@ function read_log(folder=nothing; since=nothing)
              throw(ArgumentError("since is a Date, a DateTime or an RFC 3339 time"))
     calls, ratings = JObj[], JObj[]
     (root === nothing || !isdir(root)) && return (calls, ratings)
+    files = String[joinpath(root, f) for f in sort(readdir(root)) if endswith(f, ".jsonl") && isfile(joinpath(root, f))]
     for day in sort(readdir(root))
         dir = joinpath(root, day)
         (occursin(r"^\d{4}-\d{2}-\d{2}$", day) && isdir(dir)) || continue
         !isempty(cutoff) && day < cutoff[1:10] && continue
-        for file in sort(readdir(dir))
-            endswith(file, ".jsonl") || continue
-            text = try
-                read(joinpath(dir, file), String)
+        append!(files, joinpath(dir, f) for f in sort(readdir(dir)) if endswith(f, ".jsonl"))
+    end
+    for path in files
+        text = try
+            read(path, String)
+        catch
+            continue
+        end
+        for raw in split(text, '\n')
+            isempty(strip(raw)) && continue
+            rec = try
+                LMCC.parse_json(raw)
             catch
                 continue
             end
-            for raw in split(text, '\n')
-                isempty(strip(raw)) && continue
-                rec = try
-                    LMCC.parse_json(raw)
-                catch
-                    continue
-                end
-                rec isa AbstractDict || continue
-                if get(rec, "functai_call", nothing) in READ_FORMATS && string(get(rec, "started", "")) >= cutoff
-                    push!(calls, rec)
-                elseif get(rec, "functai_rating", nothing) == RATING_FORMAT && string(get(rec, "at", "")) >= cutoff
-                    push!(ratings, rec)
-                end
+            rec isa AbstractDict || continue
+            if get(rec, "functai_call", nothing) in READ_FORMATS && string(get(rec, "started", "")) >= cutoff
+                push!(calls, rec)
+            elseif get(rec, "functai_rating", nothing) == RATING_FORMAT && string(get(rec, "at", "")) >= cutoff
+                push!(ratings, rec)
             end
         end
     end
-    (calls, ratings)
+    (latest_writers(calls), ratings)
+end
+
+writer_number(c) = (w = get(c, "writer", nothing); w isa Integer && !(w isa Bool) ? Int(w) : 1)
+
+"One record per call: of a call written by several writers (a resumed turn), the highest `writer`'s (calls.md)."
+function latest_writers(calls)
+    best = Dict{Any,Int}()
+    out = JObj[]
+    for c in calls
+        id = get(c, "id", nothing)
+        i = get(best, id, 0)
+        if i == 0
+            push!(out, c)
+            best[id] = length(out)
+        elseif writer_number(c) >= writer_number(out[i])
+            out[i] = c
+        end
+    end
+    out
 end
 
 "Whether record `a` is later than `b` by `key` (a time), then by id."

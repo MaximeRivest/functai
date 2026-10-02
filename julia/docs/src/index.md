@@ -30,6 +30,12 @@ An AI function is a Julia `Function`: call it, broadcast it, pass it to `ByRow`,
 - **Watch** a call with [`stream`](@ref); give it **tools** (Julia functions); group calls into a [`@program`](@ref).
 - **Log** every call, [`rate`](@ref) them, and turn ratings into rows with known answers with [`rated`](@ref).
 - **Save** with [`FunctAI.save`](@ref) and **load** with [`FunctAI.load`](@ref), in any FunctAI language.
+- **Converse**: a [`conversation`](@ref) is a program's calls that remember each other, kept in a store any process (and Python) opens: branches, helpers that remember only when told, turns stopped or resumed from anywhere.
+- **Ask first**: tools say what they do (`effects`), and `approve` asks a function at once, or a person later, from any process; a turn that waited goes on paying for nothing twice.
+- **Extend** with [`Plugin`](@ref)s: hooks over turns, context, calls, requests and tools, whose changes are recorded; [`compaction`](@ref) and [`delegate`](@ref) are built with them.
+- **Serve** a program over HTTP with [`serve`](@ref), and use one served in any language with [`remote`](@ref).
+- **Run long**: the reply cache (in memory, or on disk, shared with Python), a progress line, [`prune_calls`](@ref), [`quotes_found`](@ref), escalation to a model that is surer.
+- **Bake**: [`FunctAI.bake_examples`](@ref) writes the training examples every trainer reads; [`FunctAI.baked`](@ref) calls a student trained anywhere.
 
 ## One contract, four languages
 

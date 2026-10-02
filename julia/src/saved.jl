@@ -14,7 +14,7 @@ A saved program this loader will not run; `code` says why
 `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface`,
 `interface-malformed`: contract/saved.md).
 """
-struct LoadRefused <: Exception
+struct LoadRefused <: FunctAIError
     code::String
     msg::String
 end

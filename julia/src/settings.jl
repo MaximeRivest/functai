@@ -24,6 +24,14 @@ const SETTING_DOCS = (
     program_observers = "false (a host's block or configure!): the observers a program sets for itself are given no event; the host's still are. Only removes",
     caller = "who is calling, added to the environment variable `FUNCTAI_CALLER`: Dict(\"kind\" => \"notebook\")",
     concurrency = "calls in flight at once over a column (broadcasting, map, evaluate; default 8)",
+    progress = "a progress line on stderr while a column runs (rows done, failures, tokens, time left): true, false, or unset (on when stderr is a terminal)",
+    cache_replies = "the reply cache: false (default), true (this process's memory), :disk (one SQLite file every process shares, so a long run started again sends only what has no kept reply), a folder or .sqlite path, or a store (a Dict, a FunctAI.ReplyStore)",
+    replicate = "the n-th independent answer to the same request (default 0): part of the reply cache's key, nothing else",
+    approve = "ask before tools run: a function (asked at once; answers true, false or a reason), :changes (tools that change things or say nothing), :all, or tool names and approval paths (\"support/answer/refund\"); a person answers later",
+    plugins = "plugins around calls: [Plugin(...), \"plugins/modes.jl\"]; the program's own run first, the host's last",
+    program_plugins = "false (a host's block or configure!): the plugins a program sets for itself do not run. Only removes",
+    escalate_to = "when the model is less sure of its answer than escalate_below, another answers instead: a model name, a baked model, or an AI function (needs a model that measures its confidence)",
+    escalate_below = "the confidence under which escalate_to answers (default 0.9)",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
@@ -68,12 +76,21 @@ function check_setting(name::Symbol, value)
         throw(ArgumentError("$name is a whole number$(name in (:concurrency, :max_steps) ? " of at least 1" : " of at least 0"), not $(repr(value))"))
     name in (:reasoning, :include_name) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
     name === :log_calls && !(value isa Union{Bool,AbstractString}) && throw(ArgumentError("log_calls is a folder, true or false, not $(repr(value))"))
-    name === :lm && !(value isa AbstractString) && throw(ArgumentError("lm is a model name like \"gpt-4.1-mini\", not $(repr(value))"))
+    name === :lm && !(value isa AbstractString || value isa BakedModel) &&
+        throw(ArgumentError("lm is a model name like \"gpt-4.1-mini\", or a baked model (FunctAI.baked(folder; url)), not $(repr(value))"))
     name === :caller && !(value isa AbstractDict || value isa NamedTuple) && throw(ArgumentError("caller is a Dict, not $(repr(value))"))
     name === :log_content && content_setting(value)
     name === :observers && !(value isa Union{AbstractVector,Tuple}) && throw(ArgumentError("observers is a list of functions (or Channels), not $(repr(value))"))
     name === :program_observers && !(value isa Bool) && throw(ArgumentError("program_observers is true or false, not $(repr(value))"))
     name === :journal && journal_setting(value)
+    name === :cache_replies && cache_setting(value)
+    name === :replicate && !(value isa Integer && !(value isa Bool) && value >= 0) && throw(ArgumentError("replicate is a whole number of at least 0, not $(repr(value))"))
+    name === :approve && approve_setting(value)
+    name === :plugins && plugins_setting(value)
+    name in (:program_plugins, :progress) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
+    name === :escalate_to && !(value isa Union{AbstractString,BakedModel,AIFunction}) &&
+        throw(ArgumentError("escalate_to is a model name, a baked model, or an AI function, not $(repr(value))"))
+    name === :escalate_below && !(value isa Real && 0 < value <= 1) && throw(ArgumentError("escalate_below is a probability in (0, 1], not $(repr(value))"))
     nothing
 end
 
@@ -87,7 +104,10 @@ function settings_dict(kw)
                     name === :tool_errors ? Symbol(v) :
                     name === :log_content ? content_setting(v) :
                     name === :observers ? Any[v...] :
-                    name === :journal ? journal_setting(v) : v
+                    name === :journal ? journal_setting(v) :
+                    name === :cache_replies ? cache_setting(v) :
+                    name === :approve ? approve_setting(v) :
+                    name === :plugins ? plugins_setting(v) : v
     end
     out
 end

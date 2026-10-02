@@ -127,6 +127,13 @@ function cancellable_sleep(call, seconds)
     end
 end
 
+"The call begins a request to a model (every exchange is one); a resumed turn replaying a request it made before shows none."
+function begin_request!(call::Call, model)
+    call.tree.replaying && return
+    call.requests += 1
+    emit!(call, :request, LMCC.jobj("request" => call.requests, "model" => model))
+end
+
 "Only the fields a stream shows: an output's text (tool calls are shown whole)."
 function show_events(job::Job, batch)
     for ev in batch
@@ -171,15 +178,21 @@ One request: through the router, re-sent after transient errors; streamed
 when the call is watched. Each attempt is a `request` event and an exchange
 (law 8); `request_hash` is lmcc's hash of the request as it renders it.
 """
-function send(job::Job, request, request_hash)
+function send(job::Job, request, request_hash; hit=nothing)
     call = job.call
+    if hit !== nothing
+        # a reply already known (the reply cache, or a turn being resumed): an exchange like any other
+        begin_request!(call, job.model)
+        exchange!(call, job.model, request, hit, time(), 0.0; cached=true, request_hash)
+        watched(call) && replay(job, hit)
+        return hit
+    end
     retries = max(0, job.settings[:api_retries])
-    streams = watched(call) && can_stream(job.router)
+    streams = wants_pieces(call) && can_stream(job.router)
     attempt = 0
     while true
         check_cancelled(call)
-        call.requests += 1
-        emit!(call, :request, LMCC.jobj("request" => call.requests, "model" => job.model))
+        begin_request!(call, job.model)
         started = time()
         t0 = time_ns()
         elapsed() = (time_ns() - t0) / 1e9
@@ -276,9 +289,15 @@ function cut_off(r::LMCC.Refusal, response, limit)
     return LMCC.Refusal(r.code, hint; fix=r.fix, partial=r.partial)
 end
 
-"One model call; after an unreadable reply, up to `retries` follow-ups that send the reader's hint back."
+"""
+One model call; after an unreadable reply, up to `retries` follow-ups that
+send the reader's hint back. Before each send: the `request` hook (the escape
+hatch), then a reply already known (a resumed turn's recorded one, or the
+reply cache's); a reply is kept in the cache only once it was read.
+"""
 function complete_once(job::Job, rendered, responses)
     s = job.settings
+    call = job.call
     request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s))
     first_rendered = LMCC.request(rendered)
     first_hash = LMCC.sha256_of(first_rendered)
@@ -287,38 +306,54 @@ function complete_once(job::Job, rendered, responses)
     retries = max(0, s[:retries])
     attempt = 0
     while true
-        response = send(job, request, request_hash)
-        push!(responses, response)
+        # the escape hatch: a plugin may replace the provider request; no one can rebuild that request, so its
+        # exchange has no request_hash and the call is not replayable
+        sent, replaced = plugin_request(request, call, job.name)
+        sent_hash = replaced ? nothing : request_hash
+        hit = recorded_reply(call, sent, s)
+        replayed = hit !== nothing                       # a reply its turn recorded before: kept already
+        flight = hit === nothing ? begin_flight(s, sent, call) : nothing
+        flight === nothing || (hit = flight.hit)
         try
-            reading = LMCC.read(job.plan, response)
-            calls = get(reading.values, "calls", nothing)
-            asks_tools = calls isa AbstractVector && !isempty(calls)   # a tool step: the answer comes later
-            return (response, reading, asks_tools ? nothing : job.typed(reading.values))
-        catch err
-            err isa LMCC.Refusal || rethrow()
-            refusal = err
-            # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
-            limit = something(budget, setting(s, :max_tokens), Some(nothing))
-            refusal.code == "parse-truncated" && (refusal = cut_off(refusal, response, limit))
-            (attempt < retries && unreadable(refusal)) || throw(refusal)
-            refusal.code == "parse-truncated" && limit === nothing && throw(refusal)   # nothing larger to give
-            if refusal.code == "parse-truncated"
-                # asked again from the start, with a larger budget: the first request's messages, and its hash
-                budget = 2 * limit
-                request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))
-                rendered_request, request_hash = first_rendered, first_hash
-            else
-                words = "Your reply could not be read: $(refusal.hint). Reply again, in exactly the form the instructions give."
-                again = LM15.user(words)
-                request = LM15.Request(request; messages=(request.messages..., response.message, again))
-                # the request as lmcc writes it, the reply and the re-ask after its messages: what this exchange sent
-                rendered_request = LMCC.deepcopy_json(rendered_request)
-                rendered_request["messages"] = Any[rendered_request["messages"]..., LM15.to_dict(response.message),
-                                                   LMCC.jobj("role" => "user", "parts" => Any[LMCC.textpart(words)])]
-                request_hash = LMCC.sha256_of(rendered_request)
+            response = send(job, sent, sent_hash; hit)
+            push!(responses, response)
+            replayed || note_reply(call, sent, response, s)     # a stored turn keeps every reply
+            try
+                reading = LMCC.read(job.plan, response)
+                calls = get(reading.values, "calls", nothing)
+                asks_tools = calls isa AbstractVector && !isempty(calls)   # a tool step: the answer comes later
+                typed = asks_tools ? nothing : job.typed(reading.values)
+                flight === nothing || keep_flight!(flight, response) # only a reply that was read is kept
+                return (response, reading, typed)
+            catch err
+                err isa LMCC.Refusal || rethrow()
+                flight === nothing || drop!(flight)                  # a kept reply that no longer reads is forgotten
+                refusal = err
+                # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
+                limit = something(budget, setting(s, :max_tokens), Some(nothing))
+                refusal.code == "parse-truncated" && (refusal = cut_off(refusal, response, limit))
+                (attempt < retries && unreadable(refusal)) || throw(refusal)
+                refusal.code == "parse-truncated" && limit === nothing && throw(refusal)   # nothing larger to give
+                if refusal.code == "parse-truncated"
+                    # asked again from the start, with a larger budget: the first request's messages, and its hash
+                    budget = 2 * limit
+                    request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))
+                    rendered_request, request_hash = first_rendered, first_hash
+                else
+                    words = "Your reply could not be read: $(refusal.hint). Reply again, in exactly the form the instructions give."
+                    again = LM15.user(words)
+                    request = LM15.Request(request; messages=(request.messages..., response.message, again))
+                    # the request as lmcc writes it, the reply and the re-ask after its messages: what this exchange sent
+                    rendered_request = LMCC.deepcopy_json(rendered_request)
+                    rendered_request["messages"] = Any[rendered_request["messages"]..., LM15.to_dict(response.message),
+                                                       LMCC.jobj("role" => "user", "parts" => Any[LMCC.textpart(words)])]
+                    request_hash = LMCC.sha256_of(rendered_request)
+                end
+                emit_retry(job.call, asked_again(refusal), nothing)
+                attempt += 1
             end
-            emit_retry(job.call, asked_again(refusal), nothing)
-            attempt += 1
+        finally
+            flight === nothing || finish!(flight)
         end
     end
 end
@@ -337,7 +372,7 @@ function run_tool(tools, call, errors::Symbol)
         errors === :raise && rethrow()
         # what stops the call is never a tool's answer: a journal's barrier or scope (a call the tool made),
         # a closed stream, an interrupt
-        unwrap(err) isa Union{JournalError,Cancelled,InterruptException} && throw(unwrap(err))
+        unwrap(err) isa Union{JournalError,Cancelled,InterruptException,TurnWaiting,ConversationError,ApprovalError} && throw(unwrap(err))
         err = unwrap(err)
         return "error: $(error_type(err)): $(error_message(err))"
     end
@@ -363,12 +398,62 @@ function run_job(job::Job)
             return (typed, turn, responses, reading)
         end
         for c in calls
-            id, name = string(c["id"]), string(c["name"])
-            tool_called!(job.call, LMCC.jobj("id" => id, "name" => name, "input" => something(get(c, "input", nothing), JObj())))
-            output = run_tool(job.tools, c, Symbol(job.settings[:tool_errors]))
-            emit!(job.call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output))
-            turn = LMCC.tool(turn, id, output)
+            output = one_tool!(job, c)
+            turn = LMCC.tool(turn, string(c["id"]), output)
         end
     end
     throw(StepLimit("$(job.name): no answer after $steps model steps", turn))
+end
+
+"""
+One tool call of the call in progress (contract/tools.md, contract/plugins.md):
+numbered (its invocation), shown, given to the `tool_call` hooks (which may
+change its input, block it, or ask a person: `approve =` is one of them),
+kept before and after it runs when it changes things (a stored turn, a
+required journal's barrier), run, its result given to the `tool_result`
+hooks, and shown. A turn being resumed gets the result a tool that ran
+before returned: no tool runs twice.
+"""
+function one_tool!(job::Job, c)
+    call = job.call
+    id, name = string(c["id"]), string(c["name"])
+    input = something(get(c, "input", nothing), JObj())
+    call.invocations += 1
+    n = call.invocations
+    i = findfirst(t -> t.name == name, job.tools)
+    t = i === nothing ? nothing : job.tools[i]
+    effects = t === nothing ? "reads" : effects_of(t)            # an unknown tool runs nothing
+    asked = emit!(call, :tool_call, LMCC.jobj("id" => id, "name" => name, "input" => input, "invocation" => n))
+    approval = Approval(call.id, n, id, name, input, effects, approval_path(call.site, name), call.site)
+    tool_input, refused = plugin_tool_call(call, approval, job.settings)
+    output = if refused !== nothing
+        refused
+    else
+        run = call.turn_run
+        known = run === nothing ? nothing : recorded_tool(run, call, approval)
+        if known !== nothing
+            known                                                  # a turn resumed: this tool ran before
+        else
+            frontier!(call.tree)
+            if effects != "reads"
+                # a required journal keeps the tool call before a tool that changes things runs
+                t_log = call.tree
+                if required(t_log)
+                    confirmation(t_log, asked) === :confirmed ||
+                        throw(barrier_error(asked; cause=journal_cause(t_log), store=t_log.journal.store))
+                end
+                run === nothing || tool_started!(run, call, with_input(approval, tool_input))
+            end
+            check_cancelled(call)
+            out = with(TOOL_INVOCATION => n) do
+                run_tool(job.tools, LMCC.jobj("id" => id, "name" => name, "input" => tool_input), Symbol(job.settings[:tool_errors]))
+            end
+            # the result as the model is shown it; a turn resumed later reuses it, hooks and all
+            out = plugin_tool_result(call, approval, tool_input, out)
+            run === nothing || tool_done!(run, call, approval, out)
+            out
+        end
+    end
+    emit!(call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output, "invocation" => n))
+    output
 end

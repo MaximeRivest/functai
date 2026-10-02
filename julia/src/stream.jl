@@ -29,11 +29,22 @@ mutable struct AIStream
     answer::Union{Nothing,String}
     answer_text::String
     task::Union{Nothing,Task}
+    passive::Bool                   # read for its result only (a conversation's turn called plainly): replies come whole
+    conv_turn::Any                  # a conversation's turn: (conversation, turn id), or nothing
+end
+"`s.turn`: the conversation's turn a stream makes (known at once: it is saved before the model is asked)."
+Base.getproperty(s::AIStream, name::Symbol) = name === :turn ? stream_turn(s) : getfield(s, name)
+function stream_turn(s::AIStream)
+    ct = getfield(s, :conv_turn)
+    ct === nothing && throw(ArgumentError("this stream is not a conversation's turn"))
+    turn(ct[1], ct[2])
 end
 
 "The stream starts watching a call (the one it was opened on) in a tree's log."
-function attach!(s::AIStream, t::TreeLog, call_id::AbstractString)
+function attach!(s::AIStream, t::TreeLog, call_id::AbstractString, program=nothing)
     s.outer = String(call_id)
+    # a resumed turn's log goes on without showing its call's start again: the stream knows its answer anyway
+    program isa AbstractDict && (s.answer = get(program, "answer", nothing))
     push!(s.calls, s.outer)
     push!(t.streams, s)
 end
@@ -59,8 +70,8 @@ function offer!(s::AIStream, e::Event)
     end
 end
 
-function start_stream(thunk)
-    s = AIStream(Event[], Set{String}(), nothing, Threads.Condition(), false, false, nothing, nothing, "", nothing)
+function start_stream(thunk; passive::Bool=false, turn=nothing)
+    s = AIStream(Event[], Set{String}(), nothing, Threads.Condition(), false, false, nothing, nothing, "", nothing, passive, turn)
     # a task of its own on any thread (it inherits the caller's scoped settings and call): not
     # pinned to the caller's thread, and it does not pin the caller's task to it
     s.task = Threads.@spawn try
@@ -88,7 +99,7 @@ end
 ```
 """
 LM15.stream(f::AIFunction, args...; kw...) = (inputs = bind_inputs(f, args, kw); start_stream(() -> predict_inputs(f, inputs)))
-LM15.stream(p::AIProgram, args...; kw...) = start_stream(() -> p(args...; kw...))
+LM15.stream(p::AIProgram, args...; kw...) = p.remote === nothing ? start_stream(() -> p(args...; kw...)) : remote_stream(p, args, kw)
 function LM15.stream(on_piece::Function, f::Union{AIFunction,AIProgram}, args...; kw...)
     s = LM15.stream(f, args...; kw...)
     try

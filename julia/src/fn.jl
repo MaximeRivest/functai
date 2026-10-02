@@ -416,15 +416,41 @@ function resolve_route(s)
     (; model, router, provider, wire)
 end
 
-function plan_for(f::AIFunction, given)
+"""
+The plan of a call under these settings: its layout bound to the route's
+capabilities. `sig`: a signature whose instruction plugins changed (sections,
+a replacement), in place of the function's own.
+"""
+function plan_for(f::AIFunction, given; sig=nothing)
     r = resolve_route(given)
     s = adjust_settings(given, r.provider, r.wire)
     caps = call_capabilities(r.provider, r.wire, s)
-    key = (:plan, layout_key(s), sort!(collect(caps)), r.provider, s[:reasoning], s[:include_name])
-    plan = cached(f, key) do
-        bind_layout(setting(s, :adapter), setting(s, :template), signature_now(f, s), caps, r.provider)
-    end
+    signature = sig === nothing ? signature_now(f, s) : sig
+    key = (:plan, layout_key(s), sort!(collect(caps)), r.provider, s[:reasoning], s[:include_name],
+           sig === nothing ? nothing : hash(sig.instructions))
+    plan = sig === nothing ? cached(f, key) do
+        bind_layout(setting(s, :adapter), setting(s, :template), signature, caps, r.provider)
+    end : bind_layout(setting(s, :adapter), setting(s, :template), signature, caps, r.provider)
     (; plan, r..., settings=s)
+end
+
+"A signature with another instruction (plugins' sections or a replacement)."
+with_instruction(sig::LMCC.Signature, text::AbstractString) =
+    LMCC.signature_from_dict(merge(LMCC.signature_to_dict(sig), Dict("instructions" => String(text))))
+
+"""
+Refuse a call whose plugins changed the instruction when it would not reach
+the model (contract/plugins.md, "Plugins and layouts"): a template that never
+writes `{instruction}`. Sent anyway, the record would say the model was told
+what it never was.
+"""
+function check_placed(f::AIFunction, s)
+    template = setting(s, :template)
+    template === nothing && return
+    any(m -> occursin("{instruction}", string(m isa Pair ? last(m) : m)), template) && return
+    throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction (sections, a summary of earlier turns, " *
+                      "or a replacement), and its template never writes {instruction}, so the change would not be sent. Put " *
+                      "{instruction} in its template (:system => \"{instruction}\", …), or use plugins that do not change the instruction with it."))
 end
 
 "The call log's `program` of this function."
@@ -586,7 +612,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
     s = effective(f.own)
     fields = merge(program_fields(f, s), (holds=value_holds(f),))
     inputs, refusal, gap = bind_ai_inputs(f, inputs, s)
-    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields)
+    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields; fn=f)
     if refusal !== nothing
         # refused before any request, and recorded (programs.md); a missing value for a required input gives missing
         call.refusal === nothing && (call.refusal = refusal)        # a journal's refusal, set first, stands
@@ -599,23 +625,83 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         return missing
     end
     prediction = Ref{Any}(nothing)
+    prepare_context!(call, f, s)            # what it is shown of its conversation (its saw), before it starts
     run_call(call) do call
-        r = plan_for(f, s)
-        call.provider = r.provider
-        job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
-                  f.tools, call, values -> typed_outputs(f, values))
-        outputs, turn, responses, reading = run_job(job)
-        call.outputs = recorded_outputs(f, fields, outputs, turn, job.asked)
-        probs = reading.probabilities
-        if !isempty(probs)
-            chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
-            chosen = filter(!isnothing, chosen)
-            isempty(chosen) || (call.confidence = minimum(chosen))
+        # the before_call hooks: the instruction, the sections, the model, settings, tools offered
+        base = signature_now(f, s)
+        shaped = shape_call(f, code_inputs(inputs), s, call, base.instructions)
+        append!(call.changes, shaped.applied.items)
+        call.sections = copy(shaped.context_sections)        # what it was shown of its conversation (replayed)
+        changed = shaped.instruction !== nothing || !isempty(shaped.sections)
+        sig = changed ? with_instruction(base, join([something(shaped.instruction, base.instructions); shaped.sections], "\n\n")) : nothing
+        changed && check_placed(f, shaped.settings)
+        offered = shaped.tools === nothing ? f.tools : AITool[t for t in f.tools if t.name in shaped.tools]
+        make_job(settings) = begin
+            lm = get(settings, :lm, nothing)
+            if lm isa BakedModel
+                # a baked student reads its calls as it was trained: its signature and layout, no worked examples
+                changed && throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction, and it runs on a " *
+                                             "baked model, which reads only the message it was trained on: the change would not reach it"))
+                e = entry_for(lm, f)
+                plan = student_plan(e)
+                call.provider = "functai-baked-lm"
+                Job(f.definition.name, plan, shown_turns(call, f, plan), student_inputs(e, base, inputs), settings,
+                    BakedRouter(lm), lm.model, AITool[], call, values -> typed_outputs(f, values))
+            else
+                r = plan_for(f, settings; sig)
+                call.provider = r.provider
+                Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
+                    r.router, r.model, offered, call, values -> typed_outputs(f, values))
+            end
         end
+        job = make_job(shaped.settings)
+        outputs, turn, responses, reading = run_job(job)
+        probs = reading.probabilities
+        repairs = reading.repairs
+        confidence = answer_confidence(probs, outputs)
+        # escalation: a first model less sure than escalate_below has another model (or AI function) answer instead
+        target = escalation_target(f, shaped.settings)
+        if target !== nothing
+            confidence === nothing && throw(ArgumentError("$(f.definition.name): escalate_to needs a first model that measures its " *
+                "confidence (a baked model, TypeSafe's Jev, or probabilities = :required); $(job.model) gave no probabilities"))
+            threshold = Float64(something(get(shaped.settings, :escalate_below, nothing), 0.9))
+            if confidence < threshold
+                who = target isa AIFunction ? target.definition.name : target isa BakedModel ? target.model : String(target)
+                emit_retry(call, "the first model was $(round(Int, 100confidence))% sure (less than $(round(Int, 100threshold))%); " *
+                                 "$who answers instead", nothing)
+                call.escalated = true
+                if target isa AIFunction
+                    # the target follows its own escalate_to (a longer chain), never one around this call
+                    p2 = with(ESCALATING => true) do
+                        predict_inputs(target, with_defaults(target, OrderedDict{String,Any}(k => v for (k, v) in inputs if k in input_names(target))))
+                    end
+                    p2 === missing && throw(ArgumentError("$(target.definition.name) answered nothing"))
+                    outputs = NamedTuple{Tuple(Symbol(x.name) for x in f.definition.outputs)}(Tuple(p2.outputs[Symbol(x.name)] for x in f.definition.outputs))
+                    turn, responses, probs, repairs = p2.turn, p2.responses, getfield(p2, :probabilities), p2.repairs
+                    confidence = answer_confidence(probs, outputs)
+                else
+                    second = copy(shaped.settings)
+                    second[:lm] = target
+                    delete!(second, :escalate_to)
+                    job = make_job(second)
+                    outputs, turn, responses, reading = run_job(job)
+                    probs, repairs = reading.probabilities, reading.repairs
+                    confidence = answer_confidence(probs, outputs)
+                end
+            end
+        end
+        call.lmcc = try
+            LMCC.turn_to_dict(turn)
+        catch
+            nothing
+        end
+        call.steps = steps_of(call, turn)
+        call.outputs = recorded_outputs(f, fields, outputs, turn, job.asked)
+        call.confidence = confidence
         value = value_of(f, inputs, outputs)
         call.returned = f.body === nothing ? outputs[Symbol(answer_name(f))] : value
         call.has_returned = true
-        prediction[] = Prediction(value, outputs, answer_name(f), call.id, turn, responses, reading.repairs, probs)
+        prediction[] = Prediction(value, outputs, answer_name(f), call.id, turn, responses, repairs, probs)
         value
     end
     prediction[]
@@ -631,12 +717,50 @@ paid): the instruction, the worked examples, the layout, the model.
 """
 function render(f::AIFunction, args...; kw...)
     s = effective(f.own)
+    lm = setting(s, :lm)
+    if lm isa BakedModel                    # a baked student: its signature and layout, no worked examples
+        e = entry_for(lm, f)
+        plan = student_plan(e)
+        values = prepare_inputs(plan.signature, student_inputs(e, signature_now(f, s), bind_inputs(f, args, kw)))
+        return LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=rendering_turns(f, plan)); model=lm.model,
+                                 config=config_of(s))
+    end
     r = plan_for(f, s)
     plan = r.plan
     values = prepare_inputs(plan.signature, bind_inputs(f, args, kw))
     isempty(f.tools) || (values["tools"] = tool_values(f))
-    LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=past_turns(f, plan)); model=r.model, config=config_of(r.settings))
+    LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=vcat(past_turns(f, plan), rendering_turns(f, plan)));
+                      model=r.model, config=config_of(r.settings))
 end
+
+"""
+An AI function's call that may be shown again with its steps keeps them (lmcc's
+turn steps as JSON): one that ran tools, or one made in a conversation
+(contract/calls.md, "Saw"). Showing it again reads them; none is rebuilt from
+replies.
+"""
+function steps_of(call::Call, turn)
+    turn isa LMCC.Turn || return nothing
+    ran_tools = any(st -> st isa LMCC.ToolStep, turn.steps)
+    (ran_tools || call.turn_run !== nothing) || return nothing
+    try
+        LMCC.turn_to_dict(turn)["steps"]
+    catch
+        nothing
+    end
+end
+
+"A model's probability for its own answers (the least of the outputs it measured), or `nothing` when it measures none."
+function answer_confidence(probs, outputs)
+    isempty(probs) && return nothing
+    chosen = [get(p, string(jsonvalue(outputs[Symbol(k)])), nothing) for (k, p) in probs if haskey(outputs, Symbol(k))]
+    chosen = filter(!isnothing, chosen)
+    isempty(chosen) ? nothing : minimum(chosen)
+end
+
+"Internal: an escalation target answering; it follows only its own `escalate_to`."
+const ESCALATING = ScopedValue(false)
+escalation_target(f::AIFunction, s) = ESCALATING[] ? get(f.own, :escalate_to, nothing) : get(s, :escalate_to, nothing)
 
 """
     configure(f; settings...)
@@ -701,9 +825,35 @@ with one warning (see `problems()`); when every call fails, the first
 error is thrown.
 """
 function call_each(f::Function, argtuples::AbstractArray; each=f)
-    n = effective(f isa AIFunction ? f.own : Dict{Symbol,Any}())[:concurrency]
+    s = effective(f isa AIFunction ? f.own : Dict{Symbol,Any}())
+    n = s[:concurrency]
     items = vec(collect(argtuples))
-    results, errors = run_concurrently(t -> each(t...), items, n)
+    bar = progress_line(string(nameof(f)), length(items), get(s, :progress, nothing))
+    work = if bar === nothing
+        t -> each(t...)
+    else
+        function (t)
+            try
+                v = if each === f && f isa AIFunction
+                    # the prediction, for its tokens; the value is what calling returns
+                    p = predict_inputs(f, bind_inputs(f, t, ()))
+                    p === missing ? missing : (tick!(bar, p); p.value)
+                else
+                    each(t...)
+                end
+                tick!(bar, nothing)
+                v
+            catch
+                tick!(bar, nothing; failed=true)
+                rethrow()
+            end
+        end
+    end
+    results, errors = try
+        run_concurrently(work, items, n)
+    finally
+        bar === nothing || done!(bar)
+    end
     failed = findall(!isnothing, errors)
     for i in failed
         results[i] = missing
@@ -719,6 +869,60 @@ function call_each(f::Function, argtuples::AbstractArray; each=f)
     end
     reshape(map(identity, results), size(argtuples))   # map(identity) narrows the element type
 end
+
+# ------------------------------------------------------------------ a progress line (stage 1.2)
+
+"A progress line on stderr while a column runs: rows done, failures, tokens, time left."
+mutable struct ProgressLine
+    name::String
+    total::Int
+    done::Int
+    failed::Int
+    tokens::Int
+    started::Float64
+    shown::Float64
+    lock::ReentrantLock
+    io::IO
+end
+
+"""
+A progress line for `total` rows, or `nothing`: on when the `progress`
+setting says so, else when stderr is a terminal (or a notebook), and only
+for more than one row.
+"""
+function progress_line(name, total, setting)
+    total > 1 || return nothing
+    on = setting === nothing ? (stderr isa Base.TTY || isdefined(Main, :IJulia)) : setting === true
+    on || return nothing
+    ProgressLine(name, total, 0, 0, 0, time(), 0.0, ReentrantLock(), stderr)
+end
+
+function tick!(b::ProgressLine, p; failed::Bool=false)
+    lock(b.lock) do
+        if p isa Prediction
+            for r in p.responses
+                u = usage_of(r)
+                b.tokens += get(u, "total_tokens", get(u, "input_tokens", 0) + get(u, "output_tokens", 0))
+            end
+            return
+        end
+        b.done += 1
+        failed && (b.failed += 1)
+        now = time()
+        (now - b.shown >= 0.2 || b.done == b.total) && (b.shown = now; show_line(b))
+    end
+end
+
+function show_line(b::ProgressLine)
+    elapsed = time() - b.started
+    left = b.done == 0 ? "" : (r = round(Int, elapsed / b.done * (b.total - b.done)); r > 0 ? ", ~$(duration_text(r)) left" : "")
+    tokens = b.tokens == 0 ? "" : ", $(b.tokens >= 10_000 ? "$(round(b.tokens / 1000; digits=1))k" : b.tokens) tokens"
+    failed = b.failed == 0 ? "" : ", $(b.failed) failed"
+    print(b.io, "\r\e[K", b.name, ": ", b.done, "/", b.total, " rows", failed, tokens, left)
+    flush(b.io)
+end
+duration_text(s) = s >= 3600 ? "$(s ÷ 3600)h$(lpad((s % 3600) ÷ 60, 2, '0'))m" : s >= 60 ? "$(s ÷ 60)m$(lpad(s % 60, 2, '0'))s" : "$(s)s"
+done!(b::ProgressLine) = lock(() -> (show_line(b); println(b.io)), b.lock)
 
 broadcast_args(args) = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...))
 

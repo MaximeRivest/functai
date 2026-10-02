@@ -73,7 +73,7 @@ and says `journal`: `"refused"` or `"unknown"` (no answer:
 met, when it met something (a store's refusal, an error, a send it never
 answered); `store` is the journal's store.
 """
-struct JournalError <: Exception
+struct JournalError <: FunctAIError
     code::String
     msg::String
     journal::Union{Nothing,String}
@@ -173,7 +173,7 @@ that gave it the event). A failure is shown, never raised into a call.
 """
 function spawn_apart(f)
     task = with(CURRENT_CALL => nothing, STREAM_OPENING => nothing, SCOPED_SETTINGS => Dict{Symbol,Any}(),
-                SCOPED_LAYERS => Dict{Symbol,Any}[]) do
+                SCOPED_LAYERS => Dict{Symbol,Any}[], TURN_STARTING => nothing) do
         Threads.@spawn f()
     end
     errormonitor(task)
@@ -552,18 +552,38 @@ mutable struct TreeLog
     ended::Bool                                     # its outermost call's end is numbered: nothing more is
     clock::Any                                      # seq -> seconds since the epoch
     tap::Any                                        # a scripted run's copy of the whole log (see `SCRIPTED`)
+    sinks::Vector{Any}                              # given the kept form of every event of the tree (a conversation's store)
+    # a resumed turn replays what it did before: its events are held back until it does something new
+    # (contract/tools.md, "Resuming"); the calls it started meanwhile, still open, are shown from then on
+    replaying::Bool
+    held::OrderedDict{String,Tuple{Any,JObj}}
 end
-function TreeLog(tree::AbstractString, journal; clock=nothing, tap=nothing)
+"""
+`later`: a later writer's claim on a log it continues (contract/streaming.md,
+"Continuing a log"), `(writer, after, at)`: it numbers on from the last kept
+event, with its writer number, and replays until it does something new.
+"""
+function TreeLog(tree::AbstractString, journal; clock=nothing, tap=nothing, later=nothing)
     lk = ReentrantLock()
     w = journal === nothing ? nothing : LogWriter(journal, tree)
     w === nothing || lock(() -> (WRITERS[w] = nothing), WRITERS_LOCK)
-    TreeLog(String(tree), 1, 0, nothing, 0.0, lk, Threads.Condition(lk), Any[], Dict{String,Keep}(), Dict{String,JObj}(),
+    writer, seq, last, at = later === nothing ? (1, 0, nothing, 0.0) :
+        (later.writer, later.after.seq, later.after, isempty(later.at) ? 0.0 : unix_of(later.at))
+    TreeLog(String(tree), writer, seq, last, at, lk, Threads.Condition(lk), Any[], Dict{String,Keep}(), Dict{String,JObj}(),
             Dict{String,Vector{Any}}(), IdDict{Any,Union{Nothing,Position}}(), journal, w, nothing, Dict{Int,Int}(), false,
-            something(clock, _ -> time()), tap)
+            something(clock, _ -> time()), tap, Any[], later !== nothing, OrderedDict{String,Tuple{Any,JObj}}())
+end
+
+"Seconds since the epoch of a time in the call log's format."
+function unix_of(text::AbstractString)
+    m = match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?Z$", text)
+    m === nothing && return 0.0
+    frac = m.captures[2] === nothing ? 0.0 : parse(Float64, "0." * m.captures[2])
+    Dates.datetime2unix(Dates.DateTime(m.captures[1], dateformat"yyyy-mm-ddTHH:MM:SS")) + frac
 end
 
 required(t::TreeLog) = t.journal !== nothing && t.journal.required
-watched(t::TreeLog, call_observers) = !isempty(t.streams) || t.journal !== nothing || !isempty(call_observers)
+watched(t::TreeLog, call_observers) = !isempty(t.streams) || t.journal !== nothing || !isempty(call_observers) || !isempty(t.sinks)
 
 "Number an event of a call in this tree's log (`at` never goes back)."
 function number!(t::TreeLog, kind::Symbol, call_id::AbstractString, fn::AbstractString, data::JObj)
@@ -586,6 +606,21 @@ package (every call inside a tree ends before it), raised, never dropped.
 """
 function emit!(t::TreeLog, kind::Symbol, call_id, fn, data::JObj; withhold::Bool=false, last::Bool=false)
     lock(t.lock) do
+        if t.replaying
+            # a resumed turn doing again what it did before: nothing is shown until it does something new
+            if kind === :started
+                t.held[String(call_id)] = (fn, data)
+                t.programs[String(call_id)] = data["program"]       # its kept form is made when it is shown
+                return nothing
+            elseif kind in (:done, :failed) && call_id == t.tree
+                frontier!(t)
+            elseif kind in (:done, :failed)
+                delete!(t.held, String(call_id))
+                return nothing
+            else
+                return nothing
+            end
+        end
         t.ended && error("FunctAI: a $kind event of call $call_id after its tree $(t.tree) ended (a fault of FunctAI, not of your code)")
         e = number!(t, kind, call_id, fn, data)
         last && (t.ended = true)
@@ -608,10 +643,30 @@ function emit!(t::TreeLog, kind::Symbol, call_id, fn, data::JObj; withhold::Bool
 end
 
 """
+A resumed turn does something it had not done (a request with no kept
+reply, a tool that runs, an approval asked or newly answered, its end): the
+calls it started while replaying and that are still open are shown from
+here; the outermost call's start is in the log already.
+"""
+function frontier!(t::TreeLog)
+    lock(t.lock) do
+        t.replaying || return
+        t.replaying = false
+        held = collect(t.held)
+        empty!(t.held)
+        for (cid, (fn, data)) in held
+            cid == t.tree || emit!(t, :started, cid, fn, data)
+        end
+    end
+    nothing
+end
+
+"""
 Wait until the journal confirmed the event (every event up to it: appends
 are in order), or gave up on it: `:confirmed`, `:unanswered` or
 `:refused`. `:confirmed` without a journal.
 """
+confirmation(t::TreeLog, ::Nothing) = :confirmed        # an event held back while a resumed turn replays
 function confirmation(t::TreeLog, e::Event)
     t.writer_task === nothing && return :confirmed
     n = lock(() -> get(t.given, e.seq, 0), t.lock)
@@ -628,10 +683,10 @@ function deliver!(t::TreeLog, e::Event)
             offer!(s, e)
         end
         obs = get(t.observers, e.call, Any[])
-        isempty(obs) && return
+        (isempty(obs) && isempty(t.sinks)) && return
         k = kept_event(e, t.keeps[e.call], t.programs[e.call])
         k === nothing && return
-        for o in obs
+        for o in Iterators.flatten((obs, t.sinks))
             linked = relinked(k, get(t.observer_last, o, nothing))
             t.observer_last[o] = Position(linked)          # a dropped event is still the one before the next
             give!(o, linked)

@@ -27,6 +27,20 @@ function training_rows(f::AIFunction, data, expected)
     rows
 end
 
+"""
+The rows that may be worked examples: those shown no earlier turns. A rated
+turn of a conversation answers its conversation, and a worked example has
+none; such rows still count when a candidate is scored (asked again with
+their earlier turns). Says how many it skipped.
+"""
+function example_rows(f::AIFunction, rows)
+    context(r) = (e = row_meta(r, "earlier"); h = row_meta(r, "helpers"); (e isa AbstractVector && !isempty(e)) || (h isa AbstractVector && !isempty(h)))
+    keep = [r for r in rows if !context(r)]
+    skipped = length(rows) - length(keep)
+    skipped > 0 && @info "$(f.definition.name): $skipped row(s) shown earlier turns of a conversation are not worked examples (they are scored, asked again with them)"
+    keep
+end
+
 "The default judge of a run: exact_match against the row's answers."
 function default_metric(f::AIFunction)
     outs = output_names(f)
@@ -44,7 +58,7 @@ answers (a seeded random sample; `sample = false`: the first `k`). Nothing is
 called.
 """
 function labeled_few_shot(f::AIFunction, data; k::Integer=16, seed::Integer=0, sample::Bool=true, expected=nothing)
-    rows = training_rows(f, data, expected)
+    rows = example_rows(f, training_rows(f, data, expected))
     chosen = sample ? shuffle(Xoshiro(seed), rows)[1:min(k, length(rows))] : rows[1:min(k, length(rows))]
     remake(f; demos=Any[d for d in (labeled_demo(f, r) for r in chosen) if d !== nothing])
 end
@@ -60,7 +74,7 @@ Labeled rows fill the rest, up to `max_labeled`. Returns an improved copy.
 """
 function bootstrap_few_shot(f::AIFunction, data; metric=nothing, threshold=nothing, max_bootstrapped::Integer=4,
                             max_labeled::Integer=16, teacher=nothing, seed::Integer=0, concurrency::Integer=4, expected=nothing)
-    rows = training_rows(f, data, expected)
+    rows = example_rows(f, training_rows(f, data, expected))
     runner = teacher === nothing ? f : teacher isa AbstractString ? configure(f; lm=teacher) :
              teacher isa AIFunction ? teacher : throw(ArgumentError("teacher is a model name or an AI function"))
     judge = something(metric, default_metric(f))

@@ -6,6 +6,13 @@ functions; TypeScript 0.1.0, R 0.1.0 and Julia 0.1.0 pass all of it and
 are checked against Python itself. None of the new packages is published
 yet.*
 
+*2026-10-02: Julia passes stages 1.2 to 5, plugins and the baked
+examples too (every case Python's harness reads), and is checked against
+Python on conversations, the disk reply cache and serving
+(`tools/crosslang.py`). It writes training examples and calls students
+trained elsewhere; it does not train yet (see* Training in every
+language*).*
+
 ## What we want
 
 FunctAI should exist natively in **Python, TypeScript/JavaScript, R and

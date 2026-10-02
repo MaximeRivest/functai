@@ -57,3 +57,31 @@ write(joinpath(work, "julia-rated.json"), LMCC.json_text(rows))
 
 # 4. what Julia saves is a manifest every language reads (Python checks it against the schema)
 FunctAI.save(joinpath(work, "julia-saved", "mood"), with_demos(mood, ["Broke in a day." => unhappy]))
+
+# 5. stages 1.2 to 5 with Python: continue Python's conversation, answer from Python's disk cache, call Python's server
+@ai module_name = "shop" lm = "gpt-4.1-mini" function tutor(message::String)::String
+    "Tutor."
+end
+struct Echo end
+FunctAI.route(::Echo, model::AbstractString) = ("openai", String(model))
+LM15.complete(::Echo, request::LM15.Request) = LM15.Response(; model=request.model, finish_reason="stop",
+    message=LM15.Message(; role="assistant", parts=(LM15.TextPart(; text="<result>\njulia $(length(request.messages))\n</result>"),)),
+    usage=LM15.Usage(; input_tokens=10, output_tokens=5))
+chat = conversation(tutor, "lesson"; store=joinpath(work, "conversations"))
+answer = with_settings(() -> chat("Is it 5/6?"); router=Echo(), log_calls=log)
+check(answer == "julia 5", "the third turn saw both of Python's: $answer")
+rate(last(turns(chat)).id, :right; by="ana", folder=log)
+say("a conversation Python started in a folder continues here: the third turn saw Python's two")
+
+struct NoCalls end
+FunctAI.route(::NoCalls, model::AbstractString) = ("openai", String(model))
+LM15.complete(::NoCalls, request::LM15.Request) = error("julia: the request should have been answered from Python's disk cache")
+kept = with_settings(() -> mood("Kept for later."); router=NoCalls(), cache_replies=joinpath(work, "replies.sqlite"))
+check(kept == unhappy, "the cached reply: $kept")
+say("a reply Python kept in the disk cache answers the same request here, with no model call")
+
+served = LMCC.parse_json(read(joinpath(work, "served.json"), String))
+far = remote(served["url"])
+got = with_settings(() -> far("I was charged twice."); log_calls=log)
+check(got == "mixed", "the served answer: $got")
+say("a program Python serves is called here with remote (logged here, kind remote)")

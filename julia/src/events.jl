@@ -6,13 +6,16 @@
 # (journal.jl) are made of these.
 
 const EVENT_FORMAT = 2
-const EVENT_KINDS = (:started, :request, :text, :thinking, :tool_call, :tool_result, :retry, :done, :failed)
+const EVENT_KINDS = (:started, :request, :text, :thinking, :tool_call, :tool_result, :retry, :done, :failed, :approval, :approved)
 const ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 const KIND_KEYS = Dict{Symbol,Tuple}(
-    :started => ("parent", "root", "program", "inputs", "content", "omitted", "saw"), :request => ("request", "model"),
-    :text => ("field", "answer", "text"), :thinking => ("text",), :tool_call => ("id", "name", "input", "content"),
-    :tool_result => ("id", "name", "output", "content"), :retry => ("reason", "wait", "content"),
-    :done => ("value", "content"), :failed => ("error", "content"))
+    :started => ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"), :request => ("request", "model"),
+    :text => ("field", "answer", "text"), :thinking => ("text",), :tool_call => ("id", "name", "input", "content", "invocation"),
+    :tool_result => ("id", "name", "output", "content", "invocation"), :retry => ("reason", "wait", "content"),
+    :done => ("value", "content"), :failed => ("error", "content"),
+    # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
+    :approval => ("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
+    :approved => ("id", "invocation", "verdict", "by", "reason", "plugin", "content"))
 
 """
     Position(writer, seq)
@@ -230,7 +233,7 @@ rules a store keeps"): `code` is `event-malformed`, `event-conflict`,
 `event-gap`, `event-after-end`, `event-start` or `event-unknown`; `event`
 the position of the event refused (in a batch, the first refused).
 """
-struct StoreRefusal <: Exception
+struct StoreRefusal <: FunctAIError
     code::String
     event::Union{Nothing,Position}
     msg::String
@@ -450,8 +453,11 @@ function kept_event(e::Event, keep::Keep, program)
         return get(keep.outputs, data["field"], false) ? out : nothing
     elseif kind === :thinking
         return nothing
-    elseif kind === :tool_call
+    elseif kind === :tool_call || kind === :approval
         delete!(data, "input")
+        delete!(data, "question")
+    elseif kind === :approved
+        delete!(data, "reason")
     elseif kind === :tool_result
         delete!(data, "output")
     elseif kind === :retry

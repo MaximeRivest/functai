@@ -11,7 +11,7 @@ What a call saw cannot be known, or shown again (contract/calls.md,
 `saw-cycle`, `not-kept` or `turn-invalid`, and `call` the call whose record
 says so.
 """
-struct SawUnknown <: Exception
+struct SawUnknown <: FunctAIError
     code::String
     call::String
 end

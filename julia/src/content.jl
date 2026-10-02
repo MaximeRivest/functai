@@ -12,7 +12,7 @@ A `log_content` map refused (code `"log-content-field"`, contract/calls.md,
 fields (a misspelling would write the value it was meant to keep out);
 anywhere, a key that is neither a field name nor `"*"`.
 """
-struct LogContentError <: Exception
+struct LogContentError <: FunctAIError
     code::String
     field::String
     msg::String
@@ -120,7 +120,8 @@ whole(k::Keep) = all(values(k.inputs)) && all(values(k.outputs))
 kept(k::Keep, name) = get(k.inputs, name, get(k.outputs, name, false))     # a name that is no field: not kept
 
 const ALWAYS_KEPT = ("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
-                     "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
+                     "confidence", "caller", "process", "saw", "escalated", "truncated", "journal", "invocation",
+                     "conversation", "writer", "replayable")
 const EXCHANGE_DROPPED = ("request", "response", "request_hash")
 const ERROR_KEPT = ("type", "code")
 
@@ -164,8 +165,10 @@ function written_record(rec::AbstractDict, keep::Keep)
         elseif key == "described"
             described = JObj(d => Any[n for n in names if k(n)] for (d, names) in v)
             any(!isempty, values(described)) && (out["described"] = described)
-        elseif key == "returned"
-            nothing                         # code can put any value of the call into what it returns (calls.md, "Content")
+        elseif key in ("returned", "steps", "sections")
+            nothing                         # each can hold any value of the call (a summary quotes the turns): only whole
+        elseif key == "changes"
+            out["changes"] = Any[JObj(a => LMCC.deepcopy_json(b) for (a, b) in c if a != "change") for c in v]   # who, not what
         elseif key == "probabilities"
             probabilities = JObj(n => LMCC.deepcopy_json(x) for (n, x) in v if k(n))
             isempty(probabilities) || (out["probabilities"] = probabilities)

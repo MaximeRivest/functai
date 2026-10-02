@@ -78,17 +78,32 @@ interfaces), so turning reasoning on still pools its ratings. Calls rated
 under another interface, whose inputs were not all logged, or rated wrong
 with no correction are left out (and counted in an `@info`).
 """
-function rated(f::AIFunction; by=nothing, folder=nothing, since=nothing, any_file::Bool=false)
+function rated(f::Union{AIFunction,AIProgram}; by=nothing, folder=nothing, since=nothing, any_file::Bool=false)
     recs, ratings = read_log(log_root(folder); since)
     # a function defined at the top level (a notebook, a script) is known by its file too: two notebooks' summarize
     # are two programs; any_file pools across files (a notebook that moved)
-    file = any_file || f.module_name != "__main__" ? nothing : top_level_file(f.file)
-    rows, left = rated_rows(recs, ratings; name=f.definition.name, module_name=f.module_name, signature=signature_id(f),
+    name, mod, file_of = f isa AIFunction ? (f.definition.name, f.module_name, f.file) : (f.name, f.module_name, f.file)
+    file = any_file || mod != "__main__" ? nothing : top_level_file(file_of)
+    rows, left = rated_rows(recs, ratings; name, module_name=mod, signature=f isa AIFunction ? signature_id(f) : nothing,
                             interface=interface_signature(f), by, file)
+    # a rated turn of a conversation carries what it was shown (stage 5): rows the log cannot show it again for are left out
+    rows, left["no_context"] = with_context(rows, recs)
+    reasons = Dict("no_answer" => "marked wrong without the right answer", "other_signature" => "made when its inputs or outputs were different",
+                   "no_content" => "logged without their values", "no_context" => "shown earlier turns the log cannot show again")
     total = sum(values(left))
-    total > 0 && @info "rated($(f.definition.name)): $total rated call(s) left out: " *
-                       join(("$v $(replace(k, "_" => " "))" for (k, v) in left if v > 0), ", ")
-    typed_rows(f, rows)
+    total > 0 && @info "rated($name): $total rated call(s) left out: " *
+                       join(("$v $(reasons[k])" for (k, v) in left if v > 0), "; ")
+    f isa AIFunction ? typed_rows(f, rows) : plain_rows(rows)
+end
+
+"Rows as NamedTuples with one set of columns (absent values `missing`), values as JSON reads them."
+function plain_rows(rows)
+    columns = String[]
+    for r in rows, k in keys(r)
+        k in columns || push!(columns, k)
+    end
+    names = Tuple(Symbol.(columns))
+    [NamedTuple{names}(Tuple(haskey(r, k) && r[k] !== nothing ? r[k] : missing for k in columns)) for r in rows]
 end
 
 "Rows as NamedTuples with one set of columns (absent values `missing`), fields read as their types."

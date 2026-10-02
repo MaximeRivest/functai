@@ -72,6 +72,66 @@ for model in models
                                 (review="Good product but the box arrived damaged and late.", result="mixed")])
             sprint(show, e)
         end
+        check("a conversation: the second turn remembers the first") do
+            @ai function companion(message::String)::String
+                "A friendly assistant. Answer in one short sentence."
+            end
+            chat = conversation(companion; store=mktempdir())
+            chat("Hi, my name is Alex and my favourite colour is teal.")
+            answer = chat("What is my name, and my favourite colour?")
+            (occursin("Alex", answer) && occursin(r"teal"i, answer)) || error("it forgot: $(repr(answer))")
+            (answer=answer, saw=length(last(turns(chat)).saw))
+        end
+        check("a tool that asks first: the turn waits, is approved, goes on") do
+            refunded = String[]
+            refund(order::String) = (push!(refunded, order); "refunded")
+            # a docstring binds to a global only: a local function says what it does here
+            @ai tools = [tool(refund; effects=:changes, description="Refund an order, by its number.")] function desk(message::String)::String
+                "Help the customer. Refund an order when they ask for it."
+            end
+            chat = conversation(desk; store=mktempdir(), approve=:changes)
+            waited = try
+                chat("Please refund my order B-2210.")
+                false
+            catch err
+                err isa Waiting || rethrow()
+                true
+            end
+            waited && isempty(refunded) || error("the refund ran before anyone approved it")
+            answer = approve!(last(turns(chat)); by="live check")
+            refunded == ["B-2210"] || error("refunded: $refunded")
+            (answer=answer, state=last(turns(chat)).state)
+        end
+        check("a plugin's section reaches the model, and is recorded") do
+            pirate = Plugin("pirate"; before_call=_ -> Change(sections=["Always answer in the voice of a pirate, with 'Arr'."]))
+            @ai function greet(name::String)::String
+                "Greet the person in one sentence."
+            end
+            with_settings(() -> greet("Ana"); plugins=[pirate])
+        end
+        check("the disk cache: the second run sends nothing") do
+            @ai temperature = 0 function capital(country::String)::String
+                "The country's capital city, in one word."
+            end
+            path = joinpath(mktempdir(), "replies.sqlite")
+            first_answer = with_settings(() -> capital("Peru"); cache_replies=path)
+            empty!(FunctAI.DISK_REPLIES)
+            n = length(inspect_history(500))
+            again = with_settings(() -> capital("Peru"); cache_replies=path)
+            h = inspect_history(1)[1]
+            (again == first_answer && h.cached) || error("not from the cache: $(repr(h))")
+            again
+        end
+        check("served, and called with remote") do
+            port = let s = FunctAI.Sockets.listen(FunctAI.Sockets.localhost, 0); p = Int(FunctAI.Sockets.getsockname(s)[2]); close(s); p end
+            server = serve(mood; port, block=false)
+            try
+                far = remote("http://127.0.0.1:$port")
+                (far("Love it.", ), join(collect(stream(far, "Broke in a day."))))
+            finally
+                close(server)
+            end
+        end
     end
 end
 exit(failed == 0 ? 0 : 1)

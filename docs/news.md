@@ -9,6 +9,10 @@
   already did: a missing, unknown or unbindable input is checked against the
   interface before anything runs, on `/call`, `/stream` and a conversation's
   turns. It was a `500` (`TypeError`).
+- **A program saved while no model was configured verifies.** `save(...,
+  record=[...])` keeps the model FunctAI picked by default, and `verify`
+  replays with it; it failed with "no model configured", since a replay
+  has no logins to pick one from.
 
 - **Baking, rebuilt** (`design/12-bake.md`, `contract/baked.md`). Bake had no
   users, so nothing of the old generative API is kept.

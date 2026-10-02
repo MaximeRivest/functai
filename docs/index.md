@@ -151,10 +151,14 @@ in TypeScript) and catch up on the rest.
 | Your code around several AI functions, logged as one call | `@module` | `module()` | – | `@program` |
 | Call log, and people's ratings as data | ✓ | ✓ | ✓ | ✓ |
 | Loads functions saved in other languages | – | ✓ | ✓ | ✓ |
-| Reply cache (off unless you turn it on) | ✓ | ✓ | – | – |
-| Stateful memory, escalation to a bigger model | ✓ | – | – | – |
+| Reply cache (off unless you turn it on), kept on disk across runs | ✓ | memory | – | ✓ |
+| Conversations: turns that remember, branches, kept in a store | ✓ | – | – | ✓ |
+| Tools that ask a person first; a waiting turn goes on later, paying for nothing twice | ✓ | – | – | ✓ |
+| Plugins: hooks over turns, calls and tools, every change recorded | ✓ | – | – | ✓ |
+| Serve a program over HTTP, and use one served elsewhere | ✓ | – | – | ✓ |
+| Escalation to a bigger model when the first is unsure | ✓ | – | – | ✓ |
 | Sign in with a Claude, ChatGPT or Copilot subscription | ✓ | – | – | ✓ |
-| Bake it into a small model you own | ✓ | – | – | – |
+| Bake it into a small model you own | ✓ | – | – | training data, and runs a baked model |
 | Released | [PyPI](https://pypi.org/project/functai/) | not yet on npm | not yet on CRAN | not yet registered |
 
 Where a language has no ✓, a key in the environment, your own code, or
