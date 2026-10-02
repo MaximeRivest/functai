@@ -4,7 +4,7 @@
 \alias{ai_tool}
 \title{A tool the model may call}
 \usage{
-ai_tool(.fn, .description = "", ..., .name = NULL)
+ai_tool(.fn, .description = "", ..., .name = NULL, .effects = NULL)
 }
 \arguments{
 \item{.fn}{The function. It is called with its arguments by name.}
@@ -16,6 +16,12 @@ ai_tool(.fn, .description = "", ..., .name = NULL)
 
 \item{.name}{The tool's name, as the model sees it. Default: the name
 \code{.fn} is given by (\code{ai_tool(lookup_order, ...)} is \code{lookup_order}).}
+
+\item{.effects}{What it does to the world: \code{"reads"} (it only looks: a
+search, a lookup) or \code{"changes"} (it writes, sends or pays). Left out, it
+is unknown, which every approval rule treats as \code{"changes"}: forgetting
+to declare is safe. An AI function given as a tool reads, unless one of
+its own tools changes things or declares nothing.}
 }
 \value{
 A tool, for \code{ai(..., .tools = list(...))}.

@@ -73,6 +73,13 @@ judgment_layout <- function(sig) {
 
 # Bind a layout to a signature for a model's facts; every refusal fires here.
 bind_layout <- function(adapter, template, sig, caps, provider) {
+  plan <- bind_layout_(adapter, template, sig, caps, provider)
+  # what it was bound from, so a call's plugins can lay out another instruction the same way
+  plan$functai_binding <- list(adapter = adapter, template = template, caps = caps, provider = provider)
+  plan
+}
+
+bind_layout_ <- function(adapter, template, sig, caps, provider) {
   if (!is.null(template)) {
     plan <- tryCatch(lmcc::lmcc_bind(template_adapter(template), sig, caps, registry()),
       lmcc_refusal = function(e) if (identical(e$code, "not-readable") && identical(e$fix$path, "template")) NULL else stop(e))

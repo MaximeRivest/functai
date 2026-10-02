@@ -1,0 +1,224 @@
+# Conversations, tools that ask first, plugins: R's own tests, with a fake model.
+
+reply_text <- function(text) sprintf("<result>\n%s\n</result>", text)
+msg_count <- function(request) length(lmcc::lm15_plain(lm15::as_dict(request))$messages)
+
+test_that("a conversation's turns remember each other, are kept, and branch", {
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("answer %d", i)))
+  folder <- withr::local_tempdir(); logs <- withr::local_tempdir()
+  with_ai_config(lm = "gpt-4.1-mini", router = r, log_calls = logs, {
+    chat <- ai_conversation(tutor, "alex", store = folder)
+    expect_identical(chat("Hi, I'm Alex."), "answer 1")
+    expect_identical(chat("What is 1/2 + 1/3?"), "answer 2")
+    expect_identical(msg_count(r$env$requests[[2L]]), 3L)                 # the first turn, then the question
+    t <- ai_turns(chat)
+    expect_identical(t$state, c("done", "done"))
+    expect_identical(t$parent, c(NA, t$turn[[1L]]))
+    # the turn's id is its call's id in the call log; its record says so
+    recs <- log_lines(logs)
+    second <- Filter(function(x) identical(x$id, t$turn[[2L]]), recs)[[1L]]
+    expect_identical(second$conversation$id, "alex")
+    expect_identical(second$saw, list(list(call = t$turn[[1L]], steps = TRUE)))
+    expect_false(is.null(second$steps))
+    # the same line tomorrow opens it again
+    again <- ai_conversation(tutor, "alex", store = folder)
+    expect_identical(nrow(ai_turns(again)), 2L)
+    other <- continue_from(again, 1L)
+    expect_identical(other("Another question"), "answer 3")
+    expect_identical(msg_count(r$env$requests[[3L]]), 3L)                 # only the first turn
+    expect_identical(nrow(ai_turns(again, all = TRUE)), 3L)
+    expect_identical(ai_turns(other)$parent[[2L]], t$turn[[1L]])
+    # last_turns(0): nothing earlier
+    fresh <- ai_conversation(tutor, "alex", store = folder, context = last_turns(0))
+    fresh("Hello?")
+    expect_identical(msg_count(r$env$requests[[4L]]), 1L)
+    expect_length(ai_render(chat, "next?")$messages, 5L)          # both turns, then the question
+  })
+  expect_error(ai_conversation(tutor, "a/b"), class = "functai_conversation_id")
+})
+
+test_that("a turn waits for a person's answer, then goes on paying for nothing twice", {
+  refunds <- character(0)
+  refund <- function(order) { refunds <<- c(refunds, order); "refunded" }
+  helper <- ai(reply ~ message, "Help.", .name = "helper", .tools = list(ai_tool(refund, "Refund an order.", .effects = "changes")))
+  r <- fake_router(responder = function(request, i) {
+    if (msg_count(request) == 1L) list(calls = list(list(id = "c1", name = "refund", input = list(order = "A-1042"))))
+    else reply_text("Done: refunded.")
+  })
+  folder <- withr::local_tempdir()
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(helper, "shop", store = folder, approve = "changes")
+    w <- tryCatch(chat("Refund A-1042 please."), functai_waiting = identity)
+    expect_s3_class(w, "functai_waiting")
+    expect_identical(w$turn$state, "waiting")
+    expect_identical(w$approvals[[1L]]$name, "refund")
+    expect_length(refunds, 0L)
+    expect_error(chat("another?"), class = "functai_conversation_busy")
+    # later, from another conversation object on the same store
+    t <- ai_turn(ai_conversation(helper, "shop", store = folder, approve = "changes"))
+    expect_identical(approve(t), "Done: refunded.")
+    expect_identical(refunds, "A-1042")
+    expect_length(r$env$requests, 2L)                                        # the first reply was kept: not asked again
+    expect_identical(ai_turn(chat)$state, "done")
+  })
+  # denied: the model is told, and may answer otherwise
+  r2 <- fake_router(responder = function(request, i) {
+    if (msg_count(request) == 1L) list(calls = list(list(id = "c1", name = "refund", input = list(order = "B-1"))))
+    else reply_text(sprintf("seen: %s", grepl("did not allow", paste(unlist(lmcc::lm15_plain(lm15::as_dict(request))), collapse = " "))))
+  })
+  with_ai_config(lm = "gpt-4.1-mini", router = r2, {
+    chat <- ai_conversation(helper, "shop2", store = folder, approve = "changes")
+    w <- tryCatch(chat("Refund B-1."), functai_waiting = identity)
+    expect_identical(deny(w$turn, reason = "not today"), "seen: TRUE")
+  })
+  expect_identical(refunds, "A-1042")
+  # a plain call has nobody to ask
+  r3 <- fake_router(responder = function(request, i) list(calls = list(list(id = "c1", name = "refund", input = list(order = "C-1")))))
+  expect_error(with_ai_config(helper("Refund C-1."), lm = "gpt-4.1-mini", router = r3, approve = "changes", tool_errors = "raise"), class = "functai_approval_required")
+  # a function answers at once
+  r4 <- fake_router(responder = function(request, i) if (msg_count(request) == 1L) list(calls = list(list(id = "c1", name = "refund", input = list(order = "D-1")))) else reply_text("ok"))
+  expect_identical(with_ai_config(helper("Refund D-1."), lm = "gpt-4.1-mini", router = r4, approve = function(a) a$input$order == "D-1"), "ok")
+  expect_identical(refunds, c("A-1042", "D-1"))
+})
+
+test_that("plugins change calls as data, recorded", {
+  logs <- withr::local_tempdir()
+  careful <- ai_plugin("careful", version = "1.2.0", before_call = function(call) ai_change(sections = "Only point out problems."))
+  f <- ai(reply ~ message, "Review.", .name = "review")
+  r <- fake_router(responder = function(request, i) reply_text("fine"))
+  with_ai_config(f("x"), lm = "gpt-4.1-mini", router = r, plugins = list(careful), log_calls = logs)
+  sys <- lmcc::lm15_plain(lm15::as_dict(r$env$requests[[1L]]))$system
+  expect_match(paste(unlist(sys), collapse = " "), "Only point out problems.", fixed = TRUE)
+  rec <- log_lines(logs)[[1L]]
+  expect_identical(rec$changes[[1L]]$plugin, "careful")
+  expect_identical(rec$changes[[1L]]$change$sections, list("Only point out problems."))
+  expect_error(ai_plugin("Bad Name"), class = "functai_plugin_name")
+  expect_error(on_hook(careful, "befor_call", function(e) NULL), class = "functai_plugin_hook")
+  bad <- ai_plugin("bad", before_call = function(call) stop("boom"))
+  expect_error(with_ai_config(f("x"), lm = "gpt-4.1-mini", router = r, plugins = list(bad)), "plugin bad failed")
+  guard <- ai_plugin("guard", tool_call = function(t) if (t$name == "wipe") ai_change(block = "not here"))
+  wiped <- FALSE
+  g <- ai(reply ~ message, "Act.", .name = "act", .tools = list(ai_tool(function() { wiped <<- TRUE; "gone" }, "Wipe.", .name = "wipe")))
+  r2 <- fake_router(responder = function(request, i) if (msg_count(request) == 1L) list(calls = list(list(id = "c1", name = "wipe", input = list()))) else reply_text("ok"))
+  expect_identical(with_ai_config(g("go"), lm = "gpt-4.1-mini", router = r2, plugins = list(guard)), "ok")
+  expect_false(wiped)
+})
+
+test_that("a program's conversation gives its code the conversation so far", {
+  seen <- list()
+  echo <- ai(reply ~ message, "Echo.", .name = "echo")
+  bot <- ai_program(reply ~ message, "Answer.", function(message) { seen[[length(seen) + 1L]] <<- earlier(); echo(message) })
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("echo %d", i)))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(bot, "p")
+    chat("one"); chat("two")
+  })
+  expect_length(seen[[1L]], 0L)
+  expect_identical(seen[[2L]][[1L]]$message, "one")
+  expect_identical(seen[[2L]][[1L]]$result, "echo 1")
+  expect_identical(msg_count(r$env$requests[[2L]]), 1L)        # the helper remembers nothing unless told
+})
+
+test_that("compaction folds older turns into a summary the next turns are shown", {
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("answer %d", i)))
+  summaries <- list()
+  summarize <- function(earlier, rows) { summaries[[length(summaries) + 1L]] <<- rows; sprintf("summary of %d turns", length(rows[[1L]])) }
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(tutor, "long", plugins = list(compaction(keep = 1L, every = 2L, summarize = summarize)))
+    for (i in 1:4) chat(sprintf("q%d", i))
+  })
+  expect_length(summaries, 1L)                                       # after the third turn: 3 open >= 1 + 2
+  last <- r$env$requests[[4L]]
+  d <- lmcc::lm15_plain(lm15::as_dict(last))
+  expect_match(paste(unlist(d$system), collapse = " "), "summary of 2 turns", fixed = TRUE)
+  expect_identical(length(d$messages), 3L)                          # only the turn after the summary, then the question
+})
+
+test_that("delegate() hands work to another program, which remembers on its branch", {
+  research <- ai(reply ~ question, "Look things up.", .name = "research")
+  asked <- 0L
+  r <- fake_router(responder = function(request, i) {
+    text <- paste(unlist(lmcc::lm15_plain(lm15::as_dict(request))$system), collapse = " ")
+    if (grepl("Look things up", text)) { asked <<- asked + 1L; return(reply_text(sprintf("found %d (%d messages)", asked, msg_count(request)))) }
+    msgs <- lmcc::lm15_plain(lm15::as_dict(request))$messages
+    last <- msgs[[length(msgs)]]
+    if (any(vapply(last$parts, function(p) identical(p$type, "tool_result"), NA))) reply_text("done")
+    else list(calls = list(list(id = paste0("c", i), name = "research", input = list(question = "where?"))))
+  })
+  assistant <- ai(reply ~ request, "Help.", .name = "assistant", .tools = list(delegate(research, "Research a question.")))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    chat <- ai_conversation(assistant, "work")
+    chat("first"); chat("second")
+  })
+  expect_identical(asked, 2L)
+  helper_requests <- Filter(function(q) grepl("Look things up", paste(unlist(lmcc::lm15_plain(lm15::as_dict(q))$system), collapse = " ")), r$env$requests)
+  expect_identical(msg_count(helper_requests[[2L]]), 3L)            # it remembered its first question
+})
+
+test_that("a rated turn is a row that keeps its earlier turns, and is asked again with them", {
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  logs <- withr::local_tempdir()
+  r <- fake_router(responder = function(request, i) reply_text(sprintf("answer %d", i)))
+  with_ai_config(lm = "gpt-4.1-mini", router = r, log_calls = logs, {
+    chat <- ai_conversation(tutor, "alex")
+    chat("Hi, I'm Alex."); chat("What is my name?")
+  })
+  t <- ai_turns(chat)
+  rate(t$turn[[2L]], "wrong", answer = "Alex.", folder = logs)
+  rows <- rated(tutor, folder = logs, any_file = TRUE)
+  expect_identical(nrow(rows), 1L)
+  expect_identical(rows$conversation, "alex")
+  expect_identical(rows$earlier[[1L]][[1L]]$inputs$message, "Hi, I'm Alex.")
+  # asked again with its earlier turns (and nothing written to the conversation)
+  ev <- with_ai_config(evaluate(tutor, rows), lm = "gpt-4.1-mini", router = r, log_calls = logs)
+  expect_identical(msg_count(r$env$requests[[3L]]), 3L)
+  again <- Filter(function(x) length(x$saw) && !is.null(x$saw[[1L]]$saw_of), log_lines(logs))
+  expect_length(again, 1L)
+  expect_identical(again[[1L]]$saw, list(list(saw_of = t$turn[[2L]])))
+  expect_identical(nrow(ai_turns(chat)), 2L)
+  expect_length(ai_demos(labeled_few_shot(tutor, rows)), 0L)           # never a worked example
+})
+
+test_that("a served program answers its routes; remote() uses it as a program", {
+  team <- ai(team ~ message, "Which team?", team = choice("billing", "shipping"))
+  r <- fake_router(responder = function(request, i) reply_text("billing"))
+  logs <- withr::local_tempdir()
+  s <- ai_service(team, keys = "k1")
+  call <- function(method, path, body = NULL, key = "k1", headers = list())
+    serve_request(s, method, path, c(list(authorization = if (!is.null(key)) paste("Bearer", key)), headers), if (is.null(body)) raw() else lmcc::json_text(body))
+  expect_identical(call("GET", "/interface", key = "nope")$status, 401L)
+  d <- lmcc::parse_json(call("GET", "/interface")$body)
+  expect_identical(d$functai_interface, 1L); expect_identical(d$name, "team")
+  got <- with_ai_config(call("POST", "/call", list(inputs = list(message = "Charged twice."))), lm = "gpt-4.1-mini", router = r, log_calls = logs)
+  expect_identical(got$status, 200L)
+  b <- lmcc::parse_json(got$body)
+  expect_identical(b$outputs$result, "billing"); expect_identical(b$value, "billing")
+  bad <- call("POST", "/call", list(inputs = list(message = "x", urgent = TRUE)))
+  expect_identical(bad$status, 422L)
+  expect_identical(lmcc::parse_json(bad$body)$error$field, "urgent")
+  st <- with_ai_config(call("POST", "/stream", list(inputs = list(message = "x"))), lm = "gpt-4.1-mini", router = r)
+  expect_match(st$body, "event: started", fixed = TRUE); expect_match(st$body, "event: done", fixed = TRUE)
+  t <- with_ai_config(call("POST", "/conversations/c1/turns", list(inputs = list(message = "x"))), lm = "gpt-4.1-mini", router = r)
+  expect_identical(t$status, 201L)
+  expect_identical(lmcc::parse_json(t$body)$state, "done")
+  expect_identical(length(lmcc::parse_json(call("GET", "/conversations/c1/turns")$body)$turns), 1L)
+  expect_error(ai_service(ai_program(r ~ x, "Opaque.", function(x) x, x = opaque())), class = "functai_serve_opaque")
+  # over the network
+  skip_on_cran(); skip_if_not_installed("httpuv")
+  port <- httpuv::randomPort()
+  old <- the$config
+  withr::defer(the$config <- old)
+  ai_config(lm = "gpt-4.1-mini", router = r)
+  server <- ai_serve(team, port = port, keys = "k1", block = FALSE)
+  withr::defer(httpuv::stopServer(server))
+  # the server answers while R is idle: serve requests from another process
+  skip_if(!nzchar(Sys.which("Rscript")), "no Rscript")
+  out <- withr::local_tempfile()
+  script <- withr::local_tempfile(fileext = ".R")
+  writeLines(sprintf('library(functai); ai_config(log_calls = FALSE); t2 <- ai_remote("http://127.0.0.1:%d", key = "k1"); writeLines(as.character(t2(c("a", "b"))), "%s")', port, out), script)
+  system2("Rscript", script, env = paste0("R_LIBS=", paste(.libPaths(), collapse = ":")), wait = FALSE, stdout = FALSE, stderr = FALSE)
+  for (i in 1:200) { httpuv::service(50); if (file.exists(out) && length(readLines(out)) == 2L) break }
+  expect_identical(readLines(out), c("billing", "billing"))
+})

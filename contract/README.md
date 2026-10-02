@@ -115,14 +115,15 @@ thing it cannot do yet wait for it, and are not failures.
 | `baked/` | what a generative student is trained on and called with: its signature, the hashes of fixed and derived inputs, the conversations | every language that writes training examples or calls baked students |
 
 Stages 1.2 to 5 (2026-09-30) were built in Python first
-(`../design/10-stages-1.2-to-5-python.md`), then in Julia (2026-10-02):
-Python's and Julia's harnesses read `replies/`, `conversations/`,
-`tools/`, `views/`, `context/`, `plugins/` and `baked/`; TypeScript and R
-take them with each stage. `../tools/crosslang.py` checks the two against
-each other on real output: a conversation Python starts in a folder store
-and Julia continues (and Python reads back), a reply Python keeps in the
-disk cache and Julia reads, a program Python serves and Julia calls with
-`remote`.
+(`../design/10-stages-1.2-to-5-python.md`), then in Julia and R
+(2026-10-02): Python's, Julia's and R's harnesses read `replies/`,
+`conversations/`, `tools/`, `views/`, `context/`, `plugins/` and
+`baked/` (R's also `events/` and `saw/` of kind `shown`); TypeScript takes
+them with each stage. `../tools/crosslang.py` checks them against each
+other on real output: a conversation Python starts in a folder store and
+Julia and R each continue (and Python reads back), a reply Python keeps in
+the disk cache and Julia and R read, a program Python serves and Julia and
+R call with `remote`.
 
 Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
 `14` and `21`, `functions/12`, `content/03`, `14`, `15`, `17` and `18`,
@@ -133,8 +134,8 @@ reads records as closed, counts defaults by their logic, keeps added
 fields apart, keeps ratings under an account apart and knows a
 notebook's program by its file.
 
-Today (2026-09-28): Python, TypeScript and Julia stream and have modules;
-R has neither yet. Every language's harness reads `functions/`,
+Today (2026-10-02): Python, TypeScript, Julia and R stream and have
+modules. Every language's harness reads `functions/`,
 `scores/`, `rated/` and `saved/` (loading); the other folders, and
 `saved/`'s `describe` and `sends`, have no harness yet: each language adds
 it with the code. Until each language reads format 2 and interfaces,

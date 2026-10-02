@@ -20,7 +20,15 @@ local_ai_config(..., .local_envir = parent.frame())
 8), \code{on_error} (\code{"warn"}, the default: a failed row is \code{NA}; or \code{"stop"}),
 \code{log_calls} (a folder, or \code{TRUE}), \code{log_content} (\code{TRUE}, \code{FALSE},
 \code{c(transcript = FALSE)}, or the names of the fields to keep), \code{caller}, \code{router} (an
-\code{lm15::new_router()}).}
+\code{lm15::new_router()}); \code{cache_replies} (\code{TRUE}: in memory; \code{"disk"}, a
+folder or a \code{.sqlite} file: kept across runs, shared by every language)
+and \code{replicate} (the n-th independent answer to the same request);
+\code{progress} (a progress line over a column); \code{observers} (functions given
+every event), \code{journal} (\code{\link[=ai_journal]{ai_journal()}}) and \code{program_observers};
+\code{plugins} (\code{\link[=ai_plugin]{ai_plugin()}}) and \code{program_plugins}; \code{approve} (a function,
+\code{"changes"}, \code{"all"}, or tool names: see \code{\link[=ai_conversation]{ai_conversation()}});
+\code{escalate_to} (a model or an AI function that answers when the first
+model is less sure than \code{escalate_below}, default 0.9).}
 
 \item{code}{Code to run with these settings.}
 

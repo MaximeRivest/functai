@@ -141,24 +141,24 @@ in TypeScript) and catch up on the rest.
 | Typed AI functions: answers checked against their type, asked again when they don't fit | ✓ | ✓ | ✓ | ✓ |
 | Run on a whole table | [dpyr](https://github.com/MaximeRivest/dpyr): pandas, polars, files, databases | arrays of rows | dplyr verbs | broadcasting, DataFrames |
 | How often is it right, with a 95% interval | ✓ | ✓ | ✓ | ✓ |
-| Two versions compared row by row | ✓ | – | – | ✓ |
+| Two versions compared row by row | ✓ | – | ✓ | ✓ |
 | Worked examples chosen from your rows | ✓ | ✓ | ✓ | ✓ |
 | The instruction rewritten from its mistakes (GEPA) | ✓ | ✓ | ✓ | ✓ |
-| Instruction search, random search | ✓ | – | – | ✓ |
+| Instruction search, random search | ✓ | – | ✓ | ✓ |
 | A model among statistical models | – | – | tidymodels | MLJ, formulas |
 | Tools the model calls | ✓ | ✓ | ✓ | ✓ |
-| Streaming | ✓ | ✓ | – | ✓ |
-| Your code around several AI functions, logged as one call | `@module` | `module()` | – | `@program` |
+| Streaming | ✓ | ✓ | ✓ | ✓ |
+| Your code around several AI functions, logged as one call | `@module` | `module()` | `ai_program()` | `@program` |
 | Call log, and people's ratings as data | ✓ | ✓ | ✓ | ✓ |
 | Loads functions saved in other languages | – | ✓ | ✓ | ✓ |
-| Reply cache (off unless you turn it on), kept on disk across runs | ✓ | memory | – | ✓ |
-| Conversations: turns that remember, branches, kept in a store | ✓ | – | – | ✓ |
-| Tools that ask a person first; a waiting turn goes on later, paying for nothing twice | ✓ | – | – | ✓ |
-| Plugins: hooks over turns, calls and tools, every change recorded | ✓ | – | – | ✓ |
-| Serve a program over HTTP, and use one served elsewhere | ✓ | – | – | ✓ |
-| Escalation to a bigger model when the first is unsure | ✓ | – | – | ✓ |
-| Sign in with a Claude, ChatGPT or Copilot subscription | ✓ | – | – | ✓ |
-| Bake it into a small model you own | ✓ | – | – | training data, and runs a baked model |
+| Reply cache (off unless you turn it on), kept on disk across runs | ✓ | memory | ✓ | ✓ |
+| Conversations: turns that remember, branches, kept in a store | ✓ | – | ✓ | ✓ |
+| Tools that ask a person first; a waiting turn goes on later, paying for nothing twice | ✓ | – | ✓ | ✓ |
+| Plugins: hooks over turns, calls and tools, every change recorded | ✓ | – | ✓ | ✓ |
+| Serve a program over HTTP, and use one served elsewhere | ✓ | – | ✓ (one request at a time) | ✓ |
+| Escalation to a bigger model when the first is unsure | ✓ | – | ✓ | ✓ |
+| Sign in with a Claude, ChatGPT or Copilot subscription | ✓ | – | ✓ | ✓ |
+| Bake it into a small model you own | ✓ | – | training data, and runs a baked model | training data, and runs a baked model |
 | Released | [PyPI](https://pypi.org/project/functai/) | not yet on npm | not yet on CRAN | not yet registered |
 
 Where a language has no ✓, a key in the environment, your own code, or

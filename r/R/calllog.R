@@ -22,7 +22,13 @@ new_id <- function() {
   paste(substr(h, 1, 8), substr(h, 9, 12), substr(h, 13, 16), substr(h, 17, 20), substr(h, 21, 32), sep = "-")
 }
 
-iso <- function(t) format(as.POSIXct(t, origin = "1970-01-01", tz = "UTC"), "%Y-%m-%dT%H:%M:%OS6Z", tz = "UTC")
+# A time in the log's format (RFC 3339 UTC, exactly six fraction digits),
+# rounded to the microsecond (never truncated: 0.01 is .010000).
+iso <- function(t) {
+  us <- round(as.numeric(t) * 1e6)
+  secs <- us %/% 1e6
+  paste0(format(as.POSIXct(secs, origin = "1970-01-01", tz = "UTC"), "%Y-%m-%dT%H:%M:%S", tz = "UTC"), sprintf(".%06dZ", as.integer(us - secs * 1e6)))
+}
 
 # Byte order, never the locale's (the contract compares code points).
 before <- function(a, b) !identical(a, b) && order(c(a, b), method = "radix")[[1L]] == 1L
@@ -79,14 +85,24 @@ warn_once <- function(key, message) {
 size_of <- function(v) nchar(lmcc::canonical_json(v), type = "chars")
 
 # A call, from its start: `fields` are its fields (content_kept()'s names),
-# `keep` whether each one's value is written.
-start_call <- function(program, settings, inputs, fields, keep) {
+# `keep` whether each one's value is written, `own` the program's own settings
+# (its layer of observers and journal). It joins the tree of the call it runs
+# inside, or starts one (runtime.R, open_call()).
+start_call <- function(program, settings, inputs, fields, keep, own = list(), later = NULL, id = NULL, core = NULL) {
   call <- new.env(parent = emptyenv())
   parent <- the$current
-  call$id <- new_id()
-  call$parent <- if (is.null(parent)) NULL else parent$id
+  if (!is.null(parent) && isTRUE(parent$ended)) parent <- NULL
+  call$core <- core
+  # a conversation's turn takes the first call of its program: the turn's id, minted before the call
+  starting <- the$turn_starting
+  own_turn <- !is.null(core) && !is.null(starting) && !starting$root_taken &&
+    identical(program_core_of(starting$program)$definition$name, core$definition$name)
+  if (own_turn) { starting$root_taken <- TRUE; id <- starting$turn; if (is.null(parent)) later <- starting$later }
+  call$id <- id %||% new_id()
+  call$parent <- if (is.null(parent)) the$remote_parent else parent$id
   call$root <- if (is.null(parent)) call$id else parent$root
   call$program <- program
+  call$program_json <- program()
   call$started <- as.numeric(Sys.time())
   call$exchanges <- list()
   call$provider <- NULL
@@ -95,8 +111,13 @@ start_call <- function(program, settings, inputs, fields, keep) {
   call$folder <- tryCatch(folder_of(settings$log_calls), error = function(e) NULL)
   call$fields <- fields
   call$keep <- keep
+  call$keep_events <- keep_of(fields, keep)
   call$caller <- caller_of(settings)
   call$inputs <- if (length(inputs)) inputs else lmcc::jobj()
+  call$later <- later
+  call <- open_call(call, own)
+  call$turn_run <- if (own_turn) starting else if (!is.null(call$up)) call$up$turn_run else NULL
+  if (own_turn) attach_turn(call, core)
   call
 }
 
@@ -104,15 +125,21 @@ start_call <- function(program, settings, inputs, fields, keep) {
 # rendered request it was sent from (kernel section 3a, a model step's
 # `request`); a request asked again after an unreadable reply extends that
 # render with FunctAI's own words, and carries its hash.
-exchange <- function(call, model, request, response, started, seconds, error = NULL, request_hash = NULL) {
+exchange <- function(call, model, request, response, started, seconds, error = NULL, request_hash = NULL,
+                     cached = FALSE, streamed = FALSE, first_delta = NULL) {
   call$exchanges[[length(call$exchanges) + 1L]] <- list(model = model, provider = call$provider, started = started,
-    seconds = seconds, request = request, request_hash = request_hash, response = response, error = error)
+    seconds = seconds, request = request, request_hash = request_hash, response = response, error = error,
+    cached = cached, streamed = streamed, first_delta = first_delta)
 }
 
 error_json <- function(err) {
   cls <- class(err)
   type <- if (inherits(err, "lmcc_refusal")) "Refusal"
     else if (inherits(err, c("functai_interface_input", "functai_interface_output"))) "InterfaceError"
+    else if (!is.null(err$functai_type)) err$functai_type
+    else if (inherits(err, "functai_journal_error")) "JournalError"
+    else if (inherits(err, "functai_cancelled")) "Cancelled"
+    else if (inherits(err, "functai_store_refusal")) "EventRefused"
     else if (inherits(err, "LM15Error")) (setdiff(cls, c("LM15Error", "error", "condition"))[1L] %|na|% "LM15Error") else cls[[1L]]
   out <- list(type = type)
   if (inherits(err, "lmcc_refusal") || inherits(err, "functai_refusal")) out$code <- err$code
@@ -130,12 +157,13 @@ usage_of <- function(response) {
 }
 
 exchange_json <- function(ex) {
-  out <- list(model = ex$model, provider = ex$provider, started = iso(ex$started), seconds = round(ex$seconds, 6), cached = FALSE)
+  out <- list(model = ex$model, provider = ex$provider, started = iso(ex$started), seconds = round(ex$seconds, 6), cached = isTRUE(ex$cached))
   if (!is.null(ex$response)) { out$finish <- ex$response$finish_reason; out$usage <- usage_of(ex$response) }
   if (!is.null(ex$error)) out$error <- error_json(ex$error)
   out$request <- plain_lm15(ex$request)
   if (!is.null(ex$request_hash)) out$request_hash <- ex$request_hash
   if (!is.null(ex$response)) out$response <- plain_lm15(ex$response)
+  if (isTRUE(ex$streamed)) { out$streamed <- TRUE; out["first_delta"] <- list(if (is.null(ex$first_delta)) NULL else round(ex$first_delta, 6)) }
   out
 }
 
@@ -157,7 +185,7 @@ process_json <- function() {
 # The call's record (format 2): the whole record, then what log_content lets
 # it keep (content.R, kept_record()).
 call_record <- function(call, error = NULL) {
-  program <- call$program()
+  program <- call$program_json %||% call$program()
   answered <- Filter(function(e) !is.null(e$response), call$exchanges)
   usage <- list()
   for (e in answered) for (k in names(u <- usage_of(e$response))) usage[[k]] <- (usage[[k]] %||% 0L) + u[[k]]
@@ -169,7 +197,7 @@ call_record <- function(call, error = NULL) {
   for (k in names(call$inputs)) in_sizes[[k]] <- size_of(call$inputs[[k]])
   for (k in names(call$outputs)) out_sizes[[k]] <- size_of(call$outputs[[k]])
   rec <- list(functai_call = CALL_FORMAT, id = call$id, parent = call$parent, root = call$root, program = program,
-              started = iso(call$started), seconds = round((call$ended %||% as.numeric(Sys.time())) - call$started, 6), content = TRUE)
+              started = iso(call$started), seconds = round((call$ended_at %||% as.numeric(Sys.time())) - call$started, 6), content = TRUE)
   rec["inputs"] <- list(call$inputs)
   rec["outputs"] <- list(if (is.null(call$outputs)) NULL else if (length(call$outputs)) call$outputs else lmcc::jobj())
   probabilities <- Filter(length, call$probabilities %||% list())
@@ -180,9 +208,19 @@ call_record <- function(call, error = NULL) {
   rec$usage <- if (length(usage)) usage else lmcc::jobj()
   rec["confidence"] <- list(call$confidence)
   rec$exchanges <- lapply(call$exchanges, exchange_json)
-  rec$saw <- list()                    # R's AI functions are shown no earlier call
+  rec$saw <- call$saw %||% list()
+  if (!is.null(call$returned)) rec["returned"] <- list(call$returned)
+  if (isTRUE(call$escalated)) rec$escalated <- TRUE
   rec$caller <- call$caller
   rec$process <- process_json()
+  if (!is.null(call$steps)) rec$steps <- call$steps
+  if (!is.null(call$invocation)) rec$invocation <- call$invocation
+  if (!is.null(call$conversation)) rec$conversation <- call$conversation
+  if (length(call$changes)) rec$changes <- call$changes
+  if (length(call$sections)) rec$sections <- as.list(call$sections)
+  if (isFALSE(call$replayable)) rec$replayable <- FALSE
+  if (!is.null(call$tree) && call$tree$writer > 1L) rec$writer <- call$tree$writer
+  if (!is.null(call$journal_word)) rec$journal <- call$journal_word
   kept_record(rec, call$fields, call$keep)
 }
 
@@ -227,12 +265,17 @@ finish_call <- function(call, error = NULL) {
 
 read_log <- function(folder = NULL, since = NULL) {
   root <- normalizePath(path.expand(folder %||% folder_of(TRUE)), mustWork = FALSE)
-  cutoff <- if (is.null(since)) "" else iso(as.numeric(as.POSIXct(since)))
+  cutoff <- if (is.null(since)) "" else iso(time_since(since))
   calls <- list(); ratings <- list()
   if (!dir.exists(root)) return(list(calls = calls, ratings = ratings))
+  # the files at the top (what prune_calls() kept), then each day's
+  files <- sort(list.files(root, pattern = "\\.jsonl$", full.names = TRUE), method = "radix")
   for (day in sort(list.files(root), method = "radix")) {
     if (!grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", day) || (nzchar(cutoff) && before(day, substr(cutoff, 1, 10)))) next
-    for (f in sort(list.files(file.path(root, day), pattern = "\\.jsonl$", full.names = TRUE), method = "radix")) {
+    files <- c(files, sort(list.files(file.path(root, day), pattern = "\\.jsonl$", full.names = TRUE), method = "radix"))
+  }
+  {
+    for (f in files) {
       lines <- tryCatch(readLines(f, warn = FALSE, encoding = "UTF-8"), error = function(e) character(0))
       for (line in lines) {
         if (!nzchar(trimws(line))) next
@@ -243,7 +286,89 @@ read_log <- function(folder = NULL, since = NULL) {
       }
     }
   }
-  list(calls = calls, ratings = ratings)
+  list(calls = highest_writer(calls), ratings = ratings)
+}
+
+# For one id, the record of the highest writer (a resumed turn's call is
+# written again by its later writer: calls.md, `writer`).
+highest_writer <- function(calls) {
+  if (!length(calls)) return(calls)
+  ids <- vapply(calls, function(c) as.character(c$id %||% ""), "")
+  if (!anyDuplicated(ids)) return(calls)
+  w <- vapply(calls, function(c) as.numeric(c$writer %||% 1), 0)
+  keep <- vapply(seq_along(calls), function(i) { same <- which(ids == ids[[i]]); i == same[which.max(w[same])] }, NA)
+  calls[keep]
+}
+
+# A time from `since`: a date or date-time, or text like "90d", "12h", "2w".
+time_since <- function(x) {
+  if (inherits(x, c("Date", "POSIXt"))) return(as.numeric(as.POSIXct(x, tz = "UTC")))
+  if (is.character(x) && length(x) == 1L) {
+    m <- regmatches(x, regexec("^\\s*([0-9]+)\\s*([hdw])\\s*$", x))[[1L]]
+    if (length(m)) return(as.numeric(Sys.time()) - as.numeric(m[[2L]]) * c(h = 3600, d = 86400, w = 604800)[[m[[3L]]]])
+    t <- suppressWarnings(as.POSIXct(x, tz = "UTC", tryFormats = c("%Y-%m-%dT%H:%M:%OS", "%Y-%m-%d %H:%M:%OS", "%Y-%m-%d")))
+    if (!is.na(t)) return(as.numeric(t))
+  }
+  if (is.numeric(x)) return(as.numeric(x))
+  cli::cli_abort("a time is a date, a date-time, or text like {.val 2026-09-20}, {.val 90d}, {.val 12h}, {.val 2w}")
+}
+
+#' Make the call log smaller, keeping what ratings need
+#'
+#' Deletes the log's day folders older than `older_than` (the log is kept
+#' small by deleting whole days: contract/calls.md, *The folder*). Before a
+#' day goes, every rated call in it is kept: the call, every call of its tree
+#' (a program's steps), every call its `saw` names (the earlier turns a row
+#' asks again) and their ratings are copied into one file at the folder's
+#' top level, which every language's reader reads. A row of [rated()] made
+#' before pruning is the same after.
+#' @param older_than Day folders before this go: `"90d"`, `"12w"`, a date.
+#' @param folder The log folder (default: the one calls are logged to here).
+#' @param keep_rated `FALSE` deletes rated calls too.
+#' @return Counts, invisibly: `days` deleted, `calls` deleted, `kept`.
+#' @export
+prune_calls <- function(older_than = "90d", folder = NULL, keep_rated = TRUE) {
+  root <- normalizePath(path.expand(log_folder(folder) %||% cli::cli_abort("no log folder: pass {.arg folder}")), mustWork = FALSE)
+  first <- substr(iso(time_since(older_than)), 1L, 10L)
+  none <- list(days = 0L, calls = 0L, kept = 0L)
+  if (!dir.exists(root)) return(invisible(none))
+  days <- Filter(function(d) grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", d) && before(d, first) && dir.exists(file.path(root, d)), sort(list.files(root), method = "radix"))
+  if (!length(days)) return(invisible(none))
+  log <- read_log(root)
+  by_id <- stats::setNames(log$calls, vapply(log$calls, function(c) as.character(c$id %||% ""), ""))
+  old <- list()
+  for (d in days) for (f in list.files(file.path(root, d), pattern = "\\.jsonl$", full.names = TRUE))
+    for (line in readLines(f, warn = FALSE, encoding = "UTF-8")) {
+      rec <- tryCatch(lmcc::parse_json(line), error = function(e) NULL)
+      if (is.list(rec) && !is.null(names(rec))) old[[length(old) + 1L]] <- rec
+    }
+  keep <- character(0)
+  if (keep_rated) {
+    rated <- unique(vapply(log$ratings, function(r) as.character(r$call %||% ""), ""))
+    trees <- unique(unlist(lapply(rated, function(id) by_id[[id]]$root)))
+    keep <- names(by_id)[names(by_id) %in% rated | vapply(by_id, function(c) isTRUE(c$root %in% trees), NA)]
+    todo <- keep
+    while (length(todo)) {
+      c <- by_id[[todo[[1L]]]]; todo <- todo[-1L]
+      for (entry in c$saw %||% list()) for (k in c("call", "saw_of")) {
+        id <- entry[[k]]
+        if (is_str(id) && !is.null(by_id[[id]]) && !id %in% keep) { keep <- c(keep, id); todo <- c(todo, id) }
+      }
+    }
+  }
+  kept <- Filter(function(r) (!is.null(r$functai_call) && isTRUE(r$id %in% keep)) || (!is.null(r$functai_rating) && isTRUE(r$call %in% keep)), old)
+  if (length(kept)) {
+    host <- gsub("[^A-Za-z0-9_.-]", "_", Sys.info()[["nodename"]])
+    path <- file.path(root, sprintf("kept-%s-%d-%s.jsonl", host, Sys.getpid(), paste(format(openssl::rand_bytes(3)), collapse = "")))
+    con <- file(path, open = "wb")
+    writeBin(charToRaw(enc2utf8(paste0(vapply(kept, lmcc::json_text, ""), "\n", collapse = ""))), con)
+    close(con)
+    Sys.chmod(path, "0600")
+  }
+  for (d in days) unlink(file.path(root, d), recursive = TRUE)
+  n_old <- sum(vapply(old, function(r) !is.null(r$functai_call), NA))
+  n_kept <- sum(vapply(kept, function(r) !is.null(r$functai_call), NA))
+  invisible(list(days = length(days), calls = n_old - n_kept, kept = n_kept))
 }
 
 # A record of a format this reader knows (a record of another format is

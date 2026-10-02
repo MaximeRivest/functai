@@ -27,5 +27,24 @@ for (lm in models) {
   lookup_order <- function(order) if (order %in% names(orders)) orders[[order]] else "unknown order"
   lookup <- ai_tool(lookup_order, "Look up where an order is.")
   check("a tool", ai(support ~ message, "Answer the customer, looking up their order.", .tools = list(lookup))("Where is my order A-1042?"))
+  # stages 1.2 to 5
+  reply <- ai(reply ~ message, "Answer the customer in one short sentence.", .max_tokens = 300L)
+  check("a stream, piece by piece", { s <- ai_stream(reply, "Hi, is the shop open on Sunday?", .show = FALSE)
+    c(pieces = sum(vapply(s$events, function(e) e$kind == "text", NA)), streamed = isTRUE(s$events[[1L]]$kind == "started")) })
+  check("a conversation remembers", { chat <- ai_conversation(reply); chat("My name is Ana."); chat("What is my name? One word.") })
+  refunded <- character(0)
+  refund <- ai_tool(function(order) { refunded <<- c(refunded, order); "refunded" }, "Refund an order.", .name = "refund", .effects = "changes")
+  helper <- ai(reply ~ message, "Help the customer. Refund an order when they ask.", .tools = list(refund))
+  check("a turn waits for approval, then goes on", {
+    chat <- ai_conversation(helper, approve = "changes")
+    w <- tryCatch(chat("Please refund order A-1042."), functai_waiting = identity)
+    if (!inherits(w, "functai_waiting")) stop("the turn did not wait")
+    c(answer = approve(w$turn), refunded = refunded)
+  })
+  answer_as <- ai(reply ~ message + team, "Answer the customer as that team, in one sentence.", .max_tokens = 300L)
+  support <- ai_program(reply ~ message, "Answer a customer's message.", function(message) answer_as(message, team(message)))
+  check("a program over two AI functions", support("I was charged twice for order B-2210."))
+  check("the reply cache", with_ai_config({ team("Where is my parcel?"); s <- ai_stream(team, "Where is my parcel?", .show = FALSE)
+    isTRUE(s$events[[2L]]$kind == "request") }, cache_replies = TRUE))
 }
 quit(status = if (failed) 1L else 0L)

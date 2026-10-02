@@ -89,8 +89,9 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
   expected_v <- if (is.null(expected_q)) NULL else if (is.symbol(expected_q)) as.character(expected_q) else eval(expected_q, parent.frame())
   metrics <- if (is.null(metric)) NULL else if (is.function(metric)) list(metric = metric) else metric
   run <- new_id()
-  if (inherits(fn, "functai_fn")) {
-    core <- core_of(fn)
+  if (inherits(fn, c("functai_fn", "functai_program"))) {
+    is_ai <- inherits(fn, "functai_fn")
+    core <- if (is_ai) core_of(fn) else program_core(fn)
     outs <- columns_of(core)                                       # named like the formula
     mapping <- if (is.null(expected_v)) { m <- unname(outs[outs %in% names(data)]); stats::setNames(m, m) }
       else if (is.null(names(expected_v))) stats::setNames(expected_v, outs[[length(outs)]]) else expected_v
@@ -99,8 +100,8 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
     label <- core$definition$name
     more <- list(...)
     settings <- set_all(more, list(caller = c(list(evaluation = run), more$caller)))    # an optimizer's caller too
-    p <- do.call(predict.functai_fn, c(list(fn, data), settings))
-    cols <- if (core$single) stats::setNames(pred_names(core)("result"), outs) else stats::setNames(paste0(".pred_", names(outs)), outs)
+    p <- do.call(if (is_ai) predict.functai_fn else predict.functai_program, c(list(fn, data), settings))
+    cols <- if (core$single) stats::setNames(if (is_ai) pred_names(core)("result") else ".pred", outs) else stats::setNames(paste0(".pred_", names(outs)), outs)
   } else {
     outcome <- expected_v %||% model_outcome(fn)
     if (is.null(outcome)) cli::cli_abort("which column holds the right answers? pass {.arg expected}")

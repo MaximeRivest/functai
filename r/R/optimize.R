@@ -26,6 +26,7 @@
 #' }
 #' @export
 labeled_few_shot <- function(fn, data, k = 16L, sample = TRUE, seed = 0L) {
+  data <- without_context(data)
   chosen <- if (sample) withr::with_seed(seed, sample.int(nrow(data), min(k, nrow(data)))) else seq_len(min(k, nrow(data)))
   with_demos(fn, keep_labeled(fn, data[chosen, , drop = FALSE]))
 }
@@ -62,13 +63,23 @@ bootstrap_few_shot <- function(fn, data, max_bootstrapped = 4L, max_labeled = 16
       row <- lapply(as.list(data[idx[[j]], , drop = FALSE]), element, i = 1L)
       pred <- if (core$single) stats::setNames(list(element(p[[pred_names(core)("result")]], j)), cols) else
         stats::setNames(lapply(paste0(".pred_", outs), function(k) element(p[[k]], j)), cols)
+      if (has_context(data[idx[[j]], , drop = FALSE])) next          # a turn that was shown earlier turns is never a worked example
       if (passes(score(row, pred))) { boot[[length(boot) + 1L]] <- lmcc::turn_to_list(turns[[j]]); used <- c(used, idx[[j]]) }
     }
   }
-  rest <- setdiff(seq_len(nrow(data)), used)
+  rest <- setdiff(seq_len(nrow(data)), c(used, which(has_context(data))))
   room <- max(0L, max_labeled - length(boot))
   fill <- if (room && length(rest)) rest[withr::with_seed(seed, sample.int(length(rest), min(room, length(rest))))] else integer(0)
   labeled <- as_demos(core, data[fill, , drop = FALSE])
   core$state$demos <- c(boot, labeled)
   make_fn(core)
 }
+
+# Rows that were shown earlier turns (rated() of a conversation's turns):
+# measured with them, never shown as worked examples (a worked example is one
+# turn placed before the question).
+has_context <- function(data) {
+  if (!"earlier" %in% names(data)) return(rep(FALSE, nrow(data)))
+  vapply(data$earlier, function(e) length(e) > 0L, NA)
+}
+without_context <- function(data) data[!has_context(data), , drop = FALSE]

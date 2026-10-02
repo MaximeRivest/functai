@@ -337,55 +337,113 @@ route <- function(s) {
 
 # ---------------------------------------------------------------- running rows
 
-# Run one call per row. `rows`: a list of JSON input lists (NULL: skip the row).
+# Run one call per row. `rows`: a list of JSON input lists (NULL: skip the
+# row; a `functai_misfit`: refused before any request). Each row is a call of
+# its own (a tree of its own, or a step of the call it runs inside): its
+# `started`, its requests, its `done` or `failed` and its record.
 run_rows <- function(core, rows, extra = list()) {
   s <- effective(set_all(core$own, extra))
-  r <- route(s)
-  s <- adjust_settings(s, r$provider, r$wire)
-  caps <- call_capabilities(r$provider, r$wire, s)
-  sig <- signature_of(core, s)
-  plan <- bind_layout(s$adapter, s$template, sig, caps, r$provider)
-  past <- past_turns(core, plan)
+  student <- if (inherits(s$lm, "functai_baked")) s$lm else NULL
+  if (!is.null(student)) {
+    # a baked student reads its calls as it was trained: its signature and layout, no worked examples
+    entry <- entry_for(student, core)
+    r <- list(model = student$model, router = baked_router(student), provider = "functai-baked-lm", wire = student$model)
+    plan <- student_plan(entry)
+    past <- list()
+    full_sig <- bake_signature(core, entry$reasoning && identical(s$module, "cot"))
+  } else {
+    r <- route(s)
+    s <- adjust_settings(s, r$provider, r$wire)
+    caps <- call_capabilities(r$provider, r$wire, s)
+    sig <- signature_of(core, s)
+    plan <- bind_layout(s$adapter, s$template, sig, caps, r$provider)
+    past <- past_turns(core, plan)
+  }
   version <- version_of(core)
-  program <- program_of(core, version)
+  program_json_once <- program_of(core, version)()          # one program object for every row of the batch
+  program <- function() program_json_once
   fields <- call_fields(core, s)
   keep <- content_kept(fields, content_layers(core, extra$log_content))
-  jobs <- list(); calls <- vector("list", length(rows))
+  plain_outputs <- names(core$definition$outputs)
+  jobs <- list(); calls <- vector("list", length(rows)); refused <- vector("list", length(rows))
   for (i in seq_along(rows)) {
     if (is.null(rows[[i]])) next
-    if (inherits(rows[[i]], "functai_misfit")) {                   # refused before any request
-      call <- start_call(program, s, rows[[i]]$inputs, fields, keep)
-      calls[[i]] <- call
-      next
-    }
-    call <- start_call(program, s, rows[[i]], fields, keep)
+    misfit <- inherits(rows[[i]], "functai_misfit")
+    call <- start_call(program, s, if (misfit) rows[[i]]$inputs else rows[[i]], fields, keep, own = core$own, core = core)
+    if (!core$single) call$keep_events$holds <- plain_outputs
+    call$tree$keeps[[call$id]] <- call$keep_events
     call$provider <- r$provider
+    call$core <- core
     calls[[i]] <- call
-    job <- tryCatch(new_job(plan, past, rows[[i]], s, r$model, core$tools, call), error = identity)
-    if (inherits(job, "error")) { e <- job; job <- new.env(); job$state <- "failed"; job$error <- e }
-    job$call <- call
+    err <- call_begin(call)
+    if (is.null(err) && misfit) err <- misfit_error(core, rows[[i]])
+    if (is.null(err)) {
+      hooked <- tryCatch(before_call_hooks(core, call, s, rows[[i]], plan, past), error = identity)
+      if (inherits(hooked, "error")) err <- hooked
+      else if (!is.null(student) && !is.null(hooked$plan))
+        err <- plugin_error("plugin-change", sprintf("%s: plugins changed its instruction, and it runs on a baked model, which reads only the message it was trained on: the change would not reach it", core$definition$name))
+    }
+    row_inputs <- rows[[i]]
+    if (is.null(err) && !is.null(student)) {
+      row_inputs <- tryCatch(student_inputs(entry, full_sig, rows[[i]]), error = identity)
+      if (inherits(row_inputs, "error")) err <- row_inputs
+      hooked$past <- list(); hooked$plan <- NULL; hooked$tools <- list()
+    }
+    if (!is.null(err)) { refused[[i]] <- err; next }
+    job <- tryCatch(new_job(hooked$plan %||% plan, hooked$past %||% past, row_inputs, hooked$settings %||% s, hooked$model %||% r$model,
+                            if (is.null(student)) hooked$tools %||% core$tools else list(), call, core), error = identity)
+    if (inherits(job, "error")) { e <- job; job <- new.env(); job$state <- "failed"; job$error <- e; job$call <- call }
+    job$escalation <- s$escalate_to
     jobs[[as.character(i)]] <- job
   }
+  old <- the$current
+  progress_line(core, jobs, s$progress)
   run_jobs(unname(jobs), r$router, s$concurrency)
-  lapply(seq_along(rows), function(i) {
-    if (inherits(rows[[i]], "functai_misfit")) {
-      err <- misfit_error(core, rows[[i]])
-      finish_call(calls[[i]], err)
-      return(list(error = err, call = calls[[i]]$id, model = NULL))
-    }
+  the$current <- old
+  waiting <- NULL
+  out <- lapply(seq_along(rows), function(i) {
+    call <- calls[[i]]
+    if (is.null(call)) return(list(skipped = TRUE))
     job <- jobs[[as.character(i)]]
-    if (is.null(job)) return(list(skipped = TRUE))
-    if (identical(job$state, "done")) {
-      job$call$outputs <- job$outputs
-      job$call$probabilities <- job$probabilities
-      job$call$confidence <- confidence_of(job$outputs, job$probabilities)
-      finish_call(job$call)
-      list(outputs = job$outputs, call = job$call$id, model = r$model, turn = job$turn, probabilities = job$probabilities)
-    } else {
-      finish_call(job$call, job$error)
-      list(error = job$error, call = job$call$id, model = r$model)
+    err <- refused[[i]]
+    if (is.null(err) && identical(job$state, "waiting")) { waiting <<- waiting %||% job$waiting; call$ended <- TRUE; return(list(waiting = TRUE, call = call$id)) }
+    if (is.null(err) && identical(job$state, "done")) {
+      escalated <- tryCatch(escalate(core, job, s), error = identity)
+      if (inherits(escalated, "error")) err <- escalated else job <- escalated
     }
+    if (is.null(err) && identical(job$state, "done")) {
+      call$outputs <- job$outputs
+      call$probabilities <- job$probabilities
+      call$confidence <- confidence_of(job$outputs, job$probabilities)
+      call$done_value <- if (core$single) job$outputs[["result"]] else job$outputs[intersect(plain_outputs, names(job$outputs))]
+      call$steps <- steps_of(call, job$turn)
+      call$lmcc <- tryCatch(lmcc::turn_to_list(job$turn), error = function(e) NULL)
+    } else if (is.null(err)) err <- job$error
+    ending <- call_end(call, err)
+    if (is.null(ending)) list(outputs = job$outputs, call = call$id, model = job$model, turn = job$turn, probabilities = job$probabilities)
+    else list(error = ending, call = call$id, model = if (!is.null(job)) job$model else NULL)
   })
+  if (!is.null(waiting)) stop(waiting)
+  out
+}
+
+# A progress line over a column's calls (cli's progress bar: shown when the
+# run lasts more than two seconds in an interactive session, always with
+# `progress = TRUE`, never with `FALSE`): rows done, failed, tokens, time left. A long run with a
+# disk reply cache resumes by being run again.
+progress_line <- function(core, jobs, setting, envir = parent.frame()) {
+  if (isFALSE(setting) || length(jobs) < 2L || (is.null(setting) && !interactive())) return(invisible())
+  if (isTRUE(setting)) withr::local_options(cli.progress_show_after = 0, .local_envir = envir)
+  envir$pl_failed <- 0L; envir$pl_tokens <- 0
+  bar <- cli::cli_progress_bar(total = length(jobs), clear = FALSE, .envir = envir,
+    format = paste0(core$definition$name, " {cli::pb_bar} {cli::pb_current}/{cli::pb_total} | {pl_failed} failed | ",
+                    "{format(pl_tokens, big.mark = ',')} tokens | {cli::pb_eta_str}"))
+  for (job in jobs) job$on_finish <- function(job) {
+    if (identical(job$state, "failed")) envir$pl_failed <- envir$pl_failed + 1L
+    for (r in job$responses) envir$pl_tokens <- envir$pl_tokens + as.numeric(unclass(r$usage$total_tokens %||% 0))
+    cli::cli_progress_update(id = bar, .envir = envir)
+  }
+  invisible()
 }
 
 # How sure the model was (contract/calls.md, `confidence`): the probability it
@@ -610,7 +668,7 @@ print.functai_fn <- function(x, ...) {
     }
   }
   n <- length(core$state$demos)
-  cat(sprintf("  model: %s%s%s\n", s$lm %||% "(the default)", if (n) sprintf(" \u00b7 %d worked example%s", n, if (n > 1) "s" else "") else "",
+  cat(sprintf("  model: %s%s%s\n", if (inherits(s$lm, "functai_baked")) paste("baked", s$lm$model) else s$lm %||% "(the default)", if (n) sprintf(" \u00b7 %d worked example%s", n, if (n > 1) "s" else "") else "",
               if (length(core$tools)) sprintf(" \u00b7 tools: %s", paste(vapply(core$tools, function(t) t$name, ""), collapse = ", ")) else ""))
   invisible(x)
 }
@@ -625,7 +683,7 @@ type_label <- function(f) {
       sprintf("record of %s (list column)", paste(names(value_guide(shape, shape)$properties), collapse = ", "))
     } else "JSON",
     list = sprintf("list of %s", type_label(f$item)),
-    string = "text", integer = "whole number", number = "number", boolean = "yes or no", f$kind)
+    string = "text", integer = "whole number", number = "number", boolean = "yes or no", opaque = "any R value", f$kind)
   if (isTRUE(f$nullable)) paste("optional", base) else base
 }
 
@@ -656,7 +714,7 @@ update.functai_fn <- function(object, ...) {
 #' @param ... Inputs, as for calling it (one row).
 #' @return A string (`ai_version()`, `ai_instructions()`) or a list.
 #' @export
-ai_version <- function(fn) version_of(core_of(fn))
+ai_version <- function(fn) if (inherits(fn, "functai_program")) program_version(program_core(fn)) else version_of(core_of(fn))
 
 #' @rdname ai_version
 #' @export
@@ -673,6 +731,7 @@ ai_signature_id <- function(fn) { core <- core_of(fn); signature_id(signature_of
 #' @rdname ai_version
 #' @export
 ai_render <- function(fn, ...) {
+  if (inherits(fn, "functai_conversation")) return(render_turn(fn, ...))
   core <- core_of(fn)
   s <- effective(core$own)
   r <- route(s)
@@ -681,9 +740,15 @@ ai_render <- function(fn, ...) {
   row <- input_rows(core, named_inputs(core, list(...)))[[1L]]
   if (inherits(row, "functai_misfit")) stop(misfit_error(core, row))
   if (is.null(row)) cli::cli_abort("an input is missing (NA), and its type takes no null: this call would send nothing")
+  r_ <- the$rendering
+  if (!is.null(r_) && identical(r_$core$definition$name, core$definition$name) && length(r_$sections)) {
+    sig <- lmcc::signature_to_list(plan$signature); sig$instructions <- paste(c(sig$instructions, r_$sections), collapse = "\n\n")
+    plan <- rebind_plan(plan, lmcc::signature_from_list(sig))
+  }
   values <- prepare_inputs(plan$signature, row)
   if (length(core$tools)) values$tools <- tool_specs(core)
   turns <- past_turns(core, plan)
+  if (!is.null(r_) && identical(r_$core$definition$name, core$definition$name)) turns <- c(turns, shown_as(plan, core, r_$turns, r_$ids)$shown)
   plain_lm15(lmcc::lm15_request(lmcc::render(plan, values, if (length(turns)) turns else NULL), r$model, config_of(s)))
 }
 
@@ -842,13 +907,34 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
                           .call = vapply(votes, function(v) paste(stats::na.omit(v$calls), collapse = " "), ""),
                           .error = error_or_missing(vapply(votes, function(v) v$error, ""), rows)))
   }
-  results <- memo_rows(core, rows, settings)
+  results <- memo_rows(core, rows, settings, row_contexts(new_data))
   out <- answers(core, results, pred_names(core))
   if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
   out$.error <- error_or_missing(vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), ""), rows)
   attr(out, "turns") <- lapply(results, function(r) r$turn)
   if (is_choice(core)) attr(out, "probabilities") <- measured_table(core, results)
+  out
+}
+
+# Each row's context (rated() of a conversation's turns: `earlier`, `helpers`,
+# `sections`, and the rated `call`), or NULL for a row that had none.
+row_contexts <- function(data) {
+  if (!any(c("earlier", "helpers", "sections") %in% names(data))) return(NULL)
+  lapply(seq_len(nrow(data)), function(i) {
+    get <- function(k) if (k %in% names(data)) data[[k]][[i]] else NULL
+    ctx <- list(earlier = get("earlier"), helpers = get("helpers"), sections = get("sections"), call = if ("call" %in% names(data)) data$call[[i]] else NULL)
+    if (length(ctx$earlier) || length(ctx$helpers) || length(ctx$sections)) ctx else NULL
+  })
+}
+
+# Rows asked again with what their calls were shown: those with a context one
+# at a time (each with its own earlier turns), the others together.
+run_rows_in_context <- function(core, rows, settings, contexts) {
+  out <- vector("list", length(rows))
+  plain <- which(vapply(contexts, is.null, NA))
+  if (length(plain)) out[plain] <- run_rows(core, rows[plain], settings)
+  for (i in setdiff(seq_along(rows), plain)) out[i] <- replaying(contexts[[i]], core, run_rows(core, rows[i], settings))
   out
 }
 
@@ -879,7 +965,8 @@ measures_probabilities <- function(core, settings = list()) {
 # augment() asks for both, in either order) share one call a row: a fitted
 # model keeps each row's result in `core$memo`, as it keeps votes. Only a
 # fitted model has a memo, and only a measuring model uses it this way.
-memo_rows <- function(core, rows, settings) {
+memo_rows <- function(core, rows, settings, contexts = NULL) {
+  if (!is.null(contexts) && any(!vapply(contexts, is.null, NA))) return(run_rows_in_context(core, rows, settings, contexts))
   if (is.null(core$memo) || !measures_probabilities(core, settings)) return(if (length(rows)) run_rows(core, rows, settings) else list())
   s <- effective(set_all(core$own, settings))
   prefix <- paste("measured", version_of(core), s$lm %||% "", sep = "|")

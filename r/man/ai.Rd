@@ -79,42 +79,33 @@ are ASCII identifiers (\code{order_id}, not \code{order.id}), and a default fits
 its type. A function that breaks these rules is refused then
 (\code{interface-malformed}), not later by whatever reads it.
 
-\strong{Values are checked on every call}, by the same rules as the defaults:
-a value given that does not fit its field's type (\code{5} for
-\code{json_shape(list(type = "integer", minimum = 10))}, \code{2.5} for a whole
-number) fails that row before any request (\code{interface-input}, a
-\code{functai_interface_input} condition naming the \code{field}), and its call
-record says so; a reply whose value does not fit is unreadable, and the
-model is asked again. A value given to a text input that is not text is
-sent as text. An input left out is sent with its default exactly as the
-interface holds it. A value is sent as it is given, and checked so:
-nothing is dropped or filled in. A record holds only the members it
-names, so a tibble given for a \code{\link[=record]{record()}} with a column the record does
-not name (an id, an e-mail address) is refused, never sent: select the
-record's columns first (\code{dplyr::select()}, \code{dplyr::pick()}). A member
-the record requires but the value lacks is refused too. An open object
-(\code{json_shape(list(type = "object"))}, or one whose
-\code{additionalProperties} is a shape or \code{TRUE}) keeps every member given.
+\strong{Values are bound on every call} (contract/programs.md, "Binding a
+call's inputs"), as every language binds them: a value is converted to
+its field's type when the meaning is clear, and refused otherwise. Text
+takes a number (\code{42} is \code{"42"}), \code{TRUE}/\code{FALSE} (\code{"true"}, \code{"false"}), a
+date (its text), a list or a one-row tibble (JSON indented by two
+spaces); a whole number takes \code{5} or \code{"5"}, not \code{2.5}; a number takes
+\code{"2.5"}; \code{TRUE}/\code{FALSE} take nothing else. A record keeps only the members
+it names: a tibble with more columns than the \code{\link[=record]{record()}} names (an id, an
+e-mail address) sends the record's columns, and the others are dropped. A
+value that does not bind fails that row before any request
+(\code{interface-input}, a \code{functai_interface_input} condition naming the
+\code{field}, its message quoting the value unless the log drops that field),
+and its call record says so; a reply whose value does not fit is
+unreadable, and the model is asked again. The call record holds the
+bound values. An input left out is sent with its default exactly as the
+interface holds it; a default written as a formula (\code{defaults_to(~ Sys.Date())}) is computed at each call that leaves it out.
 
-\strong{Missing values.} \code{NA} (or \code{NULL}) is JSON's null, never "left out": an
-input whose type takes null (an \code{\link[=optional]{optional()}} type, a \code{\link[=json_shape]{json_shape()}} that
-allows null) is sent null; in an input whose type takes no null, required
-or optional, the row has nothing to send and makes no call: its answer is
-\code{NA}, as with a missing value anywhere in R, and \code{predict()}'s \code{.error}
-says why. \code{input = NULL} in a call warns, since R code often means "the
-default" by it: leave the input out for that. Inside a record (a row of a
-tibble column, or a named list), \code{NA} is null too, except for a member
-the record does not require and whose type takes no null: a tibble cannot
-leave a member out, so \code{NA} there leaves it out, as an answer that leaves
-it out comes back \code{NA}. Nor can a tibble hold a null record: a row of \code{NA}
-given for a record that may be null (\code{\link[=optional]{optional()}}, or a \code{\link[=json_shape]{json_shape()}}
-that allows null) is null, as a null answer comes back (vctrs's missing
-row), when it names only members of the record and a member the record
-requires, one value and never null, is \code{NA}, so the row could be no
-record. Any other row is sent as it is: a record of nulls
-(\code{list(child = list(x = NULL))}) stays one, and a row with a column the
-record does not name, \code{NA} or not, is refused before any request, the
-message naming that column.
+\strong{Missing values.} \code{NA} (or \code{NULL}) is JSON's null. An input whose type
+takes null (an \code{\link[=optional]{optional()}} type, a \code{\link[=json_shape]{json_shape()}} that allows null) is
+sent null. An optional input whose type takes no null is left out: it is
+sent with its default, as a table's gap takes the default. A required one
+fails that row before any request (\code{interface-input}): its answer is \code{NA},
+and \code{predict()}'s \code{.error} says why. Inside a record (a row of a tibble
+column, or a named list), \code{NA} is null too, except for a member the record
+does not require and whose type takes no null: a tibble cannot leave a
+member out, so \code{NA} there leaves it out, as an answer that leaves it out
+comes back \code{NA}.
 
 \strong{What the call log keeps} is \code{.log_content} (see \code{\link[=ai_config]{ai_config()}}):
 \code{TRUE}, \code{FALSE}, \code{c(transcript = FALSE)}, or the names of the fields it

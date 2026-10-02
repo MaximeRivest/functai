@@ -13,6 +13,13 @@ Python on conversations, the disk reply cache and serving
 trained elsewhere; it does not train yet (see* Training in every
 language*).*
 
+*2026-10-02: R passes them too (every case Python's harness reads, and
+the streaming contract's `events/` cases), and is checked against Python
+on conversations, the disk reply cache and serving. It writes training
+examples and calls students trained elsewhere; it does not train. What R
+does differently because it runs one thing at a time is in
+`r/README.md`,* Where R differs, stated*.*
+
 ## What we want
 
 FunctAI should exist natively in **Python, TypeScript/JavaScript, R and
@@ -349,7 +356,7 @@ Stated trade-offs: the call log's default folder is the contract's
 language shares it; it is written only when asked, which is what CRAN's
 policy requires. Program names default to the module `"__main__"`, as a
 Python notebook's, so ratings pool with Python's. Streaming and modules
-are not in 0.1.0.
+are not in 0.1.0 (both came on 2026-10-02, with stages 1.2 to 5).
 
 ## Julia and its ecosystem (0.1.0, 2026-09-27)
 
