@@ -92,6 +92,7 @@ call_end <- function(call, err = NULL) {
   unconfirmed <- withhold && status != "confirmed"
   if (unconfirmed) call$journal_word <- if (status == "refused") "refused" else "unknown"
   turn_call_ended(call, err)
+  remember_history(call)
   finish_call(call, err)
   if (unconfirmed) return(end_error(t, status, terminal, if (is.null(err)) list(done = done_value(call)) else list(failed = err)))
   if (withhold && !is.null(terminal)) deliver(t, terminal)

@@ -22,6 +22,8 @@ for (name in names(stage_cases("replies"))) {
   })
 }
 
+reply_text_s <- function(text) sprintf("<result>\n%s\n</result>", text)
+
 # ---------------------------------------------------------------- the reply cache (stage 1.2)
 
 test_that("a reply is kept once read, and the same request is answered from it", {
@@ -295,4 +297,27 @@ test_that("a first model less sure than escalate_below has another answer instea
   expect_length(rec$exchanges, 2L)
   local_mocked_bindings(confidence_of = function(outputs, probabilities) NULL)
   expect_error(with_ai_config(team("x"), lm = "gpt-4.1-mini", router = r, escalate_to = "gpt-4.1"), "measures its confidence")
+})
+
+test_that("random_search, instruction_search and compare search and measure", {
+  team <- ai(team ~ message, "Which team?", team = choice("billing", "shipping"))
+  data <- tibble::tibble(message = c("Charged twice", "Parcel late", "Refund please", "Box crushed"), team = factor(c("billing", "shipping", "billing", "shipping"), levels = c("billing", "shipping")))
+  r <- fake_router(responder = function(request, i) {
+    d <- lmcc::lm15_plain(lm15::as_dict(request))
+    text <- paste(unlist(d), collapse = " ")
+    if (grepl("Propose a new instruction", text, fixed = TRUE)) return(reply_text_s(sprintf("Answer billing or shipping. (%d)", i)))
+    last <- d$messages[[length(d$messages)]]$parts[[1L]]$text
+    reply_text_s(if (grepl("Parcel|Box", last)) "shipping" else "billing")
+  })
+  with_ai_config(lm = "gpt-4.1-mini", router = r, {
+    best <- random_search(team, data, candidates = 1L, max_bootstrapped = 1L, max_labeled = 2L)
+    expect_s3_class(ai_trials(best), "tbl_df")
+    expect_true(all(c("candidate", "score") %in% names(ai_trials(best))))
+    found <- instruction_search(team, data, candidates = 2L, trials = 3L, max_bootstrapped = 0L, max_labeled = 0L)
+    expect_identical(nrow(ai_trials(found)), 3L)
+    a <- evaluate(team, data); b <- evaluate(best, data)
+    cmp <- compare(a, b)
+    expect_identical(cmp$metric, "exact_match"); expect_identical(cmp$n, 4L)
+  })
+  expect_gte(length(inspect_history(3L)), 1L)
 })
