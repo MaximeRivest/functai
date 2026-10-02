@@ -61,19 +61,86 @@ def __getattr__(name: str):
 
 
 def plan(what: Any, data: Any = None, **options):
-    """What ``bake(what, data, **options)`` would do, decided, with nothing spent
-    (a generative bake; see ``functai.bake.planning``)."""
+    """What a generative bake would do, decided, with nothing spent.
+
+    The same as ``bake(what, data, method="sft", plan_only=True, **options)``
+    (and as ``fn.bake(rows, plan_only=True)`` when the function needs a
+    generative student). Printed, the plan says the rows and how many a
+    teacher must answer (and what that costs), the tokens per pass, the
+    student, where it would train with the time or the price of each place
+    set up, the training settings, missing speed-up kernels, and the run's
+    folder.
+
+    Parameters
+    ----------
+    what, data
+        As for ``bake``: an AI function and its rows, ``{fn: rows}``, a
+        ``@module`` and its inputs, or ``Examples``.
+    **options
+        Anything ``bake`` takes (``student=``, ``where=``, ``teacher=``,
+        ``fixed=``, training settings...).
+
+    Returns
+    -------
+    Plan
+        ``print(plan)`` to read it, ``plan.using(where="tinker")`` for the
+        same bake with one setting changed, ``plan.run()`` to do it.
+
+    Examples
+    --------
+    ```python
+    # not run: a plan reads the rows and the machine (the guide Bake it into a small model shows one)
+    plan = functai.bake.plan(summarize, rows)
+    print(plan)
+    baked = plan.using(where="tinker").run()
+    ```
+    """
     return bake(what, data, method="sft", plan_only=True, **options)
 
 
 def runs(home: Any = None):
-    """Every bake run on this machine (``~/.cache/functai/bakes``), newest first."""
+    """Every bake run on this machine, newest first.
+
+    A run is a folder (and, while it trains, a process of its own) under
+    ``~/.cache/functai/bakes`` (``$XDG_CACHE_HOME/functai/bakes``), so runs
+    started from a notebook that has since closed are listed too.
+
+    Parameters
+    ----------
+    home : str or path, optional
+        Another folder of runs.
+
+    Returns
+    -------
+    list of Run
+        Each with ``state`` (``running``, ``stopped``, ``done``,
+        ``failed``...), ``metrics()``, ``wait()``, ``stop()``, ``resume()``.
+    """
     from .running import runs as _runs
     return _runs(home)
 
 
 def run(folder: Any):
-    """The run in ``folder`` (reattach after a restart)."""
+    """A bake run, from its folder: reattach to it after a restart.
+
+    Parameters
+    ----------
+    folder : str or path
+        The run's folder (``run.folder``; listed by ``functai.bake.runs()``).
+
+    Returns
+    -------
+    Run
+
+    Examples
+    --------
+    ```python
+    # not run: it needs a run on this machine
+    run = functai.bake.run("~/.cache/functai/bakes/summarize-qwen3.5-2b-here-7f3a2c91d0e4")
+    run.metrics()            # the loss curve so far
+    baked = run.wait()       # the model, when it is done
+    ```
+    """
     from .running import Run
     return Run(folder)
 
@@ -628,7 +695,57 @@ def examples(what: Any, data: Any = None, *, student: Optional[str] = None, teac
 
 
 def judge(baked, fn: Any, rows: Any = None, **options):
-    """Measure a generative student on test rows (see ``functai.bake.judge``)."""
+    """Measure a generative student on test rows: ``functai.evaluate`` on the
+    function running on the baked model, plus what only a student has.
+
+    ``bake`` judges the student when it ends (``report=True``); ``judge``
+    does it again later, on other rows or with another metric. A head
+    model's report is made when it is baked (``baked.report``).
+
+    Parameters
+    ----------
+    baked : Baked
+        The student.
+    fn : AI function, or dict
+        The function and ``rows``, or ``{function: rows}`` for a student of
+        several functions.
+    rows : list of dict, or a table
+        Test rows with the right answers (never rows it trained on).
+    metric : optional
+        Anything ``evaluate`` takes: a function, a dpyr expression, an AI
+        judge, a dict per output. Without one, a function whose outputs are
+        all finite (``Literal``, ``Enum``, ``bool``) is scored by exact match;
+        any other is not scored (exact match on open text measures nothing):
+        the report then gives readability and samples to read.
+    compare_teacher : bool
+        Also run the teacher on the same rows, to compare (it costs a
+        teacher pass). Default False.
+    by : str, optional
+        A column of the rows (a tag, a source) to score each of its values
+        apart.
+    samples : int
+        How many answers the report shows to read (default 5).
+    save : bool
+        Write the report into the model's ``baked.json``.
+    num_threads : int
+        Rows judged at once (default 16).
+
+    Returns
+    -------
+    report
+        Printed: per function, the score with its 95% range (per group with
+        ``by``), readability (the share of replies its layout reads back into
+        the output types), speed, the cost of a call next to the teacher's,
+        and samples.
+
+    Examples
+    --------
+    ```python
+    # not run: it needs a baked model
+    report = functai.bake.judge(baked, summarize, test_rows, metric=faithful)
+    print(report)
+    ```
+    """
     from .judging import judge as _judge
     return _judge(baked, fn, rows, **options)
 

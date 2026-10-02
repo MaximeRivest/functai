@@ -86,14 +86,69 @@ class Context:
 
 
 def all_turns(*, without: Iterable[str] = ()) -> Context:
-    """Every earlier turn is shown (the default). ``without``: fields left out
-    of every earlier turn."""
+    """Show the model every earlier turn of the conversation (the default).
+
+    Running out of the model's context, and being told, is better than a
+    model that silently misses what was said; so a conversation shows every
+    earlier turn unless told otherwise.
+
+    Parameters
+    ----------
+    without : list of str
+        Inputs or outputs left out of every *earlier* turn (a long document
+        the model already answered about). The current turn is always
+        whole.
+
+    Returns
+    -------
+    Context
+        For ``fn.conversation(context=...)``.
+
+    See Also
+    --------
+    last_turns : only the most recent turns.
+
+    Examples
+    --------
+    ```python
+    # not run: part of a program (the Memory guide runs whole ones)
+    qa = reader.conversation(context=functai.all_turns(without=["document"]))
+    ```
+    """
     return Context(None, tuple(without))
 
 
 def last_turns(n: int, *, without: Iterable[str] = ()) -> Context:
-    """Only the last ``n`` earlier turns are shown. ``without``: fields left
-    out of every earlier turn."""
+    """Show the model only the last ``n`` earlier turns.
+
+    The turns left out are still kept, and each turn's record says which
+    earlier turns it was shown (``turn.saw``), so an answer can be asked
+    again exactly as it was.
+
+    Parameters
+    ----------
+    n : int
+        How many earlier turns are shown (0: none).
+    without : list of str
+        Inputs or outputs left out of every earlier turn.
+
+    Returns
+    -------
+    Context
+        For ``fn.conversation(context=...)``.
+
+    See Also
+    --------
+    all_turns : every earlier turn (the default).
+    compaction : older turns folded into a summary instead of dropped.
+
+    Examples
+    --------
+    ```python
+    # not run: part of a program (the Memory guide runs whole ones)
+    qa = reader.conversation(context=functai.last_turns(10, without=["document"]))
+    ```
+    """
     if not isinstance(n, int) or isinstance(n, bool) or n < 0:
         raise ValueError(f"last_turns takes a whole number of turns, not {n!r}")
     return Context(n, tuple(without))
@@ -109,7 +164,46 @@ class Memory:
 
 
 def remember(mode: str = "conversation", *, steps: bool = False) -> Memory:
-    """What a helper remembers: ``remember("conversation", steps=True)``."""
+    """What an AI function called inside a module's conversation remembers.
+
+    In a module's conversation, the module's turns remember each other, but
+    the AI functions it calls (its helpers) start fresh at every call unless
+    the conversation says otherwise, in ``remembers={helper: ...}``. A
+    plain ``"conversation"`` or ``"turn"`` there is the same as
+    ``remember("conversation")`` or ``remember("turn")``; ``remember`` is
+    for ``steps``.
+
+    Parameters
+    ----------
+    mode : "conversation" or "turn"
+        ``"conversation"``: the helper is shown its own earlier calls on
+        this branch, in earlier turns and in this one. ``"turn"``: only its
+        earlier calls in the current turn.
+    steps : bool
+        Also show the tool calls and results of those earlier calls (by
+        default only their inputs and answers).
+
+    Returns
+    -------
+    Memory
+        For ``module.conversation(remembers={helper: ...})``.
+
+    See Also
+    --------
+    earlier : the conversation so far, as data a helper takes as an input.
+
+    Examples
+    --------
+    ```python
+    # not run: part of a program (the Memory guide runs a whole one)
+    @module
+    def support(message: str) -> str:
+        return answer(message, topic(message))
+
+    # answer sees its own earlier answers; topic remembers nothing
+    chat = support.conversation("ana", remembers={answer: functai.remember("conversation", steps=True)})
+    ```
+    """
     if mode not in ("conversation", "turn"):
         raise ValueError(f"a helper remembers 'conversation' or 'turn', not {mode!r}")
     return Memory(mode, bool(steps))
@@ -768,28 +862,34 @@ class Turn:
 
     @property
     def id(self) -> str:
+        """The turn's id, which is also the id of its call in the call log (``call``)."""
         return self._st.id
 
     call = id
 
     @property
     def conversation(self) -> str:
+        """The id of the conversation it belongs to."""
         return self._conv.id
 
     @property
     def parent(self) -> Optional[str]:
+        """The id of the turn this one continues (None for a conversation's first turn)."""
         return self._st.parent
 
     @property
     def request_id(self) -> Optional[str]:
+        """The ``request_id`` the turn was sent with, if any: the same id sent again is this turn, not a new one."""
         return self._st.record.get("request_id")
 
     @property
     def inputs(self) -> Dict[str, Any]:
+        """The turn's inputs, by name, as they were recorded (a copy)."""
         return copy.deepcopy(self._st.record.get("inputs") or {})
 
     @property
     def outputs(self) -> Dict[str, Any]:
+        """Every output by name (``result``, ``reasoning``...), once the turn is done; ``{}`` before."""
         return copy.deepcopy((self._st.ended or {}).get("outputs") or {})
 
     @property
@@ -803,18 +903,24 @@ class Turn:
 
     @property
     def state(self) -> str:
+        """Where the turn is: ``running``, ``waiting`` (for a person's answer), ``interrupted`` (its
+        process stopped without ending it), ``done``, ``failed``, ``stopped`` or ``abandoned``."""
         return self._st.state()
 
     @property
     def model(self) -> Optional[str]:
+        """The model that answered (or, before the end, the one the turn was asked to use)."""
         return (self._st.ended or {}).get("model") or (self._st.record.get("settings") or {}).get("lm")
 
     @property
     def error(self) -> Optional[Dict[str, Any]]:
+        """How a failed turn failed (``{"type", "code", "message"}``); None otherwise."""
         return copy.deepcopy((self._st.ended or {}).get("error"))
 
     @property
     def usage(self) -> Dict[str, int]:
+        """Tokens, summed over every model call inside the turn (a module's helpers and tool loops
+        included): ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``..."""
         return dict((self._st.ended or {}).get("usage") or {})
 
     @property
@@ -840,11 +946,18 @@ class Turn:
 
     @property
     def waiting(self) -> List[Any]:
+        """The tool calls the turn waits for a person to approve (``functai.Approval``); ``[]``
+        when none. Answer with ``turn.approve(...)`` or ``turn.deny(...)``."""
         from .tools import Approval
         return [Approval.from_dict(a) for a in self._st.unanswered()]
 
     @property
     def unfinished(self) -> List[Dict[str, Any]]:
+        """Tools that started and have no result: the process stopped while they ran, so they
+        may have run. Each is ``{"invocation", "id", "name", "input", "started", "site"}``.
+        Before the turn goes on, say what each returned (``turn.resume(results={invocation:
+        output})``) or run it again (``turn.resume(rerun=[invocation])``): a tool is never run
+        again on its own."""
         return [{"invocation": t["invocation"], "id": t["id"], "name": t["name"], "input": t.get("input"),
                  "started": t.get("at"), "site": t.get("site")} for t in self._st.unfinished()]
 
@@ -1669,7 +1782,12 @@ class Conversation:
     # ----- the rest
 
     def stop(self, turn: Any) -> None:
-        """Stop a running turn, wherever it runs."""
+        """Stop a running turn, wherever it runs: in this process or another
+        one that opened the same store. The turn ends ``stopped`` within
+        about a second (its stream raises ``functai.Cancelled``). A turn that
+        waits for an approval, or was interrupted, has nothing running it:
+        stopping it ends it ``abandoned``. A turn that already ended is left
+        as it is."""
         tid = self._turn_id(turn)
         state = self._read().turns[tid].state()
         if state in ("waiting", "interrupted"):

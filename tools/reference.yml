@@ -16,6 +16,7 @@ quartodoc:
     - module
     - FunctAIFunc
     - Prediction
+    - JSON
   - title: Models and settings
     desc: Which model answers, how it is reached, and every other setting.
     contents:
@@ -56,7 +57,9 @@ quartodoc:
     - BootstrapFewShot
     - BootstrapFewShotWithRandomSearch
     - InstructionSearch
+    - GEPA
     - Optimizer
+    - ProgramState
   - title: Saving and shipping
     desc: Find everything a program depends on, save it to a folder, prove it runs
       elsewhere, load it back.
@@ -68,6 +71,7 @@ quartodoc:
     - verify
     - Verification
     - load
+    - describe
     - file
   - title: Streaming
     desc: Watch a call while it is made. `fn.stream(...)` returns a Stream; its events
@@ -75,6 +79,16 @@ quartodoc:
     contents:
     - Stream
     - Cancelled
+  - title: Observers and journals
+    desc: Every event of every call tree, given to your code as it happens, or kept in a
+      store while the call runs; read back and followed live.
+    contents:
+    - Journal
+    - MemoryStore
+    - Store
+    - Follower
+    - flush
+    - Outcome
   - title: Conversations
     desc: A program's calls that remember each other, kept in a store; branches, what the
       model sees, and helpers' memory inside a module.
@@ -86,6 +100,7 @@ quartodoc:
     - remember
     - earlier
     - FolderStore
+    - MemoryConversations
     - Waiting
     - ConversationError
   - title: Plugins
@@ -102,15 +117,17 @@ quartodoc:
     desc: Tools say what they do to the world; a person can be asked before they run.
     contents:
     - tool
+    - Tool
     - Approval
     - ApprovalError
   - title: Serving
     desc: Serve a program over HTTP to callers who see only its boundary; use a served
-      program like a local one.
+      program like a local one (`remote`'s page also has `RemoteProgram` and `RemoteError`).
     contents:
     - serve
     - Service
     - remote
+    - ServeError
   - title: The call log
     desc: Keep every call on disk, mark answers right or wrong, and turn the corrections
       into rows with known answers.
@@ -121,9 +138,11 @@ quartodoc:
     - split
     - prune_calls
   - title: Long runs
-    desc: Replies kept on disk, and a check on a judge's evidence.
+    desc: Replies kept on disk, and a check on a judge's evidence. See also `fn.map` (a
+      progress line, and resuming by running again) and `prune_calls`.
     contents:
     - quotes_found
+    - clear_cache
   - title: Baking into weights
     desc: Train a small model that answers an AI function, then run the same function
       on it.
@@ -131,18 +150,27 @@ quartodoc:
     - bake.bake
     - bake.examples
     - bake.plan
+    - name: bake.Plan
+      dynamic: true
+    - name: bake.Examples
+      dynamic: true
     - bake.adopt
     - bake.judge
     - bake.runs
     - bake.run
+    - name: bake.Run
+      dynamic: true
     - bake.Baked
     - bake.BakeReport
     - bake.load
+    - bake.is_baked
+    - bake.BakeError
   - title: Datasets
     desc: Small labelled tables to learn with. Every example on this site runs on
       them.
     contents:
     - datasets.tickets
+    - datasets.refunds
     - datasets.field_notes
   - title: Inspection
     desc: See exactly what was sent and what came back.
@@ -150,12 +178,17 @@ quartodoc:
     - phistory
     - inspect_history
     - signature_text
-    - clear_cache
   - title: Errors
     desc: What functai raises, and what each one tells you to do.
     contents:
+    - FunctAIError
+    - InterfaceError
     - LoginRequired
     - StepLimit
+    - LogContentError
+    - SawError
+    - JournalError
+    - EventRefused
     - Refused
     - LoadRefused
   - title: Low-level helpers

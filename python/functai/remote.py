@@ -65,7 +65,22 @@ def _request(url: str, key: Optional[str], data: Any = None, *, timeout: float, 
 
 
 class RemoteProgram(FunctAIModule):
-    """A served program, called like a local one. Built by ``functai.remote``."""
+    """A program served elsewhere, called like a local one. Built by
+    ``functai.remote(url, key=...)``.
+
+    Its inputs and outputs are the served program's (read from the server's
+    ``/interface``): inputs are checked here before anything is sent
+    (``InterfaceError``). It is called, mapped over a table (``.map``),
+    evaluated (``functai.evaluate``) and streamed (``.stream``: the
+    server's outside view) as a local program is. Each call is logged here,
+    as a program of kind ``"remote"``, and on the server, whose record names
+    this call as its parent.
+
+    ``url``: where it is served; ``version``: the served program's version.
+    A served program's conversations are kept by its server: talk to them
+    over HTTP (``POST <url>/conversations/<id>/turns``). The tokens a call
+    used are in the server's log, not here.
+    """
 
     def __init__(self, url: str, *, key: Optional[str] = None, timeout: float = 120.0):
         self._url = url.rstrip("/")
@@ -207,6 +222,26 @@ def remote(url: str, *, key: Optional[str] = None, timeout: float = 120.0) -> Re
     RemoteProgram
         Called with the program's inputs; ``.map``, ``evaluate``, ``.stream``
         work as for a local program; its calls are logged here too.
+
+    Raises
+    ------
+    RemoteError
+        The server refused (``code`` ``remote-401`` for a wrong key...) or
+        answered something that is not a FunctAI program. ``from
+        functai.remote import RemoteError``.
+
+    See Also
+    --------
+    serve : serve a program.
+
+    Examples
+    --------
+    ```python
+    # not run: it needs a served program (the guide Serve it over HTTP runs one)
+    team = functai.remote("https://example.org/team", key=os.environ["TEAM_KEY"])
+    team("I was charged twice for order B-2210.")
+    team.map(tickets, threads=8)
+    ```
     '''
     return RemoteProgram(url, key=key, timeout=timeout)
 

@@ -432,7 +432,36 @@ def logout(provider: str, *, auth: Any = None) -> None:
 
 
 def login_methods(provider: str) -> List[Dict[str, str]]:
-    """The ways lm15 can sign in to a provider, and whether each is proven."""
+    """The ways you can sign in to a provider, and how far each is proven.
+
+    Parameters
+    ----------
+    provider : str
+        A provider or subscription: ``"openai"``, ``"anthropic"``,
+        ``"claude"`` (a Claude subscription), ``"chatgpt"``, ``"copilot"``...
+
+    Returns
+    -------
+    list of dict
+        One per method: ``method`` (what ``login(provider, method=...)``
+        takes), ``kind`` (``api_key`` or ``account``), ``status`` and, when
+        there is one, a ``note``. ``status`` is ``supported`` (the code
+        exists and was seen working), ``unverified`` (the code exists, but no
+        recorded working run does: only used when you ask for it by name) or
+        ``unavailable`` (it cannot run here; the note says why). It never
+        says whether your account qualifies.
+
+    See Also
+    --------
+    login : sign in.
+    logins : what you can use right now.
+
+    Examples
+    --------
+    ```python
+    functai.login_methods("chatgpt")
+    ```
+    """
     a = auth_for(True)
     return [{"method": m.id, "kind": m.kind, "status": m.availability, **({"note": m.reason} if m.reason else {})}
             for m in a.methods(canonical(provider))]

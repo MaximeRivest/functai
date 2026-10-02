@@ -65,7 +65,13 @@ class Problem:
 
 
 class Refused(Exception):
-    """``save`` found errors; ``.report`` has them all."""
+    """``functai.save`` found problems that keep the program from being saved
+    cleanly, and saved nothing.
+
+    ``err.report`` is the whole ``Report`` (``err.report.errors`` lists
+    each ``Problem``, with what to do). Fix them, or, for a deliberate
+    exception, ``save(..., allow=[code, ...])`` records it in the folder.
+    """
 
     def __init__(self, report: "Report"):
         self.report = report
@@ -170,7 +176,14 @@ class Requirement:
 
 
 class Report:
-    """What ``functai.check`` found: the graph, the requirements, the problems."""
+    """What ``functai.check`` found: everything a program depends on, and what
+    would stop a clean save.
+
+    Printed, it is a readable summary. ``ok`` (also its truth value) is True
+    when nothing is an error; ``errors`` and ``warnings`` list each
+    ``Problem``; ``requirements`` maps each package the program needs to
+    its version; ``nodes`` are the programs reached (``"module:name"``).
+    """
 
     def __init__(self, entry: str, nodes: Dict[str, Node], bindings: Dict[str, Dict[str, Binding]],
                  requirements: Dict[str, Requirement], problems: List[Problem], packages: Dict[str, str],
@@ -185,14 +198,17 @@ class Report:
 
     @property
     def errors(self) -> List[Problem]:
+        """The problems that stop ``save`` (``Refused``) unless allowed."""
         return [p for p in self.problems if p.severity == "error"]
 
     @property
     def warnings(self) -> List[Problem]:
+        """The problems worth knowing that do not stop ``save``."""
         return [p for p in self.problems if p.severity == "warning"]
 
     @property
     def ok(self) -> bool:
+        """Whether the program can be saved cleanly (no errors)."""
         return not self.errors
 
     def __bool__(self) -> bool:

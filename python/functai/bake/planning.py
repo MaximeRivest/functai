@@ -121,7 +121,29 @@ def _hash_rows(h, rows: Sequence[Mapping[str, Any]]) -> None:
 
 
 class Plan:
-    """A bake, decided (see the module docstring). ``run()`` does it."""
+    """A generative bake, decided before anything is spent:
+    ``functai.bake.plan(fn, rows)`` or ``fn.bake(rows, plan_only=True)``.
+
+    ``print(plan)`` says the rows (and how many a teacher must answer, at
+    what price), the tokens per pass, the longest example against the
+    student's context, the student, each place it could train with its time
+    or price (or what that place is missing), the training settings, the
+    speed-up kernels found here, and the run's folder. ``plan.using(...)`` is
+    the same bake with some settings changed, decided again;
+    ``plan.run()`` does it.
+
+    **Where it trains** (``where="auto"``): the place you prefer
+    (``where=``, a place or a list in order of preference, else
+    ``functai.configure(bake_where=...)``); else here, when a GPU here can
+    train the student (the CPU only for small ones); else a service you
+    have set up (its key or login present, the student offered), the
+    cheapest when there are several; else none, and the plan says what each
+    place lacks.
+
+    **Which student** (``student=None``): from a short tested list, the
+    largest that trains where it is going within a day; on a service, the
+    largest that service offers.
+    """
 
     def __init__(self, what: Any, data: Any, opts: Dict[str, Any]):
         self._what, self._data, self.opts = what, data, dict(opts)
@@ -223,6 +245,8 @@ class Plan:
     # ---- the decisions
 
     def decide(self) -> "Plan":
+        """Work out every choice left open (student, place, settings, estimates). Done when the
+        plan is made; returns the plan."""
         from .hardware import kernels
         from .students import DEFAULT_STUDENTS, info
         from .trainers import PLACES, Job, trainer
@@ -415,6 +439,7 @@ class Plan:
 
     @property
     def name(self) -> str:
+        """The bake's name: ``name=``, else the function's (or the functions' joined by ``+``)."""
         if self.opts.get("name"):
             return self.opts["name"]
         names = sorted(self.entries) if self.entries else sorted((self.examples.entries or {}).keys())
@@ -422,6 +447,9 @@ class Plan:
 
     @property
     def folder(self) -> Path:
+        """The run's folder: ``run_folder=``, else one under ``~/.cache/functai/bakes`` named by the
+        bake, the student, the place and a fingerprint of the examples and settings (so the same bake
+        finds the same folder, and resumes)."""
         from .running import runs_home
         if self.opts.get("run_folder"):
             return Path(self.opts["run_folder"]).expanduser().resolve()
@@ -431,6 +459,8 @@ class Plan:
 
     @property
     def output(self) -> Path:
+        """Where the model is written: ``path=``, else ``<folder>/baked`` (``<folder>/export`` for
+        ``where="export"``)."""
         if self.opts.get("path"):
             return Path(self.opts["path"]).expanduser().resolve()
         return self.folder / ("export" if self.where == "export" else "baked")

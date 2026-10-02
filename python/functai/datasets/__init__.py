@@ -141,8 +141,9 @@ def refunds() -> Any:
 
     Examples
     --------
-    >>> from functai import datasets
-    >>> datasets.refunds().shape
-    (120, 8)
+    ```python
+    refunds = functai.datasets.refunds()
+    refunds
+    ```
     """
     return _read("refunds")

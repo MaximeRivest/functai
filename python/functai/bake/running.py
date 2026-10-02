@@ -84,7 +84,29 @@ def _duration(seconds: Optional[float]) -> str:
 
 
 class Run:
-    """A training run in its folder (see the module docstring)."""
+    """A training run: a folder, a process of its own, and a model at the end.
+
+    What ``bake(..., wait=False)`` returns at once (and ``Plan.run``,
+    ``functai.bake.runs()``, ``functai.bake.run(folder)``). The run is its own
+    process, so it outlives the notebook or terminal that started it; running
+    the same bake again with the same plan finds its folder and resumes it (or
+    finds it done).
+
+    ```{.python .no-run}
+    run = summarize.bake(rows, wait=False)   # returns at once
+    run.metrics()                            # the loss curve so far, as a table
+    run.stop(); run.resume()                 # from the last checkpoint
+    baked = run.wait()                       # the model, when it is done
+    run.checkpoint(1200)                     # any checkpoint as a model
+    ```
+
+    Its ``folder`` holds ``plan.json`` (every resolved setting: what makes
+    resuming exact), ``examples.parquet`` (the training conversations),
+    ``run.json`` (its state, where it trains, its process, its attempts),
+    ``metrics.jsonl`` (one line per logged step: step, tokens, loss, learning
+    rate, validation loss, seconds), ``log.txt`` (the trainer's own output),
+    ``checkpoints/`` and, when done, ``baked/`` (the model).
+    """
 
     def __init__(self, folder: "str | os.PathLike[str]"):
         self.folder = Path(folder).expanduser().resolve()
@@ -96,6 +118,7 @@ class Run:
 
     @property
     def plan(self) -> Dict[str, Any]:
+        """Every setting the run was decided with (its ``plan.json``)."""
         return json.loads((self.folder / "plan.json").read_text())
 
     def _state_file(self) -> Dict[str, Any]:
@@ -123,18 +146,23 @@ class Run:
 
     @property
     def state(self) -> str:
+        """``planned``, ``starting``, ``running``, ``stopping``, ``stopped`` (by ``stop()``, or its
+        process ended without finishing: ``resume()`` goes on), ``done``, ``exported`` or ``failed``."""
         return self.status.get("state", "planned")
 
     @property
     def where(self) -> str:
+        """Where it trains: ``here``, ``tinker``, ``prime`` or ``export``."""
         return self.plan["where"]
 
     def stop_requested(self) -> bool:
+        """Whether ``stop()`` was asked (what the trainer checks at each step)."""
         return (self.folder / "STOP").exists()
 
     # ---- metrics
 
     def records(self) -> List[Dict[str, Any]]:
+        """The lines of ``metrics.jsonl`` so far, as dicts (``metrics()`` gives them as a table)."""
         p = self.folder / "metrics.jsonl"
         if not p.exists():
             return []
@@ -165,6 +193,8 @@ class Run:
             f.write(json.dumps(fields, default=float) + "\n")
 
     def progress(self) -> Dict[str, Any]:
+        """Where it is now: ``state``, ``step`` of ``steps``, the last ``loss`` and ``eval_loss``,
+        ``seconds`` so far and ``eta`` (seconds left, estimated)."""
         recs = self.records()
         st = self.status
         out: Dict[str, Any] = {"state": st.get("state"), "steps": st.get("steps")}
@@ -179,6 +209,7 @@ class Run:
         return out
 
     def log(self, lines: int = 40) -> str:
+        """The last ``lines`` lines of the trainer's own output (``log.txt``): read it when a run fails."""
         p = self.folder / "log.txt"
         return "\n".join(p.read_text(errors="replace").splitlines()[-lines:]) if p.exists() else ""
 

@@ -871,10 +871,12 @@ class Stream:
 
     @property
     def done(self) -> bool:
+        """Whether the call has ended (answered, failed or cancelled)."""
         return self._done
 
     @property
     def call_id(self) -> Optional[str]:
+        """The call's id in the call log (for ``functai.rate``); waits until the call has started."""
         with self._cond:
             self._cond.wait_for(lambda: self._root is not None or self._done)
             return self._root
@@ -891,12 +893,16 @@ class Stream:
 
     @property
     def fields(self) -> Dict[str, str]:
+        """Every output's text so far, by name (``{"reasoning": ..., "result": ...}``), in the latest
+        request to the model. An AI function's stream only: a module's are on its ``Text`` events."""
         if not self._is_ai:
             raise TypeError(f"{self.function} is a module; its calls' texts are on the Text events")
         return self._answering()[1]
 
     @property
     def text(self) -> str:
+        """The answer's text so far, in the latest request to the model: it starts again when the
+        model is asked again. An AI function's stream only (a module's: ``s.text_of(fn)``)."""
         if not self._is_ai:
             raise TypeError(f"{self.function} is a module: use s.text_of(fn) or s.events()")
         name, fields = self._answering()
@@ -904,6 +910,9 @@ class Stream:
 
     @property
     def partial(self) -> Any:
+        """The answer so far as a value: the text for a text answer, the JSON read so far for a
+        record or a list (provisional), None for other answers until the call is done; the answer
+        itself once it is."""
         if self._done and self._error is None:
             return self._value
         if self._partial_kind == "text":
@@ -939,6 +948,7 @@ class Stream:
         self.close()
 
     async def aclose(self) -> None:
+        """``close()``, for ``async with`` and async code."""
         self.close()
 
     # ----- async

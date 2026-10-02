@@ -371,6 +371,7 @@ class FunctAIModule(Generic[P, R]):
         return {(f.__name__ if counts[f.__name__] == 1 else f"{f._fn.__module__}.{f.__name__}"): f for f in fns}
 
     def ai_functions(self) -> List[FunctAIFunc]:
+        """Every AI function this module reaches (``named_ai_functions().values()``)."""
         return list(self.named_ai_functions().values())
 
     # ----- optimization -----

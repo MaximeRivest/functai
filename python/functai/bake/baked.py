@@ -136,7 +136,31 @@ class _Batcher:
 
 
 class Baked:
-    """A model trained for one or more AI functions (see the module docstring)."""
+    """A model trained to answer one or more AI functions: what ``bake``
+    returns, and what ``functai.bake.load(folder)`` reads back.
+
+    Use it as a model: ``fast = summarize.using(lm=baked)`` is the same
+    function, answered by the weights (``fast("...")``, ``fast.map(rows)``,
+    ``functai.evaluate(fast, rows)``). Calls send exactly the tokens the
+    student was trained on.
+
+    Two kinds (``kind``): a **head** (``"head"``) answers functions whose
+    every output has a fixed set of answers, with a probability for each
+    (``probabilities``, ``predict`` for many rows at once); a **generative
+    student** (``"generative"``, trained with ``method="sft"``) writes its answer like any chat model, and runs
+    in this process, on a vLLM server, on Tinker, or at any
+    OpenAI-compatible address (``on``).
+
+    On disk it is a folder: ``baked.json`` (what it answers: per function,
+    its signature, its layout and the inputs left out; the weights' form and
+    base model; the chat template; the run that made it; the report; file
+    hashes, checked when loading), ``model/`` (Hugging Face weights, merged
+    when trained with LoRA: a standard folder for vLLM, TGI or
+    transformers), ``adapter/`` (the LoRA adapter alone), ``tokenizer/``,
+    and ``heads.safetensors`` for a head of several outputs. Weights trained
+    on a service and not brought here yet are a ``tinker://`` address
+    (``download()`` brings them here).
+    """
 
     __functai_baked__ = True
 
@@ -170,22 +194,27 @@ class Baked:
 
     @property
     def name(self) -> str:
+        """The model's name (by default the function's, or the functions' joined by ``+``)."""
         return self.meta["name"]
 
     @property
     def provider(self) -> str:
+        """The provider name its calls are logged under."""
         return PROVIDER if self.kind == "head" else PROVIDER_LM
 
     @property
     def model(self) -> str:
+        """The model name its calls are logged under: ``baked:<name>``."""
         return f"baked:{self.name}"
 
     @property
     def student(self) -> str:
+        """The base model it was trained from (a Hugging Face id)."""
         return self.meta["student"]
 
     @property
     def functions(self) -> List[str]:
+        """The names of the AI functions it answers."""
         return list(self.entries)
 
     def _only(self) -> Entry:
@@ -206,21 +235,26 @@ class Baked:
 
     @property
     def fingerprint(self) -> str:
+        """The fingerprint of the signature it was trained to read (one function)."""
         return self._only().fingerprint
 
     @property
     def capabilities(self) -> Dict[str, bool]:
+        """What its calls can do (tools, streaming...), as lmcc lays out requests for it."""
         if self.kind == "head":
             return dict(CAPABILITIES)
         return dict(next(iter(self.entries.values())).capabilities)
 
     @property
     def template(self):
+        """The chat template it was trained with (its text and hash): calls must write the same."""
         from .template import Template
         return Template.from_dict(self.meta["template"])
 
     @property
     def report(self):
+        """How it did on its test rows when it was baked (or after ``judge(..., save=True)``); None
+        when it was not judged. Print it."""
         if self._report is None and self.meta.get("report"):
             from .report import load_report
             self._report = load_report(self.meta["report"])
@@ -279,6 +313,8 @@ class Baked:
 
     @property
     def device(self) -> str:
+        """Where it runs in this process (``cuda``, ``mps`` or ``cpu``): the ``device`` given to
+        ``load``, else the best one its weights fit on."""
         if self._device is None:
             from .heads import choose_device
             size = sum(p.stat().st_size for p in (self.path / "model").rglob("*.safetensors")) \
@@ -287,6 +323,7 @@ class Baked:
         return self._device
 
     def tokenizer(self):
+        """Its tokenizer, checked to carry the chat template it was trained with."""
         if self._tokenizer is None:
             with self._lock:
                 if self._tokenizer is None:
@@ -316,6 +353,7 @@ class Baked:
 
     @property
     def runner(self):
+        """What answers its calls now (in this process by default; see ``on``)."""
         if self._runner is None:
             with self._lock:
                 if self._runner is None:
@@ -330,6 +368,7 @@ class Baked:
 
     @property
     def endpoint(self) -> Optional[str]:
+        """The address calls are sent to when it runs on a server (``on("vllm")``, a URL); else None."""
         return getattr(self._runner, "url", None)
 
     def stop(self) -> None:
@@ -416,10 +455,13 @@ class Baked:
     # ---- the client face (what functai calls)
 
     def resolve(self, model: str):
+        """Where a call named ``model`` goes (used by FunctAI when it routes a call)."""
         from ..models import _Route
         return _Route(self.provider, self.name)
 
     def complete(self, request: Any) -> Any:
+        """Answer one lm15 request (what FunctAI calls; to call the function on it, use
+        ``fn.using(lm=baked)``)."""
         if self.kind != "head":
             return self.runner.complete(request)
         from .examples import nest
@@ -454,6 +496,7 @@ class Baked:
         return Baked(target, device=self._device)
 
     def size(self) -> int:
+        """Its folder's size on disk, in bytes."""
         return sum(p.stat().st_size for p in self.path.rglob("*") if p.is_file())
 
 
@@ -469,11 +512,30 @@ def write_meta(path: Path, meta: Dict[str, Any]) -> None:
 
 
 def is_baked(obj: Any) -> bool:
+    """Whether ``obj`` is a baked model (``Baked``), without importing what runs one."""
     return getattr(type(obj), "__functai_baked__", False) is True
 
 
 def load(path: "str | os.PathLike[str]", *, device: Optional[str] = None) -> Baked:
-    """A baked model from its folder (its file hashes are checked)."""
+    """A baked model, from its folder.
+
+    Every file's hash is checked against ``baked.json``: a folder changed
+    since baking is refused (``BakeError``). A folder baked by FunctAI 1.1
+    (``baked.json`` format 1) is refused too, with the advice to bake again.
+
+    Parameters
+    ----------
+    path : str or path
+        The folder (``baked.path``, or the ``path=`` given to ``bake``).
+    device : str, optional
+        ``"cuda"``, ``"cuda:1"``, ``"mps"`` or ``"cpu"`` (default: the best
+        one its weights fit on).
+
+    Returns
+    -------
+    Baked
+        ``fn.using(lm=baked)`` to use it.
+    """
     return Baked(path, device=device)
 
 

@@ -37,9 +37,15 @@ DENIED = "The person did not allow this call."
 
 
 class Tool:
-    """A function the model may call, with what it does to the world
-    (``effects``: ``"reads"``, ``"changes"``, or None when it says nothing).
-    Called directly, it is the function."""
+    """A function the model may call, with what it does to the world. Made by
+    ``functai.tool``.
+
+    ``effects`` is ``"reads"`` (it only looks), ``"changes"`` (it writes,
+    sends or pays) or None (it says nothing, which every approval rule treats
+    as ``"changes"``). Called directly, it is the function; its name and
+    docstring (or the ``name`` and ``description`` given) are what the
+    model is told.
+    """
 
     def __init__(self, fn: Callable[..., Any], *, effects: Optional[str] = None, name: Optional[str] = None,
                  description: Optional[str] = None):
