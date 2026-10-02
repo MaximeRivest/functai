@@ -37,6 +37,7 @@ articles:
     contents:
       - getting-started
       - tidymodels
+      - conversations
 
 reference:
   - title: Writing an AI function
@@ -71,8 +72,10 @@ reference:
     contents:
       - labeled_few_shot
       - gepa
+      - random_search
       - ai_trials
       - with_demos
+      - compare
   - title: As a tidymodels model
     contents:
       - ai_model
@@ -91,6 +94,66 @@ reference:
     contents:
       - read_ai
       - write_ai
+  - title: Programs and streams
+    desc: Your own code around AI functions, as one call; a call watched while it is made.
+    contents:
+      - ai_program
+      - opaque
+      - ai_stream
+  - title: Conversations
+    desc: Calls that remember each other, kept in a store; tools that ask a person first.
+    contents:
+      - ai_conversation
+      - all_turns
+      - remember
+      - ai_turns
+      - continue_from
+      - move_head
+      - wait_turn
+      - approve
+      - earlier
+      - folder_store
+  - title: Plugins
+    desc: Hooks that change calls, every change recorded.
+    contents:
+      - ai_plugin
+      - ai_change
+      - ai_ask
+      - keep_entry
+      - branch_turns
+      - compaction
+      - delegate
+      - load_plugin
+  - title: Serving, and programs served elsewhere
+    contents:
+      - ai_service
+      - ai_remote
+  - title: Long runs
+    desc: The reply cache, a smaller call log, a judge's evidence.
+    contents:
+      - reply_key
+      - clear_replies
+      - default_reply_cache
+      - prune_calls
+      - quotes_found
+  - title: Watching and keeping call trees' logs
+    desc: Observers, journals and stores, by the contract's rules.
+    contents:
+      - ai_journal
+      - memory_store
+      - settle
+      - follower
+      - outside_view
+      - turn_events
+  - title: Baking
+    desc: The examples every trainer reads, and students trained anywhere.
+    contents:
+      - bake_examples
+      - baked
+  - title: Signing in, and what was sent
+    contents:
+      - ai_login
+      - inspect_history
   - title: Datasets
     contents:
       - tickets

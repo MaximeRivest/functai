@@ -223,6 +223,10 @@ the paper's GEPA). On refund decisions it took `gpt-5.4-nano` from 68% to
 `set_engine("functai", method = "gepa")` makes `fit()` learn it, and
 resampling measure it.
 
+`random_search()` tries sets of worked examples and `instruction_search()`
+instructions a model writes; `compare(evaluate(team, test), evaluate(better,
+test))` gives the paired difference row by row, with its 95% interval.
+
 Each returns an improved copy with a new `ai_version()`; the function you
 pass is unchanged. `with_demos()`, `with_instructions()` set them by hand;
 `update(team, lm = "claude-haiku-4-5")` is a copy with other settings.
@@ -295,14 +299,130 @@ which `tidyr::unnest_wider()` spreads into columns.
 `.retries`, `.concurrency`, `.router` (an `lm15::new_router()`), ...), and
 `update()` for a copy.
 
+## Your own code around AI functions
+
+A program is your R code around AI functions, declared like one (a formula,
+a sentence, a codebook) and called as one: its inputs are bound and checked
+before the code runs, its answer when the code returns, and the AI functions
+it calls are its steps, in the call log, in a stream, in a conversation.
+
+```r
+answer <- ai(reply ~ message + team, "Answer the customer, as that team.")
+support <- ai_program(reply ~ message, "Answer a customer's message.", function(message) {
+  answer(message, team(message))
+})
+support("I was charged twice.")
+tickets |> mutate(reply = support(message))     # one call per row
+```
+
+`ai_stream(support, "I was charged twice.")` watches a call while it is
+made: each event (`started`, `request`, `text`, `tool_call`, `retry`,
+`done`, ...) goes to `.each` as it happens, and the answer's text is written
+to the console as it comes. A call alone in flight is streamed from the
+provider; a column's rows go through the connection pool and are shown whole.
+
+## Conversations
+
+A conversation is a program's calls that remember each other. The function
+is unchanged; the memory is the conversation's, kept where you say, and
+nothing in it is ever deleted.
+
+```r
+chat <- ai_conversation(tutor, "alex", store = "tutoring/")  # the same line tomorrow opens it again
+chat("Hi, I'm Alex.")
+chat("What is 1/2 + 1/3?")                                   # sees the first turn
+ai_turns(chat)                                               # each turn: its inputs, answer, state
+other <- continue_from(chat, 1)                              # a branch
+```
+
+`context = last_turns(10)` shows only the last ten; a program's code reads
+the conversation so far with `earlier()`, and its helpers remember what
+`remembers = list(answer = "conversation")` says. Two processes sending to
+one conversation queue; a turn can be stopped from any of them
+(`stop_turn()`). The folder store is the files Python and Julia write: a
+conversation started in Python goes on here, and Python reads what R added.
+
+## Tools that ask first
+
+A tool says what it does to the world (`.effects = "reads"` or
+`"changes"`); undeclared counts as changes. With `approve = "changes"`, a
+conversation's turn that would run one waits, saved, and goes on when
+someone answers, from any process, paying for no model answer twice and
+running no tool twice:
+
+```r
+refund <- ai_tool(refund_order, "Refund an order.", .effects = "changes")
+chat <- ai_conversation(assistant, customer, store = "shop/", approve = "changes")
+w <- tryCatch(chat("Refund my late parcel, please."), functai_waiting = identity)
+approve(w$turn)                  # or deny(w$turn, reason = "..."), later, anywhere
+```
+
+`approve = function(a) a$input$amount < 50` answers at once; a plain call
+that needs a person refuses (`approval-required`).
+
+## Plugins
+
+Plugins change what programs do through seven hooks (`turn_start`,
+`context`, `before_call`, `request`, `tool_call`, `tool_result`,
+`turn_end`), and every change is recorded as data in the call's record, so
+a rated call is asked again as it was.
+
+```r
+review <- ai_plugin("review-mode", version = "1.0.0",
+  before_call = function(call) ai_change(sections = "Only point out problems."))
+chat <- ai_conversation(assistant, "work", plugins = list(review, compaction(keep = 20)))
+```
+
+Approval is one of them; `compaction()` folds long conversations into a
+summary; `delegate(program)` hands work to another program, in a
+conversation of its own.
+
+## Serving it, and long runs
+
+```r
+ai_serve(support, port = 8080, keys = "keys.txt")      # interface, calls, streams, conversations
+support2 <- ai_remote("http://lambda:8080", key = Sys.getenv("SUPPORT_KEY"))   # served by any language
+ai_config(cache_replies = "disk")      # replies kept across runs: a long run resumes by running it again
+prune_calls("90d")                      # a smaller log, keeping what ratings need
+quotes_found(source, verdict$quotes)    # a judge's evidence, checked
+```
+
+Callers of a served program see only its boundary. The disk cache is the
+SQLite file every language shares. `escalate_to` has another model (or AI
+function) answer when the first is unsure. `rated()` of a conversation's
+turns gives rows that keep their earlier turns, which `evaluate()` and the
+optimizers ask again with; `rsample::group_initial_split(rows, group =
+conversation)` keeps each conversation on one side. `bake_examples()`
+writes the training conversations every trainer reads, and
+`update(fn, lm = baked("baked/fn", url = ...))` runs a student trained
+anywhere, as it was trained. Observers and journals (`ai_journal()`) keep
+each call tree's events while it is written.
+
+## Where R differs, stated
+
+- **R runs one thing at a time.** A program called on a column runs its
+  code one row at a time (the AI functions it calls with a column still run
+  it at once); observers and a journal's store run in the call, as the event
+  is made, so a slow one slows the call; a served program answers one
+  request at a time, and a stream it serves arrives whole when its call
+  ends (httpuv cannot send a response piece by piece). Serve from Python or
+  Julia, from the same saved folder, when that matters.
+- **The folder store writes and closes each append**; Python's also flushes
+  it to the disk. A power cut can lose the last records.
+- **A conversation is a function** (`chat("...")`), and its turns a tibble
+  (`ai_turns(chat)`); a turn that waits raises a `functai_waiting` condition
+  holding `$turn`. Python's `split(rows, by = "conversation")` is rsample's
+  `group_initial_split()`.
+
 ## Not here yet
 
-Compared with Python: streaming, modules (your code around several AI
-functions, logged as one call), stateful memory, escalation to a bigger
-model, the reply cache, `InstructionSearch`, baking (training your own
-weights), and templates written as R functions. Python cannot yet load a
-function saved in R (TypeScript and Julia can). The
-[home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four languages.
+Compared with Python: training models itself (`bake_examples()` writes what
+any trainer reads, and `baked()` runs the result), saving a program's own R
+code or tools in a folder (an AI function saves; a program does not yet),
+Python's `verify`, `check` and `runs`, and templates written as R
+functions. Python cannot yet load a function saved in R (TypeScript and
+Julia can). The [home page](https://maximerivest.github.io/functai/#what-each-language-has)
+compares the four languages.
 
 ## Developing
 

@@ -1,0 +1,219 @@
+---
+title: "Programs, conversations and tools that ask first"
+output: rmarkdown::html_vignette
+vignette: >
+  %\VignetteIndexEntry{Programs, conversations and tools that ask first}
+  %\VignetteEngine{knitr::rmarkdown}
+  %\VignetteEncoding{UTF-8}
+---
+
+<!-- This file is conversations.Rmd.orig. It calls real models (about a
+cent), so it is knitted by hand into conversations.Rmd, outputs included:
+  cd r/vignettes && R_LIBS=../.lib Rscript -e 'knitr::knit("conversations.Rmd.orig", "conversations.Rmd")'
+Edit this file, never conversations.Rmd. -->
+
+
+
+An AI function answers one question. Real work is usually a few of them
+with some ordinary R in between, a conversation that remembers what was
+said, and now and then a tool that changes something in the world, which a
+person should allow first. This vignette builds a small customer-support
+assistant that does all three, and shows what functai records along the
+way.
+
+
+``` r
+library(functai)
+ai_config(lm = "gpt-4.1-mini", temperature = 0)
+```
+
+## A program: your code around AI functions
+
+Two AI functions: one picks the team, one answers as that team.
+
+
+``` r
+team <- ai(team ~ message, "Which team should answer this customer message?",
+  team = choice("shipping", "billing", "product", "account"))
+answer <- ai(reply ~ message + team, "Answer the customer in one or two sentences, as that team.",
+  .name = "answer")
+```
+
+A program puts them together. It is declared like an AI function (a
+formula and a sentence), and its body is ordinary R. Name it (`.name`):
+the call log, a stream and a conversation call it by that name.
+
+
+``` r
+support <- ai_program(reply ~ message, "Answer a customer's message.", function(message) {
+  answer(message, team(message))
+}, .name = "support")
+support
+#> <ai program> support: reply ~ message
+#>   Answer a customer's message.
+#>   calls: answer, team
+support("I was charged twice for order B-2210.")
+#> [1] "We apologize for the inconvenience; we are reviewing your order B-2210 and will issue a refund for the duplicate charge shortly."
+```
+
+Calling it is **one call**: the two AI functions are its steps. Its inputs
+are checked before the code runs, and its answer when the code returns, so
+a program that promises text and returns a number is refused rather than
+passed on. Given a column, it runs once per row, like every function here.
+
+## Watching a call while it is made
+
+`ai_stream()` calls the same thing, the same way, and gives each event to
+`.each` as it happens. Here we keep only what kind each event was, and which
+function it came from:
+
+
+``` r
+s <- ai_stream(support, "My parcel never arrived.", .show = FALSE)
+vapply(s$events, function(e) paste(e$kind, e[["function"]]), "")
+#>  [1] "started support" "started team"    "request team"    "text team"      
+#>  [5] "done team"       "started answer"  "request answer"  "text answer"    
+#>  [9] "text answer"     "text answer"     "text answer"     "text answer"    
+#> [13] "text answer"     "text answer"     "text answer"     "text answer"    
+#> [17] "text answer"     "text answer"     "text answer"     "text answer"    
+#> [21] "text answer"     "text answer"     "text answer"     "text answer"    
+#> [25] "text answer"     "text answer"     "text answer"     "text answer"    
+#> [29] "text answer"     "text answer"     "text answer"     "done answer"    
+#> [33] "done support"
+s$value
+#> [1] "We're sorry to hear your parcel hasn't arrived; please provide your order number so we can track it and assist you further."
+```
+
+The program starts, then `team` runs (one request, its answer's text,
+done), then `answer`, and the program ends with its value. In an
+interactive session, `ai_stream()` writes the answer's text to the console
+as the model writes it.
+
+## A conversation remembers
+
+A conversation is a function's calls that remember each other. The
+function does not change: the memory belongs to the conversation.
+
+
+``` r
+tutor <- ai(reply ~ message, "You are a patient maths tutor. Answer in one sentence.", .name = "tutor")
+chat <- ai_conversation(tutor, store = tempfile("tutoring-"))
+chat("Hi, I'm Alex.")
+#> [1] "Hi Alex! How can I help you with math today?"
+chat("What is my name, and what is 1/2 + 1/3?")
+#> [1] "Your name is Alex, and 1/2 + 1/3 = 5/6."
+ai_turns(chat)[c("state", "answer")]
+#> # A tibble: 2 × 2
+#>   state answer                                      
+#>   <chr> <chr>                                       
+#> 1 done  Hi Alex! How can I help you with math today?
+#> 2 done  Your name is Alex, and 1/2 + 1/3 = 5/6.
+```
+
+Each turn is kept in the store as it happens (a folder here, which Python
+and Julia read too), and its id is its call's id in the call log, so a
+person can rate it with `rate()`. `continue_from(chat, 1)` starts a branch
+from the first turn; nothing is ever deleted.
+
+## A tool that asks a person first
+
+A tool says what it does to the world: `.effects = "reads"` (it only
+looks) or `"changes"` (it writes, sends or pays). With `approve =
+"changes"`, a turn that is about to run a tool that changes things stops and
+waits, saved, for a person:
+
+
+``` r
+refunded <- character(0)
+refund_order <- function(order) { refunded <<- c(refunded, order); "refunded" }
+refund <- ai_tool(refund_order, "Refund an order.", order = "like A-1042", .effects = "changes")
+
+helper <- ai(reply ~ message, "Help the customer. Refund an order when they ask for it.",
+  .tools = list(refund))
+desk <- ai_conversation(helper, store = tempfile("shop-"), approve = "changes")
+
+w <- tryCatch(desk("Please refund order A-1042, it arrived broken."), functai_waiting = identity)
+w$turn$state
+#> [1] "waiting"
+w$approvals[[1]]
+#> <approval> reply/refund_order #1 (changes)
+refunded
+#> character(0)
+```
+
+Nothing was refunded yet. Anyone who opens the same conversation (this
+session, or another process tomorrow) can answer. When they do, the turn
+goes on from where it stopped: the model's first reply was kept, so it is
+not paid for again, and the tool runs once.
+
+
+``` r
+approve(w$turn)
+#> [1] "Your order A-1042 has been refunded. We apologize for the inconvenience caused by the broken item. If you need any further assistance, please let us know."
+refunded
+#> [1] "A-1042"
+```
+
+`deny(w$turn, reason = "...")` tells the model the person did not allow
+it, and it may answer otherwise. `approve = function(a) ...` decides at
+once, in code; a plain call (outside a conversation) that needs a person
+refuses with `approval-required` rather than running the tool.
+
+## A plugin changes calls, and says so
+
+A plugin hooks into calls and turns. Its changes are data, recorded in each
+call's line of the call log, so a call that is rated later can be asked
+again exactly as it was:
+
+
+``` r
+log <- tempfile("log-")
+careful <- ai_plugin("careful", version = "1.0.0",
+  before_call = function(call) ai_change(sections = "Never promise a date."))
+with_ai_config(support("When will my parcel arrive?"), plugins = list(careful), log_calls = log)
+#> [1] "We understand your eagerness to receive your parcel; please check the tracking information provided for the most up-to-date delivery status."
+calls(folder = log)[c("name", "model")]
+#> # A tibble: 3 × 2
+#>   name    model       
+#>   <chr>   <chr>       
+#> 1 support <NA>        
+#> 2 team    gpt-4.1-mini
+#> 3 answer  gpt-4.1-mini
+lines <- readLines(list.files(log, recursive = TRUE, full.names = TRUE))
+jsonlite::fromJSON(lines[[1]])$changes[c("plugin", "hook")]
+#>    plugin        hook
+#> 1 careful before_call
+```
+
+`compaction()` keeps long conversations short by folding older turns into a
+summary; `delegate(program)` hands work to another program, which keeps a
+conversation of its own.
+
+## Serving it
+
+`ai_serve(support, port = 8080, keys = "keys.txt")` serves the program over
+HTTP: its interface, calls, streams and conversations, to callers who see
+only its boundary (never a helper's answer or a tool's input).
+`ai_remote(url, key = ...)` uses a program served by functai in any
+language, here, as a program again. `ai_service()` answers one request
+without a network, which is how it is tested:
+
+
+``` r
+service <- ai_service(support)
+reply <- serve_request(service, "POST", "/call", body = '{"inputs": {"message": "Hi, my card was declined."}}')
+reply$status
+#> [1] 200
+jsonlite::fromJSON(reply$body)$outputs
+#> $result
+#> [1] "We're sorry to hear your card was declined; please check with your bank for any restrictions or try using a different payment method, and let us know if you need further assistance."
+```
+
+## What R does differently
+
+R runs one thing at a time. A program over a column runs its code one row
+at a time (the AI functions it calls with a column still run that column
+at once); a served program answers one request at a time, and a stream it
+serves arrives whole when its call ends. When those matter, Python and
+Julia serve the same saved functions, and their logs, conversations and
+reply cache are the ones R reads.

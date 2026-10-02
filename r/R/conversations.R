@@ -302,7 +302,8 @@ print.functai_conversation <- function(x, ...) {
   cat(sprintf("<conversation %s with %s> %d turn%s\n", c$id, program_name(c$program), nrow(t), if (nrow(t) == 1L) "" else "s"))
   for (i in seq_len(nrow(t))) {
     ins <- paste(vapply(t$inputs[[i]], function(v) short_text(if (is_str(v)) v else lmcc::canonical_json(v)), ""), collapse = " ")
-    out <- if (identical(t$state[[i]], "done")) short_text(if (is_str(t$value[[i]])) t$value[[i]] else lmcc::canonical_json(t$value[[i]])) else sprintf("[%s]", t$state[[i]])
+    v <- t$outputs[[i]][[answer_of(c$program)]]
+    out <- if (identical(t$state[[i]], "done")) short_text(if (is_str(v)) v else lmcc::canonical_json(v)) else sprintf("[%s]", t$state[[i]])
     cat(sprintf("%3d. %s \u2192 %s\n", i, substr(ins, 1L, 60L), substr(out, 1L, 70L)))
   }
   invisible(x)
@@ -400,8 +401,9 @@ turn_saw <- function(c, st) {
 #' TRUE`: every turn of every branch, in the order they were made), as a
 #' tibble: `turn` (its id, the call's id in the call log), `parent`,
 #' `state` (`"running"`, `"waiting"`, `"interrupted"`, `"done"`, `"failed"`,
-#' `"stopped"`, `"abandoned"`), `inputs` and `outputs` (list columns), `value`
-#' (the answer), `model`. `ai_turn()` gives one turn, as an object for
+#' `"stopped"`, `"abandoned"`), `inputs` (a list column), `answer` (of the
+#' answer's type; `NA` for a turn not done), `outputs` (a list column),
+#' `model`. `ai_turn()` gives one turn, as an object for
 #' [approve()], [resume_turn()], [stop_turn()].
 #' @param chat A conversation.
 #' @param all Every turn of every branch.
@@ -414,9 +416,13 @@ ai_turns <- function(chat, all = FALSE) {
   log <- read_conv(c)
   sts <- if (all) lapply(log$order, function(t) log$turns[[t]]) else branch_of(log, view_head(c, log))
   ts <- lapply(sts, turn_object, c = c)
+  core <- program_core_of(c$program)
+  field <- core$definition$outputs[[length(core$definition$outputs)]]
+  answers <- lapply(ts, function(t) if (identical(t$state, "done")) t$outputs[[answer_of(c$program)]] else NULL)
+  answer <- if (isTRUE(field$opaque)) answers else tryCatch(assemble(field, answers), error = function(e) answers)
   tibble::tibble(turn = vapply(ts, function(t) t$id, ""), parent = vapply(ts, function(t) t$parent %||% NA_character_, ""),
-                 state = vapply(ts, function(t) t$state, ""), inputs = lapply(ts, function(t) t$inputs), outputs = lapply(ts, function(t) t$outputs),
-                 value = lapply(ts, function(t) t$value), model = vapply(ts, function(t) as.character(t$model %||% NA_character_), ""))
+                 state = vapply(ts, function(t) t$state, ""), inputs = lapply(ts, function(t) t$inputs), answer = answer,
+                 outputs = lapply(ts, function(t) t$outputs), model = vapply(ts, function(t) as.character(t$model %||% NA_character_), ""))
 }
 
 #' @rdname ai_turns

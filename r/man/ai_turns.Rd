@@ -24,7 +24,8 @@ A tibble (\code{ai_turns()}), or a turn.
 \code{ai_turns()} gives the turns from the first to the head, in order (\code{all = TRUE}: every turn of every branch, in the order they were made), as a
 tibble: \code{turn} (its id, the call's id in the call log), \code{parent},
 \code{state} (\code{"running"}, \code{"waiting"}, \code{"interrupted"}, \code{"done"}, \code{"failed"},
-\code{"stopped"}, \code{"abandoned"}), \code{inputs} and \code{outputs} (list columns), \code{value}
-(the answer), \code{model}. \code{ai_turn()} gives one turn, as an object for
+\code{"stopped"}, \code{"abandoned"}), \code{inputs} (a list column), \code{answer} (of the
+answer's type; \code{NA} for a turn not done), \code{outputs} (a list column),
+\code{model}. \code{ai_turn()} gives one turn, as an object for
 \code{\link[=approve]{approve()}}, \code{\link[=resume_turn]{resume_turn()}}, \code{\link[=stop_turn]{stop_turn()}}.
 }

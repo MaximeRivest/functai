@@ -64,7 +64,15 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #'   8), `on_error` (`"warn"`, the default: a failed row is `NA`; or `"stop"`),
 #'   `log_calls` (a folder, or `TRUE`), `log_content` (`TRUE`, `FALSE`,
 #'   `c(transcript = FALSE)`, or the names of the fields to keep), `caller`, `router` (an
-#'   `lm15::new_router()`).
+#'   `lm15::new_router()`); `cache_replies` (`TRUE`: in memory; `"disk"`, a
+#'   folder or a `.sqlite` file: kept across runs, shared by every language)
+#'   and `replicate` (the n-th independent answer to the same request);
+#'   `progress` (a progress line over a column); `observers` (functions given
+#'   every event), `journal` ([ai_journal()]) and `program_observers`;
+#'   `plugins` ([ai_plugin()]) and `program_plugins`; `approve` (a function,
+#'   `"changes"`, `"all"`, or tool names: see [ai_conversation()]);
+#'   `escalate_to` (a model or an AI function that answers when the first
+#'   model is less sure than `escalate_below`, default 0.9).
 #' @return The settings in force, invisibly (`ai_config()`), or the value of
 #'   `code` (`with_ai_config()`).
 #' @examples
