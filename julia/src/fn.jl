@@ -416,15 +416,41 @@ function resolve_route(s)
     (; model, router, provider, wire)
 end
 
-function plan_for(f::AIFunction, given)
+"""
+The plan of a call under these settings: its layout bound to the route's
+capabilities. `sig`: a signature whose instruction plugins changed (sections,
+a replacement), in place of the function's own.
+"""
+function plan_for(f::AIFunction, given; sig=nothing)
     r = resolve_route(given)
     s = adjust_settings(given, r.provider, r.wire)
     caps = call_capabilities(r.provider, r.wire, s)
-    key = (:plan, layout_key(s), sort!(collect(caps)), r.provider, s[:reasoning], s[:include_name])
-    plan = cached(f, key) do
-        bind_layout(setting(s, :adapter), setting(s, :template), signature_now(f, s), caps, r.provider)
-    end
+    signature = sig === nothing ? signature_now(f, s) : sig
+    key = (:plan, layout_key(s), sort!(collect(caps)), r.provider, s[:reasoning], s[:include_name],
+           sig === nothing ? nothing : hash(sig.instructions))
+    plan = sig === nothing ? cached(f, key) do
+        bind_layout(setting(s, :adapter), setting(s, :template), signature, caps, r.provider)
+    end : bind_layout(setting(s, :adapter), setting(s, :template), signature, caps, r.provider)
     (; plan, r..., settings=s)
+end
+
+"A signature with another instruction (plugins' sections or a replacement)."
+with_instruction(sig::LMCC.Signature, text::AbstractString) =
+    LMCC.signature_from_dict(merge(LMCC.signature_to_dict(sig), Dict("instructions" => String(text))))
+
+"""
+Refuse a call whose plugins changed the instruction when it would not reach
+the model (contract/plugins.md, "Plugins and layouts"): a template that never
+writes `{instruction}`. Sent anyway, the record would say the model was told
+what it never was.
+"""
+function check_placed(f::AIFunction, s)
+    template = setting(s, :template)
+    template === nothing && return
+    any(m -> occursin("{instruction}", string(m isa Pair ? last(m) : m)), template) && return
+    throw(PluginError("plugin-change", "$(f.definition.name): plugins changed its instruction (sections, a summary of earlier turns, " *
+                      "or a replacement), and its template never writes {instruction}, so the change would not be sent. Put " *
+                      "{instruction} in its template (:system => \"{instruction}\", …), or use plugins that do not change the instruction with it."))
 end
 
 "The call log's `program` of this function."
@@ -586,7 +612,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
     s = effective(f.own)
     fields = merge(program_fields(f, s), (holds=value_holds(f),))
     inputs, refusal, gap = bind_ai_inputs(f, inputs, s)
-    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields)
+    call = start_call(program_of(f), f.definition.name, s, f.own, inputs, fields; fn=f)
     if refusal !== nothing
         # refused before any request, and recorded (programs.md); a missing value for a required input gives missing
         call.refusal === nothing && (call.refusal = refusal)        # a journal's refusal, set first, stands
@@ -599,12 +625,28 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
         return missing
     end
     prediction = Ref{Any}(nothing)
+    prepare_context!(call, f, s)            # what it is shown of its conversation (its saw), before it starts
     run_call(call) do call
-        r = plan_for(f, s)
+        # the before_call hooks: the instruction, the sections, the model, settings, tools offered
+        base = signature_now(f, s)
+        shaped = shape_call(f, code_inputs(inputs), s, call, base.instructions)
+        append!(call.changes, shaped.applied.items)
+        call.sections = copy(shaped.context_sections)        # what it was shown of its conversation (replayed)
+        changed = shaped.instruction !== nothing || !isempty(shaped.sections)
+        sig = changed ? with_instruction(base, join([something(shaped.instruction, base.instructions); shaped.sections], "\n\n")) : nothing
+        changed && check_placed(f, shaped.settings)
+        offered = shaped.tools === nothing ? f.tools : AITool[t for t in f.tools if t.name in shaped.tools]
+        r = plan_for(f, shaped.settings; sig)
         call.provider = r.provider
-        job = Job(f.definition.name, r.plan, past_turns(f, r.plan), inputs, r.settings, r.router, r.model,
-                  f.tools, call, values -> typed_outputs(f, values))
+        job = Job(f.definition.name, r.plan, vcat(past_turns(f, r.plan), shown_turns(call, f, r.plan)), inputs, r.settings,
+                  r.router, r.model, offered, call, values -> typed_outputs(f, values))
         outputs, turn, responses, reading = run_job(job)
+        call.lmcc = try
+            LMCC.turn_to_dict(turn)
+        catch
+            nothing
+        end
+        call.steps = steps_of(call, turn)
         call.outputs = recorded_outputs(f, fields, outputs, turn, job.asked)
         probs = reading.probabilities
         if !isempty(probs)
@@ -635,7 +677,25 @@ function render(f::AIFunction, args...; kw...)
     plan = r.plan
     values = prepare_inputs(plan.signature, bind_inputs(f, args, kw))
     isempty(f.tools) || (values["tools"] = tool_values(f))
-    LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=past_turns(f, plan)); model=r.model, config=config_of(r.settings))
+    LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=vcat(past_turns(f, plan), rendering_turns(f, plan)));
+                      model=r.model, config=config_of(r.settings))
+end
+
+"""
+An AI function's call that may be shown again with its steps keeps them (lmcc's
+turn steps as JSON): one that ran tools, or one made in a conversation
+(contract/calls.md, "Saw"). Showing it again reads them; none is rebuilt from
+replies.
+"""
+function steps_of(call::Call, turn)
+    turn isa LMCC.Turn || return nothing
+    ran_tools = any(st -> st isa LMCC.ToolStep, turn.steps)
+    (ran_tools || call.turn_run !== nothing) || return nothing
+    try
+        LMCC.turn_to_dict(turn)["steps"]
+    catch
+        nothing
+    end
 end
 
 """

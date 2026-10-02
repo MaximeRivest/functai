@@ -5,8 +5,12 @@
 # answer about its end (contract/streaming.md, "A required journal that does
 # not confirm").
 
-started_data(call::Call) = LMCC.jobj("parent" => call.parent, "root" => call.root, "program" => call.program,
-                                     "inputs" => LMCC.deepcopy_json(call.inputs), "content" => true, "saw" => Any[])
+function started_data(call::Call)
+    data = LMCC.jobj("parent" => call.parent, "root" => call.root, "program" => call.program,
+                     "inputs" => LMCC.deepcopy_json(call.inputs), "content" => true, "saw" => LMCC.deepcopy_json(call.saw))
+    call.invocation === nothing || (data["invocation"] = call.invocation)
+    data
+end
 
 """
 Run `body(call)` as the call's code: its value is what the call returns.
@@ -31,10 +35,19 @@ function run_call(body::Function, call::Call)
                 check_cancelled(call)            # no ordinary return after the stream was closed
                 call.value = v
             catch err
-                conclude(call, unwrap(err))
+                e = unwrap(err)
+                if e isa TurnWaiting
+                    # a turn stopped to wait for a person: nothing ended; its log stays unfinished, for the
+                    # process that resumes it (contract/tools.md), and no record says the call failed
+                    call.parent === nothing && t.writer_task !== nothing && close(t.writer_task)
+                    rethrow()
+                end
+                ended_with = conclude(call, e)
+                turn_call_ended(call, ended_with)
                 rethrow()
             end
             ended_with = conclude(call, nothing)
+            turn_call_ended(call, ended_with)
             ended_with === nothing || throw(ended_with)      # closed while it waited for the calls inside it
             value
         end
@@ -42,6 +55,9 @@ function run_call(body::Function, call::Call)
         release!(call)
     end
 end
+
+"A call of a conversation's turn ended: its tokens count in the turn's usage; a helper the conversation remembers keeps its call."
+turn_call_ended(call::Call, err) = call.turn_run === nothing || call_ended!(call.turn_run, call, err)
 
 "A call has ended (or never will run): the call it runs inside no longer waits for it."
 function release!(call::Call)
@@ -146,4 +162,4 @@ meant to outlive it (a task that warms a cache, say) is started detached:
 end
 ```
 """
-detached(f) = with(f, CURRENT_CALL => nothing, STREAM_OPENING => nothing)
+detached(f) = with(f, CURRENT_CALL => nothing, STREAM_OPENING => nothing, TURN_STARTING => nothing)

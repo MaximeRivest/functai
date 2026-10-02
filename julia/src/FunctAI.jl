@@ -42,10 +42,15 @@ import MLJModelInterface as MMI
 import StatsAPI
 import StatsAPI: predict, fit
 import Tables
+import SQLite
+import SQLite: DBInterface
+import HTTP
+import Sockets
 
 const FUNCTAI_VERSION = pkgversion(@__MODULE__) === nothing ? v"0.1.0" : pkgversion(@__MODULE__)
 
 include("contract.jl")
+include("errors.jl")
 include("text.jl")
 include("values.jl")
 include("settings.jl")
@@ -60,18 +65,26 @@ include("definition.jl")
 include("calllog.jl")
 include("saw.jl")
 include("tools.jl")
+include("plugins.jl")
+include("replies.jl")
 include("engine.jl")
 include("run.jl")
 include("fn.jl")
 include("macro.jl")
 include("program.jl")
 include("stream.jl")
+include("stores.jl")
+include("conversations.jl")
+include("views.jl")
 include("evaluate.jl")
 include("optimize.jl")
 include("gepa.jl")
 include("model.jl")
 include("saved.jl")
 include("api.jl")
+include("learning.jl")
+include("builtins.jl")
+include("serving.jl")
 include("accounts.jl")
 include("datasets.jl")
 include("precompile.jl")
@@ -86,6 +99,11 @@ export rate, calls, rated
 export tool, AITool, Event, AIStream, StepLimit, Cancelled, LoadRefused
 export InterfaceError, LogContentError, JournalError
 export model_capabilities, casefold, normalize_text
+export conversation, Conversation, Turn, turns, continue_from, all_turns, last_turns, remember, earlier
+export approve!, deny!, resume!, abandon!, stop!, wait_turn, MemoryConversations, FolderStore
+export Plugin, Change, on!, load_plugin, compaction, delegate, Approval
+export Waiting, ApprovalError, ConversationError, PluginError, FunctAIError
+export serve, remote, quotes_found, prune_calls, train_test
 
 # observers and journal writers work off the calls' tasks: give them a moment when Julia exits
 __init__() = atexit(() -> (drain(2.0); EXITING[] = true; nothing))

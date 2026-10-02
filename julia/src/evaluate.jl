@@ -196,8 +196,8 @@ DataFrame(e)                     # every row, its answer, its score
 """
 function evaluate(f::Union{AIFunction,Function}, data; expected=nothing, metric=nothing, concurrency=nothing)
     rows = [row_dict(r) for r in rows_of(data)]
-    outputs = f isa AIFunction ? output_names(f) : ["result"]
-    answer = f isa AIFunction ? answer_name(f) : "result"
+    outputs = f isa AIFunction ? output_names(f) : f isa AIProgram ? String[x["name"] for x in f.interface["outputs"]] : ["result"]
+    answer = f isa AIFunction ? answer_name(f) : f isa AIProgram ? last(outputs) : "result"
     mapping = expected === nothing ? OrderedDict{String,String}(o => o for o in outputs if any(r -> haskey(r, o), rows)) :
               expected isa Union{AbstractString,Symbol} ? OrderedDict{String,String}(answer => String(expected)) :
               OrderedDict{String,String}(String(k) => String(v) for (k, v) in pairs(expected))
@@ -207,11 +207,15 @@ function evaluate(f::Union{AIFunction,Function}, data; expected=nothing, metric=
     n = something(concurrency, f isa AIFunction ? effective(f.own)[:concurrency] : 8)
     results, _ = run_concurrently(rows, n) do row
         try
+            # a rated turn is asked again with what it was shown (its earlier turns, its sections): stage 5
             p = with_settings(; caller=Dict("evaluation" => run)) do
-                f isa AIFunction ? predict_inputs(f, row_inputs(f, row)) : f(NamedTuple(Symbol(k) => v for (k, v) in row))
+                replaying(row, f) do
+                    f isa AIFunction ? predict_inputs(f, row_inputs(f, row)) :
+                    f isa AIProgram ? program_row_call(f, row) : f(NamedTuple(Symbol(k) => v for (k, v) in row))
+                end
             end
             p === missing && throw(ArgumentError("an input is missing"))
-            outs = p isa Prediction ? p.outputs : (result=p,)
+            outs = p isa Prediction ? p.outputs : f isa AIProgram ? program_outputs(f, p) : (result=p,)
             s = if metric === nothing
                 answers = JObj(o => row[c] for (o, c) in mapping if haskey(row, c))
                 exact_match(answers, JObj(o => outs[Symbol(o)] for o in keys(mapping) if haskey(outs, Symbol(o))))
@@ -233,7 +237,7 @@ function evaluate(f::Union{AIFunction,Function}, data; expected=nothing, metric=
         end
         isempty(found) ? (metric isa Union{AbstractDict,NamedTuple} ? String.(collect(keys(metric))) : [string(nameof(metric))]) : found
     end
-    Evaluation(f isa AIFunction ? f.definition.name : string(nameof(f)), run, RowResult[results...], metrics, outputs)
+    Evaluation(f isa AIFunction ? f.definition.name : f isa AIProgram ? f.name : string(nameof(f)), run, RowResult[results...], metrics, outputs)
 end
 
 """
@@ -266,4 +270,19 @@ function compare(before::Evaluation, after::Evaluation)
         (metric=m, before=sum(a) / n, after=sum(b) / n, diff=mean_d, low=low, high=high,
          better=count(>(0), d), worse=count(<(0), d), same=count(==(0), d), n=n)
     end
+end
+
+"A program called on a row: its inputs are the row's columns named like them (a row missing one takes its default, or is refused)."
+function program_row_call(p::AIProgram, row)
+    names = [x["name"] for x in p.interface["inputs"]]
+    p(; (Symbol(k) => row[k] for k in names if haskey(row, k))...)
+end
+
+"A program's value as its outputs by name (one output: the value under its name)."
+function program_outputs(p::AIProgram, value)
+    names = [x["name"] for x in p.interface["outputs"]]
+    length(names) == 1 && return NamedTuple{(Symbol(only(names)),)}((value,))
+    value isa NamedTuple && return value
+    value isa AbstractDict && return NamedTuple(Symbol(k) => v for (k, v) in value)
+    NamedTuple{(Symbol(last(names)),)}((value,))
 end

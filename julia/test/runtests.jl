@@ -11,6 +11,7 @@ delete!(ENV, "FUNCTAI_CALLER")
 
 @testset "FunctAI" begin
     include("contract.jl")
+    include("stages.jl")
     include("events.jl")
     include("functions.jl")
     include("calls.jl")
@@ -18,6 +19,8 @@ delete!(ENV, "FUNCTAI_CALLER")
     include("guarantees.jl")
     include("gepa.jl")
     include("models.jl")
+    include("conversations.jl")
+    include("serving.jl")
 end
 
 # the examples in the docstrings (jldoctest), as the manual shows them

@@ -24,6 +24,12 @@ const SETTING_DOCS = (
     program_observers = "false (a host's block or configure!): the observers a program sets for itself are given no event; the host's still are. Only removes",
     caller = "who is calling, added to the environment variable `FUNCTAI_CALLER`: Dict(\"kind\" => \"notebook\")",
     concurrency = "calls in flight at once over a column (broadcasting, map, evaluate; default 8)",
+    progress = "a progress line on stderr while a column runs (rows done, failures, tokens, time left): true, false, or unset (on when stderr is a terminal)",
+    cache_replies = "the reply cache: false (default), true (this process's memory), :disk (one SQLite file every process shares, so a long run started again sends only what has no kept reply), a folder or .sqlite path, or a store (a Dict, a FunctAI.ReplyStore)",
+    replicate = "the n-th independent answer to the same request (default 0): part of the reply cache's key, nothing else",
+    approve = "ask before tools run: a function (asked at once; answers true, false or a reason), :changes (tools that change things or say nothing), :all, or tool names and approval paths (\"support/answer/refund\"); a person answers later",
+    plugins = "plugins around calls: [Plugin(...), \"plugins/modes.jl\"]; the program's own run first, the host's last",
+    program_plugins = "false (a host's block or configure!): the plugins a program sets for itself do not run. Only removes",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
@@ -74,6 +80,11 @@ function check_setting(name::Symbol, value)
     name === :observers && !(value isa Union{AbstractVector,Tuple}) && throw(ArgumentError("observers is a list of functions (or Channels), not $(repr(value))"))
     name === :program_observers && !(value isa Bool) && throw(ArgumentError("program_observers is true or false, not $(repr(value))"))
     name === :journal && journal_setting(value)
+    name === :cache_replies && cache_setting(value)
+    name === :replicate && !(value isa Integer && !(value isa Bool) && value >= 0) && throw(ArgumentError("replicate is a whole number of at least 0, not $(repr(value))"))
+    name === :approve && approve_setting(value)
+    name === :plugins && plugins_setting(value)
+    name in (:program_plugins, :progress) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
     nothing
 end
 
@@ -87,7 +98,10 @@ function settings_dict(kw)
                     name === :tool_errors ? Symbol(v) :
                     name === :log_content ? content_setting(v) :
                     name === :observers ? Any[v...] :
-                    name === :journal ? journal_setting(v) : v
+                    name === :journal ? journal_setting(v) :
+                    name === :cache_replies ? cache_setting(v) :
+                    name === :approve ? approve_setting(v) :
+                    name === :plugins ? plugins_setting(v) : v
     end
     out
 end

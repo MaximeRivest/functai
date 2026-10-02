@@ -13,7 +13,7 @@ is refused when its program is defined or read (`"interface-malformed"`).
 `field` names the field at fault (`nothing` when the fault is not a
 field's). contract/programs.md.
 """
-struct InterfaceError <: Exception
+struct InterfaceError <: FunctAIError
     code::String
     field::Union{Nothing,String}
     msg::String
