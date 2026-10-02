@@ -19,6 +19,13 @@ Each tutorial starts from a question about real data, builds the answer one smal
 The same series exists [for Python](../tutorials/index.md), on the same
 datasets, where baking a model you own takes tutorial 7's place.
 
+After the series, [Programs, conversations and tools that ask
+first](https://maximerivest.github.io/functai/r/manual/articles/conversations.html)
+(a vignette, run on a real model) puts several AI functions together as one
+program, watches a call while it is made, keeps a conversation, has a
+person approve a refund before it happens, and serves the result over
+HTTP.
+
 ## Before you start
 
 You need R 4.1 or later, and a key for at least one model provider (OpenAI's, for most of the series) in your `~/.Renviron`:
