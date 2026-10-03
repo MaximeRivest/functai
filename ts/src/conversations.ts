@@ -34,7 +34,7 @@ import { dataShape, type Interface } from "./interface.ts";
 import type { Observer } from "./log.ts";
 import { aroundLayers, Applied, ContextHook, runHook, texts, TurnEndHook, TurnStartHook, type ConversationLike, type Plugin,
   type ShownTurn } from "./plugins.ts";
-import { TurnWaiting } from "./program.ts";
+import { droppedFields, TurnWaiting } from "./program.ts";
 import { checkSettings, layersOf, withSettings, type Settings } from "./settings.ts";
 import { follow, isPersistent, storeOf, waitFor, type ConversationStore } from "./stores.ts";
 import type { Stream } from "./stream.ts";
@@ -1095,11 +1095,15 @@ export class Conversation {
 
   private checkContent(): void {
     if (!isPersistent(this.store)) return;
-    const layers = layersOf((this.program as unknown as { settings?: Settings }).settings ?? {}, this.settings);
-    const drops = layers.some((l) => l.settings.logContent !== undefined && l.settings.logContent !== null && l.settings.logContent !== true)
-      || ["0", "false", "no", "off"].includes((globalThis as { process?: { env?: Rec } }).process?.env?.["FUNCTAI_LOG_CONTENT"] as string ?? "");
-    if (drops) {
-      throw new ConversationError("conversation-content", `${this.program.name}: a logContent setting keeps some of its fields out of every record, and this store keeps a conversation's records. A conversation that must remember what it may not keep refuses rather than forgets: keep it in memory (store: null), or let the store keep those fields`);
+    const fields = this.program._conversationFields();
+    const outputs = fields.filter((f) => f["direction"] === "output");
+    const dropped = droppedFields({
+      inputs: fields.filter((f) => f["direction"] === "input").map((f) => f["name"] as string),
+      outputs: outputs.map((f) => f["name"] as string),
+      added: outputs.filter((f) => f["purpose"] !== "plain").map((f) => f["name"] as string),
+    }, (this.program as unknown as { settings?: Settings }).settings ?? {}, this.settings);
+    if (dropped.length) {
+      throw new ConversationError("conversation-content", `${this.program.name}: a logContent setting keeps ${dropped.join(", ")} out of every record, and this store keeps a conversation's records. A conversation that must remember what it may not keep refuses rather than forgets: keep it in memory (store: null), or let the store keep those fields`);
     }
   }
 

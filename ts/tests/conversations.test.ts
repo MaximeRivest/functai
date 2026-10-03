@@ -139,3 +139,12 @@ test("a turn is stopped from anywhere: it ends stopped", async () => {
   await assert.rejects(s.result);
   assert.equal((await turn.refresh()).state, "stopped");
 });
+
+test("a store that keeps records refuses a program whose logContent drops one of its fields; one that drops nothing it has is kept", async () => {
+  const router = new FakeRouter([], () => "<result>\nok\n</result>");
+  const where = folder();
+  assert.throws(() => tutor(router, { logContent: { message: false } }).conversation("secret", { store: where }),
+    (e: unknown) => e instanceof ConversationError && e.code === "conversation-content");
+  assert.equal(await tutor(router, { logContent: { "*": true } }).conversation("fine", { store: where })("hi"), "ok");
+  assert.equal(await tutor(router, { logContent: { message: false } }).conversation("memory")("hi"), "ok");     // memory keeps nothing beyond the process
+});
