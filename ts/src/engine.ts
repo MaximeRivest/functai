@@ -385,7 +385,19 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
   }
 }
 
-async function runTool(tools: readonly Tool[], call: { name: string; input?: unknown }, errors: string): Promise<string> {
+/** A promise, or Cancelled once the signal aborts (whichever comes first): a stopped call never waits on code that does not watch it. */
+function untilAborted<T>(p: PromiseLike<T> | T, signal: AbortSignal | undefined): Promise<T> {
+  if (!signal) return Promise.resolve(p);
+  if (signal.aborted) return Promise.reject(new Cancelled());
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(new Cancelled());
+    signal.addEventListener("abort", stop, { once: true });
+    Promise.resolve(p).then((v) => { signal.removeEventListener("abort", stop); resolve(v); },
+      (e) => { signal.removeEventListener("abort", stop); reject(e); });
+  });
+}
+
+async function runTool(tools: readonly Tool[], call: { name: string; input?: unknown }, errors: string, signal?: AbortSignal): Promise<string> {
   const tool = tools.find((t) => t.name === call.name);
   if (!tool) {
     if (errors === "raise") throw new Error(`the model called unknown tool ${JSON.stringify(call.name)}`);
@@ -393,7 +405,7 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
   }
   let out: unknown;
   try {
-    out = await tool.run(call.input ?? {});
+    out = await untilAborted(tool.run(call.input ?? {}), signal);
   } catch (err) {
     if (errors === "raise" || err instanceof Cancelled || (err as { code?: unknown })?.code === "turn-waiting") throw err;
     const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
@@ -435,7 +447,7 @@ async function oneTool(job: Job, asked: { id: string; name: string; input?: unkn
         run?.toolStarted(current, { ...approval, input });
       }
       stopped(job);
-      output = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors));
+      output = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors, current.signal));
       // the result as the model is shown it; a turn resumed later reuses it, hooks and all
       output = await plugins.toolResult(job.plugins, current, approval, input, output);
       run?.toolDone(current, approval, output);

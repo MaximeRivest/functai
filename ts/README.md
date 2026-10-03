@@ -109,20 +109,37 @@ p.answer;       // 15
   required input, its value alone is the call: `summarize("…")`.
 - **The reply cache**: `cacheReplies: true` answers an identical request
   (model, messages, every setting sent) with the reply it got before,
-  without a call; any store with `get`, `set` and `delete` (a `Map`,
-  Redis, …) works instead of memory, and is given plain JSON.
-  `clearCache()` empties the memory one. Unreadable replies are not kept.
-  Off by default: it answers identical requests identically, samples
-  included.
+  without a call, from this process's memory; `cacheReplies: "disk"` (or a
+  folder or `.sqlite` path) keeps replies in the SQLite file Python, R and
+  Julia use too, so a long run interrupted and started again sends only what
+  has no kept reply. Any store with `get` and `set` (a `Map`, Redis, …)
+  works instead. Only a reply that was read is kept; while one call asks the
+  model, another call of the same request waits for its reply (across
+  processes too, on disk). `replicate: n` asks for the n-th independent
+  answer to the same request. A call whose `logContent` drops a field never
+  reaches the disk. `clearCache()` empties memory, `clearCache("disk")` the file.
 - **Many inputs**: `await mood.map(reviews, { concurrency: 8 })` gives
   every answer, in order, 8 calls at a time; it rejects with the first
-  failure and starts no more. (`evaluate` keeps going and scores a failure 0.)
+  failure and starts no more. `mapSettled` goes on past a failure and gives
+  each row's outcome, as `Promise.allSettled` does. Both show a progress line
+  in a terminal (`progress: false` turns it off). (`evaluate` keeps going and
+  scores a failure 0.)
 - **Settings**: `lm`, `temperature`, `maxTokens`, `adapter` (`"xml"`, the
   default; `"chat"`; `"json"`), `module: "cot"` (reasoning first),
   `tools`, `retries`, … on the function, in `configure(...)`, in
   `withSettings({...}, () => ...)` for a block of code, or on one call.
   `fn.using({...})` is a copy with other settings.
-- `fn.render(...)` is the exact request, without sending it.
+- `await fn.render(...)` is the exact request, without sending it (plugins
+  shape it as they would the call). `inspectHistory(n)` gives the last
+  requests this process sent, `phistory()` the same as readable text.
+- **Escalation**: `escalateTo: "gpt-4.1"` (a model, or another AI
+  function) answers instead when the first model is less sure than
+  `escalateBelow` (default 0.9). The first model must measure its
+  confidence (TypeSafe's Jev, a baked model); the record says `escalated`.
+- **Signing in**: `await login("claude")` (or `"chatgpt"`, `"copilot"`,
+  `"openrouter"`, or `login("groq", { key })`) saves a login in lm15's
+  credentials file, which every language shares: a login made in Python is
+  used here. `await logins()` lists what you can use; `logout(...)`.
   `fn.version` names what the function sends besides its inputs.
 
 ## Tools
@@ -137,6 +154,19 @@ await support("Where is my order A-1042?");
 ```
 
 The model calls tools until it answers (at most `maxSteps`, default 8).
+
+**Tools that ask first.** A tool says what it does: `effects: "reads"` or
+`"changes"` (left out: unknown, which counts as `"changes"`). The `approve`
+setting (on a function, a call, `configure`, a conversation) decides which
+tool calls a person is asked about: a function asked at once (`(a) =>
+true`, `false`, or a reason to refuse), or a rule (`"changes"`, `"all"`, or
+tool names and paths like `"support/refund"`). A refusal is an answer the
+model sees ("The person did not allow this call. Reason: …"). Who answers a
+rule: on a stream, `s.approve()` or `s.deny(reason)`; in a conversation, the
+turn waits, saved (the call rejects with `Waiting`), and any process that
+opens the conversation answers with `turn.approve()`, after which it goes
+on without paying for a model answer twice or running a tool twice. A plain
+call has nobody to ask, and refuses (`approval-required`) before the tool runs.
 
 ## Your code around AI functions
 
@@ -277,14 +307,19 @@ Columns named like the inputs are the inputs; columns named like the
 outputs are the right answers (or `expected: "category"`). Rows are typed:
 a row missing an input, or an `expected` column the rows lack, is a
 compile error. The range is a
-95% interval (Wilson's for right-or-wrong).
+95% interval (Wilson's for right-or-wrong). `compare(before, after)`
+compares two evaluations of the same rows row by row: the difference, its
+95% interval, and how many rows got better or worse. `evaluate` takes
+modules and served programs (`remote`) too.
 
 ## Making it better
 
 ```ts
-import { labeledFewShot, bootstrapFewShot, gepa } from "functai";
+import { labeledFewShot, bootstrapFewShot, randomSearch, instructionSearch, gepa } from "functai";
 
 const taught = labeledFewShot(mood, rows, { k: 8 });            // rows become worked examples
+const { fn: picked } = await randomSearch(mood, rows);          // several sets of examples, the best kept
+const { fn: written } = await instructionSearch(mood, rows);    // instructions a model proposes, searched
 const better = await bootstrapFewShot(mood, rows, { teacher: "gpt-4.1" });   // runs that were right become examples
 const { fn: learned, trials } = await gepa(mood, rows, { teacher: "gpt-6-sol" });   // the instruction, rewritten from mistakes
 ```
@@ -345,14 +380,103 @@ AI functions by key). `describeSaved("mood/")` says what a saved program (an AI
 function or a module, in any language) takes and gives, without running
 anything.
 
+## Conversations
+
+```ts
+const chat = tutor.conversation("alex", { store: "tutoring/" });   // the same line tomorrow reopens it
+await chat("Hi, I'm Alex.");                                      // one turn: called like the function
+await chat("What is my name?");                                   // shown the turns before it
+const [first] = await chat.turns();
+await chat.continueFrom(first!)("Start again");                   // a branch: nothing is ever deleted
+```
+
+A conversation's turns remember each other; the function itself is
+unchanged. Turns are kept in a store: this process's memory (the
+default), a folder (`store: "folder/"`, the same files Python, R and Julia
+read and write, locked across processes), or your own (`append` and
+`read`). `context: lastTurns(10, { without: ["document"] })` shows fewer
+earlier turns. Each turn is recorded before the model is asked
+(`(await chat.stream(x).turn).id`), two sends at once queue (or `sends:
+"refuse"`, `"branch"`), the same `requestId` twice is one turn, and
+`turn.stop()` stops a turn wherever it runs. Each call records what it was
+shown (its `saw`), so a rated turn is asked again exactly as it was. A
+module's conversation gives its code the turns so far with `earlier()`;
+the AI functions it calls remember nothing unless `remembers: [[answer,
+remember("conversation")]]` says so.
+
+## Plugins
+
+```ts
+const careful = new Plugin("careful", { version: "1.0.0" })
+  .beforeCall(() => ({ sections: ["Cite the file you read."] }))
+  .toolCall((tool) => (tool.name === "delete_file" ? { block: "not here" } : undefined));
+configure({ plugins: [careful] });
+```
+
+Seven hooks (`turnStart`, `context`, `beforeCall`, `request`, `toolCall`,
+`toolResult`, `turnEnd`), each returning a change as data (or nothing).
+Every change is recorded in the call's record. The program's own plugins
+run first and the host's last. A plugin that fails stops the call (a
+`toolCall` handler that fails blocks the tool). `approve` is itself a
+plugin. Two come built in: `compaction({ keep: 20 })` folds old turns into
+a summary, and `delegate(program)` makes another program a tool with a
+conversation of its own.
+
+## Serving
+
+```ts
+await serve(team, { port: 8080, keys: "keys.txt" });              // Node's HTTP server
+export default { fetch: new Service(team, { keys }).fetch };      // Deno, Bun, Workers, any fetch handler
+const far = await remote("https://example.org/team", { key });    // a served program, used like a local one
+```
+
+The routes are the same as Python's: the interface, calls, streams (Server-Sent
+Events), conversations and approvals. A caller sees only the program's boundary
+(the `outside` view: its answer as it is written, never a helper's answer or a
+tool's input). Without keys it listens on this machine only. A `remote`
+program binds and checks its inputs here, is logged here, and the server's
+record names this call as its parent: one call tree across two logs.
+
+## Learning from conversations, and baking
+
+`rated(fn).rows` keeps, for a rated turn, the earlier turns it was shown
+(`earlier`, `conversation`); `evaluate` asks such a row again with them,
+and the optimizers measure with it but never make it a worked example.
+`split(rows)` keeps each conversation on one side. `pruneCalls({
+olderThan: "90d" })` deletes old days of the log and keeps what ratings
+need. `quotesFound(text, quotes)` checks a judge's evidence.
+
+`bakeExamples(fn, rows)` writes the training conversations any trainer
+reads (`exportExamples` as JSON lines), byte for byte what Python writes.
+`baked(folder, { url })` runs a student trained anywhere (Python's
+`functai.bake`, TRL, a service) through an OpenAI-compatible server, laid
+out exactly as it was trained.
+
+## Where TypeScript differs, stated
+
+- **Results of a store are promises.** `chat.turns()`, `chat.head()` and
+  `turn.saw()` are awaited (a store may be a database across the network),
+  and so is `fn.render()`.
+- **A folder store locks with the system's `flock` command** (util-linux,
+  as lm15 does): Node cannot call `flock` itself. Every lock costs a few
+  milliseconds. Where there is no `flock` command (macOS without
+  util-linux, Windows), a lock folder excludes this package's own processes
+  only, not Python's, R's or Julia's, and it warns once.
+- **A tool still running when its call is stopped keeps running.** The
+  call ends `Cancelled` at once, but JavaScript cannot stop a function from
+  outside; a tool given `signal`-aware code stops itself.
+- **The disk reply cache needs `node:sqlite`** (Node 22.13+, Deno). In a
+  browser, replies are cached in memory, conversations kept in memory or in
+  your own store, and a program served through `Service.fetch`.
+
 ## Not here yet
 
-Compared with the Python package: baking (training your own weights),
-the instruction-search and random-search optimizers (`gepa` is here),
-stateful memory (every call records what it saw: `[]`), escalation to a bigger model, reading tables other than
-arrays of objects, signing in with a subscription (set a key), and loading
-programs with code (only AI functions travel between languages). The
-[home page](https://maximerivest.github.io/functai/#what-each-language-has) compares the four languages;
+Compared with Python: training models itself (`bakeExamples` writes what
+any trainer reads, and `baked()` runs the result), reading tables other
+than arrays of objects, loading programs with code of their own (only AI
+functions travel between languages), and Python's `verify`, `check` and
+`runs`. The [home page](https://maximerivest.github.io/functai/#what-each-language-has)
+compares the four languages;
 [design/01-many-languages.md](https://github.com/MaximeRivest/functai/blob/master/design/01-many-languages.md)
 is the plan.
 

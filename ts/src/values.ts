@@ -170,6 +170,29 @@ export function copyData<T>(value: T): T {
   return walk(value) as T;
 }
 
+/**
+ * A value as the contract's canonical JSON reads it (calls.md, "Canonical
+ * JSON"): an lm15 `RawNumber` (a number kept as written, `0.0`) becomes the
+ * number it is (`0`, as ECMAScript writes it; an integer past 2^53, a
+ * `bigint`, its digits kept). What lmcc hashes, so a key is every language's.
+ */
+export function canonicalData<T>(value: T): T {
+  const walk = (v: unknown): unknown => {
+    if (v instanceof RawNumber) {
+      const n = Number(v.raw);
+      return /^-?\d+$/.test(v.raw) && !Number.isSafeInteger(n) ? BigInt(v.raw) : n;
+    }
+    if (Array.isArray(v)) return v.map(walk);
+    if (v !== null && typeof v === "object" && isPlain(v)) {
+      const out: Rec = {};
+      for (const k of lmcc.memberNames(v)) lmcc.setMember(out, k, walk((v as Rec)[k]));
+      return out;
+    }
+    return v;
+  };
+  return walk(value) as T;
+}
+
 /** JSON text as a record's reader expects it: lmcc's parser, which keeps members in the order written (JSON.parse does not). */
 export function parseData(text: string): unknown {
   return lmcc.parseJson(text);

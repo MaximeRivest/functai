@@ -23,6 +23,7 @@ import * as bridge from "lmcc/lm15";
 import { iso, warnOnce } from "./calllog.ts";
 import { Cancelled } from "./errors.ts";
 import { builtin, env, pid } from "./host.ts";
+import { canonicalData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -60,7 +61,7 @@ export type CacheSetting = boolean | "memory" | "disk" | string | ReplyCache | n
  * request>, "replicate": n}`, the same in every language.
  */
 export function replyKey(request: Request, replicate = 0): string {
-  return lmcc.sha256({ functai_reply: FORMAT, request: Request.toJSON(request), replicate: Math.trunc(replicate || 0) } as unknown as lmcc.Json);
+  return lmcc.sha256({ functai_reply: FORMAT, request: canonicalData(Request.toJSON(request)), replicate: Math.trunc(replicate || 0) } as unknown as lmcc.Json);
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -242,7 +243,7 @@ export class DiskReplies implements ReplyCache {
     const model = typeof reply["model"] === "string" ? reply["model"] : null;
     this.transaction(() => {
       this.db.prepare("INSERT OR REPLACE INTO replies (key, format, created, model, response) VALUES (?, ?, ?, ?, ?)")
-        .run(key, FORMAT, iso(Date.now()), model, lmcc.canonicalJson(reply));
+        .run(key, FORMAT, iso(Date.now()), model, lmcc.canonicalJson(canonicalData(reply) as lmcc.Json));
       this.db.prepare("DELETE FROM claims WHERE key = ? AND owner = ?").run(key, holderName());
     });
   }

@@ -30,10 +30,10 @@ export { Prediction, StepLimit } from "./engine.ts";
 export { Cancelled, FunctAIError, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError, BakeError,
   type Approval } from "./errors.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
-export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
+export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
   ToolResultHook, TurnEndHook } from "./plugins.ts";
 export { compaction, delegate } from "./builtins.ts";
-export { Conversation, Turn, TurnStream, allTurns, lastTurns, remember, earlier, type ContextRule, type Memory, type ConversationOptions,
+export { Conversation, Turn, TurnStream, type ConversationProgram, allTurns, lastTurns, remember, earlier, type ContextRule, type Memory, type ConversationOptions,
   type TurnOptions } from "./conversations.ts";
 export { MemoryConversations, FolderStore, FolderEvents, type ConversationStore } from "./stores.ts";
 export { View as EventView, outside, type ViewName } from "./views.ts";
@@ -50,7 +50,7 @@ export {
   type JournalChoice, type ReceiverLayer,
   type FailedEvent, type FollowResult, type KeptFields, type LogState, type Position, type ProgramInfo, type ReadAnswer,
   type RequestEvent, type RetryEvent, type SawEntry, type StartedEvent, type StoreCode, type StreamEvent, type TextEvent,
-  type ThinkingEvent, type ToolCallEvent, type ToolResultEvent,
+  type ThinkingEvent, type ToolCallEvent, type ToolResultEvent, type ApprovalEvent, type ApprovedEvent,
 } from "./events.ts";
 export { JournalError, flush, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
 export { sawOf, keepsSaw, SawUnknown, type SawCode } from "./saw.ts";

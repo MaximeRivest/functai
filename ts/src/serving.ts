@@ -48,12 +48,19 @@ export interface Servable {
   readonly name: string;
   readonly interface: Interface;
   readonly version: string;
-  stream(input: unknown, options?: Rec): Stream;
-  conversation(id?: string | null, options?: ConversationOptions): Conversation;
-  using(settings: Settings): Servable;
-  /** @internal */
-  _programInfo(): calllog.Program;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  stream(input: any, options?: any): PromiseLike<unknown>;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  conversation(id?: string | null, options?: any): unknown;
+  using(settings: Settings): unknown;
 }
+
+/** What the service uses of a program (every `ai()` function and `module()` has it). */
+type Program = {
+  readonly name: string; readonly interface: Interface; readonly version: string;
+  stream(input: unknown, options?: Rec): Stream; conversation(id?: string | null, options?: ConversationOptions): Conversation;
+  using(settings: Settings): Program; _programInfo(): calllog.Program;
+};
 
 /** Options of a service. */
 export interface ServeOptions {
@@ -138,15 +145,16 @@ function eventStream(events: AsyncIterable<Rec>, onCancel?: () => void): Respons
  * runs Node's HTTP server around it.
  */
 export class Service {
-  readonly program: Servable;
+  readonly program: Program;
   readonly keys: readonly string[];
   readonly store: ConversationOptions["store"];
   readonly lm: string | null;
   readonly approvals: "owner" | "caller";
   private readonly conversations = new Map<string, Conversation>();
 
-  constructor(program: Servable, opts: ServeOptions = {}) {
-    if (!program || typeof program.stream !== "function" || !program.interface) throw new TypeError("serve an AI function or a module");
+  constructor(servable: Servable, opts: ServeOptions = {}) {
+    const program = servable as unknown as Program;
+    if (!program || typeof program.stream !== "function" || !program.interface || typeof program._programInfo !== "function") throw new TypeError("serve an AI function or a module");
     const opaque = [...program.interface.inputs, ...program.interface.outputs].filter((f) => f.opaque).map((f) => f.name);
     if (opaque.length) {
       throw new ServeError("serve-opaque", `${program.name} cannot be served: ${opaque.join(", ")} may hold values with no JSON form, and only JSON crosses HTTP. Give ${opaque.length > 1 ? "them" : "it"} a type`);

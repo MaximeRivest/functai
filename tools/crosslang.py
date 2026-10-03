@@ -14,12 +14,13 @@ between them, on real output of both:
    function and rates one into one folder. Every record passes the
    contract's schemas, and every language's `rated` gives the same rows,
    including the others' calls and ratings.
-4. Stages 1.2 to 5, between the languages that have them (Python, R and
-   Julia): a conversation Python starts in a folder store, R and Julia each
-   continue one and Python reads back (and `rated` gives their turns'
-   earlier turns); a reply Python keeps in the disk cache answers R's and
-   Julia's identical request with no model call; a program Python serves, R
-   and Julia call with `remote`, one call tree across the languages' logs.
+4. Stages 1.2 to 5, between the four languages: a conversation Python
+   starts in a folder store, TypeScript, R and Julia each continue one and
+   Python reads back (and `rated` gives their turns' earlier turns); a
+   reply Python keeps in the disk cache answers TypeScript's, R's and
+   Julia's identical request with no model call; a program Python serves,
+   TypeScript, R and Julia call with `remote`, and one TypeScript serves,
+   Python calls: one call tree across the languages' logs.
 
 R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
 julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
@@ -138,6 +139,9 @@ def main() -> int:
         chat_r = shop.tutor.conversation("lesson-r", store=str(work / "conversations"))
         chat_r("Hi, I'm Alex.")
         chat_r("What is 1/2 + 1/3?")
+        chat_ts = shop.tutor.conversation("lesson-ts", store=str(work / "conversations"))
+        chat_ts("Hi, I'm Alex.")
+        chat_ts("What is 1/2 + 1/3?")
     cache = work / "replies.sqlite"
     with functai.configure(lm="gpt-4.1-mini", client=router, cache_replies=str(cache)):
         shop.mood("Kept for later.")
@@ -196,13 +200,26 @@ def main() -> int:
         assert len(rows) == 1 and [e["inputs"]["message"] for e in rows[0]["earlier"]] == ["Hi, I'm Alex.", "What is 1/2 + 1/3?"], rows
     print("  ok    a conversation Python started in a folder, R continued; Python reads R's turn and what it saw, "
           "and rated gives its earlier turns")
+    with functai.configure(log_calls=str(log)):
+        turns = shop.tutor.conversation("lesson-ts", store=str(work / "conversations")).turns
+        assert [t.state for t in turns] == ["done", "done", "done"], turns
+        assert [t.id for t in turns[2].saw] == [turns[0].id, turns[1].id], turns[2].saw
+        assert turns[2].result == "typescript 5", turns[2].result
+        rows = [r for r in functai.rated(shop.tutor).collect().to_dicts() if r["conversation"] == "lesson-ts"]
+        assert len(rows) == 1 and [e["inputs"]["message"] for e in rows[0]["earlier"]] == ["Hi, I'm Alex.", "What is 1/2 + 1/3?"], rows
+    print("  ok    a conversation Python started in a folder, TypeScript continued; Python reads TypeScript's turn and what it "
+          "saw, and rated gives its earlier turns")
     calls_, _ = calllog.read(log)
     remote_calls = {c["id"]: c for c in calls_ if (c.get("program") or {}).get("kind") == "remote"}
     served = [c for c in calls_ if c.get("parent") in remote_calls]
     assert remote_calls and served and served[0]["process"]["language"] == "python", (remote_calls, served)
-    assert {c["process"]["language"] for c in remote_calls.values()} == {"r", "julia"}, remote_calls
-    assert len(served) == 2 and all(c["process"]["language"] == "python" for c in served), served
-    print("  ok    a program Python serves, R and Julia call with remote: one call tree across the languages' logs")
+    assert {c["process"]["language"] for c in remote_calls.values()} == {"python", "typescript", "r", "julia"}, remote_calls
+    from_python = [c for c in served if c["process"]["language"] == "python"]
+    assert len(from_python) == 3, served                           # TypeScript's, R's and Julia's calls of Python's server
+    by_ts = [c for c in served if c["process"]["language"] == "typescript"]
+    assert len(by_ts) == 1 and remote_calls[by_ts[0]["parent"]]["process"]["language"] == "python", served
+    print("  ok    a program Python serves, TypeScript, R and Julia call with remote, and one TypeScript serves, Python "
+          "calls: one call tree across the languages' logs")
 
     # 3c. every record passes the schemas; Python's rated sees the other languages' calls and ratings
     s = schemas()

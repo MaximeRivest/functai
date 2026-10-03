@@ -29,6 +29,12 @@ for (const [name, c] of cases("replies")) {
   });
 }
 
+test("the reply key reads a number lm15 keeps as written as the number it is (0.0 is 0, as Python's canonical JSON writes it)", () => {
+  const plain = Request.fromJSON({ model: "m", messages: [{ role: "user", parts: [{ type: "text", text: "x" }] }], config: { temperature: 0 } });
+  const raw = Request.fromJSON(lmcc.parseJson('{"model": "m", "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}], "config": {"temperature": 0.0}}') as never);
+  assert.equal(replyKey(raw), replyKey(plain));
+});
+
 for (const [name, c] of cases("conversations")) {
   test(`conversations case ${name}`, async () => {
     const before = clock.now;

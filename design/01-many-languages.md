@@ -20,6 +20,13 @@ examples and calls students trained elsewhere; it does not train. What R
 does differently because it runs one thing at a time is in
 `r/README.md`,* Where R differs, stated*.*
 
+*2026-10-03: TypeScript passes them too (every case Python's harness
+reads, the `events/` cases and `saw/` of kind `shown`), and is checked
+against Python on conversations, the disk reply cache and serving, both
+ways (TypeScript serves, Python calls). It writes training examples and
+calls students trained elsewhere; it does not train. What it does
+differently is in `ts/README.md`,* Where TypeScript differs, stated*.*
+
 ## What we want
 
 FunctAI should exist natively in **Python, TypeScript/JavaScript, R and
@@ -278,9 +285,9 @@ runnable in every language.
    2026-09-27: functions, tools, streaming, the call log, evaluation,
    `labeledFewShot` and `bootstrapFewShot`, loading what Python saved.
    It passes every case, `tools/crosslang.py` checks it against Python,
-   and it answered live through OpenAI, Anthropic and Gemini. Not yet:
-   `InstructionSearch`, stateful memory, escalation, the reply cache,
-   baking. **To publish it**, lmcc's TypeScript kernel goes to npm first
+   and it answered live through OpenAI, Anthropic and Gemini. Stages 1.2
+   to 5, plugins and baking's examples on 2026-10-03 (above); not yet:
+   training. **To publish it**, lmcc's TypeScript kernel goes to npm first
    (and lmcc 0.8.4 to PyPI, so both languages run the same kernel).
 3. **lmcc for Julia** (done, lmcc D-56), then **FunctAI.jl**: 0.1.0 on
    2026-09-27, below.

@@ -4,6 +4,65 @@
 
 ## 0.1.0 (unreleased)
 
+Stages 1.2 to 5, plugins and baking's language-neutral half, as Python,
+R and Julia have them (design/10, 11 and 12): every case of `replies/`,
+`conversations/`, `tools/`, `views/`, `context/`, `plugins/`, `baked/` and
+`saw/` of kind `shown` passes, and `tools/crosslang.py` checks
+conversations, the disk reply cache and serving against Python.
+
+- **The reply cache** (`contract/replies.md`): `cacheReplies: "disk"` (or a
+  folder or `.sqlite` path) keeps replies in the SQLite file every language
+  shares (`node:sqlite`); `replicate: n`; one flight per request, in the
+  process and across processes (a claim with a lease); only a reply that was
+  read is kept; a call whose `logContent` drops a field never reaches the
+  disk. Its key is now the contract's (breaking: a store of your own holds
+  replies under new keys, so it fills again once).
+- `fn.mapSettled` (a long run goes on past a failure), a progress line for
+  `map` and `evaluate` in a terminal (`progress`), `quotesFound`,
+  `pruneCalls` (ratings outlive a cleanup), and the log's top-level kept
+  files are read; for one call id, the record of the highest `writer`.
+- **Conversations** (`fn.conversation(id, { store })`, `module.conversation`):
+  turns recorded before the call, branches (`continueFrom`), what each turn
+  is shown (`allTurns`, `lastTurns`, `without`), `sends` (queue, refuse,
+  branch), `requestId`, leases, stopping from any process, merging,
+  `render`; stores in memory, in a folder (`FolderStore`: the files Python,
+  R and Julia use, locked with `flock`), or your own. A module's code reads
+  `earlier()`; helpers remember what `remembers` says.
+- **Tools that ask first**: `tool(name, { effects })`, the `approve`
+  setting (a function, or a rule), `s.approve()` / `s.deny()` on a stream,
+  a turn that waits (`Waiting`) and resumes in any process, replaying the
+  model replies and tool results it kept; a tool that may have run is never
+  run again on its own (`turn.resume({ results })`, `{ rerun }`).
+  `approval` and `approved` events; `invocation` on tool events and on the
+  calls a tool makes.
+- **Plugins** (`Plugin`, seven hooks, changes as data in the record's
+  `changes`, `replayable: false` when a request was replaced), with
+  `compaction()` and `delegate()` built from the public hooks.
+- **Views and serving**: the `outside` view (`s.events({ view: "outside" })`,
+  `answerFrom` for a module), `Service` (a `fetch` handler) and `serve()`
+  (Node's server) with the contract's routes, and `remote(url)`: a served
+  program used like a local one, one call tree across two logs.
+- **Learning from conversations**: `rated` gives `earlier`, `conversation`
+  (and `helpers`), and counts `noContext`; `evaluate` asks such rows again
+  with their earlier turns (the call's `saw` is `saw_of` the rated call);
+  the few-shot optimizers never make them worked examples; `split`.
+- Records keep `steps` (a call that ran tools or was a conversation's turn),
+  `conversation`, `invocation`, `writer`, `sections`, `changes`,
+  `escalated` and `probabilities`.
+- **Escalation** (`escalateTo`, `escalateBelow`), `Prediction.probabilities`
+  and `.confidence`.
+- **Baking's language-neutral half**: `bakeExamples`, `exportExamples`,
+  `bakeEntry`, and `baked(folder, { url })`: a student trained anywhere,
+  called as it was trained.
+- `randomSearch`, `instructionSearch`, `compare`, `inspectHistory`,
+  `phistory`, `login` / `logins` / `logout` (lm15's shared credentials:
+  a saved login is used for its provider's calls).
+- `evaluate` takes modules and served programs.
+- **`fn.render()` returns a promise** (breaking): the plugins around a call
+  and its conversation's store may be asynchronous.
+- A stopped call no longer waits for a tool that never returns: it ends
+  `Cancelled` (the tool may keep running).
+
 - **A reply cut off at the token limit** (`contract/functions.md`): it is sent again
   with twice `maxTokens` only when one was set. Without one it already had the
   model's whole limit (lm15's default, or the provider's own), and the old re-send
