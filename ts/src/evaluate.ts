@@ -8,6 +8,10 @@ import { newId } from "./calllog.ts";
 import type { AnyAIFunction as AIFunction, Expected, Row } from "./fn.ts";
 import { withSettings } from "./settings.ts";
 import { normalize } from "./text.ts";
+import { replaying } from "./conversations.ts";
+import { Progress, showProgress } from "./progress.ts";
+import type { Interface } from "./interface.ts";
+import type { Stream } from "./stream.ts";
 import { getOwn } from "./values.ts";
 
 type Rec = Record<string, unknown>;
@@ -16,7 +20,7 @@ const Z = 1.959964;
 const T975 = [12.706, 4.303, 3.182, 2.776, 2.571, 2.447, 2.365, 2.306, 2.262, 2.228, 2.201, 2.179, 2.160, 2.145,
   2.131, 2.120, 2.110, 2.101, 2.093, 2.086, 2.080, 2.074, 2.069, 2.064, 2.060, 2.056, 2.052, 2.048, 2.045, 2.042];
 
-function t975(df: number): number {
+export function t975(df: number): number {
   if (df <= T975.length) return T975[df - 1]!;
   return Z + (Z ** 3 + Z) / (4 * df) + (5 * Z ** 5 + 16 * Z ** 3 + 3 * Z) / (96 * df ** 2);
 }
@@ -139,24 +143,44 @@ export interface EvaluateOptions<F = AIFunction, R = Rec> {
   metric?: Metric<R> | Record<string, Metric<R>>;
   /** Calls in flight at once (default 8). */
   concurrency?: number;
+  /** A line on stderr, updated as rows finish (default: on in a terminal). */
+  progress?: boolean;
 }
+
+/** What `evaluate` runs: an AI function, a module, or a program served elsewhere (`remote`). */
+type Evaluable = AIFunction | { readonly name: string; readonly interface: Interface; stream(input: unknown, options?: Rec): Stream };
 
 /**
  * Run `fn` on every row and score it. A row's inputs are its columns named
  * like the function's inputs; the right answers are the columns named like
  * its outputs (or `expected`). Calls are logged with `caller.evaluation`.
  */
-export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: EvaluateOptions<F, R> = {}): Promise<Evaluation> {
+export async function evaluate<F extends Evaluable, R extends Rec>(fn: F, rows: readonly (F extends AIFunction ? R & Row<F> : R)[],
+  opts: EvaluateOptions<F, R> = {}): Promise<Evaluation> {
   const run = newId();
-  const inputNames = fn.definition.inputs.map((f) => f.name);
-  const outputNames = fn.definition.outputs.map((f) => f.name);
-  const mapping: Record<string, string> = typeof opts.expected === "string" ? { [fn.answerName]: opts.expected }
+  const iface = fn.interface;
+  const inputNames = iface.inputs.map((f) => f.name);
+  const outputNames = iface.outputs.map((f) => f.name);
+  const answerName = outputNames[outputNames.length - 1]!;
+  const isAi = typeof (fn as { predict?: unknown }).predict === "function";
+  /** One row's call: every output, and the call's id. A row from a conversation is asked with its earlier turns. */
+  const ask = (row: Rec, inputs: Rec): Promise<{ outputs: Rec; callId: string | null; tokens: number }> => replaying(row, fn, async () => {
+    if (isAi) {
+      const pred = await (fn as AIFunction).predict(inputs as never);
+      return { outputs: pred.outputs as Rec, callId: pred.callId, tokens: pred.usage["totalTokens"] ?? 0 };
+    }
+    const s = (fn as { stream(i: unknown): Stream }).stream(inputs);
+    const value = await s.result;
+    return { outputs: outputNames.length === 1 ? { [answerName]: value } : value as Rec, callId: s.callId, tokens: 0 };
+  });
+  const mapping: Record<string, string> = typeof opts.expected === "string" ? { [answerName]: opts.expected }
     : (opts.expected as Record<string, string> | undefined) ?? Object.fromEntries(outputNames.filter((n) => rows.some((r) => Object.hasOwn(r, n))).map((n) => [n, n]));
   const custom = typeof opts.metric === "function" ? { [opts.metric.name || "metric"]: opts.metric } : opts.metric;
   if (!custom && !Object.keys(mapping).length) {
     throw new Error(`evaluate: the rows have no column for any output (${outputNames.join(", ")}); pass expected or a metric`);
   }
   const results: RowResult[] = new Array(rows.length);
+  const meter = showProgress(opts.progress) && rows.length ? new Progress(rows.length, fn.name) : null;
   let next = 0;
   const worker = async () => {
     for (;;) {
@@ -165,8 +189,8 @@ export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, ro
       const row = rows[i]!;
       const inputs = Object.fromEntries(inputNames.filter((n) => Object.hasOwn(row, n)).map((n) => [n, row[n]]));
       try {
-        const pred = await withSettings({ caller: { evaluation: run } }, () => fn.predict(inputs));
-        const outputs = pred.outputs as Rec;
+        const got = await withSettings({ caller: { evaluation: run } }, () => ask(row, inputs));
+        const outputs = got.outputs;
         let scores: Record<string, number>;
         if (custom) {
           scores = {};
@@ -175,8 +199,10 @@ export async function evaluate<F extends AIFunction, R extends Row<F>>(fn: F, ro
           const answers = Object.fromEntries(Object.entries(mapping).map(([out, col]) => [out, getOwn(row, col)]));
           scores = exactMatch(answers, Object.fromEntries(Object.keys(mapping).map((k) => [k, getOwn(outputs, k)])));
         }
-        results[i] = { row, outputs, scores, error: null, callId: pred.callId };
+        results[i] = { row, outputs, scores, error: null, callId: got.callId };
+        meter?.step(false, got.tokens);
       } catch (err) {
+        meter?.step(true, 0);
         const e = err as { name?: unknown; message?: unknown } | null | undefined;     // a call may fail with anything, undefined included
         const said = `${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
         results[i] = { row, outputs: null, scores: {}, error: said, callId: null };

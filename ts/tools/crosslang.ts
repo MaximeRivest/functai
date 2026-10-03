@@ -24,7 +24,7 @@ for (const [name, want] of Object.entries(python)) {
   const fn = load(join(work, "saved", name));
   assert.equal(fn.version, want.version, `${name}: version`);
   assert.equal(fn.signatureId, want.signature, `${name}: signature`);
-  const mine = lmcc.canonicalJson(JSON.parse(stringifyJson(Request.toJSON(fn.render(want.inputs)))));
+  const mine = lmcc.canonicalJson(JSON.parse(stringifyJson(Request.toJSON(await fn.render(want.inputs)))));
   assert.equal(mine, lmcc.canonicalJson(want.request as lmcc.Json), `${name}: the request`);
   console.log(`  ok    ${name}: saved in Python, loaded here, same version and same request`);
 }

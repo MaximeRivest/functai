@@ -80,14 +80,26 @@ export type StartedEvent = Envelope<"started"> & {
   readonly content: boolean;
   readonly omitted?: { readonly inputs: readonly string[]; readonly outputs: readonly string[] };
   readonly saw: readonly SawEntry[];
+  /** A call made while a tool ran: that tool call's number (contract/tools.md). */
+  readonly invocation?: number | null;
 };
 /** A request to a model begins: it empties the call's fields (law 3). Its `request` events are the call record's exchanges (law 8). */
 export type RequestEvent = Envelope<"request"> & { readonly request: number; readonly model: string | null };
 /** A piece of an output's text, exact (law 2). */
 export type TextEvent = Envelope<"text"> & { readonly field: string; readonly answer: boolean; readonly text: string };
 export type ThinkingEvent = Envelope<"thinking"> & { readonly text: string };
-export type ToolCallEvent = Envelope<"tool_call"> & { readonly id: string; readonly name: string; readonly input?: unknown; readonly content?: false };
-export type ToolResultEvent = Envelope<"tool_result"> & { readonly id: string; readonly name: string; readonly output?: string; readonly content?: false };
+export type ToolCallEvent = Envelope<"tool_call"> & { readonly id: string; readonly name: string; readonly input?: unknown; readonly invocation?: number; readonly content?: false };
+export type ToolResultEvent = Envelope<"tool_result"> & { readonly id: string; readonly name: string; readonly output?: string; readonly invocation?: number; readonly content?: false };
+/** A person is asked whether a tool call may run (contract/tools.md). */
+export type ApprovalEvent = Envelope<"approval"> & {
+  readonly id: string; readonly invocation: number; readonly name: string; readonly input?: unknown; readonly effects: string | null;
+  readonly path: string; readonly to: "owner" | "caller"; readonly plugin: string; readonly question?: string | null; readonly content?: false;
+};
+/** The answer to an approval. */
+export type ApprovedEvent = Envelope<"approved"> & {
+  readonly id: string; readonly invocation: number; readonly verdict: "yes" | "no"; readonly by: string | null; readonly reason?: string | null;
+  readonly plugin: string; readonly content?: false;
+};
 /** The model is asked again: empties the call's fields at once. */
 export type RetryEvent = Envelope<"retry"> & { readonly reason?: string; readonly wait: number | null; readonly content?: false };
 export type DoneEvent = Envelope<"done"> & { readonly value?: unknown; readonly content?: false };
@@ -95,18 +107,20 @@ export type FailedEvent = Envelope<"failed"> & { readonly error: ErrorInfo; read
 
 /** An event of a call tree's log (streaming.md, format 2). */
 export type StreamEvent = StartedEvent | RequestEvent | TextEvent | ThinkingEvent | ToolCallEvent | ToolResultEvent
-  | RetryEvent | DoneEvent | FailedEvent;
+  | RetryEvent | DoneEvent | FailedEvent | ApprovalEvent | ApprovedEvent;
 
 /** Any object read as an event: a known kind, or one a later writer added (readers skip what they do not know). */
 export type EventLike = Readonly<Rec> & { readonly kind?: unknown };
 
-const KINDS = new Set(["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed"]);
+const KINDS = new Set(["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed", "approval", "approved"]);
 const ENVELOPE = ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"];
 const KEYS: Record<string, readonly string[]> = {
-  started: ["parent", "root", "program", "inputs", "content", "omitted", "saw"], request: ["request", "model"],
-  text: ["field", "answer", "text"], thinking: ["text"], tool_call: ["id", "name", "input", "content"],
-  tool_result: ["id", "name", "output", "content"], retry: ["reason", "wait", "content"], done: ["value", "content"],
+  started: ["parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"], request: ["request", "model"],
+  text: ["field", "answer", "text"], thinking: ["text"], tool_call: ["id", "name", "input", "content", "invocation"],
+  tool_result: ["id", "name", "output", "content", "invocation"], retry: ["reason", "wait", "content"], done: ["value", "content"],
   failed: ["error", "content"],
+  approval: ["id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"],
+  approved: ["id", "invocation", "verdict", "by", "reason", "plugin", "content"],
 };
 
 /** An event's own position. */
@@ -414,6 +428,13 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
     case "tool_call":
       delete out["input"];
       break;
+    case "approval":
+      delete out["input"];
+      delete out["question"];
+      break;
+    case "approved":
+      delete out["reason"];
+      break;
     case "tool_result":
       delete out["output"];
       break;
@@ -502,6 +523,43 @@ const finishedLog = (log: readonly EventLike[], tree: string) => {
  * (single or batched, each one step), reads. For tests, and for a process
  * that keeps its own logs.
  */
+function appendOne(log: Rec[], writer: number, e: Rec): "kept" | "duplicate" | StoreCode {
+  const tree = e["tree"] as string;
+  const after = (e["after"] ?? null) as Position | null;
+  if (!passes("event", e) || e["functai_event"] !== 2) return "event-malformed";
+  if (after !== null && ((e["seq"] as number) <= after.seq || after.writer > (e["writer"] as number))) return "event-malformed";
+  if (log.length && e["writer"] !== writer) return "event-conflict";
+  const had = log.find((k) => k["seq"] === e["seq"]);
+  if (had) return lmcc.canonicalJson(had as lmcc.Json) === lmcc.canonicalJson(e as lmcc.Json) ? "duplicate" : "event-conflict";
+  if (finishedLog(log, tree)) return "event-after-end";
+  const last = log.length ? positionOf(log[log.length - 1]!) : null;
+  if (!samePosition(after, last)) return (after?.seq ?? 0) > (last?.seq ?? 0) ? "event-gap" : "event-conflict";
+  if (!log.length && (e.kind !== "started" || e["call"] !== tree || e["writer"] !== 1)) return "event-start";
+  log.push(copyData(e));
+  return "kept";
+}
+
+/**
+ * The rules every store keeps (streaming.md, "The rules a store keeps"): one
+ * log's events appended as one step, checked event by event. Returns the
+ * answer, and the log as it is after (null when nothing changes).
+ */
+export function appendRules(log: readonly Rec[], writer: number, events: readonly Readonly<Rec>[]): [AppendAnswer, Rec[] | null] {
+  if (!events.length) return ["duplicate", null];
+  const tree = events[0]!["tree"];
+  const trial = [...log];
+  const answers: string[] = [];
+  for (const e of events) {
+    const answer = e["tree"] !== tree || typeof tree !== "string" ? "event-malformed" : appendOne(trial, writer, e as Rec);
+    if (answer !== "kept" && answer !== "duplicate") return [{ refuses: answer, event: positionOf(e) }, null];
+    answers.push(answer);
+  }
+  return answers.every((a) => a === "duplicate") ? ["duplicate", null] : ["kept", trial];
+}
+
+/** Whether a log is finished: its outermost call's `done` or `failed` is in it. */
+export { finishedLog };
+
 export class MemoryStore implements EventStore {
   private logs = new Map<string, Rec[]>();
   private writers = new Map<string, number>();
@@ -535,34 +593,12 @@ export class MemoryStore implements EventStore {
     return { writer, after: positionOf(log[log.length - 1]!) };
   }
 
-  private one(log: Rec[], writers: Map<string, number>, e: Rec): "kept" | "duplicate" | StoreCode {
-    const tree = e["tree"] as string;
-    const after = (e["after"] ?? null) as Position | null;
-    if (!passes("event", e) || e["functai_event"] !== 2) return "event-malformed";
-    if (after !== null && ((e["seq"] as number) <= after.seq || after.writer > (e["writer"] as number))) return "event-malformed";
-    if (log.length && e["writer"] !== (writers.get(tree) ?? 1)) return "event-conflict";
-    const had = log.find((k) => k["seq"] === e["seq"]);
-    if (had) return lmcc.canonicalJson(had as lmcc.Json) === lmcc.canonicalJson(e as lmcc.Json) ? "duplicate" : "event-conflict";
-    if (finishedLog(log, tree)) return "event-after-end";
-    const last = log.length ? positionOf(log[log.length - 1]!) : null;
-    if (!samePosition(after, last)) return (after?.seq ?? 0) > (last?.seq ?? 0) ? "event-gap" : "event-conflict";
-    if (!log.length && (e.kind !== "started" || e["call"] !== tree || e["writer"] !== 1)) return "event-start";
-    log.push(copyData(e));
-    return "kept";
-  }
-
   appendNow(events: readonly Readonly<Rec>[]): AppendAnswer {
     if (!events.length) return "duplicate";
     const tree = events[0]!["tree"] as string;
-    const trial = [...(this.logs.get(tree) ?? [])];
-    const answers: string[] = [];
-    for (const e of events) {
-      const answer = e["tree"] !== tree || typeof tree !== "string" ? "event-malformed" : this.one(trial, this.writers, e as Rec);
-      if (answer !== "kept" && answer !== "duplicate") return { refuses: answer, event: positionOf(e) };
-      answers.push(answer);
-    }
-    this.logs.set(tree, trial);
-    return answers.every((a) => a === "duplicate") ? "duplicate" : "kept";
+    const [answer, kept] = appendRules(this.logs.get(tree) ?? [], this.writers.get(tree) ?? 1, events);
+    if (kept) this.logs.set(tree, kept);
+    return answer;
   }
 
   readNow(tree: string, after: Position | null): ReadAnswer {

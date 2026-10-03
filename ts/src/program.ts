@@ -6,9 +6,9 @@
  */
 
 import * as calllog from "./calllog.ts";
-import { Call, errorJson, type Program } from "./calllog.ts";
+import { ACTIVE_TURN, Call, errorJson, type Program, type TurnRunLike } from "./calllog.ts";
 import { keptFields, type CallFields } from "./content.ts";
-import { Cancelled } from "./engine.ts";
+import { Cancelled } from "./errors.ts";
 import { receivers, type ReceiverLayer } from "./events.ts";
 import { env } from "./host.ts";
 import { journalOf, JournalError, TreeLog, type Node, type Observer, type ResolvedJournal, type Watcher } from "./log.ts";
@@ -48,6 +48,40 @@ export interface CallSpec<R> {
   /** The call is refused before its code runs (an input its interface does not take): this error is its outcome. */
   readonly refused?: unknown;
   readonly body: (call: Call) => Promise<Ended<R>>;
+  /** The program object itself: a conversation's turn knows its own call by it. */
+  readonly self?: object;
+  /**
+   * What the call is shown as context, worked out before it starts (its
+   * `saw`): a conversation's earlier turns, a helper's memory, a row asked
+   * again (conversations.ts).
+   */
+  readonly prepare?: (call: Call) => void | Promise<void>;
+}
+
+/**
+ * A turn stopped to wait for a person (contract/tools.md): the call and every
+ * call it is inside stop without ending: no `failed` event, no record (the
+ * log stays unfinished, for the process that resumes it).
+ */
+export class TurnWaiting extends Error {
+  readonly code = "turn-waiting";
+  readonly approval: unknown;
+  constructor(message: string, approval: unknown) {
+    super(message);
+    this.name = "TurnWaiting";
+    this.approval = approval;
+  }
+}
+
+/**
+ * The turn a call made now runs in: the turn being started (its own call
+ * comes first), else its parent's.
+ */
+export function turnRunFor(parent: Call | undefined): TurnRunLike | null {
+  const active = ACTIVE_TURN.get();
+  if (active && !active.rootTaken) return active;
+  if (parent) return parent.turnRun as TurnRunLike | null;
+  return active ?? null;
 }
 
 const combine = (...signals: (AbortSignal | undefined)[]): AbortSignal | undefined => {
@@ -112,8 +146,22 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   }
   const keep = keptFields(spec.fields, layers.map((l) => l.settings.logContent).filter((v) => v !== undefined && v !== null) as never,
     env()["FUNCTAI_LOG_CONTENT"] ?? null);
-  const signal = combine(spec.signal, spec.stream?.signal, parent?.signal);
+  const turnRun = turnRunFor(parent);
+  const signal = combine(spec.signal, spec.stream?.signal, parent?.signal, turnRun?.signal);
   const call = new Call(spec.program, parent, folder, spec.fields, keep, calllog.callerOf(spec.settings), signal);
+  call.turnRun = turnRun;
+  if (turnRun && !turnRun.rootTaken && spec.self !== undefined && spec.self === turnRun.self) {
+    turnRun.rootTaken = true;
+    call.mintedId = turnRun.turn;                    // the turn's id, minted before the call (conversations.md)
+  }
+  if (!parent) {
+    const remote = calllog.REMOTE_PARENT.get();
+    if (remote?.id) {                               // the caller's call, in another process's log (serving.md)
+      call.remoteParent = remote.id;
+      remote.id = null;
+    }
+  } else call.invocation = calllog.INVOCATION.get() ?? null;
+  turnRun?.started(call);
   // what the record and the started event hold: the fields' values, as JSON, taken before anything could change them
   const recorded: Record<string, readonly [unknown, number, boolean]> = {};
   for (const n of spec.fields.inputs) {
@@ -130,10 +178,16 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
     ...(journalAt(l.settings) !== undefined ? { journal: journalAt(l.settings) } : {}),
   }));
   const got = receivers(receiverLayers);
-  let refusal: JournalError | null = null;
+  let refusal: unknown = null;
   let log: TreeLog;
+  const later = !parent && turnRun ? turnRun.laterWriter(call) : null;
   if (!parent) {
-    log = new TreeLog(call.id, got.journal as ResolvedJournal | null);
+    log = new TreeLog(call.id, got.journal as ResolvedJournal | null, later ?? {});
+    if (later) {                                    // a turn resumed: this process continues its log
+      call.writer = later.writer;
+      log.replaying = true;
+      call.requests = later.requests;
+    }
     if (got.refused) {
       refusal = new JournalError("journal-policy",
         `${program.name}: its own settings replace or remove a journal the host set, or a closer layer replaces, weakens or removes a required one`);
@@ -157,24 +211,34 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
       outputs: Object.fromEntries(spec.fields.outputs.map((n) => [n, getOwn(keep, n)!])),
     },
     program: { kind: program.kind, answer: program.answer },
-    observers: unique([...(parent?.node.observers ?? []), ...got.observers]),
+    observers: unique([...(parent?.node.observers ?? []), ...got.observers,
+      ...(!parent && turnRun ? [turnRun.eventsSink(call)].filter((o) => o !== null) : [])]),
     streams: [...(parent?.node.streams ?? []), ...(spec.stream ? [spec.stream] : [])],
   };
   call.node = node;
+  if (spec.prepare) {
+    try {
+      await spec.prepare(call);                    // what it is shown as context (its saw), before it starts
+    } catch (err) {
+      refusal ??= err as JournalError;              // (a conversation's refusal: the call's outcome)
+    }
+  }
 
   const started = log.emit(node, "started", {
     parent: call.parent, root: call.root, program,
-    inputs: recordOf(entriesOf(recorded).map(([k, [json]]) => [k, copyData(json)])), content: true, saw: [],
+    inputs: recordOf(entriesOf(recorded).map(([k, [json]]) => [k, copyData(json)])), content: true, saw: copyData(call.saw),
+    ...(call.invocation !== null ? { invocation: call.invocation } : {}),
   });
 
   // whether the body ended well is said by `ok`, never by the error's value: code may throw undefined (Promise.reject())
   let outcome: Outcome<R>;
   try {
-    if (refusal) throw refusal;
+    if (refusal !== null) throw refusal;
     if (spec.refused !== undefined) throw spec.refused;
     if (!parent && await log.barrier(started, call.signal) === "cancelled") throw new Cancelled();
     if (call.signal?.aborted) throw new Cancelled();
-    const ended = await calllog.current.run(call, () => spec.body(call));
+    // the body: this call is current; a call it makes is not made by a tool unless a tool of its own makes it
+    const ended = await calllog.current.run(call, () => calllog.INVOCATION.run(null, () => spec.body(call)));
     // closed before it ended: the call is cancelled, whatever its code did after (streaming.md, "Closing")
     if (call.signal?.aborted) throw new Cancelled();
     call.outputs = ended.outputs;
@@ -183,6 +247,11 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
     outcome = { ok: false, error: err };
   }
 
+  if (!outcome.ok && outcome.error instanceof TurnWaiting) {
+    // a turn stopped to wait for a person: nothing ended; its log stays unfinished, for the process that resumes it
+    throw outcome.error;
+  }
+  if (outcome.ok) call.value = outcome.ended.value;
   const kind = outcome.ok ? "done" : "failed";
   const fields = outcome.ok
     ? { value: toJson(outcome.ended.shown !== undefined ? outcome.ended.shown : outcome.ended.value)[0] }
@@ -194,6 +263,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   calllog.write(call, outcome.ok
     ? { failed: false, returned: outcome.ended.returned !== undefined ? outcome.ended.returned : outcome.ended.value }
     : { failed: true, error: outcome.error });
+  turnRun?.ended(call, !outcome.ok);
   if (unconfirmed) {
     throw new JournalError("journal-end",
       `the journal ${unconfirmed.journal === "refused" ? "refused" : "did not answer for"} the end of ${program.name}'s call (event ${unconfirmed.event.writer}:${unconfirmed.event.seq}); its outcome is in err.outcome`,

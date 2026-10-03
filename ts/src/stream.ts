@@ -12,12 +12,14 @@
  * ```
  */
 
-import { Cancelled } from "./engine.ts";
+import { Cancelled, type Approval } from "./errors.ts";
+import { answerHere, waitingHere } from "./tools.ts";
 import {
   keptEvent, known, positionOf, Relink, resume, type KeptFields, type Position, type ReadAnswer, type EventSource,
   type StartedEvent, type StreamEvent,
 } from "./events.ts";
 import { JournalError, type Node, type Watcher } from "./log.ts";
+import { View as NamedView, type ViewName } from "./views.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -47,8 +49,8 @@ export type Form = "whole" | "kept";
 export interface EventsOptions {
   /** `"whole"` (the default) or `"kept"`. */
   readonly form?: Form;
-  /** A view made from that form. */
-  readonly view?: View;
+  /** A view made from that form: one of your own, or a named one (`"outside"`: a caller who sees only the program's boundary). */
+  readonly view?: View | ViewName;
   /** Resume after this event (its position in this form); null or absent: from the first. */
   readonly after?: Position | null;
 }
@@ -69,14 +71,17 @@ class Former {
   private readonly link = new Relink();
   private readonly shown = new Map<string, boolean>();
   private readonly opts: EventsOptions;
-  constructor(opts: EventsOptions) {
+  private readonly named: NamedView | null;
+  constructor(opts: EventsOptions, answerFrom: string | null = null) {
     this.opts = opts;
+    this.named = typeof opts.view === "string" ? new NamedView(opts.view, { answerFrom }) : null;
   }
 
   take(e: StreamEvent, keep: KeptFields, program: { kind: string; answer: string }): StreamEvent | null {
     let x: Rec | null = this.opts.form === "kept" ? keptEvent(e, keep, program) : known(e);
     if (!x) return null;
-    const view = this.opts.view;
+    if (this.named) return this.named.apply(x) as unknown as StreamEvent | null;
+    const view = this.opts.view as View | undefined;
     if (view) {
       if (e.kind === "started") this.shown.set(e.call, view.calls ? view.calls(x as StartedEvent) : true);
       if (!this.shown.get(e.call)) return null;
@@ -106,8 +111,14 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   private answerText = "";
   /** The call's value (the same as calling the program); rejects with its error. */
   readonly result: Promise<A>;
+  /** Read for its result only: the calls it watches are not streamed from the provider. */
+  readonly passive: boolean;
+  /** @internal A module's answer as it is written: the AI function whose answer text is the module's (the outside view). */
+  answerFrom: string | null = null;
+  private readonly calls = new Set<string>();
 
-  constructor(start: (stream: Stream<A>) => Promise<A>, signal?: AbortSignal) {
+  constructor(start: (stream: Stream<A>) => Promise<A>, signal?: AbortSignal, passive = false) {
+    this.passive = passive;
     let onAbort: (() => void) | null = null;
     if (signal) {                                  // the caller's signal closes the stream too, until the call ends
       if (signal.aborted) this.controller.abort();
@@ -152,6 +163,39 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
     this.controller.abort();
   }
 
+  /** The tool calls this stream's call waits for a person to approve (`approve` rules, a plugin's `ask`). */
+  get waiting(): Approval[] {
+    return waitingHere().filter((a) => this.calls.has(a.call));
+  }
+
+  /**
+   * Say yes to a tool call the call waits for (`s.waiting[0]`, its invocation
+   * number, or nothing for the only one): the tool runs and the call goes on.
+   */
+  approve(approval?: Approval | number | null, opts: { by?: string | null } = {}): void {
+    this.answer(approval ?? null, true, null, opts.by ?? null);
+  }
+
+  /** Say no: the model is told the person did not allow it (and why), and may try something else. */
+  deny(approval?: Approval | number | null, reason?: string | null, opts: { by?: string | null } = {}): void {
+    this.answer(approval ?? null, false, reason ?? null, opts.by ?? null);
+  }
+
+  private answer(approval: Approval | number | null, allowed: boolean, reason: string | null, by: string | null): void {
+    const pending = this.waiting;
+    let target: Approval | undefined;
+    if (approval === null) {
+      if (pending.length !== 1) throw new TypeError(`${pending.length} tool calls wait here: name one (s.waiting)`);
+      target = pending[0];
+    } else {
+      const inv = typeof approval === "number" ? approval : approval.invocation;
+      const call = typeof approval === "number" ? null : approval.call;
+      target = pending.find((a) => a.invocation === inv && (call === null || a.call === call));
+    }
+    if (!target) throw new TypeError(`no tool call waits here for ${JSON.stringify(approval)}`);
+    answerHere(target.call, target.invocation, allowed, { reason, by, plugin: target.plugin });
+  }
+
   /** @internal */
   check(): void {
     if (this.controller.signal.aborted) throw new Cancelled();
@@ -159,6 +203,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
 
   /** @internal Given each whole event of the calls it watches (by the log). */
   receive(e: StreamEvent, node: Node): void {
+    if (e.kind === "started") this.calls.add(e.call);
     if (this.outer === null && e.kind === "started") {
       this.outer = e.call;
       this.answerField = e.program.answer;
@@ -178,7 +223,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   }
 
   private project(opts: EventsOptions, upTo = this.log.length): StreamEvent[] {
-    const former = new Former(opts);
+    const former = new Former(opts, this.answerFrom);
     const out: StreamEvent[] = [];
     for (const { event, node } of this.log.slice(0, upTo)) {
       const x = former.take(event, node.keep, node.program);
@@ -205,7 +250,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
    * (`EventUnknown` when the form has none).
    */
   async *events(opts: EventsOptions = {}): AsyncGenerator<StreamEvent> {
-    const former = new Former(opts);
+    const former = new Former(opts, this.answerFrom);
     let skipping = opts.after !== undefined && opts.after !== null;
     if (skipping && "refuses" in this.read(null, opts.after!, opts)) {
       throw new EventUnknown(`this stream has no event ${opts.after!.writer}:${opts.after!.seq} in that form`);
@@ -246,7 +291,7 @@ export class PredictionStream<A = unknown, P = unknown> extends Stream<A> {
   /** The whole prediction, when it ends. */
   readonly prediction: Promise<P>;
 
-  constructor(start: (stream: Stream<A>) => Promise<P>, answer: (p: P) => A, signal?: AbortSignal) {
+  constructor(start: (stream: Stream<A>) => Promise<P>, answer: (p: P) => A, signal?: AbortSignal, passive = false) {
     let prediction!: Promise<P>;
     super((s) => {
       try {
@@ -258,7 +303,7 @@ export class PredictionStream<A = unknown, P = unknown> extends Stream<A> {
       return prediction.then(answer, (err: unknown) => {
         throw err instanceof JournalError ? err.withDone((p) => answer(p as P)) : err;
       });
-    }, signal);
+    }, signal, passive);
     prediction.catch(() => undefined);
     this.prediction = prediction;
   }

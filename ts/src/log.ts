@@ -11,7 +11,7 @@
  * events later, each from its own bounded queue, each its own copy.
  */
 
-import { iso } from "./calllog.ts";
+import { iso, warnOnce } from "./calllog.ts";
 import { copyData } from "./values.ts";
 import {
   keptEvent, positionOf, Relink, settle, type EventStore, type KeptFields, type Position, type StreamEvent,
@@ -755,6 +755,8 @@ export interface Node {
 /** What a stream is to the log: it receives the whole events of the calls it watches. */
 export interface Watcher {
   receive(e: StreamEvent, node: Node): void;
+  /** Read for its result only: the calls it watches are not streamed from the provider. */
+  readonly passive?: boolean;
 }
 
 /** An event as made: the event, its kept form (null when the kept form leaves it out), and its number in the journal writer (0 when none). */
@@ -770,20 +772,65 @@ export interface Made {
  * observers of its call and to the journal.
  */
 export class TreeLog {
-  readonly writer = 1;
+  readonly writer: number;
   private seq = 0;
   private last: Position | null = null;
   private lastAt = "";
   private readonly observed = new Map<Observer, Relink>();
-  private readonly toJournal = new Relink();
+  private readonly toJournal: Relink;
+  private readonly startAfter: Position | null;
   readonly journalWriter: JournalWriter | null;
   readonly tree: string;
   readonly journal: ResolvedJournal | null;
+  /**
+   * A resumed turn replays what it did before (contract/tools.md,
+   * *Resuming*): its events are held back until it does something new; the
+   * calls it started meanwhile, still open, are shown from then on.
+   */
+  replaying = false;
+  private readonly held = new Map<string, { node: Node; fields: Rec }>();
+  /** The outermost call's last event was made: the log is finished. */
+  private ended = false;
 
-  constructor(tree: string, journal: ResolvedJournal | null) {
+  /**
+   * `writer`, `after` and `at`: a later writer (streaming.md, *Continuing a
+   * log*) numbers on from the last kept event, with the number its claim gave.
+   */
+  constructor(tree: string, journal: ResolvedJournal | null, opts: { writer?: number; after?: Position | null; at?: string } = {}) {
     this.tree = tree;
     this.journal = journal;
+    this.writer = opts.writer ?? 1;
+    this.startAfter = opts.after ?? null;
+    this.last = this.startAfter;
+    this.seq = this.startAfter?.seq ?? 0;
+    this.lastAt = opts.at ?? "";
+    this.toJournal = new Relink(this.startAfter);
     this.journalWriter = journal ? new JournalWriter(journal, journalTrouble(journal.store, tree)) : null;
+  }
+
+  /**
+   * Whether anything watches a call live, so its replies are streamed and
+   * shown piece by piece: a stream or an observer that is not passive (a
+   * stream read for its result only, a conversation store's own copy), or a
+   * journal.
+   */
+  wantsPieces(node: Node): boolean {
+    return node.streams.some((s) => !s.passive) || node.observers.some((o) => !(o as { passive?: boolean }).passive)
+      || this.journalWriter !== null;
+  }
+
+  /** The position of its last event, or null before any. */
+  get position(): Position | null {
+    return this.last;
+  }
+
+  /** A resumed turn does something it had not done: the calls it started while replaying, still open, are shown from here. */
+  frontier(): void {
+    if (!this.replaying) return;
+    this.replaying = false;
+    const held = [...this.held.values()];
+    this.held.clear();
+    for (const { node, fields } of held) if (node.id !== this.tree) this.emit(node, "started", fields);
   }
 
   /** Whether anything receives this call's events (then streams read replies in pieces). */
@@ -799,6 +846,7 @@ export class TreeLog {
 
   /** Make and number an event of a call; its kept form goes to the journal (a copy). */
   make(node: Node, kind: StreamEvent["kind"], fields: Rec): Made {
+    if (node.id === this.tree && (kind === "done" || kind === "failed")) this.ended = true;
     const e = {
       functai_event: 2, kind, tree: this.tree, writer: this.writer, seq: ++this.seq, after: this.last, at: this.stamp(),
       call: node.id, function: node.name, ...fields,
@@ -817,13 +865,28 @@ export class TreeLog {
     for (const o of node.observers) {
       if (broken.has(o)) continue;
       let link = this.observed.get(o);
-      if (!link) this.observed.set(o, link = new Relink());
+      if (!link) this.observed.set(o, link = new Relink(this.startAfter));
       deliver(o, link.take(copyData(made.kept)) as unknown as StreamEvent);
     }
   }
 
   /** Make an event and show it. */
   emit(node: Node, kind: StreamEvent["kind"], fields: Rec): Made | null {
+    if (this.replaying) {
+      if (kind === "started") {
+        this.held.set(node.id, { node, fields });
+        return null;
+      }
+      if (node.id === this.tree && (kind === "done" || kind === "failed")) this.frontier();
+      else {
+        if (kind === "done" || kind === "failed") this.held.delete(node.id);
+        return null;
+      }
+    }
+    if (this.ended) {
+      warnOnce(`after-end:${node.name}`, `${node.name} made an event after its call tree ended (it runs on after the outermost call returned): no stream, observer or journal gets it`);
+      return null;
+    }
     if (!this.watched(node)) return null;
     const made = this.make(node, kind, fields);
     this.show(made, node);
@@ -861,6 +924,7 @@ export class TreeLog {
    * it did not confirm it.
    */
   async end(node: Node, kind: "done" | "failed", fields: Rec): Promise<{ journal: "refused" | "unknown"; event: Position } | null> {
+    this.frontier();
     if (!this.watched(node)) return null;
     const made = this.make(node, kind, fields);
     if (!this.required || !this.journalWriter) {

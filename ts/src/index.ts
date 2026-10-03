@@ -11,7 +11,9 @@
 import * as calllog from "./calllog.ts";
 import type { AnyAIFunction as AIFunction } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
-import type { Prediction, Tool } from "./engine.ts";
+import type { Prediction } from "./engine.ts";
+import type { Effects, Tool } from "./tools.ts";
+import { metaOf, withContext } from "./calllog.ts";
 import { effective, type Settings } from "./settings.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
 import { setOwn } from "./values.ts";
@@ -24,7 +26,23 @@ export { t, describe, type FieldWith, type Json, type Shape, type FieldSpec, typ
 export { configure, withSettings, type Settings } from "./settings.ts";
 export { SettingError, type LogContent } from "./content.ts";
 export { InterfaceError, checkInterface, interfaceSignature, type Interface, type InterfaceCode, type InterfaceField } from "./interface.ts";
-export { Prediction, StepLimit, Cancelled, type Tool } from "./engine.ts";
+export { Prediction, StepLimit } from "./engine.ts";
+export { Cancelled, FunctAIError, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError, BakeError,
+  type Approval } from "./errors.ts";
+export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
+export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
+  ToolResultHook, TurnEndHook } from "./plugins.ts";
+export { compaction, delegate } from "./builtins.ts";
+export { Conversation, Turn, TurnStream, allTurns, lastTurns, remember, earlier, type ContextRule, type Memory, type ConversationOptions,
+  type TurnOptions } from "./conversations.ts";
+export { MemoryConversations, FolderStore, FolderEvents, type ConversationStore } from "./stores.ts";
+export { View as EventView, outside, type ViewName } from "./views.ts";
+export { Service, serve, type ServeOptions } from "./serving.ts";
+export { remote, type RemoteProgram } from "./remote.ts";
+export { quotesFound } from "./judges.ts";
+export { bakeExamples, exportExamples, bakeEntry, baked, BakedModel, type BakeEntry, type Example, type ExamplesOptions } from "./bake.ts";
+export { inspectHistory, phistory, type HistoryRecord } from "./history.ts";
+export { compare, type Comparison } from "./compare.ts";
 export { Stream, PredictionStream, EventUnknown, views, type EventsOptions, type Form, type View } from "./stream.ts";
 export {
   Follower, MemoryStore, Replay, keptLog, replay, resume, settle, receivers, stateOf, positionOf, samePosition,
@@ -37,13 +55,15 @@ export {
 export { JournalError, flush, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
 export { sawOf, keepsSaw, SawUnknown, type SawCode } from "./saw.ts";
 export { evaluate, exactMatch, interval, Evaluation, type EvaluateOptions, type Metric, type RowResult, type Summary } from "./evaluate.ts";
-export { labeledFewShot, bootstrapFewShot, type BootstrapOptions, type LabeledOptions } from "./optimize.ts";
+export { labeledFewShot, bootstrapFewShot, randomSearch, instructionSearch, type BootstrapOptions, type LabeledOptions, type RandomSearchOptions,
+  type InstructionSearchOptions } from "./optimize.ts";
 export { gepa, type GepaOptions, type GepaResult, type Feedback, type Trial } from "./gepa.ts";
 export { load, fromManifest, save, toManifest, describeSaved, LoadRefused } from "./saved.ts";
 export { capabilities } from "./models.ts";
-export { clearCache, type ReplyCache } from "./cache.ts";
+export { clearCache, replyKey, MemoryReplies, DiskReplies, type ReplyCache, type CacheSetting } from "./replies.ts";
 export { normalize, casefold } from "./text.ts";
-export { VERSION } from "./calllog.ts";
+export { VERSION, pruneCalls, split } from "./calllog.ts";
+export { login, logins, logout } from "./accounts.ts";
 export { Refusal, isRefusal } from "lmcc";
 
 type Rec = Record<string, unknown>;
@@ -55,16 +75,20 @@ type Rec = Record<string, unknown>;
  */
 export function tool<I extends Record<string, FieldSpec>>(
   name: string,
-  spec: { description?: string; input: I },
+  spec: { description?: string; input: I; effects?: Effects | null },
   run: (input: { [K in keyof I]: ValueOf<I[K]> }) => unknown,
 ): Tool {
+  if (spec.effects !== undefined && spec.effects !== null && spec.effects !== "reads" && spec.effects !== "changes") {
+    throw new TypeError(`tool("${name}"): effects is "reads" or "changes" (or left out: unknown, which counts as "changes")`);
+  }
   const properties: Rec = {};
   for (const [field, f] of Object.entries(spec.input)) {
     const { shape, desc } = readField(f, `${name}.${field}`);
     setOwn(properties, field, desc ? { ...shape, description: desc } : shape);
   }
   // no additionalProperties: Gemini refuses the keyword in function declarations
-  return { name, description: spec.description ?? "", parameters: { type: "object", properties, required: Object.keys(spec.input) }, run: run as Tool["run"] };
+  return { name, description: spec.description ?? "", parameters: { type: "object", properties, required: Object.keys(spec.input) }, run: run as Tool["run"],
+    effects: spec.effects ?? null };
 }
 
 /**
@@ -72,8 +96,8 @@ export function tool<I extends Record<string, FieldSpec>>(
  * (contract/calls.md, "A rating record"). `call` is a Prediction or its
  * `callId`. The rating is written to the call log folder.
  */
-export function rate(call: Prediction | string, verdict?: calllog.Verdict, opts: calllog.RateOptions = {}): Rec {
-  const id = typeof call === "string" ? call : call.callId;
+export function rate(call: Prediction | string | { callId: string } | { id: string }, verdict?: calllog.Verdict, opts: calllog.RateOptions = {}): Rec {
+  const id = typeof call === "string" ? call : "callId" in call ? call.callId : call.id;
   return calllog.rating(id, verdict, opts, effective({}));
 }
 
@@ -137,6 +161,8 @@ export interface LeftOut {
   noContent: number;
   /** Ratings that say neither what the answer was nor what it should have been. */
   noAnswer: number;
+  /** Calls shown earlier turns (a conversation) the log cannot show again: a row is never shown its turns in part. */
+  noContext: number;
 }
 
 /**
@@ -155,6 +181,8 @@ export function rated(fn: AIFunction | AnyModule | string,
   // a program whose module is its file's base name (no definedIn) is known by its file too: two folders' summarize.ts
   // are two programs; anyFile pools across files (a file that moved)
   const file = typeof fn === "string" || opts.anyFile ? undefined : (fn as unknown as { file?: string }).file;
-  const [rows, left] = calllog.ratedRows(records[0], records[1], { ...key, ...(file ? { file } : {}), by: opts.by });
-  return { rows, leftOut: { otherSignature: left.other_signature, noContent: left.no_content, noAnswer: left.no_answer } };
+  const [found, left] = calllog.ratedRows(records[0], records[1], { ...key, ...(file ? { file } : {}), by: opts.by });
+  // a rated turn of a conversation keeps the earlier turns it was shown (earlier, conversation, helpers)
+  const [rows, noContext] = withContext(found, records[0]);
+  return { rows, leftOut: { otherSignature: left.other_signature, noContent: left.no_content, noAnswer: left.no_answer, noContext } };
 }

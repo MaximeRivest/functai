@@ -118,7 +118,7 @@ test("an input's members keep the value's order: in the request (JSON and text i
   const [data, text] = request.split("<text>");
   assert.ok(before(data!, '\\"b\\": 1', '\\"10\\": 2'), request);
   assert.ok(before(text!, '\\"b\\": 1', '\\"10\\": 2'), request);
-  assert.deepEqual(f.render({ data: ordered(), text: ordered() } as never), router.requests[0]);
+  assert.deepEqual(await f.render({ data: ordered(), text: ordered() } as never), router.requests[0]);
   await flush();
   const [line] = logText(where);
   assert.ok(line!.includes('"data":{"b":1,"10":2}'), line);
@@ -162,7 +162,8 @@ test("rows read back from the call log keep their values' order", async () => {
 // JSON (a cached reply, a config), which lm15 rebuilds into its own objects.
 test("src/ copies, parses and writes data only through values.ts (copyData, parseData, writeData)", () => {
   const src = join(import.meta.dirname, "..", "src");
-  const allowed = ["hit = JSON.parse(hit);", "JSON.parse(stringifyJson(Config.toJSON("];
+  // (the served form's own script runs in the caller's browser)
+  const allowed = ["JSON.parse(stringifyJson(Config.toJSON(", "try{inputs[k]=JSON.parse(v)}"];
   const found: string[] = [];
   for (const file of readdirSync(src).filter((f) => f.endsWith(".ts") && f !== "values.ts")) {
     readFileSync(join(src, file), "utf8").split("\n").forEach((line, i) => {
@@ -190,7 +191,7 @@ test("a loaded function keeps its fields' saved type names: its signature's fing
     delete node["version"];
     const loaded = fromManifest(manifest);
     assert.equal(lmcc.signatureFingerprint(loaded.signature), saved, `cot: ${cot}`);
-    const request = sent(loaded.render({ data: {} } as never));
+    const request = sent(await loaded.render({ data: {} } as never));
     assert.ok(request.includes(JSON.stringify(text).slice(1, -1)), `the recorded reply, as written (cot: ${cot}): ${request}`);
   }
 });

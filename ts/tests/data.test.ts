@@ -152,7 +152,7 @@ const ORDERED_SHAPE = '{"type": "object", "properties": {"b": {"type": "integer"
 test("an output shape whose members lmcc keeps in order: the json adapter renders, calls, saves and loads; the schema is sent in its order", async () => {
   const router = new FakeRouter([], () => '{"result": {"b": 1, "10": 2}}');
   const f = ai("shaped", { input: { q: t.string() }, output: lmcc.parseJson(ORDERED_SHAPE), adapter: "json", router: router as never } as never);
-  const rendered = f.render({ q: "x" } as never);
+  const rendered = await f.render({ q: "x" } as never);
   const answer = await f({ q: "x" } as never) as unknown as Rec;
   assert.deepEqual(lmcc.memberNames(answer), ["b", "10"], "the answer keeps the reply's order");
   const request = router.requests[0]!;
@@ -180,7 +180,7 @@ test("a tool whose parameters lmcc keeps in order: rendered and called with nati
   const look = tool("look", { input: { x: lmcc.parseJson(ORDERED_SHAPE) as never } }, (input) => { seen.push(input); return "found"; });
   const router = new FakeRouter([{ calls: [{ id: "c1", name: "look", input: { x: { b: 1, 10: 2 } } }] }, "<result>\ndone\n</result>"]);
   const f = ai("helper", { input: { q: t.string() }, output: t.string(), tools: [look], router: router as never } as never);
-  f.render({ q: "x" } as never);
+  await f.render({ q: "x" } as never);
   assert.equal(await f({ q: "x" } as never), "done");
   assert.equal(router.requests.length, 2);
   for (const r of router.requests) sentInOrder(r, '"properties":{"b":{"type":"integer"},"10":', '"properties":{"10":{"type":"integer"},"b":');

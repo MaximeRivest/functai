@@ -6,6 +6,7 @@
  */
 
 import assert from "node:assert/strict";
+import { shownTurn } from "../src/saw.ts";
 import { test } from "node:test";
 import {
   ai, checkInterface, configure, InterfaceError, keepsSaw, module, sawOf, SawUnknown, SettingError, t,
@@ -198,7 +199,7 @@ for (const [name, c] of cases("content")) {
 
 for (const [name, c] of cases("saw")) {
   if (c.kind === "shown") {
-    test(`saw case ${name}`, { skip: "the turn an entry stands for: languages that replay context (stage 3's conversations, stage 5's rated with earlier)" }, () => undefined);
+    test(`saw case ${name}`, () => assert.deepEqual(shownTurn(c.turn, c.entry), c.expect));
     continue;
   }
   test(`saw case ${name}`, () => {

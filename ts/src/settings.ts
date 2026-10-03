@@ -23,7 +23,9 @@ import { checkLogContent, type CallFields, type LogContent, type Where } from ".
 import { Context } from "./host.ts";
 import { checkObservers, journalOf, type Journal, type Observer } from "./log.ts";
 import type { Capabilities } from "./models.ts";
-import type { ReplyCache } from "./cache.ts";
+import { checkCacheSetting, type CacheSetting } from "./replies.ts";
+import { checkApprove, type ApproveSetting } from "./tools.ts";
+import { checkPlugins, type Plugin } from "./plugins.ts";
 
 /** What calls go through: an lm15 `LMRouter`, or anything with its `resolve` and `complete` (a fake, in tests). */
 export interface Router {
@@ -103,7 +105,27 @@ export interface Settings {
    * process's memory; or a store: a `Map`, Redis, …). Off by default. It
    * returns identical samples too: leave it off where you want different ones.
    */
-  cacheReplies?: boolean | ReplyCache | null;
+  cacheReplies?: CacheSetting;
+  /** The n-th independent answer to the same request (default 0): part of the reply cache's key, and nothing else. */
+  replicate?: number | null;
+  /**
+   * Who answers a tool call before it runs (contract/tools.md): a function
+   * asked at once, or a rule a person answers later (`"changes"`, `"all"`, a
+   * list of tool names or approval paths). No approval by default.
+   */
+  approve?: ApproveSetting | null;
+  /** Plugins around the calls in scope (contract/plugins.md): they add up over the layers, the program's own first, the host's last. */
+  plugins?: readonly Plugin[] | null;
+  /** `false` (a host's layer): the program's own plugins do not run. */
+  programPlugins?: boolean | null;
+  /**
+   * When the first model is less sure of its answer than `escalateBelow`
+   * (default 0.9), another answers instead: a model, or an AI function. The
+   * first needs to measure its confidence (a baked model, TypeSafe's Jev,
+   * `config: { probabilities: "required" }`).
+   */
+  escalateTo?: string | object | null;
+  escalateBelow?: number | null;
 }
 
 export const DEFAULTS: Required<Pick<Settings, "retries" | "apiRetries" | "maxSteps" | "toolErrors" | "includeFnName">> = {
@@ -128,6 +150,12 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
     throw new TypeError(`${where}: programObservers is true or false`);
   }
   if (settings.journal !== undefined) journalOf(settings.journal, where);
+  checkCacheSetting(settings.cacheReplies, where);
+  checkApprove(settings.approve, where);
+  checkPlugins(settings.plugins, where);
+  if (settings.replicate !== undefined && settings.replicate !== null && !(Number.isInteger(settings.replicate) && settings.replicate >= 0)) {
+    throw new TypeError(`${where}: replicate is a whole number, 0 or more`);
+  }
 }
 
 /**

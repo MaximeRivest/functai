@@ -62,7 +62,7 @@ test("any store with get, set and delete: a Map, or one that keeps text; a store
   await f("Fine.");
   assert.equal(router.requests.length, 1);
   const [key, value] = [...store.entries()][0]!;
-  assert.match(key, /^functai:reply:sha256:[0-9a-f]{64}$/);
+  assert.match(key, /^sha256:[0-9a-f]{64}$/);                 // the contract's key (replies.md): every language finds it
   assert.deepEqual(JSON.parse(JSON.stringify(value)), value);  // plain JSON, for a store in another process
 
   const text = new Map<string, string>();

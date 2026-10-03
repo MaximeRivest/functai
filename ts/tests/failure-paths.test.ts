@@ -548,10 +548,10 @@ const asyncSchema = (refuse: boolean): StandardSchemaLike<string, string> => ({
   },
 });
 
-test("async validation never leaves a rejection unhandled: render refuses to wait, and a refusal beside another is the first in order", async () => {
+test("async validation never leaves a rejection unhandled: render waits for it, and a refusal beside another is the first in order", async () => {
   const unhandled = await unhandledDuring(async () => {
     const f = ai("async_shape", { input: { x: asyncSchema(true) }, output: t.string(), router: new FakeRouter([]) as never });
-    assert.throws(() => f.render("x"), /validates asynchronously/);
+    await assert.rejects(f.render("x"), (e: unknown) => e instanceof InterfaceError && e.field === "x");
     const throwing: StandardSchemaLike<string, string> = { "~standard": { vendor: "test", jsonSchema: { input: () => ({ type: "string" }) },
       validate: (v: unknown) => { if (v === undefined) return { issues: [{ message: "required" }] }; throw new Error("the validator broke"); } } };
     const g = ai("mixed", { input: { a: asyncSchema(true), b: throwing }, output: t.string(), router: new FakeRouter([]) as never });
@@ -659,7 +659,7 @@ test("an AI function's input named like an Object member is sent as given, by na
     const [byName, alone] = router.requests;
     assert.ok(sent(byName).includes(`<${name}>\\nVALUE-${name}\\n</${name}>`), sent(byName));
     assert.deepEqual(alone, byName);
-    assert.deepEqual(f.render(given as never), byName);                     // what render shows is what is sent
+    assert.deepEqual(await f.render(given as never), byName);                     // what render shows is what is sent
     const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: router as never });
     assert.equal(loaded.version, f.version);
     assert.equal(await loaded(given as never), "ok");
@@ -677,7 +677,7 @@ test("an AI function's required input named like an Object member, left out, is 
     for (const g of [f, loaded]) {
       await assert.rejects(g({} as never), refused, name);
       await assert.rejects(g.predict({} as never), refused, name);
-      assert.throws(() => g.render({} as never), refused, name);
+      await assert.rejects(g.render({} as never), refused, name);
       assert.throws(() => g.stream({} as never), refused, name);
       await assert.rejects(g.map([{}] as never), refused, name);
     }
@@ -698,7 +698,7 @@ test("an optional input named toString or constructor, left out, is sent with it
   assert.ok(!sent(a).includes("native code") && !sent(a).includes("function Object"), sent(a));
   assert.deepEqual(b, a);
   assert.deepEqual(c, a);
-  assert.deepEqual(f.render({ q: "x" } as never), a);
+  assert.deepEqual(await f.render({ q: "x" } as never), a);
 });
 
 test("worked examples and rows named like Object members: a demo's value is sent, and a row or demo without the column is never given Object's", async () => {
@@ -729,7 +729,7 @@ test("a worked example without an input or an output named like an Object member
     assert.ok(text.includes(`<${name}>\\nACTUAL\\n</${name}>`), text);
     assert.ok(!text.includes("native code") && !text.includes("[object"), text);
     assert.equal(text.split(`<${name}>`).length - 1, 1, `only the call gives ${name}: ${text}`);
-    assert.deepEqual(g.render(given as never), request);
+    assert.deepEqual(await g.render(given as never), request);
     const loaded = fromManifest(JSON.parse(JSON.stringify(toManifest(f)))).using({ router: answers as never });
     assert.equal(loaded.version, f.version);
     assert.equal(await loaded(given as never), "ok");
@@ -756,7 +756,7 @@ test("__proto__ is an input name like any other: supplied, alone, left out, opti
   assert.ok(sent(byName).includes("<__proto__>\\nACTUAL\\n</__proto__>"), sent(byName));
   assert.ok(sent(byName).includes("<__proto__>\\nDEMO\\n</__proto__>"), sent(byName));
   assert.deepEqual(alone, byName);
-  assert.deepEqual(f.render(given), byName);
+  assert.deepEqual(await f.render(given), byName);
   await assert.rejects(f({} as never), (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && e.field === P);
   const where = mkdtempSync(join(tmpdir(), "functai-proto-"));
   save(f, where);
@@ -851,7 +851,7 @@ test("a member named __proto__ inside an input's value is sent as given: every a
         assert.equal(await f({ q } as never), "ok");
         const request = router.requests.at(-1)!;
         assert.ok(sent(request).includes("__proto__"), `${adapter}: ${sent(request)}`);
-        assert.deepEqual(f.render({ q } as never), request);
+        assert.deepEqual(await f.render({ q } as never), request);
         assert.equal(await loaded({ q } as never), "ok");
         assert.deepEqual(router.requests.at(-1), request);
         assert.equal(router.requests.length - before, 2);

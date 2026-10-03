@@ -18,16 +18,25 @@ import * as lmcc from "lmcc";
 import type { Request } from "@lm15/lm15";
 import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
-import { Cancelled, lm15Request, run as runEngine, Prediction, type Router, type Tool } from "./engine.ts";
+import { lm15Request, run as runEngine, Prediction, type Router } from "./engine.ts";
+import { Cancelled, PluginError } from "./errors.ts";
+import type { Tool } from "./tools.ts";
+import * as plugins from "./plugins.ts";
+import { chatOf, Conversation, contextFor, sectionsFor, type ConversationOptions, type Shown, type TurnOptions } from "./conversations.ts";
+import { Context as Slot } from "./host.ts";
+import { Progress, showProgress } from "./progress.ts";
 import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
 import { checkInputs, checkInterface, interfaceSignature, recordedInputs, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
-import { adjustSettings, callCapabilities, defaultModel, defaultRouter, modelString, PROBE } from "./models.ts";
+import { adjustSettings, callCapabilities, defaultModel, modelString, PROBE } from "./models.ts";
+import { routerFor } from "./accounts.ts";
 import { droppedFields, recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
 import { JournalError } from "./log.ts";
-import { copyData, entriesOf, getOwn, recordOf, setOwn, writeData } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson, writeData } from "./values.ts";
+import { dataShape } from "./interface.ts";
+import { bakedJob, isBaked } from "./bake.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
@@ -118,10 +127,19 @@ export interface CallOptions extends Settings {
   signal?: AbortSignal;
 }
 
-/** Options of `fn.map`: calls in flight at once (default 8), and the call options. */
+/** Options of `fn.map`: calls in flight at once (default 8), a progress line, and the call options. */
 export interface MapOptions extends CallOptions {
   concurrency?: number;
+  /** A line on stderr, updated as rows finish: rows done, errors, tokens, time left. Default: on in a terminal. */
+  progress?: boolean;
 }
+
+/** A conversation with an AI function: called like it (one turn), with the conversation's methods. */
+export type ChatOf<I, O, A> = Conversation & {
+  (...args: CallArgs<I, TurnOptions>): Promise<A>;
+  /** One turn: every output, the lmcc turn, the replies (`p.callId` is the turn's id). */
+  predict(...args: CallArgs<I, TurnOptions>): Promise<Prediction<O, A>>;
+};
 
 /** An AI function: call it with its inputs, get the answer. */
 export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknown> {
@@ -151,8 +169,22 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   stream(...args: CallArgs<I>): PredictionStream<A, Prediction<O, A>>;
   /** Each item's answer, in order, `concurrency` calls at once. Rejects with the first failure, and stops starting new calls. */
   map(inputs: Iterable<Input<I>>, options?: MapOptions): Promise<A[]>;
-  /** The exact request a call would send, without sending it. */
-  render(...args: CallArgs<I, Settings>): Request;
+  /**
+   * Each item's outcome, in order, `concurrency` calls at once, failures
+   * included (as `Promise.allSettled` gives them): a long run goes on past a
+   * row that fails. With a reply cache on disk (`cacheReplies: "disk"`),
+   * running it again sends only what has no kept reply.
+   */
+  mapSettled(inputs: Iterable<Input<I>>, options?: MapOptions): Promise<PromiseSettledResult<A>[]>;
+  /** The exact request a call would send, without sending it (the plugins around it shape it, as they would the call). */
+  render(...args: CallArgs<I, Settings>): Promise<Request>;
+  /**
+   * A conversation with this function: its calls remember each other, kept
+   * in a store (`null`: this process's memory; a folder; your own). The same
+   * id in the same store opens the same conversation. Called like the
+   * function: `await chat(input)` is one turn.
+   */
+  conversation(id?: string | null, options?: ConversationOptions): ChatOf<I, O, A>;
   /** A copy with other settings (the model, the temperature, …). */
   using(settings: Settings): AIFunction<I, O, A>;
   state(): State;
@@ -303,7 +335,8 @@ export function defaultsDocument(iface: Interface, code: Readonly<Record<string,
 
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
-  "cacheReplies", "observers", "journal"]);
+  "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
+  "escalateBelow"]);
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -487,19 +520,21 @@ export function make(core: Core): AIFunction {
     const lm = s.lm ?? defaultModel(env());
     if (!lm) throw new Error("no model configured, and no API key found to pick one: set OPENAI_API_KEY (or ANTHROPIC_API_KEY, GEMINI_API_KEY, …), or name a model: configure({ lm: \"gpt-4.1-mini\" })");
     const model = modelString(lm);
-    const router = (s.router ?? defaultRouter()) as Router & { resolve(m: string): { provider: string; model: string } };
+    const router = (s.router ?? routerFor(model)) as Router & { resolve(m: string): { provider: string; model: string } };
     const resolution = router.resolve(model);
     return { model, router, provider: resolution.provider, wire: resolution.model };
   };
 
-  const planFor = <S extends Settings>(given: S) => {
+  const planFor = <S extends Settings>(given: S, instructions?: string | null) => {
     const r = route(given);
     const s = adjustSettings(given, r.provider, r.wire);
     const caps = callCapabilities(r.provider, r.wire, { temperature: s.temperature, capabilities: s.capabilities });
-    const key = JSON.stringify(["plan", layoutKey(s), caps, r.provider, s.module ?? null, s.includeFnName ?? null, core.state.instructions]);
+    const text = instructions ?? core.state.instructions;
+    const key = JSON.stringify(["plan", layoutKey(s), caps, r.provider, s.module ?? null, s.includeFnName ?? null, text, instructions !== undefined && instructions !== null]);
     let plan = cache.get(key) as lmcc.Plan | undefined;
     if (!plan) {
-      plan = bind(layout(s), signatureNow(s), caps, r.provider);
+      const signature = instructions !== undefined && instructions !== null ? sig.signature(definitionNow(s), instructions) : signatureNow(s);
+      plan = bind(layout(s), signature, caps, r.provider);
       if (cache.size > 64) cache.clear();
       cache.set(key, plan);
     }
@@ -530,6 +565,140 @@ export function make(core: Core): AIFunction {
     return out;
   };
 
+  /**
+   * Earlier turns, as this plan shows them, and the `saw` entries that say so
+   * (calls.md, *Saw*): a turn made for the plan whole, with its steps; one made
+   * for another as its values alone (`without` the fields the plan no longer
+   * has); one with no output left, not at all.
+   */
+  const shownAs = (plan: lmcc.Plan, shown: Shown): [Rec[], lmcc.Turn[]] => {
+    const entries: Rec[] = [];
+    const turns: lmcc.Turn[] = [];
+    shown.turns.forEach((t, i) => {
+      const id = shown.ids[i] ?? "";
+      let fitted: lmcc.Turn | null = null;
+      let whole = false;
+      if (Object.hasOwn(t, "signature") && Object.hasOwn(t, "steps")) {
+        try {
+          fitted = plan.loadTurn({ ...t, signature: plan.fingerprint });
+          whole = true;
+        } catch {
+          fitted = null;
+        }
+      }
+      if (!fitted) fitted = exampleOf(plan, (t["inputs"] ?? {}) as Rec, (t["outputs"] ?? {}) as Rec);
+      if (!fitted) return;
+      if (whole) entries.push(((t["steps"] as unknown[]) ?? []).length ? { call: id, steps: true } : { call: id });
+      else {
+        const had = new Set([...Object.keys((t["inputs"] ?? {}) as Rec), ...Object.keys((t["outputs"] ?? {}) as Rec)]);
+        const kept = new Set([...Object.keys(fitted.inputs ?? {}), ...Object.keys(fitted.outputs ?? {})]);
+        const leftOut = [...had].filter((n) => !kept.has(n)).sort();
+        entries.push(leftOut.length ? { call: id, without: leftOut } : { call: id });
+      }
+      turns.push(fitted);
+    });
+    return [entries, turns];
+  };
+
+  const exampleOf = (plan: lmcc.Plan, inputs: Rec, outputs: Rec): lmcc.Turn | null => {
+    const plain = new Set(plan.signature.fields.filter((f) => f.direction === "input" && f.purpose === "plain").map((f) => f.name));
+    const kept = new Set(plan.signature.fields.filter((f) => f.direction === "output" && (f.purpose === "plain" || f.purpose === "reasoning")).map((f) => f.name));
+    const ins = sig.prepareInputs(plan.signature, recordOf(entriesOf(inputs).filter(([k]) => plain.has(k))));
+    const outs = recordOf(entriesOf(outputs).filter(([k]) => kept.has(k)));
+    if (!Object.keys(outs).length) return null;
+    try {
+      return plan.example(ins, outs);
+    } catch (err) {
+      if (!lmcc.isRefusal(err)) throw err;
+      return null;
+    }
+  };
+
+  /** What a call is shown as earlier turns, captured when it is prepared (its saw). */
+  interface Captured { readonly plan: string | null; readonly shown: Shown; readonly entries: Rec[]; readonly turns: lmcc.Turn[] }
+  const captured = new WeakMap<object, Captured>();
+
+  /** Work out what the call is shown (its saw) before it starts: a conversation's turns, a helper's memory, a row asked again. */
+  const prepare = async (call: calllog.Call, s: Settings): Promise<void> => {
+    const found = await contextFor(fn, call);
+    if (!found) return;
+    let plan: lmcc.Plan | null = null;
+    try {
+      plan = planFor(s).plan;
+    } catch {
+      plan = null;                                     // no model to plan for: the call fails there, and says why
+    }
+    let entries: Rec[];
+    let turns: lmcc.Turn[] = [];
+    if (plan) [entries, turns] = shownAs(plan, found);
+    else entries = found.ids.map((id) => ({ call: id }));
+    if (found.finish) entries = found.finish(entries);
+    call.saw = entries;
+    captured.set(call, { plan: plan?.fingerprint ?? null, shown: found, entries, turns });
+  };
+
+  /** The turns placed before the call's own: the worked examples, then what the call is shown as earlier turns. */
+  const pastFor = async (plan: lmcc.Plan, call: calllog.Call | null, baked: boolean): Promise<lmcc.Turn[]> => {
+    const past = baked ? [] : pastTurns(plan);
+    if (call) {
+      const ctx = captured.get(call);
+      if (!ctx) return past;
+      if (ctx.plan === plan.fingerprint) return [...past, ...ctx.turns];
+      // another plan than the one its saw was worked out for (an escalation to another model): shown again as this
+      // plan shows it; when that differs, its record says the context changed
+      const [entries, turns] = shownAs(plan, ctx.shown);
+      if (writeData(entries) !== writeData(ctx.entries) && !call.saw.some((e) => (e as Rec)["context"] === "changed")) call.saw.push({ context: "changed" });
+      return [...past, ...turns];
+    }
+    const found = await contextFor(fn, null);                  // render(): what the next turn's call would be shown
+    return found ? [...past, ...shownAs(plan, found)[1]] : past;
+  };
+
+  /** The instruction a layout writes: a template without `{instruction}` would drop what plugins add to it. */
+  const checkPlaced = (s: Settings): void => {
+    if (isBaked(s.lm)) {
+      throw new PluginError("plugin-change", `${core.definition.name}: plugins changed its instruction (sections, a summary of earlier turns, or a replacement), and it runs on a baked model, which reads only the message it was trained on: the change would not reach it. Run it without those plugins, or on a model that reads instructions.`);
+    }
+    if (s.template && !JSON.stringify(s.template).includes("{instruction}")) {
+      throw new PluginError("plugin-change", `${core.definition.name}: plugins changed its instruction (sections, a summary of earlier turns, or a replacement), and its template never writes {instruction}, so the change would not be sent. Put {instruction} in its template, or use plugins that do not change the instruction with it.`);
+    }
+  };
+
+  /** The call as its `beforeCall` hooks leave it: settings, the instruction (null: its own), the tools offered. */
+  const shape = async (inputs: Rec, s: Settings, call: calllog.Call | null, extra: Settings) => {
+    const around = plugins.around(core.own, extra);
+    const base = signatureNow(s).instructions;
+    const shaped = await plugins.beforeCall(around, {
+      instruction: base, name: core.definition.name, program: fn, inputs, settings: s, tools: core.tools.map((t) => t.name),
+      given: sectionsFor(fn, call), call,
+    });
+    if (call) {
+      call.changes.push(...shaped.applied.items);
+      call.sections = [...shaped.contextSections];             // what it was shown of its conversation (replayed)
+    }
+    const changed = shaped.instruction !== null || shaped.sections.length > 0;
+    const instruction = changed ? [shaped.instruction ?? base, ...shaped.sections].join("\n\n") : null;
+    if (changed) checkPlaced(shaped.settings);
+    const offered = shaped.tools === null ? core.tools : core.tools.filter((t) => shaped.tools!.includes(t.name));
+    return { settings: effective({ ...shaped.settings }) as typeof s & ReturnType<typeof effective>, instruction, offered, plugins: around };
+  };
+
+  /** One model call (and its tool loop): on the model the settings name, or a baked student. */
+  const ask = async (call: calllog.Call, inputs: Rec, shaped: Awaited<ReturnType<typeof shape>>, lm?: unknown): Promise<Prediction> => {
+    const s = lm === undefined ? shaped.settings : { ...shaped.settings, lm: lm as string };
+    if (isBaked(s.lm)) {
+      const job = bakedJob(fn, s.lm, s, inputs, call, answer);
+      call.provider = job.provider;
+      return runEngine({ ...job, past: await pastFor(job.plan, call, true), plugins: shaped.plugins });
+    }
+    const { plan, model, router, provider, settings } = planFor(s, shaped.instruction);
+    call.provider = provider;
+    return runEngine({
+      function: core.definition.name, plan, past: await pastFor(plan, call, false), inputs, settings, router, model,
+      tools: shaped.offered, call, answer, plugins: shaped.plugins,
+    });
+  };
+
   const predict = async (arg: unknown, options: CallOptions = {}, stream?: PredictionStream): Promise<Prediction> => {
     const { signal, ...extra } = options;
     if (signal?.aborted || stream?.signal.aborted) throw new Cancelled();
@@ -557,15 +726,40 @@ export function make(core: Core): AIFunction {
       }
     }
     return runCall<Prediction>({
-      program: () => program(s), fields, own: core.own, options: extra as Settings,
+      program: () => program(s), fields, own: core.own, options: extra as Settings, self: fn,
       settings: s, stream, signal, inputs: given, ...(refused !== undefined ? { refused } : {}),
+      prepare: (call) => prepare(call, s),
       body: async (call) => {
-        const { plan, model, router, provider, settings } = planFor(s);
-        call.provider = provider;
-        const pred = await runEngine({
-          function: core.definition.name, plan, past: pastTurns(plan), inputs: bound, settings, router, model,
-          tools: core.tools, call, answer,
-        });
+        const shaped = await shape(bound, s, call, extra as Settings);
+        let pred = await ask(call, bound, shaped);
+        // escalation: a first model less sure than escalateBelow has another model (or AI function) answer instead
+        const target = ESCALATING.get() ? core.own.escalateTo : shaped.settings.escalateTo;
+        if (target !== undefined && target !== null) {
+          const conf = pred.confidence;
+          if (conf === null) {
+            throw new TypeError(`${core.definition.name}: escalateTo needs a first model that measures its confidence (a baked model, TypeSafe's Jev, or config: { probabilities: "required" }); ${pred.response?.model ?? "the model"} gave no probabilities`);
+          }
+          const threshold = shaped.settings.escalateBelow ?? 0.9;
+          if (conf < threshold) {
+            const who = typeof target === "function" ? (target as { name: string }).name : typeof target === "string" ? target : "another model";
+            call.event("retry", { reason: `the first model was ${Math.round(conf * 100)}% sure (less than ${Math.round(threshold * 100)}%); ${who} answers instead`, wait: null });
+            const first = pred;
+            if (typeof target === "function" && typeof (target as { predict?: unknown }).predict === "function") {
+              // the target follows its own escalateTo (a longer chain), never one around this call
+              const other = target as unknown as AIFunction;
+              const ins = recordOf(other.definition.inputs.filter((f) => Object.hasOwn(bound, f.name)).map((f) => [f.name, bound[f.name]] as const));
+              pred = await ESCALATING.run(true, () => other.predict(ins as never)) as Prediction;
+              pred = new Prediction(pred.outputs, answer, call.id, pred.turn, pred.response, pred.responses, pred.repairs);
+            } else {
+              pred = await ask(call, bound, { ...shaped, settings: { ...shaped.settings, escalateTo: null } }, target);
+            }
+            pred.first = first;
+            call.escalated = true;
+          }
+        }
+        call.confidence = pred.confidence;
+        if (Object.keys(pred.probabilities).length) call.probabilities = pred.probabilities;
+        call.steps = stepsOf(call, pred);
         return { value: pred, outputs: recordOutputs(pred, signature), shown: pred.answer, returned: pred.answer };
       },
     });
@@ -575,30 +769,47 @@ export function make(core: Core): AIFunction {
     throw err instanceof JournalError ? err.withDone((v) => (v as Prediction).answer) : err;
   });
 
-  const map = async (items: Iterable<unknown>, options: MapOptions = {}): Promise<unknown[]> => {
-    const { concurrency = 8, ...call } = options;
+  /** Every item, `concurrency` at once: each one's outcome (stops starting new ones once `stop()` says so). */
+  const each = async (items: Iterable<unknown>, options: MapOptions, stopOnFailure: boolean): Promise<PromiseSettledResult<unknown>[]> => {
+    const { concurrency = 8, progress, ...call } = options;
     const list = [...items];
-    const out: unknown[] = new Array(list.length);
+    const out: PromiseSettledResult<unknown>[] = new Array(list.length);
     const stop = new AbortController();
     const signal = call.signal ? AbortSignal.any([call.signal, stop.signal]) : stop.signal;
+    const meter = showProgress(progress) && list.length ? new Progress(list.length, core.definition.name) : null;
     let next = 0;
+    let failure: unknown = null;
     const worker = async () => {
       while (next < list.length && !signal.aborted) {
         const i = next++;
-        out[i] = await answerOf(predict(list[i], { ...call, signal }));
+        try {
+          const pred = await predict(list[i], { ...call, signal });
+          out[i] = { status: "fulfilled", value: pred.answer };
+          meter?.step(false, pred.usage["totalTokens"] ?? 0);
+        } catch (err) {
+          out[i] = { status: "rejected", reason: err instanceof JournalError ? err.withDone((v) => (v as Prediction).answer) : err };
+          meter?.step(true, 0);
+          if (stopOnFailure) {
+            failure ??= { err: out[i] };
+            stop.abort();                                // the first failure: start no more
+          }
+        }
       }
     };
-    try {
-      await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, worker));
-    } catch (err) {
-      stop.abort();                                  // the first failure: start no more
-      throw err;
-    }
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, worker));
+    if (failure) throw ((failure as { err: PromiseRejectedResult }).err).reason;
     if (call.signal?.aborted) throw new Cancelled();
     return out;
   };
 
+  const map = async (items: Iterable<unknown>, options: MapOptions = {}): Promise<unknown[]> =>
+    (await each(items, options, true)).map((r) => (r as PromiseFulfilledResult<unknown>).value);
+
   const fn = ((input: unknown, options?: CallOptions) => answerOf(predict(input, options))) as unknown as AIFunction;
+  const streamOf = (input: unknown, options: CallOptions, passive: boolean) => {
+    bindInputs(input);                                 // wrong arguments fail here, not in the stream
+    return new PredictionStream<unknown, Prediction>((st) => predict(input, options, st as PredictionStream), (p) => p.answer, options.signal, passive);
+  };
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },
     module: { get: () => core.module },
@@ -626,17 +837,43 @@ export function make(core: Core): AIFunction {
   Object.defineProperties(fn, props);
   Object.assign(fn, {
     predict: (input: unknown, options?: CallOptions) => predict(input, options),
-    stream: (input: unknown, options: CallOptions = {}) => {
-      bindInputs(input);                                 // wrong arguments fail here, not in the stream
-      return new PredictionStream<unknown, Prediction>((s) => predict(input, options, s as PredictionStream), (p) => p.answer, options.signal);
+    stream: (input: unknown, options: CallOptions = {}) => streamOf(input, options, false),
+    conversation: (id?: string | null, options: ConversationOptions = {}) => chatOf(new Conversation(fn as never, id ?? null, options)) as never,
+    _stream: (input: unknown, options: CallOptions, passive: boolean) => streamOf(input, options, passive),
+    _kind: "ai",
+    _conversationFields: () => {
+      const sigNow = signatureNow();
+      return sigNow.fields.filter((f) => !(f.direction === "input" && f.purpose !== "plain"))
+        .map((f) => ({ name: f.name, direction: f.direction, purpose: f.purpose ?? "plain", shape: dataShape(f.shape as Rec) }));
     },
+    _recordedInputs: (input: unknown) => {
+      const bound = parseInputsNow(input);
+      return recordOf(entriesOf(bound).map(([k, v]) => [k, toJson(v)[0]] as const));
+    },
+    _programInfo: () => program(),
+    _exampleTurn: (inputs: Rec, outputs: Rec) => {
+      const plan = planFor(settingsNow()).plan;
+      const turn = plan.example(sig.prepareInputs(plan.signature, parseInputsNow(inputs)), outputs);
+      return copyData(turn.toJSON()) as unknown as Rec;
+    },
+    _aiTools: core.tools,
     map,
-    render: (input: unknown, options: Settings = {}): Request => {
+    mapSettled: (items: Iterable<unknown>, options: MapOptions = {}) => each(items, options, false),
+    render: async (input: unknown, options: Settings = {}): Promise<Request> => {
       const s = settingsNow(options);
-      const { plan, model, settings } = planFor(s);
-      const values = sig.prepareInputs(plan.signature, parseInputsNow(input));
-      if (core.tools.length) setOwn(values, "tools", core.tools.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
-      return lm15Request(plan.render(plan.turn(values), { turns: pastTurns(plan) }), model, configOf(settings));
+      const [raw, filled] = binder.bind(input, { check: false });
+      const bound = checkInputs(core.interface, raw, core.definition.name, droppedFields(fieldsOf(core.interface, signatureNow(s)), core.own, options));
+      await binder.parse(bound, filled);
+      const shaped = await shape(bound, s, null, options);
+      if (isBaked(shaped.settings.lm)) {
+        const job = bakedJob(fn, shaped.settings.lm, shaped.settings, bound, null, answer);
+        const values = sig.prepareInputs(job.plan.signature, job.inputs);
+        return lm15Request(job.plan.render(job.plan.turn(values), { turns: await pastFor(job.plan, null, true) }), job.model, configOf(job.settings));
+      }
+      const { plan, model, settings } = planFor(shaped.settings, shaped.instruction);
+      const values = sig.prepareInputs(plan.signature, bound);
+      if (shaped.offered.length) setOwn(values, "tools", shaped.offered.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
+      return lm15Request(plan.render(plan.turn(values), { turns: await pastFor(plan, null, false) }), model, configOf(settings));
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
@@ -658,3 +895,24 @@ export function make(core: Core): AIFunction {
 }
 
 export type { Core };
+
+/** An escalation target answering: it follows only its own `escalateTo`. */
+const ESCALATING = new Slot<boolean>();
+
+/**
+ * An AI function's call that may be shown again with its steps keeps them
+ * (lmcc's turn steps as JSON): one that ran tools, or one made in a
+ * conversation (calls.md, *Saw*). Showing it again reads them; none is
+ * rebuilt from replies.
+ */
+function stepsOf(call: calllog.Call, pred: Prediction): unknown[] | null {
+  const turn = pred.turn as unknown as { steps?: readonly { kind?: string }[]; toJSON(): unknown };
+  if (!turn?.steps?.length) return null;
+  const ranTools = turn.steps.some((st) => st.kind === "tool");
+  if (!ranTools && !call.turnRun) return null;
+  try {
+    return copyData(((turn.toJSON() as Rec)["steps"] ?? null) as unknown[] | null);
+  } catch {
+    return null;
+  }
+}

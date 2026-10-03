@@ -43,7 +43,7 @@ test("a call sends the layout and returns the typed answer", async () => {
 test("inputs by name (one input: its value alone); render shows the request without sending it", async () => {
   const router = new FakeRouter(["<result>\nParis\n</result>", "<result>\nhappy\n</result>"]);
   const capital = ai("capital", { description: "The capital city.", input: { country: t.string(), year: t.integer() }, router });
-  const request = capital.render({ country: "France", year: 1900 });
+  const request = await capital.render({ country: "France", year: 1900 });
   assert.equal(text(request.messages[0]!), "<country>\nFrance\n</country>\n<year>\n1900\n</year>\n");
   assert.equal(router.requests.length, 0);
   assert.equal(await capital({ country: "France", year: 1900 }), "Paris");
@@ -209,7 +209,7 @@ test("every call is a line in the log; ratings make rows with known answers", as
   rate(p2.callId, "right", { by: "ben", folder });
   const { rows, leftOut } = rated(mood, { folder });
   assert.deepEqual(rows.map((r) => [r["review"], r["result"], r["rating"]]), [["I was charged twice", "mixed", "wrong"], ["Lovely", "happy", "right"]]);
-  assert.deepEqual(leftOut, { otherSignature: 0, noContent: 0, noAnswer: 0 });
+  assert.deepEqual(leftOut, { otherSignature: 0, noContent: 0, noAnswer: 0, noContext: 0 });
   assert.equal(calls(mood, { folder }).length, 2);
 });
 
@@ -318,18 +318,18 @@ test("improving adds worked examples: a new version, the demos in the request", 
   assert.equal(labeled.demos.length, 2);
   assert.notEqual(labeled.version, mood.version);
   assert.equal(mood.demos.length, 0);
-  const request = labeled.render("new");
+  const request = await labeled.render("new");
   assert.equal(request.messages.length, 5);
   const boot = await bootstrapFewShot(mood, rows, { maxBootstrapped: 2, maxLabeled: 3 });
   const demos = boot.demos as unknown as Record<string, unknown>[];
   assert.equal(demos.filter((d) => "steps" in d).length, 2);
   assert.equal(demos.length, 3);
-  assert.equal(boot.render("new").messages.length, 7);
+  assert.equal((await boot.render("new")).messages.length, 7);
 });
 
 // ------------------------------------------------------------------ saved
 
-test("a function saved here loads back with the same version and requests", () => {
+test("a function saved here loads back with the same version and requests", async () => {
   const mood = ai("mood", { ...moodDef, definedIn: "shop", temperature: 0 });
   mood.demos = [{ review: "Broke", result: "unhappy" }];
   const manifest = JSON.parse(JSON.stringify(toManifest(mood)));
@@ -339,7 +339,7 @@ test("a function saved here loads back with the same version and requests", () =
   assert.equal(again.version, mood.version);
   assert.equal(again.signatureId, mood.signatureId);
   assert.equal(again.module, "shop");
-  assert.deepEqual(again.render("x"), mood.render("x"));
+  assert.deepEqual(await again.render("x"), await mood.render("x"));
 });
 
 // ------------------------------------------------------------------ layouts

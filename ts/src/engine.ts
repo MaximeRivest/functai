@@ -6,26 +6,28 @@
  * comes from the plan.
  */
 
-import { cacheOf, forget, keep, lookup, replyKey } from "./cache.ts";
 import * as lmcc from "lmcc";
+import * as replies from "./replies.ts";
+import * as history from "./history.ts";
+import * as plugins from "./plugins.ts";
+import { INVOCATION } from "./calllog.ts";
+import { effectsOf, pathOf, type Tool } from "./tools.ts";
+import type { Approval } from "./errors.ts";
+import { Cancelled } from "./errors.ts";
 import * as bridge from "lmcc/lm15";
 import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Config, type Request, type Response,
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
-import { entriesOf, setOwn, writeData } from "./values.ts";
+import { copyData, entriesOf, setOwn, writeData } from "./values.ts";
+import { warnOnce } from "./calllog.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
 
 type Rec = Record<string, unknown>;
 
-/** A tool the model may call: its name, what it does, the JSON Schema of its input, and the code. */
-export interface Tool {
-  readonly name: string;
-  readonly description?: string;
-  readonly parameters: Rec;
-  readonly run: (input: any) => unknown;
-}
+export type { Tool } from "./tools.ts";
+export { Cancelled } from "./errors.ts";
 
 /** The tool loop reached `maxSteps` without an answer. */
 export class StepLimit extends Error {
@@ -37,13 +39,6 @@ export class StepLimit extends Error {
   }
 }
 
-/** A stream closed the call. */
-export class Cancelled extends Error {
-  constructor(message = "the stream was closed") {
-    super(message);
-    this.name = "Cancelled";
-  }
-}
 
 /** Everything one call produced. `answer` is the value a call returns. */
 export class Prediction<O = Rec, A = unknown> {
@@ -73,6 +68,43 @@ export class Prediction<O = Rec, A = unknown> {
     return (this.outputs as Rec)[this.answerName] as A;
   }
 
+  /**
+   * The probabilities the model measured for its own answers, by output
+   * (`{ result: { billing: 0.93, shipping: 0.05 } }`); empty when it
+   * measures none: only TypeSafe (`typesafe:jev-latest`) and servers that
+   * score tokens do (a model's own words about its confidence are not one).
+   */
+  probabilities: Record<string, Record<string, number>> = {};
+  /** The probability the model gave its own answer, the lowest over the outputs it measured; null when it measured none. */
+  get confidence(): number | null {
+    const values: number[] = [];
+    for (const [field, dist] of Object.entries(this.probabilities)) {
+      const ps = Object.values(dist);
+      if (!ps.length) continue;
+      const v = (this.outputs as Rec)[field];
+      const key = typeof v === "string" ? v : typeof v === "boolean" ? String(v) : JSON.stringify(v);
+      values.push(Object.hasOwn(dist, key) ? dist[key]! : Math.max(...ps));
+    }
+    return values.length ? Math.min(...values) : null;
+  }
+
+  /** A first model was unsure and another answered: the first one's prediction (`escalateTo`). */
+  first: Prediction | null = null;
+  get escalated(): boolean {
+    return this.first !== null;
+  }
+
+  /** Tokens, summed over every reply: `inputTokens`, `outputTokens`, `totalTokens`, … */
+  get usage(): Record<string, number> {
+    const total: Record<string, number> = {};
+    for (const r of this.responses) {
+      for (const [k, v] of Object.entries((r.usage ?? {}) as Record<string, unknown>)) {
+        if (typeof v === "number" && Number.isInteger(v)) total[k] = (total[k] ?? 0) + v;
+      }
+    }
+    return total;
+  }
+
   get attempts(): number {
     return this.responses.length;
   }
@@ -94,6 +126,8 @@ export interface Job {
   readonly tools: readonly Tool[];
   readonly call: Call;
   readonly answer: string;
+  /** The plugins around the call, in order (contract/plugins.md). */
+  readonly plugins: readonly plugins.Plugin[];
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -116,6 +150,7 @@ const retryable = (err: unknown) => RETRYABLE_ERRORS.some((cls) => err instanceo
 
 /** A request event: the call begins a request to a model (streaming.md, law 8: each is an exchange). */
 function requested(job: Job): void {
+  if (job.call.node?.log.replaying) return;                 // a resumed turn replaying a request it made before
   job.call.requests += 1;
   job.call.event("request", { request: job.call.requests, model: job.model });
 }
@@ -124,21 +159,21 @@ const stopped = (job: Job) => {
   if (job.call.signal?.aborted) throw new Cancelled();
 };
 
-/** One request: from the reply cache when on, else through the router, re-sent after transient errors; streamed when watched. */
-async function send(job: Job, request: Request, requestHash: string): Promise<Response> {
+/**
+ * One request: `hit` when the reply is already known (the reply cache, or a
+ * turn being resumed: contract/tools.md), else through the router, re-sent
+ * after transient errors; streamed when something watches the call live.
+ */
+async function send(job: Job, request: Request, requestHash: string | null, hit: Response | null): Promise<Response> {
   const { call } = job;
   const signal = call.signal;
-  const cache = cacheOf(job.settings.cacheReplies);
-  const key = cache ? replyKey(request) : null;
-  if (cache && key) {
+  if (hit) {
     stopped(job);
-    const hit = await lookup(cache, key);
-    if (hit) {
-      requested(job);
-      call.exchange(job.model, request, hit, Date.now(), 0, { cached: true, requestHash });
-      if (call.watched) replay(job, hit);           // a whole reply: one text piece per field (streaming.md)
-      return hit;
-    }
+    requested(job);
+    call.exchange(job.model, request, hit, Date.now(), 0, { cached: true, requestHash });
+    history.keep({ function: job.function, model: job.model, request, response: hit, cached: true, error: null });
+    if (call.watched) replay(job, hit);           // a whole reply: one text piece per field (streaming.md)
+    return hit;
   }
   const retries = Math.max(0, job.settings.apiRetries);
   for (let attempt = 0; ; attempt++) {
@@ -146,7 +181,7 @@ async function send(job: Job, request: Request, requestHash: string): Promise<Re
     const started = Date.now();
     const t0 = performance.now();
     requested(job);
-    const watched = call.watched;
+    const watched = call.node ? call.node.log.wantsPieces(call.node) : false;
     try {
       let response: Response;
       let first: number | null = null;
@@ -186,13 +221,14 @@ async function send(job: Job, request: Request, requestHash: string): Promise<Re
         response = materializeResponse(events, request);
       } else {
         response = await job.router.complete(request, signal ? { signal } : undefined);
-        if (watched) replay(job, response);
+        if (call.watched) replay(job, response);
       }
       call.exchange(job.model, request, response, started, (performance.now() - t0) / 1000,
         { streamed: watched && job.router.stream !== undefined, firstDelta: first, requestHash });
-      if (cache && key && response.finishReason !== "error") await keep(cache, key, response);
+      history.keep({ function: job.function, model: job.model, request, response, cached: false, error: null });
       return response;
     } catch (err) {
+      history.keep({ function: job.function, model: job.model, request, response: null, cached: false, error: `${(err as Error)?.name}: ${(err as Error)?.message}` });
       call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000,
         { error: err, streamed: watched && job.router.stream !== undefined, requestHash });
       if (signal?.aborted) throw new Cancelled();
@@ -277,7 +313,13 @@ function askedAgain(err: lmcc.Refusal): string {
     : `the reply could not be read (${err.hint}); asking again`;
 }
 
-/** One model call; after an unreadable reply, up to `retries` follow-ups that send the reader's hint back. */
+/**
+ * One model call; after an unreadable reply, up to `retries` follow-ups that
+ * send the reader's hint back. Each attempt: the `request` hooks (the escape
+ * hatch), then a reply already known (the turn being resumed recorded it, or
+ * the reply cache kept it), else the provider. Only a reply that was read is
+ * kept in the cache; a stored turn keeps every reply.
+ */
 async function complete(job: Job, rendered: lmcc.RenderResult, responses: Response[]): Promise<[Response, lmcc.Reading]> {
   const overrides: Rec = {};
   let request = lm15Request(rendered, job.model, configOf(job.settings));
@@ -286,17 +328,40 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
   let asked = rendered.request() as Rec;
   let requestHash = lmcc.sha256(asked as lmcc.Json);
   const retries = Math.max(0, job.settings.retries);
+  const replicate = Number(job.settings.replicate ?? 0) || 0;
+  const run = job.call.turnRun;
   for (let attempt = 0; ; attempt++) {
-    const response = await send(job, request, requestHash);
-    responses.push(response);
+    // the escape hatch: a plugin may replace the provider request; no one can rebuild it, so its exchange has no request_hash
+    const [sent, replaced] = await plugins.requestHook(job.plugins, request, job.call, job.function);
+    let hit: Response | null = null;
+    if (run) {
+      hit = run.recordedReply(replies.replyKey(sent, replicate));
+      if (!hit) job.call.node?.log.frontier();               // the turn does something it had not done: shown from here
+    }
+    const flight = hit ? null : await replies.begin(job.settings.cacheReplies, sent, replicate, job.call.content, job.call.signal);
+    let response!: Response;
     try {
-      const reading = bridge.read(job.plan, response);
-      checkValues(job.plan, reading.values as Rec);
+      response = await send(job, sent, replaced ? null : requestHash, hit ?? flight?.reply ?? null);
+      responses.push(response);
+      if (run?.durable) {
+        try {
+          run.noteReply(replies.replyKey(sent, replicate), response);     // a stored turn keeps every reply
+        } catch (err) {
+          warnOnce(`note-reply:${(err as Error).name}`, `a reply could not be kept in the conversation (${(err as Error).message})`);
+        }
+      }
+      let reading: lmcc.Reading;
+      try {
+        reading = bridge.read(job.plan, response);
+        checkValues(job.plan, reading.values as Rec);
+      } catch (err) {
+        if (flight) await flight.drop();                     // a kept reply that no longer reads is forgotten
+        throw err;
+      }
+      if (flight && response.finishReason !== "error") await flight.keep(response);   // only a reply that was read is kept
       return [response, reading];
     } catch (err) {
       if (!lmcc.isRefusal(err)) throw err;
-      const cache = cacheOf(job.settings.cacheReplies);
-      if (cache) await forget(cache, replyKey(request));   // an unreadable reply is not kept: asked again, it is asked of the model
       let refusal = err as lmcc.Refusal;
       // the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
       const limit = configOf(job.settings, overrides as never)?.maxTokens ?? undefined;   // null: none set
@@ -314,6 +379,8 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
         requestHash = lmcc.sha256(asked as lmcc.Json);
       }
       job.call.event("retry", { reason: askedAgain(refusal), wait: null });
+    } finally {
+      await flight?.end();
     }
   }
 }
@@ -328,11 +395,54 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
   try {
     out = await tool.run(call.input ?? {});
   } catch (err) {
-    if (errors === "raise") throw err;
+    if (errors === "raise" || err instanceof Cancelled || (err as { code?: unknown })?.code === "turn-waiting") throw err;
     const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
     return `error: ${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
   }
   return typeof out === "string" ? out : writeData(out);     // members in the value's order
+}
+
+/**
+ * One tool call of the call in progress (contract/tools.md, plugins.md):
+ * numbered (its invocation), shown, given to the `toolCall` hooks (which may
+ * change its input, block it, or ask a person: `approve` is one of them),
+ * kept before and after it runs when it changes things (a stored turn, a
+ * required journal), run, its result given to the `toolResult` hooks, and
+ * shown.
+ */
+async function oneTool(job: Job, asked: { id: string; name: string; input?: unknown }): Promise<string> {
+  const current = job.call;
+  const n = ++current.invocations;
+  const tool = job.tools.find((t) => t.name === asked.name);
+  const effects = tool ? effectsOf(tool) : "reads";            // an unknown tool runs nothing
+  const made = current.event("tool_call", { id: asked.id, name: asked.name, input: asked.input ?? {}, invocation: n });
+  const approval: Approval = {
+    call: current.id, invocation: n, id: asked.id, name: asked.name, input: asked.input ?? {}, effects,
+    path: pathOf(current, asked.name), site: current.path, plugin: "approval",
+  };
+  const [input, refused] = await plugins.toolCall(job.plugins, current, approval, job.settings as unknown as Rec);
+  let output: string;
+  if (refused !== null) output = refused;
+  else {
+    const run = current.turnRun;
+    const known = run ? run.recordedTool(current, approval) : null;
+    if (known !== null) output = known;                        // a turn resumed: this tool ran before; its result is kept
+    else {
+      current.node?.log.frontier();
+      if (effects !== "reads") {
+        // a required journal keeps the request before a tool that changes things runs (at most its timeout)
+        if (await current.node?.log.barrier(made, current.signal) === "cancelled") throw new Cancelled();
+        run?.toolStarted(current, { ...approval, input });
+      }
+      stopped(job);
+      output = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors));
+      // the result as the model is shown it; a turn resumed later reuses it, hooks and all
+      output = await plugins.toolResult(job.plugins, current, approval, input, output);
+      run?.toolDone(current, approval, output);
+    }
+  }
+  current.event("tool_result", { id: asked.id, name: asked.name, output, invocation: n });
+  return output;
 }
 
 /** Call the model (and run tools until it answers). */
@@ -355,16 +465,13 @@ export async function run(job: Job): Promise<Prediction> {
       const outputs: Rec = {};
       for (const [k, v] of entriesOf(turn.outputs ?? {})) if (k !== "calls") setOwn(outputs, k, v);
       const pred = new Prediction(outputs, job.answer, job.call.id, turn, response, responses, reading.repairs);
+      pred.probabilities = copyData((reading as { probabilities?: Record<string, Record<string, number>> }).probabilities ?? {});
       if (job.tools.length) Object.defineProperty(pred, "toolCalls", { value: toolCalls, enumerable: false });
       return pred;
     }
     for (const c of calls) {
-      const asked = job.call.event("tool_call", { id: c.id, name: c.name, input: c.input ?? {} });
-      // a required journal keeps the request before the tool runs (at most its timeout; a cancelled call stops waiting)
-      if (await job.call.node?.log.barrier(asked, job.call.signal) === "cancelled") throw new Cancelled();
       stopped(job);
-      const output = await runTool(job.tools, c, job.settings.toolErrors);
-      job.call.event("tool_result", { id: c.id, name: c.name, output });
+      const output = await oneTool(job, c);
       turn = turn.tool(c.id, output);
     }
   }

@@ -15,10 +15,12 @@ import * as lm15 from "@lm15/lm15";
 const LMCC_VERSION: unknown = (lmcc as unknown as { VERSION?: unknown }).VERSION;
 const LM15_VERSION: unknown = (lm15 as unknown as { VERSION?: unknown }).VERSION;
 import { writtenRecord, type CallFields } from "./content.ts";
-import type { Node } from "./log.ts";
+import type { Node, Observer } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
-import { entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
+import { copyData, entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
+import { FunctAIError, type Approval } from "./errors.ts";
+import { earlierOf, needsContext, recordsById, SawUnknown } from "./saw.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -128,7 +130,9 @@ export function callerOf(settings: Settings): Rec {
 
 export interface Program {
   name: string;
-  kind: "ai" | "module";
+  kind: "ai" | "module" | "remote";
+  /** A program served elsewhere: where (serving.md). */
+  remote?: string;
   module: string;
   version: string;
   /** AI functions only: lmcc's signature fingerprint with every type name empty. */
@@ -157,7 +161,7 @@ interface Exchange {
 
 /** One call being made: what its record and its events need. */
 export class Call {
-  readonly id = newId();
+  readonly id: string = newId();
   readonly parent: string | null;
   readonly root: string;
   readonly started = now();
@@ -178,6 +182,51 @@ export class Call {
   requests = 0;
   /** Its place in its tree's log (set when it starts). */
   node!: Node;
+  /**
+   * Its place in its tree by names and order (contract/conversations.md,
+   * `site`): the outermost call's name, then each child's, each with its
+   * occurrence among its parent's children of that name (`support#1/answer#1`).
+   */
+  readonly path: string;
+  /** How many children of each name it started (its children's sites). */
+  readonly names = new Map<string, number>();
+  /** Made while a tool ran: that tool call's number in the call that asked for it (tools.md). */
+  invocation: number | null = null;
+  /** The tool calls this call made so far (each one's invocation is the next). */
+  invocations = 0;
+  /** A conversation's turn: `{ id, turn, parent }` (its record's `conversation`). */
+  conversation: Rec | null = null;
+  /** A call continued by a later writer (a resumed turn): that writer's number. */
+  writer: number | null = null;
+  /** The conversation turn this call runs in (conversations.ts), or null. */
+  turnRun: TurnHooks | null = null;
+  /** What it was shown as context (its record's `saw`). */
+  saw: Rec[] = [];
+  /** What plugins changed (plugins.md, "Records"). */
+  readonly changes: Rec[] = [];
+  /** False when a plugin replaced a provider request. */
+  replayable = true;
+  /** Text its conversation's `context` hooks added to its instruction. */
+  sections: string[] = [];
+  /** An AI function's lmcc turn steps, when they are kept (calls.md, `steps`). */
+  steps: unknown[] | null = null;
+  /** A first model was unsure and another answered. */
+  escalated = false;
+  /** `{ output: { answer: probability } }`, when the model measured them. */
+  probabilities: Record<string, Record<string, number>> | null = null;
+  /** Tokens of its own exchanges, by kind. */
+  get usage(): Record<string, number> {
+    const usage: Record<string, number> = {};
+    for (const e of this.exchanges) if (e.response) for (const [k, v] of Object.entries(usageOf(e.response))) usage[k] = (usage[k] ?? 0) + v;
+    return usage;
+  }
+  /** The value its program gave (an AI function's prediction), once it has one: what a remembered helper's call keeps. */
+  value: unknown = undefined;
+
+  /** The caller's call in another process's log (a served call's `FunctAI-Parent`): its record's `parent`. */
+  set remoteParent(id: string) {
+    (this as { parent: string | null }).parent = id;
+  }
 
   readonly program: () => Program;
   readonly folder: string | null;
@@ -199,6 +248,18 @@ export class Call {
     this.signal = signal;
     this.parent = parent?.id ?? null;
     this.root = parent?.root ?? this.id;
+    const name = program().name;
+    if (parent) {
+      const n = (parent.names.get(name) ?? 0) + 1;
+      parent.names.set(name, n);
+      this.path = `${parent.path}/${name}#${n}`;
+    } else this.path = `${name}#1`;
+  }
+
+  /** The call's id, minted by its turn when it is a conversation's turn (known before the call starts). */
+  set mintedId(id: string) {
+    (this as { id: string }).id = id;
+    if (this.parent === null) (this as { root: string }).root = id;
   }
 
   /** Whether every value is written. */
@@ -215,7 +276,7 @@ export class Call {
   }
 
   /** Make one of its events (streaming.md) when anything watches it: its streams, observers, the tree's journal. */
-  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry", fields: Rec) {
+  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry" | "approval" | "approved", fields: Rec) {
     return this.node?.log.emit(this.node, kind, fields) ?? null;
   }
 
@@ -226,6 +287,54 @@ export class Call {
 }
 
 export const current = new Context<Call>();
+/** A call made while a tool runs: the number of that tool call in the call that asked (engine.ts sets it). */
+export const INVOCATION = new Context<number | null>();
+/** The call of another process a served call is made for (`FunctAI-Parent`): the outermost call's `parent` (serving.md). */
+export const REMOTE_PARENT = new Context<{ id: string | null }>();
+
+/**
+ * What a call needs from the conversation turn it runs in (conversations.ts):
+ * the replies, tool results and answers a resumed turn recorded, and the
+ * records a turn writes as it goes (contract/tools.md, *Resuming*).
+ */
+export interface TurnHooks {
+  /** The turn's id, which is its own call's. */
+  readonly turn: string;
+  /** Whether its records keep what resuming needs (a module's turn, or an AI function's with tools). */
+  readonly durable: boolean;
+  recordedReply(key: string): Response | null;
+  noteReply(key: string, response: Response): void;
+  /** A tool's result kept by an earlier attempt; throws `turn-unfinished` for one that may have run. */
+  recordedTool(call: Call, approval: Approval): string | null;
+  toolStarted(call: Call, approval: Approval): void;
+  toolDone(call: Call, approval: Approval, output: string): void;
+  /** `[allowed, reason, by, fresh]`: an answer recorded for this question (`fresh`: given while the turn waited). */
+  recordedApproval(call: Call, approval: Approval): [boolean, string | null, string | null, boolean] | null;
+  noteApproval(call: Call, approval: Approval, allowed: boolean, reason: string | null, by: string | null): void;
+  /** Stop the turn to wait for a person (throws). */
+  pause(call: Call, approval: Approval): never;
+  /** A call of this turn starts: the turn's own (attach it), or one inside. */
+  started(call: Call): void;
+  /** A call of this turn ended. */
+  ended(call: Call, failed: boolean): void;
+}
+
+/** A conversation's turn being run by this process, as a call sees it (conversations.ts makes them). */
+export interface TurnRunLike extends TurnHooks {
+  /** The program the turn is with: its call is the turn's own. */
+  readonly self: object;
+  /** The turn's own call has started. */
+  rootTaken: boolean;
+  /** Aborted when the turn is stopped (from any process) or taken over. */
+  readonly signal: AbortSignal;
+  /** For a resumed turn's own call: this process's claim on its log. */
+  laterWriter(call: Call): { writer: number; after: { writer: number; seq: number } | null; at: string; requests: number } | null;
+  /** An observer that keeps the turn's kept log in its store (another process watches it there), or null. */
+  eventsSink(call: Call): Observer | null;
+}
+
+/** The turn being started in this context (conversations.ts sets it while the turn's call begins). */
+export const ACTIVE_TURN = new Context<TurnRunLike | null>();
 
 /** FunctAI's own refusal codes (contract/README.md), recorded with their errors. */
 const OWN_CODES = /^(interface-|log-content-|journal-|saved-|event-)[a-z-]+$/;
@@ -234,7 +343,7 @@ const OWN_CODES = /^(interface-|log-content-|journal-|saved-|event-)[a-z-]+$/;
 export function errorJson(err: unknown, content = true): Rec {
   const e = err as { name?: string; code?: unknown; message?: string; constructor?: { name?: string } };
   const out: Rec = { type: e?.constructor?.name && e.constructor.name !== "Error" ? e.constructor.name : (e?.name ?? "Error") };
-  if (typeof e?.code === "string" && (lmcc.isRefusal(err) || OWN_CODES.test(e.code))) out["code"] = e.code;
+  if (typeof e?.code === "string" && (lmcc.isRefusal(err) || err instanceof FunctAIError || OWN_CODES.test(e.code))) out["code"] = e.code;
   if (content) out["message"] = e?.message ?? String(err);
   return out;
 }
@@ -327,8 +436,17 @@ export function record(call: Call, ending: Ending): Rec {
   rec["model"] = answered.length ? answered[answered.length - 1]!.model : null;
   rec["usage"] = usage;
   rec["confidence"] = call.confidence;
+  if (call.probabilities && Object.keys(call.probabilities).length) rec["probabilities"] = copyData(call.probabilities);
+  if (call.escalated) rec["escalated"] = true;
   rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, true));
-  rec["saw"] = [];
+  if (call.steps !== null) rec["steps"] = copyData(call.steps);
+  rec["saw"] = copyData(call.saw);
+  if (call.invocation !== null) rec["invocation"] = call.invocation;
+  if (call.conversation !== null) rec["conversation"] = copyData(call.conversation);
+  if (call.writer !== null && call.writer > 1) rec["writer"] = call.writer;
+  if (call.sections.length) rec["sections"] = [...call.sections];
+  if (call.changes.length) rec["changes"] = copyData(call.changes);
+  if (!call.replayable) rec["replayable"] = false;
   if (call.journal) rec["journal"] = call.journal;
   rec["caller"] = lmcc.copyObject(call.caller);
   rec["process"] = processJson();
@@ -385,44 +503,166 @@ export function write(call: Call, ending: Ending): void {
 
 // ------------------------------------------------------------------ reading
 
-/** (calls, ratings) logged in a folder, as the objects of their lines. */
-export function read(folder?: string | null, opts: { since?: Date | null } = {}): [Rec[], Rec[]] {
+/** The `.jsonl` files a reader reads: the top level (kept files, calls.md "The folder"), then each day's from `since`'s day. */
+function logFiles(root: string, since: string): string[] {
+  const fs = builtin("node:fs")!;
+  const path = builtin("node:path")!;
+  if (!fs.existsSync(root)) return [];
+  const names = fs.readdirSync(root).sort();
+  const out = names.filter((f) => f.endsWith(".jsonl")).map((f) => path.join(root, f)).filter((f) => fs.statSync(f).isFile());
+  for (const day of names) {
+    const dir = path.join(root, day);
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !fs.statSync(dir).isDirectory()) continue;
+    if (since && day < since.slice(0, 10)) continue;
+    for (const file of fs.readdirSync(dir).sort()) if (file.endsWith(".jsonl")) out.push(path.join(dir, file));
+  }
+  return out;
+}
+
+function linesOf(file: string): Rec[] {
+  const fs = builtin("node:fs")!;
+  let text: string;
+  try {
+    text = fs.readFileSync(file, "utf8");
+  } catch {
+    return [];
+  }
+  const out: Rec[] = [];
+  for (const raw of text.split("\n")) {
+    if (!raw.trim()) continue;
+    let rec: unknown;
+    try {
+      rec = parseData(raw);
+    } catch {
+      continue;
+    }
+    if (typeof rec === "object" && rec !== null && !Array.isArray(rec)) out.push(rec as Rec);
+  }
+  return out;
+}
+
+/** A time to read from: a `Date`, or text like `"7d"`, `"12h"`, `"2w"` or a date (`"2026-09-20"`). */
+export function sinceOf(since: Date | string | null | undefined): Date | null {
+  if (since === null || since === undefined) return null;
+  if (since instanceof Date) return since;
+  const m = /^\s*(\d+)\s*([hdw])\s*$/.exec(since);
+  if (m) return new Date(Date.now() - Number(m[1]) * { h: 3600e3, d: 86400e3, w: 7 * 86400e3 }[m[2] as "h" | "d" | "w"]);
+  const d = new Date(since);
+  if (Number.isNaN(d.getTime())) throw new TypeError(`since is a Date, or text like "2026-09-20", "7d", "12h", "2w"; not ${JSON.stringify(since)}`);
+  return d;
+}
+
+/**
+ * (calls, ratings) logged in a folder, as the objects of their lines: the
+ * folder's top-level files (what `pruneCalls` kept) and each day's. A call
+ * continued by a later writer (a resumed turn) is the record of its highest
+ * `writer` (calls.md).
+ */
+export function read(folder?: string | null, opts: { since?: Date | string | null } = {}): [Rec[], Rec[]] {
   const fs = builtin("node:fs");
   const path = builtin("node:path");
   const root = folder ? expand(folder) : folderOf(true);
   if (!fs || !path || !root) throw new Error("reading a log folder needs a file system; pass the records instead");
-  const cutoff = opts.since ? iso(opts.since.getTime()) : "";
+  const start = sinceOf(opts.since);
+  const cutoff = start ? iso(start.getTime()) : "";
   const calls: Rec[] = [];
   const ratings: Rec[] = [];
-  if (!fs.existsSync(root)) return [calls, ratings];
-  for (const day of fs.readdirSync(root).sort()) {
-    const dir = path.join(root, day);
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || !fs.statSync(dir).isDirectory()) continue;
-    if (cutoff && day < cutoff.slice(0, 10)) continue;
-    for (const file of fs.readdirSync(dir).sort()) {
+  for (const file of logFiles(root, cutoff)) {
+    for (const r of linesOf(file)) {
+      if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
+      else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+    }
+  }
+  return [latestWriters(calls), ratings];
+}
+
+/** One record per call: a call continued by a later writer is the record of its highest `writer`. */
+export function latestWriters(calls: readonly Rec[]): Rec[] {
+  const best = new Map<unknown, Rec>();
+  for (const c of calls) {
+    const had = best.get(c["id"]);
+    if (!had || Number(c["writer"] ?? 1) >= Number(had["writer"] ?? 1)) best.set(c["id"], c);
+  }
+  const seen = new Set<unknown>();
+  const out: Rec[] = [];
+  for (const c of calls) {
+    if (seen.has(c["id"])) continue;
+    seen.add(c["id"]);
+    out.push(best.get(c["id"])!);
+  }
+  return out;
+}
+
+/**
+ * Delete the call log's day folders older than a time, keeping what ratings
+ * need (calls.md, "The folder"). Before a day goes, every rated call in it,
+ * every call of its tree, every call its `saw` names and their ratings are
+ * copied into one file at the folder's top level
+ * (`kept-<host>-<pid>-<hex>.jsonl`), which every reader reads: a row of
+ * `rated` made before pruning is made the same after. Returns how many day
+ * folders and calls went, and how many calls were kept.
+ */
+export function pruneCalls(opts: { olderThan?: Date | string; folder?: string; keepRated?: boolean } = {}): { days: number; calls: number; kept: number } {
+  const fs = builtin("node:fs");
+  const path = builtin("node:path");
+  const os = builtin("node:os");
+  if (!fs || !path) throw new Error("pruning a log folder needs a file system");
+  const root = opts.folder ? expand(opts.folder) : folderOf(true);
+  const start = sinceOf(opts.olderThan ?? "90d");
+  if (!root || !start) throw new TypeError("olderThan is a time: \"90d\", a date");
+  const first = iso(start.getTime()).slice(0, 10);
+  if (!fs.existsSync(root)) return { days: 0, calls: 0, kept: 0 };
+  const oldDays = fs.readdirSync(root).sort().filter((d) => /^\d{4}-\d{2}-\d{2}$/.test(d) && d < first && fs.statSync(path.join(root, d)).isDirectory());
+  if (!oldDays.length) return { days: 0, calls: 0, kept: 0 };
+  const [everything, ratings] = read(root);
+  const byId = new Map(everything.map((c) => [c["id"] as string, c]));
+  const inOld = new Set<string>();
+  const oldLines: Rec[] = [];
+  for (const day of oldDays) {
+    for (const file of fs.readdirSync(path.join(root, day)).sort()) {
       if (!file.endsWith(".jsonl")) continue;
-      let text: string;
-      try {
-        text = fs.readFileSync(path.join(dir, file), "utf8");
-      } catch {
-        continue;
-      }
-      for (const raw of text.split("\n")) {
-        if (!raw.trim()) continue;
-        let rec: unknown;
-        try {
-          rec = parseData(raw);
-        } catch {
-          continue;
-        }
-        if (typeof rec !== "object" || rec === null || Array.isArray(rec)) continue;
-        const r = rec as Rec;
-        if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
-        else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+      for (const r of linesOf(path.join(root, day, file))) {
+        oldLines.push(r);
+        if ("functai_call" in r) inOld.add(r["id"] as string);
       }
     }
   }
-  return [calls, ratings];
+  const keep = new Set<string>();
+  if (opts.keepRated !== false) {
+    const rated = new Set(ratings.map((r) => r["call"] as string));
+    const trees = new Set([...rated].filter((c) => byId.has(c)).map((c) => byId.get(c)!["root"]));
+    for (const [id, c] of byId) if (rated.has(id) || trees.has(c["root"])) keep.add(id);
+    const todo = [...keep];
+    while (todo.length) {                          // every call a kept call's saw names, and theirs
+      const c = byId.get(todo.pop()!);
+      for (const entry of ((c?.["saw"] ?? []) as Rec[])) {
+        if (typeof entry !== "object" || entry === null) continue;
+        for (const key of ["call", "saw_of"]) {
+          const id = entry[key] as string | undefined;
+          if (id && byId.has(id) && !keep.has(id)) {
+            keep.add(id);
+            todo.push(id);
+          }
+        }
+      }
+    }
+  }
+  const keptLines = oldLines.filter((r) => ("functai_call" in r && keep.has(r["id"] as string)) || ("functai_rating" in r && keep.has(r["call"] as string)));
+  if (keptLines.length) {
+    const host = (os ? os.hostname() : "host").replace(/[^A-Za-z0-9_.-]/g, "_") || "host";
+    const rand = Array.from(globalThis.crypto.getRandomValues(new Uint8Array(3)), (b) => b.toString(16).padStart(2, "0")).join("");
+    const file = path.join(root, `kept-${host}-${pid() ?? 0}-${rand}.jsonl`);
+    const fd = fs.openSync(file, fs.constants.O_WRONLY | fs.constants.O_CREAT | fs.constants.O_EXCL, 0o600);
+    try {
+      fs.writeSync(fd, keptLines.map((r) => writeData(r) + "\n").join(""));
+      fs.fsyncSync(fd);
+    } finally {
+      fs.closeSync(fd);
+    }
+  }
+  for (const day of oldDays) fs.rmSync(path.join(root, day), { recursive: true, force: true });
+  const keptCalls = keptLines.filter((r) => "functai_call" in r).length;
+  return { days: oldDays.length, calls: [...inOld].filter((id) => !keep.has(id)).length, kept: keptCalls };
 }
 
 const order = (r: Rec, key: string): string => `${r[key] ?? ""}\u0000${r["id"] ?? ""}`;
@@ -488,7 +728,7 @@ function addMeta(row: Rec, meta: Rec): void {
   }
 }
 
-export interface LeftOut { other_signature: number; no_content: number; no_answer: number }
+export interface LeftOut { other_signature: number; no_content: number; no_answer: number; no_context?: number }
 
 /** Rows with known answers from rated calls (contract/calls.md, "Rows with known answers"). */
 export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
@@ -541,6 +781,86 @@ export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
     rows.push(row);
   }
   return [rows, left];
+}
+
+/** A column `ratedRows` added, under its name or with underscores in front. */
+export function metaOf(row: Rec, key: string): unknown {
+  const keys = Object.keys(row).reverse();
+  const k = keys.find((x) => x.replace(/^_+/, "") === key);
+  return k === undefined ? undefined : row[k];
+}
+
+const META = 7;
+
+/**
+ * Rows of calls that were shown earlier turns (a conversation), each with
+ * `earlier`, `conversation` (and `sections`, `helpers`) after the data and
+ * before the rating's columns, and how many rows were left out because the
+ * log cannot show those turns again (`no_context`). When no row was shown
+ * any, the rows are as they were (calls.md, "Rows that keep their context").
+ */
+export function withContext(rows: readonly Rec[], calls: Iterable<Rec>): [Rec[], number] {
+  const by = recordsById([...calls]);
+  if (!rows.some((r) => needsContext(by.get(metaOf(r, "call") as string), by))) return [[...rows], 0];
+  const out: Rec[] = [];
+  let dropped = 0;
+  for (const r of rows) {
+    let ctx: Rec;
+    try {
+      ctx = earlierOf(by, metaOf(r, "call") as string);
+    } catch (err) {
+      if (err instanceof SawUnknown) {
+        dropped++;
+        continue;
+      }
+      throw err;
+    }
+    const keys = Object.keys(r);
+    const rebuilt = recordOf(entriesOf(r).slice(0, keys.length - META));
+    addMeta(rebuilt, ctx);
+    for (const [k, v] of entriesOf(r).slice(keys.length - META)) setOwn(rebuilt, k, v);
+    out.push(rebuilt);
+  }
+  return [out, dropped];
+}
+
+/**
+ * Two lists, with every group of rows on one side: `const [train, test] =
+ * split(rated(tutor).rows)`. Turns of one conversation depend on each other:
+ * a test row whose conversation is also in the training rows measures
+ * memory, not the program. A row with no group (`conversation` null) is a
+ * group of its own. `test` is the share of groups held out (at least one
+ * group each side when there are two or more); `seed` makes it repeatable
+ * here (not Python's draw for the same seed).
+ */
+export function split<R extends Rec>(rows: readonly R[], opts: { by?: string; test?: number; seed?: number } = {}): [R[], R[]] {
+  const by = opts.by ?? "conversation";
+  const test = opts.test ?? 0.2;
+  if (!(test > 0 && test < 1)) throw new RangeError(`test is a share between 0 and 1, not ${test}`);
+  const groups: string[] = [];
+  const keyOf: string[] = [];
+  rows.forEach((r, i) => {
+    if (!Object.hasOwn(r, by)) throw new TypeError(`the rows have no column ${JSON.stringify(by)}`);
+    const v = r[by];
+    const g = v === null || v === undefined ? `\u0000row:${i}` : lmcc.canonicalJson(v as lmcc.Json);
+    keyOf.push(g);
+    if (!groups.includes(g)) groups.push(g);
+  });
+  let state = (opts.seed ?? 0) >>> 0;
+  const rng = () => {                                          // mulberry32
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+  for (let i = groups.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    [groups[i], groups[j]] = [groups[j]!, groups[i]!];
+  }
+  const nTest = groups.length > 1 ? Math.min(Math.max(1, Math.round(groups.length * test)), groups.length - 1) : 0;
+  const held = new Set(groups.slice(0, nTest));
+  return [rows.filter((_, i) => !held.has(keyOf[i]!)), rows.filter((_, i) => held.has(keyOf[i]!))];
 }
 
 // ------------------------------------------------------------------ rating

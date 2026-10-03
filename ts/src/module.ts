@@ -20,15 +20,17 @@
 import * as lmcc from "lmcc";
 import type * as calllog from "./calllog.ts";
 import type { CallFields } from "./content.ts";
-import { Cancelled } from "./engine.ts";
-import { defaultsDocument, definedAt, type AnyAIFunction, type CallArgs, type CallOptions } from "./fn.ts";
+import { Cancelled } from "./errors.ts";
+import { chatOf, Conversation, moduleSaw, interfaceFields, type ConversationOptions, type TurnOptions } from "./conversations.ts";
+import { defaultsDocument, definedAt, type AnyAIFunction, type CallArgs, type CallOptions, type MapOptions } from "./fn.ts";
+import { Progress, showProgress } from "./progress.ts";
 import { Binder, declareInput, declareOutput, type InputRule, type InputRules } from "./inputs.ts";
 import { checkInputs, checkInterface, checkReturned, dataShape, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
 import { droppedFields, recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
-import { copyData, getOwn, setOwn } from "./values.ts";
+import { copyData, getOwn, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 type Fields = Record<string, FieldSpec>;
@@ -48,6 +50,14 @@ export interface ModuleSpec<I extends Fields, O extends Fields | undefined, A ex
   uses?: readonly (AnyAIFunction | AnyModule)[];
   /** The code module the call log files it under (`program.module`; default: the file's name, without extension). */
   definedIn?: string;
+  /**
+   * The AI function whose answer, as it is written, is the module's answer
+   * (streaming.md, *Views*): a served module's caller sees that function's
+   * answer text as the module's, live.
+   */
+  answerFrom?: AnyAIFunction | null;
+  /** @internal A program served elsewhere (remote.ts). */
+  _remote?: { readonly url: string; readonly version: string };
 }
 
 type LeftOutKeys<I> = { [K in keyof I]: undefined extends ValueOf<I[K]> ? K : never }[keyof I];
@@ -94,8 +104,18 @@ export interface Module<I extends Rec = Rec, R = unknown> {
   readonly settings: Settings;
   /** Call it and watch it being made: every event of its call and the calls inside it. */
   stream(...args: CallArgs<I>): Stream<R>;
+  /** Each item's result, in order, `concurrency` calls at once. Rejects with the first failure, and stops starting new calls. */
+  map(inputs: Iterable<CallArgs<I>[0]>, options?: MapOptions): Promise<R[]>;
+  /** Each item's outcome, in order, failures included (as `Promise.allSettled` gives them). */
+  mapSettled(inputs: Iterable<CallArgs<I>[0]>, options?: MapOptions): Promise<PromiseSettledResult<R>[]>;
   /** A copy with other settings. */
   using(settings: Settings): Module<I, R>;
+  /**
+   * A conversation with this module: its calls remember each other, kept in
+   * a store. Its code reads the conversation so far with `earlier()`; the AI
+   * functions it calls remember nothing unless `remembers` says so.
+   */
+  conversation(id?: string | null, options?: ConversationOptions): Conversation & ((...args: CallArgs<I, TurnOptions>) => Promise<R>);
 }
 
 /** Any module, whatever its types. */
@@ -104,7 +124,8 @@ export type AnyModule = Module<any, any>;
 
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
-  "cacheReplies", "observers", "journal"]);
+  "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
+  "escalateBelow"]);
 
 interface ModuleCore {
   name: string;
@@ -120,6 +141,9 @@ interface ModuleCore {
   defaultCode?: Readonly<Record<string, string>>;
   /** Its module was taken from its file's name (no `definedIn`): its calls are known by its file too. */
   topLevel?: boolean;
+  answerFrom?: string | null;
+  /** A program served elsewhere (remote.ts): its records say so, with the server's version. */
+  remote?: { readonly url: string; readonly version: string } | null;
 }
 
 /** The code and AI versions a module reaches: its own code, and what it uses (their own reach, for modules). */
@@ -147,15 +171,27 @@ function makeModule(core: ModuleCore): AnyModule {
     outputs: iface.outputs.map((f) => ({ ...f, shape: dataShape(f.shape) })),
   };
   const defaults = defaultsDocument(iface, core.defaultCode);
-  const version = () => lmcc.sha256({ ...reach(core), interface: plain, ...(defaults ? { defaults } : {}) } as unknown as lmcc.Json);
+  const version = () => core.remote ? core.remote.version : lmcc.sha256({ ...reach(core), interface: plain, ...(defaults ? { defaults } : {}) } as unknown as lmcc.Json);
   const answer = iface.outputs[iface.outputs.length - 1]!.name;
   const program = (): calllog.Program => ({
-    name, kind: "module", module: core.where, version: version(), interface: interfaceId, answer,
+    name, kind: core.remote ? "remote" : "module", module: core.where, version: version(), interface: interfaceId, answer,
+    ...(core.remote ? { remote: core.remote.url } : {}),
     ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
   });
   const fields: CallFields = { inputs: iface.inputs.map((f) => f.name), outputs: iface.outputs.map((f) => f.name), added: [] };
   const names = iface.inputs.map((f) => f.name);
   const binder = new Binder(name, names, core.rules);
+
+  /** Every AI function it reaches (through modules it uses, too). */
+  const aiFunctions = (): object[] => {
+    const out: object[] = [];
+    for (const u of core.uses) {
+      const inner = (u as { _aiFunctions?: () => object[] })._aiFunctions;
+      if (inner) out.push(...inner());
+      else out.push(u);
+    }
+    return [...new Set(out)];
+  };
 
   const call = async (arg: unknown, options: CallOptions = {}, stream?: Stream): Promise<unknown> => {
     const { signal, ...extra } = options;
@@ -187,6 +223,10 @@ function makeModule(core: ModuleCore): AnyModule {
     }
     return runCall<unknown>({
       program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs: recordInputs(names, inputs),
+      self: fn, prepare: (c) => {
+        const saw = moduleSaw(fn, c);                       // a module's turn: the conversation so far
+        if (saw) c.saw = saw;
+      },
       ...(refused !== undefined ? { refused } : {}),
       body: async (c) => {
         const values: Rec = { ...inputs };                 // the code's own: what it does with them never reaches the record
@@ -202,6 +242,38 @@ function makeModule(core: ModuleCore): AnyModule {
   };
 
   const fn = ((input: unknown, options?: CallOptions) => call(input, options)) as unknown as AnyModule;
+
+  /** Every item, `concurrency` at once: each one's outcome. */
+  const each = async (items: Iterable<unknown>, options: MapOptions, stopOnFailure: boolean): Promise<PromiseSettledResult<unknown>[]> => {
+    const { concurrency = 8, progress, ...rest } = options;
+    const list = [...items];
+    const out: PromiseSettledResult<unknown>[] = new Array(list.length);
+    const stop = new AbortController();
+    const signal = rest.signal ? AbortSignal.any([rest.signal, stop.signal]) : stop.signal;
+    const meter = showProgress(progress) && list.length ? new Progress(list.length, name) : null;
+    let next = 0;
+    let failure: PromiseRejectedResult | null = null;
+    const worker = async () => {
+      while (next < list.length && !signal.aborted) {
+        const i = next++;
+        try {
+          out[i] = { status: "fulfilled", value: await call(list[i], { ...rest, signal }) };
+          meter?.step(false, 0);
+        } catch (err) {
+          out[i] = { status: "rejected", reason: err };
+          meter?.step(true, 0);
+          if (stopOnFailure) {
+            failure ??= out[i] as PromiseRejectedResult;
+            stop.abort();
+          }
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.max(1, Math.min(concurrency, list.length || 1)) }, worker));
+    if (failure) throw (failure as PromiseRejectedResult).reason;
+    if (rest.signal?.aborted) throw new Cancelled();
+    return out;
+  };
   Object.defineProperties(fn, {
     name: { value: name },
     module: { value: core.where },
@@ -214,7 +286,29 @@ function makeModule(core: ModuleCore): AnyModule {
     settings: { get: () => ({ ...core.own }) },
   });
   Object.assign(fn, {
-    stream: (input: unknown, options: CallOptions = {}) => new Stream((st) => call(input, options, st), options.signal),
+    map: async (items: Iterable<unknown>, options: MapOptions = {}) => (await each(items, options, true)).map((r) => (r as PromiseFulfilledResult<unknown>).value),
+    mapSettled: (items: Iterable<unknown>, options: MapOptions = {}) => each(items, options, false),
+    stream: (input: unknown, options: CallOptions = {}) => {
+      const st = new Stream((x) => call(input, options, x), options.signal);
+      st.answerFrom = core.answerFrom ?? null;
+      return st;
+    },
+    conversation: (id?: string | null, options: ConversationOptions = {}) => chatOf(new Conversation(fn as never, id ?? null, options)),
+    _stream: (input: unknown, options: CallOptions, passive: boolean) => {
+      const st = new Stream((x) => call(input, options, x), options.signal, passive);
+      st.answerFrom = core.answerFrom ?? null;
+      return st;
+    },
+    _kind: "module",
+    _conversationFields: () => interfaceFields(iface),
+    _recordedInputs: (input: unknown) => {
+      const given = binder.bind(input, { fill: false, check: false })[0];
+      const inputs = checkInputs(iface, given, name, droppedFields(fields, core.own));
+      return Object.fromEntries(Object.entries(inputs).map(([k, v]) => [k, toJson(v)[0]]));
+    },
+    _programInfo: () => program(),
+    _aiFunctions: aiFunctions,
+    _answerFrom: core.answerFrom ?? null,
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
       checkSettings(own, `${name}.using`, fields);
@@ -266,5 +360,7 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
   return makeModule({
     name, where: spec.definedIn ?? where.module ?? "main", file: where.file, line: where.line, iface, rules,
     run: run as ModuleCore["run"], uses: [...(spec.uses ?? [])], own, defaultCode, topLevel: spec.definedIn === undefined,
+    answerFrom: spec.answerFrom ? spec.answerFrom.name : null,
+    remote: (spec as { _remote?: { url: string; version: string } })._remote ?? null,
   }) as unknown as Module<ModuleArgs<I>, ModuleResult<O, A>>;
 }
