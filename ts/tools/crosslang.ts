@@ -8,7 +8,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { Request, stringifyJson } from "@lm15/lm15";
 import * as lmcc from "lmcc";
-import { spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import { ai, load, LoadRefused, rate, rated, remote, serve, t } from "../src/index.ts";
 import { FakeRouter } from "../tests/fake.ts";
 
@@ -71,13 +71,21 @@ console.log("  ok    a program Python serves is called here with remote (logged 
 const server = await serve(mood.using({ router: new FakeRouter([], () => "<result>\nhappy\n</result>") as never, logCalls: log }), { port: 0 });
 writeFileSync(join(work, "ts-served.json"), JSON.stringify({ url: `http://127.0.0.1:${(server.address() as { port: number }).port}` }));
 const python_ = join(import.meta.dirname, "..", "..", "python", ".venv", "bin", "python");
-const asked = spawnSync(python_, ["-c", `
+// not spawnSync: the server answers on this process's event loop while Python asks
+const asked = await new Promise<{ status: number | null; stdout: string; stderr: string }>((resolve) => {
+  const child = spawn(python_, ["-c", `
 import json, sys, functai
 url = json.load(open(sys.argv[1]))["url"]
 far = functai.remote(url)
 with functai.configure(log_calls=sys.argv[2]):
     print(far(review="Lovely."))
-`, join(work, "ts-served.json"), log], { encoding: "utf8" });
+`, join(work, "ts-served.json"), log]);
+  let stdout = "";
+  let stderr = "";
+  child.stdout.on("data", (d) => { stdout += d; });
+  child.stderr.on("data", (d) => { stderr += d; });
+  child.on("close", (status) => resolve({ status, stdout, stderr }));
+});
 server.close();
 assert.equal(asked.status, 0, asked.stderr);
 assert.equal(asked.stdout.trim(), "happy", asked.stdout);
