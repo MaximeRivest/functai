@@ -8,6 +8,13 @@ the documentation, lists what changed from 1.1).
 
 ### Fixes since the stages were merged
 
+- **Baking on the CPU no longer fails when the machine's GPUs are full.**
+  A bake with `device="cpu"` left the GPUs visible to its training
+  process, and torch's optimizer asked one for its stream at every step:
+  with every GPU's memory taken by another job, the training ended
+  `failed` (`CUDA error: out of memory`). The training process now sees no
+  GPU when it trains on the CPU.
+
 - **A served AI function refuses a wrong input with `422`** (`interface-input`,
   naming the field), as `contract/serving.md` says and as a served module
   already did: a missing, unknown or unbindable input is checked against the

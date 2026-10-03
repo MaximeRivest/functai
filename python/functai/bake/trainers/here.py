@@ -233,6 +233,10 @@ class Here(Trainer):
             visible = [v.strip() for v in os.environ.get("CUDA_VISIBLE_DEVICES", "").split(",") if v.strip()]
             idx = [int(str(d).split(":")[1]) for d in devs]
             env["CUDA_VISIBLE_DEVICES"] = ",".join(visible[i] if i < len(visible) else str(i) for i in idx)
+        else:
+            # training on the CPU (or Apple's GPU) touches no CUDA device: torch's optimizers still ask one for its
+            # stream, which fails when every GPU is full (another job), so none is visible to the worker
+            env["CUDA_VISIBLE_DEVICES"] = ""
         if len(devs) > 1:
             with socket.socket() as sock:
                 sock.bind(("127.0.0.1", 0))
