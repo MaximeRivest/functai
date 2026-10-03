@@ -1,6 +1,12 @@
 # Changelog
 
-## Unreleased
+## 1.2.0 (2026-10-03)
+
+Conversations, tools that ask first, plugins, serving, the reply cache on disk,
+learning from rated conversation turns, and baking redesigned (Upgrading, in
+the documentation, lists what changed from 1.1).
+
+### Fixes since the stages were merged
 
 - **A served AI function refuses a wrong input with `422`** (`interface-input`,
   naming the field), as `contract/serving.md` says and as a served module
@@ -102,7 +108,7 @@ recorded, so rated calls are still asked again as they were.
   in its own conversation, per branch).
 - `examples/plugins/`: six real Pi and Chattering extensions as plugins.
 
-## Stages 1.2 to 5 (merged, unreleased)
+### Stages 1.2 to 5
 
 Stages 1.2 to 5 (`design/10-stages-1.2-to-5-python.md`), in Python first;
 the contract says each (`contract/replies.md`, `conversations.md`,
@@ -165,7 +171,7 @@ the contract says each (`contract/replies.md`, `conversations.md`,
   `functai.split(rows, by="conversation")`. A record keeps its turn's
   `steps` when it ran tools or was made in a conversation.
 
-## Stage 1.1 (unreleased)
+### Stage 1.1
 
 Stage 1.1 (`design/09-stage1.1-decisions.md`): decisions on stage 1's open
 questions, and three fixes to how ratings become data.

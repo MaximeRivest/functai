@@ -34,7 +34,7 @@ function in all four languages, with the answers of a real run.
 
 | Language | Folder | Install | Learn it |
 |---|---|---|---|
-| Python | [`python/`](python/) | `pip install "functai[data]"` ([PyPI](https://pypi.org/project/functai/), 1.1.0; the site follows the next release: see [python/](python/#installation)) | [get started](https://maximerivest.github.io/functai/get-started.html), [8 tutorials](https://maximerivest.github.io/functai/tutorials/index.html), [reference](https://maximerivest.github.io/functai/reference/index.html) |
+| Python | [`python/`](python/) | `pip install "functai[data]"` ([PyPI](https://pypi.org/project/functai/), 1.2.0) | [get started](https://maximerivest.github.io/functai/get-started.html), [8 tutorials](https://maximerivest.github.io/functai/tutorials/index.html), [reference](https://maximerivest.github.io/functai/reference/index.html) |
 | TypeScript / JavaScript | [`ts/`](ts/) | not on npm yet (0.1.0, from a checkout) | [guide](https://maximerivest.github.io/functai/ts/index.html), [API reference](https://maximerivest.github.io/functai/ts/api/index.html) |
 | R | [`r/`](r/) | `remotes::install_github("MaximeRivest/functai", subdir = "r")` (0.1.0, not on CRAN yet) | [8 tutorials](https://maximerivest.github.io/functai/r/index.html), [manual](https://maximerivest.github.io/functai/r/manual/index.html) |
 | Julia | [`julia/`](julia/) | `Pkg.add(url = …)` (0.1.0, not registered yet; see [julia/](julia/#install)) | [8 tutorials](https://maximerivest.github.io/functai/julia/index.html), [manual](https://maximerivest.github.io/functai/julia/manual/index.html) |

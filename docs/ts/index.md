@@ -35,7 +35,8 @@ lists every export with its types.
 Once it is published, `npm install functai` (Node 22.18+, Deno, Bun; in a
 browser everything but the call log works). Until then, build it from a
 checkout, as in [*Developing*](#developing), and install that folder into
-your project: `npm install ../functai/ts`.
+your project: `npm install ../functai/ts`. Version 0.1.0 is the tag
+`ts-v0.1.0` (`git clone --branch ts-v0.1.0 https://github.com/MaximeRivest/functai`).
 
 Set the key of the provider you call (`OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, …). Any model

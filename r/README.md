@@ -61,6 +61,8 @@ you install with `build_vignettes = TRUE`.
 remotes::install_github("MaximeRivest/functai", subdir = "r")   # and lmcc and lm15, from GitHub
 ```
 
+That is the latest code; `"MaximeRivest/functai@r-v0.1.0"` installs version 0.1.0 exactly.
+
 Set the key of the provider you call (`OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, ...), in `~/.Renviron` for
 example. Any model [lm15](https://lm15.dev) reaches works: `"claude-haiku-4-5"`,

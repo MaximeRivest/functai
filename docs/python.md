@@ -91,14 +91,8 @@ Python 3.11+. The `[data]` part brings tables (through
 [dpyr](https://github.com/MaximeRivest/dpyr), which reads pandas and
 polars data frames, CSV, parquet, Excel, databases, and more).
 
-!!! note "These pages follow the next release"
-    `pip install functai` gives 1.1.0. These pages describe the version
-    in development, whose API changed where [Upgrading](articles/upgrading.md)
-    says. To follow them now, install it from GitHub:
-
-    ```bash
-    pip install "functai[data] @ git+https://github.com/MaximeRivest/functai#subdirectory=python"
-    ```
+!!! note "Coming from 1.1?"
+    [Upgrading](articles/upgrading.md) says what changed in 1.2.
 
 functai needs a model. If you have an API key in your environment
 (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, …) or a Claude,

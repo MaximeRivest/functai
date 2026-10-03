@@ -57,10 +57,10 @@ implementations that are checked against it.
 
 | | lm15 (providers, sign-ins) | lmcc (prompt layout, reading answers) | FunctAI |
 |---|---|---|---|
-| Python | reference | reference | 1.0.1 released, 1.1.0 not yet |
-| TypeScript | passes the full contract | passes the same cases as Python, byte for byte (not on npm yet) | **0.1.0, in `ts/`** |
-| Julia | at parity with the others since 2026-09-26 | passes the corpus (lmcc D-56) | **0.1.0, in `julia/`** |
-| R | passes the full contract; reading keys from the environment fixed 2026-09-27 | passes the corpus (lmcc D-56) | **0.1.0, in `r/`** |
+| Python | reference | reference | 1.2.0 released (2026-10-03) |
+| TypeScript | passes the full contract | passes the same cases as Python, byte for byte (not on npm yet) | **0.1.0, in `ts/`** (tag `ts-v0.1.0`) |
+| Julia | at parity with the others since 2026-09-26 | passes the corpus (lmcc D-56) | **0.1.0, in `julia/`** (tag `julia-v0.1.0`) |
+| R | passes the full contract; reading keys from the environment fixed 2026-09-27 | passes the corpus (lmcc D-56) | **0.1.0, in `r/`** (tag `r-v0.1.0`) |
 
 **TypeScript can start now.** Julia and R need lmcc in their language
 first. That is the real prerequisite, and it should be built in the lmcc

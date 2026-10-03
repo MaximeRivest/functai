@@ -1,6 +1,6 @@
 # Changelog
 
-## 0.1.0 (unreleased)
+## 0.1.0 (2026-10-03)
 
 Stages 1.2 to 5, plugins and baking's language-neutral half, as Python,
 R and Julia have them (design/10, 11 and 12): every case of `replies/`,

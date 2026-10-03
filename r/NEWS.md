@@ -1,4 +1,4 @@
-# functai 0.1.0 (unreleased)
+# functai 0.1.0 (2026-10-03)
 
 ## Stages 1.2 to 5, and plugins (Python's, `design/10-stages-1.2-to-5-python.md`)
 

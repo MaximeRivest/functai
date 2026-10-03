@@ -7,10 +7,9 @@ rat:
 
 # Upgrading
 
-## From 1.1
+## From 1.1 to 1.2
 
-*What changes when you move from FunctAI 1.1 (the release on PyPI) to the
-next release. Everything here is on GitHub's master branch today.*
+*What changes when you move from FunctAI 1.1 to 1.2.*
 
 ```python
 import functai

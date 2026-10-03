@@ -93,7 +93,7 @@ from .optimizers import (
     labeled_few_shot,
 )
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 
 # `from functai import *` brings the decorator, the sentinel and the program
 # vocabulary. The template helpers (system, user, ...) are generic names, so

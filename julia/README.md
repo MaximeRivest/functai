@@ -42,6 +42,8 @@ Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
 Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 ```
 
+That is the latest code; add `rev = "julia-v0.1.0"` to the last line for version 0.1.0 exactly.
+
 To work on FunctAI itself, `Pkg.develop(path = "functai/julia")` from a
 checkout beside `lmcc` and `lm15-dev` (its `[sources]` finds them there).
 

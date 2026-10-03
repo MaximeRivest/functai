@@ -31,13 +31,8 @@ functai.evaluate(team, tickets, expected="category")              # how often it
 pip install "functai[data]"      # Python 3.11+
 ```
 
-That is 1.1.0. The documentation follows the next release, whose API
-changed where [Upgrading](https://maximerivest.github.io/functai/articles/upgrading.html)
-says; to use it now, install from GitHub:
-
-```bash
-pip install "functai[data] @ git+https://github.com/MaximeRivest/functai#subdirectory=python"
-```
+Coming from 1.1? [Upgrading](https://maximerivest.github.io/functai/articles/upgrading.html)
+says what changed.
 
 With an API key in your environment (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`,
 `GEMINI_API_KEY`, …) or a Claude, ChatGPT or Copilot subscription, there's
