@@ -1,0 +1,3 @@
+tickets.csv has 80 customer messages and the team that should answer each one (column category). Using DSPy with gpt-4.1-mini (the OpenAI key is in the environment; the Python with DSPy installed is .venv/bin/python), build a classifier for the team and tell me how accurate it is and how sure we can be of that number. Then add the two rules in rules.md and tell me whether they really help or whether it could be luck.
+
+Save predictions.csv with columns id, category, v1, v2 (the predicted team before and after the rules), and results.json with: v1_accuracy, v1_low, v1_high (its 95% interval), v2_accuracy, diff (v2 minus v1), diff_low, diff_high (the 95% interval of that difference), and verdict ("better", "worse" or "unclear"). Accuracies as fractions between 0 and 1.

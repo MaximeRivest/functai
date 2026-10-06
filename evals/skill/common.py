@@ -147,3 +147,56 @@ def exists(p: Path) -> bool:
 
 __all__ = ["all_records", "summary_of", "check", "run_script", "call_log", "calls_summary", "request_texts", "request_parts", "norm",
            "csv_rows", "summarize", "env_for_grading", "exists", "os"]
+
+
+# ---------------------------------------------------------------------------
+# The neutral record: every request any library sent to a provider, as the
+# recording proxy saw it (recorder.py). The graders read only this, so FunctAI
+# and DSPy are judged by the same instrument.
+# ---------------------------------------------------------------------------
+IMAGE_TYPES = ("image_url", "input_image", "image")
+
+
+def _walk(node, texts: list, images: list):
+    if isinstance(node, dict):
+        if node.get("type") in IMAGE_TYPES:
+            images.append(1)
+            return
+        for k, v in node.items():
+            if isinstance(v, str) and k in ("text", "content", "instructions", "system"):
+                texts.append(v)
+            else:
+                _walk(v, texts, images)
+    elif isinstance(node, list):
+        for v in node:
+            _walk(v, texts, images)
+
+
+def recorded(path, since: float | None = None) -> list[dict]:
+    """The exchanges in a recorder file: text the model was sent, image parts, tokens."""
+    out = []
+    path = Path(path) if path else None
+    if not path or not path.exists():
+        return out
+    for line in path.read_text().splitlines():
+        try:
+            r = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if since is not None and r["time"] < since:
+            continue
+        texts, images = [], []
+        _walk(r.get("request"), texts, images)
+        u = r.get("usage") or {}
+        out.append({"time": r["time"], "seconds": r.get("seconds"), "status": r.get("status"), "text": "\n".join(texts),
+                    "images": len(images),
+                    "input_tokens": u.get("input_tokens", u.get("prompt_tokens", 0)) or 0,
+                    "output_tokens": u.get("output_tokens", u.get("completion_tokens", 0)) or 0})
+    return out
+
+
+def record_summary(path, since: float | None = None) -> dict:
+    rs = recorded(path, since)
+    return {"requests": len(rs), "input_tokens": sum(r["input_tokens"] for r in rs),
+            "output_tokens": sum(r["output_tokens"] for r in rs),
+            "errors": sum(1 for r in rs if (r["status"] or 200) >= 400)}

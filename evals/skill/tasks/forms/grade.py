@@ -2,9 +2,9 @@
 
 Checks
 - files:     extract.py, out/designs.csv and out/analyses.csv exist with the asked columns
-- rerun:     running extract.py again makes no new model call (replies kept on disk)
+- rerun:     running extract.py again sends nothing to the provider (replies kept)
 - guidance:  the requests the model receives contain the codebook's conventions
-             (read from functai's call log of that re-run: exactly what was sent)
+             (read from the recording proxy: exactly what was sent, whatever the library)
 - design, units, methods (F1), pseudoreplicated, outcome: agreement with the answer key
 """
 from __future__ import annotations
@@ -15,7 +15,7 @@ from pathlib import Path
 
 import time
 
-from common import all_records, check, csv_rows, env_for_grading, norm, request_texts, run_script, summarize, summary_of
+from common import check, csv_rows, norm, recorded, run_script, summarize
 
 HERE = Path(__file__).parent
 TRUTH = json.loads((HERE / "truth.json").read_text())
@@ -57,28 +57,23 @@ def grade(work: Path, env: dict, python: str, out: Path) -> dict:
             c[k] = check(False, 0.0, "no usable output")
         return summarize(c, required=list(c))
 
-    # re-run: free, and its call log shows exactly what the model is sent
-    rerun_calls = out / "grade_calls"
+    # re-run: free, and the proxy shows exactly what the model is sent
+    record = env.get("BENCH_RECORD")
     t0 = time.time()
-    r = run_script(work, env_for_grading(env), python, "extract.py", rerun_calls)
-    rerun = all_records({}, work, since=t0, extra=rerun_calls)     # wherever the script logs its calls
-    s = summary_of(rerun)
-    c["rerun"] = check(r["code"] == 0 and s["uncached"] == 0 and (work / "out" / "designs.csv").exists(), None,
-                       f"exit {r['code']}; {s['exchanges']} model calls, {s['uncached']} not from the cache"
-                       + (" (the script keeps its own results)" if s["exchanges"] == 0 else ""))
-    # what the model receives: the re-run's requests; when the script answers from its own
-    # store and sends nothing, the latest request the agent's runs made for each paper
-    requests = request_texts(rerun)
+    r = run_script(work, env, python, "extract.py", out / "grade_calls")
+    rerun = recorded(record, since=t0)
+    c["rerun"] = check(r["code"] == 0 and not rerun and (work / "out" / "designs.csv").exists(), None,
+                       f"exit {r['code']}; {len(rerun)} requests reached the provider")
+    requests = [x["text"] for x in rerun]
     source = "the re-run"
-    if not requests:
-        source = "the agent's latest calls"
-        papers = [r["methods"][:80] for r in csv_rows(HERE / "files" / "papers.csv")]
+    if not requests:            # replies kept: the latest request the agent's runs sent for each paper
+        source = "the agent's latest requests"
+        papers = [row["methods"][:80] for row in csv_rows(HERE / "files" / "papers.csv")]
         latest = {}
-        for rec in sorted(all_records(env, work, extra=None), key=lambda x: str(x.get("started"))):
-            for text in request_texts([rec]):
-                for i, p in enumerate(papers):
-                    if p in text:
-                        latest[i] = text
+        for x in recorded(record):
+            for i, paper in enumerate(papers):
+                if paper in x["text"]:
+                    latest[i] = x["text"]
         requests = list(latest.values())
     texts = "\n".join(requests).lower()
     found = {name: bool(re.search(rx, texts)) for name, rx in CONVENTIONS.items()}

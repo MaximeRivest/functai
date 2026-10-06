@@ -1,0 +1,3 @@
+We are going to fine-tune a small open model to do what the DSPy program in simplify.py does, with TRL on another machine. rows.csv has 24 sentences with the answer we want (column result).
+
+Write train.jsonl: one line per row, {"messages": [...]}, holding exactly the conversation DSPy will send the fine-tuned model once we plug it back in, with the row's answer as the assistant's reply. The style guide (style_guide.md) is the same for every row and we want the small model to learn it, so it must not appear in the training conversations: we will call the fine-tuned model as `dspy.Predict(Simplify.delete("style_guide"))`, with DSPy's default settings. The Python with DSPy installed is .venv/bin/python. No model call should be needed.

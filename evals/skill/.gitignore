@@ -1,3 +1,6 @@
 runs/
 .venv/
 __pycache__/
+.venv-dspy/
+.mitm
+.mitm-conf/

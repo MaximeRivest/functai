@@ -1,9 +1,13 @@
-# Does the functai skill make agents faster, cheaper and right?
+# FunctAI for coding agents: does the skill help, and how does it compare with DSPy?
 
 `skills/functai/` (at the repository root) teaches coding agents to use
-FunctAI. This folder measures whether it helps: the same agent gets the same
-four tasks with and without the skill, in fresh isolated workspaces, and code
-grades the result.
+FunctAI. This folder measures two things on the same four tasks, in fresh
+isolated workspaces, graded by code:
+
+- **the skill**: the same agent with and without it (`--arms functai-skill functai`);
+- **FunctAI vs DSPy**: (A) an agent doing each task with FunctAI and its skill,
+  or with DSPy (which models know from training); (B) a hand-written expert
+  solution in each library (`references.py`).
 
 | task | what the agent must do | the trap it comes from |
 |---|---|---|
@@ -19,8 +23,21 @@ What each check means and why: `rubric.md`.
 ```bash
 cd evals/skill
 uv venv --python 3.13 .venv
-VIRTUAL_ENV=.venv uv pip install -e "../../python[data]" pandas pillow pydantic
+VIRTUAL_ENV=.venv uv pip install -e "../../python[data]" pandas pillow pydantic scipy
+uv venv --python 3.13 .venv-dspy
+VIRTUAL_ENV=.venv-dspy uv pip install "dspy==3.4.0" pandas pillow pydantic scipy
+nix build nixpkgs#mitmproxy --out-link .mitm                 # the recording proxy
+mkdir -p .mitm-conf && timeout 5 .mitm/bin/mitmdump --set confdir=$PWD/.mitm-conf -p 18999   # makes its CA
+cat .mitm-conf/mitmproxy-ca-cert.pem /etc/ssl/certs/ca-certificates.crt > .mitm-conf/bundle.pem
+for v in .venv .venv-dspy; do cp sitecustomize.py $($v/bin/python -c "import site;print(site.getsitepackages()[0])")/; done
 ```
+
+**The recording proxy.** Every request a task's code sends to a provider goes
+through mitmproxy with `recorder.py`, whatever the library: the
+`sitecustomize.py` hook routes an environment's Python through it when
+`$BENCH_PROXY` is set (the agent itself is not routed). The graders read only
+this record, so "what the model was sent", "a re-run sends nothing" and "the
+picture went as a picture" are judged the same way for FunctAI and DSPy.
 
 Provider keys are read from `~/Projects/lm15-dev/.env` (or
 `$FUNCTAI_SKILL_EVAL_KEYS`); the tasks use `gpt-4.1-mini` (a few cents per
@@ -31,9 +48,9 @@ through the ChatGPT login. (Pi's Claude login refuses headless runs as a
 ## Run
 
 ```bash
-.venv/bin/python run.py                         # 4 tasks × with/without × 1
-.venv/bin/python run.py --reps 3 --parallel 6   # what produced the results below
-.venv/bin/python run.py --tasks forms --conditions with --model openai-codex/gpt-6-luna
+.venv/bin/python run.py --reps 3 --parallel 6                         # FunctAI + skill vs DSPy
+.venv/bin/python run.py --arms functai-skill functai --reps 3        # does the skill help?
+.venv/bin/python run.py --tasks forms --arms dspy --model openai-codex/gpt-6-luna
 .venv/bin/python report.py runs/<stamp>         # the table again
 .venv/bin/python run.py --collect runs/<stamp>  # grade every run again from its workspace (after fixing a grader)
 ```
@@ -43,22 +60,34 @@ Results go to `runs/<stamp>/` (ignored by git): `report.md`, and per run
 and the agent's whole `session.jsonl`. Workspaces stay in
 `~/.cache/functai-skill-eval/runs/<stamp>/` for inspection.
 
-## Check a grader
+## Expert solutions (benchmark B, and the graders' own check)
 
-Each task has a hand-written solution in `tasks/<task>/reference/`, written the
-way the skill teaches. A grader must give it full marks:
+Each task has a hand-written solution per library: `tasks/<task>/reference/`
+(FunctAI) and `tasks/<task>/reference.dspy/` (DSPy, written in DSPy's own
+idiom: typed Signatures, `Predict.batch`, `dspy.Evaluate`, `dspy.Image`,
+`ChatAdapter.format_finetune_data`). Every one must score 1.0, and
+`references.py` compares them: correctness, requests and tokens sent, time,
+lines of code.
 
 ```bash
-.venv/bin/python try_reference.py forms tasks/forms/reference/extract.py
+.venv/bin/python references.py                                  # both libraries, 3 rounds
+.venv/bin/python references.py --tasks forms --libraries dspy --reps 1
 ```
 
 ## Fairness
 
-- Both conditions: same task text, same model and thinking level, no
-  extensions, no other skills, no AGENTS.md, no Chattering records. The only
-  difference is `--skill <copy of skills/functai>`.
-- Each run has its own functai disk cache and call log (`XDG_CACHE_HOME`,
-  `FUNCTAI_LOG_CALLS`), so no run reuses another's replies.
+- Every arm: the same task text (with the library's name), the same agent model
+  and thinking level, no extensions, no other skills, no AGENTS.md, no
+  Chattering records. FunctAI arms may add `--skill <copy of skills/functai>`.
+  DSPy has no skill: models already know it from training; FunctAI is new.
+- The export task names the call DSPy will use (`dspy.Predict(Simplify.delete("style_guide"))`)
+  because DSPy has no built-in way to leave a constant input out of a trained
+  model's prompt; FunctAI's task relies on its `fixed=`. Each is graded against
+  its library's own training format.
+- Both environments hold pandas, pillow, pydantic and scipy; a run whose agent
+  installs packages is flagged.
+- Each run has its own caches (`XDG_CACHE_HOME`, `DSPY_CACHEDIR`) and its own
+  recording proxy, so no run reuses another's replies.
 - Workspaces live outside this repository; agents are told not to open
   `functai/evals` or `functai/skills`, and a run that does is marked
   contaminated. Both may read the rest of functai (its docs and source), as
@@ -90,3 +119,36 @@ so the rules about subscriptions' rate limits, safety filters and long runs
 come from the transcripts and are not exercised here; agents without the
 skill could read FunctAI's docs and source, as in real projects. Findings
 about FunctAI itself: `findings.md`.
+
+## FunctAI vs DSPy (2026-10-06; FunctAI 1.2.0, DSPy 3.4.0, gpt-4.1-mini, 3 runs per cell)
+
+**A. An agent doing the task** (GPT-6 Astra; FunctAI with its skill, DSPy without
+one; `runs/20261006T145753Z`):
+
+| task | succeeded (FunctAI / DSPy) | agent cost | agent tool calls | agent time | tokens the finished program sent |
+|---|---|---|---|---|---|
+| export | 3/3 · 3/3 | $0.16 · $0.11 | 9 · 6 | 0.7 · 0.6 min | 0 · 0 |
+| forms | 3/3 · 3/3 | $0.30 · $0.28 | 13 · 13 | 3.3 · 1.9 min | 22,348 · 24,486 |
+| measure | 3/3 · 3/3 | $0.40 · $0.32 | 11 · 8 | 1.8 · 2.6 min | 16,096 · 47,456 |
+| photos | 3/3 · 3/3 | $0.18 · $0.11 | 9 · 4 | 1.3 · 1.0 min | 3,480 · 4,920 |
+| **all 12** | **12/12 · 12/12** | **$3.27 · $2.31** | **126 · 100** | **21 · 22 min** | |
+
+**B. Each library used well** (hand-written solutions, `runs/references-20261006T145755Z`): all
+24 runs correct in both libraries.
+
+| task | input tokens sent (FunctAI / DSPy) | output tokens | seconds | lines of code |
+|---|---|---|---|---|
+| export | 0 · 0 | 0 · 0 | 0.4 · 1.3 | 7 · 10 |
+| forms | 7,683 · 8,773 | 487 · 746 | 4.5 · 5.9 | 42 · 49 |
+| measure | 14,096 · 36,336 | 1,440 · 1,923 | 27.7 · 19.5 | 27 · 41 |
+| photos | 2,124 · 4,488 | 204 · 228 | 4.7 · 4.8 | 27 · 15 |
+
+Reading it: both libraries let an agent get every task right. Writing the
+code was cheaper with DSPy (−29% agent cost, −21% tool calls): models know it
+from training, while a FunctAI agent first reads the skill. Running the code
+was cheaper with FunctAI: its prompts are shorter (−61% input tokens on the
+short-input task, −53% on pictures, −12% on long inputs), which grows with the
+number of rows. DSPy has a native image type (15 lines against 27 with
+FunctAI's `lmcc.format` registration) and its evaluation ran faster here.
+Limits: one agent model, three runs per cell, small tasks, and both expert
+solutions written by the same author (FunctAI's side).

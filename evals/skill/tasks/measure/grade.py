@@ -3,7 +3,7 @@
 The grader recomputes everything from predictions.csv and the answer key, and
 checks results.json against it:
 - files:      predictions.csv (id, category, v1, v2) for all 80 tickets; results.json with the asked keys
-- real:       the predictions came from model calls (functai's call log of the agent's run)
+- real:       the predictions came from model calls (the recording proxy saw every ticket)
 - accuracy:   v1_accuracy and v2_accuracy match the predictions
 - interval:   v1_low/v1_high is a 95% interval for a proportion (Wilson's, or close to it)
 - paired:     diff_low/diff_high is the PAIRED 95% interval of the per-ticket difference
@@ -16,7 +16,7 @@ import json
 import math
 from pathlib import Path
 
-from common import all_records, check, csv_rows, norm, request_texts, summarize
+from common import check, csv_rows, norm, recorded, summarize
 
 HERE = Path(__file__).parent
 KEYS = ["v1_accuracy", "v1_low", "v1_high", "v2_accuracy", "diff", "diff_low", "diff_high", "verdict"]
@@ -56,9 +56,9 @@ def grade(work: Path, env: dict, python: str, out: Path) -> dict:
             c[k] = check(False, 0.0, "no usable output")
         return summarize(c, required=list(c))
 
-    texts = "\n".join(request_texts(all_records(env, work)))
+    texts = "\n".join(x["text"] for x in recorded(env.get("BENCH_RECORD")))
     seen = sum(1 for r in csv.DictReader(open(HERE / "files" / "tickets.csv")) if r["message"][:60] in texts)
-    c["real"] = check(seen >= 76, seen, f"{seen} of 80 tickets reached a model through functai")
+    c["real"] = check(seen >= 76, seen, f"{seen} of 80 tickets reached the model")
 
     v1 = [norm(r["v1"]) == truth[r["id"]] for r in pred]
     v2 = [norm(r["v2"]) == truth[r["id"]] for r in pred]

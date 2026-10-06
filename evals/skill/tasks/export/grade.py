@@ -1,9 +1,11 @@
 """Grade the `export` task: training conversations for a small model.
 
-The right file holds, for every row, exactly the chat functai will send the
+The right file holds, for every row, exactly the chat the library will send the
 trained model (the style guide left out, since the student learns it) with the
-row's answer as the reply. The grader rebuilds that with functai's public API
-(`functai.bake.examples(..., fixed=...)`) and compares message for message.
+row's answer as the reply. The grader rebuilds that with the library's public
+API and compares message for message: FunctAI's `functai.bake.examples(...,
+fixed=...)`; DSPy's `ChatAdapter().format_finetune_data(...)` for
+`Simplify.delete("style_guide")`, the call the DSPy task names.
 
 Checks
 - files:    train.jsonl, one JSON object per line with a `messages` list of {role, content}
@@ -19,12 +21,22 @@ import json
 import sys
 from pathlib import Path
 
-from common import all_records, check, summarize, summary_of
+import subprocess
+
+from common import check, recorded, summarize
 
 HERE = Path(__file__).parent
 
 
-def reference(work: Path) -> list[list[tuple[str, str]]]:
+def reference(work: Path, env: dict) -> list[list[tuple[str, str]]]:
+    if env.get("BENCH_LIBRARY") == "dspy":      # DSPy's own training format, computed in its environment
+        out = subprocess.run([str(HERE.parent.parent / ".venv-dspy" / "bin" / "python"), str(HERE / "dspy_reference.py")],
+                             capture_output=True, text=True, check=True).stdout
+        return [[(m["role"], m["content"]) for m in conv] for conv in json.loads(out)]
+    return functai_reference()
+
+
+def functai_reference() -> list[list[tuple[str, str]]]:
     import functai.bake
     from dpyr import read
     spec = importlib.util.spec_from_file_location("simplify_ref", HERE / "files" / "simplify.py")
@@ -53,7 +65,7 @@ def grade(work: Path, env: dict, python: str, out: Path) -> dict:
             c[k] = check(False, 0.0, "no usable output")
         return summarize(c, required=list(c))
 
-    ref = reference(work)
+    ref = reference(work, env)
     c["rows"] = check(len(convs) == len(ref), None, f"{len(convs)} conversations for {len(ref)} rows")
     have = {tuple(x) for x in convs}
     exact = sum(tuple(r) in have for r in ref) / len(ref)
@@ -68,7 +80,7 @@ def grade(work: Path, env: dict, python: str, out: Path) -> dict:
                    if l.startswith("- ")]
     leaked = sum(any(g[:30] in m for _, m in conv for g in guide_lines) for conv in convs)
     c["no_guide"] = check(leaked == 0, None, f"style guide text in {leaked} conversations")
-    s = summary_of(all_records(env, work))
-    c["free"] = check(s["uncached"] == 0, None, f"{s['uncached']} model calls made")
+    sent = recorded(env.get("BENCH_RECORD"))
+    c["free"] = check(not sent, None, f"{len(sent)} requests reached the provider")
     return summarize(c, required=list(c))
 
