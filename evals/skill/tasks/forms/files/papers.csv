@@ -1,0 +1,11 @@
+paper_id,methods
+P01,"We randomly assigned 24 aquaria to three water temperatures (8 aquaria per temperature). Each aquarium held 10 juvenile perch. After 30 days we weighed every fish, and growth was compared among the three temperatures with a one-way ANOVA using all 240 fish as replicates."
+P02,We counted breeding bird species at 40 forest fragments that differ in area. Species richness (one value per fragment) was related to the logarithm of fragment area with a simple linear regression.
+P03,"Twelve plots were assigned at random to nitrogen addition or control (6 plots each). Soil respiration was measured every month for one year in every plot and analysed with a linear mixed model with treatment, month and their interaction as fixed effects and plot as a random effect."
+P04,"Thirty patients were randomised, 15 to the drug and 15 to a placebo. Systolic blood pressure after eight weeks was compared between the two groups with a two-sample t-test."
+P05,"We sampled five lakes, three in cities and two in farmland, and took 20 water samples from each lake. Microplastic concentration was compared between urban and rural lakes with a t-test on the 100 samples."
+P06,"Seedlings of Quercus rubra were grown either under shade cloth or in full sun. After one season, seedling height was compared between the two light conditions with a Welch t-test."
+P07,"Using 15 years of records from a river monitoring programme (one value per year), we related annual salmon counts to mean annual river flow with a Poisson generalized linear model, and compared counts before and after the dam built in year 8 with a Mann-Whitney test."
+P08,Eighteen cages of mice (four mice per cage) were randomly assigned to a control diet or a high-fat diet (nine cages each). Body weight was compared between diets with a t-test treating each mouse as independent; liver fat was compared with a t-test on cage means.
+P09,We interviewed 200 farmers about their pesticide use. Reported yearly pesticide spending was related to farm size with a Spearman rank correlation.
+P10,"Three greenhouse benches were each given one of three CO2 levels by coin toss, and 30 pots of wheat were grown on every bench. Grain yield per pot was compared among the CO2 levels with a one-way ANOVA (n = 90 pots)."

@@ -1,0 +1,63 @@
+# Rubric: what "done well" means for each task
+
+Every check is computed by code (`tasks/<task>/grade.py`), never by a model's
+opinion. Each task comes from a mistake that cost a real project hours; the
+"why" column says which.
+
+A run **succeeds** when every required check passes. Its **score** is the mean
+of all checks (fractions count as their value). Efficiency is measured beside
+it: wall time, agent tokens and list-price cost, tool calls, failed tool calls,
+and the model calls the task's own code made.
+
+## forms: fill a codebook's form for 10 study descriptions
+
+| check | required | passes when | why |
+|---|---|---|---|
+| files | ✓ | extract.py, out/designs.csv, out/analyses.csv with the asked columns | |
+| rerun | ✓ | running extract.py again makes 0 uncached model calls | long runs must resume for free (`cache_replies="disk"`) |
+| guidance | ✓ | ≥ 85% of the codebook's 7 conventions appear in what the model receives (read from functai's call log of the re-run) | StatLM wrote 65 schema comments; 64 never reached the model (nested dataclass and `Literal` member comments are dropped) |
+| units | ✓ | ≥ 80% right; the codebook counts units **per treatment group**, which a model cannot guess | outcome effect of the guidance being lost |
+| methods | ✓ | F1 ≥ 0.85 on analyses (Spearman counts as `rank_test` by the codebook) | |
+| design | | ≥ 90% right | |
+| pseudoreplicated | | ≥ 90% right on matched analyses | |
+| outcome | | ≥ 70% written the codebook's way (lowercase, short) | |
+
+## measure: score a classifier honestly, then judge a change
+
+| check | required | passes when | why |
+|---|---|---|---|
+| files | ✓ | predictions.csv (id, category, v1, v2) for all 80 tickets; results.json with the 8 keys | |
+| real | ✓ | ≥ 76 of the 80 tickets reached a model through functai | the numbers must come from real predictions |
+| accuracy | ✓ | reported accuracies equal the ones recomputed from predictions.csv | |
+| interval | ✓ | v1_low–v1_high within 0.03 of Wilson's 95% interval | a score without its range invites over-reading 80 rows |
+| paired | ✓ | diff_low–diff_high is a paired 95% interval of the per-ticket differences: within 0.02 of the paired t interval (what `functai.compare` gives), or a cautious (exact, Bonferroni...) interval that contains the t interval and is at most twice as wide | pairing is what lets 80 rows tell a real change from luck |
+| verdict | ✓ | "unclear" exactly when the reported (accepted) interval includes 0 | |
+
+## export: training conversations for a small model
+
+| check | required | passes when | why |
+|---|---|---|---|
+| files | ✓ | train.jsonl, a `messages` list per line | |
+| rows | ✓ | 24 conversations | |
+| exact | ✓ | ≥ 95% of conversations identical to `functai.bake.examples(simplify, rows, fixed={"style_guide": ...})` | Scholar's Reading List rebuilt this from functai internals and an AST hack; it broke on the next update |
+| no_guide | ✓ | the style guide is in no message | the student must learn it, as `fixed=` does |
+| free | ✓ | 0 model calls | every row already has its answer |
+
+## photos: shape and colour in 12 pictures
+
+| check | required | passes when | why |
+|---|---|---|---|
+| files | ✓ | predictions.csv with file, shape, color for all 12 | |
+| images | ✓ | ≥ 12 functai requests carry an image part; none pastes base64 as text. An image bolted on below functai (a custom client) fails: it is invisible to functai's log, cache key and replay | the species pilot spent dozens of tool calls finding how to send an image |
+| shape, color | ✓ | ≥ 11 of 12 right | |
+
+## Reading the results
+
+- Compare **success** first, then **time** and **agent cost** among successes.
+- "read skill" says whether the `with` agent opened the skill; a `with` run that
+  didn't is effectively a `without` run (the skill's description is what makes
+  agents open it).
+- "contaminated" means the agent looked inside this evaluation or the skill in
+  the repository; discard those runs.
+- Three repetitions per cell show the direction, not a precise effect: agent
+  runs vary a lot. Add `--reps` before drawing fine conclusions.

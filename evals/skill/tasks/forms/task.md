@@ -1,0 +1,3 @@
+I have 10 study descriptions in papers.csv and our lab's codebook in codebook.md. Write extract.py that uses functai to fill in the codebook's form for every paper, with gpt-4.1-mini (the OpenAI key is in the environment; the Python with functai installed is .venv/bin/python).
+
+It must write out/designs.csv (paper_id, design, independent_units) and out/analyses.csv (paper_id, outcome, method, pseudoreplicated; one row per analysis). Running the script a second time must not pay for the model again. Keep the script simple and easy for a scientist to read. Run it, and tell me briefly what you found.

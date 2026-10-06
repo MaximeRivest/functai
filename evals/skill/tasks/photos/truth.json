@@ -1,0 +1,50 @@
+{
+ "img01.png": {
+  "shape": "square",
+  "color": "yellow"
+ },
+ "img02.png": {
+  "shape": "triangle",
+  "color": "yellow"
+ },
+ "img03.png": {
+  "shape": "circle",
+  "color": "yellow"
+ },
+ "img04.png": {
+  "shape": "triangle",
+  "color": "green"
+ },
+ "img05.png": {
+  "shape": "triangle",
+  "color": "red"
+ },
+ "img06.png": {
+  "shape": "square",
+  "color": "red"
+ },
+ "img07.png": {
+  "shape": "triangle",
+  "color": "blue"
+ },
+ "img08.png": {
+  "shape": "circle",
+  "color": "blue"
+ },
+ "img09.png": {
+  "shape": "circle",
+  "color": "red"
+ },
+ "img10.png": {
+  "shape": "square",
+  "color": "green"
+ },
+ "img11.png": {
+  "shape": "circle",
+  "color": "green"
+ },
+ "img12.png": {
+  "shape": "square",
+  "color": "blue"
+ }
+}

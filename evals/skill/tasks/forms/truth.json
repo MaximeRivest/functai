@@ -1,0 +1,160 @@
+{
+ "P01": {
+  "design": "randomized_experiment",
+  "independent_units": 8,
+  "analyses": [
+   {
+    "method": "anova",
+    "pseudoreplicated": true,
+    "outcome": [
+     "growth",
+     "fish growth",
+     "weight",
+     "fish weight"
+    ]
+   }
+  ]
+ },
+ "P02": {
+  "design": "observational",
+  "independent_units": 40,
+  "analyses": [
+   {
+    "method": "regression",
+    "pseudoreplicated": false,
+    "outcome": [
+     "species richness",
+     "breeding bird species richness",
+     "bird species richness"
+    ]
+   }
+  ]
+ },
+ "P03": {
+  "design": "randomized_experiment",
+  "independent_units": 6,
+  "analyses": [
+   {
+    "method": "mixed_model",
+    "pseudoreplicated": false,
+    "outcome": [
+     "soil respiration"
+    ]
+   }
+  ]
+ },
+ "P04": {
+  "design": "randomized_experiment",
+  "independent_units": 15,
+  "analyses": [
+   {
+    "method": "t_test",
+    "pseudoreplicated": false,
+    "outcome": [
+     "systolic blood pressure",
+     "blood pressure"
+    ]
+   }
+  ]
+ },
+ "P05": {
+  "design": "observational",
+  "independent_units": 5,
+  "analyses": [
+   {
+    "method": "t_test",
+    "pseudoreplicated": true,
+    "outcome": [
+     "microplastic concentration"
+    ]
+   }
+  ]
+ },
+ "P06": {
+  "design": "nonrandomized_experiment",
+  "independent_units": null,
+  "analyses": [
+   {
+    "method": "t_test",
+    "pseudoreplicated": false,
+    "outcome": [
+     "seedling height",
+     "height"
+    ]
+   }
+  ]
+ },
+ "P07": {
+  "design": "observational",
+  "independent_units": 15,
+  "analyses": [
+   {
+    "method": "glm",
+    "pseudoreplicated": false,
+    "outcome": [
+     "salmon count",
+     "annual salmon count",
+     "salmon counts"
+    ]
+   },
+   {
+    "method": "rank_test",
+    "pseudoreplicated": false,
+    "outcome": [
+     "salmon count",
+     "annual salmon count",
+     "salmon counts"
+    ]
+   }
+  ]
+ },
+ "P08": {
+  "design": "randomized_experiment",
+  "independent_units": 9,
+  "analyses": [
+   {
+    "method": "t_test",
+    "pseudoreplicated": true,
+    "outcome": [
+     "body weight"
+    ]
+   },
+   {
+    "method": "t_test",
+    "pseudoreplicated": false,
+    "outcome": [
+     "liver fat"
+    ]
+   }
+  ]
+ },
+ "P09": {
+  "design": "observational",
+  "independent_units": 200,
+  "analyses": [
+   {
+    "method": "rank_test",
+    "pseudoreplicated": false,
+    "outcome": [
+     "pesticide spending",
+     "yearly pesticide spending",
+     "pesticide use"
+    ]
+   }
+  ]
+ },
+ "P10": {
+  "design": "randomized_experiment",
+  "independent_units": 1,
+  "analyses": [
+   {
+    "method": "anova",
+    "pseudoreplicated": true,
+    "outcome": [
+     "grain yield",
+     "yield"
+    ]
+   }
+  ]
+ }
+}
