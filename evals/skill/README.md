@@ -1,6 +1,6 @@
 # FunctAI for coding agents: does the skill help, and how does it compare with DSPy?
 
-`skills/functai/` (at the repository root) teaches coding agents to use
+`python/functai/skill/` (shipped in the package) teaches coding agents to use
 FunctAI. This folder measures two things on the same four tasks, in fresh
 isolated workspaces, graded by code:
 
@@ -78,7 +78,7 @@ lines of code.
 
 - Every arm: the same task text (with the library's name), the same agent model
   and thinking level, no extensions, no other skills, no AGENTS.md, no
-  Chattering records. FunctAI arms may add `--skill <copy of skills/functai>`.
+  Chattering records. FunctAI arms may add `--skill <copy of python/functai/skill>`.
   DSPy has no skill: models already know it from training; FunctAI is new.
 - The export task names the call DSPy will use (`dspy.Predict(Simplify.delete("style_guide"))`)
   because DSPy has no built-in way to leave a constant input out of a trained

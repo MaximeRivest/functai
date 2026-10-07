@@ -1,5 +1,65 @@
 # Changelog
 
+## Unreleased
+
+What the transcripts of real projects and the coding-agent evaluation
+(`evals/skill/findings.md`) showed was wrong or slow.
+
+- **Words written in the code reach the model** (`functai/guidance.py`). A
+  comment after each choice of a `Literal[...]` written over several lines,
+  or after each member of an `Enum`, now describes that choice; a comment
+  after the closing `]` of a multi-line annotation describes the field;
+  `Annotated[T, "words"]` on a record's field, a record's own docstring,
+  and every record nested in what a function reads or writes
+  (`list[Analysis]`, `Optional[Obs]`, a record given as an input) are listed
+  with their described fields; a comment after the first parameter on the
+  `def` line is read. All of these were silently dropped: StatLM's schema
+  had 1 of its 65 comments in the prompt (2026-10-04); of its 80 today, 73
+  are (the other 7 are section banners and group labels, correctly left
+  out). A wrapped comment's next line
+  is no longer taken for the following field's. Prompts that were already
+  complete are unchanged; a function whose prompt gains words gets a new
+  version, so its cached replies are asked again once.
+- **Tool pragmas are not words for the model.** `# noqa: …`, `# type: ignore`,
+  `# pyright: …` and the like were read as guidance (a `# noqa` after a return
+  annotation became "Return guidance: noqa: F722"); they are left out now.
+- **A function defined with no source says so.** Comments come from the
+  source; code run from standard input (`python - <<EOF`) or `exec()` (and
+  `python -c` before Python 3.13) has none, so its comments never reached the
+  model, without a word. FunctAI now warns once per function.
+- **A shape written as JSON Schema is kept.** `picture: {"media": "image"}`
+  was rewritten as text, so the picture went into the prompt as base64 and
+  the model guessed (3 of 12 right in the evaluation). It is now the shape
+  lmcc's own frontend reads, sent as an image part (12 of 12).
+- **Requests to OpenAI ask not to be stored.** OpenAI's Responses API keeps
+  every request and its reply for 30 days unless the request says `store:
+  false`; FunctAI now sends that by default to the providers the contract's
+  `models.json` lists under `no_storage` (OpenAI), unless the settings give
+  `store` (contract/functions.md, "Requests the provider would keep").
+  Measured 2026-10-06 on four models, kept requests were also slower (median
+  0.88–1.36 s against 0.69–0.91 s, and a long tail: p90 2.6 s against 0.9 s).
+  Every OpenAI request changes, so replies already in a disk cache are asked
+  again once.
+- **`api_max_wait`** (default 60 seconds). A provider asking to wait longer
+  before a re-send (a subscription's spent window asked for 3 h 7 min) is
+  no longer waited in silence: the error is raised at once, saying how long,
+  until when (UTC), and the setting that would wait for it. Per-minute
+  limits are still waited.
+- **A reply the provider stopped is never an answer and is not asked
+  again.** A finish reason `content_filter` (a safety filter, or the model
+  declining) raises an unreadable reply's refusal with the code
+  `parse-filtered`, saying so; it was asked again as "a reply that could not
+  be read", which sent the empty reply back (a request Claude refuses).
+- **`compare` says what differs** when two evaluations' rows are not the
+  same (`column 'rules' only in the second`), and how to compare instead.
+- **The coding-agent skill ships in the package** (`functai/skill/`):
+  `functai skill` says where it is and which agents have it; `functai skill
+  --install` copies it into Claude Code's, Pi's and Codex's skills folders.
+- **`bake(rows, plan_only=True)` on a function with a fixed set of answers
+  describes the head bake that `bake(rows)` does** (answers, splits, labels,
+  where), instead of planning a generative student that refused an encoder.
+  `method="sft"` still asks for a generative plan.
+
 ## 1.2.0 (2026-10-03)
 
 Conversations, tools that ask first, plugins, serving, the reply cache on disk,

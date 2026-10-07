@@ -1,9 +1,11 @@
-"""The command line: ``functai serve``, ``functai describe``, ``functai verify``.
+"""The command line: ``functai serve``, ``functai describe``, ``functai verify``, ``functai skill``.
 
     functai serve team/ --lm gpt-4.1-mini --keys keys.txt --port 8080
     functai serve support.py:support --store conversations/
     functai describe team/
     python -m functai verify team/          # what verify() runs in a fresh environment
+    functai skill                           # where the coding-agent skill is, and which agents have it
+    functai skill --install                 # copy it to every agent found here (Claude Code, Pi, Codex)
 """
 
 from __future__ import annotations
@@ -60,7 +62,12 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("folder")
     v = sub.add_parser("verify", help="load a saved folder here and compare its fingerprints")
     v.add_argument("folder")
+    k = sub.add_parser("skill", help="the skill that teaches coding agents to use functai: where it is, and install it")
+    k.add_argument("--install", nargs="*", metavar="DIR",
+                   help="copy it into these skills folders (default: every agent's found here)")
     args = parser.parse_args(argv)
+    if args.command == "skill":
+        return _skill(args.install)
     if args.command == "describe":
         from .saved import describe
         print(json.dumps(describe(args.folder), indent=2, ensure_ascii=False))
@@ -74,6 +81,60 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(f"serving {program.__name__} at http://{args.host}:{args.port} (the API at /openapi.json)",
           file=sys.stderr)
     service.serve(args.host, args.port)
+    return 0
+
+
+SKILL = Path(__file__).resolve().parent / "skill"
+
+# where coding agents look for skills, when the agent is installed here (its home folder exists)
+AGENT_SKILLS = {"Claude Code": "~/.claude/skills", "Pi": "~/.pi/agent/skills", "Codex": "~/.codex/skills"}
+
+
+def _skill(install: Optional[List[str]]) -> int:
+    """Say where the skill is and which agents have it; with ``--install``, copy it.
+    A copy is replaced only when it is functai's (its SKILL.md says ``name: functai``);
+    a link (a checkout's, kept current by itself) is left as it is."""
+    import shutil
+
+    from . import __version__
+    targets: List[Path] = []
+    if install:
+        targets = [Path(d).expanduser() for d in install]
+    else:
+        for agent, folder in AGENT_SKILLS.items():
+            path = Path(folder).expanduser()
+            if path.parent.exists():
+                targets.append(path)
+    if install is None:
+        print(f"the functai skill (functai {__version__}): {SKILL}")
+        for agent, folder in AGENT_SKILLS.items():
+            path = Path(folder).expanduser()
+            if not path.parent.exists():
+                continue
+            here = path / "functai"
+            state = ("linked" if here.is_symlink() else "installed" if (here / "SKILL.md").exists()
+                     else "not installed")
+            print(f"  {agent:12} {here}: {state}")
+        print("install or update it with: functai skill --install [DIR ...]")
+        return 0
+    if not targets:
+        print("functai: no coding agent found here (Claude Code, Pi, Codex); name a skills folder: "
+              "functai skill --install DIR", file=sys.stderr)
+        return 1
+    for folder in targets:
+        here = folder / "functai"
+        if here.is_symlink():
+            print(f"{here}: a link ({here.resolve()}), left as it is")
+            continue
+        if here.exists():
+            if "name: functai" not in (here / "SKILL.md").read_text(encoding="utf-8", errors="replace") \
+                    if (here / "SKILL.md").exists() else True:
+                print(f"{here}: holds something else than functai's skill, left as it is", file=sys.stderr)
+                continue
+            shutil.rmtree(here)
+        folder.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(SKILL, here, ignore=shutil.ignore_patterns("__pycache__"))
+        print(f"{here}: installed (functai {__version__})")
     return 0
 
 

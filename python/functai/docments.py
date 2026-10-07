@@ -147,6 +147,19 @@ def flexiclass(cls):
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+# Tool pragmas written as comments (``# noqa: F821``, ``# type: ignore``, ``# pyright: ignore``...):
+# instructions to a linter or a type checker, never words for the model.
+_PRAGMA = re.compile(r"^\s*(noqa\b|type:\s*ignore|pyright:|pylint:|mypy:|fmt:\s*(on|off|skip)\b|isort:|ruff:|"
+                     r"pragma:|nosec\b)", re.IGNORECASE)
+
+
+def strip_pragmas(comment: str) -> str:
+    """A comment's words without the tool pragmas in it: ``"in dollars  # noqa: E501"``
+    is ``"in dollars"``, ``"type: ignore"`` is ``""``."""
+    pieces = [p.strip() for p in comment.split("#")]
+    return " # ".join(p for p in pieces if p and not _PRAGMA.match(p)).strip()
+
+
 def get_source(s: Any) -> str:
     "Get source code for string, function object, class, or dataclass."
     if isinstance(s, str):
@@ -420,7 +433,8 @@ def _harvest_inline_param_and_return_comments(fn: Any) -> Tuple[Dict[str, str], 
             if return_comment is None:
                 return_comment = v
 
-    return param_comments, return_comment
+    param_comments = {k: w for k, v in param_comments.items() if (w := strip_pragmas(v))}
+    return param_comments, (strip_pragmas(return_comment) or None) if return_comment else None
 
 
 def _harvest_ai_output_inline_comments(fn: Any) -> Dict[str, str]:
@@ -440,14 +454,19 @@ def _harvest_ai_output_inline_comments(fn: Any) -> Dict[str, str]:
             cmt = (m.group(2) or "").strip()
             if cmt:
                 out[name] = cmt
-    return out
+    return {k: w for k, v in out.items() if (w := strip_pragmas(v))}
 
 
 def _class_field_docments(cls: Any) -> Dict[str, str]:
     """
     Extract inline/above comments for annotated class fields (dataclass or plain class).
-    Tries multiple strategies to locate and parse the class body.
+    Tries multiple strategies to locate and parse the class body. Tool pragmas
+    (``# noqa``, ``# type: ignore``) are not words.
     """
+    return {k: w for k, v in _class_field_comments(cls).items() if (w := strip_pragmas(v))}
+
+
+def _class_field_comments(cls: Any) -> Dict[str, str]:
     def _parse(text: str) -> Dict[str, str]:
         out: Dict[str, str] = {}
         if not text:

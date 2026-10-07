@@ -78,6 +78,7 @@ fast.predict("...").probabilities           # {'result': {'card_arrival': 0.93, 
 
 ```{.python .no-run}
 print(summarize.bake(rows, plan_only=True))   # what it would do: nothing runs, nothing is spent
+                                              # (for a fixed set of answers: the head's plan, its splits and labels)
 baked = summarize.bake(rows)                  # do it
 fast = summarize.using(lm=baked)
 ```

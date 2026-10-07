@@ -1,6 +1,10 @@
 # FunctAI: training a small model on a function ("bake")
 
-- Plan first, spend nothing: `print(fn.bake(rows, plan_only=True))`.
+- Plan first, spend nothing: `print(fn.bake(rows, plan_only=True))`. For a function with a fixed set of
+  answers (`Literal`, `Enum`, `bool`) it is the head's plan: answers never seen in the labels, the rows held
+  out to test and to validate. With few rows, pass your own `test=` rows (by paper, by customer...), so the
+  rest all train (StatLM, 168 rows: 86 trained by default, 136 with `test=`). Before 1.3, `plan_only`
+  planned a generative student instead and refused an encoder.
 - Training data in the **exact** format the function will later send:
   ```python
   import functai.bake

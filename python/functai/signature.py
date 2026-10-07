@@ -12,6 +12,7 @@ This module only reads code; it never calls a model.
 from __future__ import annotations
 
 import ast
+import copy
 import dataclasses
 import enum
 import inspect
@@ -23,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple, TypedDict
 import lmcc
 from lmcc import core as lmcc_core
 
+from . import guidance
 from .docments import (_class_field_docments, _harvest_ai_output_inline_comments,
                        _harvest_inline_param_and_return_comments, flexiclass)
 
@@ -32,10 +34,24 @@ RESERVED_PARAMS: frozenset = frozenset()
 # ──────────────────────────────────────────────────────────────────────────────
 # Type-hint helpers
 # ──────────────────────────────────────────────────────────────────────────────
+# JSON-Schema keywords: an annotation written as a dict holding one is a shape, as lmcc's own
+# frontend reads it (``picture: {"media": "image"}``): kept as written, never turned into text
+_SCHEMA_KEYS = frozenset({"type", "media", "enum", "const", "anyOf", "oneOf", "allOf", "properties", "items",
+                          "prefixItems", "additionalProperties", "$ref"})
+
+
+def is_schema(tp: Any) -> bool:
+    """An annotation written as a JSON-Schema shape (a dict with a schema keyword)."""
+    return isinstance(tp, dict) and any(k in _SCHEMA_KEYS for k in tp)
+
+
 def _is_type_hint_like(tp: Any) -> bool:
-    """Return True if tp looks like a usable type hint (builtins, typing generics, PEP 585 generics)."""
+    """Return True if tp looks like a usable type hint (builtins, typing generics, PEP 585 generics,
+    a JSON-Schema shape written as a dict)."""
     if tp is None or tp is inspect._empty:
         return False
+    if is_schema(tp):
+        return True
     try:
         if isinstance(tp, type):
             return True
@@ -572,6 +588,8 @@ def shape_of(ann: Any, registry: Any = None, *, where: str = "?") -> dict:
     if constraints:
         return _constrained(shape_of(unannotate(ann)[0], registry, where=where), constraints)
     ann, _ = unannotate(ann)
+    if is_schema(ann):
+        return copy.deepcopy(ann)                       # a shape written as one: as written
     if ann is typing.Any or ann is object:
         return {}
     if ann is None or ann is type(None):
@@ -744,13 +762,15 @@ def _field(name: str, direction: str, ann: Any, registry: Any, *, desc: Optional
 # Instruction text
 # ──────────────────────────────────────────────────────────────────────────────
 
-def _instruction_appendix(fn: Any, *, outputs: List[Tuple[str, str]], main_output_type: Any) -> str:
-    """Guidance harvested from the code: parameter comments, ``_ai`` descriptions
-    and comments, the return comment, and the documented fields of a returned
-    class. Only what was written down; undocumented names add nothing."""
+def _instruction_appendix(*, params: Dict[str, str], outputs: List[Tuple[str, str]], ret_cmt: Optional[str],
+                          types: List[Any]) -> str:
+    """Guidance harvested from the code: parameter words, ``_ai`` descriptions
+    and comments, the return comment, and every record the function reads or
+    writes (``types``: the outputs' types first, then the inputs'), each with
+    its docstring and described fields, nested records included. Only what was
+    written down; undocumented names add nothing."""
     parts: List[str] = []
-    param_docs, ret_cmt = _harvest_inline_param_and_return_comments(fn)
-    documented = [(k, v) for k, v in param_docs.items() if v]
+    documented = [(k, v) for k, v in params.items() if v]
     if documented:
         parts += ["Parameter guidance:", *[f"- {k}: {v}" for k, v in documented], ""]
     described = [(n, d) for n, d in outputs if d]
@@ -758,18 +778,34 @@ def _instruction_appendix(fn: Any, *, outputs: List[Tuple[str, str]], main_outpu
         parts += ["Output guidance:", *[f"- {n}: {d}" for n, d in described], ""]
     if ret_cmt:
         parts += [f"Return guidance: {ret_cmt}", ""]
-    if isinstance(main_output_type, type) and getattr(main_output_type, "__annotations__", None):
-        src_docs = _class_field_docments(main_output_type) or {}
-        meta_docs: Dict[str, Optional[str]] = {}
-        if dataclasses.is_dataclass(main_output_type):
-            meta_docs = {f.name: (f.metadata.get("doc") if f.metadata else None)
-                         for f in dataclasses.fields(main_output_type)}
-        cls_name = getattr(main_output_type, "__name__", "Object")
-        lines = [f"- {cls_name}.{k}: {src_docs.get(k) or meta_docs.get(k)}"
-                 for k in main_output_type.__annotations__ if src_docs.get(k) or meta_docs.get(k)]
-        if lines:
-            parts += [f"{cls_name} fields:", *lines, ""]
+    parts += guidance.record_sections(types, _record_field_docs)
     return "\n".join(parts).strip()
+
+
+def _record_field_docs(cls: Any, metadata_only: bool = False) -> Dict[str, str]:
+    """A record's one-line field comments (docments: used when the parser cannot
+    read the class), and a dataclass field's ``metadata["doc"]`` where there is
+    no comment."""
+    docs = {} if metadata_only else dict(_class_field_docments(cls) or {})
+    if dataclasses.is_dataclass(cls):
+        for f in dataclasses.fields(cls):
+            if not docs.get(f.name) and f.metadata and f.metadata.get("doc"):
+                docs[f.name] = f.metadata["doc"]
+    return {k: v for k, v in docs.items() if v}
+
+
+def _words(old: Optional[str], note: Any, ann: Any) -> str:
+    """A name's words: the one-line comment docments found, else what only the
+    parser finds (a comment after a closing bracket), else an Enum's docstring;
+    then a line per described choice (a Literal's, or an Enum's members)."""
+    words = guidance.mine(old, note) or (note.words if note else "")
+    choices = dict(note.choices) if note else {}
+    kind = guidance.enum_in(ann) if ann is not None else None
+    if kind is not None:
+        edoc, members = guidance.enum_notes(kind)
+        words = words or edoc
+        choices = {**members, **choices}
+    return guidance.with_choices(words, choices)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -793,7 +829,12 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
                reasoning: bool = False, tools: bool = False, registry: Any = None) -> Spec:
     sig = inspect.signature(fn)
     hints = _safe_get_type_hints(fn)
+    guidance.warn_without_source(fn)
     param_docs, ret_cmt = _harvest_inline_param_and_return_comments(fn)
+    param_notes, output_notes, return_note = guidance.function_notes(fn)
+    param_docs = {**{k: v for k, v in param_docs.items() if v},
+                  **{k: w for k in sig.parameters
+                     if (w := _words(param_docs.get(k), param_notes.get(k), hints.get(k)))}}
 
     # ---- inputs
     inputs: List[lmcc_core.Field] = []
@@ -836,7 +877,7 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
     ai_inline = _harvest_ai_output_inline_comments(fn)
     ast_map: Dict[str, Tuple[Any, str]] = {}
     for n, t, d in ast_outputs:
-        extra = ai_inline.get(n)
+        extra = _words(ai_inline.get(n), output_notes.get(n), t if _is_type_hint_like(t) else None)
         ast_map[n] = (t, f"{d} — {extra}" if (d and extra) else (d or extra or ""))
 
     fn_ret_raw = _raw_return_annotation(fn)
@@ -869,6 +910,8 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
             main_typ = items[where[0]]
     if not main_desc and ret_cmt:
         main_desc = ret_cmt
+    if main_name not in ast_map:                 # a choice of the return annotation, described where it is written
+        main_desc = _words(main_desc, return_note, main_typ) or main_desc
 
     if main_name in input_names:           # an input already has the name: fall back
         for candidate in (MAIN_OUTPUT_DEFAULT_NAME, "output", "answer"):
@@ -902,8 +945,11 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
         text = instructions.strip()
     else:
         base = _compose_system_doc(fn, include_fn_name=include_fn_name)
-        appendix = _instruction_appendix(fn, outputs=[(n, d) for n, _t, d in extras] + [(main_name, main_desc)],
-                                         main_output_type=unannotate(main_typ)[0])
+        appendix = _instruction_appendix(
+            params={k: param_docs.get(k, "") for k in sig.parameters},
+            outputs=[(n, d) for n, _t, d in extras] + [(main_name, main_desc)],
+            ret_cmt=ret_cmt,
+            types=[main_typ, *[t for _n, t, _d in extras], *[hints.get(k) for k in sig.parameters if k in hints]])
         text = base if not appendix else (base + ("\n\n" if base else "") + appendix)
 
     signature = lmcc_core._validated(lmcc_core.SignatureCore(text, inputs + outputs))

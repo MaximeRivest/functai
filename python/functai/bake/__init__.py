@@ -180,6 +180,57 @@ def _gold_values(row: Dict[str, Any], outputs: Sequence[str]) -> Optional[Dict[s
     return {n: row[n] for n in outputs}
 
 
+class HeadPlan(str):
+    """What ``bake(fn, rows)`` will do for a function whose every output has a
+    fixed set of answers: printed, it says so; nothing has run."""
+
+
+def head_plan(fn, data, *, student: str, teacher: Any, labels: str, test: Any, holdout: float,
+              validation: float, seed: int = 0) -> HeadPlan:
+    """The plan of a head bake, by the rules ``bake_head`` follows (the same
+    splits, from the same seed), without loading a model or calling one."""
+    from .examples import head_fields
+    from ..evaluation import rows_of
+    fields = head_fields(fn._variant_spec(reasoning=False, tools=False))
+    rows = rows_of(data)
+    gold = [_gold(r, fields) for r in rows]
+    labeled = [i for i, g in enumerate(gold) if g is not None]
+    if test is None:
+        _pool, held = _split(labeled, holdout, 50, 2000, seed)
+        n_test, train_idx = len(held), [i for i in range(len(rows)) if i not in set(held)]
+        test_said = f"{n_test:,} labeled rows held out to test (holdout={holdout:g}: at least 50, at most half)"
+    else:
+        n_test, train_idx = len(rows_of(test)), list(range(len(rows)))
+        test_said = f"{n_test:,} rows given as test"
+    unlabeled = sum(gold[i] is None for i in train_idx)
+    if labels == "data":
+        train_idx = [i for i in train_idx if gold[i] is not None]
+    teach = len(train_idx) if labels == "teacher" else (unlabeled if labels == "auto" else 0)
+    n_val = len(_split(train_idx, validation, 32, 1000, seed + 1)[1]) if len(train_idx) >= 100 else 0
+    lines = [f"bake {fn.__name__} → {student} (a head: a probability for every answer, trained here)"]
+    for f in fields:
+        seen = {k for i in train_idx if gold[i] is not None
+                for k, p in zip(f.keys, gold[i][fields.index(f)]) if p > 0}
+        never = [k for k in f.keys if k not in seen]
+        lines.append(f"  answers    {f.name}: {len(f.keys)}" + (f"; {len(never)} never in the training labels "
+                                                               f"({', '.join(never[:6])}{', …' if len(never) > 6 else ''}): "
+                                                               f"it cannot learn them" if never else ""))
+    lines += [f"  rows       {len(rows):,} given, {len(labeled):,} with labels",
+              f"  test       {test_said}",
+              f"  train      {len(train_idx) - n_val:,} rows, {n_val:,} more to validate"
+              + ("" if n_val else " (fewer than 100 training rows: no early stopping, no temperature fitting)"),
+              f"  labels     " + (f"{teach:,} rows labeled by {getattr(teacher, '__name__', teacher)} first"
+                                  if teach and teacher is not None else
+                                  f"{teach:,} training rows have no label and no teacher was given: it will refuse"
+                                  if teach else "the data's"),
+              "  where      here: the GPU with the most free memory if it has room, else the CPU; seconds to minutes",
+              "  nothing has run: the same bake without plan_only does this"]
+    if test is None and len(labeled) < 200:
+        lines.append(f"  note       with {len(labeled):,} labeled rows, holding out {n_test} leaves "
+                     f"{len(train_idx) - n_val:,} to train: pass your own test=rows to train on all the others")
+    return HeadPlan("\n".join(lines))
+
+
 def _split(items: List[Any], share: float, lo: int, hi: int, seed: int) -> Tuple[List[Any], List[Any]]:
     items = list(items)
     random.Random(seed).shuffle(items)
@@ -618,8 +669,9 @@ def bake(what: Any, data: Any = None, *, method: str = "auto", student: Optional
     """
     from ..core import FunctAIFunc
     single = isinstance(what, FunctAIFunc)
+    # what only a generative student does (asking for a plan is not one: a head has its plan too)
     sft_asked = any(v not in (None, False, "auto") for v in (fixed, derived, layout, tags, weights, functions)) or \
-        reasoning or (where not in ("auto", None, "here")) or plan_only or not wait
+        reasoning or (where not in ("auto", None, "here")) or not wait
     if method == "auto":
         method = "head" if single and _all_finite(what) and not sft_asked and not training.get("lora") else "sft"
     if method == "head":
@@ -627,13 +679,17 @@ def bake(what: Any, data: Any = None, *, method: str = "auto", student: Optional
             raise BakeError("a head model answers one function: bake(fn, rows, method='head')")
         extra = {k: v for k, v in {"fixed": fixed, "derived": derived, "layout": layout, "tags": tags,
                                    "weights": weights, "functions": functions}.items() if v}
-        if extra or where not in ("auto", None, "here") or plan_only or not wait:
-            raise BakeError(f"a head model trains here, in seconds; {sorted(extra) or ['where/plan_only/wait']} "
+        if extra or where not in ("auto", None, "here") or not wait:
+            raise BakeError(f"a head model trains here, in seconds; {sorted(extra) or ['where/wait']} "
                             f"apply to generative students (method='sft')")
         head_opts = {k: training.pop(k) for k in ("epochs", "lr", "batch_size", "max_length", "device", "prices")
                      if k in training}
         if training:
             raise TypeError(f"bake(method='head') does not take {sorted(training)}")
+        if plan_only:
+            return head_plan(what, data, student=student or "jhu-clsp/ettin-encoder-17m", teacher=teacher,
+                             labels=labels, test=test, holdout=0.1 if holdout is None else holdout,
+                             validation=0.1 if validation is None else validation, seed=seed)
         return bake_head(what, data, student=student or "jhu-clsp/ettin-encoder-17m", teacher=teacher, labels=labels,
                          test=test, holdout=0.1 if holdout is None else holdout,
                          validation=0.1 if validation is None else validation, seed=seed, num_threads=num_threads,

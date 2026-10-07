@@ -241,9 +241,11 @@ def test_auto_picks_a_head_when_it_can_and_a_student_otherwise(tiny, home):
         """Mood."""
     from functai.bake import _all_finite
     assert _all_finite(mood) and not _all_finite(capital)
-    p = mood.bake([{"text": "x", "result": "happy"}] * 20, student=tiny, plan_only=True, local_files_only=True,
-                  log=None, device="cpu")
-    assert type(p).__name__ == "Plan"            # plan_only asks for a generative plan
+    rows = [{"text": "x", "result": "happy"}] * 20
+    p = mood.bake(rows, student=tiny, plan_only=True, device="cpu")
+    assert type(p).__name__ == "HeadPlan"        # a plan says what bake(rows) does: a head, here
+    p = mood.bake(rows, student=tiny, method="sft", plan_only=True, local_files_only=True, log=None, device="cpu")
+    assert type(p).__name__ == "Plan"            # a generative student's plan, when asked for one
 
 
 # ------------------------------------------------------------------ training here, for real (on the CPU)

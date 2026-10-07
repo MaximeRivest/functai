@@ -368,3 +368,22 @@ def test_log_false_is_silent(capsys):
     _say(False)("nothing")
     _say(None)("nothing")
     assert capsys.readouterr().err == ""
+
+
+def test_a_finite_function_has_a_head_plan_that_says_what_bake_will_do():
+    from typing import Literal
+
+    @functai.ai
+    def mood(text: str) -> Literal["happy", "sad", "angry"]:
+        """The writer's mood."""
+        ...
+
+    rows = [{"text": f"text {i}", "result": "happy" if i % 2 else "sad"} for i in range(160)]
+    plan = mood.bake(rows, plan_only=True)
+    text = str(plan)
+    assert text.startswith("bake mood → jhu-clsp/ettin-encoder-17m (a head")
+    assert "result: 3; 1 never in the training labels (angry)" in text
+    assert "test       50 labeled rows held out" in text and "train      88 rows, 22 more to validate" not in text
+    assert "nothing has run" in text
+    given = str(mood.bake(rows[:120], test=rows[120:], plan_only=True))
+    assert "40 rows given as test" in given and "train      88 rows, 32 more to validate" in given

@@ -95,6 +95,30 @@ topic("Rover finds traces of ancient riverbed on Mars")
 'science'
 ```
 
+### Describing each choice
+
+Write a menu over several lines and put each choice's meaning in a comment
+after it; a comment after the closing `]` describes the field. The same
+works on an `Enum`'s members.
+
+```{.python .no-run}
+@dataclass
+class Study:
+    setting: Literal[
+        "field",   # outdoors, in nature
+        "lab",     # indoors, controlled
+    ]  # where the measurements were made
+```
+
+The model is told:
+
+```text
+Study fields:
+- Study.setting: where the measurements were made
+  - field: outdoors, in nature
+  - lab: indoors, controlled
+```
+
 ## Collections
 
 ```python
@@ -197,6 +221,16 @@ Review(stars=3, summary='The tacos are great and the atmosphere lively, but the 
 
 Records nest: a field can be a list of another record, an enum, or an
 optional value.
+
+### Records inside records
+
+A record that holds other records (`analyses: list[Analysis]`, `best:
+Optional[Analysis]`) is described whole: each record's docstring and
+described fields are listed once, nested ones included, and so are the
+records a function takes as inputs. Check what the model is told with
+`print(fn.render(...).system)`, from a file: comments come from the source,
+so code run from standard input or `exec()` has none (FunctAI warns when
+that happens).
 
 ## Types as inputs
 

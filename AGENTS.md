@@ -19,8 +19,8 @@ before adding a language or changing the contract.
 | `.github/workflows/docs.yml` | the website on GitHub Pages: the site and the three manuals, built in parallel on every push to master, placed as `tools/docs.py site` places them | |
 | `tools/crosslang.py` | Python, TypeScript, R and Julia against each other: saved in Python, loaded in the others; one call log | `contract/` |
 | `design/` | numbered design notes | |
-| `skills/functai/` | the skill that teaches coding agents to use FunctAI (installed for Pi as a link in `~/.pi/agent/skills/functai`) | what real projects did with FunctAI |
-| `evals/skill/` | agents doing four tasks with and without that skill, and with DSPy instead; expert solutions in both libraries; graded by code from a recording proxy (`run.py`, `references.py`, `rubric.md`, `findings.md`) | `skills/functai/` |
+| `python/functai/skill/` | the skill that teaches coding agents to use FunctAI in Python, shipped in the package (`functai skill --install` copies it to the agents found; for Pi here, `~/.pi/agent/skills/functai` links to it) | what real projects did with FunctAI |
+| `evals/skill/` | agents doing four tasks with and without that skill, and with DSPy instead; expert solutions in both libraries; graded by code from a recording proxy (`run.py`, `references.py`, `rubric.md`, `findings.md`) | `python/functai/skill/` |
 | `check` | the one command: the contract, then every implementation | |
 
 Rules:

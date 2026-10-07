@@ -10,7 +10,7 @@ argument names, types and some comments are the prompt**; the answer comes back
 as the declared type. Distilled from real projects; every rule here cost
 someone hours. Read the side files only when the task needs them:
 
-- `recipes.md`: complete tested scripts (nested extraction, two models at once, measure-and-compare, training export, **images**). Images need that recipe: functai has no image type, and an annotation like `{"media": "image"}` is silently sent as base64 *text* the model cannot see
+- `recipes.md`: complete tested scripts (nested extraction, two models at once, measure-and-compare, training export, **images**). A picture is an input annotated `{"media": "image"}`, given `{"media_type": "image/png", "data": <base64>}` (before 1.3 that annotation was sent as text the model cannot see: use the recipe's `lmcc.format` registration there)
 - `failures.md`: refusals, safety filters, rate limits on subscriptions, overloads, logins
 - `training.md`: baking a small model, exporting training conversations
 
@@ -35,42 +35,52 @@ $PY -c "import functai; [print(l) for l in functai.logins()]"     # what can pay
 ## 2. Make sure your guidance reaches the model
 
 ```python
+from dataclasses import dataclass
 from typing import Literal
-from pydantic import BaseModel, Field
 import functai
 from functai import ai, _ai
 
-class Analysis(BaseModel):
-    method: Literal["t_test", "anova", "other"] = Field(description="t_test: two groups; anova: three or more")
+@dataclass
+class Analysis:
+    """One statistical test whose result the paper reports."""
+    method: Literal[
+        "t_test",   # two groups
+        "anova",    # three or more groups
+        "other",
+    ]  # the test, as the codebook names it
 
-class Study(BaseModel):
-    units: int | None = Field(description="independent units per group; null when not stated")
+@dataclass
+class Study:
+    units: int | None  # independent units per group; None when not stated
     analyses: list[Analysis]
 
 @ai
 def read_study(methods: str) -> Study:
-    """Fill in the form from this methods section. Never guess: use null."""
+    """Fill in the form from this methods section. Never guess: use None."""
     quotes: list[str] = _ai  # sentences copied word for word that support the answers
     return _ai
 ```
 
-What reaches the prompt (measured on functai 1.2.0):
+What reaches the prompt (this version; check `functai.__version__`):
 
 | you write | reaches the model? |
 |---|---|
-| the docstring; `_ai["description"]`; a comment after an `_ai` output | yes |
-| a one-line comment after an argument, or after a field of the **returned** dataclass | yes |
-| pydantic `Field(description=...)` and pydantic class docstrings, **at any depth** | yes |
-| a long text passed as an input (a codebook, a guide) | yes |
-| comments on each choice of a multi-line `Literal[...]`, on `Enum` members, or after the closing `]` | **no** |
-| comments on fields of a dataclass **nested** in the result (`list[Analysis]`) | **no** |
-| a dataclass docstring, `Annotated[..., "text"]` | **no** |
-| **any** comment when the code runs from `python - <<EOF`, `python -c`, or `exec(...)` | **no** |
+| the docstring; `_ai["description"]`; a comment after a parameter, an `_ai` output, or a record's field | yes |
+| a comment after each choice of a multi-line `Literal[...]` or after each `Enum` member; a comment after the closing `]` | yes |
+| records nested in what the function reads or writes (`list[Analysis]`), their fields' comments and their docstrings | yes |
+| pydantic `Field(description=...)`; `Annotated[T, "words"]`; a long text passed as an input (a codebook) | yes |
+| comment lines between choices that label a group, section banners | no (they describe no one field) |
+| tool pragmas: `# noqa`, `# type: ignore`, `# pyright: …` | no (left out, from 1.3) |
+| **any** comment when the code runs from `python - <<EOF` or `exec(...)` (and `python -c` before Python 3.13) | **no**: comments come from the source; FunctAI warns |
 
-So: nested records → pydantic with `Field(description=...)`; menu choices →
-define them in the field's description or the docstring; test from a file, not
-a heredoc. **Before paying, look:** `print(read_study.render(<one input>).system)`
-(no call is made) and check every definition you wrote is there.
+Before `1.3` (the PyPI `1.2.0`): choice comments, comments after `]`, nested
+records' comments and dataclass docstrings were silently dropped; there, use
+pydantic `Field(description=...)` for nested records and put choice meanings
+in the field's own comment.
+
+**Before paying, look:** `print(read_study.render(<one input>).system)` (no
+call is made) and check every definition you wrote is there. Test from a
+file, not a heredoc.
 
 Also: `Literal` for fixed answers; `X | None` + "null when not stated" instead of
 guesses; outputs are written in declared order (put `quotes`/`reasoning` before

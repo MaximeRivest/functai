@@ -12,7 +12,7 @@ Each run gets a fresh workspace OUTSIDE this repository (~/.cache/functai-skill-
 or $FUNCTAI_SKILL_EVAL_WORK) holding the task's files and a `.venv` link to this
 folder's environment. Pi runs headless with nothing personal loaded: no
 extensions, skills, AGENTS.md or prompt templates; the `with` condition adds
-only a copy of skills/functai. Every request the task's code sends to a provider
+only a copy of python/functai/skill. Every request the task's code sends to a provider
 goes through a recording proxy (recorder.py), so the graders judge every library
 by the same record. Both get the same task text and the same rule:
 do not open this evaluation or the skill in the repository (a run that does is
@@ -41,7 +41,7 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
-SKILL = REPO / "skills" / "functai"
+SKILL = REPO / "python" / "functai" / "skill"
 WORK_ROOT = Path(os.environ.get("FUNCTAI_SKILL_EVAL_WORK", Path.home() / ".cache" / "functai-skill-eval"))
 KEYS_FILE = Path(os.environ.get("FUNCTAI_SKILL_EVAL_KEYS", Path.home() / "Projects" / "lm15-dev" / ".env"))
 TASKS = sorted(p.name for p in (HERE / "tasks").iterdir() if (p / "task.md").exists())
