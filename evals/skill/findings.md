@@ -8,6 +8,13 @@ behaviour below was reproduced on functai 1.2.0 before being written down.
 
 ## FunctAI issues worth fixing
 
+Status 2026-10-06 (unreleased, after 1.2.0): 1 to 5, 7 to 9 fixed (`python/CHANGELOG.md`,
+*Unreleased*); 6 is the users' to change (`functai.bake.examples` is the public way). lmcc's
+side is in its issues: lm15 media parts as types and values
+([lmcc#3](https://github.com/MaximeRivest/lmcc/issues/3)), rebuilding a host type from its
+JSON form ([lmcc#4](https://github.com/MaximeRivest/lmcc/issues/4)), and a `parse-filtered`
+refusal in the kernel ([lmcc#5](https://github.com/MaximeRivest/lmcc/issues/5)).
+
 1. **Guidance silently dropped from the prompt.** Comment harvesting skips
    comments on the choices of a multi-line `Literal[...]`, a comment after its
    closing `]`, `Enum` member comments, comments on fields of dataclasses
@@ -17,34 +24,54 @@ behaviour below was reproduced on functai 1.2.0 before being written down.
    input). When the source is unavailable (`python -`, `python -c`, `exec`),
    *every* comment is dropped, with no warning, so a probe sends a different
    prompt than the script. Pydantic `Field(description=...)` works at every depth.
-   Suggest: harvest nested and member comments like top-level ones, and warn
-   once when an AI function's comments cannot be read.
-2. **A non-type annotation is accepted.** `def f(image: {"media": "image"})`
-   runs and sends the image as base64 *JSON text*; the model guesses (3/12 in
-   the evaluation) and the agent reported success. Suggest: refuse
-   annotations that are not types, and ship an image input type (the species
-   pilot and the evaluation both had to register one with `lmcc.format`).
+   Fixed: `functai/guidance.py` reads them with Python's parser and
+   tokenizer; StatLM's schema now has 73 of its 80 comments in the prompt
+   (the 7 others are section banners and group labels).
+2. **A picture given as `{"media": "image"}` is sent as text.** The run
+   succeeds, the model guesses (3/12 in the evaluation) and the agent reported
+   success. The cause is item 8: FunctAI rewrites that annotation as a string.
+   Honour it as lmcc does (an image input with no registration), and ship a
+   type for pictures and files (design note 13).
 3. **`api_retries` sleeps the provider's full `retry-after`, uncapped.** A
    subscription 429 said 11,270 s (about 3 h); every thread of a `map` would
    sleep that long. The species pilot set `api_retries=0` to avoid it; the
-   rewriting scripts wrapped every call in their own retry loop. Suggest: a cap
-   (`max_wait=`), and a refusal that says "your plan's window resets at …".
+   rewriting scripts wrapped every call in their own retry loop. Fixed in all
+   four languages: `api_max_wait` (60 s) raises at once beyond it, saying until when.
 4. **A safety-filtered reply is reported as an unreadable reply.** Claude Opus
    stopped mid-answer on toxicology papers (finish `content_filter`); FunctAI
    raised a parse `Refusal`, which hid the cause. The re-ask then sent the
    empty reply back, which Claude rejects (`text content blocks must be
-   non-empty`, HTTP 400). Suggest: name the filter in the error and never re-send
-   an empty turn.
+   non-empty`, HTTP 400). Fixed in all four languages: `parse-filtered`, not
+   asked again; lmcc#5 proposes the code in the kernel.
 5. **`compare`'s refusal could say why.** "compare needs the same examples in
    the same order; row 0 differs" cost 3 of 3 agents a debugging round in the
    first evaluation: they had passed the new rules as an extra input column.
-   Saying "the input columns differ: rules" would make the fix obvious.
+   Saying "the input columns differ: rules" would make the fix obvious. Fixed
+   in all four languages (R's `compare` did not check the rows at all).
 6. **Training export was done through internals.** `sciencemadereadable/training/prepare.py`
    rebuilds prompts with `fn._variant_spec`, `engine.prepare_inputs`,
    `adapters.REGISTRY` and an AST rewrite to add an input; the 2026-10-02 bake
    rebuild broke it and pinned the project to a copy in `/tmp/fx/functai-train`.
    `functai.bake.examples(fn, rows, fixed=..., derived=...)` now does this job
    publicly; that project could move to it.
+
+7. **The default OpenAI endpoint halves the speed.** lm15 routes `gpt-4.1-mini`
+   to the Responses API; DSPy uses Chat Completions. Same FunctAI function,
+   8 threads, 40 calls each, alternated twice: median 1.01 s and 1.05 s
+   (`gpt-4.1-mini`) against 0.53 s and 0.57 s (`openai-chat:gpt-4.1-mini`).
+   The benchmark's evaluation took 26 s with FunctAI and 15 s with DSPy, with
+   both keeping 8 requests in flight 95% of the time: FunctAI adds no
+   overhead. The root cause was not the endpoint: OpenAI's Responses API
+   keeps every request for 30 days unless asked not to, and kept requests
+   were slower (median 0.88–1.36 s against 0.69–0.91 s with `store: false`,
+   four models). Fixed in all four languages: `store: false` by default.
+8. **A JSON-Schema annotation is rewritten as text.** `picture: {"media":
+   "image"}` becomes the shape `{"type": "string"}` in FunctAI's interface, so
+   the picture is pasted as JSON text. lmcc's own frontend (`@lmcc.fn`) keeps
+   `{"media": "image"}`, which the kernel sends as a real image part (§7b).
+   Honouring it would give FunctAI an image input with no registration.
+9. **Agents guess `functai.history`** (4 of 66 FunctAI sessions in the
+   evaluation); it is `phistory` / `inspect_history`.
 
 ## On this machine
 
