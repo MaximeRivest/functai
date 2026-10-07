@@ -120,7 +120,7 @@ export interface Job {
   readonly plan: lmcc.Plan;
   readonly past: readonly lmcc.Turn[];
   readonly inputs: Rec;
-  readonly settings: Settings & { retries: number; apiRetries: number; maxSteps: number; toolErrors: string };
+  readonly settings: Settings & { retries: number; apiRetries: number; apiMaxWait: number; maxSteps: number; toolErrors: string };
   readonly router: Router;
   readonly model: string;
   readonly tools: readonly Tool[];
@@ -232,13 +232,33 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
       call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000,
         { error: err, streamed: watched && job.router.stream !== undefined, requestHash });
       if (signal?.aborted) throw new Cancelled();
-      if (!retryable(err) || attempt >= retries) throw err;
+      if (!retryable(err)) throw err;
       const after = (err as { retryAfter?: number }).retryAfter;
-      const wait = typeof after === "number" && after > 0 ? after : Math.min(30, 2 ** attempt) * (0.5 + Math.random());
+      const asked = typeof after === "number" && after > 0 ? after : null;
+      const limit = job.settings.apiMaxWait ?? 60;
+      if (asked !== null && asked > limit && err instanceof Error) err.message += `\n${longWaitNote(asked, limit)}`;
+      if (attempt >= retries || (asked !== null && asked > limit)) throw err;
+      const wait = asked ?? Math.min(30, 2 ** attempt) * (0.5 + Math.random());
       call.event("retry", { reason: `the provider failed (${(err as Error).name}); sending again in ${wait.toFixed(1)} s`, wait });
       await sleep(wait * 1000, signal);
     }
   }
+}
+
+/** What a provider asking for a longer wait than `apiMaxWait` is told (functions.md). */
+export function longWaitNote(asked: number, limit: number): string {
+  const until = new Date(Date.now() + asked * 1000).toISOString().slice(0, 16).replace("T", " ");
+  return `the provider asks to wait ${duration(asked)} (until ${until} UTC); functai waits at most apiMaxWait=${limit} s, `
+    + `so it did not send again. To wait, set apiMaxWait: ${Math.ceil(asked)}; or run again later `
+    + `(with cacheReplies: "disk", the answers already received are kept).`;
+}
+
+/** `3 h 7 min`, `12 min`, `45 s`. */
+export function duration(seconds: number): string {
+  const s = Math.round(seconds), h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
+  if (h) return m ? `${h} h ${m} min` : `${h} h`;
+  if (m) return sec && m < 10 ? `${m} min ${sec} s` : `${m} min`;
+  return `${sec} s`;
 }
 
 /** A piece of an output's text (the answer's when it is the answer field). */
@@ -272,6 +292,9 @@ function replay(job: Job, response: Response): void {
 export function lm15Request(rendered: lmcc.RenderResult, model: string, config: Config | undefined): Request {
   return bridge.request(rendered, { model, config });
 }
+
+/** The hint of a reply the provider stopped (functions.md, "A stopped reply"). */
+export const FILTERED_HINT = "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer";
 
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
@@ -352,6 +375,8 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       }
       let reading: lmcc.Reading;
       try {
+        // a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
+        if (response.finishReason === "content_filter") throw new lmcc.Refusal("parse-filtered", FILTERED_HINT);
         reading = bridge.read(job.plan, response);
         checkValues(job.plan, reading.values as Rec);
       } catch (err) {
@@ -366,7 +391,8 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       // the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
       const limit = configOf(job.settings, overrides as never)?.maxTokens ?? undefined;   // null: none set
       if (refusal.code === "parse-truncated") refusal = cutOff(refusal, response, limit);
-      if (attempt >= retries || !(refusal.code.startsWith("parse-") || refusal.code === "format-read-error")) throw refusal;
+      if (attempt >= retries || refusal.code === "parse-filtered"                       // stopped again if asked again
+        || !(refusal.code.startsWith("parse-") || refusal.code === "format-read-error")) throw refusal;
       if (refusal.code === "parse-truncated" && limit === undefined) throw refusal;   // nothing larger to give
       if (refusal.code === "parse-truncated") {
         overrides["maxTokens"] = limit! * 2;

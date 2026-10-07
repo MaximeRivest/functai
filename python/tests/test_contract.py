@@ -77,6 +77,7 @@ def test_the_model_table_is_the_contracts():
         caps = models.capabilities(provider, "some-model")
         assert caps["stop_sequences"] == (provider not in table["native"]["no_stop_sequences"])
     assert {k: tuple(v) for k, v in table["fixed_sampling"].items() if k != "about"} == models._FIXED_SAMPLING
+    assert set(table["no_storage"]["providers"]) == models.NO_STORAGE
     assert models.capabilities("anthropic", "claude-3-5-haiku")["assistant_prefill"] is True
     assert models.capabilities("openai", "gpt-4.1")["assistant_prefill"] is False
 
@@ -86,7 +87,7 @@ def test_a_sampling_the_model_does_not_take_is_left_out_once(recwarn):
     from types import SimpleNamespace
     models._warned.clear()
     luna = SimpleNamespace(provider="openai", model="gpt-6-luna")
-    assert models.adjust({"temperature": 1}, luna) == {"temperature": 1}      # 1 is what it samples at
+    assert models.adjust({"temperature": 1}, luna) == {"temperature": 1, "store": False}   # 1 is what it samples at
     out = models.adjust({"temperature": 0, "top_p": 0.5}, luna)
     assert out["temperature"] is None and out["top_p"] is None and out["_dropped"] == ("temperature", "top_p")
     models.adjust({"temperature": 0, "top_p": 0.5}, luna)
@@ -95,6 +96,30 @@ def test_a_sampling_the_model_does_not_take_is_left_out_once(recwarn):
     assert models.adjust({"temperature": 0}, sonnet)["temperature"] is None
     haiku = SimpleNamespace(provider="anthropic", model="claude-haiku-4-5")
     assert models.adjust({"temperature": 0}, haiku) == {"temperature": 0}
+
+
+def test_a_provider_that_keeps_requests_is_asked_not_to():
+    from types import SimpleNamespace
+    mini = SimpleNamespace(provider="openai", model="gpt-4.1-mini")
+    assert models.adjust({}, mini) == {"store": False}
+    assert models.adjust({"store": True}, mini) == {"store": True}         # a store the settings give is sent as given
+    assert models.adjust({"store": False}, mini) == {"store": False}
+    for provider in ("openai-chat", "anthropic", "gemini", "openai-codex", "claude-code"):
+        assert "store" not in models.adjust({}, SimpleNamespace(provider=provider, model="m"))
+
+
+def test_the_request_to_openai_says_store_false(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
+
+    @functai.ai(lm="openai:gpt-4.1-mini")
+    def capital(country: str) -> str:
+        """The country's capital."""
+        ...
+
+    assert capital.render("Peru").config.store is False
+    assert capital.using(store=True).render("Peru").config.store is True
+    chat = capital.using(lm="openai-chat:gpt-4.1-mini").render("Peru").config
+    assert chat is None or chat.store is None                              # Chat Completions keeps nothing by default
 
 
 # ------------------------------------------------------------------ scores

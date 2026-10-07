@@ -381,4 +381,19 @@ end
     @test isempty(FunctAI.refused_settings("gemini", "gemini-3.8-flash"))
 end
 
+@testset "a provider that keeps requests is asked not to, unless the settings say" begin
+    s(; kw...) = Dict{Symbol,Any}(kw)
+    @test FunctAI.NO_STORAGE == Set(["openai"])
+    store(x) = FunctAI.config_of(x).store
+    @test store(FunctAI.adjust_settings(s(), "openai", "gpt-4.1-mini")) === false
+    @test store(FunctAI.adjust_settings(s(config = (store = true,)), "openai", "gpt-4.1-mini")) === true
+    @test store(FunctAI.adjust_settings(s(config = LM15.Config(store = true)), "openai", "gpt-4.1-mini")) === true
+    kept = FunctAI.config_of(FunctAI.adjust_settings(s(config = LM15.Config(seed = 1)), "openai", "gpt-4.1-mini"))
+    @test kept.store === false && kept.seed == 1
+    @test FunctAI.config_of(FunctAI.adjust_settings(s(config = Dict("seed" => 2)), "openai", "gpt-4.1-mini")).store === false
+    for provider in ("openai-chat", "anthropic", "gemini", "openai-codex", "claude-code")
+        @test !haskey(FunctAI.adjust_settings(s(), provider, "m"), :config)
+    end
+end
+
 end

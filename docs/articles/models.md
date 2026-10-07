@@ -156,10 +156,17 @@ program: the machine that loads it uses its own.
 | `tools`, `max_steps`, `tool_errors` | the [tool loop](tools.md) |
 | `approve` | tools that ask first (`functai.tool`) |
 | `cache_replies`, `replicate` | replies kept, and asked again |
-| `retries`, `api_retries`, `cache_replies` | [reliability](reliability.md) |
+| `retries`, `api_retries`, `api_max_wait`, `cache_replies` | [reliability](reliability.md) |
+| `store` | whether the provider may keep the request (OpenAI: `False` unless you say otherwise; below) |
 | `capabilities` | what the model can do, when you know better than functai's table |
 | `optimizer`, `teacher`, `teacher_lm` | [optimization](improving.md) defaults |
 | `debug` | print one line per call |
+
+**Requests are not kept by OpenAI.** OpenAI's Responses API keeps every
+request and its reply for 30 days unless the request says `store: false`.
+FunctAI sends that unless you set `store` yourself, so your data stays where
+your own log says it is. Kept requests were also slower when measured
+(median 0.9–1.4 s against 0.7–0.9 s on four models, 2026-10-06).
 
 A misspelled setting is an error, not silently ignored:
 

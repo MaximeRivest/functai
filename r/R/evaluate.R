@@ -128,7 +128,7 @@ evaluate <- function(fn, data, expected = NULL, metric = NULL, ...) {
   names_ <- if (!is.null(metrics)) names(metrics) else c("exact_match", if (length(mapping) > 1L) paste0(names(mapping), "_match"))
   table <- tibble::as_tibble(vctrs::vec_cbind(tibble::as_tibble(data), p[setdiff(names(p), names(data))]))
   for (m in names_) table[[m]] <- vapply(scores, function(s) if (is.null(s)) 0 else s[[m]], 0)
-  structure(list(run = run, metrics = names_, rows = table, fn = label), class = "functai_evaluation")
+  structure(list(run = run, metrics = names_, rows = table, fn = label, data_columns = names(data)), class = "functai_evaluation")
 }
 
 # The outcome column a fitted parsnip model or workflow was fitted on.

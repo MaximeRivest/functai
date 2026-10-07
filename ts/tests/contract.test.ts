@@ -10,7 +10,8 @@ import { test } from "node:test";
 import * as lmcc from "lmcc";
 import { describeSaved, exactMatch, fromManifest, interval, LoadRefused } from "../src/index.ts";
 import { ratedRows } from "../src/calllog.ts";
-import { adjustSettings, capabilities, PROBE, refusedSettings } from "../src/models.ts";
+import { MODELS } from "../src/generated/contract.ts";
+import { adjustSettings, capabilities, NO_STORAGE, PROBE, refusedSettings } from "../src/models.ts";
 import { Request, stringifyJson } from "@lm15/lm15";
 import { FakeRouter } from "./fake.ts";
 import { REGISTRY, resolveAdapter } from "../src/layouts.ts";
@@ -146,8 +147,9 @@ test("a sampling the model does not take is left out, with one warning", () => {
   const said: string[] = [];
   console.warn = (m: string) => { said.push(m); };
   try {
-    assert.deepEqual(adjustSettings({ temperature: 1 }, "openai", "gpt-6-luna"), { temperature: 1 });
-    assert.deepEqual(adjustSettings({ temperature: 0, topP: 0.5 }, "openai", "gpt-6-luna"), { temperature: null, topP: null });
+    assert.deepEqual(adjustSettings({ temperature: 1 }, "openai", "gpt-6-luna"), { temperature: 1, config: { store: false } });
+    assert.deepEqual(adjustSettings({ temperature: 0, topP: 0.5 }, "openai", "gpt-6-luna"),
+      { temperature: null, topP: null, config: { store: false } });
     adjustSettings({ temperature: 0, topP: 0.5 }, "openai", "gpt-6-luna");
     assert.equal(said.filter((m) => m.includes("does not take temperature, top_p")).length, 1);
     assert.equal(adjustSettings({ temperature: 0 }, "claude-code", "claude-sonnet-5").temperature, null);
@@ -155,5 +157,15 @@ test("a sampling the model does not take is left out, with one warning", () => {
     assert.deepEqual(refusedSettings("gemini", "gemini-3.8-flash"), []);
   } finally {
     console.warn = warn;
+  }
+});
+
+test("a provider that keeps requests is asked not to, unless the settings say", () => {
+  assert.deepEqual([...NO_STORAGE], [...MODELS.no_storage.providers]);
+  assert.deepEqual(adjustSettings({}, "openai", "gpt-4.1-mini"), { config: { store: false } });
+  assert.deepEqual(adjustSettings({ config: { store: true } }, "openai", "gpt-4.1-mini"), { config: { store: true } });
+  assert.deepEqual(adjustSettings({ config: { seed: 1 } }, "openai", "gpt-4.1-mini"), { config: { seed: 1, store: false } });
+  for (const provider of ["openai-chat", "anthropic", "gemini", "openai-codex", "claude-code"]) {
+    assert.deepEqual(adjustSettings({}, provider, "m"), {});
   }
 });

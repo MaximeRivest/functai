@@ -4,7 +4,7 @@
  * about the model come from the contract's table, never from guessing.
  */
 
-import { LMRouter } from "@lm15/lm15";
+import { LMRouter, type Config } from "@lm15/lm15";
 import { MODELS } from "./generated/contract.ts";
 
 export type Capabilities = Record<string, boolean>;
@@ -71,9 +71,18 @@ export function refusedSettings(provider: string, model: string): string[] {
   return Array.isArray(prefixes) && prefixes.some((p) => model.startsWith(p)) ? [...SAMPLING] : [];
 }
 
-export function adjustSettings<S extends { temperature?: number | null; topP?: number | null; maxTokens?: number | null }>(
-  s: S, provider: string, model: string,
+/** Providers that keep every request and reply unless asked not to (contract/models.json, `no_storage`;
+ * functions.md, "Requests the provider would keep"). */
+export const NO_STORAGE = set(MODELS.no_storage.providers);
+
+export function adjustSettings<S extends { temperature?: number | null; topP?: number | null; maxTokens?: number | null; config?: Partial<Config> | null }>(
+  given: S, provider: string, model: string,
 ): S {
+  let s = given;
+  // a provider that would keep the request is asked not to, unless the settings say otherwise
+  if (NO_STORAGE.has(provider) && (s.config?.store === undefined || s.config?.store === null)) {
+    s = { ...s, config: { ...(s.config ?? {}), store: false } };
+  }
   const drop = refusedSettings(provider, model).filter((k) => {
     const v = (s as Record<string, unknown>)[k];
     return v !== undefined && v !== null && (k === "maxTokens" || provider === "openai-codex" || v !== 1);

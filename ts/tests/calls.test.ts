@@ -7,12 +7,12 @@ import { join } from "node:path";
 import { test } from "node:test";
 import * as z from "zod";
 import {
-  ai, bootstrapFewShot, calls, Cancelled, configure, evaluate, fromManifest, labeledFewShot, module, rate, rated,
+  ai, bootstrapFewShot, calls, Cancelled, compare, configure, evaluate, fromManifest, labeledFewShot, module, rate, rated,
   StepLimit, t, tool, toManifest, withSettings, type StreamEvent,
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
 import { Message, Response } from "@lm15/lm15";
-import type * as lmcc from "lmcc";
+import * as lmcc from "lmcc";
 
 // the tests read no settings from the environment they run in (an agent's caller, a log folder)
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
@@ -38,6 +38,34 @@ test("a call sends the layout and returns the typed answer", async () => {
   const claude = new FakeRouter(["<result>\nunhappy\n</result>"]);
   await ai("mood", { ...moodDef, router: claude, lm: "anthropic:claude-3-5-haiku" })("Broke.");
   assert.deepEqual(claude.requests[0]!.config?.stop, ["</result>"]);
+});
+
+test("compare says what differs when the rows are not the same", async () => {
+  const router = new FakeRouter([], () => "<result>\nhappy\n</result>");
+  const mood = ai("mood", { ...moodDef, router });
+  const rows = [{ review: "Love it", mood: "happy" }, { review: "Broke", mood: "unhappy" }];
+  const before = await evaluate(mood, rows, { expected: "mood", progress: false });
+  const after = await evaluate(mood, rows.map((r) => ({ ...r, rules: "refunds are billing" })), { expected: "mood", progress: false });
+  assert.throws(() => compare(before, after),
+    /row 0 differs: column 'rules' only in the second\. Evaluate both versions on the very same table/);
+});
+
+test("a reply the provider stopped is never an answer, and is not asked again", async () => {
+  const router = new FakeRouter([{ text: "", finish: "content_filter" }, "<result>\nhappy\n</result>"]);
+  await assert.rejects(ai("mood", { ...moodDef, router, retries: 2 })("x"),
+    (e: unknown) => lmcc.isRefusal(e) && (e as lmcc.Refusal).code === "parse-filtered"
+      && (e as lmcc.Refusal).hint.includes("safety filter, or the model declining"));
+  assert.equal(router.requests.length, 1);
+  const reads = new FakeRouter([{ text: "<result>\nhappy\n</result>", finish: "content_filter" }]);
+  await assert.rejects(ai("mood", { ...moodDef, router: reads })("x"), (e: unknown) => (e as lmcc.Refusal).code === "parse-filtered");
+});
+
+test("a request to a provider that keeps requests says store: false, unless the settings say", async () => {
+  const router = new FakeRouter(["<result>\nunhappy\n</result>", "<result>\nunhappy\n</result>", "<result>\nunhappy\n</result>"]);
+  await ai("mood", { ...moodDef, router })("Broke.");
+  await ai("mood", { ...moodDef, router, config: { store: true } })("Broke.");
+  await ai("mood", { ...moodDef, router, lm: "anthropic:claude-3-5-haiku" })("Broke.");
+  assert.deepEqual(router.requests.map((r) => r.config?.store), [false, true, undefined]);
 });
 
 test("inputs by name (one input: its value alone); render shows the request without sending it", async () => {

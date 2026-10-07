@@ -11,7 +11,7 @@ load_refused <- function(code, message, field = NULL) {
                code = code, field = field, call = NULL)
 }
 
-SNAKE <- c(retries = "retries", api_retries = "api_retries", max_steps = "max_steps", tool_errors = "tool_errors",
+SNAKE <- c(retries = "retries", api_retries = "api_retries", api_max_wait = "api_max_wait", max_steps = "max_steps", tool_errors = "tool_errors",
            capabilities = "capabilities", log_content = "log_content")
 
 # A field of a saved function, from its shape: the R type its values are

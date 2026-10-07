@@ -40,7 +40,7 @@ const refuse = (code: string, message: string): never => {
 };
 
 const SNAKE: Record<string, keyof Settings> = {
-  retries: "retries", api_retries: "apiRetries", max_steps: "maxSteps", tool_errors: "toolErrors",
+  retries: "retries", api_retries: "apiRetries", api_max_wait: "apiMaxWait", max_steps: "maxSteps", tool_errors: "toolErrors",
   capabilities: "capabilities", log_content: "logContent",
 };
 

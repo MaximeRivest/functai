@@ -33,10 +33,26 @@ export interface Comparison {
  * // [{ metric: "exact_match", before: 0.6, after: 0.8, diff: 0.2, low: -0.05, high: 0.45, better: 2, worse: 0, same: 8, n: 10 }]
  * ```
  */
+/** What differs between two rows: the columns only one has, else the first that differs. */
+function howRowsDiffer(a: unknown, b: unknown): string {
+  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return "the rows are not the same";
+  const ka = Object.keys(a), kb = Object.keys(b);
+  const onlyA = ka.filter((k) => !kb.includes(k)), onlyB = kb.filter((k) => !ka.includes(k));
+  const q = (ks: string[]) => ks.map((k) => `'${k}'`).join(", ");
+  if (onlyA.length || onlyB.length) {
+    return [onlyA.length ? `column ${q(onlyA)} only in the first` : "", onlyB.length ? `column ${q(onlyB)} only in the second` : ""]
+      .filter(Boolean).join("; ");
+  }
+  const differ = ka.find((k) => writeData((a as Record<string, unknown>)[k]) !== writeData((b as Record<string, unknown>)[k]));
+  return differ !== undefined ? `column '${differ}' differs` : "the rows are not the same";
+}
+
 export function compare(before: Evaluation, after: Evaluation): Comparison[] {
   if (before.rows.length !== after.rows.length) throw new RangeError(`compare needs the same examples: ${before.rows.length} rows vs ${after.rows.length}`);
   before.rows.forEach((a, i) => {
-    if (writeData(a.row) !== writeData(after.rows[i]!.row)) throw new RangeError(`compare needs the same examples in the same order; row ${i} differs`);
+    if (writeData(a.row) !== writeData(after.rows[i]!.row)) {
+      throw new RangeError(`compare needs the same examples in the same order; row ${i} differs: ${howRowsDiffer(a.row, after.rows[i]!.row)}. Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data.`);
+    }
   });
   const shared = before.metrics.filter((m) => after.metrics.includes(m));
   if (!shared.length) throw new RangeError(`no metric in common: ${before.metrics.join(", ")} vs ${after.metrics.join(", ")}`);

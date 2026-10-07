@@ -1,5 +1,23 @@
 # FunctAI.jl changelog
 
+## Unreleased
+
+- **Requests to OpenAI ask not to be stored.** OpenAI's Responses API keeps
+  every request and its reply for 30 days unless the request says `store:
+  false`; FunctAI now sends that by default to the providers the contract's
+  `models.json` lists under `no_storage` (OpenAI), unless the settings give
+  `config = (store = ...,)` (contract/functions.md, "Requests the provider would keep").
+  Measured 2026-10-06 on four models, kept requests were also slower (median
+  0.88–1.36 s against 0.69–0.91 s, and a long tail: p90 2.6 s against 0.9 s).
+  Every OpenAI request changes, so replies already in a disk cache are asked
+  again once.
+- **`api_max_wait`** (default 60 seconds): a provider asking to wait longer
+  before a re-send is not waited; the error is raised at once, its message
+  saying how long and until when (contract/functions.md).
+- **A reply the provider stopped** (finish reason `content_filter`) is never an
+  answer and is not asked again: an LMCC refusal `parse-filtered`.
+- **`compare` says what differs** when two evaluations' rows are not the same.
+
 ## 0.1.0 (2026-10-03)
 
 The first tagged version (`julia-v0.1.0`): everything below.

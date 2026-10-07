@@ -16,7 +16,9 @@ local_ai_config(..., .local_envir = parent.frame())
 \item{...}{Settings: \code{lm} (the model: \code{"gpt-4.1-mini"}, \code{"claude-haiku-4-5"},
 \code{"gemini:gemini-2.5-flash"}, ...), \code{temperature}, \code{max_tokens}, \code{adapter}
 (\code{"xml"}, \code{"chat"}, \code{"json"}), \code{module} (\code{"cot"}: reasoning first),
-\code{retries}, \code{api_retries}, \code{concurrency} (calls in flight at once, default
+\code{retries}, \code{api_retries}, \code{api_max_wait} (the longest a provider may ask to
+wait before a re-send, in seconds, default 60: a longer wait, as a spent
+subscription window asks, raises at once saying until when), \code{concurrency} (calls in flight at once, default
 8), \code{on_error} (\code{"warn"}, the default: a failed row is \code{NA}; or \code{"stop"}),
 \code{log_calls} (a folder, or \code{TRUE}), \code{log_content} (\code{TRUE}, \code{FALSE},
 \code{c(transcript = FALSE)}, or the names of the fields to keep), \code{caller}, \code{router} (an

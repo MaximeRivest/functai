@@ -35,6 +35,10 @@
   "about": "Providers that answer only judgments (typed questions with a probability for each answer, lm15 MAP-14).",
   "providers": ["typesafe"]
  },
+ "no_storage": {
+  "about": "Providers that keep requests and replies on their side unless a request sends store: false (OpenAI's Responses API keeps them 30 days). FunctAI sends store: false there when a call's settings give no store (functions.md, 'Requests the provider would keep'). Seen live 2026-10-06: kept requests also answered slower (gpt-4.1-mini, gpt-4.1-nano, gpt-4.1, gpt-4o-mini: median 0.88-1.36 s kept, 0.69-0.91 s with store: false). By the provider a call is routed to.",
+  "providers": ["openai"]
+ },
  "probe": {
   "about": "The fixed facts a version is computed under (contract/calls.md, 'Versions'), with provider \"probe\".",
   "instruct": true,

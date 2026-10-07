@@ -48,6 +48,9 @@ LMCC_TRUNCATED_ADVICE <- "; raise max_tokens or ask for less"
 # A token count as text: lm15 keeps a JSON number's own spelling.
 count_text <- function(x) { x <- unclass(x); if (is.character(x)) x else format(x, scientific = FALSE, trim = TRUE) }
 
+# The hint of a reply the provider stopped (functions.md, "A stopped reply").
+FILTERED_HINT <- "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer"
+
 # A parse-truncated refusal that says what happened (functions.md, "When the
 # reply cannot be read"): how much went to thinking, whose limit it was and
 # whether it can be raised, and what lm15 changed in the request. `limit`: the
@@ -139,15 +142,19 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
   if (!cached && !isTRUE(job$replayed)) reply_note(job, response)          # a stored turn keeps every reply
   if (!streamed && (wants_pieces(call) || length(call$tree$sinks))) show_whole(job, response)
   job$responses[[length(job$responses) + 1L]] <- response
-  reading <- tryCatch({ r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r },
-                      lmcc_refusal = function(e) e)
+  reading <- tryCatch({
+    # a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
+    if (identical(response$finish_reason, "content_filter")) stop(lmcc::refusal("parse-filtered", FILTERED_HINT))
+    r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r
+  }, lmcc_refusal = function(e) e)
   if (inherits(reading, "lmcc_refusal")) {
     reply_forget(job)                                              # a kept reply that no longer reads is forgotten
     code <- reading$code
     # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
     limit <- job$overrides$max_tokens %||% job$settings$max_tokens
     if (code == "parse-truncated") reading <- cut_off(reading, response, limit)
-    if (job$retries >= job$settings$retries || !(startsWith(code, "parse-") || code == "format-read-error")) return(fail(job, reading))
+    if (job$retries >= job$settings$retries || code == "parse-filtered" ||      # stopped again if asked again
+        !(startsWith(code, "parse-") || code == "format-read-error")) return(fail(job, reading))
     if (code == "parse-truncated" && is.null(limit)) return(fail(job, reading))   # nothing larger to give
     job$retries <- job$retries + 1L
     call_emit(call, "retry", list(reason = asked_again(reading), wait = NULL))
@@ -199,9 +206,15 @@ on_error <- function(job, err, started, seconds, streamed = FALSE) {
   exchange(job$call, job$model, job$sent %||% job$request, NULL, started, seconds, error = err, request_hash = job$sent_hash, streamed = streamed)
   reply_drop(job)
   if (inherits(err, "functai_cancelled")) return(fail(job, err))
+  asked <- if (lm15::retryable(err) && is.numeric(err$retry_after) && length(err$retry_after) == 1L &&
+                isTRUE(err$retry_after > 0)) err$retry_after else NULL
+  limit <- job$settings$api_max_wait %||% 60
+  if (!is.null(asked) && asked > limit) {
+    err$message <- paste0(conditionMessage(err), "\n", long_wait_note(asked, limit))   # not waited: raised at once
+    return(fail(job, err))
+  }
   if (lm15::retryable(err) && job$api_retries < job$settings$api_retries) {
-    wait <- err$retry_after
-    if (!is.numeric(wait) || length(wait) != 1L || wait <= 0) wait <- min(30, 2^job$api_retries) * (0.5 + stats::runif(1))
+    wait <- asked %||% (min(30, 2^job$api_retries) * (0.5 + stats::runif(1)))
     job$api_retries <- job$api_retries + 1L
     job$not_before <- as.numeric(Sys.time()) + wait
     call_emit(job$call, "retry", list(reason = sprintf("the provider failed (%s); sending again in %.1f s", error_json(err)$type, wait), wait = wait))
@@ -461,4 +474,21 @@ stream_job <- function(job, router, started) {
            else on_response(job, response, started, seconds, streamed = TRUE, first_delta = first),
            functai_turn_waiting = function(w) { job$state <- "waiting"; job$waiting <- w; finished(job) },
            error = function(e) fail(job, e))
+}
+
+# What a provider asking for a longer wait than `api_max_wait` is told (functions.md).
+long_wait_note <- function(asked, limit) {
+  until <- format(as.POSIXct(Sys.time(), tz = "UTC") + asked, "%Y-%m-%d %H:%M", tz = "UTC")
+  sprintf(paste0("the provider asks to wait %s (until %s UTC); functai waits at most api_max_wait=%s s, ",
+                 "so it did not send again. To wait, set api_max_wait = %d; or run again later ",
+                 "(with cache_replies = \"disk\", the answers already received are kept)."),
+          wait_duration(asked), until, format(limit), as.integer(ceiling(asked)))
+}
+
+# `3 h 7 min`, `12 min`, `45 s`.
+wait_duration <- function(seconds) {
+  s <- round(seconds); h <- s %/% 3600; m <- (s %% 3600) %/% 60; sec <- s %% 60
+  if (h > 0) return(if (m > 0) sprintf("%d h %d min", h, m) else sprintf("%d h", h))
+  if (m > 0) return(if (sec > 0 && m < 10) sprintf("%d min %d s", m, sec) else sprintf("%d min", m))
+  sprintf("%d s", sec)
 }

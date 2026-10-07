@@ -58,6 +58,9 @@ export interface Settings {
   retries?: number;
   /** Re-sends after a transient provider error (default 3). */
   apiRetries?: number;
+  /** The longest a provider may ask to wait before a re-send, in seconds (default 60). A longer
+   * `retryAfter` (a spent subscription window) raises at once, saying until when. */
+  apiMaxWait?: number;
   /** Model calls per tool loop (default 8). */
   maxSteps?: number;
   /** `"report"` (the model sees a tool's error) or `"raise"`. */
@@ -128,8 +131,8 @@ export interface Settings {
   escalateBelow?: number | null;
 }
 
-export const DEFAULTS: Required<Pick<Settings, "retries" | "apiRetries" | "maxSteps" | "toolErrors" | "includeFnName">> = {
-  retries: 1, apiRetries: 3, maxSteps: 8, toolErrors: "report", includeFnName: true,
+export const DEFAULTS: Required<Pick<Settings, "retries" | "apiRetries" | "apiMaxWait" | "maxSteps" | "toolErrors" | "includeFnName">> = {
+  retries: 1, apiRetries: 3, apiMaxWait: 60, maxSteps: 8, toolErrors: "report", includeFnName: true,
 };
 
 let global: Settings = {};
@@ -155,6 +158,10 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
   checkPlugins(settings.plugins, where);
   if (settings.replicate !== undefined && settings.replicate !== null && !(Number.isInteger(settings.replicate) && settings.replicate >= 0)) {
     throw new TypeError(`${where}: replicate is a whole number, 0 or more`);
+  }
+  const wait = settings.apiMaxWait;
+  if (wait !== undefined && wait !== null && !(typeof wait === "number" && wait >= 0)) {
+    throw new TypeError(`${where}: apiMaxWait is a number of seconds, at least 0`);
   }
 }
 

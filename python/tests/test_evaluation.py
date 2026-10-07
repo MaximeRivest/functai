@@ -272,6 +272,10 @@ def test_compare_pairs_the_examples(fake):
     assert diff["low"] < 0.5 < diff["high"]
     with pytest.raises(ValueError, match="same examples"):
         compare(before, evaluate(f, ROWS[:2]))
+    with_rules = [{**r, "rules": "refunds are billing"} for r in ROWS]
+    with pytest.raises(ValueError, match="row 0 differs: column 'rules' only in the second. Evaluate both versions on "
+                                         "the very same table, and put the change in the function"):
+        compare(before, evaluate(f, with_rules))
 
 
 def test_runs_are_logged_as_parquet_and_read_back_as_one_table(fake, tmp_path):

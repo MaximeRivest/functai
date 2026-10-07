@@ -318,6 +318,8 @@ test_that("random_search, instruction_search and compare search and measure", {
     a <- evaluate(team, data); b <- evaluate(best, data)
     cmp <- compare(a, b)
     expect_identical(cmp$metric, "exact_match"); expect_identical(cmp$n, 4L)
+    c2 <- evaluate(team, dplyr::mutate(data, rules = "refunds are billing"))
+    expect_error(compare(a, c2), "row 1 differs: column 'rules' only in the second. Evaluate both versions")
   })
   expect_gte(length(inspect_history(3L)), 1L)
 })

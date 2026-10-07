@@ -71,7 +71,16 @@ refused_settings <- function(provider, model) {
   if (any(startsWith(model, prefixes))) SAMPLING else character(0)
 }
 
+# Providers that keep every request and reply unless asked not to (contract/models.json,
+# no_storage; functions.md, "Requests the provider would keep").
+no_storage <- function() unlist(contract_data("models")$no_storage$providers)
+
 adjust_settings <- function(s, provider, model) {
+  if (provider %in% no_storage() && is.null(s$config$store)) {
+    cfg <- s$config %||% list()
+    cfg$store <- FALSE
+    s["config"] <- list(cfg)
+  }
   refused <- function(k) {
     v <- s[[k]]
     !is.null(v) && (!k %in% SAMPLING || identical(provider, "openai-codex") || !isTRUE(all.equal(as.numeric(v), 1)))

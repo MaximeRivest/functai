@@ -17,11 +17,38 @@ tells you when it did.
 | a slightly misspelled reply (`<Result>` for `<result>`, `**answer**`) | reads it anyway, by one rule, and lists the repair in `prediction.repairs` | always on |
 | a reply it can't read | asks again once, with a hint of what was expected | `retries=1`; `retries=0` raises `lmcc.Refusal` |
 | a reply cut off at the token limit | sends it again with twice the budget when you set one; without one the reply already had the model's whole limit, so it raises at once, saying how much went to thinking | `max_tokens`, `retries` |
-| a provider error: rate limit, 5xx, timeout | sends it again, waiting longer each time | `api_retries=3` |
+| a provider error: rate limit, 5xx, timeout | sends it again, waiting as the provider asks, else longer each time | `api_retries=3` |
+| a provider asking to wait longer than a minute (a subscription's spent window) | raises at once, saying how long and until when, instead of sleeping for hours | `api_max_wait=60` |
+| a reply the provider stopped (its safety filter, or the model declining) | raises `lmcc.Refusal` with the code `parse-filtered`; not asked again, since the same request would be stopped again | – |
 | a login that expired | raises `LoginRequired` with the command to type; never switches to a paid key | – |
 | a tool loop that doesn't finish | raises `StepLimit` | `max_steps=8` |
 | an impossible layout (a JSON layout on a model without structured output; several outputs and no reply form) | refuses before any request is sent | – |
 | an unknown setting | raises, instead of ignoring it | – |
+
+## When the provider says "wait"
+
+A rate limit usually says how long to wait, and FunctAI waits that long
+before sending again. A subscription whose usage window is spent can say
+three hours; a run that sleeps that long looks hung. So a wait longer than
+`api_max_wait` (60 seconds by default) is not waited: the error is raised
+at once, with a note like
+
+```text
+the provider asks to wait 3 h 7 min (until 2026-10-06 20:42 UTC); functai waits at most
+api_max_wait=60 s, so it did not send again. To wait, set api_max_wait=11270; or run again
+later (with cache_replies='disk', the answers already received are kept).
+```
+
+## A reply the provider stopped
+
+A provider's safety filter can stop a reply partway (OpenAI, Gemini), and
+a model can decline (Claude); lm15 reports both as the finish reason
+`content_filter`. Such a reply is never taken as an answer, even when it
+reads, and is not asked again: the call raises `lmcc.Refusal` with the
+code `parse-filtered`. A prompt change rarely helps; another model often
+does (one project's toxicology papers stopped Claude Opus and were read by
+GPT-6 Astra). With `on_unreadable="record"` the call is kept as a turn with
+no values, so a long run goes on.
 
 ## `Refusal`: when a reply can't be read
 

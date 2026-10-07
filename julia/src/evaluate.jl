@@ -240,6 +240,20 @@ function evaluate(f::Union{AIFunction,Function}, data; expected=nothing, metric=
     Evaluation(f isa AIFunction ? f.definition.name : f isa AIProgram ? f.name : string(nameof(f)), run, RowResult[results...], metrics, outputs)
 end
 
+"What differs between two rows: the columns only one has, else the first that differs."
+function how_rows_differ(a, b)
+    (a isa Union{AbstractDict,NamedTuple} && b isa Union{AbstractDict,NamedTuple}) || return "the rows are not the same"
+    only_a, only_b = [k for k in keys(a) if !haskey(b, k)], [k for k in keys(b) if !haskey(a, k)]
+    if !isempty(only_a) || !isempty(only_b)
+        said = String[]
+        isempty(only_a) || push!(said, "column $(join(repr.(string.(only_a)), ", ")) only in the first")
+        isempty(only_b) || push!(said, "column $(join(repr.(string.(only_b)), ", ")) only in the second")
+        return join(said, "; ")
+    end
+    k = findfirst(k -> !isequal(a[k], b[k]), collect(keys(a)))
+    k === nothing ? "the rows are not the same" : "column $(repr(string(collect(keys(a))[k]))) differs"
+end
+
 """
     compare(before, after)
 
@@ -251,7 +265,8 @@ the `same`. When the range includes 0, the change could be luck.
 function compare(before::Evaluation, after::Evaluation)
     length(before) == length(after) || throw(ArgumentError("compare needs the same rows: $(length(before)) vs $(length(after))"))
     for (i, (a, b)) in enumerate(zip(before.results, after.results))
-        isequal(a.row, b.row) || throw(ArgumentError("compare needs the same rows in the same order; row $i differs"))
+        isequal(a.row, b.row) || throw(ArgumentError("compare needs the same rows in the same order; row $i differs: " *
+                                                     "$(how_rows_differ(a.row, b.row)). Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data."))
     end
     shared = [m for m in before.metrics if m in after.metrics]
     isempty(shared) && throw(ArgumentError("no metric in common: $(before.metrics) vs $(after.metrics)"))

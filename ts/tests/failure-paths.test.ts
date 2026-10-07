@@ -23,6 +23,7 @@ import {
   ai, Cancelled, checkInterface, configure, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, LoadRefused, MemoryStore, module, Prediction, replay,
   save, SettingError, settle as settleLog, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
 } from "../src/index.ts";
+import { duration } from "../src/engine.ts";
 import { holdAtMost } from "../src/log.ts";
 import { passes } from "../src/schema.ts";
 import { jsonForm } from "../src/values.ts";
@@ -615,6 +616,25 @@ test("a long-lived signal keeps no finished stream, and a retry's wait lets go o
   const caller = new AbortController();
   assert.equal(await mood(flaky)("x", { signal: caller.signal }), "happy");
   assert.equal(getEventListeners(caller.signal, "abort").length, 0);
+});
+
+test("a provider asking for a longer wait than apiMaxWait is not waited: raised at once, saying until when", async () => {
+  let asks = 0;
+  const spent = {
+    resolve: (m: string) => ({ provider: "openai", model: m }),
+    complete: async (r: Request) => {
+      if (asks++ === 0) throw new RateLimitError("window spent", { retryAfter: 11270 });
+      return new FakeRouter(["<result>\nhappy\n</result>"]).complete(r);
+    },
+  };
+  const started = Date.now();
+  await assert.rejects(mood(spent)("x"), (e: unknown) =>
+    e instanceof RateLimitError && /wait 3 h 7 min \(until \d{4}-\d\d-\d\d \d\d:\d\d UTC\)/.test(e.message)
+    && e.message.includes("apiMaxWait=60 s") && e.message.includes("apiMaxWait: 11270"));
+  assert.equal(asks, 1);
+  assert.ok(Date.now() - started < 2000);
+  assert.throws(() => configure({ apiMaxWait: -1 }), /apiMaxWait is a number of seconds/);
+  assert.deepEqual([45, 125, 720, 3600, 11270].map(duration), ["45 s", "2 min 5 s", "12 min", "1 h", "3 h 7 min"]);
 });
 
 // ------------------------------------------------------------------ names JavaScript treats specially

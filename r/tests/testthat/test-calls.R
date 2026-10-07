@@ -26,6 +26,37 @@ test_that("a call sends the contract's layout and returns the declared type", {
   expect_identical(names(formals(mood)), "review")
 })
 
+test_that("a request to a provider that keeps requests says store: false, unless the settings say", {
+  r <- fake_router(responder = guess)
+  mood_of(r)("Broke.")
+  mood_of(r, .config = list(store = TRUE))("Broke.")
+  mood_of(r, .lm = "anthropic:claude-3-5-haiku")("Broke.")
+  stores <- lapply(r$env$requests, function(q) lmcc::lm15_plain(lm15::as_dict(q))$config$store)
+  expect_identical(stores, list(FALSE, TRUE, NULL))
+})
+
+test_that("a reply the provider stopped is never an answer, and is not asked again", {
+  r <- fake_router(list(list(text = "", finish = "content_filter"), "<result>\nhappy\n</result>"))
+  err <- tryCatch(mood_of(r, .retries = 2L, .on_error = "stop")("x"), error = function(e) e)
+  expect_identical(err$code, "parse-filtered")
+  expect_match(conditionMessage(err), "safety filter, or the model declining")
+  expect_length(r$env$requests, 1L)
+  r <- fake_router(list(list(text = "<result>\nhappy\n</result>", finish = "content_filter")))
+  expect_error(mood_of(r, .on_error = "stop")("x"), "stopped the reply")
+})
+
+test_that("a provider asking for a longer wait than api_max_wait is not waited: raised at once, saying until when", {
+  spent <- lm15::lm15_error("window spent", code = "rate_limit", retry_after = 11270)
+  r <- fake_router(list(spent, "<result>\nhappy\n</result>"))
+  started <- Sys.time()
+  expect_error(mood_of(r)("x"), "wait 3 h 7 min \\(until [0-9-]+ [0-9:]+ UTC\\).*api_max_wait=60 s.*api_max_wait = 11270")
+  expect_length(r$env$requests, 1L)                           # no second request
+  expect_lt(as.numeric(Sys.time() - started, units = "secs"), 5)
+  expect_error(ai_config(api_max_wait = -1), "api_max_wait")
+  expect_identical(vapply(c(45, 125, 720, 3600, 11270), functai:::wait_duration, ""),
+                   c("45 s", "2 min 5 s", "12 min", "1 h", "3 h 7 min"))
+})
+
 test_that("functions are vectorised: one call per row, recycled, NA in gives NA out", {
   r <- fake_router(responder = guess)
   mood <- mood_of(r)

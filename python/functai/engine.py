@@ -310,12 +310,16 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
         except lm15.RETRYABLE_ERRORS as exc:
             calllog.exchange(model, request, None, started=started, seconds=time.perf_counter() - t0, error=exc,
                              streamed=watched, request_hash=request_hash)
-            if attempt == retries:
+            asked = getattr(exc, "retry_after", None)
+            asked = float(asked) if isinstance(asked, (int, float)) and not isinstance(asked, bool) and asked > 0 else None
+            limit = settings.get("api_max_wait")
+            limit = 60.0 if limit is None else float(limit)
+            if asked is not None and asked > limit:
+                exc.add_note(long_wait_note(asked, limit))
+            if attempt == retries or (asked is not None and asked > limit):
                 _record(CallRecord(function, model, request, None, error=f"{type(exc).__name__}: {exc}"))
                 raise
-            wait = getattr(exc, "retry_after", None)
-            wait = float(wait) if isinstance(wait, (int, float)) and wait > 0 \
-                else min(30.0, 2 ** attempt) * (0.5 + random.random())
+            wait = asked if asked is not None else min(30.0, 2 ** attempt) * (0.5 + random.random())
             if call is not None:
                 call.emit("retry", reason=f"the provider failed ({type(exc).__name__}); sending again in "
                                           f"{wait:.1f} s", wait=wait)
@@ -345,6 +349,28 @@ def send(router: Any, request: Any, *, function: str, model: str, settings: Dict
     _record(CallRecord(function, model, request, response))
     _remember(request, response)
     return response
+
+
+def long_wait_note(asked: float, limit: float) -> str:
+    """What a provider asking for a longer wait than ``api_max_wait`` is told (functions.md)."""
+    import datetime
+    import math
+    until = datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(seconds=asked)
+    return (f"the provider asks to wait {duration(asked)} (until {until:%Y-%m-%d %H:%M} UTC); functai waits at most "
+            f"api_max_wait={limit:g} s, so it did not send again. To wait, set api_max_wait={math.ceil(asked)}; "
+            f"or run again later (with cache_replies='disk', the answers already received are kept).")
+
+
+def duration(seconds: float) -> str:
+    """``3 h 7 min``, ``12 min``, ``45 s``."""
+    s = int(round(seconds))
+    h, rest = divmod(s, 3600)
+    m, sec = divmod(rest, 60)
+    if h:
+        return f"{h} h {m} min" if m else f"{h} h"
+    if m:
+        return f"{m} min {sec} s" if sec and m < 10 else f"{m} min"
+    return f"{sec} s"
 
 
 def config_of(settings: Dict[str, Any], overrides: Optional[Dict[str, Any]] = None) -> Optional[lm15.Config]:
@@ -440,6 +466,11 @@ def _asked_again(err: lmcc.Refusal) -> str:
 
 LMCC_TRUNCATED_ADVICE = "; raise max_tokens or ask for less"
 
+# the hint of a reply the provider stopped (contract/functions.md, "A stopped reply")
+FILTERED_HINT = ("the provider stopped the reply (finish reason content_filter: its safety filter, or the model "
+                 "declining); asking again would be stopped the same way, so it was not asked again; another model "
+                 "may answer")
+
 
 def cut_off(err: lmcc.Refusal, response: Any, limit: Optional[int]) -> lmcc.Refusal:
     """A ``parse-truncated`` refusal that says what happened (functions.md,
@@ -500,6 +531,8 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
             responses.append(response)
             conversations.note_reply(request, response, settings)    # a stored turn keeps every reply
             try:
+                if getattr(response, "finish_reason", None) == "content_filter":
+                    raise lmcc.Refusal("parse-filtered", FILTERED_HINT)     # never an answer, even when it reads
                 reading = lmcc_lm15.read(plan, response)
                 problem = _misfit(annotations or {}, reading.values)
                 if problem:
@@ -518,8 +551,9 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 if "max_tokens" not in (settings.get("_dropped") or ()):
                     limit = (config_of(settings, overrides) or lm15.Config()).max_tokens
                 err = cut_off(err, response, limit)
-            if attempt == retries or not (err.code.startswith("parse-") or err.code == "format-read-error"):
-                raise err
+            if attempt == retries or err.code == "parse-filtered" \
+                    or not (err.code.startswith("parse-") or err.code == "format-read-error"):
+                raise err                     # a stopped reply would be stopped again (functions.md)
             if err.code == "parse-truncated" and limit is None:
                 raise err                     # no budget was set: nothing larger to give
             if err.code == "parse-truncated":

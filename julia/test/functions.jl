@@ -240,6 +240,29 @@ end
     @test length(r.requests) == 2
 end
 
+@testset "a reply the provider stopped is never an answer, and is not asked again" begin
+    r = fake((text = "", finish = "content_filter"), xml(:result => "happy"))
+    err = try using_fake(() -> mood("x"), r; retries = 2) catch e e end
+    @test err isa FunctAI.LMCC.Refusal && err.code == "parse-filtered" && length(r.requests) == 1
+    @test occursin("safety filter, or the model declining", err.hint)
+    r = fake((text = xml(:result => "happy"), finish = "content_filter"))
+    err = try using_fake(() -> mood("x"), r) catch e e end
+    @test err isa FunctAI.LMCC.Refusal && err.code == "parse-filtered"
+end
+
+@testset "a provider asking for a longer wait than api_max_wait is not waited: raised at once, saying until when" begin
+    r = fake(LM15.RateLimitError("window spent"; retry_after=11270), xml(:result => "happy"))
+    started = time()
+    err = try using_fake(() -> mood("x"), r) catch e e end
+    @test err isa LM15.RateLimitError && length(r.requests) == 1 && time() - started < 5
+    msg = sprint(showerror, err)
+    @test occursin(r"wait 3 h 7 min \(until \d{4}-\d\d-\d\d \d\d:\d\d UTC\)", msg)
+    @test occursin("api_max_wait=60 s", msg) && occursin("api_max_wait = 11270", msg)
+    @test err.retry_after == 11270
+    @test_throws ArgumentError FunctAI.check_setting(:api_max_wait, -1)
+    @test FunctAI.wait_duration.([45, 125, 720, 3600, 11270]) == ["45 s", "2 min 5 s", "12 min", "1 h", "3 h 7 min"]
+end
+
 @testset "tools: the model calls Julia functions" begin
     orders = Dict("A1" => "shipped")
     "Look up an order by its number."
@@ -368,6 +391,10 @@ end
     e2 = using_fake(() -> evaluate(mood, rows), r2)
     c = only(compare(e, e2))
     @test c.before == 0.75 && c.after == 0.25 && c.worse == 2
+    with_rules = [(; r..., rules="refunds are billing") for r in rows]
+    e3 = using_fake(() -> evaluate(mood, with_rules), FakeRouter(; responder=(req, i) -> xml(:result => "happy")))
+    err = try compare(e, e3) catch x x end
+    @test err isa ArgumentError && occursin("row 1 differs: column \"rules\" only in the second. Evaluate both versions", err.msg)
     # a conventional model is evaluated the same way
     rule(row) = occursin("Love", row.review) ? "happy" : "unhappy"
     @test evaluate(rule, rows; expected=:result).score == 0.75

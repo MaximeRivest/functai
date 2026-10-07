@@ -15,6 +15,7 @@ const SETTING_DOCS = (
     capabilities = "facts about the model that replace the table's: Dict(\"native_reasoning\" => false)",
     retries = "re-asks after an unreadable reply (default 1)",
     api_retries = "re-sends after a transient provider error (default 3)",
+    api_max_wait = "the longest a provider may ask to wait before a re-send, in seconds (default 60); a longer wait (a spent subscription window) raises at once, saying until when",
     max_steps = "model requests per tool loop (default 8)",
     tool_errors = ":report (the model sees a tool's error, default) or :raise",
     log_calls = "the call log: a folder, true (the default folder) or false; unset: the environment variable `FUNCTAI_LOG_CALLS` decides",
@@ -35,7 +36,7 @@ const SETTING_DOCS = (
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
-const DEFAULTS = Dict{Symbol,Any}(:retries => 1, :api_retries => 3, :max_steps => 8, :tool_errors => :report,
+const DEFAULTS = Dict{Symbol,Any}(:retries => 1, :api_retries => 3, :api_max_wait => 60, :max_steps => 8, :tool_errors => :report,
                                   :include_name => true, :reasoning => false, :concurrency => 8)
 
 const GLOBAL_SETTINGS = Dict{Symbol,Any}()
@@ -74,6 +75,8 @@ function check_setting(name::Symbol, value)
         throw(ArgumentError("tool_errors is :report or :raise, not $(repr(value))"))
     name in (:retries, :api_retries, :max_steps, :concurrency) && !(value isa Integer && value >= (name === :concurrency || name === :max_steps ? 1 : 0)) &&
         throw(ArgumentError("$name is a whole number$(name in (:concurrency, :max_steps) ? " of at least 1" : " of at least 0"), not $(repr(value))"))
+    name === :api_max_wait && !(value isa Real && !(value isa Bool) && value >= 0) &&
+        throw(ArgumentError("api_max_wait is a number of seconds, at least 0, not $(repr(value))"))
     name in (:reasoning, :include_name) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
     name === :log_calls && !(value isa Union{Bool,AbstractString}) && throw(ArgumentError("log_calls is a folder, true or false, not $(repr(value))"))
     name === :lm && !(value isa AbstractString || value isa BakedModel) &&

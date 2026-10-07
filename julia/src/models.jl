@@ -12,6 +12,8 @@ const TOOL_HOSTS = Set{String}(MODELS["native_tool_hosts"]["providers"])
 const JUDGMENT_ONLY = Set{String}(MODELS["judgment_only"]["providers"])
 const SPEAKS_AS = Dict{String,String}(k => v for (k, v) in MODELS["speaks_as"] if k != "about")
 const FIXED_SAMPLING = Dict{String,Vector{String}}(k => String.(v) for (k, v) in MODELS["fixed_sampling"] if k != "about")
+"Providers that keep every request and reply unless asked not to (contract/models.json, `no_storage`; functions.md, \"Requests the provider would keep\")."
+const NO_STORAGE = Set{String}(MODELS["no_storage"]["providers"])
 
 """
     model_capabilities(provider, model) -> NamedTuple
@@ -79,7 +81,25 @@ const REFUSED_WARNED = Set{String}()
 const WARN_LOCK = ReentrantLock()
 
 "Settings a model does not take are left out of its requests, with one warning per provider."
+# The `store` a `config` setting gives (nothing, an `LM15.Config`, or keywords), and the same setting with `store` set.
+config_store(::Nothing) = nothing
+config_store(c::LM15.Config) = c.store
+function config_store(c)
+    for (k, v) in pairs(c)
+        Symbol(k) === :store && return v
+    end
+    nothing
+end
+with_store(::Nothing, v) = (store = v,)
+with_store(c::LM15.Config, v) = LM15.Config(; (n => getfield(c, n) for n in fieldnames(LM15.Config) if n !== :store)..., store = v)
+with_store(c::NamedTuple, v) = merge(c, (store = v,))
+with_store(c, v) = merge!(Dict{Symbol,Any}(Symbol(k) => x for (k, x) in pairs(c)), Dict{Symbol,Any}(:store => v))
+
 function adjust_settings(s::AbstractDict{Symbol}, provider, model)
+    if provider in NO_STORAGE && config_store(setting(s, :config)) === nothing
+        s = copy(s)                       # a provider that would keep the request is asked not to
+        s[:config] = with_store(setting(s, :config), false)
+    end
     drop = [k for k in refused_settings(provider, model)
             if setting(s, k) !== nothing && (k === :max_tokens || provider == "openai-codex" || setting(s, k) != 1)]
     isempty(drop) && return s

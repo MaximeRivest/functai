@@ -150,6 +150,19 @@ compare <- function(before, after) {
   if (!inherits(before, "functai_evaluation") || !inherits(after, "functai_evaluation")) cli::cli_abort("{.fn compare} takes two evaluations from {.fn evaluate}")
   a_rows <- augment(before); b_rows <- augment(after)
   if (nrow(a_rows) != nrow(b_rows)) cli::cli_abort("compare needs the same rows: {nrow(a_rows)} vs {nrow(b_rows)}")
+  # the same examples in the same order: what the pairs mean (an evaluation from before 2026-10-06 does not say its columns)
+  a_cols <- before$data_columns; b_cols <- after$data_columns
+  if (!is.null(a_cols) && !is.null(b_cols)) {
+    only_a <- setdiff(a_cols, b_cols); only_b <- setdiff(b_cols, a_cols)
+    differ <- if (!length(only_a) && !length(only_b)) Filter(function(k) !identical(a_rows[[k]], b_rows[[k]]), a_cols) else character(0)
+    if (length(only_a) || length(only_b) || length(differ)) {
+      row <- if (length(differ)) which(vapply(seq_len(nrow(a_rows)), function(i) !identical(a_rows[[differ[[1L]]]][i], b_rows[[differ[[1L]]]][i]), TRUE))[[1L]] else 1L
+      how <- if (length(differ)) sprintf("column '%s' differs", differ[[1L]]) else paste(c(
+        if (length(only_a)) sprintf("column %s only in the first", paste0("'", only_a, "'", collapse = ", ")),
+        if (length(only_b)) sprintf("column %s only in the second", paste0("'", only_b, "'", collapse = ", "))), collapse = "; ")
+      cli::cli_abort("compare needs the same rows in the same order; row {row} differs: {how}. Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data.")
+    }
+  }
   shared <- intersect(tidy(before)$metric, tidy(after)$metric)
   if (!length(shared)) cli::cli_abort("no metric in common")
   rows <- lapply(shared, function(m) {

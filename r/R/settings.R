@@ -1,11 +1,11 @@
 # Settings: a function's own beat a with_ai_config() block, which beats
 # ai_config(), which beats the defaults (the order every language uses).
 
-DEFAULTS <- list(retries = 1L, api_retries = 3L, max_steps = 8L, tool_errors = "report",
+DEFAULTS <- list(retries = 1L, api_retries = 3L, api_max_wait = 60, max_steps = 8L, tool_errors = "report",
                  include_fn_name = TRUE, concurrency = 8L)
 
 SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "seed", "config", "adapter", "template",
-              "module", "include_fn_name", "capabilities", "retries", "api_retries", "max_steps", "tool_errors",
+              "module", "include_fn_name", "capabilities", "retries", "api_retries", "api_max_wait", "max_steps", "tool_errors",
               "log_calls", "log_content", "caller", "concurrency", "on_error", "observers", "journal", "program_observers",
               "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below")
 
@@ -28,6 +28,8 @@ check_settings <- function(s, call = rlang::caller_env()) {
   if ("cache_replies" %in% names(s) && !is.null(s$cache_replies) && !isTRUE(s$cache_replies) && !isFALSE(s$cache_replies)) reply_store(s$cache_replies)
   if ("replicate" %in% names(s) && !is.null(s$replicate) && !(is_num(s$replicate) && s$replicate >= 0 && s$replicate == round(s$replicate)))
     cli::cli_abort("{.arg replicate} is a whole number from 0: the n-th independent answer to the same request", call = call)
+  if ("api_max_wait" %in% names(s) && !is.null(s$api_max_wait) && !(is_num(s$api_max_wait) && s$api_max_wait >= 0))
+    cli::cli_abort("{.arg api_max_wait} is a number of seconds, at least 0", call = call)
   if ("plugins" %in% names(s)) s["plugins"] <- list(check_plugins(s$plugins, call = call))
   if ("approve" %in% names(s)) s["approve"] <- list(check_approve(s$approve, call = call))
   s
@@ -60,7 +62,9 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #' @param ... Settings: `lm` (the model: `"gpt-4.1-mini"`, `"claude-haiku-4-5"`,
 #'   `"gemini:gemini-2.5-flash"`, ...), `temperature`, `max_tokens`, `adapter`
 #'   (`"xml"`, `"chat"`, `"json"`), `module` (`"cot"`: reasoning first),
-#'   `retries`, `api_retries`, `concurrency` (calls in flight at once, default
+#'   `retries`, `api_retries`, `api_max_wait` (the longest a provider may ask to
+#'   wait before a re-send, in seconds, default 60: a longer wait, as a spent
+#'   subscription window asks, raises at once saying until when), `concurrency` (calls in flight at once, default
 #'   8), `on_error` (`"warn"`, the default: a failed row is `NA`; or `"stop"`),
 #'   `log_calls` (a folder, or `TRUE`), `log_content` (`TRUE`, `FALSE`,
 #'   `c(transcript = FALSE)`, or the names of the fields to keep), `caller`, `router` (an

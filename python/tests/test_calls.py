@@ -523,6 +523,60 @@ def test_transient_errors_are_retried(fake, monkeypatch):
     assert f("x") == "ok" and len(r.requests) == 2
 
 
+def test_a_provider_asking_for_a_long_wait_is_not_waited(fake, monkeypatch):
+    import lm15
+    slept = []
+    monkeypatch.setattr("time.sleep", slept.append)
+
+    @ai
+    def f(x: str) -> str: ...
+    r = fake(lm15.RateLimitError("window spent", retry_after=11270), "<result>\nok\n</result>")
+    with pytest.raises(lm15.RateLimitError) as caught:
+        f("x")
+    assert len(r.requests) == 1 and slept == []                   # raised at once: no sleep, no second request
+    note = "\n".join(caught.value.__notes__)
+    assert "wait 3 h 7 min (until " in note and " UTC)" in note and "api_max_wait=60 s" in note
+    assert "api_max_wait=11270" in note
+
+    r = fake(lm15.RateLimitError("per minute", retry_after=20), "<result>\nok\n</result>")
+    assert f("y") == "ok" and slept == [20.0]                      # a short wait is waited, as the provider asked
+
+    r = fake(lm15.RateLimitError("window spent", retry_after=11270), "<result>\nok\n</result>")
+    assert f.using(api_max_wait=20000)("z") == "ok" and slept[-1] == 11270.0
+
+
+def test_api_max_wait_is_refused_when_it_is_not_a_number_of_seconds():
+    with pytest.raises(ValueError, match="api_max_wait is a number of seconds"):
+        functai.configure(api_max_wait=-1)
+    with pytest.raises(ValueError, match="api_max_wait"):
+        functai.configure(api_max_wait="1 h")
+
+
+def test_durations_read_like_people_say_them():
+    from functai.engine import duration
+    assert [duration(x) for x in (45, 125, 720, 3600, 11270)] == ["45 s", "2 min 5 s", "12 min", "1 h", "3 h 7 min"]
+
+
+def test_a_reply_the_provider_stopped_is_never_an_answer_and_not_asked_again(fake):
+    import lmcc
+
+    @ai
+    def f(x: str) -> str: ...
+    r = fake(("", "content_filter"), "<result>\nok\n</result>")
+    with pytest.raises(lmcc.Refusal) as caught:
+        f.using(retries=2)("toxin dose")
+    assert caught.value.code == "parse-filtered" and len(r.requests) == 1       # not asked again
+    assert "safety filter, or the model declining" in caught.value.hint
+
+    r = fake(("<result>\nI can't help with that.\n</result>", "content_filter"))
+    with pytest.raises(lmcc.Refusal, match="parse-filtered"):
+        f("x")                                                                   # it reads, and is still not an answer
+
+    r = fake(("", "content_filter"))
+    p = f.using(on_unreadable="record").predict("x")                             # rollouts go on: kept, no values
+    assert p.refusal is not None and "parse-filtered" in str(p.refusal)
+
+
 def test_phistory_shows_the_exchange(fake):
     @ai
     def f(x: str) -> str:

@@ -41,6 +41,7 @@ DEFAULTS: Dict[str, Any] = {
     "module": "predict",        # "predict" | "cot" | "react"
     "retries": 1,               # re-asks after an unreadable reply (only spent when a call would fail)
     "api_retries": 3,           # re-sends after a transient provider error (rate limit, 5xx, timeout)
+    "api_max_wait": 60,         # seconds: a provider asking to wait longer (a spent subscription window) raises at once
     "max_steps": 8,             # model calls per tool loop
     "tool_errors": "report",    # "report" (the model sees the error) | "raise"
     "on_unreadable": "raise",   # "raise" | "record": keep an unreadable reply as a turn with no values
@@ -146,6 +147,9 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
         if settings.get("cache_replies") is not None:
             from . import replies
             replies.check_setting(settings["cache_replies"])
+        wait = settings.get("api_max_wait")
+        if wait is not None and (not isinstance(wait, (int, float)) or isinstance(wait, bool) or not wait >= 0):
+            raise ValueError(f"api_max_wait is a number of seconds, at least 0, not {wait!r}")
         rep = settings.get("replicate")
         if rep is not None and (not isinstance(rep, int) or isinstance(rep, bool) or rep < 0):
             raise ValueError(f"replicate is a whole number of at least 0, not {rep!r}")
@@ -206,7 +210,7 @@ class configure:
         Any setting ``@ai`` takes: ``lm``, ``temperature``, ``max_tokens``,
         ``api_key``, ``base_url``, ``auth``, ``client``, ``adapter``,
         ``module``, ``tools``, ``max_steps``, ``approve``, ``retries``,
-        ``api_retries``, ``cache_replies`` (``"disk"`` keeps replies across runs), ``replicate``,
+        ``api_retries``, ``api_max_wait``, ``cache_replies`` (``"disk"`` keeps replies across runs), ``replicate``,
         ``teacher_lm``, ``debug``...
         An unknown setting raises ``TypeError``. The call log:
         ``log_calls`` (``True``, or a folder: keep every call),

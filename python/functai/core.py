@@ -1678,6 +1678,10 @@ def ai(_fn: Any = None, /, **cfg: Any) -> Any:
         How many times an unreadable reply is asked again (default 1).
     api_retries : int
         How many times a provider error is re-sent (default 3).
+    api_max_wait : float
+        The longest a provider may ask to wait before a re-send, in seconds
+        (default 60). A longer ``retry_after`` (a spent subscription window)
+        raises at once, saying until when.
     log_calls : bool or folder, optional
         Keep this function's calls in the call log (see ``functai.calls``);
         ``False`` keeps them out, whatever ``configure`` says.

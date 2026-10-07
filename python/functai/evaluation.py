@@ -918,6 +918,18 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
 # ------------------------------------------------------------------ comparing runs
 
 
+def _how_rows_differ(a: Any, b: Any) -> str:
+    """What differs between two rows: the columns only one has, else the first that differs."""
+    if not (isinstance(a, Mapping) and isinstance(b, Mapping)):
+        return "the rows are not the same"
+    only_a, only_b = [k for k in a if k not in b], [k for k in b if k not in a]
+    if only_a or only_b:
+        return "; ".join(x for x in (f"column {', '.join(map(repr, only_a))} only in the first" if only_a else "",
+                                     f"column {', '.join(map(repr, only_b))} only in the second" if only_b else "") if x)
+    differ = [k for k in a if a[k] != b[k]]
+    return f"column {differ[0]!r} differs" if differ else "the rows are not the same"
+
+
 def compare(before: Evaluation, after: Evaluation):
     '''Compare two evaluations of the same rows, row by row.
 
@@ -974,7 +986,8 @@ def compare(before: Evaluation, after: Evaluation):
         raise ValueError(f"compare needs the same examples: {len(before)} rows vs {len(after)}")
     for i, (a, b) in enumerate(zip(before._rows, after._rows)):
         if a != b:
-            raise ValueError(f"compare needs the same examples in the same order; row {i} differs")
+            raise ValueError(f"compare needs the same examples in the same order; row {i} differs: "
+                             f"{_how_rows_differ(a, b)}. Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data.")
     shared = [m for m in before.metrics if m in after.metrics]
     if not shared:
         raise ValueError(f"no metric in common: {before.metrics} vs {after.metrics}")

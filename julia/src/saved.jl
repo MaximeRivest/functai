@@ -21,7 +21,7 @@ end
 Base.showerror(io::IO, e::LoadRefused) = print(io, "LoadRefused [", e.code, "]: ", e.msg)
 refuse_load(code, msg) = throw(LoadRefused(code, msg))
 
-const SNAKE_SETTINGS = (:retries, :api_retries, :max_steps, :tool_errors, :capabilities, :log_content)
+const SNAKE_SETTINGS = (:retries, :api_retries, :api_max_wait, :max_steps, :tool_errors, :capabilities, :log_content)
 
 
 """

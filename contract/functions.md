@@ -167,6 +167,15 @@ worked out, and warns once per process and provider that it did. So one
 `temperature = 0` set for a session works across models, and says where
 it could not apply.
 
+**Requests the provider would keep.** A provider in `no_storage` (by the
+provider the call is routed to) keeps every request and its reply on its
+side unless the request says `store: false` (OpenAI's Responses API: 30
+days). A call whose settings give no `store` sends `store: false` there,
+silently; a `store` the settings give (`True` or `False`) is sent as given.
+So a program's data stays where its log says it is, by default. The
+setting is part of the request, so it is part of the reply cache's key
+([replies.md](replies.md)).
+
 A version is computed under the fixed facts of `probe`, with provider
 `"probe"` (a judgment-only layout never applies there).
 
@@ -217,6 +226,18 @@ JSON.
   requests (default 1). Each sends the conversation so far plus the reply
   and a user message: `Your reply could not be read: <lmcc's hint>. Reply
   again, in exactly the form the instructions give.`
+- **A stopped reply** (the response's finish reason `content_filter`:
+  the provider's safety filter, or the model declining, as lm15 reports
+  both) is never an answer, even when it reads, and is not asked again:
+  the same request would be stopped the same way, and the re-ask would
+  send the stopped reply back (an empty one is a request Claude refuses).
+  The call raises an unreadable reply's refusal with the code
+  `parse-filtered` and the hint `the provider stopped the reply (finish
+  reason content_filter: its safety filter, or the model declining);
+  asking again would be stopped the same way, so it was not asked again;
+  another model may answer`. (Until 2026-10-06 it was asked again, as
+  "a reply that could not be read".) lmcc may report the code itself
+  later; the behaviour is the same.
 - **A cut-off reply** (`parse-truncated`) is sent again instead, with
   twice the token budget, only when the request set one (`max_tokens`,
   the caller's or a previous re-send's) and the provider takes one. When
@@ -257,7 +278,14 @@ JSON.
 - **A transient provider error** (rate limit, server error, time-out:
   lm15's retryable errors) is re-sent up to `api_retries` times (default
   3), after the provider's `retry_after`, else `min(30, 2^attempt)`
-  seconds times a random factor in [0.5, 1.5).
+  seconds times a random factor in [0.5, 1.5). A `retry_after` longer
+  than `api_max_wait` seconds (default 60; a number of at least 0) is not
+  waited: the error is raised at once, saying how long the provider asked
+  to wait, until when (UTC), and the setting that would wait for it (a
+  note on the error, or its message where a language's errors take no
+  note). A subscription's spent window asks for hours, and a run that
+  sleeps that long without a word looks hung; a per-minute limit asks
+  for less than a minute, and is waited.
 - **Tools**: while the reply asks for tool calls, each runs and its
   result is added to the turn, up to `max_steps` requests (default 8);
   then `StepLimit`. A tool's error is reported to the model as `error:

@@ -288,6 +288,11 @@ _FIXED_SAMPLING = {
 }
 
 
+# providers that keep every request and reply unless asked not to (contract/models.json,
+# no_storage; functions.md, "Requests the provider would keep")
+NO_STORAGE = frozenset({"openai"})
+
+
 def refused_settings(provider: str, model: str) -> tuple:
     if provider == "openai-codex":
         # the ChatGPT subscription backend: no sampling knobs, and no output cap
@@ -308,7 +313,10 @@ _warned: set = set()
 
 
 def adjust(settings: Dict[str, Any], route: Any) -> Dict[str, Any]:
-    """The settings as this provider can take them."""
+    """The settings as this provider can take them: what it refuses left out, and
+    ``store=False`` where the provider would otherwise keep the request."""
+    if route.provider in NO_STORAGE and settings.get("store") is None:
+        settings = {**settings, "store": False}
     drop = [k for k in refused_settings(route.provider, route.model) if _refused(k, settings.get(k), route.provider)]
     if not drop:
         return settings

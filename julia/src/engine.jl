@@ -162,15 +162,46 @@ function replay(job::Job, response)
     end
 end
 
-"The seconds to wait before re-sending after a transient error: the provider's advice, else backoff with jitter."
-function backoff(err, attempt)
+"The seconds a provider's error asks to wait before a re-send (its `retry_after`), or `nothing`."
+function asked_wait(err)
     after = err isa LM15.LM15Error ? (try
         err.retry_after
     catch
         nothing
     end) : nothing
-    after isa Real && after > 0 && return Float64(after)
-    min(30.0, 2.0^attempt) * (0.5 + rand())
+    after isa Real && after > 0 ? Float64(after) : nothing
+end
+
+"The seconds to wait before re-sending after a transient error: the provider's advice, else backoff with jitter."
+backoff(err, attempt) = something(asked_wait(err), min(30.0, 2.0^attempt) * (0.5 + rand()))
+
+"`3 h 7 min`, `12 min`, `45 s`."
+function wait_duration(seconds::Real)
+    s = round(Int, seconds)
+    h, m, sec = s ÷ 3600, (s % 3600) ÷ 60, s % 60
+    h > 0 && return m > 0 ? "$h h $m min" : "$h h"
+    m > 0 && return sec > 0 && m < 10 ? "$m min $sec s" : "$m min"
+    "$sec s"
+end
+
+"What a provider asking for a longer wait than `api_max_wait` is told (functions.md)."
+function long_wait_note(asked::Real, limit::Real)
+    until = Dates.format(Dates.unix2datetime(time() + asked), "yyyy-mm-dd HH:MM")
+    "the provider asks to wait $(wait_duration(asked)) (until $until UTC); functai waits at most api_max_wait=$(isinteger(limit) ? Int(limit) : limit) s, " *
+    "so it did not send again. To wait, set api_max_wait = $(ceil(Int, asked)); or run again later " *
+    "(with cache_replies = :disk, the answers already received are kept)."
+end
+
+"The same lm15 error with a note after its message (lm15's errors carry their metadata immutably); an error
+without that metadata is returned as it is, the note given as a warning."
+function with_note(err, note::AbstractString)
+    if !(hasfield(typeof(err), :metadata) && hasfield(typeof(getfield(err, :metadata)), :message))
+        @warn note
+        return err
+    end
+    meta = getfield(err, :metadata)
+    fields = (f => getfield(meta, f) for f in fieldnames(typeof(meta)) if f !== :message)
+    typeof(err)(typeof(meta)(; fields..., message = meta.message * "\n" * note))
 end
 
 """
@@ -243,7 +274,10 @@ function send(job::Job, request, request_hash; hit=nothing)
         catch err
             exchange!(call, job.model, request, nothing, started, elapsed(); error=err, streamed=streams, request_hash)
             cancelled(call) && throw(Cancelled())
-            (LM15.retryable(err) && attempt < retries) || rethrow()
+            LM15.retryable(err) || rethrow()
+            asked, limit = asked_wait(err), Float64(something(get(job.settings, :api_max_wait, nothing), 60))
+            asked !== nothing && asked > limit && throw(with_note(err, long_wait_note(asked, limit)))   # not waited
+            attempt < retries || rethrow()
             wait = backoff(err, attempt)
             emit_retry(call, "the provider failed ($(error_type(err))); sending again in $(round(wait; digits=1)) s", wait)
             cancellable_sleep(call, wait)
@@ -251,6 +285,9 @@ function send(job::Job, request, request_hash; hit=nothing)
         end
     end
 end
+
+"The hint of a reply the provider stopped (functions.md, \"A stopped reply\")."
+const FILTERED_HINT = "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer"
 
 asked_again(r::LMCC.Refusal) = r.code == "parse-truncated" ?
     "the reply was cut off; asking again with a larger token budget" : "the reply could not be read ($(r.hint)); asking again"
@@ -319,6 +356,8 @@ function complete_once(job::Job, rendered, responses)
             push!(responses, response)
             replayed || note_reply(call, sent, response, s)     # a stored turn keeps every reply
             try
+                # a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
+                response.finish_reason == "content_filter" && throw(LMCC.Refusal("parse-filtered", FILTERED_HINT))
                 reading = LMCC.read(job.plan, response)
                 calls = get(reading.values, "calls", nothing)
                 asks_tools = calls isa AbstractVector && !isempty(calls)   # a tool step: the answer comes later
@@ -333,6 +372,7 @@ function complete_once(job::Job, rendered, responses)
                 limit = something(budget, setting(s, :max_tokens), Some(nothing))
                 refusal.code == "parse-truncated" && (refusal = cut_off(refusal, response, limit))
                 (attempt < retries && unreadable(refusal)) || throw(refusal)
+                refusal.code == "parse-filtered" && throw(refusal)          # stopped again if asked again
                 refusal.code == "parse-truncated" && limit === nothing && throw(refusal)   # nothing larger to give
                 if refusal.code == "parse-truncated"
                     # asked again from the start, with a larger budget: the first request's messages, and its hash
