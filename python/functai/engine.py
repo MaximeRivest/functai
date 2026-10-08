@@ -461,15 +461,12 @@ def _asked_again(err: lmcc.Refusal) -> str:
     """Why the model is asked again, in a sentence (a stream's Retry event)."""
     if err.code == "parse-truncated":
         return "the reply was cut off; asking again with a larger token budget"
+    if err.code == "parse-interrupted":
+        return "the reply ended in an error; sending the same request again"
     return f"the reply could not be read ({err.hint}); asking again"
 
 
 LMCC_TRUNCATED_ADVICE = "; raise max_tokens or ask for less"
-
-# the hint of a reply the provider stopped (contract/functions.md, "A stopped reply")
-FILTERED_HINT = ("the provider stopped the reply (finish reason content_filter: its safety filter, or the model "
-                 "declining); asking again would be stopped the same way, so it was not asked again; another model "
-                 "may answer")
 
 
 def cut_off(err: lmcc.Refusal, response: Any, limit: Optional[int]) -> lmcc.Refusal:
@@ -516,6 +513,7 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
     cancelled = call.check if call is not None else None
     from . import plugins
     for attempt in range(retries + 1):
+        unhooked = request                  # before the plugins: what an interrupted reply sends again
         # the escape hatch: a plugin may replace the provider request; no one can rebuild that request, so
         # its exchange has no request_hash and the call is not replayable
         request, replaced = plugins.request(request, call, function)
@@ -531,8 +529,6 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
             responses.append(response)
             conversations.note_reply(request, response, settings)    # a stored turn keeps every reply
             try:
-                if getattr(response, "finish_reason", None) == "content_filter":
-                    raise lmcc.Refusal("parse-filtered", FILTERED_HINT)     # never an answer, even when it reads
                 reading = lmcc_lm15.read(plan, response)
                 problem = _misfit(annotations or {}, reading.values)
                 if problem:
@@ -553,12 +549,14 @@ def _complete(plan, rendered, *, router, model, settings, function, responses, a
                 err = cut_off(err, response, limit)
             if attempt == retries or err.code == "parse-filtered" \
                     or not (err.code.startswith("parse-") or err.code == "format-read-error"):
-                raise err                     # a stopped reply would be stopped again (functions.md)
+                raise err                     # a stopped reply (lmcc's parse-filtered) would be stopped again
             if err.code == "parse-truncated" and limit is None:
                 raise err                     # no budget was set: nothing larger to give
             if err.code == "parse-truncated":
                 overrides["max_tokens"] = limit * 2
                 request = lmcc_lm15.request(rendered, model=model, config=config_of(settings, overrides))
+            elif err.code == "parse-interrupted":
+                request = unhooked            # the same request again: no correction, no larger budget
             else:
                 correction = (f"Your reply could not be read: {err.hint}. Reply again, in exactly "
                               f"the form the instructions give.")

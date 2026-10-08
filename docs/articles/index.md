@@ -56,6 +56,9 @@ rat:
 [Types](types.md)
 : Lists, records, choices, maybe-missing values; as answers and as inputs.
 
+[Pictures and files](files.md)
+: A picture, a PDF, a spreadsheet, a web page or a folder as an input; the model sees the pages.
+
 [Reasoning and several answers](outputs.md)
 : Think first, return several values, get everything with `predict`.
 

@@ -152,59 +152,82 @@ No model call is made when every row has its answer. Rows without one are
 answered by `teacher=` (priced first). `student="Qwen/Qwen3.5-0.8B"` adds
 `input_ids` and `answer_start` under that model's chat template.
 
-## Images
+## Pictures
 
 ```python
-import base64, io
 from pathlib import Path
 from typing import Literal
 
 import functai
 from functai import ai
-from PIL import Image
+from lm15.types import ImagePart, image
 
 functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
 
 
-def picture(path):
-    """A picture as an image part's data: PNG, no EXIF or file name (they can give the answer away)."""
-    image = Image.open(path).convert("RGB")
-    image.info.clear()
-    buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
-    return {"media_type": "image/png", "data": base64.b64encode(buffer.getvalue()).decode()}
-
-
 @ai
-def shape(picture: {"media": "image"}) -> Literal["circle", "square", "triangle"]:  # noqa: F821
+def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]:
     """The main shape in the picture."""
     ...
 
 
 files = sorted(Path("images").glob("*.png"))
-run = shape.map([{"file": f.name, "picture": picture(f)} for f in files], threads=8)   # pred_result per file
+run = shape.map([{"file": f.name, "picture": image(path=f)} for f in files], threads=8)   # pred_result per file
 ```
 
-Check once that the request holds an image part:
-`[p.type for p in shape.render(picture(files[0])).messages[0].parts]` → contains `"image"`.
-Use a model that reads images (gpt-4.1-mini, Claude, Gemini, GPT-6). Tested:
-12 of 12 colours right on the evaluation's pictures. Linters and type checkers object to a
-dict annotation (ruff F821, pyright); `# noqa: F821` / `# type: ignore` quiet
-them, and functai leaves such pragmas out of the prompt. lmcc is to map lm15's
-`ImagePart` to a picture input, which a checker accepts (lmcc#3).
+- `image(path=...)` is read when the call is made: the request, the reply
+  cache's key and the call log hold the picture, not its name, so a file
+  changed under the same name is asked again, and a log replays elsewhere.
+  `image(data=bytes, media_type="image/png")` and `image(url=...)` work too
+  (a URL is fetched by the provider). A name is never sent to the model.
+- Check once that the request holds an image part:
+  `[p.type for p in shape.render(image(path=files[0])).messages[0].parts]` → contains `"image"`.
+- Use a model that reads images (gpt-4.1-mini, Claude, Gemini, GPT-6).
+- **One picture per input.** `list[ImagePart]` is written as base64 *text* the
+  model cannot see (functai warns; lmcc#7). Several pictures: one input each,
+  or `att([...])` as one `Artifacts` input (below).
+- Strip EXIF if it could give the answer away (`PIL.Image.open(f).convert("RGB")`
+  saved again).
 
-**Before functai 1.3** the dict annotation was turned into text (the picture
-went as base64 the model could not see: 3 of 12 right). There, register a type:
+**Before functai 1.3 / lmcc 0.8.6** `ImagePart` was refused as an input type.
+There, annotate `picture: {"media": "image"}` (1.3 only) or register a type:
+`lmcc.format(Photo, shape={"media": "image"}, write=lambda p: [dict(p, type="image")])`
+with `class Photo(dict)`, given `Photo(media_type=..., data=<base64>)`.
+
+## Documents, spreadsheets, web pages, folders (Attachments)
 
 ```python
-import lmcc
+import functai
+from attachments import Artifacts, att      # pip install "functai[files]"  (attachments >= 1.0.0a2)
+from functai import ai
 
-class Photo(dict):
-    """An image part's data."""
+functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
 
-lmcc.format(Photo, shape={"media": "image"}, write=lambda photo: [dict(photo, type="image")])
-# then: def shape(picture: Photo) -> ...;  picture(path) returns Photo(**{...})
+
+@ai
+def summarize(report: Artifacts) -> str:
+    """The report's main finding, in one sentence."""
+    ...
+
+
+summarize(att("report.pdf[pages: 1-4, images: true]"))   # each page's text, then that page's picture
+summarize(att("budget.xlsx[sheet: Q3]"))
+summarize(att(["notes.md", "figure.png"]))    # several files: one input
 ```
 
-Other traps seen in real runs: a custom lm15 client that bolts the image onto
-the request works but hides it from functai's log, cache key and replay.
+- The model gets Attachments' own parts: text and page images as image parts,
+  page by page. Its JSON form (Attachments' wire form) is what the call log,
+  the reply cache and replays hold.
+- File names are shown (as `att()` prints them). When a name could give the
+  answer away (a classifier over `cat_01.png`), use `ImagePart` above instead.
+- A file `att()` could not read (missing, or a reader not installed:
+  `pip install "attachments[pdf]"`) refuses the call before any request
+  (`InterfaceError`, naming the file and why). `att(...).errors` lists them.
+- **A PDF sends its text only** unless `[images: true]`: a chart's numbers, a
+  scan or a figure are in the pictures (by default Attachments draws pages
+  only when a PDF has no text). Pictures cost tokens: ask for the pages you need.
+- PDF pages are drawn at most 2000 px wide by default (`[max_dim: 1568]`,
+  `[image_format: jpeg]` to send less); `att(...).estimate_tokens()` counts
+  the pictures too.
+- Ask questions about many documents with `map`:
+  `summarize.map([{"report": att(f)} for f in files], threads=8)`.

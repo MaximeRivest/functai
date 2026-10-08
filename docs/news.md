@@ -48,10 +48,37 @@ What the transcripts of real projects and the coding-agent evaluation
   until when (UTC), and the setting that would wait for it. Per-minute
   limits are still waited.
 - **A reply the provider stopped is never an answer and is not asked
-  again.** A finish reason `content_filter` (a safety filter, or the model
-  declining) raises an unreadable reply's refusal with the code
-  `parse-filtered`, saying so; it was asked again as "a reply that could not
-  be read", which sent the empty reply back (a request Claude refuses).
+  again.** lmcc 0.8.6 refuses it with the code `parse-filtered` (a finish
+  reason `content_filter`, a safety filter or the model declining, and a
+  model's refusal in its own words); FunctAI raises it at once. It was asked
+  again as "a reply that could not be read", which sent the empty reply back
+  (a request Claude refuses). Requires lmcc ≥ 0.8.6.
+- **A reply that ended in an error is sent again as it was** (lmcc's
+  `parse-interrupted`): the same request, without the "could not be read"
+  correction that would have sent the broken half reply back.
+- **Files as inputs, through Attachments** (`functai/files.py`, design/13):
+  `def summarize(report: attachments.Artifacts)`, called with
+  `att("report.pdf")` (or a spreadsheet, slides, a web page, a folder, a
+  picture, several files): the model gets Attachments' own parts: text,
+  and pictures as image parts (a PDF's page pictures, with `[images: true]`,
+  each after its page's text). The call log, the
+  reply cache, conversations and served calls keep Attachments' wire form,
+  and rebuild it on replay. A file `att()` could not read refuses the call
+  before any request (`InterfaceError`, naming the file and why). Importing
+  functai never imports attachments: the binding is made when attachments is
+  imported, or when a program that reads files is planned. `pip install
+  "functai[files]"` (attachments ≥ 1.0.0a2).
+- **Pictures as `lm15.types.ImagePart` inputs** (lmcc 0.8.6 binds lm15's
+  media parts): `def shape(picture: ImagePart)`, called with
+  `image(path="cat.png")`, `image(data=...)` or `image(url=...)`.
+- **A picture given by its path is read when the call is made**
+  (contract/programs.md, *Binding*): the request, the reply cache's key and
+  the call log hold the picture, not its name. A file changed under the same
+  name was answered from the cache with the old picture's answer. A path that
+  cannot be read refuses the call, naming the file.
+- **A list of pictures is warned about.** `list[ImagePart]` is written as
+  base64 text the model cannot see (lmcc#7); functai warns once per function
+  and points to one input per picture, or one `Artifacts` input.
 - **`compare` says what differs** when two evaluations' rows are not the
   same (`column 'rules' only in the second`), and how to compare instead.
 - **The coding-agent skill ships in the package** (`functai/skill/`):

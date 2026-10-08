@@ -782,6 +782,38 @@ def _instruction_appendix(*, params: Dict[str, str], outputs: List[Tuple[str, st
     return "\n".join(parts).strip()
 
 
+def _nested_media(shape: Any, top: bool = True) -> bool:
+    """Whether a shape holds a media shape below its top (in a list, a record, a map)."""
+    if not isinstance(shape, dict):
+        return False
+    if "media" in shape:
+        return not top
+    if isinstance(shape.get("anyOf"), list):          # Optional[...] keeps its level
+        return any(_nested_media(s, top) for s in shape["anyOf"])
+    below = [shape.get("items"), shape.get("additionalProperties"), *(shape.get("prefixItems") or []),
+             *(shape.get("properties") or {}).values(), *(shape.get("$defs") or {}).values()]
+    return any(_nested_media(s, False) for s in below)
+
+
+_warned_media: set = set()
+
+
+def _warn_nested_media(fn: Any, inputs: List[Any]) -> None:
+    """Once per function: pictures inside a list or a record are written as text
+    by the layouts' JSON format, so the model cannot see them (lmcc#7)."""
+    held = [f.name for f in inputs if _nested_media(f.shape)]
+    key = (getattr(fn, "__module__", ""), getattr(fn, "__qualname__", ""), tuple(held))
+    if not held or key in _warned_media:
+        return
+    _warned_media.add(key)
+    import warnings
+    warnings.warn(
+        f"functai: {getattr(fn, '__name__', 'this function')}: {', '.join(map(repr, held))} holds pictures (or other "
+        f"media) inside a list or a record; lmcc writes those as JSON text with the bytes in base64, which the model "
+        f"cannot see (lmcc issue #7). Give each picture its own input, or give several files as one Attachments value "
+        f"(att([...])), which functai sends as image parts.", stacklevel=4)
+
+
 def _record_field_docs(cls: Any, metadata_only: bool = False) -> Dict[str, str]:
     """A record's one-line field comments (docments: used when the parser cannot
     read the class), and a dataclass field's ``metadata["doc"]`` where there is
@@ -854,6 +886,7 @@ def build_spec(fn: Any, *, instructions: Optional[str] = None, include_fn_name: 
         elif p.kind is inspect.Parameter.VAR_KEYWORD:
             ann = typing.Dict[str, ann]  # type: ignore[valid-type]
         inputs.append(_field(pname, "input", ann, registry, desc=param_docs.get(pname)))
+    _warn_nested_media(fn, inputs)
     input_names = {f.name for f in inputs}
 
     # ---- outputs declared in the body, and the primary one

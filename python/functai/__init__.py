@@ -77,6 +77,9 @@ from .calllog import prune_calls, split
 from .data import Prediction
 from .engine import LoginRequired, StepLimit, clear_cache, clear_history  # noqa: F401
 from . import datasets  # noqa: F401  (functai.datasets.tickets(), ...)
+from . import files as _files
+
+_files.watch()      # an Attachments result as an input: bound when attachments is imported, never imported here
 from .evaluation import Evaluation, compare, evaluate, exact_match, runs
 from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module

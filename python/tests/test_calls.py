@@ -576,6 +576,30 @@ def test_a_reply_the_provider_stopped_is_never_an_answer_and_not_asked_again(fak
     p = f.using(on_unreadable="record").predict("x")                             # rollouts go on: kept, no values
     assert p.refusal is not None and "parse-filtered" in str(p.refusal)
 
+    from lm15.types import Message, RefusalPart, Response, Usage
+    declined = Response(id="r", model="m", message=Message(role="assistant", parts=(RefusalPart(text="I can't."),)),
+                        finish_reason="stop", usage=Usage(input_tokens=1, output_tokens=1))
+    r = fake(declined, "<result>\nok\n</result>")
+    with pytest.raises(lmcc.Refusal) as caught:
+        f.using(retries=2)("x")                                                  # a model declining in its own words
+    assert caught.value.code == "parse-filtered" and "I can't." in caught.value.hint and len(r.requests) == 1
+
+
+def test_an_interrupted_reply_is_sent_again_as_it_was(fake):
+    import lmcc
+
+    @ai
+    def f(x: str) -> str: ...
+    r = fake(("<result>\nhal", "error"), "<result>\nok\n</result>")
+    assert f("x") == "ok" and len(r.requests) == 2
+    assert r.requests[1].messages == r.requests[0].messages                     # no correction, the same request
+    assert r.requests[1].config == r.requests[0].config                         # no larger budget either
+
+    r = fake(("<result>\nhal", "error"), ("<result>\nha", "error"))
+    with pytest.raises(lmcc.Refusal) as caught:
+        f("x")                                                                   # retries=1: sent twice, then raised
+    assert caught.value.code == "parse-interrupted" and len(r.requests) == 2
+
 
 def test_phistory_shows_the_exchange(fake):
     @ai

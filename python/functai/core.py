@@ -780,6 +780,8 @@ class FunctAIFunc(Generic[P, R]):
         return adapters.Layout(adapter=settings.get("adapter"))
 
     def _plan_for(self, spec: Spec, settings: Dict[str, Any]):
+        from . import files
+        files.ensure_for({f.type for f in spec.signature.fields})     # an Artifacts input: its lmcc binding
         router, model, route = models.resolve(settings)
         caps = models.model_capabilities(settings, route)
         baked = settings.get("lm") if is_baked(settings.get("lm")) else None
@@ -922,9 +924,12 @@ class FunctAIFunc(Generic[P, R]):
         *Binding a call's inputs*): what the model is sent. Raises
         ``InterfaceError`` (``interface-input``) for an input that does not
         bind; its message never quotes a value the log drops."""
+        from . import files
         from . import interface as _interface
-        return _interface.bind_call(self.interface, self._bind_args(args, kwargs), program=self.__name__,
-                                    dropped=calllog.dropped_now(self))
+        bound = _interface.bind_call(self.interface, self._bind_args(args, kwargs), program=self.__name__,
+                                     dropped=calllog.dropped_now(self))
+        files.check_inputs(bound, program=self.__name__)       # a file att() could not read: refused here
+        return bound
 
     def _recorded_inputs(self, args, kwargs) -> Dict[str, Any]:
         """The inputs the call's record holds: bound where they bind (a call

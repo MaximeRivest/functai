@@ -497,7 +497,34 @@ def _fits_bound(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> bool:
         return False
 
 
+class UnreadableFile(Exception):
+    """A media value names a file that cannot be read (programs.md, *Binding*)."""
+
+    def __init__(self, path: str, reason: str):
+        super().__init__(f"the file {path} cannot be read ({reason})")
+        self.path, self.reason = path, reason
+
+
+def _read_media_file(v: Any) -> Any:
+    """A media value given by a local file, with the file's bytes as its ``data``
+    instead (programs.md, *Binding a call's inputs*: media given by a file);
+    any other value as it is."""
+    if not isinstance(v, Mapping) or not v.get("path") or v.get("data"):
+        return v
+    import base64
+    import os
+    path = os.fspath(v["path"])
+    try:
+        with open(path, "rb") as f:
+            data = f.read()
+    except OSError as e:
+        raise UnreadableFile(path, e.strerror or type(e).__name__) from None
+    return {**{k: x for k, x in v.items() if k != "path"}, "data": base64.b64encode(data).decode("ascii")}
+
+
 def _bind_shape(v: Any, shape: Dict[str, Any], root: Dict[str, Any]) -> Any:
+    if "media" in shape:
+        v = _read_media_file(v)
     ref = shape.get("$ref")
     if isinstance(ref, str) and REF.fullmatch(ref):
         v = _bind_shape(v, (root.get("$defs") or {})[REF.fullmatch(ref).group(1)], root)   # type: ignore[union-attr]
@@ -634,7 +661,10 @@ def bind_call(interface: Mapping[str, Any], given: Mapping[str, Any], *, program
     for f in interface["inputs"]:
         name = f["name"]
         if name in given and not _missing_to_optional(f, given[name]):
-            ok, value = bind(given[name], f)
+            try:
+                ok, value = bind(given[name], f)
+            except UnreadableFile as e:
+                raise InterfaceError("interface-input", name, f"{where}input {name!r}: {e}") from None
             if not ok:
                 raise InterfaceError("interface-input", name,
                                      refusal_message(program, f, given[name],

@@ -1,6 +1,6 @@
 ---
 name: functai
-description: Use whenever a task involves FunctAI (Python `functai`, `@ai`, `_ai`, `functai.configure`), or when the user wants a language model to label, extract, classify, rewrite or judge many rows (papers, messages, images) as typed data, measure how well it does, or prepare data to train a small model on it. Covers writing AI functions whose guidance actually reaches the model, running them over tables with caching and resume, honest measurement, provider failures, training-data export and images.
+description: Use whenever a task involves FunctAI (Python `functai`, `@ai`, `_ai`, `functai.configure`), or when the user wants a language model to label, extract, classify, rewrite or judge many rows (papers, messages, images) as typed data, measure how well it does, or prepare data to train a small model on it. Covers writing AI functions whose guidance actually reaches the model, running them over tables with caching and resume, honest measurement, provider failures, training-data export, pictures, and documents (PDF, Word, Excel, slides, web pages, folders) through Attachments.
 ---
 
 # FunctAI: getting it right the first time
@@ -10,7 +10,7 @@ argument names, types and some comments are the prompt**; the answer comes back
 as the declared type. Distilled from real projects; every rule here cost
 someone hours. Read the side files only when the task needs them:
 
-- `recipes.md`: complete tested scripts (nested extraction, two models at once, measure-and-compare, training export, **images**). A picture is an input annotated `{"media": "image"}`, given `{"media_type": "image/png", "data": <base64>}` (before 1.3 that annotation was sent as text the model cannot see: use the recipe's `lmcc.format` registration there)
+- `recipes.md`: complete tested scripts (nested extraction, two models at once, measure-and-compare, training export, **pictures**, **PDFs and other files**)
 - `failures.md`: refusals, safety filters, rate limits on subscriptions, overloads, logins
 - `training.md`: baking a small model, exporting training conversations
 
@@ -110,7 +110,29 @@ papers.select("paper_id", "analyses").unnest("analyses").write_csv("out/analyses
   background (`nohup $PY run.py > run.log 2>&1 &`) and check `tail -2 run.log`
   instead of sleep-polling. For a run that costs cents, just run it.
 
-## 4. Measuring honestly
+## 4. Pictures and files
+
+```python
+from lm15.types import ImagePart, image
+from attachments import Artifacts, att            # pip install "functai[files]"
+
+@ai
+def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]: ...
+shape(image(path="cat.png"))                      # sent as a picture; the cache and log hold it, not its name
+
+@ai
+def summarize(report: Artifacts) -> str: ...
+summarize(att("report.pdf[images: true]"))        # each page's text, then its picture
+```
+
+One picture per input (`list[ImagePart]` is sent as base64 text: functai warns);
+several files are one `att([...])`. A PDF sends its text only unless
+`[images: true]` (charts, scans, figures need the pictures). Attachments shows file names: when a name
+could give the answer away, use `ImagePart`. A file `att()` could not read
+refuses the call, naming it. Details: `recipes.md`. Needs functai ≥ 1.3, lmcc ≥
+0.8.6, attachments ≥ 1.0.0a2; check with `functai.__version__`.
+
+## 5. Measuring honestly
 
 ```python
 before = functai.evaluate(team, tickets, expected="category", num_threads=8)   # score + 95% range
@@ -128,14 +150,14 @@ functai.compare(before, after)      # paired: diff, low, high, better, worse
 - Evidence: return `quotes` and check them free with `functai.quotes_found(text, quotes)`.
 - Never score on rows used for examples or optimization; generated answers are not gold labels.
 
-## 5. Scripts people can read
+## 6. Scripts people can read
 
 For scientists: top-to-bottom like a notebook; a docstring saying what it does,
 how to run it, where results go; settings as constants at the top; `# ====`
 section headers; the run under `if __name__ == "__main__":`. Hard-code what is
 fixed; no clever abstractions; no `try/except` around model calls.
 
-## 6. Before you say "done"
+## 7. Before you say "done"
 
 - [ ] `render(...)` shows every definition you meant the model to have.
 - [ ] Outputs checked by eye on a few rows; failures counted separately.

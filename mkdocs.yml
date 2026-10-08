@@ -80,6 +80,7 @@ nav:
           - Toolbox:
               - articles/anatomy.md
               - articles/types.md
+              - articles/files.md
               - articles/outputs.md
               - articles/streaming.md
               - articles/tools.md

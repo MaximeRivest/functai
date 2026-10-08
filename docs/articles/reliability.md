@@ -19,7 +19,8 @@ tells you when it did.
 | a reply cut off at the token limit | sends it again with twice the budget when you set one; without one the reply already had the model's whole limit, so it raises at once, saying how much went to thinking | `max_tokens`, `retries` |
 | a provider error: rate limit, 5xx, timeout | sends it again, waiting as the provider asks, else longer each time | `api_retries=3` |
 | a provider asking to wait longer than a minute (a subscription's spent window) | raises at once, saying how long and until when, instead of sleeping for hours | `api_max_wait=60` |
-| a reply the provider stopped (its safety filter, or the model declining) | raises `lmcc.Refusal` with the code `parse-filtered`; not asked again, since the same request would be stopped again | – |
+| a reply the provider stopped (its safety filter, or the model declining, in its own words too) | raises lmcc's `Refusal` with the code `parse-filtered`; not asked again, since the same request would be stopped again | – |
+| a reply that ended in an error partway (a broken stream) | sends the same request again, with no correction (lmcc's `parse-interrupted`) | `retries=1` |
 | a login that expired | raises `LoginRequired` with the command to type; never switches to a paid key | – |
 | a tool loop that doesn't finish | raises `StepLimit` | `max_steps=8` |
 | an impossible layout (a JSON layout on a model without structured output; several outputs and no reply form) | refuses before any request is sent | – |
@@ -42,10 +43,10 @@ later (with cache_replies='disk', the answers already received are kept).
 ## A reply the provider stopped
 
 A provider's safety filter can stop a reply partway (OpenAI, Gemini), and
-a model can decline (Claude); lm15 reports both as the finish reason
-`content_filter`. Such a reply is never taken as an answer, even when it
-reads, and is not asked again: the call raises `lmcc.Refusal` with the
-code `parse-filtered`. A prompt change rarely helps; another model often
+a model can decline (Claude; an OpenAI model in its own words). lmcc
+recognises both and refuses the reply with the code `parse-filtered`. Such a
+reply is never taken as an answer, even when it reads, and is not asked
+again: the call raises that `lmcc.Refusal`. A prompt change rarely helps; another model often
 does (one project's toxicology papers stopped Claude Opus and were read by
 GPT-6 Astra). With `on_unreadable="record"` the call is kept as a turn with
 no values, so a long run goes on.

@@ -33,7 +33,7 @@ classifiers = [
 # lmcc lays out each call and reads each reply; lm15 talks to the providers.
 # lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
-    "lmcc>=0.8.5,<0.9",
+    "lmcc>=0.8.6,<0.9",
     "lm15>=1.0.1,<2",
 ]
 
@@ -51,6 +51,13 @@ functai = "functai.__main__:main"
 # tables: evaluation results, fn.map(), reading datasets from files and dataframes
 data = [
     "dpyr>=1.10",
+]
+# files as inputs: an Attachments result (PDF, Word, Excel, slides, web pages,
+# folders, pictures) as an AI function's input, its text and page images sent
+# page by page (functai/files.py). 1.0.0a2 has the wire form and parts this
+# needs; pip takes the pre-release because the requirement names one.
+files = [
+    "attachments>=1.0.0a2",
 ]
 # baking functions into weights you own: training here (TRL, PEFT, Accelerate),
 # running and serving the trained models. TRL is pinned to the minor version
@@ -95,12 +102,15 @@ dev = [
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Development runs on lmcc's checkout beside this repository (../../lmcc, as
-# ts/ does). A built wheel ignores this table: it requires lmcc>=0.8.5 from
-# PyPI (names are data and members keep their order, D-58; on PyPI since
-# 2026-09-29).
+# Development runs on lmcc's and attachments' checkouts beside this repository
+# (../../lmcc, as ts/ does; ../../attachments). A built wheel ignores this
+# table: it requires lmcc>=0.8.6 from PyPI (a reply the provider stopped
+# refuses parse-filtered; a type's JSON form on its binding; lm15's media
+# parts as types: on PyPI since 2026-10-08), and attachments>=1.0.0a2 with
+# the `files` extra.
 [tool.uv.sources]
 lmcc = { path = "../../lmcc/python", editable = true }
+attachments = { path = "../../attachments", editable = true }
 
 [tool.hatch.build]
 packages = ["functai", "functai_verifiers", "functai_rows"]
@@ -119,6 +129,7 @@ dev = [
     "dpyr>=1.10",
     "jsonschema>=4.18",     # the call log's records against contract/schema
     "basedpyright>=1.40.1",
+    "attachments>=1.0.0a2",  # tests/test_files.py: files as inputs
 ]
 # the documentation (../docs/): Markdown notebooks run on rat (../tools/docs.py run),
 # the reference written from the docstrings by quartodoc, the site built by Zensical
