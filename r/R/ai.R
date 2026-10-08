@@ -504,7 +504,11 @@ input_rows <- function(core, inputs, n = NULL) {
         return(structure(list(inputs = row, field = k, message = sprintf("%s: a missing value (NA), and its type takes no null", k)),
                          class = "functai_misfit"))
       }
-      row[k] <- list(bind_json(write[[k]](v), shapes[[k]]))
+      bound <- tryCatch(bind_json(write[[k]](v), shapes[[k]]), functai_unreadable_file = function(e) e)
+      if (inherits(bound, "functai_unreadable_file"))          # refused before any request, naming the file
+        return(structure(list(inputs = row, field = k, message = sprintf("%s: %s", k, conditionMessage(bound))),
+                         class = "functai_misfit"))
+      row[k] <- list(bound)
     }
     for (k in names(given)) {
       why <- check[[k]](row[[k]], k)

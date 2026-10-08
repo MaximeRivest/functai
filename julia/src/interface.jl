@@ -372,7 +372,40 @@ end
 fits_bound(v, shape, root) = !(v isa NoJSONValue) && !(v isa BindRefused) && fits_shape(v, shape, root)
 
 "A JSON value bound to a shape (programs.md, \"Binding a call's inputs\"): converted where its meaning is clear, else as it is."
+# A media value names a file that cannot be read (programs.md, *Binding*: media given by a file).
+struct UnreadableFile <: Exception
+    path::String
+    reason::String
+end
+Base.showerror(io::IO, e::UnreadableFile) = print(io, "the file ", e.path, " cannot be read (", e.reason, ")")
+
+"""
+A media value given by a local file, with the file's bytes as its `data`
+instead (programs.md, *Binding a call's inputs*: media given by a file);
+any other value as it is.
+"""
+function read_media_file(v)
+    v isa AbstractDict || return v
+    path = get(v, "path", nothing)
+    (path isa AbstractString && !isempty(path)) || return v
+    data = get(v, "data", nothing)
+    (data === nothing || data == "") || return v
+    bytes = try
+        read(path)
+    catch err
+        throw(UnreadableFile(String(path), err isa SystemError ? Base.Libc.strerror(err.errnum) :
+                                         sprint(showerror, err)))
+    end
+    out = LMCC.jobj()
+    for (k, x) in v
+        k == "path" || (out[k] = x)
+    end
+    out["data"] = Base64.base64encode(bytes)
+    out
+end
+
 function bind_shape(v, shape::AbstractDict, root)
+    haskey(shape, "media") && (v = read_media_file(v))
     if haskey(shape, "\$ref")
         m = match(DEFS_REF, string(shape["\$ref"]))
         m === nothing || (v = bind_shape(v, root["\$defs"][m.captures[1]], root))

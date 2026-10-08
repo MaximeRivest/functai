@@ -7,6 +7,7 @@
  */
 
 import * as lmcc from "lmcc";
+import { builtin } from "./host.ts";
 import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
@@ -347,7 +348,42 @@ function fitsBound(v: unknown, shape: Rec, root: Rec): boolean {
   return !(v instanceof NoJson) && fitsShape(v, shape, root);
 }
 
+/** A media value names a file that cannot be read (programs.md, "Binding": media given by a file). */
+class UnreadableFile extends Error {
+  readonly path: string;
+  readonly reason: string;
+  constructor(path: string, reason: string) {
+    super(`the file ${path} cannot be read (${reason})`);
+    this.path = path;
+    this.reason = reason;
+  }
+}
+
+/**
+ * A media value given by a local file, with the file's bytes as its `data`
+ * instead (programs.md, "Binding a call's inputs": media given by a file); any
+ * other value as it is. Where there is no file system (a browser), refused.
+ */
+function readMediaFile(v: unknown): unknown {
+  if (!isObject(v)) return v;
+  const path = getOwn(v as Rec, "path");
+  if (typeof path !== "string" || !path || getOwn(v as Rec, "data")) return v;
+  const fs = builtin("node:fs");
+  if (!fs) throw new UnreadableFile(path, "no file system here: give the picture's data instead of its path");
+  let bytes: Uint8Array;
+  try {
+    bytes = fs.readFileSync(path);
+  } catch (err) {
+    throw new UnreadableFile(path, (err as NodeJS.ErrnoException).code ?? (err as Error).name);
+  }
+  const out: Rec = {};
+  for (const [k, x] of entriesOf(v as Rec)) if (k !== "path") setOwn(out, k, x);
+  setOwn(out, "data", Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64"));
+  return out;
+}
+
 function bindShape(v: unknown, shape: Rec, root: Rec): unknown {
+  if (Object.hasOwn(shape, "media")) v = readMediaFile(v);
   if (typeof shape["$ref"] === "string") {
     const target = getOwn(isObject(root["$defs"]) ? root["$defs"] as Record<string, Rec> : null, REF.exec(shape["$ref"])?.[1] ?? "");
     if (isObject(target)) v = bindShape(v, target, root);
@@ -555,7 +591,13 @@ export function checkInputs(iface: Interface, given: Readonly<Rec>, where: strin
   for (const f of iface.inputs) {
     const value = getOwn(given, f.name);
     if (value !== undefined && !missingToOptional(f, value)) {
-      const [ok, bound] = bindValue(value, f);
+      let ok: boolean, bound: unknown;
+      try {
+        [ok, bound] = bindValue(value, f);
+      } catch (err) {
+        if (err instanceof UnreadableFile) throw new InterfaceError("interface-input", f.name, `${where}: input ${f.name}: ${err.message}`);
+        throw err;
+      }
       if (!ok) throw new InterfaceError("interface-input", f.name, refusalMessage(where, f, value, "input", quotes(dropped, f.name)));
       setOwn(out, f.name, bound);
     } else if (!f.optional) {
@@ -578,8 +620,15 @@ export function recordedInputs(iface: Interface, given: Readonly<Rec>): Rec {
   const out: Rec = {};
   for (const f of iface.inputs) {
     const value = getOwn(given, f.name);
-    if (value !== undefined && !missingToOptional(f, value)) setOwn(out, f.name, bindValue(value, f)[1]);
-    else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, copyData(f.shape["default"]));
+    if (value !== undefined && !missingToOptional(f, value)) {
+      let bound: unknown = value;
+      try {
+        bound = bindValue(value, f)[1];
+      } catch (err) {
+        if (!(err instanceof UnreadableFile)) throw err;           // a file that cannot be read: recorded as given
+      }
+      setOwn(out, f.name, bound);
+    } else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, copyData(f.shape["default"]));
   }
   return out;
 }

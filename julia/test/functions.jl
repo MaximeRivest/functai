@@ -250,6 +250,50 @@ end
     @test err isa FunctAI.LMCC.Refusal && err.code == "parse-filtered"
 end
 
+@testset "a model declining in its own words is lmcc's parse-filtered, and is not asked again" begin
+    declined = LM15.Response(; model="m", message=LM15.Message(; role="assistant", parts=(LM15.RefusalPart(; text="I can't."),)),
+                             finish_reason="stop", usage=LM15.Usage(; input_tokens=1, output_tokens=1))
+    r = fake(declined, xml(:result => "happy"))
+    err = try using_fake(() -> mood("x"), r; retries = 2) catch e e end
+    @test err isa FunctAI.LMCC.Refusal && err.code == "parse-filtered" && occursin("I can't.", err.hint)
+    @test length(r.requests) == 1
+end
+
+@testset "an interrupted reply is sent again as it was: no correction, no larger budget" begin
+    r = fake((text = "<result>\nhap", finish = "error"), xml(:result => "happy"))
+    @test using_fake(() -> mood("x"), r) === happy
+    @test length(r.requests) == 2
+    @test LM15.to_dict(r.requests[2])["messages"] == LM15.to_dict(r.requests[1])["messages"]
+    @test r.requests[2].config == r.requests[1].config
+    r = fake((text = "<result>\nhap", finish = "error"), (text = "<result>\nha", finish = "error"))
+    err = try using_fake(() -> mood("x"), r) catch e e end
+    @test err isa FunctAI.LMCC.Refusal && err.code == "parse-interrupted" && length(r.requests) == 2
+end
+
+@testset "a picture given by its path is sent as its bytes, so a changed file is a new request" begin
+    dir = mktempdir()
+    png = joinpath(dir, "now.png")
+    a = FunctAI.Base64.base64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+    b = FunctAI.Base64.base64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+    write(png, a)
+    colour = AIFunction("colour", "The main colour."; inputs=(picture=Dict("media" => "image"),), output=String)
+    r = FakeRouter(; responder=(req, i) -> xml(:result => "yellow"))
+    picture = Dict("media_type" => "image/png", "path" => png)
+    with_settings(router=r, lm="gpt-4.1-mini", cache_replies=joinpath(dir, "replies.sqlite")) do
+        colour(picture); colour(picture)
+        @test length(r.requests) == 1                                   # the same picture: from the cache
+        image = only(p for p in r.requests[1].messages[1].parts if p.type == "image")
+        @test image.data == FunctAI.Base64.base64encode(a) && image.path === nothing
+        write(png, b)
+        colour(picture)
+        @test length(r.requests) == 2                                   # another picture, same name: asked
+        err = try colour(Dict("media_type" => "image/png", "path" => joinpath(dir, "gone.png"))) catch e e end
+        @test err isa FunctAI.InterfaceError && err.code == "interface-input"
+        @test occursin(r"the file .*gone\.png cannot be read", sprint(showerror, err))
+        @test length(r.requests) == 2
+    end
+end
+
 @testset "a provider asking for a longer wait than api_max_wait is not waited: raised at once, saying until when" begin
     r = fake(LM15.RateLimitError("window spent"; retry_after=11270), xml(:result => "happy"))
     started = time()

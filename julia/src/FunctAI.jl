@@ -27,6 +27,7 @@ and read back) and lm15 (every provider, one wire).
 """
 module FunctAI
 
+import Base64
 import Dates
 using Dates: @dateformat_str
 using OrderedCollections: OrderedDict

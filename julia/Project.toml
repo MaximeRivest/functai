@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Maxime Rivest"]
 
 [deps]
+Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
 LM15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
@@ -25,14 +26,15 @@ CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 
 [sources]
-LM15 = {path = "../../lm15-dev/lm15-jl"}
-LMCC = {path = "../../lmcc/julia"}
+LM15 = {path = "../../../../lm15-dev/lm15-jl"}
+LMCC = {path = "../../../../lmcc/julia"}
 
 [extensions]
 FunctAICategoricalArraysExt = "CategoricalArrays"
 FunctAIStatsModelsExt = "StatsModels"
 
 [compat]
+Base64 = "1"
 CategoricalArrays = "0.10, 1"
 DataFrames = "1"
 Dates = "1"
@@ -40,7 +42,7 @@ Documenter = "1"
 GLM = "1"
 HTTP = "1.10"
 LM15 = "1"
-LMCC = "0.8.5"
+LMCC = "0.8.6"
 MLJBase = "1"
 MLJModelInterface = "1.9"
 OrderedCollections = "1.6"

@@ -48,9 +48,6 @@ LMCC_TRUNCATED_ADVICE <- "; raise max_tokens or ask for less"
 # A token count as text: lm15 keeps a JSON number's own spelling.
 count_text <- function(x) { x <- unclass(x); if (is.character(x)) x else format(x, scientific = FALSE, trim = TRUE) }
 
-# The hint of a reply the provider stopped (functions.md, "A stopped reply").
-FILTERED_HINT <- "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer"
-
 # A parse-truncated refusal that says what happened (functions.md, "When the
 # reply cannot be read"): how much went to thinking, whose limit it was and
 # whether it can be raised, and what lm15 changed in the request. `limit`: the
@@ -130,8 +127,11 @@ begin_request <- function(job) {
   call_emit(call, "request", list(request = call$requests, model = job$model))
 }
 
-asked_again <- function(r) if (identical(r$code, "parse-truncated")) "the reply was cut off; asking again with a larger token budget" else
+asked_again <- function(r) {
+  if (identical(r$code, "parse-truncated")) return("the reply was cut off; asking again with a larger token budget")
+  if (identical(r$code, "parse-interrupted")) return("the reply ended in an error; sending the same request again")
   sprintf("the reply could not be read (%s); asking again", r$hint)
+}
 
 # ---------------------------------------------------------------- one reply
 
@@ -142,18 +142,15 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
   if (!cached && !isTRUE(job$replayed)) reply_note(job, response)          # a stored turn keeps every reply
   if (!streamed && (wants_pieces(call) || length(call$tree$sinks))) show_whole(job, response)
   job$responses[[length(job$responses) + 1L]] <- response
-  reading <- tryCatch({
-    # a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
-    if (identical(response$finish_reason, "content_filter")) stop(lmcc::refusal("parse-filtered", FILTERED_HINT))
-    r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r
-  }, lmcc_refusal = function(e) e)
+  reading <- tryCatch({ r <- lmcc::lm15_read(job$plan, response); check_values(job$plan, r$values); r },
+                      lmcc_refusal = function(e) e)
   if (inherits(reading, "lmcc_refusal")) {
     reply_forget(job)                                              # a kept reply that no longer reads is forgotten
     code <- reading$code
     # the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
     limit <- job$overrides$max_tokens %||% job$settings$max_tokens
     if (code == "parse-truncated") reading <- cut_off(reading, response, limit)
-    if (job$retries >= job$settings$retries || code == "parse-filtered" ||      # stopped again if asked again
+    if (job$retries >= job$settings$retries || code == "parse-filtered" ||      # lmcc's: stopped again if asked again
         !(startsWith(code, "parse-") || code == "format-read-error")) return(fail(job, reading))
     if (code == "parse-truncated" && is.null(limit)) return(fail(job, reading))   # nothing larger to give
     job$retries <- job$retries + 1L
@@ -161,6 +158,8 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     if (code == "parse-truncated") {
       job$overrides$max_tokens <- 2L * as.integer(limit)
       job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
+    } else if (code == "parse-interrupted") {
+      # the reply ended in an error: the same request again, no correction, no larger budget (functions.md)
     } else {
       correction <- sprintf(REASK, reading$hint)
       d <- lm15::as_dict(job$request)

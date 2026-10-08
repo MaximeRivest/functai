@@ -39,7 +39,7 @@
   },
   "dependencies": {
     "@lm15/lm15": "1.0.0-rc.3",
-    "lmcc": "^0.8.5"
+    "lmcc": "^0.8.6"
   },
   "devDependencies": {
     "@types/node": "^22",

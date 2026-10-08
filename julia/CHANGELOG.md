@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A reply the provider stopped is lmcc's to recognise** (lmcc 0.8.6,
+  `parse-filtered`, which also catches a model's refusal in its own words);
+  FunctAI's own check is gone and the rule (never asked again) stays.
+  Requires lmcc ≥ 0.8.6.
+- **A reply that ended in an error is sent again as it was** (lmcc's
+  `parse-interrupted`), without the "could not be read" correction.
+- **A picture given by its path is read when the call is made**
+  (contract/programs.md, *Binding*): the request, the reply cache's key and
+  the call's record hold the picture, not its name; a changed file is a new
+  request. A path that cannot be read refuses the call, naming the file.
 - **Requests to OpenAI ask not to be stored.** OpenAI's Responses API keeps
   every request and its reply for 30 days unless the request says `store:
   false`; FunctAI now sends that by default to the providers the contract's

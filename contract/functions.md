@@ -222,22 +222,29 @@ JSON.
 ## When the reply cannot be read
 
 - **An unreadable reply** (an lmcc refusal whose code starts with
-  `parse-`, or `format-read-error`) is followed by up to `retries` more
+  `parse-`, or `format-read-error`, other than the stopped and interrupted
+  ones below) is followed by up to `retries` more
   requests (default 1). Each sends the conversation so far plus the reply
   and a user message: `Your reply could not be read: <lmcc's hint>. Reply
   again, in exactly the form the instructions give.`
-- **A stopped reply** (the response's finish reason `content_filter`:
-  the provider's safety filter, or the model declining, as lm15 reports
-  both) is never an answer, even when it reads, and is not asked again:
-  the same request would be stopped the same way, and the re-ask would
-  send the stopped reply back (an empty one is a request Claude refuses).
-  The call raises an unreadable reply's refusal with the code
-  `parse-filtered` and the hint `the provider stopped the reply (finish
-  reason content_filter: its safety filter, or the model declining);
-  asking again would be stopped the same way, so it was not asked again;
-  another model may answer`. (Until 2026-10-06 it was asked again, as
-  "a reply that could not be read".) lmcc may report the code itself
-  later; the behaviour is the same.
+- **A stopped reply** (lmcc's `parse-filtered`, kernel 0.8.6 §4a: the
+  response's finish reason `content_filter`, a provider's safety filter or
+  the model declining, or a `refusal` part, a model declining in its own
+  words) is never an answer, even when it reads, and is **not asked
+  again**: the same request would be stopped the same way, and the re-ask
+  would send the stopped reply back (an empty one is a request Claude
+  refuses). The call raises lmcc's refusal as it is, its hint lmcc's.
+  (Until 2026-10-06 it was asked again as "a reply that could not be
+  read"; from then to lmcc 0.8.6, FunctAI checked the finish reason
+  itself, with a hint of its own.)
+- **An interrupted reply** (lmcc's `parse-interrupted`, kernel 0.8.6 §4a:
+  the response ended in error, finish reason `error`, before an output
+  ended) is **sent again as it was**: the same request, with no
+  correction and no larger budget, up to `retries` more times, since the
+  model did nothing wrong and the remedy is to ask again. It counts as a
+  re-ask, and is an exchange like one. When the re-asks are spent the call
+  raises lmcc's refusal. (Before, it would have been re-asked with "Your
+  reply could not be read", sending the broken half reply back.)
 - **A cut-off reply** (`parse-truncated`) is sent again instead, with
   twice the token budget, only when the request set one (`max_tokens`,
   the caller's or a previous re-send's) and the provider takes one. When

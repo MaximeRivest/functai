@@ -597,7 +597,13 @@ function bind_ai_inputs(f::AIFunction, inputs::AbstractDict, s)
         v isa LeftOut && (out[x.name] = v; continue)
         field = fields_by[x.name]
         missing_to_optional(field, v) && (out[x.name] = LeftOut(x); continue)
-        ok, bound = bind_value(v, field)
+        ok, bound = try
+            bind_value(v, field)
+        catch err
+            err isa UnreadableFile || rethrow()
+            return (inputs, InterfaceError("interface-input", x.name, "$(f.definition.name): input $(x.name): " *
+                                           sprint(showerror, err)), false)
+        end
         if !ok
             quoted = !("*" in dropped || x.name in dropped)
             return (inputs, InterfaceError("interface-input", x.name, "$(f.definition.name): " *

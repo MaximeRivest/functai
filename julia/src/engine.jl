@@ -286,11 +286,10 @@ function send(job::Job, request, request_hash; hit=nothing)
     end
 end
 
-"The hint of a reply the provider stopped (functions.md, \"A stopped reply\")."
-const FILTERED_HINT = "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer"
-
-asked_again(r::LMCC.Refusal) = r.code == "parse-truncated" ?
-    "the reply was cut off; asking again with a larger token budget" : "the reply could not be read ($(r.hint)); asking again"
+asked_again(r::LMCC.Refusal) =
+    r.code == "parse-truncated" ? "the reply was cut off; asking again with a larger token budget" :
+    r.code == "parse-interrupted" ? "the reply ended in an error; sending the same request again" :
+    "the reply could not be read ($(r.hint)); asking again"
 
 unreadable(r::LMCC.Refusal) = startswith(r.code, "parse-") || r.code == "format-read-error"
 
@@ -356,8 +355,6 @@ function complete_once(job::Job, rendered, responses)
             push!(responses, response)
             replayed || note_reply(call, sent, response, s)     # a stored turn keeps every reply
             try
-                # a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
-                response.finish_reason == "content_filter" && throw(LMCC.Refusal("parse-filtered", FILTERED_HINT))
                 reading = LMCC.read(job.plan, response)
                 calls = get(reading.values, "calls", nothing)
                 asks_tools = calls isa AbstractVector && !isempty(calls)   # a tool step: the answer comes later
@@ -372,9 +369,11 @@ function complete_once(job::Job, rendered, responses)
                 limit = something(budget, setting(s, :max_tokens), Some(nothing))
                 refusal.code == "parse-truncated" && (refusal = cut_off(refusal, response, limit))
                 (attempt < retries && unreadable(refusal)) || throw(refusal)
-                refusal.code == "parse-filtered" && throw(refusal)          # stopped again if asked again
+                refusal.code == "parse-filtered" && throw(refusal)          # lmcc's: stopped again if asked again
                 refusal.code == "parse-truncated" && limit === nothing && throw(refusal)   # nothing larger to give
-                if refusal.code == "parse-truncated"
+                if refusal.code == "parse-interrupted"
+                    # the reply ended in an error: the same request again, no correction, no larger budget
+                elseif refusal.code == "parse-truncated"
                     # asked again from the start, with a larger budget: the first request's messages, and its hash
                     budget = 2 * limit
                     request = LMCC.lm15_request(rendered; model=job.model, config=config_of(s; max_tokens=budget))

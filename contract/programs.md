@@ -170,6 +170,20 @@ has one. Then, by the shape (after following `$ref`):
 | a list of types | the first type in the list the value binds to and fits; `null` stays `null` | |
 | none (`{}`), or an opaque field | never: the value as it is | |
 
+- **A picture or other media given by a file** (a shape `{"media":
+  kind}`, at any depth: `items` of a list too): a value that names a local
+  file (`path`) and holds no `data` is read when it is bound: its `data`
+  becomes the file's bytes in standard base64 (RFC 4648, with padding),
+  and `path` is left out; `media_type` and every other member stay as
+  given. So the request, the reply cache's key ([replies.md](replies.md))
+  and the call's record hold the picture, not its name: a file changed
+  under the same name is a new request (it was answered from the cache
+  with the old file's answer), and a record replays on a machine without
+  the file. A value addressed by `url` or `file_id` is not fetched: the
+  provider reads it, and what it holds is the provider's. A file that
+  cannot be read refuses `interface-input`, naming the input and the
+  file, before any request. lmcc never reads files (its D-61); lm15 would
+  read the path only when sending, after the key was made.
 - **Choices** (`enum`, `const`) bind by the shape's `type` when it has
   one (`{"enum": [1, 2], "type": "integer"}` given `"2"` is `2`), and
   then must match exactly.

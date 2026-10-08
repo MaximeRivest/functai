@@ -295,7 +295,25 @@ convert_json <- function(v, kind) {
 
 # A JSON value bound to a shape (programs.md, "Binding a call's inputs"):
 # converted where its meaning is clear, else as it is (the check refuses it).
+# A media value given by a local file, with the file's bytes as its `data`
+# instead (programs.md, *Binding a call's inputs*: media given by a file); any
+# other value as it is. A file that cannot be read signals
+# `functai_unreadable_file`, which refuses the row before any request.
+read_media_file <- function(v) {
+  if (!is.list(v) || is.null(names(v))) return(v)
+  path <- v[["path"]]
+  if (!is.character(path) || length(path) != 1L || !nzchar(path) || length(v[["data"]])) return(v)
+  bytes <- tryCatch(readBin(path, "raw", n = file.info(path)$size), error = function(e) NULL, warning = function(w) NULL)
+  if (is.null(bytes) || (length(bytes) == 0L && !isTRUE(file.exists(path))))
+    rlang::abort(sprintf("the file %s cannot be read (%s)", path, if (file.exists(path)) "unreadable" else "no such file"),
+                 class = "functai_unreadable_file")
+  v[["path"]] <- NULL
+  v[["data"]] <- openssl::base64_encode(bytes)
+  v
+}
+
 bind_json <- function(v, shape, root = shape) {
+  if (has_key(shape, "media")) v <- read_media_file(v)
   ref <- ref_name(shape[["$ref"]])
   if (!is.null(ref) && is_obj(root[["$defs"]][[ref]])) v <- bind_json(v, root[["$defs"]][[ref]], root)
   if (is.list(shape$anyOf) && length(shape$anyOf)) {

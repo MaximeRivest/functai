@@ -45,6 +45,55 @@ test_that("a reply the provider stopped is never an answer, and is not asked aga
   expect_error(mood_of(r, .on_error = "stop")("x"), "stopped the reply")
 })
 
+test_that("a model declining in its own words is lmcc's parse-filtered, and is not asked again", {
+  declined <- lm15::response("gpt-4.1-mini", lm15::message_assistant(list(lm15::refusal_part("I can't."))), "stop",
+                             usage = lm15::usage(input_tokens = 1L, output_tokens = 1L, total_tokens = 2L))
+  r <- fake_router(list(declined, "<result>\nhappy\n</result>"))
+  err <- tryCatch(mood_of(r, .retries = 2L, .on_error = "stop")("x"), error = function(e) e)
+  expect_identical(err$code, "parse-filtered")
+  expect_match(conditionMessage(err), "I can't.", fixed = TRUE)
+  expect_length(r$env$requests, 1L)
+})
+
+test_that("an interrupted reply is sent again as it was: no correction, no larger budget", {
+  r <- fake_router(list(list(text = "<result>\nhap", finish = "error"), "<result>\nhappy\n</result>"))
+  expect_identical(as.character(mood_of(r)("x")), "happy")
+  expect_length(r$env$requests, 2L)
+  d <- lapply(r$env$requests, function(q) lmcc::lm15_plain(lm15::as_dict(q)))
+  expect_identical(d[[2]]$messages, d[[1]]$messages)
+  expect_identical(d[[2]]$config, d[[1]]$config)
+  r <- fake_router(list(list(text = "<result>\nhap", finish = "error"), list(text = "<result>\nha", finish = "error")))
+  err <- tryCatch(mood_of(r, .on_error = "stop")("x"), error = function(e) e)
+  expect_identical(err$code, "parse-interrupted")
+  expect_length(r$env$requests, 2L)
+})
+
+test_that("a picture given by its path is sent as its bytes, so a changed file is a new request", {
+  dir <- withr::local_tempdir()
+  png <- file.path(dir, "now.png")
+  a <- openssl::base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==")
+  b <- openssl::base64_decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+  writeBin(a, png)
+  r <- fake_router(responder = function(req, i) "<result>\nyellow\n</result>")
+  colour <- ai(colour ~ picture, "The main colour.", picture = json_shape(list(media = "image")),
+               .lm = "gpt-4.1-mini", .router = r, .log_calls = FALSE, .cache_replies = file.path(dir, "replies.sqlite"))
+  picture <- list(list(media_type = "image/png", path = png))
+  colour(picture); colour(picture)
+  expect_length(r$env$requests, 1L)                                  # the same picture: from the cache
+  parts <- lmcc::lm15_plain(lm15::as_dict(r$env$requests[[1L]]))$messages[[1L]]$parts
+  image <- Filter(function(p) identical(p$type, "image"), parts)[[1L]]
+  expect_identical(image$data, openssl::base64_encode(a))
+  expect_null(image$path)
+  writeBin(b, png)
+  colour(picture)
+  expect_length(r$env$requests, 2L)                                  # another picture, same name: asked
+  err <- tryCatch(ai_render(colour, list(list(media_type = "image/png", path = file.path(dir, "gone.png")))),
+                  error = function(e) e)
+  expect_identical(err$code, "interface-input")
+  expect_match(conditionMessage(err), "the file .*gone[.]png cannot be read")
+  expect_length(r$env$requests, 2L)
+})
+
 test_that("a provider asking for a longer wait than api_max_wait is not waited: raised at once, saying until when", {
   spent <- lm15::lm15_error("window spent", code = "rate_limit", retry_after = 11270)
   r <- fake_router(list(spent, "<result>\nhappy\n</result>"))

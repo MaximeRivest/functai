@@ -1,13 +1,13 @@
 /** Calls, offline: a fake router stands in for every provider. */
 
 import assert from "node:assert/strict";
-import { mkdtempSync, readdirSync, readFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as z from "zod";
 import {
-  ai, bootstrapFewShot, calls, Cancelled, compare, configure, evaluate, fromManifest, labeledFewShot, module, rate, rated,
+  ai, bootstrapFewShot, calls, Cancelled, compare, configure, evaluate, fromManifest, InterfaceError, labeledFewShot, module, rate, rated,
   StepLimit, t, tool, toManifest, withSettings, type StreamEvent,
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
@@ -17,6 +17,7 @@ import * as lmcc from "lmcc";
 // the tests read no settings from the environment they run in (an agent's caller, a log folder)
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
 configure({ lm: "gpt-4.1-mini", logCalls: false });
+type Rec = Record<string, unknown>;
 
 const moodDef = {
   description: "How does the customer feel about what they bought?",
@@ -58,6 +59,52 @@ test("a reply the provider stopped is never an answer, and is not asked again", 
   assert.equal(router.requests.length, 1);
   const reads = new FakeRouter([{ text: "<result>\nhappy\n</result>", finish: "content_filter" }]);
   await assert.rejects(ai("mood", { ...moodDef, router: reads })("x"), (e: unknown) => (e as lmcc.Refusal).code === "parse-filtered");
+});
+
+test("a model declining in its own words is lmcc's parse-filtered, and is not asked again", async () => {
+  const declined = new Response({
+    model: "m", message: Message.assistant([{ type: "refusal", text: "I can't." }] as never), finishReason: "stop" as never,
+    usage: { inputTokens: 1, outputTokens: 1, totalTokens: 2 },
+  });
+  const router = new FakeRouter([declined, "<result>\nhappy\n</result>"]);
+  await assert.rejects(ai("mood", { ...moodDef, router, retries: 2 })("x"),
+    (e: unknown) => lmcc.isRefusal(e) && (e as lmcc.Refusal).code === "parse-filtered" && (e as lmcc.Refusal).hint.includes("I can't."));
+  assert.equal(router.requests.length, 1);
+});
+
+test("an interrupted reply is sent again as it was: no correction, no larger budget", async () => {
+  const router = new FakeRouter([{ text: "<result>\nhap", finish: "error" }, "<result>\nhappy\n</result>"]);
+  assert.equal(await ai("mood", { ...moodDef, router })("x"), "happy");
+  assert.equal(router.requests.length, 2);
+  assert.deepEqual(router.requests[1]!.messages, router.requests[0]!.messages);
+  assert.deepEqual(router.requests[1]!.config, router.requests[0]!.config);
+  const twice = new FakeRouter([{ text: "<result>\nhap", finish: "error" }, { text: "<result>\nha", finish: "error" }]);
+  await assert.rejects(ai("mood", { ...moodDef, router: twice })("x"),
+    (e: unknown) => lmcc.isRefusal(e) && (e as lmcc.Refusal).code === "parse-interrupted");
+  assert.equal(twice.requests.length, 2);
+});
+
+test("a picture given by its path is sent as its bytes, so a changed file is a new request", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "functai-media-"));
+  const png = join(dir, "now.png");
+  const A = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+  const B = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
+  writeFileSync(png, A);
+  const router = new FakeRouter([], () => "<result>\nyellow\n</result>");
+  const colour = ai("colour", { description: "The main colour.", input: { picture: { media: "image" } as never }, output: t.string(),
+    router, cacheReplies: join(dir, "replies.sqlite") });
+  await colour({ picture: { media_type: "image/png", path: png } } as never);
+  await colour({ picture: { media_type: "image/png", path: png } } as never);
+  assert.equal(router.requests.length, 1);                                          // the same picture: from the cache
+  const image = (router.requests[0]!.messages[0]!.parts as unknown as Rec[]).find((p) => p["type"] === "image")!;
+  assert.equal(image["data"], A.toString("base64"));
+  assert.equal(image["path"], undefined);
+  writeFileSync(png, B);
+  await colour({ picture: { media_type: "image/png", path: png } } as never);
+  assert.equal(router.requests.length, 2);                                          // another picture, same name: asked
+  await assert.rejects(colour({ picture: { media_type: "image/png", path: join(dir, "gone.png") } } as never),
+    (e: unknown) => e instanceof InterfaceError && e.code === "interface-input" && /the file .*gone\.png cannot be read/.test(e.message));
+  assert.equal(router.requests.length, 2);
 });
 
 test("a request to a provider that keeps requests says store: false, unless the settings say", async () => {

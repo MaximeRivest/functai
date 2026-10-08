@@ -293,9 +293,6 @@ export function lm15Request(rendered: lmcc.RenderResult, model: string, config: 
   return bridge.request(rendered, { model, config });
 }
 
-/** The hint of a reply the provider stopped (functions.md, "A stopped reply"). */
-export const FILTERED_HINT = "the provider stopped the reply (finish reason content_filter: its safety filter, or the model declining); asking again would be stopped the same way, so it was not asked again; another model may answer";
-
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
   for (const f of plan.signature.fields) {
@@ -331,9 +328,9 @@ export function cutOff(err: lmcc.Refusal, response: Response, limit: number | un
 }
 
 function askedAgain(err: lmcc.Refusal): string {
-  return err.code === "parse-truncated"
-    ? "the reply was cut off; asking again with a larger token budget"
-    : `the reply could not be read (${err.hint}); asking again`;
+  if (err.code === "parse-truncated") return "the reply was cut off; asking again with a larger token budget";
+  if (err.code === "parse-interrupted") return "the reply ended in an error; sending the same request again";
+  return `the reply could not be read (${err.hint}); asking again`;
 }
 
 /**
@@ -375,8 +372,6 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       }
       let reading: lmcc.Reading;
       try {
-        // a reply the provider stopped is never an answer, even when it reads (functions.md, "A stopped reply")
-        if (response.finishReason === "content_filter") throw new lmcc.Refusal("parse-filtered", FILTERED_HINT);
         reading = bridge.read(job.plan, response);
         checkValues(job.plan, reading.values as Rec);
       } catch (err) {
@@ -391,12 +386,14 @@ async function complete(job: Job, rendered: lmcc.RenderResult, responses: Respon
       // the budget this request set (functions.md: a cut reply is re-sent with twice it, only when one was set)
       const limit = configOf(job.settings, overrides as never)?.maxTokens ?? undefined;   // null: none set
       if (refusal.code === "parse-truncated") refusal = cutOff(refusal, response, limit);
-      if (attempt >= retries || refusal.code === "parse-filtered"                       // stopped again if asked again
+      if (attempt >= retries || refusal.code === "parse-filtered"     // lmcc's: a stopped reply would be stopped again
         || !(refusal.code.startsWith("parse-") || refusal.code === "format-read-error")) throw refusal;
       if (refusal.code === "parse-truncated" && limit === undefined) throw refusal;   // nothing larger to give
       if (refusal.code === "parse-truncated") {
         overrides["maxTokens"] = limit! * 2;
         request = lm15Request(rendered, job.model, configOf(job.settings, overrides as never));
+      } else if (refusal.code === "parse-interrupted") {
+        // the reply ended in an error: the same request again, no correction, no larger budget (functions.md)
       } else {
         const correction = `Your reply could not be read: ${refusal.hint}. Reply again, in exactly the form the instructions give.`;
         request = { ...request, messages: [...request.messages, response.message, Message.user(correction)] };
