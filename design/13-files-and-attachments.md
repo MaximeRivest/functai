@@ -1,11 +1,9 @@
 # 13 — Files as inputs: FunctAI × Attachments × lmcc
 
-*Status, 2026-10-06: proposal; since then FunctAI honours `{"media": "image"}`
-annotations (a picture input with no registration, 12 of 12 in the evaluation's
-pictures), and lmcc's side is filed as issues
-[#3](https://github.com/MaximeRivest/lmcc/issues/3) (lm15 media parts as types
-and values) and [#4](https://github.com/MaximeRivest/lmcc/issues/4) (a host
-type's JSON form, both ways). From a review of the three code bases and a
+*Status, 2026-10-08: built in Python (`python/functai/files.py`), on lmcc
+0.8.6 (issues #3, #4, #5 closed) and Attachments 1.0.0a2 (the six additions
+its review asked for). What differs from the proposal is under **As built**
+at the end. From a review of the three code bases and a
 working prototype (`~/.cache/functai-skill-eval/att/`). Nothing built in the
 repositories yet. Motivated by the FunctAI vs DSPy benchmark
 (`evals/skill/README.md`): pictures were DSPy's one clear edge (a native
@@ -106,3 +104,41 @@ Not decided, needs Maxime:
    language.
 5. Benchmark: a `files` task (PDF and spreadsheet questions; DSPy has no
    native way), the photos task again, FunctAI vs DSPy rerun.
+
+## As built (2026-10-08)
+
+- **The binding** is an lmcc type binding (lmcc D-61): shape a list of
+  objects (Attachments' wire schema is not copied: `from_wire` checks it,
+  and a copy would fall behind its additive changes), format writing
+  `Artifacts.parts()` as parts, JSON form `to_wire`/`from_wire`. Made when
+  attachments is imported (a `sys.meta_path` watch, so importing functai
+  never imports it: it costs ~60 ms) or when a program whose signature has
+  an `Artifacts` field is planned (a saved or served one).
+- **File names are shown** (Attachments' default, what `att()` prints), not
+  hidden as proposed: a folder's files are told apart by them, and a value
+  should reach the model as its user sees it. For a classifier whose file
+  names carry the answer, the recommendation is an `ImagePart` input, which
+  has no name. No per-input switch was added (it would need a setting the
+  contract does not have).
+- **Errors** are refused at binding (`interface-input`, naming the input and
+  each file's error), before any request; the format refuses too, as a
+  backstop for values that reach it another way (worked examples).
+- **A PDF sends text only unless `[images: true]`** (Attachments' `auto`
+  draws pages only when there is no text): FunctAI does not override
+  `att()`'s options; the skill and the page say when pictures are needed.
+- **Media by reference** in logs and caches was not done: values are logged
+  whole, twice (the input and the request, in base64): measured, the
+  benchmark's 3-page report with page pictures (121 KB of PNG, mostly white)
+  makes a 326 KB call record; dense real pages make more. Logging is off by
+  default; the reply cache keeps replies, not requests. It is a contract change
+  for four languages, left for when logs of files are in real use.
+- **Pictures by path** are read at binding in all four languages
+  (contract/programs.md): a changed file was answered from the cache with
+  the old picture's answer.
+- **TypeScript, R and Julia** take pictures (`{"media": "image"}` and lmcc's
+  bridges) but not Attachments values: Attachments is Python-only. Its wire
+  form is language-neutral, so a served Python program reading files can be
+  called from any of them.
+- **lmcc#7** (filed 2026-10-08): `list[ImagePart]` is written as base64 text
+  by the layouts' JSON format; Python warns until lmcc gives lists of media
+  a default.

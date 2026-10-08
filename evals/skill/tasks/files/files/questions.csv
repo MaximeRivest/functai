@@ -1,0 +1,6 @@
+id,file,question
+q1,report.pdf,Which region had the highest revenue in Figure 1?
+q2,report.pdf,"What revenue does Figure 1 show for the South region, in thousands of dollars?"
+q3,report.pdf,"What dividend per share did the board approve, in dollars?"
+q4,budget.xlsx,Which department went over its budget by the most?
+q5,budget.xlsx,"How much did Engineering spend, in dollars?"

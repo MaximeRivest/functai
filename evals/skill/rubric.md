@@ -52,6 +52,21 @@ and the model calls the task's own code made.
 | images | ✓ | ≥ 12 requests carry an image part; none pastes base64 as text | the species pilot spent dozens of tool calls finding how to send an image |
 | shape, color | ✓ | ≥ 11 of 12 right | |
 
+## files: questions about a PDF report and a spreadsheet
+
+| check | required | passes when | why |
+|---|---|---|---|
+| files | ✓ | answers.csv with id and answer for q1..q5 | |
+| real | ✓ | the report's text and the spreadsheet's numbers reached the model | answers must come from the documents |
+| picture | ✓ | at least one request carries an image part | Figure 1's values are only in its picture; a text-only reading cannot answer q1 and q2 |
+| chart | ✓ | q1 (highest region) and q2 (South's value) right | the reason the picture must be sent |
+| text | ✓ | q3 (dividend, PDF text), q4 (most over budget), q5 (Engineering's spending) right | |
+
+The company was renamed from "Northwind" to "Larkspur" so that "North" (q1's
+answer) is in no text layer. Both environments have the same document
+tools (Attachments, pypdf, PyMuPDF, openpyxl, pandas); only the AI library
+differs, and only FunctAI's arm gets a skill that names Attachments.
+
 ## Reading the results
 
 - Compare **success** first, then **time** and **agent cost** among successes.

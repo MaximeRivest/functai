@@ -1,0 +1,32 @@
+{
+ "q1": {
+  "accept": [
+   "north"
+  ],
+  "image_only": true
+ },
+ "q2": {
+  "accept": [
+   "17"
+  ],
+  "image_only": true
+ },
+ "q3": {
+  "accept": [
+   "0.42"
+  ],
+  "image_only": false
+ },
+ "q4": {
+  "accept": [
+   "marketing"
+  ],
+  "image_only": false
+ },
+ "q5": {
+  "accept": [
+   "1240000"
+  ],
+  "image_only": false
+ }
+}

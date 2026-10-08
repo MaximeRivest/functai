@@ -10,10 +10,12 @@ behaviour below was reproduced on functai 1.2.0 before being written down.
 
 Status 2026-10-06 (unreleased, after 1.2.0): 1 to 5, 7 to 9 fixed (`python/CHANGELOG.md`,
 *Unreleased*); 6 is the users' to change (`functai.bake.examples` is the public way). lmcc's
-side is in its issues: lm15 media parts as types and values
+side was filed as issues and closed by lmcc 0.8.6 (2026-10-08): lm15 media parts as types and values
 ([lmcc#3](https://github.com/MaximeRivest/lmcc/issues/3)), rebuilding a host type from its
 JSON form ([lmcc#4](https://github.com/MaximeRivest/lmcc/issues/4)), and a `parse-filtered`
-refusal in the kernel ([lmcc#5](https://github.com/MaximeRivest/lmcc/issues/5)).
+refusal in the kernel ([lmcc#5](https://github.com/MaximeRivest/lmcc/issues/5)); FunctAI
+uses all three since. Open: a list of pictures written as base64 text
+([lmcc#7](https://github.com/MaximeRivest/lmcc/issues/7); FunctAI warns meanwhile).
 
 1. **Guidance silently dropped from the prompt.** Comment harvesting skips
    comments on the choices of a multi-line `Literal[...]`, a comment after its
@@ -72,6 +74,11 @@ refusal in the kernel ([lmcc#5](https://github.com/MaximeRivest/lmcc/issues/5)).
    Honouring it would give FunctAI an image input with no registration.
 9. **Agents guess `functai.history`** (4 of 66 FunctAI sessions in the
    evaluation); it is `phistory` / `inspect_history`.
+
+10. **A picture given by its path was answered from the cache after the file
+    changed** (the key held the path, lm15 read the file only when sending).
+    Fixed in all four languages: a media value given by a path is read when
+    the call is bound (contract/programs.md).
 
 ## On this machine
 

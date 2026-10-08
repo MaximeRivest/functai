@@ -1,7 +1,7 @@
 # FunctAI for coding agents: does the skill help, and how does it compare with DSPy?
 
 `python/functai/skill/` (shipped in the package) teaches coding agents to use
-FunctAI. This folder measures two things on the same four tasks, in fresh
+FunctAI. This folder measures two things on the same five tasks, in fresh
 isolated workspaces, graded by code:
 
 - **the skill**: the same agent with and without it (`--arms functai-skill functai`);
@@ -15,6 +15,7 @@ isolated workspaces, graded by code:
 | `measure` | score a classifier with its 95% range, then judge two new rules with a paired interval | numbers without ranges; unpaired comparisons |
 | `export` | write the exact training conversations for a small model, leaving a constant style guide out | rebuilding prompts from functai internals (Scholar's Reading List) |
 | `photos` | name shapes and colours in 12 pictures, sent as real images | finding how to send an image (species pilot) |
+| `files` | answer 5 questions from a PDF report and a spreadsheet; two answers are only in a chart's picture | DSPy reads images only; FunctAI reads any file through Attachments (design/13) |
 
 What each check means and why: `rubric.md`.
 
@@ -152,3 +153,46 @@ number of rows. DSPy has a native image type (15 lines against 27 with
 FunctAI's `lmcc.format` registration) and its evaluation ran faster here.
 Limits: one agent model, three runs per cell, small tasks, and both expert
 solutions written by the same author (FunctAI's side).
+
+## FunctAI vs DSPy, second round (2026-10-08; FunctAI unreleased 1.3 on lmcc 0.8.6 with Attachments 1.0.0a2, DSPy 3.4.0)
+
+What changed since the first round: requests to OpenAI say `store: false`;
+pictures are `lm15.types.ImagePart` inputs; files are Attachments inputs; the
+skill teaches both. A fifth task, `files` (a PDF whose chart holds two answers,
+and a spreadsheet). Both environments have the same document tools.
+
+**A. An agent doing the task** (GPT-6 Astra, thinking medium, 3 runs per cell;
+`runs/20261008T120740Z`):
+
+| task | succeeded (FunctAI / DSPy) | agent cost | agent tool calls | agent time | tokens the finished program sent |
+|---|---|---|---|---|---|
+| export | 3/3 · 3/3 | $0.18 · $0.15 | 10 · 7 | 0.7 · 0.7 min | 0 · 0 |
+| files | 3/3 · 3/3 | $0.24 · $0.14 | 8 · 6 | 1.0 · 1.1 min | 22,567 · 44,712 |
+| forms | 3/3 · 3/3 | $0.36 · $0.29 | 18 · 16 | 2.1 · 2.2 min | 27,731 · 42,030 |
+| measure | 3/3 · 3/3 | $0.35 · $0.25 | 12 · 9 | 1.6 · 2.1 min | 16,096 · 51,939 |
+| photos | 3/3 · 3/3 | $0.17 · $0.10 | 9 · 3 | 0.9 · 0.7 min | 3,384 · 4,956 |
+| **all 15** | **15/15 · 15/15** | **$3.98 · $2.70** | **168 · 124** | **20 · 21 min** | |
+
+**B. Each library used well** (hand-written solutions, 3 rounds, `runs/references-20261008T122232Z`):
+all 30 runs correct.
+
+| task | input tokens sent (FunctAI / DSPy) | seconds | lines of code |
+|---|---|---|---|
+| export | 0 · 0 | 0.9 · 1.7 | 7 · 10 |
+| files | 22,148 · 32,640 | 6.0 · 7.7 | 14 · 28 |
+| forms | 7,683 · 8,773 | 4.3 · 10.4 | 42 · 49 |
+| measure | 14,096 · 36,336 | 17.9 · 18.9 | 27 · 41 |
+| photos | 2,124 · 4,488 | 3.9 · 6.0 | 16 · 15 |
+
+Reading it: both libraries let an agent get every task right, the new one
+included (DSPy's agents drew the PDF pages with PyMuPDF; FunctAI's used
+Attachments with `[images: true]`). Programs written with FunctAI send fewer
+tokens on every task (about half on `files` and `measure`) and now run faster
+than DSPy's everywhere, the evaluation included (it was 28 s against 20 s
+before `store: false`). Writing them still costs an agent more (+47% list
+price, +35% tool calls): it reads FunctAI's skill, and models know DSPy from
+training. Limits as before: one agent model, three runs per cell, small
+tasks; the machine was loaded during these runs (both arms equally); the
+expert solutions are written by FunctAI's side; DSPy's `files` solution draws
+pages at 150 dpi and Attachments at its default (2000 px at most), so their
+picture tokens differ by choice, not by library.
