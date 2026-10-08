@@ -25,6 +25,8 @@ export interface Ended<R> {
   readonly shown?: unknown;
   /** AI functions: what the code returned, when it is not the answer as the model gave it. */
   readonly returned?: unknown;
+  /** AI functions: the refusal of an unreadable reply kept with no values (`onUnreadable: "record"`), the record's error. */
+  readonly refusal?: unknown;
 }
 
 export interface CallSpec<R> {
@@ -261,7 +263,8 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   else log.emit(node, kind, fields);
   if (unconfirmed) call.journal = unconfirmed.journal;
   calllog.write(call, outcome.ok
-    ? { failed: false, returned: outcome.ended.returned !== undefined ? outcome.ended.returned : outcome.ended.value }
+    ? { failed: false, returned: outcome.ended.returned !== undefined ? outcome.ended.returned : outcome.ended.value,
+      ...(outcome.ended.refusal !== undefined ? { error: outcome.ended.refusal } : {}) }
     : { failed: true, error: outcome.error });
   turnRun?.ended(call, !outcome.ok);
   if (unconfirmed) {

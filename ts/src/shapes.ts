@@ -7,6 +7,7 @@
 
 import * as lmcc from "lmcc";
 import { InterfaceError } from "./interface.ts";
+import { oneLine, withChoices } from "./text.ts";
 import { copyData, entriesOf, setOwn } from "./values.ts";
 
 type JsonObject = Record<string, unknown>;
@@ -84,6 +85,32 @@ export type ValueOf<S> =
 
 const OPAQUE = Symbol.for("functai.opaque");
 
+/** What each described answer of a `t.choice` means, in the choice's order (kept beside the shape, never in it). */
+const MEANINGS = Symbol.for("functai.meanings");
+type Meanings = readonly (readonly [string, string])[];
+
+/** The described answers a shape carries (`t.choice`, and what wraps one: `t.optional`, `t.list`, `t.withDefault`). */
+export function meaningsOf(shape: unknown): Meanings {
+  if (typeof shape !== "object" || shape === null) return [];
+  return ((shape as Record<symbol, unknown>)[MEANINGS] as Meanings | undefined) ?? [];
+}
+
+/** `to`, carrying `from`'s described answers. */
+function carry<S>(from: unknown, to: S): S {
+  const m = meaningsOf(from);
+  if (m.length) Object.defineProperty(to, MEANINGS, { value: m });
+  return to;
+}
+
+/** A property's shape with its choice's meanings in its `description`, where the model reads them (a record's schema). */
+function described(shape: unknown): unknown {
+  const m = meaningsOf(shape);
+  if (!m.length) return shape;
+  const words = typeof (shape as JsonObject)["description"] === "string" ? (shape as JsonObject)["description"] as string : null;
+  return { ...(shape as JsonObject), description: withChoices(words, m) };
+}
+
+
 /** Any JSON value. */
 export type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
@@ -126,17 +153,47 @@ export const t = {
   boolean: <const E extends Extra & { readonly default?: boolean } = {}>(extra?: E): Built<E, boolean> =>
     lmcc.t.boolean(extraOf(extra, "boolean", SCALAR) as never) as never,
   /** A list: `t.list(t.string(), { description: "one per line" })`. */
-  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => ({ ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
+  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => carry(items, { ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
   /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
   object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
-    ({ ...lmcc.t.object(properties), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
+    ({ ...lmcc.t.object(Object.fromEntries(entriesOf(properties).map(([k, v]) => [k, described(v)])) as P), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
   /** A map from text keys to values: `t.record(t.integer())`. */
   record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> =>
-    ({ type: "object", additionalProperties: values, ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
+    ({ type: "object", additionalProperties: described(values), ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
-  optional: <T>(shape: Shape<T>): Shape<T | null> => lmcc.t.nullable(shape),
+  optional: <T>(shape: Shape<T>): Shape<T | null> => carry(shape, lmcc.t.nullable(shape)),
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
-  withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => ({ ...shape, default: value }) as Shape<T> & { readonly default: T },
+  withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => carry(shape, { ...shape, default: value }) as Shape<T> & { readonly default: T },
+  /**
+   * One of these answers; with what some of them mean, which the model reads:
+   * `t.choice(["low", "high"], { high: "the customer is losing money or time now" })`.
+   * The shape is `t.enum`'s, in the list's order; the meanings go into the
+   * field's words, written as every language writes them
+   * (contract/functions.md, "A choice's answers, described one by one"), or,
+   * inside `t.object`, into the property's description.
+   */
+  choice: <const A extends readonly string[]>(answers: A, meanings: { readonly [K in A[number]]?: string } = {}): Shape<A[number]> => {
+    if (!Array.isArray(answers) || !answers.length || answers.some((a) => typeof a !== "string")) {
+      throw new TypeError('t.choice(answers, meanings?): answers is a list of strings, t.choice(["yes", "no"])');
+    }
+    if (typeof meanings !== "object" || meanings === null || Array.isArray(meanings)) {
+      throw new TypeError("t.choice(answers, meanings): meanings is an object, from an answer to what it means");
+    }
+    const twice = answers.find((a, i) => answers.indexOf(a) !== i);
+    if (twice !== undefined) throw new TypeError(`t.choice has ${JSON.stringify(twice)} twice`);
+    for (const [k, v] of entriesOf(meanings as Record<string, unknown>)) {
+      if (!answers.includes(k)) throw new TypeError(`t.choice: ${JSON.stringify(k)} is given a meaning, but it is not one of the answers ${JSON.stringify(answers)}`);
+      if (typeof v !== "string") throw new TypeError(`t.choice: what ${JSON.stringify(k)} means is text, not ${JSON.stringify(v)}`);
+    }
+    const described: [string, string][] = [];
+    for (const a of answers) {
+      const m = Object.hasOwn(meanings, a) ? oneLine((meanings as Record<string, string>)[a]!) : "";
+      if (m) described.push([a, m]);
+    }
+    const shape = lmcc.t.enum(...answers);
+    if (described.length) Object.defineProperty(shape, MEANINGS, { value: Object.freeze(described) });
+    return shape as Shape<A[number]>;
+  },
   /** Any JSON value (shape `{}`), with words about it if you like: `t.json({ description: "each input by name" })`. */
   json: (extra: Extra = {}): Shape<Json> => ({ ...extra }) as Shape<Json>,
   /**
@@ -246,6 +303,7 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
     desc = spec.desc ?? null;
     raw = spec.shape;
   }
+  const meanings = meaningsOf(raw);
   let shape: JsonObject;
   if (isStandard(raw)) shape = fromZod(raw["~standard"].jsonSchema!.input({ target: "draft-2020-12" }));
   else if (isZod(raw)) shape = fromZod(raw.toJSONSchema({ io: "input" }));
@@ -273,7 +331,7 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];
   }
-  return { shape, desc };
+  return { shape, desc: withChoices(desc, meanings) };
 }
 
 /**

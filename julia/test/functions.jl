@@ -474,3 +474,73 @@ end
 end
 
 end
+
+@testset "OneOf: what each answer means reaches the model as every language writes it (contract case 18)" begin
+    want = LMCC.parse_json(read(joinpath(@__DIR__, "..", "..", "contract", "cases", "functions", "18-choices-described-one-by-one.json"), String))
+    route = AIFunction("route", "Which team answers?";
+        inputs=(message=String => "the customer's words",
+                channel=OneOf("email" => "written at leisure, often long", "chat" => "short,\n   often several messages")),
+        outputs=(urgency=OneOf("low", "high" => "the customer is losing money or time now") => "how soon to answer",
+                 result=OneOf("shipping" => "where the parcel is, damage in transit", "billing" => " charges, refunds ")),
+        lm="gpt-4.1-mini")
+    @test version(route) == want["expect"]["version"]
+    @test occursin("- channel: one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages\n",
+                   instructions(route))
+    # the shape is the plain choice's; an empty meaning describes nothing; Symbols too
+    @test FunctAI.shape_of(OneOf("a", "b" => "  ")) == FunctAI.shape_of(OneOf("a", "b"))
+    @test OneOf("a", "b" => "  ").meanings == Pair{String,String}[]
+    @test OneOf(:low, :high => "now").meanings == ["high" => "now"]
+    @test_throws ArgumentError OneOf("a", :b)
+    @test_throws ArgumentError OneOf("a", "a" => "twice")
+    @test sprint(show, OneOf("low", "high" => "now")) == "OneOf(\"low\", \"high\" => \"now\")"
+end
+
+@testset "on_unreadable = :record keeps an unreadable reply: missing, the refusal said and recorded, a conversation goes on" begin
+    dir = mktempdir()
+    r = fake("no tags at all", (text = "", finish = "content_filter"))
+    p = using_fake(() -> predict(mood, "Where is it?"), r; retries=0, on_unreadable=:record, log_calls=dir)
+    @test p.answer === missing && p.value === missing && isempty(p.outputs)
+    @test p.refusal isa LMCC.Refusal && p.refusal.code == "parse-missing-fields"
+    @test p.turn.meta["refusal"]["code"] == "parse-missing-fields"
+    @test using_fake(() -> mood("x"), r; retries=0, on_unreadable=:record, log_calls=dir) === missing   # a stopped reply too
+    recs = first(FunctAI.read_log(dir))
+    @test length(recs) == 2
+    @test all(rec -> isempty(rec["outputs"]) && rec["error"]["type"] == "Refusal" && !haskey(rec, "returned"), recs)
+    @test Set(rec["error"]["code"] for rec in recs) == Set(["parse-missing-fields", "parse-filtered"])
+    # a conversation's turn is done with no outputs, and the next one goes on
+    @ai function tutor(message::String)::String
+        "Tutor."
+    end
+    r = fake("nope", xml(:result => "fine"))
+    chat = conversation(tutor, "kept")
+    @test using_fake(() -> chat("first"), r; retries=0, on_unreadable=:record) === missing
+    @test using_fake(() -> chat("second"), r; retries=0, on_unreadable=:record) == "fine"
+    @test [t.state for t in turns(chat)] == ["done", "done"]
+    # the default still raises; a setting that is neither is refused
+    @test_throws LMCC.Refusal using_fake(() -> mood("x"), fake("nope"); retries=0)
+    @test_throws ArgumentError configure(mood; on_unreadable=:keep)
+end
+
+@testset "api_key and base_url: the function's own key and address; the address is saved, the key never" begin
+    seen = Tuple{String,String}[]
+    server = FunctAI.HTTP.serve!("127.0.0.1", 0; listenany=true) do req
+        push!(seen, (req.target, FunctAI.HTTP.header(req, "Authorization")))
+        FunctAI.HTTP.Response(400, ["Content-Type" => "application/json"], "{\"error\":{\"message\":\"seen\"}}")
+    end
+    try
+        url = "http://127.0.0.1:$(FunctAI.HTTP.port(server))/v1"
+        f = configure(mood; lm="openai:qwen3", api_key="sk-local", base_url=url, api_retries=0)
+        @test_throws Exception f("x")
+        @test length(seen) == 1
+        @test startswith(seen[1][1], "/v1/")                  # the request went to the function's own address
+        @test seen[1][2] == "Bearer sk-local"                 # with its own key
+        folder = mktempdir()
+        FunctAI.save(folder, f)
+        saved = read(joinpath(folder, "functai.json"), String)
+        @test occursin(url, saved) && !occursin("sk-local", saved)
+        @test FunctAI.load(folder).own[:base_url] == url
+    finally
+        close(server)
+    end
+    @test_throws ArgumentError configure(mood; base_url=3)
+end

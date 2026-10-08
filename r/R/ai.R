@@ -330,7 +330,8 @@ route <- function(s) {
   if (is.null(lm)) cli::cli_abort(c("no model configured, and no API key found to pick one",
     i = "set OPENAI_API_KEY (or ANTHROPIC_API_KEY, GEMINI_API_KEY, ...), or name one: {.code ai_config(lm = \"gpt-4.1-mini\")}"))
   model <- model_string(lm)
-  router <- s$router %||% default_router()
+  # a router given wins; then the function's own key or address; then the shared router (keys from the environment)
+  router <- s$router %||% (if (!is.null(s$api_key) || !is.null(s$base_url)) explicit_router(model, s$api_key, s$base_url) else default_router())
   res <- resolve_model(router, model)
   list(model = model, router = router, provider = res$provider, wire = res$model)
 }
@@ -418,9 +419,11 @@ run_rows <- function(core, rows, extra = list()) {
       call$done_value <- if (core$single) job$outputs[["result"]] else job$outputs[intersect(plain_outputs, names(job$outputs))]
       call$steps <- steps_of(call, job$turn)
       call$lmcc <- tryCatch(lmcc::turn_to_list(job$turn), error = function(e) NULL)
+      call$kept_refusal <- job$refusal            # on_unreadable = "record": no values, and the record says why
     } else if (is.null(err)) err <- job$error
     ending <- call_end(call, err)
-    if (is.null(ending)) list(outputs = job$outputs, call = call$id, model = job$model, turn = job$turn, probabilities = job$probabilities)
+    if (is.null(ending)) list(outputs = job$outputs, call = call$id, model = job$model, turn = job$turn, probabilities = job$probabilities,
+                              kept = job$refusal)
     else list(error = ending, call = call$id, model = if (!is.null(job)) job$model else NULL)
   })
   if (!is.null(waiting)) stop(waiting)
@@ -480,6 +483,7 @@ input_rows <- function(core, inputs, n = NULL) {
   unset <- setdiff(required_inputs(core), names(given))
   if (length(unset)) cli::cli_abort("no value for input{?s} {.field {unset}}", call = NULL)
   given <- lapply(given, function(v) if (is.null(v)) NA else v)
+  for (k in names(given)) one_value_given(fields[[k]], given[[k]], k)
   if (length(given)) given <- vctrs::vec_recycle_common(!!!given, .size = n)
   n <- n %||% if (length(given)) vctrs::vec_size_common(!!!given) else 1L
   # what each field's check needs, worked out once for all the rows
@@ -527,6 +531,21 @@ dropped_fields <- function(core) {
     keep <- content_kept(call_fields(core, effective(core$own)), content_layers(core))
     names(keep)[!unlist(keep)]
   }, error = function(e) "*")
+}
+
+# An input is a column, one value per row, so a record or a picture given
+# alone, as a named list of its members, would be read as one row per
+# member. Such a list is refused, saying how to give it, rather than guessed
+# at: a list column may carry names of its own.
+MEDIA_MEMBERS <- c("media_type", "data", "url", "file_id", "path", "detail", "continuation")
+one_value_given <- function(f, v, k) {
+  if (!is.list(v) || is.data.frame(v) || is.null(names(v)) || !all(nzchar(names(v)))) return(invisible())
+  shape <- data_shape(f$shape)
+  members <- if (!is.null(shape$media)) MEDIA_MEMBERS else if (identical(shape$type, "object") && length(shape$properties)) names(shape$properties)
+  if (is.null(members) || !all(names(v) %in% members)) return(invisible())
+  what <- if (!is.null(shape$media)) sprintf("a %s", shape$media) else "a record"
+  cli::cli_abort(c(sprintf("input {.field %s} is a column, one value per row: this named list would be read as %d rows, one per member", k, length(v)),
+    i = sprintf("give %s alone as {.code list(list(%s))}, one element per row", what, paste(sprintf("%s = ...", names(v)), collapse = ", "))), call = NULL)
 }
 
 # A prediction's `.error`: the call's error, or why a row made no call (an
@@ -911,7 +930,9 @@ predict.functai_fn <- function(object, new_data, type = NULL, samples = 1L, temp
   out <- answers(core, results, pred_names(core))
   if (core$single) { col <- out; out <- tibble::tibble(x = col); names(out) <- pred_names(core)("result") }
   out$.call <- vapply(results, function(r) r$call %||% NA_character_, "")
-  out$.error <- error_or_missing(vapply(results, function(r) if (is.null(r$error)) NA_character_ else conditionMessage(r$error), ""), rows)
+  # why a row has no answer: its call's error, the unreadable reply it kept (on_unreadable = "record"), or a missing input
+  out$.error <- error_or_missing(vapply(results, function(r) if (!is.null(r$error)) conditionMessage(r$error) else
+    if (!is.null(r$kept)) conditionMessage(r$kept) else NA_character_, ""), rows)
   attr(out, "turns") <- lapply(results, function(r) r$turn)
   if (is_choice(core)) attr(out, "probabilities") <- measured_table(core, results)
   out

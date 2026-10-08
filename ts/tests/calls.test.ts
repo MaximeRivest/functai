@@ -396,3 +396,82 @@ test("the json layout asks for one object and reads it; cot adds reasoning first
   assert.equal(p.outputs["reasoning" as never], "3 pens at 7 each");
   assert.match(r2.requests[0]!.system as string, /Reason step by step in the 'reasoning' section/);
 });
+
+type Rec = Record<string, any>;
+
+test("onUnreadable: record keeps an unreadable reply: no answer, the refusal said and recorded, a conversation goes on", async () => {
+  const folder = mkdtempSync(join(tmpdir(), "functai-log-"));
+  const router = new FakeRouter(["no tags at all", { text: "", finish: "content_filter" }, "nope", "<result>\nhappy\n</result>"]);
+  const keep = ai("mood", { ...moodDef, router, retries: 0, onUnreadable: "record", logCalls: folder });
+  const p = await keep.predict("Where is it?");
+  assert.equal(p.answer, undefined);
+  assert.deepEqual(p.outputs, {});
+  assert.equal(p.refusal?.code, "parse-missing-fields");
+  assert.deepEqual((p.turn.meta as Rec)["refusal"], { ...p.refusal!.describe() });
+  assert.equal(await keep("x"), undefined);                                   // a stopped reply is kept too
+  const [rec, filtered] = logged(folder);
+  assert.deepEqual(rec!.outputs, {});
+  assert.ok(!("returned" in rec!));                                           // no answer, and no code changed one
+  assert.equal(rec!.error.type, "Refusal");
+  assert.equal(rec!.error.code, "parse-missing-fields");
+  assert.equal(filtered!.error.code, "parse-filtered");
+  // a conversation's turn is done with no outputs, and the next one goes on
+  const chat = keep.conversation("kept");
+  assert.equal(await chat("first"), undefined);
+  assert.equal(await chat("second"), "happy");
+  assert.deepEqual((await chat.turns()).map((turn) => turn.state), ["done", "done"]);
+  // the default still raises; a provider error is never kept
+  await assert.rejects(ai("mood", { ...moodDef, router: new FakeRouter(["nope"]), retries: 0 })("x"), (e: unknown) => lmcc.isRefusal(e));
+  assert.throws(() => ai("mood", { ...moodDef, onUnreadable: "keep" as never }), /onUnreadable is "raise" or "record"/);
+});
+
+test("t.choice: what each answer means reaches the model as every language writes it", async () => {
+  const router = new FakeRouter(["<urgency>\nhigh\n</urgency>\n<result>\nbilling\n</result>"]);
+  const route = ai("route", {
+    description: "Which team answers?", router,
+    input: {
+      message: { shape: t.string(), desc: "the customer's words" },
+      channel: t.choice(["email", "chat"], { email: "written at leisure, often long", chat: "short,\n   often several messages" }),
+    },
+    outputs: {
+      urgency: { shape: t.choice(["low", "high"], { high: "the customer is losing money or time now", low: "  " }), desc: "how soon to answer" },
+      result: t.choice(["shipping", "billing"], { shipping: "where the parcel is, damage in transit", billing: "charges, refunds" }),
+    },
+  });
+  const contract = JSON.parse(readFileSync(new URL("../../contract/cases/functions/18-choices-described-one-by-one.json", import.meta.url), "utf8"));
+  assert.equal(route.version, contract.expect.version);
+  const answer = await route({ message: "Charged twice", channel: "chat" });
+  assert.equal(answer, "billing");
+  assert.match(router.requests[0]!.system as string, /- channel: one of:\n {2}- email: written at leisure, often long\n {2}- chat: short, often several messages\n/);
+  // the shape is t.enum's; inside a record, the meanings are the property's description
+  assert.deepEqual(t.choice(["a", "b"]), t.enum("a", "b"));
+  assert.deepEqual((t.object({ a: t.choice(["p", "q"], { q: "yes" }) }) as Rec)["properties"]["a"], { enum: ["p", "q"], type: "string", description: "one of:\n  - q: yes" });
+  assert.throws(() => t.choice(["a", "b"], { c: "no" } as never), /"c" is given a meaning, but it is not one of the answers/);
+  assert.throws(() => t.choice(["a", "a"]), /twice/);
+});
+
+test("apiKey and baseUrl: a key and an address of the function's own; the address is saved, the key never", async () => {
+  const { createServer } = await import("node:http");
+  const seen: { url: string; auth: string }[] = [];
+  const server = createServer((req, res) => {
+    seen.push({ url: req.url ?? "", auth: String(req.headers["authorization"] ?? "") });
+    req.resume();
+    req.on("end", () => { res.writeHead(400, { "content-type": "application/json" }); res.end('{"error":{"message":"seen"}}'); });
+  });
+  await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+  const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/v1`;
+  try {
+    const fn = ai("mood", { ...moodDef, lm: "openai:qwen3", apiKey: "sk-local", baseUrl: url, apiRetries: 0 });
+    await assert.rejects(fn("x"));
+    assert.equal(seen.length, 1);
+    assert.match(seen[0]!.url, /^\/v1\//);                       // the request went to the function's own address
+    assert.equal(seen[0]!.auth, "Bearer sk-local");                 // with its own key
+    const manifest = toManifest(fn) as Rec;
+    assert.equal(manifest["nodes"][manifest["entry"]]["ai"]["settings"]["base_url"], url);
+    assert.ok(!JSON.stringify(manifest).includes("sk-local"));      // a key is never saved
+    assert.equal(fromManifest(manifest).settings.baseUrl, url);
+  } finally {
+    server.close();
+  }
+  assert.throws(() => ai("mood", { ...moodDef, baseUrl: 3 as never }), /baseUrl is text/);
+});

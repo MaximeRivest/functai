@@ -231,7 +231,7 @@ remember_history <- function(call) {
 #' @export
 ai_login <- function(provider, key = NULL) {
   out <- if (is.null(key)) lm15::login(provider) else lm15::set_api_key(provider, key)
-  the$router <- NULL
+  the$router <- NULL; the$explicit_routers <- NULL
   invisible(out)
 }
 
@@ -245,4 +245,4 @@ ai_logins <- function() {
 
 #' @rdname ai_login
 #' @export
-ai_logout <- function(provider) { out <- lm15::logout(provider); the$router <- NULL; invisible(out) }
+ai_logout <- function(provider) { out <- lm15::logout(provider); the$router <- NULL; the$explicit_routers <- NULL; invisible(out) }

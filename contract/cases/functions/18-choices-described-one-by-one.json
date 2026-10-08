@@ -1,0 +1,136 @@
+{
+ "description": "Answers of a choice described one by one (functions.md, A definition): an input's desc is its words, then a line per described answer, and goes into its field and its Parameter guidance as written; an input with no words of its own starts with 'one of:'; an answer left undescribed is not listed.",
+ "definition": {
+  "name": "route",
+  "description": "Which team answers?",
+  "inputs": [
+   {
+    "name": "message",
+    "shape": {
+     "type": "string"
+    },
+    "desc": "the customer's words"
+   },
+   {
+    "name": "channel",
+    "shape": {
+     "enum": [
+      "email",
+      "chat"
+     ],
+     "type": "string"
+    },
+    "desc": "one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "urgency",
+    "shape": {
+     "enum": [
+      "low",
+      "high"
+     ],
+     "type": "string"
+    },
+    "desc": "how soon to answer\n  - high: the customer is losing money or time now"
+   },
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "shipping",
+      "billing"
+     ],
+     "type": "string"
+    },
+    "desc": "one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds"
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: route\n\nWhich team answers?\n\nParameter guidance:\n- message: the customer's words\n- channel: one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages\n\nOutput guidance:\n- urgency: how soon to answer\n  - high: the customer is losing money or time now\n- result: one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds",
+   "fields": [
+    {
+     "name": "message",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain",
+     "desc": "the customer's words"
+    },
+    {
+     "name": "channel",
+     "direction": "input",
+     "shape": {
+      "enum": [
+       "email",
+       "chat"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain",
+     "desc": "one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages"
+    },
+    {
+     "name": "urgency",
+     "direction": "output",
+     "shape": {
+      "enum": [
+       "low",
+       "high"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "enum": [
+       "shipping",
+       "billing"
+      ],
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "message": "example text",
+   "channel": "email"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: route\n\nWhich team answers?\n\nParameter guidance:\n- message: the customer's words\n- channel: one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages\n\nOutput guidance:\n- urgency: how soon to answer\n  - high: the customer is losing money or time now\n- result: one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds\n\nReply in exactly this form:\n<urgency>\none of: low, high\n</urgency>\n<result>\none of: shipping, billing\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<message>\nexample text\n</message>\n<channel>\nemail\n</channel>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:1e51b671c89b4b49dab94839ab48f6534406580bb9bc4ec78e4a3ad4dbd1f4b2",
+  "version": "sha256:56f644e50c404fa691a3d765acdaae1aeb1181ee337e5329d26ef59296db274e",
+  "signature_id": "sha256:c20c78c3f0c6ba4a1df23aed81ebb73fa987ca4fc73cb5e2d7343e0b96fefb7c"
+ }
+}

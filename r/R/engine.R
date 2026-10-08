@@ -35,6 +35,28 @@ render_next <- function(job) {
 
 fail <- function(job, err) { job$state <- "failed"; job$error <- err; ended(job); finished(job) }
 
+# An unreadable reply the call would end with (functions.md, "Keeping an
+# unreadable reply"): with `on_unreadable = "record"` and a `parse-` refusal,
+# the call ends well with no values, the reply kept as it came (its lmcc step
+# has no values) and the refusal said; otherwise it fails.
+fail_or_keep <- function(job, refusal, response) {
+  if (!identical(job$settings$on_unreadable, "record") || !startsWith(refusal$code, "parse-")) return(fail(job, refusal))
+  turn <- lmcc::turn_to_list(job$turn)
+  step <- lmcc::jobj(kind = "model", outputs = lmcc::jobj(), message = lm15::as_dict(response$message),
+                     request = lmcc::sha256_of(lmcc::request_of(job$rendered)))
+  if (!is.null(job$plan$calls_field)) step$calls_field <- job$plan$calls_field
+  turn$steps <- c(turn$steps, list(step))
+  turn <- lmcc::finish_turn(lmcc::turn_from_list(turn))
+  job$turn <- lmcc::with_meta(turn, c(as.list(turn$meta %||% list()), list(refusal = lmcc::describe_refusal(refusal))))
+  job$outputs <- list()
+  job$refusal <- refusal
+  job$probabilities <- list()
+  job$state <- "done"
+  ended(job)
+  finished(job)
+  invisible()
+}
+
 # A job is done, failed or waiting: whoever watches the batch hears of it (a progress line).
 finished <- function(job) if (is.function(job$on_finish)) job$on_finish(job)
 
@@ -154,8 +176,8 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     limit <- job$overrides$max_tokens %||% job$settings$max_tokens
     if (code == "parse-truncated") reading <- cut_off(reading, response, limit)
     if (job$retries >= job$settings$retries || code == "parse-filtered" ||      # stopped again if asked again
-        !(startsWith(code, "parse-") || code == "format-read-error")) return(fail(job, reading))
-    if (code == "parse-truncated" && is.null(limit)) return(fail(job, reading))   # nothing larger to give
+        !(startsWith(code, "parse-") || code == "format-read-error")) return(fail_or_keep(job, reading, response))
+    if (code == "parse-truncated" && is.null(limit)) return(fail_or_keep(job, reading, response))   # nothing larger to give
     job$retries <- job$retries + 1L
     call_emit(call, "retry", list(reason = asked_again(reading), wait = NULL))
     if (code == "parse-truncated") {

@@ -4,6 +4,27 @@
 
 WHITE <- c(0x09:0x0d, 0x1c:0x20, 0x85, 0xa0, 0x1680, 0x2000:0x200a, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000)
 
+# Line breaks: what Python's str.splitlines() splits on.
+BREAKS <- c(0x0a:0x0d, 0x1c:0x1e, 0x85, 0x2028, 0x2029)
+
+# A choice's meaning as the contract writes it (functions.md, "A choice's
+# answers, described one by one"): trimmed, and each run of white space that
+# holds a line break made one space.
+one_line <- function(text) {
+  cps <- utf8ToInt(enc2utf8(text))
+  if (!length(cps)) return("")
+  white <- cps %in% WHITE
+  runs <- rle(white)
+  ends <- cumsum(runs$lengths)
+  starts <- ends - runs$lengths + 1L
+  out <- integer(0)
+  for (i in seq_along(runs$values)) {
+    run <- cps[starts[[i]]:ends[[i]]]
+    out <- c(out, if (runs$values[[i]] && any(run %in% BREAKS)) 0x20L else run)
+  }
+  trim_white(intToUtf8(out))
+}
+
 split_white <- function(text) {
   cps <- utf8ToInt(enc2utf8(text))
   if (!length(cps)) return(character(0))

@@ -398,7 +398,7 @@ function processJson(): Rec {
  * whole record, then what `logContent` lets it keep.
  */
 /** How a call ended, for its record: what it returned, or what it threw (anything, `undefined` included). */
-export type Ending = { readonly failed: false; readonly returned: unknown } | { readonly failed: true; readonly error: unknown };
+export type Ending = { readonly failed: false; readonly returned: unknown; readonly error?: unknown } | { readonly failed: true; readonly error: unknown };
 
 export function record(call: Call, ending: Ending): Rec {
   const program = call.program();
@@ -426,13 +426,14 @@ export function record(call: Call, ending: Ending): Rec {
     started: iso(call.started), seconds: round6((now() - call.started) / 1000), content: true,
     inputs, outputs,
   };
-  if (program.kind === "ai" && !ending.failed) {
+  if (program.kind === "ai" && !ending.failed && ending.error === undefined) {   // a kept unreadable reply: no answer, no `returned`
     const [shown] = toJson(ending.returned);
     if (outputs === null || !Object.hasOwn(outputs, program.answer) || !lmcc.jsonEqual(getOwn(outputs as Rec, program.answer) as lmcc.Json, shown)) rec["returned"] = shown;
   }
   rec["sizes"] = { inputs: inSizes, outputs: outSizes };
   if (described.inputs.length || described.outputs.length) rec["described"] = described;
-  rec["error"] = ending.failed ? errorJson(ending.error, true) : null;
+  // a call that ended well with no values (onUnreadable: "record") records the refusal it kept (calls.md)
+  rec["error"] = ending.failed || ending.error !== undefined ? errorJson(ending.error, true) : null;
   rec["model"] = answered.length ? answered[answered.length - 1]!.model : null;
   rec["usage"] = usage;
   rec["confidence"] = call.confidence;

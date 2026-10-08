@@ -61,7 +61,10 @@ def choose_device(device: Optional[str], need_gb: float) -> str:
     if torch.cuda.is_available():
         best, free_best = None, 0.0
         for i in range(torch.cuda.device_count()):
-            free, _total = torch.cuda.mem_get_info(i)
+            try:
+                free, _total = torch.cuda.mem_get_info(i)
+            except Exception:  # noqa: BLE001 — a GPU too full to open a context on (other jobs hold it) is skipped
+                continue
             if free / 2 ** 30 > free_best:
                 best, free_best = i, free / 2 ** 30
         if best is not None and free_best >= need_gb:

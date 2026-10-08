@@ -14,6 +14,11 @@ An answer from a fixed list, without declaring an `@enum`:
 `::OneOf("yes", "no")` a `String`. Its shape is the choice
 `{"enum": [...], "type": "string"}`, as Python's `Literal[...]`.
 
+An answer written `answer => "what it means"` is described, and the model
+reads it: `OneOf("low", "high" => "the customer is losing money or time
+now")`. The words go into the field's words, as every language writes them
+(contract/functions.md, "A choice's answers, described one by one").
+
 # Examples
 ```jldoctest
 julia> species = ["mallard", "blue jay", "other"];
@@ -24,19 +29,40 @@ julia> print(FunctAI.LMCC.json_text(FunctAI.shape_of(OneOf(species))))
 """
 struct OneOf{T}
     values::Vector{T}
-    function OneOf{T}(values) where {T}
+    meanings::Vector{Pair{String,String}}     # the described answers, in order: answer => what it means
+    function OneOf{T}(values, meanings=Pair{String,String}[]) where {T}
         isempty(values) && throw(ArgumentError("OneOf needs at least one value"))
         allunique(values) || throw(ArgumentError("OneOf has a value twice: $(values)"))
-        new{T}(collect(T, values))
+        new{T}(collect(T, values), meanings)
     end
 end
 OneOf(values::Symbol...) = OneOf{Symbol}(collect(values))
 OneOf(values::AbstractString...) = OneOf{String}(String[values...])
 OneOf(values::AbstractVector{Symbol}) = OneOf{Symbol}(values)
 OneOf(values::AbstractVector{<:AbstractString}) = OneOf{String}(String.(values))
-Base.show(io::IO, o::OneOf) = print(io, "OneOf(", join(repr.(o.values), ", "), ")")
-Base.:(==)(a::OneOf, b::OneOf) = a.values == b.values
-Base.hash(o::OneOf, h::UInt) = hash(o.values, hash(:OneOf, h))
+function OneOf(answers::Union{Symbol,AbstractString,Pair}...)
+    values = [a isa Pair ? first(a) : a for a in answers]
+    for a in answers
+        a isa Pair && !(last(a) isa AbstractString) &&
+            throw(ArgumentError("OneOf: $(repr(first(a))) => ... says what the answer means, in a string; not $(repr(last(a)))"))
+    end
+    symbols = all(v -> v isa Symbol, values)
+    symbols || all(v -> v isa AbstractString, values) ||
+        throw(ArgumentError("OneOf's answers are all Symbols or all strings, not $(repr(values))"))
+    meanings = Pair{String,String}[]
+    for a in answers
+        a isa Pair || continue
+        m = one_line(last(a))
+        isempty(m) || push!(meanings, string(first(a)) => m)     # an empty meaning describes nothing
+    end
+    symbols ? OneOf{Symbol}(Symbol[values...], meanings) : OneOf{String}(String[values...], meanings)
+end
+function Base.show(io::IO, o::OneOf)
+    said = Dict(o.meanings)
+    print(io, "OneOf(", join((haskey(said, string(v)) ? "$(repr(v)) => $(repr(said[string(v)]))" : repr(v) for v in o.values), ", "), ")")
+end
+Base.:(==)(a::OneOf, b::OneOf) = a.values == b.values && a.meanings == b.meanings
+Base.hash(o::OneOf, h::UInt) = hash(o.meanings, hash(o.values, hash(:OneOf, h)))
 
 # ------------------------------------------------------------------ shapes
 

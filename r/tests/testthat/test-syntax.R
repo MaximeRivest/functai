@@ -62,13 +62,26 @@ test_that("choice(): strings, vectors, a factor's levels; named levels say what 
   expect_identical(choice(refunds$state)$levels, levels(refunds$state))
   s <- choice(approve = "the rules allow it", deny = "they do not")
   expect_identical(s$levels, c("approve", "deny"))
-  expect_identical(field_desc(s), "approve: the rules allow it; deny: they do not")
-  expect_identical(field_desc(described(s, "What to do.")), "What to do. approve: the rules allow it; deny: they do not")
+  # written as every language writes it (contract/functions.md, "A choice's answers, described one by one")
+  expect_identical(field_desc(s), "one of:\n  - approve: the rules allow it\n  - deny: they do not")
+  expect_identical(field_desc(described(s, "What to do.")), "What to do.\n  - approve: the rules allow it\n  - deny: they do not")
   expect_identical(choice("keep", c(approve = "yes"))$levels, c("keep", "approve"))
+  expect_identical(choice(a = "  first\n   second  ", b = " ")$meanings, c(a = "first second"))   # one line; empty: none
   expect_error(choice(), "needs its answers")
   expect_error(choice("a", "a"), "twice")
   f <- ai(action ~ message, "Act.", action = s)
-  expect_match(ai_instructions(f), "- result: approve: the rules allow it; deny: they do not", fixed = TRUE)
+  expect_match(ai_instructions(f), "- result: one of:\n  - approve: the rules allow it\n  - deny: they do not", fixed = TRUE)
+})
+
+test_that("a choice described one by one has the version every language gives it (contract case 18)", {
+  want <- read_json_file(file.path(contract_root(), "cases", "functions", "18-choices-described-one-by-one.json"))
+  route <- ai(urgency + result ~ message + channel, "Which team answers?",
+    message = "the customer's words",
+    channel = choice(email = "written at leisure, often long", chat = "short,\n  often several messages"),
+    urgency = described(choice("low", high = "the customer is losing money or time now"), "how soon to answer"),
+    result = choice(shipping = "where the parcel is, damage in transit", billing = "charges, refunds"),
+    .name = "route", .lm = "gpt-4.1-mini")
+  expect_identical(ai_version(route), want$expect$version)
 })
 
 test_that("demos, evaluation and improvement read the answer from the formula's column", {

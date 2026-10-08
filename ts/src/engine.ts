@@ -52,6 +52,11 @@ export class Prediction<O = Rec, A = unknown> {
   readonly response: Response | null;
   readonly responses: readonly Response[];
   readonly repairs: readonly unknown[];
+  /**
+   * Why the call has no answer, when its settings kept an unreadable reply
+   * (`onUnreadable: "record"`): the refusal it would have raised. Else null.
+   */
+  refusal: lmcc.Refusal | null = null;
 
   constructor(outputs: O, answerName: string, callId: string, turn: lmcc.Turn, response: Response | null,
     responses: readonly Response[], repairs: readonly unknown[] = []) {
@@ -494,7 +499,23 @@ export async function run(job: Job): Promise<Prediction> {
   const steps = Math.max(1, job.settings.maxSteps);
   for (let i = 0; i < steps; i++) {
     const rendered = plan.render(turn, { turns: [...job.past] });
-    const [response, reading] = await complete(job, rendered, responses);
+    let got: [Response, lmcc.Reading];
+    try {
+      got = await complete(job, rendered, responses);
+    } catch (err) {
+      if (job.settings.onUnreadable !== "record" || !lmcc.isRefusal(err) || !(err as lmcc.Refusal).code.startsWith("parse-")
+        || !responses.length) throw err;
+      // kept as it came, with no values (functions.md, "Keeping an unreadable reply"): the call ends well with no answer
+      const refusal = err as lmcc.Refusal;
+      const last = responses[responses.length - 1]!;
+      turn = turn.withStep(new lmcc.ModelStep({}, Message.toJSON(last.message) as never, lmcc.sha256(rendered.request() as lmcc.Json),
+        plan.callsField)).finish();
+      turn = turn.withMeta({ ...turn.meta, refusal: refusal.describe() as unknown as Rec });
+      const pred = new Prediction({}, job.answer, job.call.id, turn, last, responses);
+      pred.refusal = refusal;
+      return pred;
+    }
+    const [response, reading] = got;
     turn = bridge.step(rendered, response);
     const calls = ((reading.values as Rec)["calls"] ?? []) as Array<{ id: string; name: string; input?: unknown }>;
     toolCalls.push(...(calls as unknown as Rec[]));

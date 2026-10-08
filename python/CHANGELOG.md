@@ -55,6 +55,17 @@ What the transcripts of real projects and the coding-agent evaluation
 - **The coding-agent skill ships in the package** (`functai/skill/`):
   `functai skill` says where it is and which agents have it; `functai skill
   --install` copies it into Claude Code's, Pi's and Codex's skills folders.
+- **A call that kept an unreadable reply (`on_unreadable="record"`) records no
+  `returned`**: it has no answer, and no code changed one (contract/functions.md,
+  "Keeping an unreadable reply"). Its record had `returned: null`.
+- **Choosing a device for a baked head skips a GPU too full to ask**: with every
+  GPU held by other jobs, asking one its free memory fails (CUDA out of memory),
+  and running a baked head failed with it; it now runs on a GPU that answers, else
+  the CPU.
+- **Python loads what TypeScript, R and Julia save**, and `tools/crosslang.py`
+  now checks it: the same version, the same request, and the settings saved with
+  them. (It always could; nothing checked it, and the other languages' READMEs
+  said it could not.)
 - **`bake(rows, plan_only=True)` on a function with a fixed set of answers
   describes the head bake that `bake(rows)` does** (answers, splits, labels,
   where), instead of planning a generative student that refused an encoder.

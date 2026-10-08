@@ -17,6 +17,20 @@
 - **A reply the provider stopped** (finish reason `content_filter`) is never an
   answer and is not asked again: an LMCC refusal `parse-filtered`.
 - **`compare` says what differs** when two evaluations' rows are not the same.
+- **`OneOf("low", "high" => "the customer is losing money or time now")`: a
+  choice that says what its answers mean.** The model reads each meaning on a
+  line of its own under the field, written as every language writes it
+  (contract/functions.md, "A choice's answers, described one by one", case
+  `functions/18`): the same choice described in Python, R or TypeScript has
+  the same version.
+- **`api_key` and `base_url`**: a function's own key (it beats saved sign-ins
+  and the environment; never saved), and the address of its provider, such
+  as a vLLM or Ollama server of your own (saved with the function).
+- **`on_unreadable = :record`**: a reply that still cannot be read once the
+  re-asks are spent ends the call well, with `missing` (the prediction's
+  `refusal` says why), recorded with no outputs, no `returned` and the
+  refusal as its error; a conversation goes on past it.
+- **Python loads what Julia saves**, checked by `tools/crosslang.py`.
 
 ## 0.1.0 (2026-10-03)
 

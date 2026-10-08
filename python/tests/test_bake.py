@@ -387,3 +387,19 @@ def test_a_finite_function_has_a_head_plan_that_says_what_bake_will_do():
     assert "nothing has run" in text
     given = str(mood.bake(rows[:120], test=rows[120:], plan_only=True))
     assert "40 rows given as test" in given and "train      88 rows, 32 more to validate" in given
+
+
+def test_a_gpu_too_full_to_open_is_skipped_for_the_cpu(monkeypatch):
+    # other jobs can fill a GPU so that even asking its free memory fails (CUDA out of memory): the device is
+    # chosen among the GPUs that answer, else the CPU, never an error (2026-10-08, two vLLM servers on lambda)
+    torch = pytest.importorskip("torch")
+    from functai.bake import heads
+
+    def full(i):
+        raise RuntimeError("CUDA error: out of memory")
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 2)
+    monkeypatch.setattr(torch.cuda, "mem_get_info", full)
+    assert heads.choose_device(None, 0.5) == "cpu"
+    monkeypatch.setattr(torch.cuda, "mem_get_info", lambda i: ((8 if i else 0) * 2 ** 30, 24 * 2 ** 30) if i else full(i))
+    assert heads.choose_device(None, 0.5) == "cuda:1"

@@ -57,3 +57,40 @@ export function casefold(text: string): string {
 export function normalize(text: string): string {
   return casefold(splitWhite(text).join(" "));
 }
+
+/** Line breaks: what Python's `str.splitlines()` splits on. */
+const BREAKS = new Set<number>([0x0a, 0x0b, 0x0c, 0x0d, 0x1c, 0x1d, 0x1e, 0x85, 0x2028, 0x2029]);
+
+/**
+ * A choice's meaning as the contract writes it (functions.md, "A choice's
+ * answers, described one by one"): trimmed, and each run of white space that
+ * holds a line break made one space.
+ */
+export function oneLine(text: string): string {
+  let out = "";
+  let run = "";
+  let broke = false;
+  for (const ch of text) {
+    const c = ch.codePointAt(0)!;
+    if (WHITE.has(c)) {
+      run += ch;
+      broke ||= BREAKS.has(c);
+      continue;
+    }
+    out += broke ? " " : run;
+    out += ch;
+    run = "";
+    broke = false;
+  }
+  return trimWhite(out);
+}
+
+/**
+ * A field's words with what each described answer of its choice means: the
+ * words (or `one of:`), then `  - <answer>: <meaning>` per answer, joined by
+ * `\n` (functions.md). No described answer: the words as they are.
+ */
+export function withChoices(words: string | null, meanings: readonly (readonly [string, string])[]): string | null {
+  if (!meanings.length) return words;
+  return [words || "one of:", ...meanings.map(([answer, meaning]) => `  - ${answer}: ${meaning}`)].join("\n");
+}

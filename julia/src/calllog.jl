@@ -162,6 +162,7 @@ mutable struct Call
     steps::Any                          # its lmcc turn's steps, when its record keeps them (or nothing)
     lmcc::Any                           # an AI function's lmcc turn, as JSON, once it answered (a helper's memory)
     escalated::Bool                     # its first model was not sure enough: another answered (escalate_to)
+    kept::Any                           # on_unreadable = :record: the refusal of the unreadable reply it kept, its record's error
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
@@ -349,7 +350,7 @@ function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{S
                 Exchange[], nothing, JObj(), JObj(), String[], nothing, nothing, false, nothing, nothing,
                 later === nothing ? 0 : later.requests, parent, 0, false, false,
                 fn, site, Dict{String,Int}(), invocation, 0, turn_run, nothing, later === nothing ? nothing : later.writer,
-                Any[], nothing, Any[], true, String[], nothing, nothing, false)
+                Any[], nothing, Any[], true, String[], nothing, nothing, false, nothing)
     for (k, v) in inputs
         data, described = logvalue_described(v)
         call.inputs[String(k)] = data
@@ -510,6 +511,8 @@ function call_record(call::Call; error=nothing, journal=nothing)
     rec = LMCC.jobj("functai_call" => LOG_FORMAT, "id" => call.id, "parent" => call.parent, "root" => call.root,
                     "program" => program, "started" => iso(call.started), "seconds" => round6(time() - call.started),
                     "content" => true, "inputs" => copy(call.inputs), "outputs" => outputs)
+    # a call that ended well with no values (on_unreadable = :record) records the refusal it kept, and no `returned`
+    error === nothing && (error = call.kept)
     if program["kind"] == "ai" && call.has_returned && error === nothing
         shown = logvalue(call.returned)
         (outputs === nothing || !same_json(get(outputs, program["answer"], nothing), shown)) && (rec["returned"] = shown)

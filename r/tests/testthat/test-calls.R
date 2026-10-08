@@ -498,3 +498,79 @@ test_that("GEPA's own calls keep nothing when a layer in force drops a field of 
   withr::local_envvar(FUNCTAI_LOG_CONTENT = "0")
   expect_false(core_of(meta_fn(new_instruction ~ cases, "x", "_reflect", NULL, improved(), "run"))$own$log_content)
 })
+
+test_that("on_unreadable = 'record' keeps an unreadable reply: NA, .error says why, recorded, and a conversation goes on", {
+  logs <- withr::local_tempdir()
+  r <- fake_router(list("no tags at all", list(text = "", finish = "content_filter")))
+  keep <- mood_of(r, .retries = 0L, .on_unreadable = "record", .log_calls = logs)
+  p <- predict(keep, data.frame(review = c("Where is it?", "x")))
+  expect_true(all(is.na(p$.pred_class)))
+  expect_match(p$.error[[1L]], "parse-missing-fields|could not", perl = TRUE)
+  expect_match(p$.error[[2L]], "stopped the reply")
+  recs <- log_lines(logs)
+  expect_length(recs, 2L)
+  for (rec in recs) {
+    expect_identical(length(rec$outputs), 0L)
+    expect_identical(rec$error$type, "Refusal")
+  }
+  expect_setequal(vapply(recs, function(x) x$error$code, ""), c("parse-missing-fields", "parse-filtered"))
+  # no warning: the calls ended well, with no answer
+  r2 <- fake_router(list("nope"))
+  expect_no_warning(v <- mood_of(r2, .retries = 0L, .on_unreadable = "record")("x"))
+  expect_true(is.na(v))
+  # a conversation's turn is done with no outputs, and the next goes on
+  tutor <- ai(reply ~ message, "Tutor.", .name = "tutor")
+  r3 <- fake_router(list("nope", "<result>\nfine\n</result>"))
+  with_ai_config(lm = "gpt-4.1-mini", router = r3, retries = 0L, on_unreadable = "record", log_calls = FALSE, {
+    chat <- ai_conversation(tutor, "kept")
+    expect_true(is.na(chat("first")))
+    expect_identical(chat("second"), "fine")
+    expect_identical(ai_turns(chat)$state, c("done", "done"))
+  })
+  # the default still fails the call; a setting that is neither is refused
+  expect_error(mood_of(fake_router(list("nope")), .retries = 0L)("x"), class = "lmcc_refusal")
+  expect_error(mood_of(r, .on_unreadable = "keep"), "raise.*record")
+})
+
+test_that("api_key and base_url: the function's own key and address; the address is saved, the key never", {
+  skip_if_not_installed("httpuv")
+  # a server in a process of its own (this one waits on the request, so a server here could not answer it),
+  # noting the path and the key of each request that reaches it
+  port <- httpuv::randomPort()
+  seen_file <- withr::local_tempfile(); pid_file <- withr::local_tempfile(); script <- withr::local_tempfile(fileext = ".R")
+  writeLines(c(
+    sprintf("writeLines(as.character(Sys.getpid()), %s)", deparse(pid_file)),
+    sprintf("invisible(httpuv::startServer('127.0.0.1', %dL, list(call = function(req) {", port),
+    sprintf("  cat(req$PATH_INFO, if (is.null(req$HTTP_AUTHORIZATION)) '' else req$HTTP_AUTHORIZATION, '\\n', file = %s, append = TRUE)", deparse(seen_file)),
+    "  list(status = 400L, headers = list('Content-Type' = 'application/json'), body = '{\"error\":{\"message\":\"seen\"}}')",
+    "})))",
+    "repeat httpuv::service(100)"), script)
+  system2(file.path(R.home("bin"), "Rscript"), script, wait = FALSE, stdout = FALSE, stderr = FALSE)
+  listening <- function() file.exists(pid_file) &&
+    !inherits(try(suppressWarnings(close(socketConnection("127.0.0.1", port, timeout = 1))), silent = TRUE), "try-error")
+  for (i in 1:100) if (listening()) break else Sys.sleep(0.1)
+  on.exit(if (file.exists(pid_file)) tools::pskill(as.integer(readLines(pid_file))), add = TRUE)
+  url <- sprintf("http://127.0.0.1:%d/v1", port)
+  f <- ai(mood ~ review, "How?", mood = choice("happy", "unhappy"), .lm = "openai:qwen3", .api_key = "sk-local",
+          .base_url = url, .api_retries = 0L, .log_calls = FALSE, .on_error = "stop")
+  expect_error(f("x"))
+  seen <- strsplit(trimws(readLines(seen_file)), " ")
+  expect_length(seen, 1L)
+  expect_match(seen[[1L]][[1L]], "^/v1/")                         # the request went to the function's own address
+  expect_identical(seen[[1L]][-1L], c("Bearer", "sk-local"))      # with its own key
+  folder <- withr::local_tempdir()
+  write_ai(f, folder)
+  saved <- paste(readLines(file.path(folder, "functai.json"), encoding = "UTF-8"), collapse = "\n")
+  expect_match(saved, url, fixed = TRUE)
+  expect_false(grepl("sk-local", saved, fixed = TRUE))
+  expect_identical(core_of(read_ai(folder))$own$base_url, url)
+  expect_error(ai(mood ~ review, "How?", .base_url = 3), "one string")
+})
+
+test_that("a record or a picture given alone, as a named list, is refused saying how to give it", {
+  look <- ai(colour ~ picture, "The main colour.", picture = json_shape(list(media = "image")), .lm = "gpt-4.1-mini")
+  expect_error(ai_render(look, list(media_type = "image/png", data = "iVBORw0KGgo=")),
+               "list(list(media_type = ..., data = ...))", fixed = TRUE)
+  req <- ai_render(look, list(list(media_type = "image/png", data = "iVBORw0KGgo=")))
+  expect_identical(vapply(req$messages[[1L]]$parts, function(p) p$type, ""), c("text", "image", "text"))
+})
