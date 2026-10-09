@@ -25,10 +25,17 @@ What the transcripts of real projects and the coding-agent evaluation
 - **Tool pragmas are not words for the model.** `# noqa: …`, `# type: ignore`,
   `# pyright: …` and the like were read as guidance (a `# noqa` after a return
   annotation became "Return guidance: noqa: F722"); they are left out now.
+- **The coding-agent skill is proportional and tested.** Everything common is
+  on its first page with the exact names of what comes back; checks scale
+  with the run's cost; every example runs in `tests/test_skill.py`. Agents
+  using it took 8% more steps than DSPy agents (was 35%).
+- **`functai[data]` needs dpyr ≥ 1.12** (`unnest`, which the skill and the
+  docs use for lists of records; 1.10 and 1.11 lack it).
 - **A function defined with no source says so.** Comments come from the
   source; code run from standard input (`python - <<EOF`) or `exec()` (and
   `python -c` before Python 3.13) has none, so its comments never reached the
-  model, without a word. FunctAI now warns once per function.
+  model, nor were its `name: T = _ai` outputs asked for, without a word.
+  FunctAI now warns once per function, naming both.
 - **A shape written as JSON Schema is kept.** `picture: {"media": "image"}`
   was rewritten as text, so the picture went into the prompt as base64 and
   the model guessed (3 of 12 right in the evaluation). It is now the shape

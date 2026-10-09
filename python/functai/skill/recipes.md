@@ -1,4 +1,4 @@
-# FunctAI recipes (read SKILL.md first)
+# FunctAI recipes: what SKILL.md does not cover
 
 Complete scripts, each run against functai 1.2.0 (the evaluation tasks in
 `evals/skill/` hold tested versions). Copy, then change the
@@ -100,120 +100,14 @@ with ThreadPoolExecutor(len(MODELS)) as pool:        # the only thread pool you 
 For probes on a subscription, add `api_retries=0` so a multi-hour rate limit
 fails at once instead of sleeping.
 
-## Measure, change, measure again
-
-```python
-import functai
-from functai import ai
-from dpyr import read
-from typing import Literal
-
-functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
-tickets = read("tickets.csv")                    # columns: message, category
-
-@ai
-def team(message: str) -> Literal["shipping", "billing", "product", "account"]:
-    """Which team should answer this customer message?"""
-    ...
-
-@ai
-def team_v2(message: str) -> Literal["shipping", "billing", "product", "account"]:
-    """Which team should answer this customer message? An item that arrived
-    broken is shipping; any request for money back is billing."""
-    ...
-
-before = functai.evaluate(team, tickets, expected="category", num_threads=8)
-after = functai.evaluate(team_v2, tickets, expected="category", num_threads=8)
-print(before, after, functai.compare(before, after), sep="\n")
-before.table.to_pandas()      # every row: message, category, pred_result, exact_match, error, tokens
-```
-
-`compare` gives `before`, `after`, `diff`, `low`, `high`, `better`, `worse`,
-`same`. A `low..high` that includes 0 means "can't tell yet".
-`functai.evaluation.interval(values)` gives `(mean, low, high)` for any list of
-0/1 or numeric scores.
-
-## Training conversations for a small model
-
-```python
-import functai, functai.bake
-from dpyr import read
-from simplify import simplify          # the @ai function the student will answer
-
-GUIDE = open("style_guide.md").read()
-rows = read("rows.csv")                 # inputs + the answer in a column named like the output ("result")
-
-ex = functai.bake.examples(simplify, rows, fixed={"style_guide": GUIDE})
-print(ex.stats())
-ex.save("train.jsonl")                  # one JSON object per line: "messages" (the reply last), "split", ...
-```
-
-No model call is made when every row has its answer. Rows without one are
-answered by `teacher=` (priced first). `student="Qwen/Qwen3.5-0.8B"` adds
-`input_ids` and `answer_start` under that model's chat template.
-
-## Pictures
-
-```python
-from pathlib import Path
-from typing import Literal
-
-import functai
-from functai import ai
-from lm15.types import ImagePart, image
-
-functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
-
-
-@ai
-def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]:
-    """The main shape in the picture."""
-    ...
-
-
-files = sorted(Path("images").glob("*.png"))
-run = shape.map([{"file": f.name, "picture": image(path=f)} for f in files], threads=8)   # pred_result per file
-```
-
-- `image(path=...)` is read when the call is made: the request, the reply
-  cache's key and the call log hold the picture, not its name, so a file
-  changed under the same name is asked again, and a log replays elsewhere.
-  `image(data=bytes, media_type="image/png")` and `image(url=...)` work too
-  (a URL is fetched by the provider). A name is never sent to the model.
-- Check once that the request holds an image part:
-  `[p.type for p in shape.render(image(path=files[0])).messages[0].parts]` → contains `"image"`.
-- Use a model that reads images (gpt-4.1-mini, Claude, Gemini, GPT-6).
-- **One picture per input.** `list[ImagePart]` is written as base64 *text* the
-  model cannot see (functai warns; lmcc#7). Several pictures: one input each,
-  or `att([...])` as one `Artifacts` input (below).
-- Strip EXIF if it could give the answer away (`PIL.Image.open(f).convert("RGB")`
-  saved again).
+## Pictures and documents: beyond SKILL.md §4
 
 **Before functai 1.3 / lmcc 0.8.6** `ImagePart` was refused as an input type.
 There, annotate `picture: {"media": "image"}` (1.3 only) or register a type:
 `lmcc.format(Photo, shape={"media": "image"}, write=lambda p: [dict(p, type="image")])`
 with `class Photo(dict)`, given `Photo(media_type=..., data=<base64>)`.
 
-## Documents, spreadsheets, web pages, folders (Attachments)
-
-```python
-import functai
-from attachments import Artifacts, att      # pip install "functai[files]"  (attachments >= 1.0.0a2)
-from functai import ai
-
-functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
-
-
-@ai
-def summarize(report: Artifacts) -> str:
-    """The report's main finding, in one sentence."""
-    ...
-
-
-summarize(att("report.pdf[pages: 1-4, images: true]"))   # each page's text, then that page's picture
-summarize(att("budget.xlsx[sheet: Q3]"))
-summarize(att(["notes.md", "figure.png"]))    # several files: one input
-```
+More on Attachments inputs:
 
 - The model gets Attachments' own parts: text and page images as image parts,
   page by page. Its JSON form (Attachments' wire form) is what the call log,

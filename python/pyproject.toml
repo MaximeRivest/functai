@@ -49,8 +49,9 @@ functai = "functai.__main__:main"
 
 [project.optional-dependencies]
 # tables: evaluation results, fn.map(), reading datasets from files and dataframes
+# (1.12: unnest, which the skill and the docs use for lists of records)
 data = [
-    "dpyr>=1.10",
+    "dpyr>=1.12",
 ]
 # files as inputs: an Attachments result (PDF, Word, Excel, slides, web pages,
 # folders, pictures) as an AI function's input, its text and page images sent
@@ -126,7 +127,7 @@ testpaths = ["tests"]
 dev = [
     "pytest>=7.0.0",
     "pydantic>=2",
-    "dpyr>=1.10",
+    "dpyr>=1.12",
     "jsonschema>=4.18",     # the call log's records against contract/schema
     "basedpyright>=1.40.1",
     "attachments>=1.0.0a2",  # tests/test_files.py: files as inputs
@@ -135,7 +136,7 @@ dev = [
 # the reference written from the docstrings by quartodoc, the site built by Zensical
 docs = [
     "pydantic>=2",
-    "dpyr>=1.10",
+    "dpyr>=1.12",
     "pandas>=2",
     "pyyaml>=6",
     "quartodoc>=0.11",

@@ -108,6 +108,40 @@ class Recording:
         self.proc.wait(timeout=10)
 
 
+def preflight(arms: list) -> None:
+    """Refuse to start unless the instrument works: the proxy's certificate
+    bundle is the one its CA signed, and each arm's Python reaches the provider
+    through the recording proxy (a free request, GET /v1/models) and the proxy
+    records it. A broken proxy made a whole round invalid on 2026-10-09: the
+    agents spent their sessions on TLS errors, which would read as the libraries'."""
+    bundle = MITM_CONF / "bundle.pem"
+    ca = MITM_CONF / "mitmproxy-ca-cert.pem"
+    if not (bundle.exists() and ca.exists() and ca.read_text().strip() in bundle.read_text()):
+        raise SystemExit(f"preflight: {bundle} is missing or does not hold the proxy's CA ({ca}): see README.md, Setup")
+    probe = ("import json, os, urllib.request; r = urllib.request.Request('https://api.openai.com/v1/models', "
+             "headers={'Authorization': 'Bearer ' + os.environ['OPENAI_API_KEY']}); "
+             "print(urllib.request.urlopen(r, timeout=30).status)")
+    tmp = WORK_ROOT / "preflight"
+    shutil.rmtree(tmp, ignore_errors=True)
+    tmp.mkdir(parents=True)
+    for name in dict.fromkeys(ARMS[a]["venv"] for a in arms):
+        recording = Recording(tmp)
+        try:
+            env = {**os.environ, **keys(), **recording.env()}
+            p = subprocess.run([str(HERE / name / "bin" / "python"), "-c", probe], env=env, capture_output=True,
+                               text=True, timeout=60)
+            time.sleep(0.5)
+            seen = recording.file.read_text().count("/v1/models")
+        finally:
+            recording.close()
+        if p.returncode != 0 or p.stdout.strip() != "200" or not seen:
+            raise SystemExit(f"preflight: {name} cannot reach the provider through the recording proxy "
+                             f"(exit {p.returncode}, recorded {seen}): {p.stderr.strip()[-400:]}")
+        (tmp / "requests.jsonl").unlink()
+    print(f"preflight ok: {', '.join(dict.fromkeys(ARMS[a]['venv'] for a in arms))} reach the provider through "
+          f"the recording proxy", flush=True)
+
+
 def run_env(base: Path, arm: dict, recording: "Recording") -> dict:
     return {**os.environ, **keys(), **recording.env(), "BENCH_LIBRARY": arm["library"],
             "XDG_CACHE_HOME": str(base / "xdg"), "FUNCTAI_LOG_CALLS": str(base / "calls"),
@@ -274,6 +308,7 @@ def main():
     ap.add_argument("--parallel", type=int, default=4)
     args = ap.parse_args()
 
+    preflight(args.arms)
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     run_root = WORK_ROOT / "runs" / stamp
     results = HERE / "runs" / stamp

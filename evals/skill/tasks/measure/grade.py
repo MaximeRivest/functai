@@ -64,7 +64,12 @@ def grade(work: Path, env: dict, python: str, out: Path) -> dict:
     v2 = [norm(r["v2"]) == truth[r["id"]] for r in pred]
     n = len(v1)
     a1, a2 = sum(v1) / n, sum(v2) / n
-    f = lambda k: float(res[k]) / (100 if float(res[k]) > 1.0 else 1)   # accept 0.85 or 85
+    def f(k):                                       # accept 0.85 or 85; anything else fails the checks that read it
+        try:
+            v = float(res[k])
+        except (TypeError, ValueError):
+            return float("nan")
+        return v / (100 if v > 1.0 else 1)
     c["accuracy"] = check(abs(f("v1_accuracy") - a1) < 0.006 and abs(f("v2_accuracy") - a2) < 0.006,
                           None, f"recomputed v1 {a1:.3f}, v2 {a2:.3f}; reported {res['v1_accuracy']}, {res['v2_accuracy']}")
     lo, hi = wilson(sum(v1), n)

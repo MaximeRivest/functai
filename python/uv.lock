@@ -1082,16 +1082,16 @@ wheels = [
 
 [[package]]
 name = "dpyr"
-version = "1.10.0"
+version = "1.12.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "duckdb" },
     { name = "polars" },
     { name = "pyarrow" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/ff/0e/e0ca74a353798cc447dc1c85779f20da86a10fb231df7bf63049bb89a3b3/dpyr-1.10.0.tar.gz", hash = "sha256:43864a0f4ca19c727a58b7561bfeef0ca386c402ecfce0eb01182ad3ae43eec6", size = 164129, upload-time = "2026-09-26T16:20:08.728Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/1a/b3/560c91e4c4c56745f6bb34a7942b098df24a80523dadaeec1c79f7f880d4/dpyr-1.12.0.tar.gz", hash = "sha256:e8e03ae6809d5028ae16777a2a42427ee3c5bc9828bf2bbb6ebc037721e9b2c2", size = 172677, upload-time = "2026-10-03T00:10:55.614Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/6b/4b/a877b63f9d3854d0e82bd136e67a3488f67ac12ed99aa7e5a49ada1a290a/dpyr-1.10.0-py3-none-any.whl", hash = "sha256:d9a65f019386c6df58d3ab55a8bbd84c9c9c7c9b1dfa0e9efefb0702da60ebfb", size = 68555, upload-time = "2026-09-26T16:20:07.224Z" },
+    { url = "https://files.pythonhosted.org/packages/dc/93/0bbb0afe837096d1f1d4dd7af3b88d31b117a65ebcbdabd89467aa9e3655/dpyr-1.12.0-py3-none-any.whl", hash = "sha256:16d4cda33813912142a0758098a88093190f2f04e34abb9f216b37ab26446ccc", size = 71371, upload-time = "2026-10-03T00:10:54.3Z" },
 ]
 
 [[package]]
@@ -1452,7 +1452,7 @@ requires-dist = [
     { name = "attachments", marker = "extra == 'files'", editable = "../../attachments" },
     { name = "bitsandbytes", marker = "sys_platform != 'darwin' and extra == 'bake'", specifier = ">=0.45" },
     { name = "datasets", marker = "extra == 'bake'", specifier = ">=4.7" },
-    { name = "dpyr", marker = "extra == 'data'", specifier = ">=1.10" },
+    { name = "dpyr", marker = "extra == 'data'", specifier = ">=1.12" },
     { name = "flash-linear-attention", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.4" },
     { name = "kernels", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.16,<0.17" },
     { name = "liger-kernel", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.6" },
@@ -1476,13 +1476,13 @@ provides-extras = ["data", "files", "bake", "tinker", "fast", "prime", "dev"]
 dev = [
     { name = "attachments", editable = "../../attachments" },
     { name = "basedpyright", specifier = ">=1.40.1" },
-    { name = "dpyr", specifier = ">=1.10" },
+    { name = "dpyr", specifier = ">=1.12" },
     { name = "jsonschema", specifier = ">=4.18" },
     { name = "pydantic", specifier = ">=2" },
     { name = "pytest", specifier = ">=7.0.0" },
 ]
 docs = [
-    { name = "dpyr", specifier = ">=1.10" },
+    { name = "dpyr", specifier = ">=1.12" },
     { name = "griffe", specifier = ">=1,<2" },
     { name = "ipython", specifier = ">=8" },
     { name = "jedi", specifier = ">=0.19" },

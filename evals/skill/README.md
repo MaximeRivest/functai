@@ -196,3 +196,29 @@ tasks; the machine was loaded during these runs (both arms equally); the
 expert solutions are written by FunctAI's side; DSPy's `files` solution draws
 pages at 150 dpi and Attachments at its default (2000 px at most), so their
 picture tokens differ by choice, not by library.
+
+## Third round: the skill made proportional (2026-10-09, `runs/20261009T114527Z`)
+
+The second round's extra steps came from the skill itself: every FunctAI agent
+opened a side file, ran the setup checks and the `render` check it prescribed,
+and still looked inside FunctAI for two calls the page only half-explained.
+SKILL.md now holds everything common with the exact names of what comes back
+(evaluation results, training export, pictures, files), checks scale with the
+stakes, and every example in it runs in the test suite (`python/tests/test_skill.py`).
+Both arms ran again together (same conditions), 3 runs per task:
+
+| | FunctAI + skill | DSPy | gap (round 2 → 3) |
+|---|---|---|---|
+| succeeded | 15/15 | 15/15 | |
+| tool calls | 119 | 110 | +35% → **+8%** |
+| list-price cost | $2.80 | $2.39 | +47% → **+17%** |
+| agent minutes | 14 | 15 | |
+
+Per FunctAI run: side files opened 0 (was 12 over 15 runs), setup checks 0
+(was 14), `render` checks 3 (was 15), looks inside the library 0 (was 7; DSPy's
+agents made 10). What remains is reading the skill (15 reads). Programs written
+with FunctAI still sent fewer tokens on every task. An earlier attempt at this
+round (same day) is discarded: the proxy's certificate link was missing, so
+every request failed TLS in both arms; `run.py` and `references.py` now refuse
+to start until each environment reaches the provider through the recording
+proxy (`preflight`).

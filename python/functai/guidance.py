@@ -406,8 +406,9 @@ def warn_without_source(fn: Any) -> None:
     run = "from standard input (python - <<EOF)" if where == "<stdin>" else "by exec() (or python -c, before Python 3.13)"
     warnings.warn(
         f"functai: {getattr(fn, '__name__', 'this function')} was defined {run}, so Python keeps no source for it: "
-        f"its comments (and those of the records it uses) do not reach the model. Put the code in a file and run "
-        f"that file; or give the words in ways that need no source: the docstring, _ai['...'], "
+        f"its comments (and those of the records it uses) do not reach the model, and outputs declared in its body "
+        f"(`name: T = _ai`) are not asked for. Put the code in a file and run that file; or use what needs no "
+        f"source: the docstring, a returned record (dataclass) for several outputs, "
         f"pydantic Field(description=...).", stacklevel=4)
 
 

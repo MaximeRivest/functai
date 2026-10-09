@@ -90,6 +90,7 @@ def main():
     ap.add_argument("--libraries", nargs="*", default=list(LIBS), choices=list(LIBS))
     ap.add_argument("--reps", type=int, default=3)
     args = ap.parse_args()
+    run.preflight([LIBS[lib][1] for lib in args.libraries])
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     root = run.WORK_ROOT / "references" / stamp
     results = HERE / "runs" / f"references-{stamp}"

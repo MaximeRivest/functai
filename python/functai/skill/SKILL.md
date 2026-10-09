@@ -1,38 +1,25 @@
 ---
 name: functai
-description: Use whenever a task involves FunctAI (Python `functai`, `@ai`, `_ai`, `functai.configure`), or when the user wants a language model to label, extract, classify, rewrite or judge many rows (papers, messages, images) as typed data, measure how well it does, or prepare data to train a small model on it. Covers writing AI functions whose guidance actually reaches the model, running them over tables with caching and resume, honest measurement, provider failures, training-data export, pictures, and documents (PDF, Word, Excel, slides, web pages, folders) through Attachments.
+description: Use whenever a task involves FunctAI (Python `functai`, `@ai`, `_ai`, `functai.configure`), or when the user wants a language model to label, extract, classify, rewrite or judge many rows (papers, messages, images) as typed data, measure how well it does, or prepare data to train a small model on it. Covers writing AI functions whose guidance actually reaches the model, running them over tables with caching and resume, honest measurement, training-data export, pictures, and documents (PDF, Word, Excel, slides, web pages, folders) through Attachments.
 ---
 
 # FunctAI: getting it right the first time
 
 FunctAI turns a typed Python function into a model call: the **name, docstring,
-argument names, types and some comments are the prompt**; the answer comes back
-as the declared type. Distilled from real projects; every rule here cost
-someone hours. Read the side files only when the task needs them:
+argument names, types and comments are the prompt**; the answer comes back as
+the declared type. Everything common is on this page, with the exact names of
+what comes back: write the script from it, run it, look at the output once.
+Side files, only for what this page does not cover:
 
-- `recipes.md`: complete tested scripts (nested extraction, two models at once, measure-and-compare, training export, **pictures**, **PDFs and other files**)
-- `failures.md`: refusals, safety filters, rate limits on subscriptions, overloads, logins
-- `training.md`: baking a small model, exporting training conversations
+- `recipes.md`: two models at once, a nested extraction with quotes checked, more on Attachments (sizes, errors, many documents), older versions
+- `failures.md`: an error you do not understand (safety filters, rate limits, logins, unreadable files)
+- `training.md`: training a small model itself (`bake`), beyond exporting its data
 
-## 1. Setup checks (one command each)
+The project's Python is `.venv/bin/python`. Choose the model explicitly:
+`functai.configure(lm="gpt-4.1-mini")`; subscriptions are `"claude:claude-opus-5-5"`,
+`"chatgpt:gpt-6-astra"`; reasoning `reasoning="low"` (`"off"`, `"medium"`, `"high"`).
 
-```bash
-PY=.venv/bin/python          # the project's environment
-$PY -c "import functai, lmcc; print(functai.__version__, lmcc.__file__)"
-$PY -c "import functai; [print(l) for l in functai.logins()]"     # what can pay for calls (reads files only)
-```
-
-- `lmcc has no attribute 'default_registry'` or an `lmcc.__file__` of `None`:
-  a folder named `lmcc` next to the script shadows the library (a `/tmp/lmcc`
-  link did on Maxime's machine until 2026-10-06): **never run scripts saved directly in `/tmp`**; put
-  probes in the project (`scratch/probe.py`). Only if the path is right, re-sync
-  (`uv sync`). Never patch functai from a user project; pin a version
-  (`functai==1.2.0`) for work that must be reproducible.
-- Choose the model explicitly: `functai.configure(lm="gpt-4.1-mini")`. Subscriptions:
-  `"claude:claude-opus-5-5"` (= `claude-code:`), `"chatgpt:gpt-6-astra"` (= `openai-codex:`).
-  Reasoning: `reasoning="low"` (`"off"`, `"medium"`, `"high"`).
-
-## 2. Make sure your guidance reaches the model
+## 1. A function: its words reach the model
 
 ```python
 from dataclasses import dataclass
@@ -61,106 +48,124 @@ def read_study(methods: str) -> Study:
     return _ai
 ```
 
-What reaches the prompt (this version; check `functai.__version__`):
+The docstring, and a comment after a parameter, a field, an `_ai` output, each
+choice of a multi-line `Literal`, an `Enum` member, or a closing `]` all reach
+the model, in nested records too; so do pydantic `Field(description=...)` and
+`Annotated[T, "words"]`. A long text the model must follow (a codebook) can
+also be an input. Not sent: section-banner comments, `# noqa`-style pragmas,
+and, **when the code is run from `python - <<EOF` or `exec()`, every comment
+and every `name: T = _ai` output** (both come from the source file; FunctAI
+warns). Write scripts to files.
 
-| you write | reaches the model? |
-|---|---|
-| the docstring; `_ai["description"]`; a comment after a parameter, an `_ai` output, or a record's field | yes |
-| a comment after each choice of a multi-line `Literal[...]` or after each `Enum` member; a comment after the closing `]` | yes |
-| records nested in what the function reads or writes (`list[Analysis]`), their fields' comments and their docstrings | yes |
-| pydantic `Field(description=...)`; `Annotated[T, "words"]`; a long text passed as an input (a codebook) | yes |
-| comment lines between choices that label a group, section banners | no (they describe no one field) |
-| tool pragmas: `# noqa`, `# type: ignore`, `# pyright: …` | no (left out, from 1.3) |
-| **any** comment when the code runs from `python - <<EOF` or `exec(...)` (and `python -c` before Python 3.13) | **no**: comments come from the source; FunctAI warns |
+`Literal` for fixed answers; `X | None` with "None when not stated" instead of
+guesses; outputs are written in declared order (`quotes` before the answer);
+several small functions beat one giant form; `fn.using(lm=...)` is a copy with
+other settings. To see the exact prompt without paying:
+`print(fn.render(<one input>).system)`; worth one look when a function has
+nested records or many described choices, not for a simple one.
 
-Before `1.3` (the PyPI `1.2.0`): choice comments, comments after `]`, nested
-records' comments and dataclass docstrings were silently dropped; there, use
-pydantic `Field(description=...)` for nested records and put choice meanings
-in the field's own comment.
-
-**Before paying, look:** `print(read_study.render(<one input>).system)` (no
-call is made) and check every definition you wrote is there. Test from a
-file, not a heredoc.
-
-Also: `Literal` for fixed answers; `X | None` + "null when not stated" instead of
-guesses; outputs are written in declared order (put `quotes`/`reasoning` before
-the answer); the body runs after the answer, so plain Python can check it;
-several small functions beat one giant form; `fn.using(lm=..., max_tokens=...)`
-is a copy with other settings.
-
-## 3. Many rows
+## 2. Many rows
 
 ```python
 from dpyr import read, col
 functai.configure(lm="gpt-4.1-mini", cache_replies="disk")
-papers = read("papers.csv").mutate(**read_study.unpack(col.methods))     # one column per output
+
+papers = read("papers.csv")                                         # csv, parquet, pandas, list of dicts
+papers = papers.mutate(**read_study.unpack(col.methods))            # one column per output: quotes, units, analyses
 papers.select("paper_id", "units").write_csv("out/studies.csv")
-papers.select("paper_id", "analyses").unnest("analyses").write_csv("out/analyses.csv")
+papers.select("paper_id", "analyses").unnest("analyses").write_csv("out/analyses.csv")   # one row per analysis
+
+run = read_study.map(papers, threads=8).to_pandas()                 # or: the run as a table
+# columns: the inputs, pred_<output> (pred_result for a single answer), error, seconds, *_tokens
 ```
 
-- AI function on a column → a column (`mutate(label=fn(col.text))`); a record →
-  `fn.unpack(...)`; lists → `.unnest(...)`. 8 rows at a time; each distinct input asked once.
-- `fn.map(rows, threads=8)` returns the run as a table: `pred_<field>` columns,
-  `error`, `seconds`, tokens. Failed rows are rows, not exceptions: no `try/except`.
-- `cache_replies="disk"`: a re-run is free and an interrupted run **resumes by
-  running it again**. Don't hand-roll thread pools, retry loops or JSON caches.
-- `configure(log_calls="out/calls")` keeps every request and reply for audit.
-- Scale the process to the stakes: for an expensive or long run, try 2 rows
-  first (`.slice_head(n=2)`) and read `print(functai.phistory(1))`; run it in the
-  background (`nohup $PY run.py > run.log 2>&1 &`) and check `tail -2 run.log`
-  instead of sleep-polling. For a run that costs cents, just run it.
+Each distinct input is asked once, 8 at a time. A failed row is a row with an
+`error`, not an exception: no `try/except`. `cache_replies="disk"` makes a
+re-run free and an interrupted run resume by running it again; no thread
+pools, retry loops or JSON caches of your own. A long or costly run: try 2 rows
+first (`papers.slice_head(n=2)`), then run it in the background with a log.
+
+## 3. Measuring, and whether a change helps
+
+```python
+tickets = read("tickets.csv")                                        # message, category
+before = functai.evaluate(team, tickets, expected="category", num_threads=8)
+after = functai.evaluate(team_v2, tickets, expected="category", num_threads=8)
+
+before.score                                                         # share right
+s = before.summary.to_pandas().iloc[0]                               # metric, mean, low, high (95%), n, failed
+c = functai.compare(before, after).to_pandas().iloc[0]               # before, after, diff, low, high (paired 95%),
+                                                                     # better, worse, same, n
+t = before.table.to_pandas()                                         # the rows: your columns, pred_result, exact_match, error
+verdict = "unclear" if c["low"] <= 0 <= c["high"] else ("better" if c["diff"] > 0 else "worse")
+```
+
+- **The change goes in the function, never in the data**: `team_v2` is a second
+  `@ai` function (the new rules in its docstring) or `team.using(lm=...)`,
+  evaluated on **the same table**. `compare` refuses tables that differ.
+  `evaluate` takes `@ai` functions or `@module`s, not plain wrappers.
+- Metrics other than exact match: `functai.evaluate(fn, rows, {"name": metric})`,
+  `metric(row, prediction) -> number`; or a judge `@ai` function.
+- Quotes as evidence: `functai.quotes_found(text, quotes)` checks them, free.
+- Never score on rows used for examples; a model's answers are not gold labels.
 
 ## 4. Pictures and files
 
 ```python
+from typing import Literal
 from lm15.types import ImagePart, image
 from attachments import Artifacts, att            # pip install "functai[files]"
 
 @ai
-def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]: ...
-shape(image(path="cat.png"))                      # sent as a picture; the cache and log hold it, not its name
+def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]:
+    """The main shape in the picture."""
+shape(image(path="cat.png"))                      # a picture, not its name; image(data=..., media_type=...) too
+run = shape.map([{"file": f.name, "picture": image(path=f)} for f in files], threads=8).to_pandas()
 
 @ai
-def summarize(report: Artifacts) -> str: ...
-summarize(att("report.pdf[images: true]"))        # each page's text, then its picture
+def answer(question: str, document: Artifacts) -> str:
+    """Answer the question from the document, in a word or a number."""
+answer("Which region sold most?", att("report.pdf[images: true]"))   # each page's text, then its picture
+answer("Total spent?", att("budget.xlsx"))                           # sheets as tables
 ```
 
-One picture per input (`list[ImagePart]` is sent as base64 text: functai warns);
-several files are one `att([...])`. A PDF sends its text only unless
-`[images: true]` (charts, scans, figures need the pictures). Attachments shows file names: when a name
-could give the answer away, use `ImagePart`. A file `att()` could not read
-refuses the call, naming it. Details: `recipes.md`. Needs functai ≥ 1.3, lmcc ≥
-0.8.6, attachments ≥ 1.0.0a2; check with `functai.__version__`.
+- A PDF sends its **text only** unless `[images: true]`: charts, scans and
+  figures need the pictures. Several files are one value: `att(["a.md", "b.png"])`.
+- One picture per input: `list[ImagePart]` is sent as base64 text the model
+  cannot see (FunctAI warns).
+- Attachments shows file names; when a name could give the answer away, use `ImagePart`.
+- A file `att()` could not read (missing, or a reader not installed) refuses
+  the call before anything is sent, saying which and why.
 
-## 5. Measuring honestly
+## 5. Training data for a small model
 
 ```python
-before = functai.evaluate(team, tickets, expected="category", num_threads=8)   # score + 95% range
-after = functai.evaluate(team_v2, tickets, expected="category", num_threads=8)
-functai.compare(before, after)      # paired: diff, low, high, better, worse
+import functai.bake
+rows = read("rows.csv")                          # the inputs, and the wanted answer in a column named like
+                                                 # the output ("result" for a single answer); at least 10 rows
+ex = functai.bake.examples(simplify, rows, fixed={"style_guide": open("style_guide.md").read()}, log=False)
+ex.save("train.jsonl")                           # per line: messages [system, user, assistant] exactly as
+                                                 # functai will send them, plus split, row_id, prompt, completion
 ```
 
-- **Put the change in the function, never in the data**: the new version is a
-  second `@ai` function (new rules in its docstring) or `fn.using(lm=...)`,
-  evaluated on **the very same table**. `compare` refuses ("needs the same
-  examples in the same order") if you added a column for one version.
-  `evaluate` takes `@ai` functions or `@module`s, not plain wrappers.
-- `before.summary` has `low`/`high`; `compare(...)` gives the paired t interval.
-  If it includes 0, the change may be luck: say so.
-- Evidence: return `quotes` and check them free with `functai.quotes_found(text, quotes)`.
-- Never score on rows used for examples or optimization; generated answers are not gold labels.
+`fixed=` leaves an input that is the same in every row out of the
+conversations (the trained model learns it, and a call with another value is
+refused). No model is called when every row has its answer. Use the public
+API only: never rebuild prompts from functai's internals. Training itself:
+`training.md`.
 
-## 6. Scripts people can read
+## 6. Scripts people can read, and when you are done
 
-For scientists: top-to-bottom like a notebook; a docstring saying what it does,
-how to run it, where results go; settings as constants at the top; `# ====`
-section headers; the run under `if __name__ == "__main__":`. Hard-code what is
-fixed; no clever abstractions; no `try/except` around model calls.
+For scientists: top-to-bottom like a notebook; a docstring saying what it
+does, how to run it and where results go; settings as constants at the top;
+the run under `if __name__ == "__main__":`; no `try/except` around model calls.
 
-## 7. Before you say "done"
+Done means: the script ran, you looked at its output file once, failures are
+counted, and accuracy claims carry their range and row count. For a run that
+costs real money or hours, also check that running it again makes no new calls.
+Tell the user what you did not check.
 
-- [ ] `render(...)` shows every definition you meant the model to have.
-- [ ] Outputs checked by eye on a few rows; failures counted separately.
-- [ ] Re-running makes no new calls (`cache_replies="disk"`).
-- [ ] Accuracy claims carry their range and row count; comparisons are paired.
-- [ ] You told the user honestly what was not checked.
+If `import functai` fails with `lmcc has no attribute ...`, a folder named
+`lmcc` next to the script shadows the library (never run scripts saved in
+`/tmp`); otherwise `uv sync`. Needs functai ≥ 1.3, lmcc ≥ 0.8.6, attachments ≥
+1.0.0a2 for sections 4's pictures and files.
