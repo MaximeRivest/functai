@@ -248,6 +248,18 @@ def test_auto_picks_a_head_when_it_can_and_a_student_otherwise(tiny, home):
     assert type(p).__name__ == "Plan"            # a generative student's plan, when asked for one
 
 
+def test_the_longest_example_is_one_rows_prompt_and_answer(tiny, home):
+    # a long question with a short answer, and a short question with a long answer: the
+    # longest example is one of them, not the long question with the long answer
+    long_q = "Long question. " * 200
+    long_a = "Long answer. " * 200
+    data = [{"country": long_q, "style": "s", "result": "x"}, {"country": "x", "style": "s", "result": long_a}] * 10
+    p = capital.bake(data, student=tiny, method="sft", plan_only=True, local_files_only=True, log=None, device="cpu")
+    s = p.stats
+    assert s["longest"] < s["prompt"]["max"] + s["answer"]["max"]
+    assert s["longest"] >= max(s["prompt"]["max"], s["answer"]["max"])
+
+
 # ------------------------------------------------------------------ training here, for real (on the CPU)
 
 

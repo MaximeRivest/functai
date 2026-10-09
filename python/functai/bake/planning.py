@@ -384,13 +384,14 @@ class Plan:
         tpl = describe(tok)
         sample = self.items if len(self.items) <= 4000 else random.Random(0).sample(self.items, 4000)
         scale = len(self.items) / len(sample)
-        raw_prompts, answers, weights = [], [], []
+        raw_prompts, answers, weights, totals = [], [], [], []
         for it in sample:
             msgs, answer = it.entry.messages(it.inputs, it.outputs)
             raw_prompts.append(len(prompt_ids(tok, msgs, tpl.kwargs)))
             weights.append(it.weight)
             if answer is not None:
                 answers.append((len(tok(answer + tpl.end, add_special_tokens=False)["input_ids"]), it.weight))
+                totals.append(raw_prompts[-1] + answers[-1][0])     # one example: its own prompt and answer
         known = [a for a, _w in answers]
         mean_answer = statistics.mean(known) if known else None
         unknown_w = sum(it.weight for it in sample if it.outputs is None)
@@ -414,7 +415,9 @@ class Plan:
                        "p99": pct(p_sorted, 0.99), "max": int(max(raw_prompts))},
             "answer": {"median": int(statistics.median(known)) if known else None, "p90": pct(a_sorted, 0.9),
                        "p99": pct(a_sorted, 0.99), "max": longest_answer} if known else {"max": 0},
-            "longest": int(max(raw_prompts) + (longest_answer or 0)) if known else int(max(raw_prompts) * 1.5),
+            # the longest example, prompt and answer of the same row (the longest prompt and the longest
+            # answer are usually different rows: their sum would refuse runs that fit)
+            "longest": int(max(totals)) if known else int(max(raw_prompts) * 1.5),
             "answer_known_mean": mean_answer, "unknown_answers": int(unknown * scale), "sampled": scale > 1,
         }
 
