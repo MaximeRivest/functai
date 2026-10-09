@@ -17,7 +17,6 @@ import * as lmcc from "lmcc";
 // the tests read no settings from the environment they run in (an agent's caller, a log folder)
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
 configure({ lm: "gpt-4.1-mini", logCalls: false });
-type Rec = Record<string, unknown>;
 
 const moodDef = {
   description: "How does the customer feel about what they bought?",
