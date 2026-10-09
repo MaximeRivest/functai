@@ -139,6 +139,7 @@ in TypeScript) and catch up on the rest.
 | | Python | TypeScript | R | Julia |
 |---|:-:|:-:|:-:|:-:|
 | Typed AI functions: answers checked against their type, asked again when they don't fit | ✓ | ✓ | ✓ | ✓ |
+| A choice whose answers each say what they mean, sent the same way in every language | comments | `t.choice` | `choice()` | `OneOf` |
 | Run on a whole table | [dpyr](https://github.com/MaximeRivest/dpyr): pandas, polars, files, databases | arrays of rows | dplyr verbs | broadcasting, DataFrames |
 | How often is it right, with a 95% interval | ✓ | ✓ | ✓ | ✓ |
 | Two versions compared row by row | ✓ | ✓ | ✓ | ✓ |
@@ -150,7 +151,7 @@ in TypeScript) and catch up on the rest.
 | Streaming | ✓ | ✓ | ✓ | ✓ |
 | Your code around several AI functions, logged as one call | `@module` | `module()` | `ai_program()` | `@program` |
 | Call log, and people's ratings as data | ✓ | ✓ | ✓ | ✓ |
-| Loads functions saved in other languages | – | ✓ | ✓ | ✓ |
+| Loads functions saved in other languages | ✓ | ✓ | ✓ | ✓ |
 | Reply cache (off unless you turn it on), kept on disk across runs | ✓ | ✓ | ✓ | ✓ |
 | Conversations: turns that remember, branches, kept in a store | ✓ | ✓ | ✓ | ✓ |
 | Tools that ask a person first; a waiting turn goes on later, paying for nothing twice | ✓ | ✓ | ✓ | ✓ |
@@ -158,7 +159,10 @@ in TypeScript) and catch up on the rest.
 | Serve a program over HTTP, and use one served elsewhere | ✓ | ✓ (any `fetch` host: Node, Deno, Bun, Workers) | ✓ (one request at a time) | ✓ |
 | Escalation to a bigger model when the first is unsure | ✓ | ✓ | ✓ | ✓ |
 | Sign in with a Claude, ChatGPT or Copilot subscription | ✓ | ✓ | ✓ | ✓ |
-| Bake it into a small model you own | ✓ | training data, and runs a baked model | training data, and runs a baked model | training data, and runs a baked model |
+| A function's own key, or your own model server (vLLM, Ollama) | ✓ | ✓ | ✓ | ✓ |
+| Bake it into a small model you own | ✓ | training data, and runs a baked model that writes text | training data, and runs a baked model that writes text | training data, and runs a baked model that writes text |
+| The instruction written and refined by the model as calls come in; training rows a teacher model writes | ✓ | – | – | – |
+| Check that a saved program still sends what it sent (`verify`), what a program depends on (`check`), past evaluations (`runs`) | ✓ | – | – | – |
 | Released | [PyPI](https://pypi.org/project/functai/) | not yet on npm | not yet on CRAN | not yet registered |
 
 Where a language has no ✓, a key in the environment, your own code, or

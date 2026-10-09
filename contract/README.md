@@ -125,6 +125,14 @@ the disk cache and Julia, R and TypeScript read, a program Python serves and
 Julia, R and TypeScript call with `remote`, and one TypeScript serves that
 Python calls.
 
+`functions/18` (2026-10-08) pins a choice whose answers are described one
+by one (functions.md, *A choice's answers, described one by one*): every
+language writes the same desc from its own way of saying it, so
+`../tools/crosslang.py` also checks that `route`, written natively in each
+language, has Python's version, and that functions TypeScript, R and Julia
+save load in Python with the version and the request they had there, and
+the settings saved with them (`base_url`, `on_unreadable`).
+
 Stage 1.1 (2026-09-30, design/09) changed what `programs/05`, `06`,
 `14` and `21`, `functions/12`, `content/03`, `14`, `15`, `17` and `18`,
 and `saved/16` expect, and added `programs/22` to `26`, `functions/13` to

@@ -9,7 +9,7 @@ import { join } from "node:path";
 import { Request, stringifyJson } from "@lm15/lm15";
 import * as lmcc from "lmcc";
 import { spawn } from "node:child_process";
-import { ai, load, LoadRefused, rate, rated, remote, serve, t } from "../src/index.ts";
+import { ai, describe, load, LoadRefused, rate, rated, remote, save, serve, t } from "../src/index.ts";
 import { FakeRouter } from "../tests/fake.ts";
 
 const work = process.argv[2]!;
@@ -27,7 +27,11 @@ for (const [name, want] of Object.entries(python)) {
   assert.equal(fn.signatureId, want.signature, `${name}: signature`);
   const mine = lmcc.canonicalJson(JSON.parse(stringifyJson(Request.toJSON(await fn.render(want.inputs)))));
   assert.equal(mine, lmcc.canonicalJson(want.request as lmcc.Json), `${name}: the request`);
-  console.log(`  ok    ${name}: saved in Python, loaded here, same version and same request`);
+  if (name === "route") {                  // the settings saved with it travel too (its address, its rule)
+    assert.equal(fn.settings.baseUrl, "http://127.0.0.1:8000/v1");
+    assert.equal(fn.settings.onUnreadable, "record");
+  }
+  console.log(`  ok    ${name}: saved in Python, loaded here, same version and same request${name === "route" ? ", baseUrl and onUnreadable" : ""}`);
 }
 
 // 2. the same function, written here
@@ -39,6 +43,29 @@ const mood = ai("mood", {
 assert.equal(mood.version, python["mood"]!.version);
 assert.equal(mood.signatureId, python["mood"]!.signature);
 console.log("  ok    mood written in TypeScript has Python's version and signature");
+const route = ai("route", {
+  description: "Which team answers?", definedIn: "shop", lm: "gpt-4.1-mini", baseUrl: "http://127.0.0.1:8000/v1", onUnreadable: "record",
+  input: {
+    message: describe(t.string(), "the customer's words"),
+    channel: t.choice(["email", "chat"], { email: "written at leisure, often long", chat: "short, often several messages" }),
+  },
+  outputs: {
+    urgency: describe(t.choice(["low", "high"], { high: "the customer is losing money or time now" }), "how soon to answer"),
+    result: t.choice(["shipping", "billing"], { shipping: "where the parcel is, damage in transit", billing: "charges, refunds" }),
+  },
+});
+assert.equal(route.version, python["route"]!.version, "route: version");
+assert.equal(route.signatureId, python["route"]!.signature, "route: signature");
+console.log("  ok    route written in TypeScript (t.choice, each answer described) has Python's version and signature");
+
+// 5. what TypeScript saves, Python loads (it checks the version and the request this gives)
+const savedHere: Record<string, unknown> = {};
+for (const [name, fn] of [["mood", mood], ["route", route]] as const) {
+  save(fn as never, join(work, "typescript-saved", name));
+  const inputs = python[name]!.inputs;
+  savedHere[name] = { version: fn.version, inputs, request: JSON.parse(stringifyJson(Request.toJSON(await fn.render(inputs as never)))) };
+}
+writeFileSync(join(work, "typescript-saved.json"), stringifyJson(savedHere));
 
 // 3. one log: log and rate here, then read Python's calls and ratings with ours
 const p = await mood.predict("Arrived broken, but support was great.");

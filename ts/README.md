@@ -63,7 +63,7 @@ p.answer;       // 15
 ```
 
 - **Shapes** are JSON Schema: `t.string()`, `t.integer()`, `t.number()`,
-  `t.boolean()`, `t.enum(...)`, `t.list(...)`, `t.object({...})`,
+  `t.boolean()`, `t.enum(...)`, `t.choice(...)`, `t.list(...)`, `t.object({...})`,
   `t.record(...)`, `t.optional(...)`; or a schema from any library that
   implements [Standard Schema](https://standardschema.dev) with JSON
   Schema (zod 4, valibot, arktype, ...), read as the JSON Schema Python
@@ -73,6 +73,12 @@ p.answer;       // 15
   description, minItems: 1 })`) and never replace what it makes (`type`,
   `items`, `properties`, …: a `TypeError`); a default is a value of its
   type (`t.string({ default: "kind" })`).
+- **A choice can say what its answers mean**, and the model reads it:
+  `t.choice(["low", "high"], { high: "the customer is losing money or
+  time now" })`. The words are written as every language writes them, so
+  the same choice described in Python (a comment after each answer), R
+  (`choice()`) or Julia (`OneOf`) sends the same request and has the same
+  version. Inside `t.object`, they become the property's description.
 - **Names are data**: `toString`, `constructor` or `__proto__` is a field
   (an input or an output) like any other, and so is a member of a JSON
   value; a worked example that leaves one out is sent without it, and a
@@ -130,6 +136,17 @@ p.answer;       // 15
   `tools`, `retries`, … on the function, in `configure(...)`, in
   `withSettings({...}, () => ...)` for a block of code, or on one call.
   `fn.using({...})` is a copy with other settings.
+- **Your own key, your own server**: `apiKey` is a key for the provider
+  `lm` names (it beats saved logins and the environment, and is never
+  saved); `baseUrl` is where that provider is reached: a server of your own
+  that speaks its API, such as vLLM or Ollama (`lm: "openai:qwen3", baseUrl:
+  "http://localhost:8000/v1"`). The address is saved with the function, as
+  its model is.
+- **A reply that cannot be read** is asked again (`retries`, default 1),
+  then the call fails with the reason. `onUnreadable: "record"` ends it
+  well instead, with no answer (`undefined`; `prediction.refusal` says why),
+  recorded with no outputs and the refusal as its error, and a conversation
+  goes on past it: for long runs that must not stop at one bad reply.
 - `await fn.render(...)` is the exact request, without sending it (plugins
   shape it as they would the call). `inspectHistory(n)` gives the last
   requests this process sent, `phistory()` the same as readable text.
@@ -473,10 +490,15 @@ out exactly as it was trained.
 ## Not here yet
 
 Compared with Python: training models itself (`bakeExamples` writes what
-any trainer reads, and `baked()` runs the result), reading tables other
+any trainer reads, and `baked()` runs the result when it writes text; a
+baked classifier, a *head*, runs only in Python), reading tables other
 than arrays of objects, loading programs with code of their own (only AI
-functions travel between languages), and Python's `verify`, `check` and
-`runs`. The [home page](https://maximerivest.github.io/functai/#what-each-language-has)
+functions travel between languages), Python's `verify`, `check` and
+`runs`, an instruction the model writes and refines as calls come in
+(`autoinstruct`, `instruction_autorefine_calls`, `freeze()`), training
+rows a teacher model writes (`opt(n_synth = …)`), the record of how a copy
+was improved (`optimization_runs()`), and the skill that teaches coding
+agents FunctAI. The [home page](https://maximerivest.github.io/functai/#what-each-language-has)
 compares the four languages;
 [design/01-many-languages.md](https://github.com/MaximeRivest/functai/blob/master/design/01-many-languages.md)
 is the plan.

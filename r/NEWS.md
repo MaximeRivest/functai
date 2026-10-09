@@ -27,6 +27,28 @@
 - **`compare()` checks that both evaluations have the same rows**, as the
   other languages do, and says what differs; it paired rows by position
   without looking, so two different tables gave a meaningless difference.
+- **What each answer of a `choice()` means is written as every language
+  writes it** (contract/functions.md, "A choice's answers, described one by
+  one", case `functions/18`): the field's words (or `one of:`), then one line
+  per described answer, `  - approve: the rules allow a refund`. R wrote
+  them on one line, `approve: the rules allow a refund; deny: ...`, which a
+  semicolon or a colon in a meaning made ambiguous, and which no other
+  language wrote. A function with described answers sends a new prompt and
+  gets a new version: its cached replies are asked again once. The same
+  choice described in Python, TypeScript or Julia now has the same version.
+  A meaning's line breaks become spaces; an empty meaning describes nothing.
+- **`api_key` and `base_url`**: a function's own key (it beats the
+  environment; never saved), and the address of its provider, such as a vLLM
+  or Ollama server of your own (saved with the function).
+- **`on_unreadable = "record"`**: a reply that still cannot be read once the
+  re-asks are spent ends the call well: the row is `NA` without a warning,
+  `predict()`'s `.error` says why, the call log records it with no outputs
+  and the refusal as its error, and a conversation goes on past it.
+- **A record or a picture given alone, as a named list, is refused saying how
+  to give it** (`list(list(media_type = ..., data = ...))`): an input is a
+  column, so the list was read as one row per member, and the error spoke of
+  a member's value instead.
+- **Python loads what R saves**, checked by `tools/crosslang.py`.
 
 # functai 0.1.0 (2026-10-03)
 

@@ -181,6 +181,18 @@ def loaded_function(d: dict):
     return functai.saved.from_manifest(manifest)
 
 
+def described_choice(f: dict, default: str) -> str:
+    """An input whose answers are described one by one (functions.md, "A choice's answers, described one by one"),
+    as a Python user writes it: a Literal over several lines, a comment after each described answer, and the
+    field's own words after the closing bracket."""
+    words, *lines = f["desc"].split("\n")
+    meant = dict(line.removeprefix("  - ").split(": ", 1) for line in lines)
+    assert "enum" in f["shape"] and set(meant) <= set(f["shape"]["enum"]), f
+    answers = [f"        {a!r},{'  # ' + meant[a] if a in meant else ''}" for a in f["shape"]["enum"]]
+    own = "" if words == "one of:" else f"  # {words}"
+    return "\n".join([f"    {f['name']}: Literal[", *answers, f"    ]{default},{own}"])
+
+
 def python_function(d: dict):
     """The definition written the way a Python user writes it, then decorated."""
     classes: list = []
@@ -193,6 +205,9 @@ def python_function(d: dict):
             called = f["default_code"].split("(")[0]
             helpers.append(f"def {called}():\n    return {f['shape']['default']!r}\n")
             default = f" = {f['default_code']}"
+        if "\n" in f.get("desc", ""):
+            params.append(described_choice(f, default))
+            continue
         params.append(f"    {f['name']}: {annotation(f['shape'], f['name'], classes)}{default},"
                       + (f"  # {f['desc']}" if f.get("desc") else ""))
     *extras, main = d["outputs"]

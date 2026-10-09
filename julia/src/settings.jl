@@ -4,7 +4,9 @@
 
 const SETTING_DOCS = (
     lm = "the model: \"gpt-4.1-mini\", \"claude-haiku-4-5\", \"groq:openai/gpt-oss-120b\", …",
-    router = "the lm15 router calls go through (keys, base URLs; a fake in tests)",
+    router = "the lm15 router calls go through (keys, base URLs; a fake in tests); it wins over api_key and base_url",
+    api_key = "a key for the provider `lm` routes to: it beats saved sign-ins and the environment; never saved with a function",
+    base_url = "where that provider is reached: a server of your own that speaks its API (vLLM or Ollama with lm = \"openai:qwen3\", base_url = \"http://localhost:8000/v1\"), a gateway; saved with a function, as its model is",
     temperature = "sampling temperature", max_tokens = "the token budget of a reply",
     top_p = "nucleus sampling", stop = "stop sequences", seed = "the provider's seed",
     config = "other lm15 Config fields, as keywords: (reasoning = LM15.Reasoning(effort=\"low\"),)",
@@ -14,6 +16,7 @@ const SETTING_DOCS = (
     include_name = "false: leave the function's name out of the instruction",
     capabilities = "facts about the model that replace the table's: Dict(\"native_reasoning\" => false)",
     retries = "re-asks after an unreadable reply (default 1)",
+    on_unreadable = ":raise (default) or :record: a reply that still cannot be read once the re-asks are spent ends the call well with no answer (`missing`; the prediction's `refusal` says why), recorded with no outputs and the refusal as its error, and a conversation goes on past it; for long runs that must not stop at one bad reply",
     api_retries = "re-sends after a transient provider error (default 3)",
     api_max_wait = "the longest a provider may ask to wait before a re-send, in seconds (default 60); a longer wait (a spent subscription window) raises at once, saying until when",
     max_steps = "model requests per tool loop (default 8)",
@@ -73,6 +76,10 @@ function check_setting(name::Symbol, value)
     value === nothing && return nothing
     name === :tool_errors && !(value in (:report, :raise, "report", "raise")) &&
         throw(ArgumentError("tool_errors is :report or :raise, not $(repr(value))"))
+    name === :on_unreadable && !(value in (:raise, :record, "raise", "record")) &&
+        throw(ArgumentError("on_unreadable is :raise or :record, not $(repr(value))"))
+    name in (:api_key, :base_url) && !(value isa AbstractString && !isempty(value)) &&
+        throw(ArgumentError("$name is a string, not $(repr(value))"))
     name in (:retries, :api_retries, :max_steps, :concurrency) && !(value isa Integer && value >= (name === :concurrency || name === :max_steps ? 1 : 0)) &&
         throw(ArgumentError("$name is a whole number$(name in (:concurrency, :max_steps) ? " of at least 1" : " of at least 0"), not $(repr(value))"))
     name === :api_max_wait && !(value isa Real && !(value isa Bool) && value >= 0) &&
@@ -104,7 +111,8 @@ function settings_dict(kw)
         check_setting(name, v)
         out[name] = v === nothing ? nothing :
                     name === :caller ? Dict{String,Any}(String(a) => b for (a, b) in pairs(v)) :
-                    name === :tool_errors ? Symbol(v) :
+                    name in (:tool_errors, :on_unreadable) ? Symbol(v) :
+                    name in (:api_key, :base_url) ? String(v) :
                     name === :log_content ? content_setting(v) :
                     name === :observers ? Any[v...] :
                     name === :journal ? journal_setting(v) :

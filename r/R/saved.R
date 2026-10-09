@@ -12,7 +12,7 @@ load_refused <- function(code, message, field = NULL) {
 }
 
 SNAKE <- c(retries = "retries", api_retries = "api_retries", api_max_wait = "api_max_wait", max_steps = "max_steps", tool_errors = "tool_errors",
-           capabilities = "capabilities", log_content = "log_content")
+           capabilities = "capabilities", log_content = "log_content", base_url = "base_url", on_unreadable = "on_unreadable")
 
 # A field of a saved function, from its shape: the R type its values are
 # read as. What is sent never depends on it (to_json() reads the shape

@@ -206,6 +206,32 @@ export function routerFor(model: string): LMRouter {
   return saved ? namer : shared$("env", () => new LMRouter());
 }
 
+/**
+ * The router for calls that give their own key or address (`apiKey`,
+ * `baseUrl`), as Python chooses: the key beats saved logins and the
+ * environment; with only an address (a server of your own that speaks the
+ * provider's API), a saved login for the provider still supplies the
+ * credential, else the environment's key does.
+ */
+export function explicitRouter(model: string, apiKey: string | null, baseUrl: string | null): LMRouter {
+  const a = localAuth();
+  const namer = a ? shared$("auth", () => new LMRouter({ auth: a })) : shared$("env", () => new LMRouter());
+  const provider = namer.resolve(model).provider;
+  let saved = false;
+  if (!apiKey && a) {
+    try {
+      saved = a.statusSync(provider)?.connection != null;
+    } catch {
+      saved = false;
+    }
+  }
+  return shared$(JSON.stringify(["explicit", provider, apiKey, baseUrl, saved]), () => new LMRouter({
+    ...(apiKey ? { apiKeys: { [provider]: apiKey } } : {}),
+    ...(baseUrl ? { baseUrls: { [provider]: baseUrl } } : {}),
+    ...(saved ? { auth: a! } : {}),
+  }));
+}
+
 function shared$(key: string, make: () => LMRouter): LMRouter {
   let r = routers.get(key);
   if (!r) routers.set(key, r = make());

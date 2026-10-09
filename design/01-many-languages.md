@@ -27,6 +27,17 @@ ways (TypeScript serves, Python calls). It writes training examples and
 calls students trained elsewhere; it does not train. What it does
 differently is in `ts/README.md`,* Where TypeScript differs, stated*.*
 
+*2026-10-08: an audit of what Python had and the others did not. Ported:
+a choice whose answers each say what they mean, written one way in every
+language (contract case `functions/18`; R's one-line form changed to it),
+a function's own `api_key` and `base_url`, and `on_unreadable = "record"`.
+Python now loads what TypeScript, R and Julia save, checked by
+`tools/crosslang.py` (it always could; nothing checked it, and the READMEs
+said it could not). Still only in Python: training, an instruction the
+model writes and refines as calls come in, training rows a teacher writes,
+`optimization_runs()`, `verify`, `check` and `runs`, and the coding-agent
+skill; each language's README lists them.*
+
 ## What we want
 
 FunctAI should exist natively in **Python, TypeScript/JavaScript, R and

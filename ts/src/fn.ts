@@ -29,7 +29,7 @@ import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type Inpu
 import { checkInputs, checkInterface, interfaceSignature, recordedInputs, type Interface } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, modelString, PROBE } from "./models.ts";
-import { routerFor } from "./accounts.ts";
+import { explicitRouter, routerFor } from "./accounts.ts";
 import { droppedFields, recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
 import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
@@ -336,7 +336,7 @@ export function defaultsDocument(iface: Interface, code: Readonly<Record<string,
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "apiMaxWait", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
-  "escalateBelow"]);
+  "escalateBelow", "apiKey", "baseUrl", "onUnreadable"]);
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -520,7 +520,9 @@ export function make(core: Core): AIFunction {
     const lm = s.lm ?? defaultModel(env());
     if (!lm) throw new Error("no model configured, and no API key found to pick one: set OPENAI_API_KEY (or ANTHROPIC_API_KEY, GEMINI_API_KEY, …), or name a model: configure({ lm: \"gpt-4.1-mini\" })");
     const model = modelString(lm);
-    const router = (s.router ?? routerFor(model)) as Router & { resolve(m: string): { provider: string; model: string } };
+    // a router given wins; then the function's own key or address; then a saved login, else the environment
+    const router = (s.router ?? (s.apiKey || s.baseUrl ? explicitRouter(model, s.apiKey ?? null, s.baseUrl ?? null) : routerFor(model))) as
+      Router & { resolve(m: string): { provider: string; model: string } };
     const resolution = router.resolve(model);
     return { model, router, provider: resolution.provider, wire: resolution.model };
   };
@@ -760,6 +762,8 @@ export function make(core: Core): AIFunction {
         call.confidence = pred.confidence;
         if (Object.keys(pred.probabilities).length) call.probabilities = pred.probabilities;
         call.steps = stepsOf(call, pred);
+        // a kept unreadable reply has no answer: the record's and the done event's value is null (calls.md)
+        if (pred.refusal !== null) return { value: pred, outputs: {}, shown: null, returned: null, refusal: pred.refusal };
         return { value: pred, outputs: recordOutputs(pred, signature), shown: pred.answer, returned: pred.answer };
       },
     });

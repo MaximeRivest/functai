@@ -9,7 +9,9 @@ between them, on real output of both:
    version, and the same request, byte for byte, for the same input. One
    with code of its own is refused.
 2. The same function written natively in TypeScript, R and Julia has
-   Python's version and signature.
+   Python's version and signature: `mood`, and `route`, whose choices say
+   what each answer means (Python's comments, R's `choice()`, TypeScript's
+   `t.choice`, Julia's `OneOf`).
 3. One call log, four writers: each language logs calls of the same
    function and rates one into one folder. Every record passes the
    contract's schemas, and every language's `rated` gives the same rows,
@@ -21,6 +23,8 @@ between them, on real output of both:
    Julia's identical request with no model call; a program Python serves,
    TypeScript, R and Julia call with `remote`, and one TypeScript serves,
    Python calls: one call tree across the languages' logs.
+5. Functions TypeScript, R and Julia save load in Python: the version and
+   the request the saving language gives, byte for byte, for the same input.
 
 R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
 julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
@@ -86,11 +90,41 @@ def rounded(x: float) -> float:
 @ai(lm="gpt-4.1-mini")
 def tutor(message: str) -> str:
     """Tutor."""
+
+@ai(lm="gpt-4.1-mini", base_url="http://127.0.0.1:8000/v1", on_unreadable="record")
+def route(
+    message: str,  # the customer's words
+    channel: Literal[
+        "email",   # written at leisure, often long
+        "chat",    # short, often several messages
+    ],
+) -> Literal[
+    "shipping",    # where the parcel is, damage in transit
+    "billing",     # charges, refunds
+]:
+    """Which team answers?"""
+    urgency: Literal[
+        "low",
+        "high",    # the customer is losing money or time now
+    ] = _ai  # how soon to answer
+    return _ai
 '''
 
-NAMES = ["mood", "mood_taught", "person", "solve", "rounded"]
+NAMES = ["mood", "mood_taught", "person", "solve", "rounded", "route"]
 SAMPLE = {"mood": {"review": "Broke."}, "mood_taught": {"review": "Broke."}, "person": {"text": "Ana, 31."},
-          "solve": {"problem": "Two plus two?"}, "rounded": {"x": 1.5}}
+          "solve": {"problem": "Two plus two?"}, "rounded": {"x": 1.5},
+          "route": {"message": "I was charged twice.", "channel": "chat"}}
+# what each other language saves (5): every one of these, saved there, loads in Python with the same version and request
+SAVED_ELSEWHERE = {"typescript": ["mood", "route"], "r": ["mood", "route"], "julia": ["mood", "route"]}
+
+
+LANGUAGE = {"typescript": "TypeScript", "r": "R", "julia": "Julia"}
+
+
+def canonical(value) -> str:
+    """JSON compared as the contract compares it: lmcc's canonical form (keys in any order)."""
+    from lmcc.turn import canonical_json
+    return canonical_json(value)
 
 
 def schemas():
@@ -180,6 +214,26 @@ def main() -> int:
     server.shutdown()
     functai.configure(lm=None, client=None, log_calls=None)
 
+    # 5. what TypeScript, R and Julia saved loads here, and sends what it sent there
+    s = schemas()
+    for language, names in SAVED_ELSEWHERE.items():
+        theirs = json.loads((work / f"{language}-saved.json").read_text())
+        for name in names:
+            folder = work / f"{language}-saved" / name
+            manifest = json.loads((folder / "functai.json").read_text())
+            s["saved"].validate(manifest)
+            assert manifest["language"] == language, manifest["language"]
+            fn = functai.load(folder)
+            want = theirs[name]
+            assert fn.version == want["version"], (language, name, fn.version, want["version"])
+            mine = request_to_dict(fn.render(**want["inputs"]))
+            assert canonical(mine) == canonical(want["request"]), (language, name, mine, want["request"])
+            if name == "route":                    # the settings saved with it travel too (its address, its rule)
+                got = {k: fn._settings.get(k) for k in ("base_url", "on_unreadable")}
+                assert got == {"base_url": "http://127.0.0.1:8000/v1", "on_unreadable": "record"}, (language, got)
+            print(f"  ok    {name}: saved in {LANGUAGE[language]}, loaded in Python, same version and same request"
+                  + (", base_url and on_unreadable" if name == "route" else ""))
+
     # 4b. Python reads what Julia did: the conversation's third turn, the served call's parent
     with functai.configure(log_calls=str(log)):
         chat = shop.tutor.conversation("lesson", store=str(work / "conversations"))
@@ -230,7 +284,6 @@ def main() -> int:
         s["call"].validate(c)
     for r in ratings:
         s["rating"].validate(r)
-    s["saved"].validate(json.loads((work / "julia-saved" / "mood" / "functai.json").read_text()))
     rows, _left = calllog.rated_rows(calls_, ratings, name="mood", module="shop",
                                      signature=calllog.signature_id(shop.mood.signature))
     with functai.configure(log_calls=str(log)):

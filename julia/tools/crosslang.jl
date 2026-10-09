@@ -28,7 +28,11 @@ for (name, want) in python
     inputs = (; (Symbol(k) => v for (k, v) in want["inputs"])...)
     mine = LMCC.canonical_json(LM15.to_dict(render(f; inputs...)))
     check(mine == LMCC.canonical_json(want["request"]), "$name request:\n$mine\n$(LMCC.canonical_json(want["request"]))")
-    say("$name: saved in Python, loaded in Julia, same version and same request")
+    if name == "route"                     # the settings saved with it travel too (its address, its rule)
+        check(f.own[:base_url] == "http://127.0.0.1:8000/v1", "route base_url")
+        check(f.own[:on_unreadable] === :record, "route on_unreadable")
+    end
+    say("$name: saved in Python, loaded in Julia, same version and same request" * (name == "route" ? ", base_url and on_unreadable" : ""))
 end
 
 # 2. the same function, written here with Julia types
@@ -39,6 +43,20 @@ end
 check(version(mood) == python["mood"]["version"], "mood version")
 check(signature_id(mood) == python["mood"]["signature"], "mood signature")
 say("mood written in Julia (an @enum answer) has Python's version and signature")
+@ai module_name = "shop" lm = "gpt-4.1-mini" base_url = "http://127.0.0.1:8000/v1" on_unreadable = :record function route(message::String,
+        channel::OneOf("email" => "written at leisure, often long", "chat" => "short, often several messages"))
+    """
+    Which team answers?
+
+    # Arguments
+    - `message`: the customer's words
+    """
+    urgency::OneOf("low", "high" => "the customer is losing money or time now") = ai"how soon to answer"
+    result::OneOf("shipping" => "where the parcel is, damage in transit", "billing" => "charges, refunds") = ai
+end
+check(version(route) == python["route"]["version"], "route version: $(version(route)) != $(python["route"]["version"])")
+check(signature_id(route) == python["route"]["signature"], "route signature")
+say("route written in Julia (OneOf, each answer described) has Python's version and signature")
 
 # 3. one log: log and rate here, then read everyone's calls and ratings
 struct Fixed end
@@ -55,8 +73,16 @@ calls_, ratings = FunctAI.read_log(log)
 rows, _ = FunctAI.rated_rows(calls_, ratings; name="mood", module_name="shop", signature=signature_id(mood))
 write(joinpath(work, "julia-rated.json"), LMCC.json_text(rows))
 
-# 4. what Julia saves is a manifest every language reads (Python checks it against the schema)
-FunctAI.save(joinpath(work, "julia-saved", "mood"), with_demos(mood, ["Broke in a day." => unhappy]))
+# 4. what Julia saves is a manifest every language reads (Python checks it against the schema, loads it, and checks
+# the version and the request this gives)
+saved_here = LMCC.jobj()
+for (name, f) in ("mood" => with_demos(mood, ["Broke in a day." => unhappy]), "route" => route)
+    FunctAI.save(joinpath(work, "julia-saved", name), f)
+    inputs = python[name]["inputs"]
+    request = LM15.to_dict(render(f, (inputs[n] for n in FunctAI.input_names(f))...))      # its inputs are positional
+    saved_here[name] = LMCC.jobj("version" => version(f), "inputs" => inputs, "request" => request)
+end
+write(joinpath(work, "julia-saved.json"), LMCC.json_text(saved_here))
 
 # 5. stages 1.2 to 5 with Python: continue Python's conversation, answer from Python's disk cache, call Python's server
 @ai module_name = "shop" lm = "gpt-4.1-mini" function tutor(message::String)::String

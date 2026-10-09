@@ -31,6 +31,7 @@ Julia refuses to guess when two packages loaded with `using` export different fu
 - **Probabilities per class from `AIModel`**: predictions are deterministic. Calibrated probabilities come from a model that measures them (TypeSafe's Jev): `predict(f, x).probabilities`.
 - **A program's own settings**: a `@program` takes no settings of its own (`plugins`, `log_content`, …); set them around its calls (`with_settings`) or on the AI functions it calls.
 - **A program's version** follows the AI functions and programs it names (globals of its module, and the ones it captured where it was written), not plain Julia functions it calls.
+- **What only Python has yet**: an instruction the model writes and refines as calls come in (`autoinstruct`, `instruction_autorefine_calls`, `freeze()`); training rows a teacher model writes (`opt(n_synth = …)`); the record of how a copy was improved (`optimization_runs()`); `verify` (does a saved program still send what it sent), `check` (what a program depends on) and `runs` (past evaluations); the skill that teaches coding agents FunctAI.
 
 ## By design, for the stages Python built first
 

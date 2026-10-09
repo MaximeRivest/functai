@@ -74,6 +74,7 @@ function field_def(name, spec, where; default=nothing)
     spec isa Union{Type,OneOf,AbstractDict} || throw(ArgumentError("$where: a type, OneOf(...), a JSON Schema Dict, or T => \"words\"; not $(repr(spec))"))
     shape = shape_of(spec; where)
     desc = desc === nothing || isempty(desc) ? nothing : String(desc)
+    spec isa OneOf && (desc = with_choices(desc, spec.meanings))       # what each described answer means
     default === nothing && return FieldDef(String(name), spec, shape, desc)
     written = something(default)
     computed = written isa ComputedDefault ? written : nothing
@@ -410,7 +411,10 @@ function resolve_route(s)
         "ANTHROPIC_API_KEY, GEMINI_API_KEY, GROQ_API_KEY, …), sign in with FunctAI.login(), or name a model: " *
         "FunctAI.configure!(lm = \"gpt-4.1-mini\")"))
     model = model_string(lm)
+    # a router given wins; then the function's own key or address; then a saved sign-in, else the environment
     router = something(setting(s, :router), Some(nothing))
+    key, url = setting(s, :api_key), setting(s, :base_url)
+    router === nothing && (key !== nothing || url !== nothing) && (router = explicit_router(model, key, url))
     router === nothing && (router = default_router(model))
     provider, wire = route(router, model)
     (; model, router, provider, wire)
@@ -660,8 +664,22 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
                     r.router, r.model, offered, call, values -> typed_outputs(f, values))
             end
         end
+        # on_unreadable = :record: no answer (missing), its own code not run, the refusal recorded as its error
+        kept(turn, responses, refusal) = begin
+            call.lmcc = try
+                LMCC.turn_to_dict(turn)
+            catch
+                nothing
+            end
+            call.steps = steps_of(call, turn)
+            call.outputs = OrderedDict{String,Any}()
+            call.kept = refusal
+            prediction[] = Prediction(missing, (;), answer_name(f), call.id, turn, responses, Any[], JObj(), refusal)
+            missing
+        end
         job = make_job(shaped.settings)
         outputs, turn, responses, reading = run_job(job)
+        reading isa Kept && return kept(turn, responses, reading.refusal)
         probs = reading.probabilities
         repairs = reading.repairs
         confidence = answer_confidence(probs, outputs)
@@ -691,6 +709,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
                     delete!(second, :escalate_to)
                     job = make_job(second)
                     outputs, turn, responses, reading = run_job(job)
+                    reading isa Kept && return kept(turn, responses, reading.refusal)
                     probs, repairs = reading.probabilities, reading.repairs
                     confidence = answer_confidence(probs, outputs)
                 end

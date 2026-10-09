@@ -21,7 +21,8 @@ end
 Base.showerror(io::IO, e::LoadRefused) = print(io, "LoadRefused [", e.code, "]: ", e.msg)
 refuse_load(code, msg) = throw(LoadRefused(code, msg))
 
-const SNAKE_SETTINGS = (:retries, :api_retries, :api_max_wait, :max_steps, :tool_errors, :capabilities, :log_content)
+const SNAKE_SETTINGS = (:retries, :api_retries, :api_max_wait, :max_steps, :tool_errors, :capabilities, :log_content, :base_url,
+                        :on_unreadable)
 
 
 """
@@ -195,7 +196,7 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
     adapter === nothing || (own[:adapter] = adapter)
     for k in SNAKE_SETTINGS
         v = get(settings_in, String(k), nothing)
-        v === nothing || (own[k] = k === :tool_errors ? Symbol(v) : k === :log_content ? content_setting(v) : v)
+        v === nothing || (own[k] = k in (:tool_errors, :on_unreadable) ? Symbol(v) : k === :log_content ? content_setting(v) : v)
     end
     template = get(data, "template", nothing)
     template isa AbstractVector && (own[:template] = Any[template...])

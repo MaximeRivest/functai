@@ -303,6 +303,18 @@ DEFINITIONS = {
                                                                                    "default": "2026-09-30"}},
                                "required": ["note"]}, None)],
                    [("result", S, None)])),
+    "18-choices-described-one-by-one": (
+        "Answers of a choice described one by one (functions.md, A definition): an input's desc is its words, "
+        "then a line per described answer, and goes into its field and its Parameter guidance as written; an "
+        "input with no words of its own starts with 'one of:'; an answer left undescribed is not listed.",
+        definition("route", "Which team answers?",
+                   [("message", S, "the customer's words"),
+                    ("channel", {"enum": ["email", "chat"], "type": "string"},
+                     "one of:\n  - email: written at leisure, often long\n  - chat: short, often several messages")],
+                   [("urgency", {"enum": ["low", "high"], "type": "string"},
+                     "how soon to answer\n  - high: the customer is losing money or time now"),
+                    ("result", {"enum": ["shipping", "billing"], "type": "string"},
+                     "one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds")])),
 }
 
 

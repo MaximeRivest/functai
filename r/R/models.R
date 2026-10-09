@@ -115,6 +115,21 @@ default_router <- function() {
   the$router
 }
 
+# The router for calls that give their own key or address (`api_key`,
+# `base_url`), as Python chooses: the key beats the environment's; with only
+# an address (a server of your own that speaks the provider's API), the
+# environment's key is still used. One per provider, key and address.
+explicit_router <- function(model, api_key, base_url) {
+  provider <- resolve_model(default_router(), model)$provider
+  key <- paste("explicit", provider, api_key %||% "", base_url %||% "", sep = "\r")
+  if (is.null(the$explicit_routers)) the$explicit_routers <- new.env(parent = emptyenv())
+  if (is.null(the$explicit_routers[[key]]))
+    the$explicit_routers[[key]] <- lm15::new_router(
+      api_keys = if (is.null(api_key)) list() else stats::setNames(list(api_key), provider),
+      base_urls = if (is.null(base_url)) list() else stats::setNames(list(base_url), provider))
+  the$explicit_routers[[key]]
+}
+
 # provider and model name for a model string, through the router
 resolve_model <- function(router, model) {
   if (inherits(router, "lm15_router")) return(lm15::resolve(router, model))

@@ -175,6 +175,22 @@ API keys from the environment (as Python chooses).
 """
 default_router(model::AbstractString) = shared_router((:for, String(model)), () -> pick_router(model))
 
+"""
+The router for calls that give their own key or address (`api_key`,
+`base_url`), as Python chooses: the key beats saved sign-ins and the
+environment; with only an address (a server of your own that speaks the
+provider's API), a saved sign-in for the provider still supplies the
+credential, else the environment's key does.
+"""
+function explicit_router(model::AbstractString, api_key, base_url)
+    provider = route(default_router(model), model)[1]
+    signed_in = api_key === nothing && provider in signed_in_providers()
+    shared_router((:for, :explicit, provider, api_key, base_url, signed_in), () -> LM15.LMRouter(LM15.RouterConfig(;
+        api_keys=api_key === nothing ? Dict{String,Any}() : Dict{String,Any}(provider => api_key),
+        base_urls=base_url === nothing ? Dict{String,String}() : Dict{String,String}(provider => base_url),
+        auth=signed_in ? LM15.local_auth() : nothing)))
+end
+
 function pick_router(model)
     env = shared_router(:env, LM15.LMRouter)
     provider = try

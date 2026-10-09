@@ -22,7 +22,12 @@ for (name in names(python)) {
   stopifnot_eq(ai_signature_id(fn), want$signature, paste(name, "signature"))
   mine <- lmcc::canonical_json(do.call(ai_render, c(list(fn), want$inputs)))
   stopifnot_eq(mine, lmcc::canonical_json(want$request), paste(name, "request"))
-  say(name, ": saved in Python, loaded in R, same version and same request")
+  if (name == "route") {                   # the settings saved with it travel too (its address, its rule)
+    own <- functai:::core_of(fn)$own
+    stopifnot_eq(own$base_url, "http://127.0.0.1:8000/v1", "route base_url")
+    stopifnot_eq(own$on_unreadable, "record", "route on_unreadable")
+  }
+  say(name, ": saved in Python, loaded in R, same version and same request", if (name == "route") ", base_url and on_unreadable")
 }
 
 # 2. the same function, written here
@@ -35,6 +40,25 @@ mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
 stopifnot_eq(ai_version(mood), python$mood$version, "version")
 stopifnot_eq(ai_signature_id(mood), python$mood$signature, "signature")
 say("mood written in R has Python's version and signature")
+route <- ai(urgency + result ~ message + channel, "Which team answers?",
+  message = "the customer's words",
+  channel = choice(email = "written at leisure, often long", chat = "short, often several messages"),
+  urgency = described(choice("low", high = "the customer is losing money or time now"), "how soon to answer"),
+  result = choice(shipping = "where the parcel is, damage in transit", billing = "charges, refunds"),
+  .name = "route", .defined_in = "shop", .lm = "gpt-4.1-mini", .base_url = "http://127.0.0.1:8000/v1", .on_unreadable = "record")
+stopifnot_eq(ai_version(route), python$route$version, "route version")
+stopifnot_eq(ai_signature_id(route), python$route$signature, "route signature")
+say("route written in R (choice(), each answer described) has Python's version and signature")
+
+# 5. what R saves, Python loads (it checks the version and the request this gives)
+saved_here <- list()
+for (name in c("mood", "route")) {
+  fn <- get(name)
+  write_ai(fn, file.path(work, "r-saved", name))
+  inputs <- python[[name]]$inputs
+  saved_here[[name]] <- list(version = ai_version(fn), inputs = inputs, request = do.call(ai_render, c(list(fn), inputs)))
+}
+writeLines(lmcc::json_text(saved_here), file.path(work, "r-saved.json"))
 
 # 3. one log: log and rate here, then read everyone's calls and ratings
 p <- predict(mood, data.frame(review = "Five stars, would buy again."))

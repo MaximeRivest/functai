@@ -84,6 +84,11 @@ end
   `Dict{String,T}`, `NamedTuple`s, your own structs, and `Union{T,Nothing}`.
   Answers come back as those types; an answer that does not fit (a choice
   outside the list, a missing field) is asked again.
+- **A choice can say what its answers mean**, and the model reads it:
+  `OneOf("low", "high" => "the customer is losing money or time now")`.
+  The words are written as every language writes them, so the same choice
+  described in Python (a comment after each answer), R (`choice()`) or
+  TypeScript (`t.choice`) sends the same request and has the same version.
 - **Code of your own** after the outputs runs on them, and its value is
   what the call returns:
 
@@ -122,6 +127,16 @@ A function's own settings win over `with_settings`, which wins over
 (`:xml`, `:chat`, `:json`), `template`, `reasoning = true` (the model writes
 its reasoning first), `tools`, `retries`, `concurrency`, `log_calls`.
 `?configure!` lists them all.
+
+`api_key` is a key for the provider `lm` names (it beats saved sign-ins
+and the environment, and is never saved); `base_url` is where that
+provider is reached: a server of your own that speaks its API, such as vLLM
+or Ollama (`lm = "openai:qwen3", base_url = "http://localhost:8000/v1"`),
+saved with the function as its model is. A reply that still cannot be read
+once the re-asks are spent fails the call; with `on_unreadable = :record`
+the call ends well instead, with `missing` (`predict(...).refusal` says
+why), recorded with no outputs and the refusal as its error, and a
+conversation goes on past it.
 
 ## Tables
 
@@ -320,7 +335,8 @@ A saved folder holds shapes, not Julia types; `types` gives them back.
 from any language) takes and gives, without loading it. A
 function saved in Python, TypeScript or R loads here when it has no code of
 its own; what it cannot run is refused with a reason (`LoadRefused`).
-TypeScript and R load what Julia saves; Python does not yet.
+Python, TypeScript and R load what Julia saves (`tools/crosslang.py` checks
+each, both ways).
 
 ## Where Julia differs, stated
 
@@ -372,9 +388,16 @@ TypeScript and R load what Julia saves; Python does not yet.
   `load` and `login` are not exported (FileIO's names), nor is `ai"…"`
   (PromptingTools.jl's): `@ai` reads it from your code.
 - **Not yet**: training your own weights (Julia writes the examples and
-  calls a trained student; Python's `bake` or any trainer trains), a
-  `@program`'s own settings, and saving code of your own. The manual's
-  *Where Julia differs* lists every difference.
+  calls a trained student; Python's `bake` or any trainer trains; a baked
+  classifier, a *head*, runs only in Python), a `@program`'s own settings,
+  and saving code of your own. Python has some things no other language
+  has yet: an instruction the model writes and refines as calls come in
+  (`autoinstruct`, `instruction_autorefine_calls`, `freeze()`), training
+  rows a teacher model writes (`opt(n_synth = …)`), the record of how a
+  copy was improved (`optimization_runs()`), `verify`, `check` and `runs`
+  for saved programs and past evaluations, and the skill that teaches
+  coding agents FunctAI. The manual's *Where Julia differs* lists every
+  difference.
 
 ## Developing
 

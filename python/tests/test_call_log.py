@@ -223,6 +223,7 @@ def test_an_unreadable_reply_kept_as_a_turn_is_a_failure_with_empty_outputs(fake
     p = keep.predict("Where is it?")
     [rec] = valid(schemas, logged(log))
     assert p.refusal is not None and rec["outputs"] == {} and rec["error"]["type"] == "Refusal"
+    assert "returned" not in rec                                     # no answer, and no code changed one
 
 
 def test_a_measured_answer_carries_its_confidence_and_escalation(monkeypatch, log, schemas):

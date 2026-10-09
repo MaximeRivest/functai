@@ -30,7 +30,16 @@ every event), \code{journal} (\code{\link[=ai_journal]{ai_journal()}}) and \code
 \code{plugins} (\code{\link[=ai_plugin]{ai_plugin()}}) and \code{program_plugins}; \code{approve} (a function,
 \code{"changes"}, \code{"all"}, or tool names: see \code{\link[=ai_conversation]{ai_conversation()}});
 \code{escalate_to} (a model or an AI function that answers when the first
-model is less sure than \code{escalate_below}, default 0.9).}
+model is less sure than \code{escalate_below}, default 0.9); \code{api_key} (a key
+for the provider \code{lm} routes to: it beats saved sign-ins and the
+environment; never saved) and \code{base_url} (where that provider is reached:
+a server of your own that speaks its API, such as vLLM or Ollama with
+\code{lm = "openai:qwen3"}; saved with a function, as its model is);
+\code{on_unreadable} (\code{"raise"}, the default, or \code{"record"}: a reply that still
+cannot be read once the re-asks are spent ends the call well with no
+answer, \code{NA}, \code{predict()}'s \code{.error} saying why, recorded with no outputs
+and the refusal as its error, and a conversation goes on past it; for
+long runs that must not stop at one bad reply).}
 
 \item{code}{Code to run with these settings.}
 

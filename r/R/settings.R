@@ -7,7 +7,8 @@ DEFAULTS <- list(retries = 1L, api_retries = 3L, api_max_wait = 60, max_steps = 
 SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "seed", "config", "adapter", "template",
               "module", "include_fn_name", "capabilities", "retries", "api_retries", "api_max_wait", "max_steps", "tool_errors",
               "log_calls", "log_content", "caller", "concurrency", "on_error", "observers", "journal", "program_observers",
-              "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below")
+              "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below",
+              "api_key", "base_url", "on_unreadable")
 
 check_settings <- function(s, call = rlang::caller_env()) {
   twice <- unique(names(s)[duplicated(names(s))])
@@ -30,6 +31,10 @@ check_settings <- function(s, call = rlang::caller_env()) {
     cli::cli_abort("{.arg replicate} is a whole number from 0: the n-th independent answer to the same request", call = call)
   if ("api_max_wait" %in% names(s) && !is.null(s$api_max_wait) && !(is_num(s$api_max_wait) && s$api_max_wait >= 0))
     cli::cli_abort("{.arg api_max_wait} is a number of seconds, at least 0", call = call)
+  if ("on_unreadable" %in% names(s) && !is.null(s$on_unreadable) && !(rlang::is_string(s$on_unreadable) && s$on_unreadable %in% c("raise", "record")))
+    cli::cli_abort("{.arg on_unreadable} is {.val raise} or {.val record}", call = call)
+  for (k in intersect(c("api_key", "base_url"), names(s)))
+    if (!is.null(s[[k]]) && !(rlang::is_string(s[[k]]) && nzchar(s[[k]]))) cli::cli_abort("{.arg {k}} is one string", call = call)
   if ("plugins" %in% names(s)) s["plugins"] <- list(check_plugins(s$plugins, call = call))
   if ("approve" %in% names(s)) s["approve"] <- list(check_approve(s$approve, call = call))
   s
@@ -76,7 +81,16 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #'   `plugins` ([ai_plugin()]) and `program_plugins`; `approve` (a function,
 #'   `"changes"`, `"all"`, or tool names: see [ai_conversation()]);
 #'   `escalate_to` (a model or an AI function that answers when the first
-#'   model is less sure than `escalate_below`, default 0.9).
+#'   model is less sure than `escalate_below`, default 0.9); `api_key` (a key
+#'   for the provider `lm` routes to: it beats saved sign-ins and the
+#'   environment; never saved) and `base_url` (where that provider is reached:
+#'   a server of your own that speaks its API, such as vLLM or Ollama with
+#'   `lm = "openai:qwen3"`; saved with a function, as its model is);
+#'   `on_unreadable` (`"raise"`, the default, or `"record"`: a reply that still
+#'   cannot be read once the re-asks are spent ends the call well with no
+#'   answer, `NA`, `predict()`'s `.error` saying why, recorded with no outputs
+#'   and the refusal as its error, and a conversation goes on past it; for
+#'   long runs that must not stop at one bad reply).
 #' @return The settings in force, invisibly (`ai_config()`), or the value of
 #'   `code` (`with_ai_config()`).
 #' @examples

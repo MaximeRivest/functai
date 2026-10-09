@@ -1261,7 +1261,9 @@ def _outputs_of(call: Call, returned: Any, error: Optional[BaseException]
         named.update({k: v for k, v in raw.items() if k not in named})
         values = {k: json_value(v) for k, v in named.items()}
         outputs = {k: v for k, (v, _n, _d) in values.items()}
-        if returned is not _NOTHING and not isinstance(returned, Prediction) and error is None:
+        # a kept unreadable reply (on_unreadable="record") has no answer, and no code changed one: no `returned`
+        if returned is not _NOTHING and not isinstance(returned, Prediction) and error is None \
+                and getattr(pred, "refusal", None) is None:
             value, _n, _d = json_value(returned)
             if outputs.get(call.answer or "result", _NOTHING) != value:
                 shown = value

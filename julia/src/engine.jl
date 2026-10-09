@@ -35,15 +35,20 @@ struct Prediction
     responses::Vector{Any}
     repairs::Vector{Any}
     probabilities::JObj
+    refusal::Any                     # on_unreadable = :record: why the call has no answer (the refusal it kept), else nothing
 end
+Prediction(value, outputs, answer_name, call, turn, responses, repairs, probabilities) =
+    Prediction(value, outputs, answer_name, call, turn, responses, repairs, probabilities, nothing)
 function Base.getproperty(p::Prediction, name::Symbol)
     name === :probabilities && return typed_probabilities(p)
+    name === :answer && getfield(p, :refusal) !== nothing && return missing
     name === :answer && return getproperty(getfield(p, :outputs), Symbol(getfield(p, :answer_name)))
     name === :response && return isempty(getfield(p, :responses)) ? nothing : last(getfield(p, :responses))
     name === :attempts && return length(getfield(p, :responses))
     getfield(p, name)
 end
-Base.propertynames(::Prediction) = (:value, :answer, :outputs, :call, :turn, :response, :responses, :attempts, :repairs, :probabilities)
+Base.propertynames(::Prediction) = (:value, :answer, :outputs, :call, :turn, :response, :responses, :attempts, :repairs, :probabilities,
+                                    :refusal)
 
 "An answer as the probabilities spell it: text for a text or choice answer, JSON otherwise."
 answer_json(T, k) = T <: Union{AbstractString,Symbol,Enum} ? k : (try
@@ -418,7 +423,18 @@ function run_tool(tools, call, errors::Symbol)
     out isa AbstractString ? String(out) : LMCC.json_text(logvalue(out))
 end
 
-"Call the model (and run tools until it answers): the typed outputs, the turn, the replies."
+"An unreadable reply a call kept with no values (functions.md, \"Keeping an unreadable reply\"): its refusal."
+struct Kept
+    refusal::LMCC.Refusal
+end
+
+"""
+Call the model (and run tools until it answers): the typed outputs, the turn,
+the replies, and the reading. With `on_unreadable = :record`, a reply that
+still cannot be read (a `parse-` refusal) ends it with no values: empty
+outputs, the turn with that reply as its last step, and `Kept(refusal)` in
+place of the reading.
+"""
 function run_job(job::Job)
     plan = job.plan
     values = prepare_inputs(plan.signature, job.inputs)
@@ -428,7 +444,20 @@ function run_job(job::Job)
     steps = max(1, job.settings[:max_steps])
     for _ in 1:steps
         rendered = LMCC.render(plan, turn; turns=job.past)
-        response, reading, typed = complete_once(job, rendered, responses)
+        got = try
+            complete_once(job, rendered, responses)
+        catch err
+            (err isa LMCC.Refusal && startswith(err.code, "parse-") && get(job.settings, :on_unreadable, :raise) === :record &&
+             !isempty(responses)) || rethrow()
+            # kept as it came, with no values: the call ends well with no answer
+            message = LMCC.as_message(LMCC.deepcopy_json(LM15.to_dict(last(responses))))
+            turn = LMCC.finish(LMCC.with_step(turn, LMCC.ModelStep(JObj(), message, LMCC.sha256_of(LMCC.request(rendered)),
+                                                                   plan.calls_field)))
+            meta = copy(turn.meta)
+            meta["refusal"] = LMCC.describe(err)
+            return ((;), LMCC.with_meta(turn, meta), responses, Kept(err))
+        end
+        response, reading, typed = got
         turn = LMCC.step(rendered, response)
         calls = get(reading.values, "calls", nothing)
         calls === nothing || append!(job.asked, calls)

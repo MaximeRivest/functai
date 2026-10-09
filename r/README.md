@@ -135,6 +135,11 @@ item_state <- ai(state ~ message, "What state is the item in?",
     faulty   = "worked at first, then failed in normal use"))
 ```
 
+The model reads each meaning on a line of its own under the field, written
+as every language writes it: the same choice described in Python (a
+comment after each answer), TypeScript (`t.choice`) or Julia (`OneOf`)
+sends the same request and has the same version.
+
 Printing a function shows it as you wrote it: the formula, the sentence,
 and each field with its type and words.
 
@@ -155,7 +160,16 @@ record's columns first) fails its
 row before any request. When some calls fail
 (after the re-asks and the provider retries), their rows are `NA` and one
 warning says how many; `ai_problems()` lists them. A single call that fails
-is an error, as is any failure with `.on_error = "stop"`.
+is an error, as is any failure with `.on_error = "stop"`. With
+`.on_unreadable = "record"`, a reply that still cannot be read once the
+re-asks are spent ends its call well instead: the row is `NA` with no
+warning, `predict()`'s `.error` says why, the call log records it with no
+outputs and the refusal as its error, and a conversation goes on past it.
+
+An input is a column: one value per row. A record or a picture given
+alone is a list of one, `list(list(media_type = "image/png", data = b64))`;
+a bare named list would be read as one row per member, and is refused,
+saying so.
 
 ## How often is it right?
 
@@ -274,7 +288,7 @@ reasoning on, or changing a default, starts no new pool).
 
 ```r
 team <- read_ai("team/")     # a folder Python's functai.save wrote, or TypeScript's, or Julia's
-write_ai(team, "team/")      # for TypeScript's and Julia's loaders
+write_ai(team, "team/")      # for Python's, TypeScript's and Julia's loaders
 ```
 
 `read_ai()` checks the function sends exactly what it sent where it was
@@ -299,7 +313,11 @@ which `tidyr::unnest_wider()` spreads into columns.
 `ai()` for one function (`.lm`, `.temperature`, `.max_tokens`, `.adapter`
 (`"xml"`, `"chat"`, `"json"`), `.module = "cot"` (reasoning first),
 `.retries`, `.concurrency`, `.router` (an `lm15::new_router()`), ...), and
-`update()` for a copy.
+`update()` for a copy. `.api_key` is a key for the provider `lm` names (it
+beats the environment, and is never saved); `.base_url` is where that
+provider is reached: a server of your own that speaks its API, such as
+vLLM or Ollama (`.lm = "openai:qwen3", .base_url =
+"http://localhost:8000/v1"`), saved with the function as its model is.
 
 ## Your own code around AI functions
 
@@ -419,11 +437,16 @@ each call tree's events while it is written.
 ## Not here yet
 
 Compared with Python: training models itself (`bake_examples()` writes what
-any trainer reads, and `baked()` runs the result), saving a program's own R
+any trainer reads, and `baked()` runs the result when it writes text; a
+baked classifier, a *head*, runs only in Python), saving a program's own R
 code or tools in a folder (an AI function saves; a program does not yet),
-Python's `verify`, `check` and `runs`, and templates written as R
-functions. Python cannot yet load a function saved in R (TypeScript and
-Julia can). The [home page](https://maximerivest.github.io/functai/#what-each-language-has)
+Python's `verify`, `check` and `runs`, templates written as R functions, an
+instruction the model writes and refines as calls come in (`autoinstruct`,
+`instruction_autorefine_calls`, `freeze()`), training rows a teacher model
+writes (`opt(n_synth = …)`), the record of how a copy was improved
+(`optimization_runs()`), and the skill that teaches coding agents FunctAI.
+Python, TypeScript and Julia load what R saves. The
+[home page](https://maximerivest.github.io/functai/#what-each-language-has)
 compares the four languages.
 
 ## Developing

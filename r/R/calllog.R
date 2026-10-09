@@ -203,6 +203,8 @@ call_record <- function(call, error = NULL) {
   probabilities <- Filter(length, call$probabilities %||% list())
   if (length(probabilities) && !is.null(call$outputs)) rec$probabilities <- probabilities
   rec$sizes <- list(inputs = in_sizes, outputs = out_sizes)
+  # a call that ended well with no values (on_unreadable = "record") records the refusal it kept (calls.md)
+  error <- error %||% call$kept_refusal
   rec["error"] <- list(if (is.null(error)) NULL else error_json(error))
   rec["model"] <- list(if (length(answered)) answered[[length(answered)]]$model else NULL)
   rec$usage <- if (length(usage)) usage else lmcc::jobj()

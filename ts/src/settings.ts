@@ -37,8 +37,16 @@ export interface Router {
 export interface Settings {
   /** The model: `"gpt-4.1-mini"`, `"claude-haiku-4-5"`, `"groq:openai/gpt-oss-120b"`, … */
   lm?: string | null;
-  /** The lm15 router calls go through (keys, base URLs, a fake for tests). */
+  /** The lm15 router calls go through (keys, base URLs, a fake for tests). It wins over `apiKey` and `baseUrl`. */
   router?: Router | null;
+  /** A key for the provider `lm` routes to: it beats saved logins and the environment. Never saved with a function. */
+  apiKey?: string | null;
+  /**
+   * Where that provider is reached: a server of your own that speaks its API
+   * (`lm: "openai:qwen3"` with `baseUrl: "http://localhost:8000/v1"` for vLLM or
+   * Ollama), a gateway. Saved with a function, as its model is.
+   */
+  baseUrl?: string | null;
   temperature?: number | null;
   maxTokens?: number | null;
   topP?: number | null;
@@ -56,6 +64,15 @@ export interface Settings {
   capabilities?: Capabilities | null;
   /** Re-asks after an unreadable reply (default 1). */
   retries?: number;
+  /**
+   * What a reply that still cannot be read once the re-asks are spent does:
+   * `"raise"` (the default) ends the call with its refusal; `"record"` ends it
+   * well with no answer (`undefined`; `prediction.refusal` says why), recorded
+   * with `outputs: {}` and the refusal as its error, and a conversation goes on
+   * past it. For runs that must not stop at one bad reply. A provider error
+   * still raises.
+   */
+  onUnreadable?: "raise" | "record";
   /** Re-sends after a transient provider error (default 3). */
   apiRetries?: number;
   /** The longest a provider may ask to wait before a re-send, in seconds (default 60). A longer
@@ -158,6 +175,13 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
   checkPlugins(settings.plugins, where);
   if (settings.replicate !== undefined && settings.replicate !== null && !(Number.isInteger(settings.replicate) && settings.replicate >= 0)) {
     throw new TypeError(`${where}: replicate is a whole number, 0 or more`);
+  }
+  if (settings.onUnreadable !== undefined && settings.onUnreadable !== "raise" && settings.onUnreadable !== "record") {
+    throw new TypeError(`${where}: onUnreadable is "raise" or "record", not ${JSON.stringify(settings.onUnreadable)}`);
+  }
+  for (const k of ["apiKey", "baseUrl"] as const) {
+    const v = settings[k];
+    if (v !== undefined && v !== null && (typeof v !== "string" || !v)) throw new TypeError(`${where}: ${k} is text`);
   }
   const wait = settings.apiMaxWait;
   if (wait !== undefined && wait !== null && !(typeof wait === "number" && wait >= 0)) {

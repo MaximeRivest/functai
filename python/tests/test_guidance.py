@@ -4,10 +4,12 @@ Literal or an Enum, after a closing bracket, on the fields of nested records,
 a record's docstring, Annotated text (functai/guidance.py). Each test reads
 the instruction a function would send; nothing is sent."""
 import enum
+import json
 import subprocess
 import sys
 import textwrap
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Annotated, Literal, Optional
 
 from pydantic import BaseModel, Field
@@ -177,6 +179,14 @@ def test_choices_of_parameters_outputs_and_the_answer_are_described():
     assert "- message: the customer's words" in text
     assert "- urgency: how soon to answer\n  - high: the customer is losing money or time now" in text
     assert "- result: one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds" in text
+
+
+def test_described_choices_are_written_as_every_language_writes_them():
+    # contract/functions.md, "A choice's answers, described one by one": route is case 18's definition, written in
+    # Python's way (R's choice(), TypeScript's t.choice and Julia's OneOf give it the same version)
+    case = json.loads((Path(__file__).resolve().parents[2] / "contract" / "cases" / "functions"
+                       / "18-choices-described-one-by-one.json").read_text())
+    assert route.using(lm="gpt-4.1-mini").version == case["expect"]["version"]
 
 
 # ---------------------------------------------------------------- what stays the same

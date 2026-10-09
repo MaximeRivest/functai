@@ -312,7 +312,10 @@ def test_running_the_same_bake_again_finds_it_done(baked, tiny):
 
 
 def test_a_stopped_run_resumes_from_its_checkpoint(tiny, home):
-    run = capital.bake(rows(), student=tiny, wait=False, report=False, **{**TRAIN, "epochs": 16})
+    # a checkpoint every tenth of the run: the stop comes at the first, and the resumed run does the other nine
+    # tenths. 3 epochs (51 steps) keep that well inside the test's 240 s on a loaded machine: CPU training ran at
+    # about one step a second there (2026-10-08), and 16 epochs (272 steps) went past the limit
+    run = capital.bake(rows(), student=tiny, wait=False, report=False, **{**TRAIN, "epochs": 3})
     t0 = time.time()
     while not run.checkpoints() and time.time() - t0 < 180:
         time.sleep(0.5)

@@ -39,7 +39,11 @@ choice <- function(...) {
   if (!length(levels)) cli::cli_abort("{.fn choice} needs its answers: {.code choice(\"yes\", \"no\")}")
   if (anyDuplicated(levels)) cli::cli_abort("{.fn choice} has {.val {levels[duplicated(levels)]}} twice")
   f <- new_field(list(enum = as.list(levels), type = "string"), "enum", levels = levels)
-  if (length(meanings)) f$meanings <- vapply(meanings, trim_white, "")
+  if (length(meanings)) {
+    meanings <- vapply(meanings, one_line, "")
+    meanings <- meanings[nzchar(meanings)]                 # an empty meaning describes nothing
+    if (length(meanings)) f$meanings <- meanings
+  }
   f
 }
 
@@ -61,11 +65,13 @@ described <- function(x, desc) {
   f
 }
 
-# The words the model reads about a field: yours, then what each answer of a
-# choice means.
+# The words the model reads about a field: yours (or "one of:"), then a line
+# per answer of a choice that says what it means, as every language writes it
+# (contract/functions.md, "A choice's answers, described one by one").
 field_desc <- function(f) {
-  m <- if (length(f$meanings)) paste(sprintf("%s: %s", names(f$meanings), f$meanings), collapse = "; ")
-  if (is.null(f$desc)) m else if (is.null(m)) f$desc else paste0(sub("[.;:,]$", "", f$desc), ". ", m)
+  if (!length(f$meanings)) return(f$desc)
+  paste(c(if (is.null(f$desc) || !nzchar(f$desc)) "one of:" else f$desc,
+          sprintf("  - %s: %s", names(f$meanings), f$meanings)), collapse = "\n")
 }
 
 # A field's JSON Schema, with its words as the description.
@@ -149,7 +155,8 @@ new_field <- function(shape, kind, desc = NULL, levels = NULL, fields = NULL, it
 
 #' @export
 print.functai_field <- function(x, ...) {
-  cat("<functai field> ", type_label(x), if (!is.null(field_desc(x))) paste0("  # ", field_desc(x)), "\n", sep = "")
+  cat("<functai field> ", type_label(x), if (!is.null(x$desc)) paste0("  # ", x$desc), "\n", sep = "")
+  if (length(x$meanings)) cat(sprintf("  %s  %s\n", formatC(names(x$meanings), width = -max(nchar(names(x$meanings)))), x$meanings), sep = "")
   invisible(x)
 }
 

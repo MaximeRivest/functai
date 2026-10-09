@@ -32,6 +32,30 @@ its docstring; TypeScript: `ai({...})`), it comes down to this data:
 | `settings` | the ones that shape the request: `adapter`, `template`, `module`, `include_fn_name_in_instructions`, `capabilities`, `tools`. |
 | `state` | what improving changes: `instructions` (text that replaces the written instruction, or null) and `demos` (worked examples). |
 
+**A choice's answers, described one by one.** Where a language lets each
+answer of a choice say what it means (Python: a comment after each choice
+of a `Literal[...]` written over several lines, or after each member of an
+`Enum`; R: `choice(approve = "...")`; TypeScript: `t.choice(["approve",
+"deny"], { approve: "..." })`; Julia: `OneOf("approve" => "...")`), those
+words are part of
+the field's `desc`, written one way in every language, so the same choice
+described the same way sends the same bytes wherever it is written:
+
+- the field's own words, or `one of:` when it has none;
+- then, for each described answer, in the shape's order, a line
+  `  - <answer>: <meaning>` (two spaces, a dash, a space);
+- joined by `\n`.
+
+A meaning is trimmed of white space at both ends, and each run of white
+space inside it that holds a line break (what Python's `str.splitlines()`
+splits on) becomes one space. White space is what [scores.md](scores.md)
+says it is. An answer whose
+meaning is empty is not described, and an answer left undescribed is not
+listed (the shape lists every answer). A choice with no described answer
+leaves the field's words as they are. (Until 2026-10-08 R wrote `<words>.
+<answer>: <meaning>; ...` on one line: a semicolon or a colon inside a
+meaning made that ambiguous, and six long meanings were one wall of text.)
+
 A definition is refused when lmcc refuses its signature
 (`signature-malformed`), and then when its interface (its inputs and
 outputs) breaks the rules every interface keeps ([programs.md](programs.md),
@@ -279,6 +303,17 @@ JSON.
 - **A value that does not fit its type** (a choice outside its list, a
   record missing a field or holding one it does not name) is an
   unreadable reply (`parse-value`).
+- **Keeping an unreadable reply** (`on_unreadable`: `"raise"`, the
+  default, or `"record"`). With `"record"`, a reply whose refusal's code
+  starts with `parse-` (`parse-filtered` included) that would end the
+  call, once its re-asks are spent, ends it well instead, with no values:
+  the call returns no answer (Python `None`, TypeScript `undefined`, R
+  `NA`, Julia `missing`), what it returns says why (its refusal), its
+  record has `outputs: {}`, no `returned`, and the refusal as its `error`
+  ([calls.md](calls.md)), and in a conversation its turn is `done` with no
+  outputs, so the turns after it go on. It is for runs that must not stop
+  at one bad reply (rollouts, long batches). Any other failure (a
+  provider error, `format-read-error`, a step limit) still raises.
 - **Each request is its own exchange**: a re-ask, a resend with a larger
   budget and a tool step are each recorded as an exchange, with the
   `request_hash` of the lmcc request it sent ([calls.md](calls.md)).
