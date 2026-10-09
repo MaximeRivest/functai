@@ -63,6 +63,13 @@ def test_the_skill_has_its_examples():
     assert len(BLOCKS) >= 5
 
 
+def test_the_skills_examples_need_nothing_functai_data_does_not_install():
+    """`functai[data]` brings dpyr, not pandas (checked in a clean environment from
+    PyPI, 2026-10-09): an example calling .to_pandas() fails for its readers."""
+    for code in BLOCKS:
+        assert ".to_pandas(" not in code and "import pandas" not in code, code[:80]
+
+
 @pytest.mark.parametrize("i", range(len(BLOCKS)), ids=lambda i: BLOCKS[i].strip().splitlines()[0][:40])
 def test_each_example_in_the_skill_runs(world, i):
     pytest.importorskip("dpyr")

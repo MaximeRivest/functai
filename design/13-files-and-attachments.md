@@ -1,7 +1,7 @@
 # 13 — Files as inputs: FunctAI × Attachments × lmcc
 
 *Status, 2026-10-08: built in Python (`python/functai/files.py`), on lmcc
-0.8.6 (issues #3, #4, #5 closed) and Attachments 1.0.0a2 (the six additions
+0.8.6 (issues #3, #4, #5 closed) and Attachments 1.0.0a2, published as 1.0.0b2 (the six additions
 its review asked for). What differs from the proposal is under **As built**
 at the end. From a review of the three code bases and a
 working prototype (`~/.cache/functai-skill-eval/att/`). Nothing built in the

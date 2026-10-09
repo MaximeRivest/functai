@@ -29,6 +29,9 @@ What the transcripts of real projects and the coding-agent evaluation
   on its first page with the exact names of what comes back; checks scale
   with the run's cost; every example runs in `tests/test_skill.py`. Agents
   using it took 8% more steps than DSPy agents (was 35%).
+- **The skill's examples need only what `functai[data]` installs**: they read
+  results with dpyr's `to_dicts()`, not `to_pandas()` (pandas is not in the
+  extra; found by running them in a clean environment from PyPI).
 - **`functai[data]` needs dpyr ≥ 1.12** (`unnest`, which the skill and the
   docs use for lists of records; 1.10 and 1.11 lack it).
 - **A function defined with no source says so.** Comments come from the
@@ -74,7 +77,7 @@ What the transcripts of real projects and the coding-agent evaluation
   before any request (`InterfaceError`, naming the file and why). Importing
   functai never imports attachments: the binding is made when attachments is
   imported, or when a program that reads files is planned. `pip install
-  "functai[files]"` (attachments ≥ 1.0.0a2).
+  "functai[files]"` (attachments ≥ 1.0.0b2, a beta on PyPI).
 - **Pictures as `lm15.types.ImagePart` inputs** (lmcc 0.8.6 binds lm15's
   media parts): `def shape(picture: ImagePart)`, called with
   `image(path="cat.png")`, `image(data=...)` or `image(url=...)`.

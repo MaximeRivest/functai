@@ -251,7 +251,7 @@ wheels = [
 
 [[package]]
 name = "attachments"
-version = "1.0.0a2"
+version = "1.0.0b2"
 source = { editable = "../../attachments" }
 
 [package.metadata]
@@ -264,7 +264,7 @@ requires-dist = [
     { name = "faster-whisper", marker = "extra == 'audio'", specifier = ">=1.0" },
     { name = "httpx", marker = "extra == 'service'", specifier = ">=0.27" },
     { name = "lxml", marker = "extra == 'html'", specifier = ">=5.0" },
-    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.2" },
+    { name = "mcp", marker = "extra == 'mcp'", specifier = ">=1.17" },
     { name = "openpyxl", marker = "extra == 'xlsx'", specifier = ">=3.1,<4.0" },
     { name = "openpyxl", marker = "extra == 'xlsx-pandas'", specifier = ">=3.1,<4.0" },
     { name = "pandas", marker = "extra == 'csv-pandas'", specifier = ">=2.0,<3.0" },
@@ -294,7 +294,7 @@ dev = [
     { name = "ipykernel", specifier = ">=6.30.1" },
     { name = "jsonschema", specifier = ">=4.21" },
     { name = "lxml", specifier = ">=5.0" },
-    { name = "mcp", specifier = ">=1.2" },
+    { name = "mcp", specifier = ">=1.17" },
     { name = "openpyxl", specifier = ">=3.1,<4.0" },
     { name = "pandas", specifier = ">=2.0,<3.0" },
     { name = "pillow", specifier = ">=10.0" },

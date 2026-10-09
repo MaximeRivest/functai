@@ -75,11 +75,12 @@ papers = papers.mutate(**read_study.unpack(col.methods))            # one column
 papers.select("paper_id", "units").write_csv("out/studies.csv")
 papers.select("paper_id", "analyses").unnest("analyses").write_csv("out/analyses.csv")   # one row per analysis
 
-run = read_study.map(papers, threads=8).to_pandas()                 # or: the run as a table
-# columns: the inputs, pred_<output> (pred_result for a single answer), error, seconds, *_tokens
+run = read_study.map(papers, threads=8).to_dicts()                  # or: the run, one dict per row with
+# the inputs, pred_<output> (pred_result for a single answer), error, seconds, *_tokens
 ```
 
-Each distinct input is asked once, 8 at a time. A failed row is a row with an
+Every table here also has `.to_pandas()` / `.to_polars()` (pandas needs
+`pip install pandas`; `functai[data]` does not bring it). Each distinct input is asked once, 8 at a time. A failed row is a row with an
 `error`, not an exception: no `try/except`. `cache_replies="disk"` makes a
 re-run free and an interrupted run resume by running it again; no thread
 pools, retry loops or JSON caches of your own. A long or costly run: try 2 rows
@@ -93,10 +94,10 @@ before = functai.evaluate(team, tickets, expected="category", num_threads=8)
 after = functai.evaluate(team_v2, tickets, expected="category", num_threads=8)
 
 before.score                                                         # share right
-s = before.summary.to_pandas().iloc[0]                               # metric, mean, low, high (95%), n, failed
-c = functai.compare(before, after).to_pandas().iloc[0]               # before, after, diff, low, high (paired 95%),
+s = before.summary.to_dicts()[0]                                     # metric, mean, low, high (95%), n, failed
+c = functai.compare(before, after).to_dicts()[0]                     # before, after, diff, low, high (paired 95%),
                                                                      # better, worse, same, n
-t = before.table.to_pandas()                                         # the rows: your columns, pred_result, exact_match, error
+t = before.table.to_dicts()                                          # the rows: your columns, pred_result, exact_match, error
 verdict = "unclear" if c["low"] <= 0 <= c["high"] else ("better" if c["diff"] > 0 else "worse")
 ```
 
@@ -120,7 +121,7 @@ from attachments import Artifacts, att            # pip install "functai[files]"
 def shape(picture: ImagePart) -> Literal["circle", "square", "triangle"]:
     """The main shape in the picture."""
 shape(image(path="cat.png"))                      # a picture, not its name; image(data=..., media_type=...) too
-run = shape.map([{"file": f.name, "picture": image(path=f)} for f in files], threads=8).to_pandas()
+run = shape.map([{"file": f.name, "picture": image(path=f)} for f in files], threads=8).to_dicts()
 
 @ai
 def answer(question: str, document: Artifacts) -> str:
@@ -168,4 +169,4 @@ Tell the user what you did not check.
 If `import functai` fails with `lmcc has no attribute ...`, a folder named
 `lmcc` next to the script shadows the library (never run scripts saved in
 `/tmp`); otherwise `uv sync`. Needs functai ≥ 1.3, lmcc ≥ 0.8.6, attachments ≥
-1.0.0a2 for sections 4's pictures and files.
+1.0.0b2 for section 4's pictures and files.

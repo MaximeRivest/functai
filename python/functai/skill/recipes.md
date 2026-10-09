@@ -1,7 +1,8 @@
 # FunctAI recipes: what SKILL.md does not cover
 
-Complete scripts, each run against functai 1.2.0 (the evaluation tasks in
-`evals/skill/` hold tested versions). Copy, then change the
+The recipes here hand tables to pandas (`.to_pandas()`): `pip install pandas` with `functai[data]`.
+
+Complete scripts (the evaluation tasks in `evals/skill/` hold tested versions). Copy, then change the
 names. Read `SKILL.md` first for the rules behind them.
 
 ## Extraction: one paper → a record with a list inside
