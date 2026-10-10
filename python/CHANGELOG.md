@@ -9,6 +9,8 @@ What the transcripts of real projects and the coding-agent evaluation
   the longest prompt of the data to its longest answer, which usually belong
   to two different rows: long-text bakes were refused for memory they did not
   need (an example of 26,000 tokens was counted as 38,000).
+- **Baking from an Examples file works.** `bake(examples)` stopped with
+  `'Plan' object has no attribute 'to_label'` before planning anything.
 - **Words written in the code reach the model** (`functai/guidance.py`). A
   comment after each choice of a `Literal[...]` written over several lines,
   or after each member of an `Enum`, now describes that choice; a comment

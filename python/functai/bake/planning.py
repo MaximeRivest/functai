@@ -182,6 +182,7 @@ class Plan:
             if o.get("student") and o["student"] != ex.student:
                 raise BakeError(f"the examples were tokenized for {ex.student}, not {o['student']}")
             self.examples = ex
+            self.to_label = []                  # examples already carry their answers
             return
         self.examples = None
         pairs = list(src.pairs)
