@@ -23,8 +23,8 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from ..examples import BakeError
-from ..hardware import (GB, attention_implementation, devices, fixed_training_bytes, kernels, memory_per_token,
-                        micro_batch_tokens, training_seconds)
+from ..hardware import (GB, attention_implementation, devices, fixed_training_bytes, kernels, known_speed,
+                        measured, measured_speed, memory_per_token, micro_batch_tokens, training_seconds)
 from ..recipe import recipe
 from . import Estimate, Job, Stopped, Trainer
 
@@ -97,9 +97,9 @@ class Here(Trainer):
                 break
         if not usable:
             best = max(accel, key=lambda d: d.free_gb)
-            need = (fixed_training_bytes(st, quantize="4bit" if kernels()["bitsandbytes"] else None,
-                                         lora_rank=rank if lora else None)
-                    + longest * memory_per_token(st)) / GB
+            q = "4bit" if kernels()["bitsandbytes"] else None
+            need = (fixed_training_bytes(st, quantize=q, lora_rank=rank if lora else None)
+                    + longest * memory_per_token(st, q)) / GB
             return Estimate(False, [f"the longest example ({longest:,} tokens) needs about {need:.0f} GB; the "
                                     f"freest GPU here ({best.name}) has {best.free_gb:.1f} GB free"],
                             summary="does not fit")
@@ -123,21 +123,34 @@ class Here(Trainer):
         micro = min(room, max(longest, int(math.ceil(want / 64) * 64)))
         accumulate = max(1, math.ceil(r["examples_per_step"] * mean / (micro * len(usable))))
         padding = 1.0 if packing else 1.15
-        secs = training_seconds(st, tokens, devices_=usable, lora=lora, context=context, padding=padding)
+        secs = training_seconds(st, tokens, devices_=usable, lora=lora, context=context, padding=padding,
+                                quantize=quantize)
         # loading the weights, validation passes, and merging the adapter on the CPU at the end
         secs += 45 + st.parameters * 2 / GB * 12 + training_seconds(
-            st, s.get("val_tokens", 0) * 20 / 3, devices_=usable, lora=lora, context=context)
+            st, s.get("val_tokens", 0) * 20 / 3, devices_=usable, lora=lora, context=context, quantize=quantize)
         notes: List[str] = []
         if st.hybrid:
             notes.append("not packing: this student has linear-attention layers, whose state would cross from one "
                          "packed example into the next; batches are examples of similar length instead")
             k = kernels()
-            if not k["flash_linear_attention"]:
+            if usable[0].kind == "cuda" and not k["flash_linear_attention"]:
                 notes.append("flash-linear-attention is not installed: its layers run on PyTorch's slow reference "
                              'code (pip install "functai[fast]")')
+            if usable[0].kind == "cuda" and not k["causal_conv1d"]:
+                notes.append("causal-conv1d is not installed: its convolutions run on slower code (pip install "
+                             "causal-conv1d --no-build-isolation; it compiles, with the CUDA compiler)")
         elif not attention:
             notes.append('not packing: no flash-attention kernel here (pip install "functai[fast]" on a CUDA GPU '
                          'of compute capability 8.0 or more); batches are examples of similar length')
+        speeds = [measured_speed(st.name, quantize, d.name, context) for d in usable]
+        unknown = sorted({d.name for d, v in zip(usable, speeds) if not v and not known_speed(d.name)})
+        if unknown:
+            notes.append(f"the time is a rough guess: bake does not know the speed of {', '.join(unknown)}; "
+                         f"the run measures it (and later plans here use that)")
+        elif all(speeds):
+            notes.append("time from the speed an earlier run of this student measured here")
+        if measured(st.name, quantize).get("bytes_per_token"):
+            notes.append("memory from what an earlier run of this student measured here")
         if quantize:
             why = "as asked" if opts.get("quantize") == "4bit" else "the 16-bit ones do not fit"
             notes.append(f"4-bit base weights (QLoRA, {why}); the adapter is merged into the 16-bit weights at "
@@ -146,7 +159,7 @@ class Here(Trainer):
         # off the prompt tokens, and Liger's patches are tested per model family
         liger = bool(kernels()["liger"]) and usable[0].kind == "cuda" and opts.get("liger") is True
         used = (fixed_training_bytes(st, quantize=quantize, lora_rank=rank if lora else None)
-                + micro * memory_per_token(st)) / GB
+                + micro * memory_per_token(st, quantize)) / GB
         names = sorted({d.name.replace("NVIDIA ", "").replace("GeForce ", "") for d in usable})
         where = (f"{len(usable)}× " if len(usable) > 1 else "") + " + ".join(names)
         size = f"{micro / 1024:.0f}k" if micro >= 4096 else f"{micro:,}"
@@ -193,6 +206,8 @@ class Here(Trainer):
         extra = run.folder / "final" / "functai_training.json"
         if extra.exists():
             training.update(json.loads(extra.read_text()))
+        if run.notices:
+            training["notices"] = run.notices
         training.update(where="here", settings={k: v for k, v in {**plan["settings"],
                                                                   **(run.status.get("overrides") or {})}.items()
                                                 if k in ("precision", "quantize", "packing", "micro_tokens",
@@ -210,11 +225,17 @@ class Here(Trainer):
             new = max(longest, int(micro * 0.7))
             over.update(micro_tokens=new, accumulate=max(1, math.ceil(s["accumulate"] * micro / new)))
             run.update(overrides=over, phase=f"out of memory: retrying with {new:,}-token batches")
+            run.notice(f"out of memory with {micro:,}-token batches: training with {new:,}-token batches instead "
+                       f"(the same examples per step; slower)")
             return
         if not (over.get("quantize") or s.get("quantize")) and kernels()["bitsandbytes"] and \
                 str(s["devices"][0]).startswith("cuda"):
             over["quantize"] = "4bit"
             run.update(overrides=over, phase="out of memory with one example a batch: retrying with 4-bit weights")
+            run.notice(f"the longest example ({longest:,} tokens) does not fit with 16-bit weights: training on "
+                       f"4-bit base weights instead (QLoRA: about a third slower; the adapter is merged into the "
+                       f"16-bit weights, which answer very slightly differently). To keep 16-bit weights: a GPU with "
+                       f"more memory, or leave the longest rows out")
             return
         raise BakeError(f"out of memory with one example a batch (the longest has {longest:,} tokens): use a smaller "
                         f"student, leave the longest rows out, or train elsewhere (where='tinker')")

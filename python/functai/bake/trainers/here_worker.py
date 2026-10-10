@@ -154,7 +154,7 @@ def _train(root: Path) -> int:
     from transformers.utils import logging as hf_logging
     from trl import SFTConfig, SFTTrainer
 
-    from ..hardware import nixos_triton
+    from ..hardware import nixos_triton, remember
     from ..running import Run
     from ..template import load_tokenizer
     nixos_triton()
@@ -174,6 +174,7 @@ def _train(root: Path) -> int:
     val = [i for i in range(n) if tokens.splits[i] == "validation"]
     train = repeat_by_weight(train, tokens.weights, seed)
     lengths = {i: tokens.length(i) for i in set(train) | set(val)}
+    mean_length = sum(lengths[i] for i in train) / max(1, len(train))
     micro = int(s["micro_tokens"])
     packed = bool(s.get("packing"))
     make_bins = packed_bins if packed else grouped_bins
@@ -203,6 +204,7 @@ def _train(root: Path) -> int:
     if on_gpu:
         kwargs["device_map"] = {"": local_rank}
     quantize = s.get("quantize")
+    device_name = torch.cuda.get_device_name(local_rank) if on_gpu else "cpu"
     if quantize == "4bit":
         from transformers import BitsAndBytesConfig
         kwargs["quantization_config"] = BitsAndBytesConfig(
@@ -223,6 +225,7 @@ def _train(root: Path) -> int:
 
     # ---- the trainer
     out = root / "checkpoints"
+    resume = get_last_checkpoint(str(out)) if out.exists() else None
     liger = bool(s.get("liger"))
     args = SFTConfig(
         output_dir=str(out), num_train_epochs=epochs, per_device_train_batch_size=1, per_device_eval_batch_size=1,
@@ -254,6 +257,12 @@ def _train(root: Path) -> int:
             if rank != 0 or not logs:
                 return
             rec = {"step": state.global_step, "epoch": round(state.epoch or 0, 4), "seconds": round(time.time() - t0, 1)}
+            seen = logs.get("num_input_tokens_seen")
+            if on_gpu and seen and state.global_step >= 2 and not resume:
+                # the speed this student trains at on this device, for the next plans here
+                remember(student, quantize, device_name, tokens_per_second=round(float(seen) / world /
+                                                                                 (time.time() - t0), 1),
+                         context=round(mean_length))
             for k_in, k_out in (("loss", "loss"), ("eval_loss", "eval_loss"), ("learning_rate", "learning_rate"),
                                 ("grad_norm", "grad_norm"), ("mean_token_accuracy", "token_accuracy"),
                                 ("num_input_tokens_seen", "tokens")):
@@ -290,19 +299,34 @@ def _train(root: Path) -> int:
                          data_collator=collate, callbacks=[Watch()])
 
     # ---- the largest batch first: one that does not fit fails now, not hours in
-    resume = get_last_checkpoint(str(out)) if out.exists() else None
     if rank == 0:
         run.update(phase="checking memory with the largest batch" if not resume else
                    f"resuming from {Path(resume).name}")
     probe = collate.collate([(tokens.ids(i), int(tokens.starts[i])) for i in largest])
     trainer.model.train()
     probe = {k: v.to(trainer.args.device) for k, v in probe.items()}
+    probe_tokens = int(probe["input_ids"].numel())
+    if on_gpu:
+        torch.cuda.synchronize()
+        torch.cuda.reset_peak_memory_stats(local_rank)
+        before = torch.cuda.memory_allocated(local_rank)
     with trainer.compute_loss_context_manager():
         loss = trainer.compute_loss(trainer.model, probe)
     trainer.accelerator.backward(loss)
     trainer.model.zero_grad(set_to_none=True)
     del probe, loss
     if on_gpu:
+        torch.cuda.synchronize()
+        peak = torch.cuda.max_memory_allocated(local_rank)
+        per_token = (peak - before) / max(1, probe_tokens)
+        if rank == 0:
+            # what a token of a batch really takes here: the next plans of this student use it. Only from a
+            # batch of 8k tokens or more: the vocabulary's scores take a fixed few hundred MB, which a small
+            # batch would spread over too few tokens (a 536-token batch of a tiny student: 1.9 MB a token)
+            if probe_tokens >= 8192:
+                remember(student, quantize, bytes_per_token=round(per_token))
+            run.update(measured={"bytes_per_token": round(per_token), "probe_tokens": probe_tokens,
+                                 "peak_gb": round(peak / 2 ** 30, 2), "device": device_name})
         torch.cuda.empty_cache()
 
     trainer.train(resume_from_checkpoint=resume)

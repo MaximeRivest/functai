@@ -133,6 +133,17 @@ class Run:
         _write_json(self.folder / "run.json", data)
         return data
 
+    def notice(self, text: str) -> None:
+        """Something the run decided on its own that changes what it makes (smaller batches, 4-bit
+        weights): kept in run.json, shown by ``wait`` and written into the baked model's record."""
+        data = self._state_file()
+        self.update(notices=list(data.get("notices") or []) + [text])
+
+    @property
+    def notices(self) -> List[str]:
+        """What the run decided on its own (see ``notice``)."""
+        return list(self._state_file().get("notices") or [])
+
     @property
     def status(self) -> Dict[str, Any]:
         """run.json, with a process that ended without saying so shown as such."""
@@ -316,9 +327,13 @@ class Run:
         """Wait for the end; show progress; return the model."""
         say = _printer(show)
         last = None
+        told = 0
         while True:
             st = self.status
             state = st.get("state")
+            for text in (st.get("notices") or [])[told:]:
+                say(f"NOTE: {text}")
+            told = len(st.get("notices") or [])
             p = self.progress()
             line = self._line(p)
             if line != last:

@@ -11,6 +11,42 @@ What the transcripts of real projects and the coding-agent evaluation
   need (an example of 26,000 tokens was counted as 38,000).
 - **Baking from an Examples file works.** `bake(examples)` stopped with
   `'Plan' object has no attribute 'to_label'` before planning anything.
+  Examples made without `student=` (or for another student) are tokenized
+  by the bake itself instead of refused; examples tokenized for a student
+  train that student (the default list was tried instead); and the plan
+  counts their validation rows (it said "0 validation").
+- **Bake's estimates match real runs, and runs correct them.** From a
+  StatLM run (Qwen3.5-4B, examples up to 87,119 tokens, an RTX PRO 6000):
+  - The RTX PRO 6000 matched nothing in the speed table and was taken for
+    a 30 TFLOPS card: the plan said 3.7 days, the run took 9.3 hours. The
+    table knows it (500), the B300 and the RTX PRO 5000/4500/4000; a card
+    it does not know is named in the plan as a rough guess.
+  - Students with linear-attention layers (Qwen3.5) need about 1.7 times
+    the memory a token the formula gave: the plan said 16-bit weights fit
+    (58.9 / 95 GB); they ran out of memory. Their margin comes from that
+    run: 16-bit does not fit, 4-bit does, as it happened.
+  - 4-bit base weights are counted about a third slower.
+  - Every run on a GPU measures the memory a token of its largest batch
+    takes (from batches of 8k tokens or more) and the speed it trains at;
+    later plans of that student on that machine use them, and say so
+    (`~/.cache/functai/bakes/measured.json`). A speed is reused only for
+    examples of a similar length.
+- **A run says what it decided on its own.** Retrying with smaller batches
+  or with 4-bit base weights after running out of memory was a line in
+  `log.txt`; it is now printed while waiting (`NOTE: …`), kept in
+  `run.notices`, recorded in the model (`training.notices`), and shown in
+  the model's repr ("trained on 4bit base weights").
+- **The plan lists what matters.** With `where=` given, places that cannot
+  train the bake are left out of the plan (Tinker and Prime were listed
+  with their missing keys under every plan); a missing `causal-conv1d` for
+  a Qwen3.5 student is named with how to install it.
+- **Long replies are not cut by the client.** A request to a baked
+  student's server waited 10 minutes at most, less than a 50,000-token
+  reply takes on a small GPU; it now waits at least as long as 10 tokens a
+  second would need.
+- **Serving on a full GPU says so.** `baked.on("vllm")` on a GPU without
+  room for the weights started vLLM, which failed with a long trace; it now
+  says how much is free and how much is needed before starting.
 - **Words written in the code reach the model** (`functai/guidance.py`). A
   comment after each choice of a `Literal[...]` written over several lines,
   or after each member of an `Enum`, now describes that choice; a comment

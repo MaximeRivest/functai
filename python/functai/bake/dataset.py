@@ -116,6 +116,28 @@ class Examples:
         """The names of the AI functions the examples train."""
         return sorted({r["function"] for r in self.rows})
 
+    def tokenize(self, student: str, *, local_files_only: bool = False,
+                 log: Callable[[str], None] = lambda s: None) -> "Examples":
+        """The same examples with ``student``'s exact tokens (what training needs):
+        ``functai.bake.examples(..., student=...)`` makes them so at once; this
+        does it later, for examples made or saved without one."""
+        import array
+        from .template import describe, example_ids, load_tokenizer
+        tok = load_tokenizer(student, local_files_only=local_files_only)
+        tpl = describe(tok)
+        rows = []
+        every = max(1000, len(self.rows) // 10)
+        for k, r in enumerate(self.rows):
+            msgs = list(r["messages"])
+            if not msgs or msgs[-1].get("role") != "assistant":
+                raise BakeError(f"example {k} does not end with the reply (an assistant message)")
+            ids, start = example_ids(tok, msgs[:-1], msgs[-1]["content"], tpl.kwargs, tpl)
+            rows.append({**r, "input_ids": array.array("i", ids), "answer_start": start, "prompt_tokens": start,
+                         "answer_tokens": len(ids) - start})
+            if (k + 1) % every == 0:
+                log(f"tokenized {k + 1:,}/{len(self.rows):,} conversations for {student}")
+        return Examples(rows, student=student, template=tpl.to_dict(), entries=self.entries, info=self.info)
+
     def split(self, name: str) -> "Examples":
         """The examples of one split: ``ex.split("train")`` or ``ex.split("validation")``."""
         return self._with([r for r in self.rows if r.get("split", "train") == name])

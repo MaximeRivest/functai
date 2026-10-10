@@ -260,6 +260,44 @@ def test_the_longest_example_is_one_rows_prompt_and_answer(tiny, home):
     assert s["longest"] >= max(s["prompt"]["max"], s["answer"]["max"])
 
 
+def test_examples_saved_without_a_student_are_tokenized_when_baked(tiny, home, tmp_path):
+    # examples made without student= (or for another student) train anyway: bake writes their tokens
+    ex = functai.bake.examples(capital, rows(), labels="data", log=False)
+    assert not ex.tokenized
+    ex.save(tmp_path / "ex.parquet")
+    p = functai.bake.plan(str(tmp_path / "ex.parquet"), student=tiny, local_files_only=True, log=None, device="cpu")
+    assert p.examples.tokenized and p.examples.student == tiny
+    assert p.stats["validation_rows"] == len(ex.split("validation")) > 0
+    assert f"{len(ex.split('validation')):,} validation" in repr(p)       # was "0 validation"
+
+
+def test_examples_with_tokens_plan_without_a_teacher(tiny, home):
+    # a bake from an Examples table stopped on a missing attribute before planning anything
+    ex = functai.bake.examples(capital, rows(), student=tiny, labels="data", log=False, local_files_only=True)
+    p = functai.bake.plan(ex, local_files_only=True, log=None, device="cpu")
+    assert p.to_label == [] and p.student == tiny
+
+
+def test_places_not_asked_for_that_cannot_train_are_not_listed(tiny, home, monkeypatch):
+    _fake_places(monkeypatch, {"here": (True, 600, None, True), "tinker": (False, None, None, False),
+                               "prime": (True, None, 2.0, True)})
+    p = functai.bake.plan(capital, rows(), student=tiny, where="here", local_files_only=True, log=None)
+    assert "tinker" not in repr(p) and "prime summary" in repr(p)
+    p = functai.bake.plan(capital, rows(), student=tiny, local_files_only=True, log=None)   # auto: all of them
+    assert "tinker" in repr(p)
+
+
+def test_a_run_says_what_it_decided_on_its_own(home, tmp_path):
+    from functai.bake.running import Run
+    run = Run.create(tmp_path / "run", {"name": "x", "student": "s", "where": "here", "settings": {}})
+    run.notice("training on 4-bit base weights instead")
+    run.update(state="exported")
+    said = []
+    assert run.wait(poll=0.01, show=said.append) is None
+    assert "NOTE: training on 4-bit base weights instead" in said
+    assert run.notices == ["training on 4-bit base weights instead"]
+
+
 # ------------------------------------------------------------------ training here, for real (on the CPU)
 
 

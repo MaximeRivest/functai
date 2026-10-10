@@ -30,26 +30,35 @@ def nixos_triton() -> None:
 
 
 # Dense tensor throughput for training (bf16 or fp16 with fp32 accumulation),
-# in TFLOPS, by the words in the device name. GeForce cards accumulate in fp32
-# at half their advertised fp16 rate. Unknown devices fall back by vendor.
+# in TFLOPS, by the words in the device name (first match wins: longer names
+# first). GeForce cards accumulate in fp32 at half their advertised fp16 rate.
+# A device not listed is assumed at 30 TFLOPS, and the plan says so.
 _PEAK_TFLOPS = [
-    ("B200", 2250), ("H200", 989), ("H100 PCIe", 756), ("H100", 989), ("GH200", 989), ("H800", 989),
+    ("B300", 2250), ("B200", 2250), ("H200", 989), ("H100 PCIe", 756), ("H100", 989), ("GH200", 989), ("H800", 989),
     ("A100", 312), ("A800", 312), ("L40S", 362), ("L40", 181), ("L4", 121), ("A10G", 70), ("A10", 125),
-    ("A30", 165), ("A40", 150), ("A6000", 155), ("RTX 6000 Ada", 364), ("RTX 6000", 130), ("A5000", 111),
+    ("A30", 165), ("A40", 150), ("A6000", 155), ("RTX PRO 6000", 500), ("RTX PRO 5000", 250),
+    ("RTX PRO 4500", 170), ("RTX PRO 4000", 125), ("RTX 6000 Ada", 364), ("RTX 6000", 130), ("A5000", 111),
     ("A4000", 77), ("V100", 125), ("T4", 65), ("P100", 19),
     ("5090", 210), ("5080", 113), ("5070", 62), ("4090", 165), ("4080", 97), ("4070", 58), ("4060", 30),
     ("3090", 71), ("3080", 60), ("3070", 41), ("3060", 25), ("2080", 40), ("2070", 30), ("2060", 26),
 ]
 _GEFORCE_HALF_RATE = ("RTX 50", "RTX 40", "RTX 30", "RTX 20", "GeForce")
+UNKNOWN_TFLOPS = 30.0
 
 
 def _peak_tflops(name: str) -> float:
     for key, tf in _PEAK_TFLOPS:
         if key in name:
-            if any(k in name for k in _GEFORCE_HALF_RATE) and "RTX 6000" not in name and "A6000" not in name:
+            if any(k in name for k in _GEFORCE_HALF_RATE) and "RTX 6000" not in name and "A6000" not in name \
+                    and "RTX PRO" not in name:
                 return tf / 2
             return tf
-    return 30.0
+    return UNKNOWN_TFLOPS
+
+
+def known_speed(name: str) -> bool:
+    """Whether the speed table knows this device (else times are a rough guess)."""
+    return any(key in name for key, _tf in _PEAK_TFLOPS)
 
 
 @dataclasses.dataclass(frozen=True)
@@ -156,15 +165,26 @@ def weight_bytes(student: StudentInfo, quantize: Optional[str]) -> float:
     return student.parameters * 2
 
 
-def memory_per_token(student: StudentInfo) -> float:
+def memory_per_token(student: StudentInfo, quantize: Optional[str] = None) -> float:
     """Training memory a token of a micro-batch takes, with gradient
     checkpointing: each block's input kept for the backward pass, one block's
     activations recomputed at a time, and the answer's vocabulary scores in
-    chunks (TRL's ``chunked_nll``). A margin of 1.5 for what the formula misses."""
+    chunks (TRL's ``chunked_nll``). A margin of 1.5 for what the formula misses.
+
+    Students with linear-attention layers (Qwen3.5) take a margin of 2.45,
+    from a real run (Qwen3.5-4B, LoRA r64, 87,119-token batches, a 95 GB GPU,
+    2026-10-09): 16-bit weights ran out of memory and 4-bit ones fit, which
+    this margin is the middle of (2.37 to 2.55); with 1.5 it said 16-bit fit.
+
+    A run measures what it really takes on its first batch; once a run of this
+    student has, that measure is used instead (``measured``)."""
+    m = measured(student.name, quantize).get("bytes_per_token")
+    if m:
+        return float(m) * 1.1             # what PyTorch held at its peak; its cache adds a little
     d, f, L = student.hidden, student.intermediate, student.layers
     kept = L * d * 2
     one_block = (16 * d + 6 * f + 4 * student.heads * student.head_dim) * 2
-    return (kept + one_block) * 1.5
+    return (kept + one_block) * (2.45 if student.hybrid else 1.5)
 
 
 def fixed_training_bytes(student: StudentInfo, *, quantize: Optional[str], lora_rank: Optional[int]) -> float:
@@ -186,7 +206,7 @@ def micro_batch_tokens(student: StudentInfo, device: Device, *, quantize: Option
     room = free - fixed_training_bytes(student, quantize=quantize, lora_rank=lora_rank)
     if room <= 0:
         return 0
-    tokens = int(room / memory_per_token(student))
+    tokens = int(room / memory_per_token(student, quantize))
     if tokens < longest:
         return 0
     return max(longest, min(cap, tokens))
@@ -204,16 +224,75 @@ def flops_per_token(student: StudentInfo, *, lora: bool, context: float) -> floa
 
 
 def training_seconds(student: StudentInfo, tokens: float, *, devices_: List[Device], lora: bool, context: float,
-                     padding: float = 1.0, efficiency: float = 0.3) -> float:
+                     padding: float = 1.0, efficiency: float = 0.3, quantize: Optional[str] = None) -> float:
     """Seconds to train on ``tokens`` across ``devices_`` (data parallel), at
     ``efficiency`` of their peak (0.3: measured LoRA runs on consumer and
-    datacenter GPUs land between 0.25 and 0.45). ``padding``: tokens computed
-    per real token."""
+    datacenter GPUs land between 0.25 and 0.45; 4-bit base weights are
+    unpacked at every layer, about a third slower). ``padding``: tokens
+    computed per real token. A speed measured by an earlier run of this
+    student on this kind of device is used instead (``measured``)."""
+    seen = [measured_speed(student.name, quantize, d.name, context) for d in devices_]
+    if seen and all(seen):           # measured on real (unpadded) tokens, with the padding it had
+        scale = 0.9 if len(devices_) > 1 else 1.0
+        return tokens / (sum(seen) * scale)
     flops = flops_per_token(student, lora=lora, context=context) * tokens * padding
     peak = sum(d.tflops for d in devices_) * 1e12
     scale = 0.9 if len(devices_) > 1 else 1.0                   # gradient exchange between GPUs
+    if quantize == "4bit":
+        efficiency *= 0.75
     return flops / (peak * efficiency * scale)
 
 
+# ------------------------------------------------------------------ what runs measured
+
+
+def _measured_path():
+    from .running import runs_home
+    return runs_home() / "measured.json"
+
+
+def _measured_key(student: str, quantize: Optional[str], device: Optional[str] = None) -> str:
+    return "|".join([student, quantize or "16bit"] + ([device] if device else []))
+
+
+def measured(student: str, quantize: Optional[str] = None, device: Optional[str] = None) -> Dict[str, Any]:
+    """What earlier runs on this machine measured for ``student``: its memory a
+    token (``bytes_per_token``, any device), or with ``device`` its speed there
+    (``tokens_per_second``). Empty when no run measured it."""
+    import json
+    try:
+        data = json.loads(_measured_path().read_text())
+    except (OSError, ValueError):
+        return {}
+    return dict(data.get(_measured_key(student, quantize, device)) or {})
+
+
+def measured_speed(student: str, quantize: Optional[str], device: str, context: float) -> Optional[float]:
+    """Tokens a second an earlier run of ``student`` trained at on ``device``,
+    when its examples were of a similar length (within a factor of two of
+    ``context``: longer examples train slower a token); else None."""
+    m = measured(student, quantize, device)
+    tps, ctx = m.get("tokens_per_second"), m.get("context")
+    if not tps or not ctx or not context or not 0.5 <= context / ctx <= 2:
+        return None
+    return float(tps)
+
+
+def remember(student: str, quantize: Optional[str], device: Optional[str] = None, **values: Any) -> None:
+    """Keep what a run measured, for the next plans on this machine (``measured``)."""
+    import json
+    path = _measured_path()
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, ValueError):
+        data = {}
+    key = _measured_key(student, quantize, device)
+    data[key] = {**(data.get(key) or {}), **values}
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(".tmp")
+    tmp.write_text(json.dumps(data, indent=1, sort_keys=True))
+    tmp.replace(path)
+
+
 __all__ = ["Device", "devices", "kernels", "attention_implementation", "micro_batch_tokens", "training_seconds",
-           "weight_bytes", "nixos_triton"]
+           "weight_bytes", "nixos_triton", "measured", "measured_speed", "remember", "known_speed"]

@@ -267,7 +267,9 @@ class Baked:
             what = ", ".join(self.functions)
         w = self.meta.get("weights", {})
         where = w.get("uri") if w.get("form") == "remote" else str(self.path)
-        return f"<Baked {self.name}: {self.student} → {what} | {where}>"
+        q = ((self.meta.get("training") or {}).get("settings") or {}).get("quantize")
+        how = f" (trained on {q} base weights)" if q else ""
+        return f"<Baked {self.name}: {self.student}{how} → {what} | {where}>"
 
     # ---- which function, and how its calls are laid out
 

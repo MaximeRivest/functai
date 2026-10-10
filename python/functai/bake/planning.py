@@ -176,11 +176,15 @@ class Plan:
         src = self.source
         if src.kind == "examples":
             ex = src.examples
-            if not ex.tokenized:
-                raise BakeError("these examples carry no tokens; make them with student= "
-                                "(functai.bake.examples(..., student=...)) to train on them")
-            if o.get("student") and o["student"] != ex.student:
-                raise BakeError(f"the examples were tokenized for {ex.student}, not {o['student']}")
+            want = o.get("student") or (ex.student if ex.tokenized else None)
+            if not ex.tokenized or (want and want != ex.student):
+                # tokens for the student asked (or the default one): the messages are the examples,
+                # the tokens only their spelling for one student
+                from .students import DEFAULT_STUDENTS
+                student = want or DEFAULT_STUDENTS[0]
+                self.say(f"writing the examples' tokens for {student}")
+                ex = ex.tokenize(student, local_files_only=bool(o.get("local_files_only")), log=self.say)
+            o["student"] = ex.student                 # the examples' tokens are this student's
             self.examples = ex
             self.to_label = []                  # examples already carry their answers
             return
@@ -340,6 +344,7 @@ class Plan:
                 chosen = pick
         self.where, self.student = chosen
         self.reason = reason
+        self.asked_where = prefs != ["auto"]
         self.student_info = infos[self.student]
         self.estimate = est(*chosen)
         self.stats = stats_for(self.student)
@@ -376,6 +381,7 @@ class Plan:
             tr = ex.split("train")
             s = tr.stats()
             s["train_rows"] = len(tr)
+            s["validation_rows"] = len(ex) - len(tr)
             s["val_tokens"] = ex.split("validation").stats().get("tokens", 0)
             s["answer_known_mean"] = None
             s["unknown_answers"] = 0
@@ -513,6 +519,8 @@ class Plan:
                         f" · LONGER than the student's context ({ctx:,})" if ctx else ""))
         lines.append(f"  where      {self.where}: {e.summary}" + (f"   ({self.reason})" if self.reason else ""))
         for pname, alt in self.alternatives.items():
+            if self.asked_where and not alt.ok:
+                continue             # a place you did not ask for and that cannot train it: not news
             what = alt.summary if alt.ok else "; ".join(alt.problems[:2]) or alt.summary
             lines.append(f"             {pname}: {what}")
         r_ = e.settings

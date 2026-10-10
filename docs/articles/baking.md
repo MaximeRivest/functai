@@ -127,6 +127,17 @@ run.checkpoint(1200)                       # any checkpoint as a model
 
 Running the same bake again resumes it (or finds it done).
 
+**Estimates, then measures.** The plan's memory and time are estimates from
+the student's shape and the GPU's speed (a GPU bake does not know is
+assumed slow, and the plan says so). Every run measures what it really
+takes: the memory a token of its first, largest batch uses, and the tokens
+a second it trains at. Later plans of that student on that machine use
+those measures (`~/.cache/functai/bakes/measured.json`), and say so. When
+a run must change its own plan to fit (smaller batches, or 4-bit base
+weights when even one example does not fit in 16-bit), it says it while
+it waits (`NOTE: …`), keeps it in `run.notices`, and records it in the
+model it makes.
+
 **Judging.** Exact match measures nothing on open text, so a generative
 student is scored with your metric or an AI judge (`metric=`, anything
 `evaluate` takes); without one, the report gives readability (the share
@@ -146,7 +157,8 @@ by another one.
 
 **Bring your own trainer.** `functai.bake.examples(fn, rows,
 student=...)` gives the training conversations as a table (`messages`
-for any tool, `input_ids` with `answer_start` for the exact tokens);
+for any tool, `input_ids` with `answer_start` for the exact tokens; made
+without `student=`, `bake(examples, student=...)` writes the tokens itself);
 `where="export"` writes them with a TRL script and an Axolotl config; and
 `functai.bake.adopt(folder, fn, examples=ex)` takes the trained model
 back, after checking that its chat template writes the tokens it was

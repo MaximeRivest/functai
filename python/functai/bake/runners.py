@@ -190,6 +190,11 @@ class Endpoint(Runner):
     def submit(self, ids, limit, messages=None):
         return self._one(ids, limit, messages)
 
+    def _wait(self, limit: int) -> float:
+        """How long one request may take: ``timeout``, or longer for a long reply
+        (at least 10 tokens a second: a long answer is measured, not cut)."""
+        return max(self.timeout, 60 + limit / 10)
+
     def _one(self, ids: List[int], limit: int, msgs: Optional[List[Dict[str, str]]]) -> Tuple[str, int, bool]:
         stops = self.baked.template.stop_token_ids
         with self._sem:
@@ -197,7 +202,7 @@ class Endpoint(Runner):
                 try:
                     r = _post(f"{self.url}/completions", {
                         "model": self.served, "prompt": ids, "max_tokens": limit, "temperature": 0.0,
-                        "stop_token_ids": stops, "skip_special_tokens": True}, self.api_key, self.timeout)
+                        "stop_token_ids": stops, "skip_special_tokens": True}, self.api_key, self._wait(limit))
                     self.tokens, self.fidelity = True, "tokens"
                     c = r["choices"][0]
                     n = (r.get("usage") or {}).get("completion_tokens", 0)
@@ -210,7 +215,7 @@ class Endpoint(Runner):
                 raise BakeError(f"{self.url} takes no token ids, and these calls carry no messages")
             r = _post(f"{self.url}/chat/completions", {
                 "model": self.served, "messages": msgs, "max_tokens": limit, "temperature": 0.0,
-                "chat_template_kwargs": self.baked.template.kwargs}, self.api_key, self.timeout)
+                "chat_template_kwargs": self.baked.template.kwargs}, self.api_key, self._wait(limit))
             c = r["choices"][0]
             n = (r.get("usage") or {}).get("completion_tokens", 0)
             return c["message"].get("content") or "", n, c.get("finish_reason") != "length"
@@ -265,6 +270,14 @@ def start_vllm(baked, *, python=None, port=None, gpu_memory=None, device=None, t
     dev = int(device.split(":")[1]) if device else gpus[0].index
     chosen = next(d for d in gpus if d.index == dev)
     if gpu_memory is None:
+        weights_gb = (sum(p.stat().st_size for p in (baked.path / w["path"]).rglob("*.safetensors"))
+                      if w["form"] == "merged" else (baked.meta.get("parameters") or 0) * 2) / 2 ** 30
+        room = chosen.free_gb - 0.05 * chosen.total_gb
+        if weights_gb and room < weights_gb * 1.2 + 1:
+            raise BakeError(f"GPU {dev} ({chosen.name}) has {chosen.free_gb:.1f} GB free; serving {baked.name} "
+                            f"needs about {weights_gb * 1.2 + 1:.0f} GB (its weights take {weights_gb:.1f} GB, "
+                            f"and vLLM needs room for the replies). Free that GPU, choose another (device=), or "
+                            f"give gpu_memory= yourself")
         gpu_memory = max(0.05, round(chosen.free_gb / chosen.total_gb - 0.05, 2))
     gen = baked.meta.get("generation", {})
     max_len = int(gen.get("max_model_len") or 8192)
