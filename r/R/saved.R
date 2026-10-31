@@ -314,6 +314,13 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   settings_in <- d$settings %||% list()
   for (k in names(settings_in)) if (is.list(settings_in[[k]]) && any(c("baked", "node") %in% names(settings_in[[k]])))
     load_refused("saved-model", sprintf("%s: setting %s is %s, not something this loader can reach", key, k, lmcc::json_text(settings_in[[k]])))
+  # files (an input typed Artifacts: contract/functions.md): read through Attachments, which R does not have. Refused
+  # here, before anything is sent: without it, a layout would write the artifacts as JSON text the model cannot read
+  files <- Filter(function(f) identical(f$direction, "input") && identical(f$type, "Artifacts"), d$signature$fields %||% list())
+  if (length(files))
+    rlang::abort(sprintf("[files-unavailable] %s reads files (its input %s is Attachments' artifacts), and R has no Attachments: call it where it was saved, or serve it there and call it with remote()",
+                         key, files[[1L]]$name),
+                 class = c("functai_files_unavailable", "functai_refusal"), code = "files-unavailable", field = files[[1L]]$name, call = NULL)
   iface <- node_interface(key, n)
   # the R types R saved its fields as (the interface's `type`); another
   # language's names for them are its own

@@ -1,0 +1,131 @@
+{
+ "description": "A video input; its sample is video/mp4 by web address.",
+ "definition": {
+  "name": "summarize_clip",
+  "description": "What happens in the clip?",
+  "inputs": [
+   {
+    "name": "clip",
+    "shape": {
+     "media": "video"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: summarize_clip\n\nWhat happens in the clip?",
+   "fields": [
+    {
+     "name": "clip",
+     "direction": "input",
+     "shape": {
+      "media": "video"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "clip": {
+    "media_type": "video/mp4",
+    "url": "https://example.com/sample.mp4"
+   }
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: summarize_clip\n\nWhat happens in the clip?\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<clip>\n"
+      },
+      {
+       "type": "video",
+       "media_type": "video/mp4",
+       "url": "https://example.com/sample.mp4"
+      },
+      {
+       "type": "text",
+       "text": "\n</clip>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:8502b069794538c0b9b3712077245da00df231b086babff5f52517140887e0b9",
+  "version": "sha256:6d7a8f50f8d8c0f4852d9c95df2921ad48159fca2f0acaf368c5685a8c3fa1a7",
+  "signature_id": "sha256:70294e13e5d5c6d734eafaf094b3a35c8a84641eabc03d64f6b452e04618bf3b"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "clip": {
+     "type": "video",
+     "media_type": "video/mp4",
+     "data": "AAAAGGZ0eXBtcDQyAAAAAG1wNDJpc29t"
+    }
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: summarize_clip\n\nWhat happens in the clip?\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<clip>\n"
+        },
+        {
+         "type": "video",
+         "media_type": "video/mp4",
+         "data": "AAAAGGZ0eXBtcDQyAAAAAG1wNDJpc29t"
+        },
+        {
+         "type": "text",
+         "text": "\n</clip>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

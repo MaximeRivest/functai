@@ -8,7 +8,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { test } from "node:test";
 import * as lmcc from "lmcc";
-import { describeSaved, exactMatch, fromManifest, interval, LoadRefused } from "../src/index.ts";
+import { describeSaved, exactMatch, FilesUnavailable, fromManifest, interval, LoadRefused } from "../src/index.ts";
+import { checkInputs, InterfaceError } from "../src/interface.ts";
 import { ratedRows } from "../src/calllog.ts";
 import { MODELS } from "../src/generated/contract.ts";
 import { adjustSettings, capabilities, NO_STORAGE, PROBE, refusedSettings } from "../src/models.ts";
@@ -74,10 +75,57 @@ for (const [name, c] of cases("functions")) {
     assert.equal(lmcc.sha256(request), c.expect.request_hash);
     assert.equal(fn.version, c.expect.version);
     assert.equal(fn.signatureId, c.expect.signature_id);
+    for (const sent of c.sends ?? []) assert.deepEqual(sends(fn, sent.inputs), sent.expect, JSON.stringify(sent.inputs).slice(0, 200));
   });
 }
 
+/**
+ * What a function sends for these inputs, rendered as its probe is (functions/ and files/ `sends`): its inputs
+ * bound as a call binds them (programs.md), then the request; or the refusal binding gives, before any request.
+ */
+function sends(fn: ReturnType<typeof tsFunction>, inputs: Rec): Rec {
+  let bound: Rec;
+  try {
+    bound = checkInputs(fn.interface, inputs, fn.name);
+  } catch (err) {
+    if (err instanceof InterfaceError) return { refuses: err.code, field: err.field };
+    throw err;
+  }
+  return { request: JSON.parse(JSON.stringify(fn.probeRequest(bound))) };
+}
+
 test("the contract has function cases", () => assert.ok(cases("functions").length >= 10));
+
+// ------------------------------------------------------------------ files
+
+// Files (functions.md, "Pictures, sounds, documents and files") are read through Attachments (attachments-dev, plugged
+// in by functai/files). With it, each case is defined here and loaded from the folder another language saved, and
+// both send what the case says; without it, both refuse files-unavailable and send nothing.
+const files = await import("../src/files.ts").catch(() => null);
+
+for (const [name, c] of cases("files")) {
+  test(`files case ${name}${files ? "" : " (without Attachments: files-unavailable)"}`, () => {
+    const manifest = { ...c.manifest, language: "python" };
+    if (!files) {
+      assert.throws(() => fromManifest(manifest, { node: c.node }), (e: unknown) => e instanceof FilesUnavailable && e.code === "files-unavailable");
+      assert.throws(() => tsFunction(c.definition), (e: unknown) => e instanceof FilesUnavailable);
+      return;
+    }
+    const defined = tsFunction(c.definition);
+    const loaded = fromManifest(manifest, { node: c.node });
+    for (const fn of [defined, loaded]) {
+      const want = { ...c.expect.signature, fields: c.expect.signature.fields.map((f: Rec) => ({ ...f, purpose: f.purpose ?? "plain" })) };
+      assert.deepEqual(withoutType(fn.signature), want);
+      assert.deepEqual(JSON.parse(JSON.stringify(fn.probeRequest(c.expect.sample))), c.expect.request);
+      assert.equal(lmcc.sha256(fn.probeRequest(c.expect.sample)), c.expect.request_hash);
+      assert.equal(fn.version, c.expect.version);
+      assert.equal(fn.signatureId, c.expect.signature_id);
+      for (const sent of c.sends) assert.deepEqual(sends(fn, sent.inputs), sent.expect, JSON.stringify(sent.inputs).slice(0, 200));
+    }
+  });
+}
+
+test("the contract has files cases", () => assert.ok(cases("files").length >= 2));
 
 // ------------------------------------------------------------------ scores
 

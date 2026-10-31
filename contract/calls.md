@@ -522,7 +522,12 @@ version, and its ratings pool.
   canonical JSON. It is the first entry of `fingerprints.requests` in a
   saved program's `functai.json`, so a saved folder names the version it
   holds. The sample input has, for each input field, by its JSON Schema:
-  the first `enum` value; the first non-null option of an `anyOf`; for
+  for a media shape (`{"media": kind}`, [functions.md](functions.md)),
+  a part addressed by a web address, `{"media_type": T, "url":
+  "https://example.com/sample.E"}`, with `T` and `E` by kind (`image`:
+  `image/png`, `png`; `audio`: `audio/wav`, `wav`; `video`: `video/mp4`,
+  `mp4`; `document`: `application/pdf`, `pdf`; `binary`:
+  `application/octet-stream`, `bin`), which nothing fetches; the first `enum` value; the first non-null option of an `anyOf`; for
   a `type` that is a list, the first non-null type in it (`["string",
   "null"]` is a string); `"example text"` for a string, `3` for an integer, `2.5` for a number,
   `true` for a boolean, `[]` for an array, `{}` for an object. The fixed
@@ -531,7 +536,11 @@ version, and its ratings pool.
   `native_reasoning` and `assistant_prefill` false; provider `"probe"`.
   A function on a baked model renders with the layout and facts the
   model was trained with. When the sample cannot be rendered, `R` is
-  `"refused:<lmcc refusal code>"`.
+  `"refused:<lmcc refusal code>"`. (Until 2026-10-31 a media shape had
+  no sample of its own: it was given `"example text"`, which lmcc
+  refuses, so every function with a picture (or other media) input had
+  the one version `{"request": "refused:value-invalid"}`, whatever its
+  instruction, layout or worked examples.)
 - The model writes the whole body when the body holds nothing but a
   description, output declarations and "the answer is the value". Python:
   after the docstring, only `x = _ai`, `x: T = _ai`, `x: T = _ai["…"]`,

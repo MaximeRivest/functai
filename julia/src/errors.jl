@@ -30,6 +30,23 @@ Its subtypes say where it comes from: [`InterfaceError`](@ref),
 abstract type FunctAIError <: Exception end
 
 """
+    FilesUnavailable
+
+A function reads files (an input typed `Artifacts`: Attachments' `att()`
+results, contract/functions.md), and Julia has no Attachments: code
+`files-unavailable`, raised when such a function is loaded. Nothing was
+sent. Call it where it was saved, or serve it there and call it with
+[`remote`](@ref).
+"""
+struct FilesUnavailable <: FunctAIError
+    code::String
+    msg::String
+    field::String
+end
+FilesUnavailable(msg, field) = FilesUnavailable("files-unavailable", String(msg), String(field))
+Base.showerror(io::IO, e::FilesUnavailable) = print(io, "FilesUnavailable [", e.code, "]: ", e.msg)
+
+"""
     ConversationError
 
 A conversation, or one of its turns, refused what was asked

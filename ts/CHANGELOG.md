@@ -1,6 +1,44 @@
 # Changelog
 
-## Unreleased
+## 1.0.0 (unreleased: published once lmcc 0.8.7 and attachments-dev are on npm)
+
+The first stable version: what it does is what the contract says, checked
+case by case, and against Python, R and Julia (`tools/crosslang.py`).
+Training models stays in Python (*Not here yet* in the README).
+
+### Pictures and files
+
+- **Pictures, sounds, videos and documents**: `t.image()`, `t.audio()`,
+  `t.video()`, `t.document()` and `t.binary()`, typed by lm15's parts.
+  lm15's own `image({ path })` (and `audio`, `video`, `document`, `binary`,
+  exported here) works as the value; so does the same part as data
+  (`{ media_type, data }`). The model is sent the part itself. Values are
+  logged as lm15's part data (`media_type`, never lm15-ts's `mediaType`), as
+  Python logs an `ImagePart`, so the same picture sends the same bytes in
+  both. Before, a picture had to be written as a raw shape, typed `never`,
+  and lm15's `image(...)` was refused (`'mediaType' is not a member`).
+- **Several pictures in one input**: `t.list(t.image())` sends each one as a
+  picture, and `t.optional(t.image())` left out is the text `null` (lmcc
+  0.8.7, D-64, now required: functai refuses to start on an older lmcc,
+  which sent such pictures as base64 text the model could not see). A
+  record holding a picture is refused before anything is sent.
+- **A picture function has a version of its own** (contract/calls.md,
+  *Versions*): a media input had no sample value, so every function with a
+  picture input had one version, whatever its instruction. Every picture
+  function gets a new version once.
+- **Files: PDFs, Word and Excel files, slides, web pages, folders**, through
+  Attachments: `import { artifacts } from "functai/files"`, an input that
+  takes `att()`'s result (attachments-dev, an optional peer dependency the
+  main entry never imports). The model sees Attachments' parts, each page's
+  pictures after its text; a file `att()` could not read refuses the call
+  before any request; the data is Attachments' wire form, so a function
+  reading files saved in Python loads here with the same version, and the
+  other way round, and served functions take files from any language.
+  Without `functai/files`, such a function refuses `files-unavailable`
+  (`FilesUnavailable`).
+- lm15 1.0.0 (was 1.0.0-rc.3).
+
+### Also since 0.1.0
 
 - **A reply the provider stopped is lmcc's to recognise** (lmcc 0.8.6,
   `parse-filtered`, which also catches a model's refusal in its own words);

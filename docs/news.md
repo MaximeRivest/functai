@@ -4,9 +4,88 @@
 
 ## Unreleased
 
+Pictures and files, checked against TypeScript, R and Julia (contract:
+`functions.md`, *Pictures, sounds, documents and files*; cases
+`functions/19`–`23` and `files/`).
+
+- **A picture function has a version of its own.** A media input
+  (`ImagePart`, `AudioPart`, …) had no sample value: its sample render was
+  refused, so every function with a picture input had the one version
+  `{"request": "refused:value-invalid"}`, whatever its instruction, layout or
+  worked examples, and their ratings pooled. Its sample is now a picture by
+  web address (contract/calls.md, *Versions*). Every picture function gets a
+  new version once; cached replies are unaffected (they are keyed by the
+  request).
+- **Lists of pictures are sent as pictures** (lmcc 0.8.7, D-64, now
+  required): `list[ImagePart]` sends each picture as an image part, and
+  `Optional[ImagePart]` left out is the text `null`. The warning that a list
+  of pictures was written as base64 text is gone. A dataclass holding a
+  picture is refused before anything is sent (`no-format`) instead of
+  being sent as base64 text.
+- **A function reading files, loaded from a folder another language wrote,
+  reads them.** Loaded from data, an `Artifacts` input was not bound to
+  Attachments (lmcc binds by the Python type, which a saved signature names
+  only as text), so the sample sent `[]` as JSON and the load refused
+  `saved-differs`; calls would have sent the artifacts as JSON text.
+- **Files are a whole input.** `Optional[Artifacts]`, `list[Artifacts]` and
+  a record holding `Artifacts` sent the artifacts as JSON text, pictures as
+  base64; they are refused when the function is defined
+  (`interface-malformed`). For no files, give `att([])`: the model sees
+  `(no content)`.
+- **A failed file in a served call is refused.** Artifacts given in their
+  wire form (a served call, a replay) were not checked for files that failed
+  to read; they are refused before any request, as `att()`'s result is, and so
+  is a value Attachments' `from_wire` refuses (`interface-input`).
+- **`FilesUnavailable`** (code `files-unavailable`, an `ImportError`): a
+  function reading files where Attachments is not installed.
+- The `Artifacts` input's shape no longer carries a description (it named a
+  file Attachments has since moved); its signature id changes once.
+
 What the transcripts of real projects and the coding-agent evaluation
 (`evals/skill/findings.md`) showed was wrong or slow.
 
+- **A bake's longest example is one row's prompt and answer.** The plan added
+  the longest prompt of the data to its longest answer, which usually belong
+  to two different rows: long-text bakes were refused for memory they did not
+  need (an example of 26,000 tokens was counted as 38,000).
+- **Baking from an Examples file works.** `bake(examples)` stopped with
+  `'Plan' object has no attribute 'to_label'` before planning anything.
+  Examples made without `student=` (or for another student) are tokenized
+  by the bake itself instead of refused; examples tokenized for a student
+  train that student (the default list was tried instead); and the plan
+  counts their validation rows (it said "0 validation").
+- **Bake's estimates match real runs, and runs correct them.** From a
+  StatLM run (Qwen3.5-4B, examples up to 87,119 tokens, an RTX PRO 6000):
+  - The RTX PRO 6000 matched nothing in the speed table and was taken for
+    a 30 TFLOPS card: the plan said 3.7 days, the run took 9.3 hours. The
+    table knows it (500), the B300 and the RTX PRO 5000/4500/4000; a card
+    it does not know is named in the plan as a rough guess.
+  - Students with linear-attention layers (Qwen3.5) need about 1.7 times
+    the memory a token the formula gave: the plan said 16-bit weights fit
+    (58.9 / 95 GB); they ran out of memory. Their margin comes from that
+    run: 16-bit does not fit, 4-bit does, as it happened.
+  - 4-bit base weights are counted about a third slower.
+  - Every run on a GPU measures the memory a token of its largest batch
+    takes (from batches of 8k tokens or more) and the speed it trains at;
+    later plans of that student on that machine use them, and say so
+    (`~/.cache/functai/bakes/measured.json`). A speed is reused only for
+    examples of a similar length.
+- **A run says what it decided on its own.** Retrying with smaller batches
+  or with 4-bit base weights after running out of memory was a line in
+  `log.txt`; it is now printed while waiting (`NOTE: …`), kept in
+  `run.notices`, recorded in the model (`training.notices`), and shown in
+  the model's repr ("trained on 4bit base weights").
+- **The plan lists what matters.** With `where=` given, places that cannot
+  train the bake are left out of the plan (Tinker and Prime were listed
+  with their missing keys under every plan); a missing `causal-conv1d` for
+  a Qwen3.5 student is named with how to install it.
+- **Long replies are not cut by the client.** A request to a baked
+  student's server waited 10 minutes at most, less than a 50,000-token
+  reply takes on a small GPU; it now waits at least as long as 10 tokens a
+  second would need.
+- **Serving on a full GPU says so.** `baked.on("vllm")` on a GPU without
+  room for the weights started vLLM, which failed with a long trace; it now
+  says how much is free and how much is needed before starting.
 - **Words written in the code reach the model** (`functai/guidance.py`). A
   comment after each choice of a `Literal[...]` written over several lines,
   or after each member of an `Enum`, now describes that choice; a comment

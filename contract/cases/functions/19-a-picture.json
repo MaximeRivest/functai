@@ -1,0 +1,174 @@
+{
+ "description": "A picture input ({\"media\": \"image\"}): the model is sent the picture as an image part at the input's place, never as text. Its sample is a picture addressed by a web address (calls.md, Versions), so the version holds the instruction and the layout. Sent: a picture's bytes, and one addressed by a web address.",
+ "definition": {
+  "name": "count_items",
+  "description": "How many items are on the shelf?",
+  "inputs": [
+   {
+    "name": "photo",
+    "shape": {
+     "media": "image"
+    },
+    "desc": "a photo of one shelf"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: count_items\n\nHow many items are on the shelf?\n\nParameter guidance:\n- photo: a photo of one shelf",
+   "fields": [
+    {
+     "name": "photo",
+     "direction": "input",
+     "shape": {
+      "media": "image"
+     },
+     "purpose": "plain",
+     "desc": "a photo of one shelf"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "photo": {
+    "media_type": "image/png",
+    "url": "https://example.com/sample.png"
+   }
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: count_items\n\nHow many items are on the shelf?\n\nParameter guidance:\n- photo: a photo of one shelf\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<photo>\n"
+      },
+      {
+       "type": "image",
+       "media_type": "image/png",
+       "url": "https://example.com/sample.png"
+      },
+      {
+       "type": "text",
+       "text": "\n</photo>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:5c4df2ce42f1685862d59269778451d21ef511fc9ad1ffc181d4c5305ff3e75b",
+  "version": "sha256:12c80c127ccb49f65b565dc872dabec3922d5877e4485f64372e42b1274f8219",
+  "signature_id": "sha256:7c5c7d8677500da2af44e9c36d86eb85d137c706a18f300b665604ef99545875"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "photo": {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    }
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: count_items\n\nHow many items are on the shelf?\n\nParameter guidance:\n- photo: a photo of one shelf\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<photo>\n"
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "\n</photo>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "photo": {
+     "media_type": "image/jpeg",
+     "url": "https://example.com/shelf-3.jpg",
+     "detail": "high"
+    }
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: count_items\n\nHow many items are on the shelf?\n\nParameter guidance:\n- photo: a photo of one shelf\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<photo>\n"
+        },
+        {
+         "type": "image",
+         "media_type": "image/jpeg",
+         "url": "https://example.com/shelf-3.jpg",
+         "detail": "high"
+        },
+        {
+         "type": "text",
+         "text": "\n</photo>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

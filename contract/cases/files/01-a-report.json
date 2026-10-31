@@ -1,0 +1,508 @@
+{
+ "description": "An Artifacts input in the default layout (tags). Its sample is [] (an array), sent as one text part (no content). Sent: one text file; a folder of a text file and a two-page PDF, each page's picture after that page's text, the file names shown, as Attachments' parts() gives them; nothing at all. Refused at binding, before any request: a file att() could not read (alone, or among good ones), and values Attachments' from_wire refuses (not a list; text that is not text). A wire value with members left out is Attachments' to fill (its contract, cases/wire.json): no source is shown as (unknown).",
+ "definition": {
+  "name": "summarize",
+  "description": "The report in three sentences.",
+  "inputs": [
+   {
+    "name": "report",
+    "shape": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     }
+    },
+    "desc": "what to summarize",
+    "type": "Artifacts"
+   },
+   {
+    "name": "audience",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize",
+   "fields": [
+    {
+     "name": "report",
+     "direction": "input",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "purpose": "plain",
+     "desc": "what to summarize"
+    },
+    {
+     "name": "audience",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "report": [],
+   "audience": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<report>\n(no content)\n</report>\n<audience>\nexample text\n</audience>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:76e8e3c9c60c6b5a822e76539cb30158cde206975db7fa4dc107557c7ccaab23",
+  "version": "sha256:0a48b8374d4a050b076af2ede06521e5cc3341a161b1eef4b88699a61744b168",
+  "signature_id": "sha256:2100a45b90ade8e9a951da93cddfc039ef568c9edbb6fbc63ac512fd58335674"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": "Revenue rose 12% in the third quarter.\nCosts were flat.",
+      "images": [],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "notes.md",
+       "kind": "text"
+      }
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<report>\n## notes.md\nRevenue rose 12% in the third quarter.\nCosts were flat.\n</report>\n<audience>\nthe board\n</audience>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": "Revenue rose 12% in the third quarter.\nCosts were flat.",
+      "images": [],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "notes.md",
+       "kind": "text"
+      }
+     },
+     {
+      "text": "Q3 report\n\nRevenue by region: see the chart.\n\nOutlook\n\nWe expect growth to slow.",
+      "images": [
+       {
+        "name": "q3-page-1.png",
+        "mimetype": "image/png",
+        "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+        "page": 1
+       },
+       {
+        "name": "q3-page-2.png",
+        "mimetype": "image/png",
+        "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+        "page": 2
+       }
+      ],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "q3.pdf",
+       "kind": "pdf",
+       "segments": [
+        {
+         "kind": "page",
+         "label": "page 1",
+         "start": 0,
+         "end": 44,
+         "page": 1
+        },
+        {
+         "kind": "page",
+         "label": "page 2",
+         "start": 46,
+         "end": 80,
+         "page": 2
+        }
+       ]
+      }
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<report>\n## notes.md\nRevenue rose 12% in the third quarter.\nCosts were flat.\n\n## q3.pdf\nQ3 report\n\nRevenue by region: see the chart."
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "Outlook\n\nWe expect growth to slow."
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "\n</report>\n<audience>\nthe board\n</audience>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "report": [],
+    "audience": "the board"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<report>\n(no content)\n</report>\n<audience>\nthe board\n</audience>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": "",
+      "images": [],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "scan.pdf",
+       "kind": "pdf",
+       "error": {
+        "code": "missing-dependency",
+        "message": "PDF reading needs pypdf: pip install 'attachments[pdf]'"
+       }
+      }
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "report"
+   }
+  },
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": "Revenue rose 12% in the third quarter.\nCosts were flat.",
+      "images": [],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "notes.md",
+       "kind": "text"
+      }
+     },
+     {
+      "text": "",
+      "images": [],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "scan.pdf",
+       "kind": "pdf",
+       "error": {
+        "code": "missing-dependency",
+        "message": "PDF reading needs pypdf: pip install 'attachments[pdf]'"
+       }
+      }
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "report"
+   }
+  },
+  {
+   "inputs": {
+    "report": "q3.pdf",
+    "audience": "the board"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "report"
+   }
+  },
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": 3
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "refuses": "interface-input",
+    "field": "report"
+   }
+  },
+  {
+   "inputs": {
+    "report": [
+     {
+      "text": "A note with no meta."
+     }
+    ],
+    "audience": "the board"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize\n\nReply in exactly this form:\n<result>\n...\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<report>\n## (unknown)\nA note with no meta.\n</report>\n<audience>\nthe board\n</audience>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "manifest": {
+  "functai_saved": 1,
+  "language": "python",
+  "entry": "shop:summarize",
+  "created": "2026-09-27T12:00:00+00:00",
+  "python": "3.13.1",
+  "modules": {
+   "shop": "code/shop.py"
+  },
+  "nodes": {
+   "shop:summarize": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "summarize",
+    "interface": {
+     "description": "The report in three sentences.",
+     "inputs": [
+      {
+       "name": "report",
+       "shape": {
+        "type": "array",
+        "items": {
+         "type": "object"
+        }
+       },
+       "desc": "what to summarize",
+       "type": "Artifacts"
+      },
+      {
+       "name": "audience",
+       "shape": {
+        "type": "string"
+       }
+      }
+     ],
+     "outputs": [
+      {
+       "name": "result",
+       "shape": {
+        "type": "string"
+       }
+      }
+     ]
+    },
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [],
+     "teacher": null,
+     "state": {
+      "instructions": null,
+      "demos": []
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Function: summarize\n\nThe report in three sentences.\n\nParameter guidance:\n- report: what to summarize",
+      "fields": [
+       {
+        "name": "report",
+        "direction": "input",
+        "shape": {
+         "type": "array",
+         "items": {
+          "type": "object"
+         }
+        },
+        "purpose": "plain",
+        "desc": "what to summarize",
+        "type": "Artifacts"
+       },
+       {
+        "name": "audience",
+        "direction": "input",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "type": "string"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "report": [],
+       "audience": "example text"
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:2100a45b90ade8e9a951da93cddfc039ef568c9edbb6fbc63ac512fd58335674",
+      "requests": [
+       "sha256:76e8e3c9c60c6b5a822e76539cb30158cde206975db7fa4dc107557c7ccaab23"
+      ]
+     },
+     "body": null,
+     "version": "sha256:0a48b8374d4a050b076af2ede06521e5cc3341a161b1eef4b88699a61744b168"
+    }
+   }
+  },
+  "requirements": [
+   "functai==1.1.0"
+  ],
+  "allowed": [],
+  "warnings": [],
+  "models": {},
+  "data_files": {},
+  "hashes": {}
+ },
+ "node": "shop:summarize"
+}

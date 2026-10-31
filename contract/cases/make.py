@@ -3,6 +3,7 @@ implementation's output:
 
     rated/       ../calls.md, "Rows with known answers"      (rated.py)
     functions/   ../functions.md and ../calls.md, "Versions"  (functions.py)
+    files/       ../functions.md, "Pictures, sounds, documents and files"  (files.py)
     scores/      ../scores.md                                (scores.py)
     saved/       ../saved.md                                 (saved.py)
     programs/    ../programs.md                              (programs.py)
@@ -32,6 +33,7 @@ sys.path.insert(0, str(HERE))
 import baked  # noqa: E402
 import content  # noqa: E402
 import events  # noqa: E402
+import files  # noqa: E402
 import functions  # noqa: E402
 import plugins  # noqa: E402
 import programs  # noqa: E402
@@ -62,6 +64,8 @@ def check(folder: str, cases: dict) -> None:
             schemas.check(schemas.CALL, case["record"], f"{where} record")
             if "record" in case["expect"]:
                 schemas.check(schemas.CALL, case["expect"]["record"], f"{where} expect.record")
+        elif folder == "files":
+            schemas.check(schemas.SAVED, case["manifest"], f"{where} manifest")
         elif folder == "saved":
             if case["expect"].get("refuses") == "saved-format":        # a format this schema does not know
                 assert not schemas.SAVED.is_valid(case["manifest"]), f"{where}: the schema accepts it"
@@ -129,7 +133,7 @@ def write(folder: str, cases: dict) -> int:
 
 if __name__ == "__main__":
     schemas.refusals()
-    n = write("rated", rated.CASES) + write("functions", functions.cases()) + write("scores", scores.cases()) \
+    n = write("rated", rated.CASES) + write("functions", functions.cases()) + write("files", files.cases()) + write("scores", scores.cases()) \
         + write("saved", saved.cases()) + write("programs", programs.cases()) + write("content", content.cases()) \
         + write("saw", saw.cases()) + write("events", events.cases())
     for folder, made in stages.cases().items():

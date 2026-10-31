@@ -928,7 +928,7 @@ class FunctAIFunc(Generic[P, R]):
         from . import interface as _interface
         bound = _interface.bind_call(self.interface, self._bind_args(args, kwargs), program=self.__name__,
                                      dropped=calllog.dropped_now(self))
-        files.check_inputs(bound, program=self.__name__)       # a file att() could not read: refused here
+        files.check_inputs(bound, files.file_inputs(self._spec().signature), program=self.__name__)  # failed files
         return bound
 
     def _recorded_inputs(self, args, kwargs) -> Dict[str, Any]:

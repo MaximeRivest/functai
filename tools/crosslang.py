@@ -25,6 +25,11 @@ between them, on real output of both:
    Python calls: one call tree across the languages' logs.
 5. Functions TypeScript, R and Julia save load in Python: the version and
    the request the saving language gives, byte for byte, for the same input.
+6. Pictures and files: functions taking a picture and a list of pictures
+   (saved in Python) load in every language and send the same request, the
+   pictures as pictures; one reading files (Attachments' artifacts) loads in
+   TypeScript with the same version and request, both ways, and R and
+   Julia refuse it files-unavailable.
 
 R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
 julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
@@ -55,6 +60,8 @@ from functai import calllog  # noqa: E402
 SHOP = '''
 from typing import Literal
 import dataclasses
+from attachments import Artifacts
+from lm15.types import ImagePart
 from functai import ai, _ai
 
 @ai(lm="gpt-4.1-mini", temperature=0)
@@ -108,14 +115,40 @@ def route(
         "high",    # the customer is losing money or time now
     ] = _ai  # how soon to answer
     return _ai
+
+
+@ai(lm="gpt-4.1-mini", temperature=0)
+def colour(picture: ImagePart) -> str:
+    """The main colour of the picture."""
+
+@ai(lm="gpt-4.1-mini", temperature=0)
+def brighter(pictures: list[ImagePart], question: str) -> int:
+    """Which picture is brighter? Its position, from 1."""
+
+
+@ai(lm="gpt-4.1-mini", temperature=0)
+def summarize(report: Artifacts) -> str:
+    """The report in three sentences."""
 '''
 
-NAMES = ["mood", "mood_taught", "person", "solve", "rounded", "route"]
+PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+PICTURE = {"type": "image", "media_type": "image/png", "data": PNG}
+# Attachments' wire form: a text file, and a page with its picture
+REPORT = [{"text": "Revenue rose 12%.", "images": [], "audio": [], "video": [], "meta": {"source": "notes.md", "kind": "text"}},
+          {"text": "Page one.", "images": [{"name": "p-1.png", "mimetype": "image/png", "bytes_b64": PNG, "page": 1}],
+           "audio": [], "video": [], "meta": {"source": "p.pdf", "kind": "pdf",
+                                               "segments": [{"kind": "page", "label": "page 1", "start": 0, "end": 9, "page": 1}]}}]
+
+NAMES = ["mood", "mood_taught", "person", "solve", "rounded", "route", "colour", "brighter"]
 SAMPLE = {"mood": {"review": "Broke."}, "mood_taught": {"review": "Broke."}, "person": {"text": "Ana, 31."},
           "solve": {"problem": "Two plus two?"}, "rounded": {"x": 1.5},
-          "route": {"message": "I was charged twice.", "channel": "chat"}}
+          "route": {"message": "I was charged twice.", "channel": "chat"},
+          "colour": {"picture": PICTURE}, "brighter": {"pictures": [PICTURE, PICTURE], "question": "Which?"},
+          "summarize": {"report": REPORT}}
+# functions reading files (6): only a language with Attachments loads them; the others refuse files-unavailable
+FILES = ["summarize"]
 # what each other language saves (5): every one of these, saved there, loads in Python with the same version and request
-SAVED_ELSEWHERE = {"typescript": ["mood", "route"], "r": ["mood", "route"], "julia": ["mood", "route"]}
+SAVED_ELSEWHERE = {"typescript": ["mood", "route", "colour", "summarize"], "r": ["mood", "route"], "julia": ["mood", "route"]}
 
 
 LANGUAGE = {"typescript": "TypeScript", "r": "R", "julia": "Julia"}
@@ -156,6 +189,14 @@ def main() -> int:
         expected[name] = {"version": fn.version, "signature": calllog.signature_id(fn.signature),
                           "request": request_to_dict(fn.render(**SAMPLE[name])), "inputs": SAMPLE[name]}
     (work / "python.json").write_text(json.dumps(expected))
+    files = {}
+    for name in FILES:
+        fn = getattr(shop, name)
+        functai.save(fn, work / "saved" / name)
+        schemas()["saved"].validate(json.loads((work / "saved" / name / "functai.json").read_text()))
+        files[name] = {"version": fn.version, "signature": calllog.signature_id(fn.signature),
+                       "request": request_to_dict(fn.render(**SAMPLE[name])), "inputs": SAMPLE[name]}
+    (work / "python-files.json").write_text(json.dumps(files))
 
     # 3a. Python logs two calls of mood and rates one
     router = FakeRouter(responder=lambda req: "<result>\nunhappy\n</result>")
@@ -184,6 +225,8 @@ def main() -> int:
     functai.configure(lm="gpt-4.1-mini", client=served_router, log_calls=str(log))
     server = functai.serve(shop.mood, port=0, block=False)
     (work / "served.json").write_text(json.dumps({"url": f"http://127.0.0.1:{server.server_address[1]}"}))
+    files_server = functai.serve(shop.summarize, port=0, block=False)      # 6: files sent to Python as their wire form
+    (work / "served-files.json").write_text(json.dumps({"url": f"http://127.0.0.1:{files_server.server_address[1]}"}))
 
     # 2, 1 and 3b in TypeScript
     node = subprocess.run(
@@ -212,6 +255,10 @@ def main() -> int:
         return 1
 
     server.shutdown()
+    files_server.shutdown()
+    seen = [p.text for req in served_router.requests for m in req.messages for p in m.parts if p.type == "text"]
+    assert any("Revenue rose 12%." in t for t in seen), seen                 # TypeScript's files reached the model
+    assert sum(p.type == "image" for req in served_router.requests for m in req.messages for p in m.parts) >= 1
     functai.configure(lm=None, client=None, log_calls=None)
 
     # 5. what TypeScript, R and Julia saved loads here, and sends what it sent there
@@ -226,7 +273,7 @@ def main() -> int:
             fn = functai.load(folder)
             want = theirs[name]
             assert fn.version == want["version"], (language, name, fn.version, want["version"])
-            mine = request_to_dict(fn.render(**want["inputs"]))
+            mine = request_to_dict(fn.render(**want["inputs"]))    # pictures and files as data, as a served call gives them
             assert canonical(mine) == canonical(want["request"]), (language, name, mine, want["request"])
             if name == "route":                    # the settings saved with it travel too (its address, its rule)
                 got = {k: fn._settings.get(k) for k in ("base_url", "on_unreadable")}

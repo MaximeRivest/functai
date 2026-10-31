@@ -1,6 +1,6 @@
 {
   "name": "functai",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "description": "Typed functions whose body is a language model call: write the signature, a model writes the body, you measure how well. The TypeScript implementation of the FunctAI contract.",
   "type": "module",
   "license": "MIT",
@@ -14,12 +14,20 @@
   "engines": {
     "node": ">=22.18.0"
   },
-  "sideEffects": false,
+  "sideEffects": [
+    "./src/files.ts",
+    "./dist/files.js"
+  ],
   "exports": {
     ".": {
       "functai-source": "./src/index.ts",
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
+    },
+    "./files": {
+      "functai-source": "./src/files.ts",
+      "types": "./dist/files.d.ts",
+      "default": "./dist/files.js"
     },
     "./package.json": "./package.json"
   },
@@ -38,11 +46,20 @@
     "docs": "typedoc"
   },
   "dependencies": {
-    "@lm15/lm15": "1.0.0-rc.3",
-    "lmcc": "^0.8.6"
+    "@lm15/lm15": "^1.0.0",
+    "lmcc": "^0.8.7"
+  },
+  "peerDependencies": {
+    "attachments-dev": ">=0.1.0 <2"
+  },
+  "peerDependenciesMeta": {
+    "attachments-dev": {
+      "optional": true
+    }
   },
   "devDependencies": {
     "@types/node": "^22",
+    "attachments-dev": ">=0.1.0 <2",
     "typedoc": "^0.28.20",
     "typescript": "^5.9",
     "zod": "^4.6.5"

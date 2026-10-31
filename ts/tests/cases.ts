@@ -2,10 +2,13 @@
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { ai, type Tool } from "../src/index.ts";
+import { ai, FilesUnavailable, type Tool } from "../src/index.ts";
 import { CONTRACT } from "../tools/generate.ts";
 
 export type Rec = Record<string, any>;
+
+/** functai/files, when Attachments (attachments-dev) is here. */
+const files = await import("../src/files.ts").catch(() => null);
 
 /** Every case of a folder, by file name (without `.json`), in order; `prefix` keeps one kind of `events/`. */
 export const cases = (folder: string, prefix = ""): [string, Rec][] =>
@@ -22,6 +25,11 @@ export function tsFunction(d: Rec) {
       const called = String(f.default_code).split("(")[0]!;
       const make = new Function("v", `const ${called} = () => v; return () => ${f.default_code};`);
       shape = { ...f.shape, default: make(f.shape.default) };
+    }
+    if (f.type === "Artifacts") {
+      // files: functai/files' artifacts(), whose words are its description (without Attachments here: refused)
+      if (!files) throw new FilesUnavailable(`${d.name} reads files, and Attachments is not loaded here`);
+      return files.artifacts(f.desc ? { description: f.desc } : {});
     }
     return input ? { shape, ...words, optional: Boolean(f.optional) } : f.desc ? { shape, ...words } : shape;
   };

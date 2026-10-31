@@ -25,16 +25,19 @@ contract](https://github.com/MaximeRivest/functai/tree/master/contract), like th
 [Python](https://maximerivest.github.io/functai/python.html), [R](https://maximerivest.github.io/functai/r/index.html) and
 [Julia](https://maximerivest.github.io/functai/julia/index.html) packages.
 
-**Status: 0.1.0, not on npm yet.** The [API reference](https://maximerivest.github.io/functai/ts/api/index.html)
+**Status: 1.0.0, ready; not on npm yet** (it waits for lmcc 0.8.7 and
+attachments-dev to be published there). The [API reference](https://maximerivest.github.io/functai/ts/api/index.html)
 lists every export with its types.
 
 ## Install
 
 Once it is published, `npm install functai` (Node 22.18+, Deno, Bun; in a
-browser everything but the call log works). Until then, build it from a
-checkout, as in [*Developing*](#developing), and install that folder into
-your project: `npm install ../functai/ts`. Version 0.1.0 is the tag
-`ts-v0.1.0` (`git clone --branch ts-v0.1.0 https://github.com/MaximeRivest/functai`).
+browser everything but the call log works), and `npm install
+attachments-dev` too for [files](#files-pdfs-word-and-excel-files-slides-web-pages-folders).
+Until then, build it from a checkout, as in [*Developing*](#developing),
+and install that folder into your project: `npm install ../functai/ts`.
+Version 0.1.0 is the tag `ts-v0.1.0` (`git clone --branch ts-v0.1.0
+https://github.com/MaximeRivest/functai`).
 
 Set the key of the provider you call (`OPENAI_API_KEY`,
 `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, …). Any model
@@ -97,7 +100,7 @@ p.answer;       // 15
   record of the order (`lmcc.memberNames`), and so does what lm15 writes
   (the `json` adapter's `response_format` schema, a tool's parameters, a
   `config`'s maps) and reads (a tool call's input), since lmcc's record
-  is lm15's (lm15 1.0.0-rc.3, lmcc 0.8.5): a request goes out with the
+  is lm15's (lm15 1.0, lmcc 0.8.5 and later): a request goes out with the
   same bytes as Python's. With an older lm15 installed anyway, what lm15
   writes reaches the provider in JavaScript's order, `"10"` before `"b"`.
 - **JSON FunctAI writes** (a text input given an object, the call log, a
@@ -159,6 +162,91 @@ p.answer;       // 15
   credentials file, which every language shares: a login made in Python is
   used here. `await logins()` lists what you can use; `logout(...)`.
   `fn.version` names what the function sends besides its inputs.
+
+## Pictures, sounds, videos and documents
+
+```ts
+import { ai, t, image } from "functai";
+
+const count = ai("count_items", {
+  description: "How many items are on the shelf?",
+  input: { photo: t.image() },
+  output: t.integer(),
+});
+
+await count({ photo: image({ path: "shelf.jpg" }) });         // or { url }, { data }, { fileId }
+```
+
+- `t.image()`, `t.audio()`, `t.video()`, `t.document()` (a PDF given
+  whole, which providers that read PDFs read themselves) and `t.binary()`
+  take lm15's parts: `image`, `audio`, `video`, `document` and `binary`
+  are exported here, so nothing else needs installing. The same part as
+  data works too (`{ media_type: "image/png", data: "<base64>" }`, a
+  served call's JSON).
+- The model is sent the part itself, never its bytes as text.
+  `t.list(t.image())` sends each picture, in order; `t.optional(t.image())`
+  may be left out (the model reads `null`). A record holding a picture
+  (`t.object({ photo: t.image() })`) is refused before anything is sent
+  (lmcc's `no-format`): no layout can show it, and none may write it as
+  text. Give the picture its own input.
+- A picture given by `path` is read when the call is made: the request,
+  the reply cache's key and the call's record hold the picture, not its
+  name, so a changed file is a new request, and a record replays on a
+  machine without the file. An address (`url`) is left for the provider.
+- The call's record holds the part as lm15's data (`type`, `media_type`,
+  `data`), as Python logs an `ImagePart`: the same picture function in
+  Python sends the same bytes and has the same version.
+- Pictures are kept whole in the call log (in the input and in the
+  request), as in Python: logging is off by default; a function given
+  large pictures and `logCalls` writes large records.
+
+## Files: PDFs, Word and Excel files, slides, web pages, folders
+
+```ts
+import { ai, t } from "functai";
+import { artifacts } from "functai/files";
+import { att } from "attachments-dev";
+
+const answer = ai("answer", {
+  description: "Answer the question from the document, in a word or a number.",
+  input: { question: t.string(), document: artifacts() },
+  output: t.string(),
+});
+
+await answer({ question: "Which region sold most?", document: await att("report.pdf[images: true]") });
+```
+
+[Attachments](https://attachments.dev) (`npm install attachments-dev`)
+turns a file, a folder, a web page or a repository into text and pictures;
+`artifacts()` is an input that takes `att()`'s result. Importing
+`functai/files` plugs it in; the main package never imports it, so a
+program that reads no files never needs it.
+
+- **The model sees** Attachments' own `parts()` at the input's place:
+  each file's name, its text, and each page's pictures after that page's
+  text, as pictures. `att([])` (no files) is `(no content)`. A PDF sends
+  its text only unless `[images: true]`: charts and scans need the
+  pictures.
+- **A file `att()` could not read** (a missing file, or a format nothing
+  here reads) refuses the call before anything is sent, naming each file
+  and why (`InterfaceError`, `interface-input`).
+- **Its data** is Attachments' wire form (`toWire()`): the record, the
+  reply cache's key, a conversation and a served call hold it, and a
+  function given the wire form sends the same request. Python's `report:
+  Artifacts` is the same input: a function reading files saved in Python
+  loads here with the same version, and the other way round.
+- **Files are a whole input**: not optional, not in a list or a record,
+  never an output. Several files are one `att([...])`.
+- **What reads what** is Attachments': in TypeScript it reads text, code,
+  folders, archives, web addresses and repositories itself, and sends
+  PDFs, Office files, pictures and audio to an Attachments service when
+  one is configured (`configure({ serviceUrl })`, or an API key); without
+  one, such a file is an artifact with an error, which the call refuses.
+  For a picture alone, `t.image()` needs no service.
+- A function saved in another language that reads files loads only once
+  `functai/files` has been imported (`import "functai/files"`); before, and
+  in R and Julia, which have no Attachments, it refuses
+  `files-unavailable` (`FilesUnavailable`) and sends nothing.
 
 ## Tools
 
@@ -483,6 +571,12 @@ out exactly as it was trained.
 - **A tool still running when its call is stopped keeps running.** The
   call ends `Cancelled` at once, but JavaScript cannot stop a function from
   outside; a tool given `signal`-aware code stops itself.
+- **Files come through a second entry point**, `functai/files`: Python
+  binds Attachments when it is imported, which JavaScript cannot watch,
+  and the main package must not make a bundler look for a package a
+  program may not use. A picture is `t.image()` with lm15's `image(...)`
+  (Python: an `ImagePart` annotation); TypeScript has no annotations to
+  read.
 - **The disk reply cache needs `node:sqlite`** (Node 22.13+, Deno). In a
   browser, replies are cached in memory, conversations kept in memory or in
   your own store, and a program served through `Service.fetch`.
@@ -505,8 +599,9 @@ is the plan.
 
 ## Developing
 
-lmcc and lm15 come from npm (`lmcc` 0.8.5 or later, which keeps member
-order: functai refuses to start on an older one). From `functai/ts`:
+lmcc and lm15 come from npm (`lmcc` 0.8.7 or later, which keeps member
+order and sends every picture of a list as a picture: functai refuses to
+start on an older one). From `functai/ts`:
 
 ```bash
 npm ci
@@ -523,4 +618,8 @@ in `src/generated/`; `tools/live.ts` calls real models (costs cents).
 To try an lmcc change before it is released, install its checkout in
 place of the published package, without changing `package.json`:
 `(cd ../../lmcc/ts && npm run build) && npm install --no-save ../../lmcc/ts`.
-`npm ci` puts the published one back.
+`npm ci` puts the published one back. Attachments' checkout is tried the
+same way: `npm install --no-save ../../attachments/ts` (after `npm run
+build` there; or run the tests with `NODE_OPTIONS=--conditions=attachments-source`
+to use its sources). Without `attachments-dev`, the files tests check only
+that a function reading files refuses `files-unavailable`.

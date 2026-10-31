@@ -114,6 +114,12 @@ const missing = HELPERS.filter((h) => typeof (lmcc as unknown as Record<string, 
 if (missing.length) {
   throw new Error(`functai needs lmcc with decision D-58 (names are data, members keep their order; lmcc 0.8.5 or later): this lmcc has no ${missing.join(", ")}`);
 }
+// An lmcc before 0.8.7 (D-64) writes a list of pictures, an optional picture or a record holding one as base64 JSON text
+// the model cannot see, and the call succeeds: functai would send pictures the model never sees. It refuses to run instead.
+const kernel = String((lmcc as unknown as { KERNEL_VERSION?: unknown }).KERNEL_VERSION ?? "0").split(".").map(Number);
+if ((kernel[0] ?? 0) * 1e6 + (kernel[1] ?? 0) * 1e3 + (kernel[2] ?? 0) < 8007) {
+  throw new Error(`functai needs lmcc 0.8.7 or later (D-64: pictures in a list are sent as pictures, never as text): this lmcc is ${kernel.join(".")}`);
+}
 
 /** Set a member as data: `__proto__` is an own member, and a new name comes after the others (lmcc's `setMember`). */
 export function setOwn(obj: object, key: string, value: unknown): void {

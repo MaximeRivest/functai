@@ -24,11 +24,15 @@ export { module, type AnyModule, type Module, type ModuleArgs, type ModuleContex
   type ModuleSpec } from "./module.ts";
 export { t, describe, type FieldWith, type Json, type Shape, type FieldSpec, type StandardSchemaLike, type ValueOf, type ZodLike } from "./shapes.ts";
 export { configure, withSettings, type Settings } from "./settings.ts";
+// pictures, sounds, videos and documents as inputs: lm15's own parts (t.image(), t.audio(), …), so no second install
+export { image, audio, video, document, binary } from "@lm15/lm15";
+export type { ImagePart, AudioPart, VideoPart, DocumentPart, BinaryPart } from "@lm15/lm15";
+export type { AudioInput, BinaryInput, DocumentInput, ImageInput, MediaData, MediaKind, VideoInput } from "./media.ts";
 export { SettingError, type LogContent } from "./content.ts";
 export { InterfaceError, checkInterface, interfaceSignature, type Interface, type InterfaceCode, type InterfaceField } from "./interface.ts";
 export { Prediction, StepLimit } from "./engine.ts";
-export { Cancelled, FunctAIError, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError, BakeError,
-  type Approval } from "./errors.ts";
+export { Cancelled, FunctAIError, FilesUnavailable, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError,
+  BakeError, type Approval } from "./errors.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
 export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
   ToolResultHook, TurnEndHook } from "./plugins.ts";
@@ -83,7 +87,8 @@ export function tool<I extends Record<string, FieldSpec>>(
   }
   const properties: Rec = {};
   for (const [field, f] of Object.entries(spec.input)) {
-    const { shape, desc } = readField(f, `${name}.${field}`);
+    const { shape, desc, files } = readField(f, `${name}.${field}`);
+    if (files) throw new TypeError(`tool("${name}"): ${field}: a tool's input is what the model writes, never files (artifacts())`);
     setOwn(properties, field, desc ? { ...shape, description: desc } : shape);
   }
   // no additionalProperties: Gemini refuses the keyword in function declarations

@@ -35,6 +35,18 @@ for (name, want) in python
     say("$name: saved in Python, loaded in Julia, same version and same request" * (name == "route" ? ", base_url and on_unreadable" : ""))
 end
 
+# 6. a function reading files: Julia has no Attachments, so it is refused when it is loaded, and nothing is sent
+for (name, _) in LMCC.parse_json(read(joinpath(work, "python-files.json"), String))
+    err = try
+        FunctAI.load(joinpath(work, "saved", name))
+        nothing
+    catch e
+        e
+    end
+    check(err isa FilesUnavailable && err.code == "files-unavailable", "$name: expected files-unavailable, got $(repr(err))")
+    say("$name: reads files; refused in Julia (files-unavailable: Julia has no Attachments)")
+end
+
 # 2. the same function, written here with Julia types
 @enum Mood happy unhappy mixed
 @ai module_name = "shop" lm = "gpt-4.1-mini" temperature = 0 function mood(review::String)::Mood

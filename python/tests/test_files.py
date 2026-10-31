@@ -73,6 +73,43 @@ def test_a_file_that_could_not_be_read_refuses_the_call_before_any_request(fake)
         summary(report() + missing)                                             # one bad file in a folder too
 
 
+def test_a_failed_file_in_its_wire_form_is_refused_too(fake):
+    """A served call or a replay gives the wire form: a file that failed is refused all the same, and so is a value
+    Attachments' from_wire refuses."""
+    r = fake("<result>\nok\n</result>")
+    failed = Artifacts([error_artifact("missing.pdf", "unpack-error", "no such file")]).to_wire()
+    for bad in (failed, [{"text": 3}]):
+        with pytest.raises(InterfaceError) as caught:
+            summary(bad)
+        assert caught.value.code == "interface-input" and caught.value.field == "doc"
+    assert not r.requests
+
+
+@pytest.mark.filterwarnings("ignore:.*defined by exec")
+@pytest.mark.parametrize("annotation", ["Optional[Artifacts]", "list[Artifacts]", "dict[str, Artifacts]", "Holder"])
+def test_files_are_a_whole_input(annotation):
+    """Inside another type a layout would write the artifacts as JSON text (their pictures as base64): refused when
+    the function is defined, saying how to give no files."""
+    import dataclasses
+    from typing import Optional
+
+    @dataclasses.dataclass
+    class Holder:
+        doc: Artifacts
+    space = {"Artifacts": Artifacts, "Optional": Optional, "Holder": Holder, "ai": ai}
+    with pytest.raises(InterfaceError) as caught:
+        exec(f"@ai\ndef read(doc: {annotation}) -> str:\n    'Read it.'\n    ...\n", space)
+    assert caught.value.code == "interface-malformed" and "att([])" in str(caught.value)
+    with pytest.raises(InterfaceError, match="an input"):
+        exec("@ai\ndef make(topic: str) -> Artifacts:\n    'Write it.'\n    ...\n", space)
+
+
+def test_no_files_is_no_content(fake):
+    fake()
+    texts = [p.text for p in parts_of(summary.render(Artifacts([]))) if p.type == "text"]
+    assert any("(no content)" in t for t in texts)
+
+
 def test_the_log_holds_the_wire_form_and_the_cache_answers_the_same_document(fake, tmp_path):
     r = fake("<result>\nA report.\n</result>")
     functai.configure(cache_replies=tmp_path / "replies.sqlite", log_calls=tmp_path / "calls")

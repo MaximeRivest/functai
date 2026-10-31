@@ -107,10 +107,32 @@ for (name in names(cases("functions"))) {
     expect_identical(request_hash(core, c$expect$sample), c$expect$request_hash)
     expect_identical(ai_version(fn), c$expect$version)
     expect_identical(ai_signature_id(fn), c$expect$signature_id)
+    # what it sends for other inputs (a picture's bytes, a list of pictures, null), rendered as the probe is
+    for (sent in c$sends) {
+      one <- lapply(sent$inputs, function(v) if (is.list(v)) list(v) else v)   # a list is one row of a list column
+      bound <- bound_row(fn, one)
+      expect_identical(lmcc::canonical_json(probe_request(core, bound)), lmcc::canonical_json(sent$expect$request),
+                       info = lmcc::json_text(sent$inputs))
+    }
   })
 }
 
 test_that("the contract has function cases", expect_gte(length(cases("functions")), 10L))
+
+# ---------------------------------------------------------------- files
+
+# R has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that
+# reads files is refused files-unavailable when it is loaded, and nothing is sent.
+for (name in names(cases("files"))) {
+  test_that(paste("files case", name, "(R reads no files: files-unavailable)"), {
+    c <- cases("files")[[name]]
+    dir <- withr::local_tempdir()
+    writeLines(lmcc::json_text(c$manifest), file.path(dir, "functai.json"), useBytes = TRUE)
+    err <- tryCatch(read_ai(dir, c$node), functai_refusal = function(e) e)
+    expect_s3_class(err, "functai_files_unavailable")
+    expect_identical(err$code, "files-unavailable")
+  })
+}
 
 # ---------------------------------------------------------------- scores
 

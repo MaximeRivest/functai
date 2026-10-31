@@ -132,8 +132,9 @@ answer("Total spent?", att("budget.xlsx"))                           # sheets as
 
 - A PDF sends its **text only** unless `[images: true]`: charts, scans and
   figures need the pictures. Several files are one value: `att(["a.md", "b.png"])`.
-- One picture per input: `list[ImagePart]` is sent as base64 text the model
-  cannot see (FunctAI warns).
+- Several pictures in one input: `list[ImagePart]` sends each as a picture.
+  A dataclass holding a picture is refused (no layout can show it): give the
+  picture its own input.
 - Attachments shows file names; when a name could give the answer away, use `ImagePart`.
 - A file `att()` could not read (missing, or a reader not installed) refuses
   the call before anything is sent, saying which and why.

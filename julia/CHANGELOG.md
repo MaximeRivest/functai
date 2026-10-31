@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **A picture function has a version of its own** (contract/calls.md,
+  *Versions*): a media input had no sample value, so every function with a
+  picture input had one version, whatever its instruction. Its sample is
+  now a picture by web address; every picture function gets a new version
+  once. Lists of pictures are sent as pictures (lmcc 0.8.7).
+- **A function reading files, saved in Python or TypeScript, is refused
+  when it is loaded** (`FilesUnavailable`, `files-unavailable`): Julia has no Attachments, and
+  without it the artifacts would have been sent as JSON text. Serve it where
+  it was saved and call it with `remote`.
 - **A reply the provider stopped is lmcc's to recognise** (lmcc 0.8.6,
   `parse-filtered`, which also catches a model's refusal in its own words);
   FunctAI's own check is gone and the rule (never asked again) stays.

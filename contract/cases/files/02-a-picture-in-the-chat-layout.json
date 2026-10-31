@@ -1,0 +1,250 @@
+{
+ "description": "An Artifacts input holding a picture, in the chat layout ([[ ## name ## ]] sections): the picture is an image part inside the input's section, after the file's name.",
+ "definition": {
+  "name": "count_items",
+  "description": "How many items are on the shelf?",
+  "inputs": [
+   {
+    "name": "photo",
+    "shape": {
+     "type": "array",
+     "items": {
+      "type": "object"
+     }
+    },
+    "type": "Artifacts"
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "settings": {
+   "adapter": "Chat"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: count_items\n\nHow many items are on the shelf?",
+   "fields": [
+    {
+     "name": "photo",
+     "direction": "input",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object"
+      }
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "photo": []
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: count_items\n\nHow many items are on the shelf?\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## result ## ]]\n(integer)\n\n[[ ## completed ## ]]",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "[[ ## photo ## ]]\n(no content)\n\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "[[ ## completed ## ]]"
+    ]
+   }
+  },
+  "request_hash": "sha256:cf1e587794cfd15a3460ee674e66c54700791ddf9ca56b644a46ce3718e15fe9",
+  "version": "sha256:34f596cbe78711eee6c41f9b2f5232df83dabdc531d102ae7ec031d8e80188cd",
+  "signature_id": "sha256:3d233447cb0eefab54e9686740be29b59c834a7c27529bf0e23a4f42c1101cda"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "photo": [
+     {
+      "text": "",
+      "images": [
+       {
+        "name": "shelf.png",
+        "mimetype": "image/png",
+        "bytes_b64": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+       }
+      ],
+      "audio": [],
+      "video": [],
+      "meta": {
+       "source": "shelf.png",
+       "kind": "image"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: count_items\n\nHow many items are on the shelf?\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## result ## ]]\n(integer)\n\n[[ ## completed ## ]]",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "[[ ## photo ## ]]\n## shelf.png"
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "[[ ## completed ## ]]"
+      ]
+     }
+    }
+   }
+  }
+ ],
+ "manifest": {
+  "functai_saved": 1,
+  "language": "python",
+  "entry": "shop:count_items",
+  "created": "2026-09-27T12:00:00+00:00",
+  "python": "3.13.1",
+  "modules": {
+   "shop": "code/shop.py"
+  },
+  "nodes": {
+   "shop:count_items": {
+    "kind": "ai",
+    "module": "shop",
+    "name": "count_items",
+    "interface": {
+     "description": "How many items are on the shelf?",
+     "inputs": [
+      {
+       "name": "photo",
+       "shape": {
+        "type": "array",
+        "items": {
+         "type": "object"
+        }
+       },
+       "type": "Artifacts"
+      }
+     ],
+     "outputs": [
+      {
+       "name": "result",
+       "shape": {
+        "type": "integer"
+       }
+      }
+     ]
+    },
+    "ai": {
+     "settings": {
+      "lm": "gpt-4.1-mini",
+      "module": "predict",
+      "include_fn_name_in_instructions": true,
+      "adapter": "Chat"
+     },
+     "config": {
+      "temperature": 0
+     },
+     "template": null,
+     "tools": [],
+     "teacher": null,
+     "state": {
+      "instructions": null,
+      "demos": []
+     },
+     "requires": [],
+     "signature": {
+      "instructions": "Function: count_items\n\nHow many items are on the shelf?",
+      "fields": [
+       {
+        "name": "photo",
+        "direction": "input",
+        "shape": {
+         "type": "array",
+         "items": {
+          "type": "object"
+         }
+        },
+        "purpose": "plain",
+        "type": "Artifacts",
+        "desc": null
+       },
+       {
+        "name": "result",
+        "direction": "output",
+        "shape": {
+         "type": "integer"
+        },
+        "purpose": "plain",
+        "type": null,
+        "desc": null
+       }
+      ]
+     },
+     "probes": [
+      {
+       "photo": []
+      }
+     ],
+     "fingerprints": {
+      "signature": "sha256:3d233447cb0eefab54e9686740be29b59c834a7c27529bf0e23a4f42c1101cda",
+      "requests": [
+       "sha256:cf1e587794cfd15a3460ee674e66c54700791ddf9ca56b644a46ce3718e15fe9"
+      ]
+     },
+     "body": null,
+     "version": "sha256:34f596cbe78711eee6c41f9b2f5232df83dabdc531d102ae7ec031d8e80188cd"
+    }
+   }
+  },
+  "requirements": [
+   "functai==1.1.0"
+  ],
+  "allowed": [],
+  "warnings": [],
+  "models": {},
+  "data_files": {},
+  "hashes": {}
+ },
+ "node": "shop:count_items"
+}

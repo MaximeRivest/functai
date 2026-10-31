@@ -100,9 +100,10 @@ A definition becomes an lmcc signature (`instructions` and `fields`).
 
 `type` is the host's name for the type (Python `str`, `Literal['a',
 'b']`). It is not part of this contract except for the two tool fields,
-where lmcc_std finds its formats by it: implementations compare
-signatures with `type` left out, and a call's `program.signature` is
-computed without it ([calls.md](calls.md)).
+where lmcc_std finds its formats by it, and an input of files, whose
+`type` is `Artifacts` (*Pictures, sounds, documents and files*, below):
+implementations compare signatures with `type` left out, and a call's
+`program.signature` is computed without it ([calls.md](calls.md)).
 
 **Instructions.** When `state.instructions` is not null, they are that
 text with white space trimmed at both ends, and nothing else. Otherwise
@@ -242,6 +243,63 @@ conversation memory, for the **sample input**: each plain input's
 value from its shape, as calls.md says. lmcc's `request("probe")` gives
 the request as JSON; its hash is `"sha256:"` + SHA-256 of its canonical
 JSON.
+
+## Pictures, sounds, documents and files
+
+**Media.** An input whose shape is lmcc's media shape `{"media": kind}`,
+`kind` one of `image`, `audio`, `video`, `document`, `binary` (kernel
+§7b), takes one part of that kind, and the model is sent that part: a
+picture as a picture, never as text. Its value, as data, is lm15's part
+data: `media_type` and one of `data` (the bytes in standard base64),
+`url`, `file_id` or `path`, and `detail` for a picture; `"type"` (the
+kind) may be given too. Python's `ImagePart`, TypeScript's lm15 parts
+(`image({ path })`, whose members are camelCase), R's and Julia's lm15
+bridges are that data in the language's own form, and are logged as it,
+with `type`. A picture given by `path` is read when the call is bound
+([programs.md](programs.md), *Binding a call's inputs*).
+
+lmcc (kernel 0.8.7, D-64) also writes, as parts:
+
+- a list of one kind (`{"type": "array", "items": {"media": "image"}}`):
+  each item's part at the input's place, in order; `[]` writes nothing;
+- an optional one (`{"anyOf": [{"media": "image"}, {"type": "null"}]}`):
+  `null` is written as the text `null`.
+
+A record holding a picture (`{"properties": {"photo": {"media":
+"image"}}}`) is refused when the layout is bound (`no-format`): no
+layout writes it as parts, and none may write it as text. An
+implementation on an lmcc before 0.8.7 would send such values as base64
+text the model cannot see, and must not run.
+
+**Files.** An input whose `type` is `Artifacts` takes the result of
+Attachments' `att()` (a PDF, a Word or Excel file, slides, a web page,
+a folder, a repository, a picture; Attachments' own contract,
+`attachments/contract/`). Its shape is `{"type": "array", "items":
+{"type": "object"}}`, and its value, as data, is Attachments' wire form
+of the artifacts (`to_wire`: each `{text, images: [{name, mimetype,
+bytes_b64, page?}], audio, video, meta}`). The type name is what tells a
+list of artifacts from any other list of objects, so it is kept where a
+saved node or a served interface names its inputs' types.
+
+- **What the model sees** at the input's place: Attachments' `parts()`
+  of the artifacts, as Attachments' contract writes them
+  (`presenting.md`: each artifact's text, file names shown, each page's
+  pictures after that page's text) — text parts and picture parts, in
+  that order. When `parts()` gives none (`[]`: no artifacts), one text
+  part `(no content)`.
+- **A file that failed** (an artifact with `meta.error`: `att()` never
+  raises) refuses the call when it is bound, `interface-input`, naming
+  the input and each failed source with its error code, before any
+  request: an empty document would reach the model otherwise. A value
+  Attachments' `from_wire` refuses (not a list, an artifact whose `text`
+  is not text: Attachments' contract, `cases/wire.json`) is refused the
+  same way; members it fills in (a missing `meta`) are its to fill.
+- **A language that cannot read files** (no Attachments for it, or the
+  package not installed) refuses such a function `files-unavailable`,
+  when it is defined or loaded, or at the latest when a call or its
+  version is rendered, and never sends anything. It never writes the
+  artifacts as JSON text instead, which is what a layout's `*` format
+  would do without the binding.
 
 ## When the reply cannot be read
 

@@ -44,6 +44,16 @@ class FunctAIError(Exception):
         self.code = code
 
 
+class FilesUnavailable(FunctAIError, ImportError):
+    """A function reads files (an ``Artifacts`` input) and Attachments is not
+    installed (``pip install 'functai[files]'``). ``code`` is
+    ``"files-unavailable"``; nothing was sent. It is an ``ImportError``, which
+    is what a missing package is in Python."""
+
+    def __init__(self, message: str):
+        super().__init__("files-unavailable", message)
+
+
 class InterfaceError(FunctAIError, TypeError, ValueError):
     """A program's interface refused what it was given or what it gave back.
 

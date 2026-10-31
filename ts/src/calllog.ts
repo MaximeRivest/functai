@@ -31,7 +31,7 @@ export const RATING_FORMAT = 1;
 const MAX_LINE = 8 * 1024 * 1024;
 const OFF = new Set(["", "0", "false", "no", "off"]);
 const ON = new Set(["1", "true", "yes", "on"]);
-export const VERSION = "0.1.0";
+export const VERSION = "1.0.0";
 
 type Json = unknown;
 type Rec = Record<string, unknown>;

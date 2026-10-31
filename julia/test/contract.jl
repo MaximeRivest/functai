@@ -162,8 +162,20 @@ end
     @test LMCC.sha256_of(request) == c["expect"]["request_hash"]
     @test version(f) == c["expect"]["version"]
     @test signature_id(f) == c["expect"]["signature_id"]
+    # what it sends for other inputs (a picture's bytes, a list of pictures, null), bound as a call binds them
+    for x in get(c, "sends", Any[])
+        bound = FunctAI.check_inputs(FunctAI.interface(f), Dict{String,Any}(k => v for (k, v) in x["inputs"]))
+        @test LMCC.canonical_json(FunctAI.probe_request(f, bound)) == LMCC.canonical_json(x["expect"]["request"])
+    end
 end
 @test length(cases("functions")) >= 10
+
+# Julia has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that
+# reads files is refused files-unavailable when it is loaded, and nothing is sent.
+@testset "files case $name (Julia reads no files: files-unavailable)" for (name, c) in cases("files")
+    err = refusal_of(() -> FunctAI.from_manifest(c["manifest"]; node=c["node"]))
+    @test err isa FilesUnavailable && err.code == "files-unavailable"
+end
 
 @testset "score case $name" for (name, c) in cases("scores")
     if c["kind"] == "interval"

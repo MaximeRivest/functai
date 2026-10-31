@@ -138,7 +138,9 @@ Not decided, needs Maxime:
 - **TypeScript, R and Julia** take pictures (`{"media": "image"}` and lmcc's
   bridges) but not Attachments values: Attachments is Python-only. Its wire
   form is language-neutral, so a served Python program reading files can be
-  called from any of them.
+  called from any of them. *(2026-10-31: TypeScript reads files through
+  attachments-dev, `functai/files`; R and Julia refuse a function reading
+  files `files-unavailable`; the rule is in the contract. See design/15.)*
 - **lmcc#7** (filed 2026-10-08): `list[ImagePart]` is written as base64 text
   by the layouts' JSON format; Python warns until lmcc gives lists of media
   a default.

@@ -9,6 +9,7 @@ import { install } from "lmcc/std";
 import { LAYOUTS, MODELS } from "./generated/contract.ts";
 import { JUDGMENT_ONLY } from "./models.ts";
 import { copyData } from "./values.ts";
+import { ARTIFACTS, FILES_SHAPE, filesParts } from "./files-binding.ts";
 
 /** The registry every plan binds with: lmcc's standard pack and functai's reply reader. */
 export const REGISTRY = new lmcc.Registry();
@@ -34,6 +35,14 @@ class ReplyReader extends lmcc.Reader {
   }
 }
 REGISTRY.registerReader("functai_reply", (spec) => new ReplyReader(spec), { version: "1.0.0", existOk: true });
+
+// files (functions.md, "Pictures, sounds, documents and files"): an input typed Artifacts is written as Attachments'
+// parts, always, so no layout's `*` format ever writes the artifacts as JSON text; without Attachments it refuses
+// files-unavailable (functai/files plugs Attachments in)
+REGISTRY.format(ARTIFACTS, {
+  write: (value: unknown, field: lmcc.Field) => filesParts(value, `input ${field.name}`) as lmcc.Part[],
+  writes: "parts", direction: "in", shape: { ...FILES_SHAPE } as lmcc.JsonObject,
+});
 
 const NAMED: Record<string, "xml" | "chat" | "json"> = {
   xml: "xml", default: "xml", tags: "xml", chat: "chat", chatadapter: "chat", json: "json", jsonadapter: "json",
