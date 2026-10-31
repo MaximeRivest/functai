@@ -47,6 +47,7 @@ baked = functai.bake.bake(ex)                # or train elsewhere, then functai.
 | [split](#functai.bake.Examples.split) | The examples of one split: ``ex.split("train")`` or ``ex.split("validation")``. |
 | [stats](#functai.bake.Examples.stats) | Counts and token lengths (lengths need tokens: ``student=``). |
 | [to_hf](#functai.bake.Examples.to_hf) | A Hugging Face ``datasets.Dataset``. |
+| [tokenize](#functai.bake.Examples.tokenize) | The same examples with ``student``'s exact tokens (what training needs): |
 
 ### filter { #functai.bake.Examples.filter }
 
@@ -115,3 +116,13 @@ bake.Examples.to_hf(columns=None)
 ```
 
 A Hugging Face ``datasets.Dataset``.
+
+### tokenize { #functai.bake.Examples.tokenize }
+
+```{.python .no-run}
+bake.Examples.tokenize(student, *, local_files_only=False, log=lambda s: None)
+```
+
+The same examples with ``student``'s exact tokens (what training needs):
+``functai.bake.examples(..., student=...)`` makes them so at once; this
+does it later, for examples made or saved without one.
