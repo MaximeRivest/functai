@@ -41,7 +41,7 @@ An AI function is a Julia `Function`: call it, broadcast it, pass it to `ByRow`,
 
 FunctAI exists in Python, TypeScript, R and Julia, held together by one [contract](https://github.com/MaximeRivest/functai/tree/master/contract): the same function has the same [`version`](@ref), writes the same call log and saves to the same folder in every language. A function improved in Python loads here and sends the same bytes; ratings made in R pool with calls made in Julia.
 
-It stands on two libraries: [lmcc](https://github.com/MaximeRivest/lmcc) (how values are written into a prompt and read back) and [lm15](https://github.com/lm15-dev/LM15.jl) (every provider, one wire, and sign-ins).
+It stands on two libraries: [lmcc](https://github.com/MaximeRivest/lmcc) (how values are written into a prompt and read back) and [lm15](https://github.com/lm15-dev/LanguageModel15.jl) (every provider, one wire, and sign-ins).
 
 ## Install
 
@@ -50,7 +50,7 @@ Julia 1.10 or later. FunctAI and the two packages under it are not in the Genera
 ```julia
 using Pkg
 Pkg.add(url = "https://github.com/MaximeRivest/lmcc", subdir = "julia")
-Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
+Pkg.add(url = "https://github.com/lm15-dev/LanguageModel15.jl")
 Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 ```
 

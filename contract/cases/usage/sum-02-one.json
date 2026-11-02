@@ -1,0 +1,24 @@
+{
+ "description": "One model call: its counts.",
+ "kind": "sum",
+ "usages": [
+  {
+   "input_tokens": 10,
+   "output_tokens": 5,
+   "total_tokens": 15,
+   "reasoning_tokens": 2,
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0
+  }
+ ],
+ "expect": {
+  "usage": {
+   "cache_read_tokens": 0,
+   "cache_write_tokens": 0,
+   "input_tokens": 10,
+   "output_tokens": 5,
+   "reasoning_tokens": 2,
+   "total_tokens": 15
+  }
+ }
+}

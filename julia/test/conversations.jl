@@ -333,6 +333,28 @@ end
         @test capital("Kenya") == "disk 0" && length(r2.requests) == 1
     end
     @test length(FunctAI.DiskReplies(path)) == 1
+    # rows are format 2; a row lm15 1 kept (format 1) is reused, its counts kept only when they cannot mislead
+    db = FunctAI.SQLite.DB(path)
+    @test [r.format for r in FunctAI.DBInterface.execute(db, "SELECT format FROM replies")] == [2]
+    function as_lm15_1(usage)
+        row = first(FunctAI.DBInterface.execute(db, "SELECT key, response FROM replies"))
+        data = LMCC.parse_json(row.response)
+        data["usage"] = usage
+        FunctAI.DBInterface.execute(db, "UPDATE replies SET format = 1, response = ? WHERE key = ?", (LMCC.canonical_json(data), row.key))
+    end
+    logs = mktempdir()
+    function tokens_now()
+        empty!(FunctAI.DISK_REPLIES)
+        with_settings(router=r2, lm=GPT, cache_replies=path, log_calls=logs) do
+            @test capital("Kenya") == "disk 0"
+        end
+        last(calls(capital; folder=logs)).input_tokens
+    end
+    as_lm15_1(LMCC.jobj("input_tokens" => 20, "output_tokens" => 5, "total_tokens" => 25, "cache_read_tokens" => 4873))
+    @test tokens_now() === nothing                          # reused, its counts unknown
+    as_lm15_1(LMCC.jobj("input_tokens" => 20, "output_tokens" => 5, "total_tokens" => 25, "cache_read_tokens" => 0))
+    @test tokens_now() == 20
+    @test length(r2.requests) == 1                          # never asked again
     # one flight: two calls of the same request at once ask the model once
     slow = FakeRouter(; responder=(req, i) -> (sleep(0.3); xmlr(:result => "once")))
     with_settings(router=slow, lm=GPT, cache_replies=true) do

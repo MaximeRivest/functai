@@ -32,7 +32,7 @@ A column of text goes in; a column of `Team`s comes out, one model call per row.
 ```{.julia .no-run}
 using Pkg
 Pkg.add(url = "https://github.com/MaximeRivest/lmcc", subdir = "julia")
-Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
+Pkg.add(url = "https://github.com/lm15-dev/LanguageModel15.jl")
 Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 Pkg.add(["DataFrames", "CairoMakie"])
 ```

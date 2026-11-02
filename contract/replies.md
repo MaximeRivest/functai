@@ -1,4 +1,4 @@
-# The reply cache (format 1)
+# The reply cache (rows of format 2)
 
 A model's reply to a request, kept and reused when the same request is
 made again. On by the setting `cache_replies` (off by default): `true`
@@ -56,9 +56,18 @@ CREATE TABLE replies (key TEXT PRIMARY KEY, format INTEGER NOT NULL, created TEX
 CREATE TABLE claims  (key TEXT PRIMARY KEY, owner TEXT NOT NULL, until REAL NOT NULL);
 ```
 
-- `response` is lm15's canonical JSON of the response; `format` is `1`
+- `response` is lm15's canonical JSON of the response; `format` is `2`
   (a reader skips a row of a format it does not know); `created` is the
-  call log's time format.
+  call log's time format. The key's document keeps `"functai_reply": 1`:
+  the key did not change, so every kept reply is still found.
+- **Format 1** rows were written with lm15 1, whose token counts were
+  each provider's own ([calls.md](calls.md), *Token counts*). A reader
+  reads them: the reply is the same, and its `usage` is read by the rule
+  for counts written with lm15 1 (kept when `total_tokens` is
+  `input_tokens + output_tokens` and no cache counter is above 0, else
+  `{}`). A writer writes format 2 and never rewrites a format-1 row. A
+  reader that knows only format 1 skips format-2 rows, asks the model,
+  and keeps its reply as format 1: it costs, never misleads.
 - **A claim** is taken in one transaction (`BEGIN IMMEDIATE`) when the key
   has no reply and no claim whose `until` (Unix seconds) is still ahead,
   or one of the same `owner` (`<host>:<pid>:<random>`). Its lease is 120

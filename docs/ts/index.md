@@ -603,7 +603,8 @@ is the plan.
 
 lmcc and lm15 come from npm (`lmcc` 0.8.7 or later, which keeps member
 order and sends every picture of a list as a picture: functai refuses to
-start on an older one). From `functai/ts`:
+start on an older one; `@lm15/lm15` 2, whose token counts mean the same
+on every provider). From `functai/ts`:
 
 ```bash
 npm ci

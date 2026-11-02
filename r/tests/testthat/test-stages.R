@@ -24,6 +24,41 @@ for (name in names(stage_cases("replies"))) {
 
 reply_text_s <- function(text) sprintf("<result>\n%s\n</result>", text)
 
+for (name in names(stage_cases("usage"))) {
+  test_that(paste("usage case", name), {
+    c <- stage_cases("usage")[[name]]
+    got <- if (identical(c$kind, "sum")) sum_usage(c$usages) else usage_read(c$usage, c$lm15)
+    expect_identical(lmcc::canonical_json(got), lmcc::canonical_json(c$expect$usage))
+  })
+}
+
+test_that("a reply is kept as format 2; one lm15 1 kept is reused, its counts kept only when they cannot mislead", {
+  f <- ai(reply ~ message, "Answer.")
+  r <- fake_router(list("<result>\nOslo\n</result>"))
+  folder <- withr::local_tempdir()
+  db <- file.path(withr::local_tempdir(), "replies.sqlite")
+  with_ai_config(lm = "gpt-4.1-mini", router = r, cache_replies = db, f("Norway"))
+  con <- DBI::dbConnect(RSQLite::SQLite(), db)
+  on.exit(DBI::dbDisconnect(con), add = TRUE)
+  expect_identical(DBI::dbGetQuery(con, "SELECT format FROM replies")$format, 2L)
+  as_lm15_1 <- function(usage) {
+    row <- DBI::dbGetQuery(con, "SELECT key, response FROM replies")
+    data <- lmcc::parse_json(row$response[[1L]])
+    data$usage <- usage
+    DBI::dbExecute(con, "UPDATE replies SET format = 1, response = ? WHERE key = ?", params = list(lmcc::canonical_json(data), row$key[[1L]]))
+  }
+  ask <- function() {
+    clear_replies()
+    with_ai_config(lm = "gpt-4.1-mini", router = r, cache_replies = db, log_calls = folder, f("Norway"))
+    log_lines(folder)[[length(log_lines(folder))]]$usage
+  }
+  as_lm15_1(list(input_tokens = 20L, output_tokens = 5L, total_tokens = 25L, cache_read_tokens = 4873L))
+  expect_length(ask(), 0L)                           # reused, its counts unknown
+  as_lm15_1(list(input_tokens = 20L, output_tokens = 5L, total_tokens = 25L, cache_read_tokens = 0L))
+  expect_identical(ask()$input_tokens, 20L)
+  expect_length(r$env$requests, 1L)                  # never asked again
+})
+
 # ---------------------------------------------------------------- the reply cache (stage 1.2)
 
 test_that("a reply is kept once read, and the same request is answered from it", {

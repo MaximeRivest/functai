@@ -232,6 +232,14 @@ a whole, both numbers. The file name's first word is the `"kind"`:
 `kind: "key"`: `request` (lm15's canonical JSON of a request) and
 `replicate`; `expect.key` is the reply cache's key.
 
+## usage/ (../calls.md, *Token counts*)
+
+- `kind: "sum"`: `usages` (the token counts of each model call);
+  `expect.usage` is their sum.
+- `kind: "read"`: `usage` (counts a record or a kept reply holds) and
+  `lm15` (the lm15 that wrote them, or null when the writer did not
+  say); `expect.usage` is what a reader shows.
+
 ## conversations/ (../conversations.md)
 
 Every case holds `records` (a conversation's records, with their `seq`)

@@ -10,6 +10,11 @@ stage_router() = FakeRouter(Any[]; provider="openai")
     @test FunctAI.reply_key(request, c["replicate"]) == c["expect"]["key"]
 end
 
+@testset "usage case $name" for (name, c) in cases("usage")
+    got = c["kind"] == "sum" ? FunctAI.sum_usage(c["usages"]) : FunctAI.usage_read(c["usage"], c["lm15"])
+    @test LMCC.canonical_json(got) == LMCC.canonical_json(c["expect"]["usage"])
+end
+
 @testset "conversations case $name" for (name, c) in cases("conversations")
     now = at_time(c["now"])
     old_clock = FunctAI.CONVERSATION_CLOCK[]

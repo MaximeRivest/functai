@@ -45,6 +45,63 @@ def reply_cases() -> dict:
     return out
 
 
+# ------------------------------------------------------------------ usage: token counts
+
+
+def usage_sum(parts: list) -> dict:
+    """calls.md, *Token counts*: a counter is in the sum only when every part has it."""
+    if not parts:
+        return {}
+    names = set(parts[0]).intersection(*parts[1:])
+    return {k: sum(p[k] for p in parts) for k in sorted(names)}
+
+
+def usage_read(usage: dict, lm15) -> dict:
+    """calls.md, *Token counts written with lm15 1*."""
+    if lm15 is not None and int(lm15.split(".")[0]) >= 2:
+        return dict(usage)
+    i, o, t = usage.get("input_tokens"), usage.get("output_tokens"), usage.get("total_tokens")
+    if None in (i, o, t) or t != i + o or usage.get("cache_read_tokens", 0) > 0 or usage.get("cache_write_tokens", 0) > 0:
+        return {}
+    return dict(usage)
+
+
+def usage_cases() -> dict:
+    full = {"input_tokens": 10, "output_tokens": 5, "total_tokens": 15, "reasoning_tokens": 2,
+            "cache_read_tokens": 0, "cache_write_tokens": 0}
+    sums = [("sum-01-none", "No model call: nothing.", []),
+            ("sum-02-one", "One model call: its counts.", [full]),
+            ("sum-03-every-call-reported", "Two calls that reported the same counters.",
+             [full, {**full, "input_tokens": 7, "total_tokens": 12}]),
+            ("sum-04-one-did-not-say", "A counter one call did not report is left out of the sum.",
+             [full, {"input_tokens": 4, "output_tokens": 1, "total_tokens": 5}]),
+            ("sum-05-a-call-reported-nothing", "A call that reported nothing: every count unknown.",
+             [full, {}])]
+    out = {}
+    for name, why, parts in sums:
+        out[name] = {"description": why, "kind": "sum", "usages": parts, "expect": {"usage": usage_sum(parts)}}
+    anthropic_cached = {"input_tokens": 20, "output_tokens": 5, "total_tokens": 25, "cache_read_tokens": 4873,
+                        "cache_write_tokens": 0}
+    gemini_thinking = {"input_tokens": 10, "output_tokens": 43, "reasoning_tokens": 142, "total_tokens": 195}
+    reads = [("read-01-lm15-2", "Written with lm15 2: as written.", {**anthropic_cached, "input_tokens": 4893,
+                                                                       "total_tokens": 4898}, "2.0.0"),
+             ("read-02-lm15-1-same-meaning", "lm15 1, total = input + output and no cache: the same in lm15 2.",
+              full, "1.5.0"),
+             ("read-03-no-version", "A record that does not say which lm15 wrote it was written with lm15 1.",
+              full, None),
+             ("read-04-lm15-1-cache", "lm15 1 with cached tokens (Anthropic left them out of input): unknown.",
+              anthropic_cached, "1.1.0"),
+             ("read-05-lm15-1-reasoning-outside", "lm15 1, total above input + output (Gemini's thinking): unknown.",
+              gemini_thinking, "1.2.0"),
+             ("read-06-lm15-1-no-total", "lm15 1 without a total: it cannot be checked, unknown.",
+              {"input_tokens": 10, "output_tokens": 5}, "1.0.1"),
+             ("read-07-lm15-3", "A later lm15 keeps lm15 2's meaning: as written.", anthropic_cached, "3.1.0")]
+    for name, why, usage, lm15 in reads:
+        out[name] = {"description": why, "kind": "read", "usage": usage, "lm15": lm15,
+                     "expect": {"usage": usage_read(usage, lm15)}}
+    return out
+
+
 # ------------------------------------------------------------------ conversations: the rules
 
 
@@ -546,5 +603,5 @@ def context_cases() -> dict:
 
 
 def cases() -> dict:
-    return {"replies": reply_cases(), "conversations": conversation_cases(), "tools": tool_cases(),
+    return {"replies": reply_cases(), "usage": usage_cases(), "conversations": conversation_cases(), "tools": tool_cases(),
             "views": view_cases(), "context": context_cases()}

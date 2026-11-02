@@ -22,10 +22,10 @@ A tibble, one row per call, oldest first: \code{id}, \code{started},
 the names of the fields whose values were not kept, as \code{inputs} and
 \code{outputs}; \code{NULL} otherwise), \code{saw} (the earlier calls it was shown,
 \code{NULL} when its record does not say).
-Providers count differently: OpenAI's and Anthropic's \code{output_tokens}
-include the model's hidden reasoning, Gemini's leave it out (it is in
-\code{reasoning_tokens}). Every one bills \code{total_tokens - input_tokens} as
-output.
+Token counts mean the same on every provider (lm15 2): \code{input_tokens}
+includes cached tokens, \code{output_tokens} the model's hidden reasoning.
+A count not reported is \code{NA}, and so are counts lm15 1 wrote that may
+mean something else.
 }
 \description{
 Every logged call

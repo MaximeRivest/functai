@@ -36,8 +36,8 @@ using Printf: @sprintf
 using Random: Xoshiro, shuffle, shuffle!
 using ScopedValues: ScopedValue, with
 import LMCC
-import LM15
-import LM15: stream, text, configure
+import LanguageModel15 as LM15            # lm15 for Julia: the package is LanguageModel15 since 2.0
+import LanguageModel15: stream, text, configure
 import LMCC: render, tool
 import MLJModelInterface as MMI
 import StatsAPI

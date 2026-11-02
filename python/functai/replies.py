@@ -31,7 +31,8 @@ from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-FORMAT = 1
+FORMAT = 2        # the rows this writes: a reply as lm15 2 writes it (contract/replies.md, *The file*)
+KEY_FORMAT = 1    # the version of the key's document; a new one would make every kept reply unreachable
 _LEASE = 120.0                       # seconds a claim holds a key against other processes
 _OWNER = f"{socket.gethostname()}:{os.getpid()}:{secrets.token_hex(3)}"
 
@@ -49,7 +50,7 @@ def key(request: Any, replicate: int = 0) -> str:
     ``{"functai_reply": 1, "request": <lm15 canonical request>, "replicate": n}``."""
     from lm15.serde import request_to_dict
     from .calllog import canonical
-    doc = {"functai_reply": FORMAT, "request": request_to_dict(request), "replicate": int(replicate or 0)}
+    doc = {"functai_reply": KEY_FORMAT, "request": request_to_dict(request), "replicate": int(replicate or 0)}
     return "sha256:" + hashlib.sha256(canonical(doc).encode("utf-8")).hexdigest()
 
 
@@ -59,9 +60,17 @@ def _dump(response: Any) -> str:
     return canonical(response_to_dict(response))
 
 
-def _load(text: str) -> Any:
+def _load(text: str, fmt: int = FORMAT) -> Any:
+    """A kept reply. A format-1 row was written with lm15 1, whose token counts
+    were each provider's own: its counts are kept only where they cannot
+    differ from lm15 2's (``functai.data.usage_read``), else they are unknown;
+    the reply itself is the same."""
     from lm15.serde import response_from_dict
-    return response_from_dict(json.loads(text))
+    data = json.loads(text)
+    if fmt == 1:
+        from .data import usage_read
+        data["usage"] = usage_read(data.get("usage"), None)
+    return response_from_dict(data)
 
 
 # ------------------------------------------------------------------ stores
@@ -205,10 +214,10 @@ class DiskReplies:
 
     def get(self, k: str) -> Any:
         row = self._db().execute("SELECT response, format FROM replies WHERE key = ?", (k,)).fetchone()
-        if row is None or row[1] != FORMAT:
+        if row is None or row[1] not in (1, FORMAT):
             return None
         try:
-            return _load(row[0])
+            return _load(row[0], row[1])
         except Exception:  # noqa: BLE001 — a row this reader cannot read is no reply
             return None
 

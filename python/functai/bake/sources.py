@@ -16,6 +16,7 @@ import threading
 import time
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
+from ..data import sum_usage, usage_of
 from .examples import BakeError
 from .functions import Entry
 
@@ -185,13 +186,14 @@ def label(items: List[Item], teacher: Any, *, num_threads: int = 16, log: Callab
         return {"rows": reused, "reused": reused}
     out_file = open(keep_path, "a") if keep_path is not None else None
     lock = threading.Lock()
-    usage = {"input_tokens": 0, "output_tokens": 0, "reasoning_tokens": 0}
+    exchanges: List[Dict[str, int]] = []       # the token counts of each teacher call
     failures: List[str] = []
     done = [0]
     t0 = time.time()
     fns = {id(it.entry): teacher_for(it.entry.fn, teacher) for it in todo}
     prices = {k: _price(f) for k, f in fns.items()}
     spent = [0.0]
+    unpriced = [0]                              # rows whose tokens were not all reported: no exact cost
     every = max(10, len(todo) // 20)
 
     def one(it: Item) -> None:
@@ -213,17 +215,19 @@ def label(items: List[Item], teacher: Any, *, num_threads: int = 16, log: Callab
         it.outputs, it.source = got, "teacher"
         u = pred.usage
         with lock:
+            exchanges.extend(usage_of(r) for r in pred.responses)
             if out_file is not None:
                 from lmcc.turn import to_json
                 out_file.write(json.dumps({"key": _answer_key(it, teacher_name(tfn)), "outputs": to_json(got)},
                                           ensure_ascii=False) + "\n")
                 out_file.flush()
-            for k in usage:
-                usage[k] += int(u.get(k, 0) or 0)
             p = prices[id(it.entry)]
-            if p is not None:
-                spent[0] += (u.get("input_tokens", 0) * p[0] + (u.get("total_tokens", 0) - u.get("input_tokens", 0))
-                             * p[1]) / 1e6
+            # lm15 2: input includes cached tokens, output includes reasoning, on every provider
+            # (list prices for plain input and output: a cached prompt's discount is not taken off)
+            if p is not None and u.get("input_tokens") is not None and u.get("output_tokens") is not None:
+                spent[0] += (u["input_tokens"] * p[0] + u["output_tokens"] * p[1]) / 1e6
+            elif p is not None:
+                unpriced[0] += 1
             done[0] += 1
             n = done[0]
         if n % every == 0:
@@ -236,9 +240,13 @@ def label(items: List[Item], teacher: Any, *, num_threads: int = 16, log: Callab
             out_file.close()
     info: Dict[str, Any] = {"rows": done[0] + reused, "reused": reused, "failed": len(failures),
                             "seconds": round(time.time() - t0, 1),
-                            "teacher": ", ".join(sorted({teacher_name(f) for f in fns.values()})), **usage}
-    if all(p is not None for p in prices.values()):
+                            "teacher": ", ".join(sorted({teacher_name(f) for f in fns.values()})),
+                            **{k: v for k, v in sum_usage(exchanges).items()
+                               if k in ("input_tokens", "output_tokens", "reasoning_tokens")}}
+    if all(p is not None for p in prices.values()) and not unpriced[0]:
         info["dollars"] = round(spent[0], 4)
+    elif unpriced[0]:
+        log(f"teacher: {unpriced[0]:,} rows' tokens were not all reported: their cost is unknown")
     if failures:
         info["first_failure"] = failures[0]
         log(f"teacher: {len(failures):,} rows failed (left out); first: {failures[0]}")
@@ -265,7 +273,7 @@ def from_program(program: Any, rows: Sequence[Mapping[str, Any]], *, teacher: An
     keep = None if functions is None else {getattr(f, "_fn", f) for f in functions}
     lock = threading.Lock()
     calls: Dict[Any, Tuple[Any, List[Tuple]]] = {}
-    usage = {"input_tokens": 0, "output_tokens": 0}
+    exchanges: List[Dict[str, int]] = []       # the token counts of each kept call's model calls
     failed: List[str] = []
     done = [0]
     t0 = time.time()
@@ -292,8 +300,7 @@ def from_program(program: Any, rows: Sequence[Mapping[str, Any]], *, teacher: An
             if keep is not None and key not in keep:
                 continue
             with lock:
-                for u in usage:
-                    usage[u] += int(pred.usage.get(u, 0) or 0)
+                exchanges.extend(usage_of(r) for r in pred.responses)
                 calls.setdefault(key, (fn, []))[1].append((dict(pred.turn.inputs), dict(pred), f"{i}.{k}"))
 
     parallel(one, list(enumerate(rows)), max(1, num_threads))
@@ -302,7 +309,8 @@ def from_program(program: Any, rows: Sequence[Mapping[str, Any]], *, teacher: An
     if not calls:
         raise BakeError("the program made no AI calls on these rows" + (f" (first failure: {failed[0]})" if failed
                                                                          else ""))
-    return calls, {"rows": len(rows), "failed": len(failed), "seconds": round(time.time() - t0, 1), **usage}
+    tokens = {k: v for k, v in sum_usage(exchanges).items() if k in ("input_tokens", "output_tokens")}
+    return calls, {"rows": len(rows), "failed": len(failed), "seconds": round(time.time() - t0, 1), **tokens}
 
 
 __all__ = ["Item", "from_rows", "from_program", "label", "teacher_for", "teacher_estimate"]

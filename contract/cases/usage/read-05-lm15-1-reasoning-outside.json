@@ -1,0 +1,14 @@
+{
+ "description": "lm15 1, total above input + output (Gemini's thinking): unknown.",
+ "kind": "read",
+ "usage": {
+  "input_tokens": 10,
+  "output_tokens": 43,
+  "reasoning_tokens": 142,
+  "total_tokens": 195
+ },
+ "lm15": "1.2.0",
+ "expect": {
+  "usage": {}
+ }
+}

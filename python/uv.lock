@@ -1460,7 +1460,7 @@ requires-dist = [
     { name = "flash-linear-attention", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.4" },
     { name = "kernels", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.16,<0.17" },
     { name = "liger-kernel", marker = "sys_platform == 'linux' and extra == 'fast'", specifier = ">=0.6" },
-    { name = "lm15", specifier = ">=1.0.1,<2" },
+    { name = "lm15", specifier = ">=2.0,<3" },
     { name = "lmcc", editable = "../../lmcc/python" },
     { name = "peft", marker = "extra == 'bake'", specifier = ">=0.17" },
     { name = "pyarrow", marker = "extra == 'tinker'", specifier = ">=15" },
@@ -2140,11 +2140,11 @@ wheels = [
 
 [[package]]
 name = "lm15"
-version = "1.1.0"
+version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/ce/28/b7cf01b18e4770e5f4220beaa02f6639548a9a86da8447ead4abf30df168/lm15-1.1.0.tar.gz", hash = "sha256:348a0fb16f8c021e8ea6da6ff78a978e632df4802b22f34833c0faa1e503079b", size = 684814, upload-time = "2026-09-26T15:38:01.025Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/f3/d9/c77164553d0341f723b4576ab931606575560ac21728c5632e051595b5b7/lm15-2.0.0.tar.gz", hash = "sha256:f9fe9e8a22b0681863453419fe5795a79071bcc155d131df0af69b106257abca", size = 718572, upload-time = "2026-11-01T11:00:30.478Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/f1/f1/0dd0adaab38efeac4132b33c8101c07ee086a62f937bb63137b7c5922022/lm15-1.1.0-py3-none-any.whl", hash = "sha256:95d73e26a34277dbe45bc76f58358150d0cdaf0b4ab8d2908da1c8d07132460b", size = 484811, upload-time = "2026-09-26T15:37:59.345Z" },
+    { url = "https://files.pythonhosted.org/packages/ee/cb/b6ba5eb2a170e4343afb9da852ece677a3c78a92e72523ae4e4fae768fc1/lm15-2.0.0-py3-none-any.whl", hash = "sha256:742f0e65e19391f22cae0d7770a53b60966e762b88ba3538bd158cd420be020e", size = 502253, upload-time = "2026-11-01T11:00:29.084Z" },
 ]
 
 [[package]]

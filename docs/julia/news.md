@@ -4,6 +4,20 @@
 
 ## Unreleased
 
+- **lm15 for Julia 2.0, now called `LanguageModel15`** (same UUID; Julia's
+  General registry refused the name `LM15`). FunctAI loads it as
+  `import LanguageModel15 as LM15`; your own code says `using
+  LanguageModel15` (or binds a short name). It needs an lmcc whose
+  extension answers to `LanguageModel15` 2.
+- **Token counts mean one thing on every provider** (lm15 2,
+  contract/calls.md, *Token counts*): `input_tokens` includes cached
+  tokens, `output_tokens` includes reasoning. A record's and a turn's
+  `usage` include a count only when every model call reported it (a sum
+  is exact or absent). `calls()` shows counts lm15 1 wrote only when they
+  cannot mislead (`total_tokens` is `input_tokens + output_tokens` and no
+  cache count is above 0; else `nothing`). The reply cache writes rows of
+  format 2 and still uses the rows lm15 1 wrote, with the same rule for
+  their counts.
 - **A picture function has a version of its own** (contract/calls.md,
   *Versions*): a media input had no sample value, so every function with a
   picture input had one version, whatever its instruction. Its sample is

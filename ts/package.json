@@ -46,7 +46,7 @@
     "docs": "typedoc"
   },
   "dependencies": {
-    "@lm15/lm15": "^1.0.0",
+    "@lm15/lm15": "^2.0.0",
     "lmcc": "^0.8.7"
   },
   "peerDependencies": {

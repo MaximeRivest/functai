@@ -1,0 +1,12 @@
+{
+ "description": "lm15 1 without a total: it cannot be checked, unknown.",
+ "kind": "read",
+ "usage": {
+  "input_tokens": 10,
+  "output_tokens": 5
+ },
+ "lm15": "1.0.1",
+ "expect": {
+  "usage": {}
+ }
+}

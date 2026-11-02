@@ -1,6 +1,7 @@
 using FunctAI
 using Test
-import LMCC, LM15
+import LMCC
+import LanguageModel15 as LM15
 using Random: Xoshiro, shuffle
 
 include("fake.jl")

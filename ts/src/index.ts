@@ -17,6 +17,7 @@ import { metaOf, withContext } from "./calllog.ts";
 import { effective, type Settings } from "./settings.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
 import { setOwn } from "./values.ts";
+import { usageRead } from "./usage.ts";
 
 export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column, type Definition, type Demo, type Expected, type Input,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
@@ -124,7 +125,11 @@ export interface LoggedCall {
   outputs: Rec | null;
   error: { type: string; message?: string; code?: string } | null;
   model: string | null;
-  /** Tokens, summed over the call's requests: `inputTokens`, `outputTokens`, `totalTokens`, … */
+  /**
+   * Tokens, summed over the call's requests: `inputTokens`, `outputTokens`, `totalTokens`, … with lm15 2's
+   * meaning (input includes cached tokens, output includes reasoning). A count not reported is absent; so are
+   * counts lm15 1 wrote that may mean something else (calls.md, *Token counts written with lm15 1*).
+   */
   usage: Record<string, number>;
   confidence: number | null;
   /** Who called: `{ evaluation: "…" }`, `{ optimization: "…" }`, `$FUNCTAI_CALLER`'s keys. */
@@ -142,7 +147,7 @@ function loggedCall(r: Rec): LoggedCall {
     content: r["content"] === true, omitted: r["content"] === true ? null : omitted ?? { inputs: [], outputs: [] },
     inputs: (r["inputs"] as Rec | undefined) ?? null, outputs: (r["outputs"] as Rec | undefined) ?? null,
     error: (r["error"] as LoggedCall["error"] | undefined) ?? null, model: (r["model"] as string | null) ?? null,
-    usage: Object.fromEntries(Object.entries((r["usage"] ?? {}) as Record<string, number>).map(([k, v]) => [camel(k), v])),
+    usage: Object.fromEntries(Object.entries(usageRead(r["usage"], (r["process"] as Rec | undefined)?.["lm15"])).map(([k, v]) => [camel(k), v])),
     confidence: (r["confidence"] as number | null | undefined) ?? null, caller: (r["caller"] ?? {}) as Rec, record: r,
   };
 }

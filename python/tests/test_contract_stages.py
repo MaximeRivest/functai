@@ -21,6 +21,14 @@ def test_reply_key(path):
     assert replies.key(request, case["replicate"]) == case["expect"]["key"]
 
 
+@pytest.mark.parametrize("path", cases("usage"), ids=lambda p: p.stem)
+def test_usage(path):
+    from functai.data import sum_usage, usage_read
+    case = load(path)
+    got = sum_usage(case["usages"]) if case["kind"] == "sum" else usage_read(case["usage"], case["lm15"])
+    assert got == case["expect"]["usage"]
+
+
 def _log(records):
     log = conversations._Log()
     log.apply(records)

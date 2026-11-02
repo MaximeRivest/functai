@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### lm15 2: one meaning per token count
+
+FunctAI now requires lm15 2 (`lm15>=2.0,<3`). lm15 2 gives each token
+counter one meaning on every provider: `input_tokens` includes cached
+tokens, `output_tokens` includes reasoning (contract/calls.md, *Token
+counts*). In lm15 1, Anthropic's input left the cache out and Gemini's and
+xAI's output left the thinking out, so the same column meant different
+things depending on the model.
+
+- **A sum of token counts is exact or absent.** `pred.usage`, a call
+  record's `usage`, a turn's, an evaluation row's and bake's teacher
+  totals include a counter only when every model call reported it. Before,
+  a counter one call did not report was skipped, so the sum was a part of
+  the total that looked like all of it.
+- **Counts lm15 1 wrote are shown only when they cannot mislead.**
+  `functai.calls()` reads a record's counts with the lm15 that wrote it
+  (`process.lm15`): from lm15 1 they are shown when `total_tokens` is
+  `input_tokens + output_tokens` and no cache count is above 0, else null.
+  Records are never rewritten.
+- **The reply cache writes rows of format 2** (contract/replies.md). Rows
+  lm15 1 wrote are still used, with the same rule for their counts, so no
+  reply is asked for again. Keys are unchanged. An older FunctAI skips the
+  new rows and asks the model again.
+- **Bake's teacher cost is unknown when tokens are.** A row whose tokens
+  were not all reported made the dollar figure an undercount; it is now
+  left out, with a note, and the report says "tokens not reported". The
+  cost is still plain input and output list prices (a cached prompt's
+  discount is not taken off).
+
 Pictures and files, checked against TypeScript, R and Julia (contract:
 `functions.md`, *Pictures, sounds, documents and files*; cases
 `functions/19`–`23` and `files/`).

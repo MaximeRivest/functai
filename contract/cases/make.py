@@ -10,9 +10,9 @@ implementation's output:
     content/     ../calls.md, "Content"                      (content.py)
     saw/         ../calls.md, "Saw"                          (saw.py)
     events/      ../streaming.md                             (events.py)
-    replies/, conversations/, tools/, views/, context/
-                 ../replies.md, ../conversations.md, ../tools.md, ../streaming.md "Views",
-                 ../calls.md "Rows that keep their context"   (stages.py)
+    replies/, usage/, conversations/, tools/, views/, context/
+                 ../replies.md, ../calls.md "Token counts", ../conversations.md, ../tools.md,
+                 ../streaming.md "Views", ../calls.md "Rows that keep their context"   (stages.py)
     plugins/     ../plugins.md, "Order"                      (plugins.py)
     baked/       ../baked.md, "The examples"                 (baked.py)
 

@@ -6,6 +6,24 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### lm15 2: one meaning per token count
+
+- **Requires `@lm15/lm15` 2.** Each token counter now means one thing on
+  every provider: `inputTokens` includes cached tokens, `outputTokens`
+  includes reasoning (contract/calls.md, *Token counts*). With lm15 1,
+  Anthropic's input left the cache out and Gemini's and xAI's output left
+  the thinking out.
+- **A sum of token counts is exact or absent**: `pred.usage`, a call
+  record's `usage` and a turn's include a counter only when every model
+  call reported it, never a part of the total.
+- **Counts lm15 1 wrote are shown only when they cannot mislead**:
+  `calls()` reads a record's counts with the lm15 that wrote it
+  (`process.lm15`), and shows those from lm15 1 only when `total_tokens`
+  is `input_tokens + output_tokens` and no cache count is above 0.
+- **The reply cache writes rows of format 2** (contract/replies.md); rows
+  lm15 1 wrote are still used, with the same rule for their counts. Keys
+  are unchanged.
+
 ### Pictures and files
 
 - **Pictures, sounds, videos and documents**: `t.image()`, `t.audio()`,

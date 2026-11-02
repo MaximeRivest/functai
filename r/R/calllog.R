@@ -187,8 +187,7 @@ process_json <- function() {
 call_record <- function(call, error = NULL) {
   program <- call$program_json %||% call$program()
   answered <- Filter(function(e) !is.null(e$response), call$exchanges)
-  usage <- list()
-  for (e in answered) for (k in names(u <- usage_of(e$response))) usage[[k]] <- (usage[[k]] %||% 0L) + u[[k]]
+  usage <- sum_usage(lapply(answered, function(e) usage_of(e$response)))   # calls.md, *Token counts*
   if (!is.null(call$outputs)) {                 # in the fields' order (the ones FunctAI adds first, as lmcc's signature has them)
     ord <- c(intersect(call$fields$outputs, names(call$outputs)), setdiff(names(call$outputs), call$fields$outputs))
     call$outputs <- call$outputs[ord]

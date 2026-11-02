@@ -2,7 +2,8 @@
 # folder): load what Python saved, write the same function here, log and
 # rate into the same folder, and read everyone's calls and ratings back.
 using FunctAI
-import LMCC, LM15
+import LMCC
+import LanguageModel15 as LM15
 
 work = ARGS[1]
 python = LMCC.parse_json(read(joinpath(work, "python.json"), String))

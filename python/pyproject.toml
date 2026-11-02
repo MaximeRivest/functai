@@ -34,7 +34,7 @@ classifiers = [
 # lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
     "lmcc>=0.8.7,<0.9",
-    "lm15>=1.0.1,<2",
+    "lm15>=2.0,<3",
 ]
 
 [project.scripts]

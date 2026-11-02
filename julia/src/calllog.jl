@@ -386,17 +386,11 @@ not; their replies arrive whole, and are shown as one piece per field.
 """
 wants_pieces(call::Call) = any(s -> !s.passive, call.tree.streams) || call.tree.journal !== nothing || !isempty(call.observers)
 
-"Tokens summed over a call's own exchanges (integers only)."
-function own_usage(call::Call)
-    usage = JObj()
-    for e in call.exchanges
-        e.response === nothing && continue
-        for (k, v) in usage_of(e.response)
-            usage[k] = get(usage, k, 0) + v
-        end
-    end
-    usage
-end
+"The token counts of each of a call's own exchanges that got a reply."
+exchange_usages(call::Call) = JObj[usage_of(e.response) for e in call.exchanges if e.response !== nothing]
+
+"Tokens summed over a call's own exchanges (integers only); a count one of them did not report is absent."
+own_usage(call::Call) = sum_usage(exchange_usages(call))
 
 "Make one of this call's events and give it to its readers."
 function emit!(call::Call, kind::Symbol, data::JObj; kw...)
@@ -423,6 +417,48 @@ error_type(err) = err isa LM15.LM15Error ? String(LM15.class_name(err)) : String
 error_message(err) = err isa LMCC.Refusal ? err.hint : err isa LM15.LM15Error ? err.message :
                      hasproperty(err, :msg) && getproperty(err, :msg) isa AbstractString ? String(err.msg) :
                      sprint(showerror, err)
+
+"""
+    sum_usage(parts) -> JObj
+
+Token counts summed over model calls (contract/calls.md, *Token counts*): a
+counter is in the sum only when every call reported it, so a sum is exact or
+absent, never a part of the total. No calls: an empty object.
+"""
+function sum_usage(parts)
+    total = nothing
+    for part in parts
+        total = total === nothing ? JObj(String(k) => v for (k, v) in part) :
+                JObj(k => v + part[k] for (k, v) in total if haskey(part, k))
+    end
+    total === nothing ? JObj() : total
+end
+
+"""
+    usage_read(usage, lm15) -> JObj
+
+Token counts an earlier run kept, with the meaning lm15 2 gives them.
+`lm15`: the lm15 that wrote them (a call record's `process.lm15`), or
+`nothing` when the writer did not say (then lm15 1). lm15 1 kept each
+provider's own counting (Anthropic's input left the cache out, Gemini's and
+xAI's output the reasoning): its counts are kept only when `total_tokens` is
+`input_tokens + output_tokens` and no cache count is above 0; otherwise every
+count is unknown (an empty object).
+"""
+function usage_read(usage, lm15)
+    counts = JObj()
+    if usage isa AbstractDict
+        for (k, v) in usage
+            v isa Integer && !(v isa Bool) && (counts[String(k)] = Int(v))
+        end
+    end
+    major = lm15 isa AbstractString ? tryparse(Int, first(split(lm15, "."))) : nothing
+    major !== nothing && major >= 2 && return counts
+    i, o, t = get(counts, "input_tokens", nothing), get(counts, "output_tokens", nothing), get(counts, "total_tokens", nothing)
+    (i === nothing || o === nothing || t === nothing || t != i + o) && return JObj()
+    (get(counts, "cache_read_tokens", 0) > 0 || get(counts, "cache_write_tokens", 0) > 0) && return JObj()
+    counts
+end
 
 function usage_of(response)
     u = get(LM15.to_dict(response), "usage", JObj())
@@ -503,11 +539,7 @@ function call_record(call::Call; error=nothing, journal=nothing)
             described && push!(out_described, String(k))
         end
     end
-    answered = [e for e in call.exchanges if e.response !== nothing]
-    usage = JObj()
-    for e in answered, (k, v) in usage_of(e.response)
-        usage[k] = get(usage, k, 0) + v
-    end
+    usage = own_usage(call)                                    # calls.md, *Token counts*
     rec = LMCC.jobj("functai_call" => LOG_FORMAT, "id" => call.id, "parent" => call.parent, "root" => call.root,
                     "program" => program, "started" => iso(call.started), "seconds" => round6(time() - call.started),
                     "content" => true, "inputs" => copy(call.inputs), "outputs" => outputs)
@@ -522,6 +554,7 @@ function call_record(call::Call; error=nothing, journal=nothing)
         rec["described"] = LMCC.jobj("inputs" => Any[call.described...], "outputs" => Any[out_described...])
     end
     rec["error"] = error === nothing ? nothing : error_json(error, true)
+    answered = [e for e in call.exchanges if e.response !== nothing]
     rec["model"] = isempty(answered) ? nothing : last(answered).model
     rec["usage"] = usage
     rec["confidence"] = call.confidence
