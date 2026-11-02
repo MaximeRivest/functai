@@ -130,6 +130,7 @@ FunctAI.to_manifest
 FunctAI.from_manifest
 FunctAI.describe
 LoadRefused
+FunctAI.FilesUnavailable
 ```
 
 ## Conversations
