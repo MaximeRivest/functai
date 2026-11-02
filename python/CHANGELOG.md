@@ -4,7 +4,7 @@
 
 ### lm15 2: one meaning per token count
 
-FunctAI now requires lm15 2 (`lm15>=2.0,<3`). lm15 2 gives each token
+FunctAI now requires lm15 2 (`lm15>=2.0,<3`) and lmcc 0.8.8, the lmcc made for it. lm15 2 gives each token
 counter one meaning on every provider: `input_tokens` includes cached
 tokens, `output_tokens` includes reasoning (contract/calls.md, *Token
 counts*). In lm15 1, Anthropic's input left the cache out and Gemini's and

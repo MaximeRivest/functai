@@ -2149,13 +2149,13 @@ wheels = [
 
 [[package]]
 name = "lmcc"
-version = "0.8.7"
+version = "0.8.8"
 source = { editable = "../../lmcc/python" }
 
 [package.metadata]
 requires-dist = [
     { name = "dspy", marker = "extra == 'dspy'", specifier = ">=3.0" },
-    { name = "lm15", marker = "extra == 'lm15'", specifier = "==1.0.1" },
+    { name = "lm15", marker = "extra == 'lm15'", specifier = ">=2.0.0,<3" },
     { name = "pydantic", marker = "extra == 'dspy'", specifier = ">=2" },
 ]
 provides-extras = ["dspy", "lm15"]

@@ -5,7 +5,7 @@
 - **lm15 for Julia 2.0, now called `LanguageModel15`** (same UUID; Julia's
   General registry refused the name `LM15`). FunctAI loads it as
   `import LanguageModel15 as LM15`; your own code says `using
-  LanguageModel15` (or binds a short name). It needs an lmcc whose
+  LanguageModel15` (or binds a short name). It needs lmcc 0.8.8, whose
   extension answers to `LanguageModel15` 2.
 - **Token counts mean one thing on every provider** (lm15 2,
   contract/calls.md, *Token counts*): `input_tokens` includes cached

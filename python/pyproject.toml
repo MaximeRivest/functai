@@ -33,7 +33,7 @@ classifiers = [
 # lmcc lays out each call and reads each reply; lm15 talks to the providers.
 # lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
-    "lmcc>=0.8.7,<0.9",
+    "lmcc>=0.8.8,<0.9",
     "lm15>=2.0,<3",
 ]
 

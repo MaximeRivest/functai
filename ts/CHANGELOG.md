@@ -8,7 +8,7 @@ Training models stays in Python (*Not here yet* in the README).
 
 ### lm15 2: one meaning per token count
 
-- **Requires `@lm15/lm15` 2.** Each token counter now means one thing on
+- **Requires `@lm15/lm15` 2 and lmcc 0.8.8** (the first lmcc that accepts lm15 2; not on npm yet). Each token counter now means one thing on
   every provider: `inputTokens` includes cached tokens, `outputTokens`
   includes reasoning (contract/calls.md, *Token counts*). With lm15 1,
   Anthropic's input left the cache out and Gemini's and xAI's output left
