@@ -67,11 +67,15 @@ export interface CallSpec<R> {
  */
 export class TurnWaiting extends Error {
   readonly code = "turn-waiting";
+  /** The approval it waits for, or null when it waits for results that come later. */
   readonly approval: unknown;
-  constructor(message: string, approval: unknown) {
+  /** The results it waits for (tools.md, "A result that comes later"): `{ site, invocation, id, name, key, path }`. */
+  readonly later: readonly Record<string, unknown>[];
+  constructor(message: string, approval: unknown, later: readonly Record<string, unknown>[] = []) {
     super(message);
     this.name = "TurnWaiting";
     this.approval = approval;
+    this.later = later;
   }
 }
 
@@ -140,7 +144,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   const parent = calllog.current.get();
   const layers = layersOf(spec.own, spec.options);
   const program = spec.program();
-  let folder: string | null = null;
+  let folder: string | calllog.CallStore | null = null;
   try {
     folder = calllog.folderOf(spec.settings.logCalls);
   } catch (err) {
@@ -262,7 +266,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   if (!parent) unconfirmed = await log.end(node, kind, fields);
   else log.emit(node, kind, fields);
   if (unconfirmed) call.journal = unconfirmed.journal;
-  calllog.write(call, outcome.ok
+  await calllog.write(call, outcome.ok
     ? { failed: false, returned: outcome.ended.returned !== undefined ? outcome.ended.returned : outcome.ended.value,
       ...(outcome.ended.refusal !== undefined ? { error: outcome.ended.refusal } : {}) }
     : { failed: true, error: outcome.error });

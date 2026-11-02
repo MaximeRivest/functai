@@ -63,8 +63,9 @@ format 1 too (*Formats*).
 
 **Where.** Off unless asked for. The setting `log_calls` (in
 `configure`, `@ai`, or `using`) is a folder, `True` (on, in the folder
-the environment names, else the default folder), or `False` (never,
-whatever the environment says). Unset, the environment variable
+the environment names, else the default folder), `False` (never,
+whatever the environment says), or a store of one's own (*A store of
+one's own*). Unset, the environment variable
 `FUNCTAI_LOG_CALLS` decides: empty, `0`, `false`, `no` or `off` is off;
 `1`, `true`, `yes` or `on` is the default folder; anything else is a
 folder. `log_content` says which values are written (see *Content*): set
@@ -85,6 +86,30 @@ can lose the last lines, and a process killed mid-line leaves a partial
 last line in its own file, which readers skip). If the folder cannot be written, the implementation warns
 once and the call returns as it would have. A record longer than 8 MiB
 loses its exchanges' messages, then its values (`truncated: true`).
+
+## A store of one's own
+
+A machine that keeps no files (a serverless function, a container that
+goes away) logs calls to a **store**: any object with two operations,
+
+- `append(record)`: keep one record, a call record or a rating record
+  (the JSON object a folder's line holds, the same bytes' meaning, after
+  the 8 MiB rule);
+- `read()`: every record kept, in the order appended.
+
+A database table, a bucket or a queue behind them is the host's. Writing
+follows *Never in the way*: an `append` that fails is warned about once
+and the call returns as it would have (a language whose stores answer
+later waits for the answer before the call returns, so a process that
+ends with its call has logged it). Every reader of the log (the calls
+table, `rated`, rating a call) takes a store where it takes a folder, and
+reads it as it reads a folder's lines: records of a format it does not
+know are skipped, and a call continued by later writers is its highest
+writer's record. Deleting old calls (`prune_calls`) is the store's own:
+FunctAI refuses to prune one. Python `functai.MemoryCalls()` is a store
+in memory (tests). A store written in one language is read by another
+only through code that reads it there: a folder is the one form every
+language reads as it is.
 
 ## A call record
 

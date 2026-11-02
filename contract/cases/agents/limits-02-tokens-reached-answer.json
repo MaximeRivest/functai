@@ -1,0 +1,38 @@
+{
+ "description": "Tokens reached: the loop is offered no tools and told to answer.",
+ "kind": "limits",
+ "limits": {
+  "tokens": 200000,
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ]
+  ],
+  "seconds": 30
+ },
+ "at": {
+  "hook": "step",
+  "step": 4,
+  "max_steps": 8,
+  "tools": [
+   "look",
+   "click"
+  ]
+ },
+ "expect": {
+  "change": {
+   "tools": [],
+   "reminder": "This task has reached its limit (200000 tokens). Do not ask for any more tools: give your answer now, from what you have found so far."
+  }
+ }
+}

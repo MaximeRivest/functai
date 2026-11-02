@@ -387,8 +387,12 @@ saved node or a served interface names its inputs' types.
   sleeps that long without a word looks hung; a per-minute limit asks
   for less than a minute, and is waited.
 - **Tools**: while the reply asks for tool calls, each runs and its
-  result is added to the turn, up to `max_steps` requests (default 8);
-  then `StepLimit`. A tool's error is reported to the model as `error:
+  result (text, or pictures and other parts: [tools.md](tools.md), *What
+  a tool returns*) is added to the turn, up to `max_steps` requests
+  (default 8); then `StepLimit`. Before each request after the first, the
+  `step` hook may change what the next request offers and shows
+  ([plugins.md](plugins.md), *The step hook*); the `limits` plugin ends
+  the loop with an answer instead of `StepLimit`. A tool's error is reported to the model as `error:
   <type>: <message>` unless `tool_errors` is `"raise"`.
 
 The re-ask and the error text are the only words FunctAI itself writes

@@ -40,6 +40,7 @@ import { follow, isPersistent, storeOf, waitFor, type ConversationStore } from "
 import type { Stream } from "./stream.ts";
 import { holderName } from "./replies.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
+import { Delivered, resultOf, type ToolOutput } from "./results.ts";
 import { View } from "./views.ts";
 import { sumUsage } from "./usage.ts";
 
@@ -169,9 +170,21 @@ export class TurnState {
     for (const t of this.tools) {
       const k = `${t["site"]}|${t["invocation"]}`;
       if (t["state"] === "started") started.set(k, t);
-      else if (t["state"] === "done" || t["state"] === "given" || t["state"] === "rerun") started.delete(k);
+      else if (t["state"] === "done" || t["state"] === "given" || t["state"] === "rerun" || t["state"] === "later") started.delete(k);
     }
     return [...started.values()];
+  }
+
+  /** Tools whose result comes later: their last record says `later`. */
+  later(): Rec[] {
+    const last = new Map<string, Rec>();
+    for (const t of this.tools) last.set(`${t["site"]}|${t["invocation"]}`, t);
+    return [...last.values()].filter((t) => t["state"] === "later");
+  }
+
+  /** The results the turn waits for that no one delivered yet. */
+  undelivered(delivered: ReadonlyMap<string, Rec>): Rec[] {
+    return this.later().filter((t) => !delivered.has(t["key"] as string));
   }
 }
 
@@ -187,6 +200,8 @@ export class ConvLog {
   readonly requestIds = new Map<string, string>();
   readonly programs = new Map<string, Rec>();
   readonly entries: Rec[] = [];
+  /** A later result's key → the first delivery of it (tools.md, "A result that comes later"). */
+  readonly delivered = new Map<string, Rec>();
 
   apply(records: readonly Rec[]): this {
     for (const r of records) {
@@ -199,6 +214,10 @@ export class ConvLog {
       }
       if (kind === "entry") {
         this.entries.push(r);
+        continue;
+      }
+      if (kind === "delivered") {
+        if (typeof r["key"] === "string" && !this.delivered.has(r["key"])) this.delivered.set(r["key"], r);
         continue;
       }
       const tid = r["turn"] as string;
@@ -408,6 +427,8 @@ class TurnRun implements TurnRunLike {
   private readonly replies = new Map<string, Rec[]>();
   private readonly tools = new Map<string, Rec>();
   private readonly unfinished = new Map<string, Rec>();
+  private readonly laters = new Map<string, Rec>();
+  private readonly delivered = new Map<string, Rec>();
   private readonly answers = new Map<string, [boolean, string | null, string | null, boolean]>();
   /** The store's own copy of the turn's kept log: its appends, in order. */
   private sinkChain: Promise<void> = Promise.resolve();
@@ -417,7 +438,7 @@ class TurnRun implements TurnRunLike {
   private writes: Promise<unknown> = Promise.resolve();
 
   constructor(conv: Conversation, turn: string, opts: {
-    attempt: number; context: TurnContext; replay?: { replies: Rec[]; tools: Rec[]; answers: Rec[]; waitingSeq: number };
+    attempt: number; context: TurnContext; replay?: { replies: Rec[]; tools: Rec[]; answers: Rec[]; waitingSeq: number; delivered?: ReadonlyMap<string, Rec> };
     later?: { writer: number; after: Position | null; at: string; requests: number } | null;
   }) {
     this.conv = conv;
@@ -433,13 +454,18 @@ class TurnRun implements TurnRunLike {
       q.push(rec["response"] as Rec);
       this.replies.set(rec["key"] as string, q);
     }
+    for (const [k, v] of r?.delivered ?? []) this.delivered.set(k, v);
     for (const t of r?.tools ?? []) {
       const k = `${t["site"]}|${Number(t["invocation"] ?? 0)}`;
       if (t["state"] === "done" || t["state"] === "given") {
         this.tools.set(k, t);
         this.unfinished.delete(k);
+        this.laters.delete(k);
       } else if (t["state"] === "rerun") {
         this.tools.delete(k);
+        this.unfinished.delete(k);
+      } else if (t["state"] === "later" && !this.tools.has(k)) {
+        this.laters.set(k, t);
         this.unfinished.delete(k);
       } else if (t["state"] === "started" && !this.tools.has(k)) this.unfinished.set(k, t);
     }
@@ -589,9 +615,17 @@ class TurnRun implements TurnRunLike {
     void this.append([record("reply", { turn: this.turn, attempt: this.attempt, key, response: json(Response.toJSON(response)) })]);
   }
 
-  recordedTool(call: Call, approval: Approval): string | null {
+  recordedTool(call: Call, approval: Approval): ToolOutput | Delivered | null {
     const k = `${call.path}|${approval.invocation}`;
-    if (this.tools.has(k)) return (this.tools.get(k)!["output"] ?? null) as string | null;
+    if (this.tools.has(k)) return (this.tools.get(k)!["output"] ?? null) as ToolOutput | null;
+    if (this.laters.has(k)) {
+      const key = this.laters.get(k)!["key"] as string;
+      const got = this.delivered.get(key);
+      if (!got) {
+        throw new ConversationError("turn-state", `${approval.path} waits for its result (${JSON.stringify(key)}): deliver it first (chat.deliver(${JSON.stringify(key)}, result))`, { turn: this.turn });
+      }
+      return new Delivered(got["output"] as ToolOutput);
+    }
     if (this.unfinished.has(k)) {
       throw new ConversationError("turn-unfinished", `${approval.path} started before the turn stopped, and whether it ran is not known: `
         + `resume({ results: { ${approval.invocation}: <what it returned> } }) or resume({ rerun: [${approval.invocation}] })`, { turn: this.turn });
@@ -606,7 +640,28 @@ class TurnRun implements TurnRunLike {
     })]);
   }
 
-  async toolDone(call: Call, approval: Approval, output: string): Promise<void> {
+  async toolLater(call: Call, approval: Approval, key: string): Promise<void> {
+    await this.append([record("tool", {
+      turn: this.turn, attempt: this.attempt, site: call.path, invocation: approval.invocation, id: approval.id, name: approval.name,
+      input: json(approval.input), effects: approval.effects, state: "later", key,
+    })]);
+  }
+
+  async deliveries(keys: readonly string[]): Promise<Map<string, ToolOutput>> {
+    await this.written();
+    const log = await this.conv.readLog();
+    for (const k of keys) {
+      const got = log.delivered.get(k);
+      if (got && !this.delivered.has(k)) this.delivered.set(k, got);
+    }
+    return new Map(keys.filter((k) => this.delivered.has(k)).map((k) => [k, this.delivered.get(k)!["output"] as ToolOutput]));
+  }
+
+  waitLater(later: readonly Rec[]): never {
+    throw new TurnWaiting(`${later.map((x) => x["key"]).join(", ")} waits for its result`, null, later);
+  }
+
+  async toolDone(call: Call, approval: Approval, output: ToolOutput): Promise<void> {
     await this.append([record("tool", {
       turn: this.turn, attempt: this.attempt, site: call.path, invocation: approval.invocation, id: approval.id, name: approval.name,
       state: "done", output,
@@ -799,6 +854,19 @@ export class Turn {
   get unfinished(): Rec[] {
     return this._st.unfinished().map((t) => ({
       invocation: t["invocation"], id: t["id"], name: t["name"], input: t["input"] ?? null, started: t["at"] ?? null, site: t["site"] ?? null,
+    }));
+  }
+
+  /**
+   * The results it waits for, from tools that returned `later(key)`: each
+   * `{ key, invocation, id, name, input, site }`; `[]` when none. Deliver one
+   * with `chat.deliver(key, result)`.
+   */
+  async later(): Promise<Rec[]> {
+    const log = await this._conv.readLog();
+    this._st = log.turns.get(this.id) ?? this._st;
+    return this._st.undelivered(log.delivered).map((t) => ({
+      key: t["key"], invocation: t["invocation"], id: t["id"] ?? null, name: t["name"] ?? null, input: t["input"] ?? null, site: t["site"] ?? null,
     }));
   }
 
@@ -1528,13 +1596,17 @@ export class Conversation {
       const state = st.state();
       if (state !== "waiting" && state !== "interrupted") throw new ConversationError("turn-state", `turn ${tid} is ${state}: only a waiting or interrupted turn goes on`, { turn: tid });
       if (st.unanswered().length) throw new ConversationError("turn-state", `turn ${tid} still waits for ${st.unanswered().length} approval(s)`, { turn: tid });
+      const missing = st.undelivered(log.delivered);
+      if (missing.length) {
+        throw new ConversationError("turn-state", `turn ${tid} still waits for ${missing.length} result(s) to be delivered: ${missing.map((t) => JSON.stringify(t["key"])).join(", ")}`, { turn: tid });
+      }
       const given: Rec[] = [];
       for (const t of st.unfinished()) {
         const inv = Number(t["invocation"]);
         const keys = [inv, String(inv), t["id"]];
         const hit = Object.entries(results).find(([k]) => keys.includes(k) || keys.includes(Number(k)));
         const base = { turn: tid, site: t["site"] ?? null, invocation: t["invocation"], id: t["id"] ?? null, name: t["name"] ?? null };
-        if (hit) given.push(record("tool", { ...base, state: "given", output: typeof hit[1] === "string" ? hit[1] : json(hit[1]) }));
+        if (hit) given.push(record("tool", { ...base, state: "given", output: resultOf(hit[1]) }));
         else if (rerun.some((r) => keys.includes(r) || keys.includes(Number(r)))) given.push(record("tool", { ...base, state: "rerun" }));
         else throw new ConversationError("turn-unfinished", `turn ${tid}: ${t["name"]} (invocation ${inv}) started and may have run: resume({ results: { ${inv}: <what it returned> } }) or resume({ rerun: [${inv}] })`, { turn: tid });
       }
@@ -1569,7 +1641,7 @@ export class Conversation {
     context.changes = [];                               // the turn's own changes are on its first record
     const run = new TurnRun(this, tid, {
       attempt, context, later,
-      replay: { replies: st.replies, tools: st.tools, answers: st.answers, waitingSeq: Number(st.waiting?.["seq"] ?? 0) },
+      replay: { replies: st.replies, tools: st.tools, answers: st.answers, waitingSeq: Number(st.waiting?.["seq"] ?? 0), delivered: log.delivered },
     });
     run.startSeq = startSeq;
     const settings: Settings = { ...this.settings };
@@ -1579,6 +1651,58 @@ export class Conversation {
     const s = new TurnStream(this, true, undefined);
     s.begin(Promise.resolve({ run, inputs: copyData(st.record["inputs"] ?? {}), settings }));
     return { s };
+  }
+
+  /**
+   * Give a tool that returned `later(key)` its result, from any process that
+   * opens the conversation (a webhook's handler). `result` is what the tool
+   * would have returned: text, a value, a picture (an lm15 part) or a list
+   * of them. It is kept in the conversation (a `delivered` record), and the
+   * tool's turn uses it: when nothing else keeps that turn waiting, it goes
+   * on here and this resolves to its answer (`resume: false`: later,
+   * `turn.resume()`); else to undefined. A result delivered before the turn
+   * waits for it is used when it does. The first delivery of a key is the
+   * one kept: delivering it again does nothing (a webhook may be sent twice).
+   */
+  async deliver(key: string, result: unknown, opts: { by?: string | null; resume?: boolean } = {}): Promise<unknown> {
+    if (typeof key !== "string" || !key.trim()) throw new TypeError("a later result's key is a non-empty text");
+    const output = resultOf(result);
+    for (;;) {
+      const log = await this.readLog();
+      if (log.delivered.has(key)) return undefined;
+      try {
+        await this.append([record("delivered", { key, output, ...(opts.by ? { by: opts.by } : {}) })], { expect: log.n });
+      } catch (err) {
+        if (err instanceof ConversationError && err.code === "store-conflict") continue;
+        throw err;
+      }
+      break;
+    }
+    if (opts.resume === false) return undefined;
+    const log = await this.readLog();
+    for (const tid of log.order) {
+      const st = log.turns.get(tid)!;
+      if (st.state() !== "waiting" || !st.later().some((t) => t["key"] === key)) continue;
+      if (st.unanswered().length || st.undelivered(log.delivered).length) return undefined;
+      try {
+        const { s } = await this.resumeTurn(tid, {}, []);
+        return await s.result;
+      } catch (err) {
+        if (err instanceof ConversationError && err.code === "turn-state") return undefined;   // another process resumed it first
+        throw err;
+      }
+    }
+    return undefined;
+  }
+
+  /** @internal Resume a waiting turn that has nothing left to wait for, unless another process already did. */
+  async goOn(tid: string): Promise<void> {
+    try {
+      const { s } = await this.resumeTurn(tid, {}, []);
+      await s.result;
+    } catch {
+      // another process resumed it first, or the turn's own end records what happened
+    }
   }
 
   /**
@@ -1875,11 +1999,16 @@ export class TurnStream implements AsyncIterable<string>, PromiseLike<unknown> {
       const saw = root ? copyData(root.saw) : [...(run.context.moduleSaw ?? [])];
       const base = { turn: run.turn, attempt: run.attempt };
       if (error instanceof TurnWaiting) {
-        const a = error.approval as Approval;
-        await conv.append([record("waiting", { ...base, approvals: [approvalJson(a)], saw })]);
+        const a = error.approval as Approval | null;
+        await conv.append([record("waiting", { ...base, approvals: a ? [approvalJson(a)] : [], ...(error.later.length ? { later: copyData(error.later) } : {}), saw })]);
         const t = await conv.turn(run.turn);
-        const err = new Waiting(`turn ${run.turn} waits for a person's answer: ${a.path}(${short(a.input, 80)})`, t, t.waiting);
-        this.fail(err);
+        const later = await t.later();
+        if (!a && !later.length) {
+          // every result arrived between the turn's last look and its waiting record: it goes on now
+          void conv.goOn(run.turn);
+        }
+        const what = a ? `a person's answer: ${a.path}(${short(a.input, 80)})` : `results that come later: ${error.later.map((x) => JSON.stringify(x["key"])).join(", ")}`;
+        this.fail(new Waiting(`turn ${run.turn} waits for ${what}`, t, t.waiting, later));
         return;
       }
       const rec: Rec = record("ended", { ...base, saw, seconds: Math.round((performance.now() - started) * 1000) / 1e6, usage: sumUsage(run.exchanges) });
@@ -1998,7 +2127,7 @@ function approvalJson(a: Approval): Rec {
 function outcome(conv: Conversation, t: Turn): unknown {
   const state = t.state;
   if (state === "done") return t.result;
-  if (state === "waiting") throw new Waiting(`turn ${t.id} waits for a person's answer`, t, t.waiting);
+  if (state === "waiting") throw new Waiting(`turn ${t.id} waits ${t.waiting.length ? "for a person's answer" : "for results that come later"}`, t, t.waiting);
   const err = t.error ?? {};
   throw new ConversationError("turn-state", `turn ${t.id} ended ${state}${t.error ? `: ${err["type"]}: ${err["message"] ?? ""}` : ""}`, { turn: t.id });
 }

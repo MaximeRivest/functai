@@ -69,10 +69,12 @@ call log's id) and that call's program (`function`, the program's name).
 | `text` | a piece of an output's text is written | `field`, `answer` (true when the field is the answer), `text` |
 | `thinking` | a piece of the model's own thinking that no output reads | `text` |
 | `tool_call` | the model asked for a tool, and the request is complete | `id` (the call's id, as lmcc names it: the provider's, or one lmcc assigned), `name`, `input`, `invocation` (its number among the call's tool calls: [tools.md](tools.md)) |
-| `tool_result` | the tool ran (or a person refused it: the refusal is its output) | `id`, `name`, `output` (text, as the model sees it), `invocation` |
+| `tool_result` | the tool ran (or a person refused it: the refusal is its output) | `id`, `name`, `output` (the result's text: the result itself when it is text, else its text parts joined by a new line, maybe empty), `parts` (only when the result is a list of parts, a picture with it: the whole result as lm15 parts, [tools.md](tools.md), *What a tool returns*), `invocation` |
 | `approval` | a tool call waits for a person's answer ([tools.md](tools.md)) | `id`, `invocation`, `name`, `input`, `effects`, `path`, `to` (`owner` or `caller`), `plugin`, `question`? |
 | `approved` | the answer | `id`, `invocation`, `verdict` (`yes`, `no`), `by`, `reason`?, `plugin` |
 | `retry` | the model is asked again for this call's answer | `reason` (a sentence), `wait` (seconds before asking, or null) |
+| `note` | code in the call says something happened (Python `functai.note(name, data)`, from a module's body or a tool) | `name` (what happened, as the code names it: a non-empty text), `data` (any JSON value, or null) |
+| `later` | a tool's result comes later ([tools.md](tools.md), *A result that comes later*) | `id`, `invocation`, `name`, `key` |
 | `done` | the call ended with a value | `value`: what the call returned, as JSON (an AI function's answer, as its code returned it; a module's output, or its outputs by name when it has several). A value with no JSON form is described as in the call log. |
 | `failed` | the call ended with an error | `error` `{"type", "message", "code"?}` as in the call log |
 
@@ -83,8 +85,8 @@ with what it does not know is in *Formats*.
 Laws:
 
 1. **Order.** A call's events come in the order they happened: `started`,
-   then its `request`, `text`, `thinking`, `tool_call`, `tool_result` and
-   `retry` events and the events of the calls inside it, then exactly one
+   then its `request`, `text`, `thinking`, `tool_call`, `tool_result`,
+   `retry`, `note` and `later` events and the events of the calls inside it, then exactly one
    `done` or `failed`. A log's first event is its outermost call's
    `started`; its last is that call's `done` or `failed`, and nothing
    follows it. When calls inside run at the same time, their events are
@@ -127,6 +129,14 @@ Laws:
    sending again after a dropped connection) are neither. (A call
    continued by a later writer: *Continuing a log*.)
 
+**Notes.** A `note` says what plain code did, so a reader can show a
+pipeline's progress between model calls ("screen 4 captured", "recording
+ready"). It is an event, not a value of the call: the call log does not
+keep it. Outside a call, or when nothing watches, making one does
+nothing. A resumed turn does not show again the notes its code makes
+while it replays what it did before (*Continuing a log*). `cases/agents/`
+pin the kept form of `note`, `later` and a `tool_result` with `parts`.
+
 ## Replaying
 
 Reading a form's events in order, from its first, and applying laws 1 to
@@ -137,8 +147,9 @@ log read back from where it was kept shows what was seen live.
 A reader keeps, for each call it has seen start: whether it ended, and
 each field's text so far. `started` adds the call with no fields; `request`
 and `retry` empty every field of their call; `text` appends to its field;
-`done` and `failed` mark the call ended. `thinking`, `tool_call` and
-`tool_result` are shown as they come and change no field. An event of a
+`done` and `failed` mark the call ended. `thinking`, `tool_call`,
+`tool_result`, `note` and `later` are shown as they come and change no
+field. An event of a
 kind the reader does not know changes nothing. The log is **finished**
 once its outermost call has ended. `cases/events/replay-*.json` pin this.
 
@@ -231,8 +242,10 @@ kept thus:
 | `text` | a field that is kept: as is. Any other: not kept at all |
 | `thinking` | not kept |
 | `tool_call` | `id` and `name`, no `input`; `content: false` |
-| `tool_result` | `id` and `name`, no `output`; `content: false` |
+| `tool_result` | `id` and `name`, no `output` and no `parts`; `content: false` |
 | `retry` | `wait`, no `reason`; `content: false` |
+| `note` | `name`, no `data`; `content: false` |
+| `later` | `id`, `invocation` and `name`, no `key`; `content: false` |
 | `done` | `value` when every output it holds is kept (an AI function's answer; a module's outputs); else no `value`, and `content: false` |
 | `failed` | `error` with only `type` and `code`; `content: false` |
 

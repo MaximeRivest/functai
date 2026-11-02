@@ -1,0 +1,98 @@
+{
+ "description": "As many old pictures as at_once: all go at once.",
+ "kind": "pictures",
+ "results": [
+  {
+   "invocation": 1,
+   "output": [
+    {
+     "type": "text",
+     "text": "page 1"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  },
+  {
+   "invocation": 2,
+   "output": [
+    {
+     "type": "text",
+     "text": "page 2"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  },
+  {
+   "invocation": 3,
+   "output": [
+    {
+     "type": "text",
+     "text": "page 3"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  },
+  {
+   "invocation": 4,
+   "output": [
+    {
+     "type": "text",
+     "text": "page 4"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  }
+ ],
+ "last": 1,
+ "at_once": 3,
+ "expect": {
+  "replace": {
+   "1": [
+    {
+     "type": "text",
+     "text": "page 1"
+    },
+    {
+     "type": "text",
+     "text": "(A picture was here. It is no longer shown, to save space.)"
+    }
+   ],
+   "2": [
+    {
+     "type": "text",
+     "text": "page 2"
+    },
+    {
+     "type": "text",
+     "text": "(A picture was here. It is no longer shown, to save space.)"
+    }
+   ],
+   "3": [
+    {
+     "type": "text",
+     "text": "page 3"
+    },
+    {
+     "type": "text",
+     "text": "(A picture was here. It is no longer shown, to save space.)"
+    }
+   ]
+  }
+ }
+}

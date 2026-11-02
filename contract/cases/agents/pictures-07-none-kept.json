@@ -1,0 +1,36 @@
+{
+ "description": "last 0: every picture goes.",
+ "kind": "pictures",
+ "results": [
+  {
+   "invocation": 1,
+   "output": [
+    {
+     "type": "text",
+     "text": "page 1"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  }
+ ],
+ "last": 0,
+ "at_once": 1,
+ "expect": {
+  "replace": {
+   "1": [
+    {
+     "type": "text",
+     "text": "page 1"
+    },
+    {
+     "type": "text",
+     "text": "(A picture was here. It is no longer shown, to save space.)"
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,11 @@
+{
+ "description": "A text is the result as it is, and the event's output.",
+ "kind": "result",
+ "returned": "clicked Buy",
+ "expect": {
+  "result": "clicked Buy",
+  "event": {
+   "output": "clicked Buy"
+  }
+ }
+}

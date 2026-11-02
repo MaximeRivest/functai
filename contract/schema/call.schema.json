@@ -188,7 +188,7 @@
             "properties": {
               "plugin": {"type": "string", "minLength": 1},
               "version": {"type": "string"},
-              "hook": {"enum": ["turn_start", "context", "before_call", "request", "tool_call", "tool_result"]},
+              "hook": {"enum": ["turn_start", "context", "before_call", "step", "request", "tool_call", "tool_result"]},
               "change": {"type": "object"}
             }
           }

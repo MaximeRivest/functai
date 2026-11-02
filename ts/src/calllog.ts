@@ -22,6 +22,7 @@ import { copyData, entriesOf, getOwn, parseData, recordOf, setOwn, toJson, write
 import { FunctAIError, type Approval } from "./errors.ts";
 import { earlierOf, needsContext, recordsById, SawUnknown } from "./saw.ts";
 import { sumUsage } from "./usage.ts";
+import type { Delivered, ToolOutput } from "./results.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -90,9 +91,40 @@ function expand(p: string): string {
   return path.resolve(home);
 }
 
-/** The folder calls are logged to under this setting, or null when off. */
-export function folderOf(setting: Settings["logCalls"]): string | null {
+/**
+ * A call log kept somewhere of one's own (contract/calls.md, "A store of
+ * one's own"): `append(record)` keeps one record (a call, or a rating: the
+ * object a folder's line holds), `read()` gives back every record kept, in
+ * the order appended. Put it in front of a database, a bucket or a queue
+ * when a machine keeps no files (a serverless function, a container that
+ * goes away). An `append` that answers later is waited for before the call
+ * returns.
+ */
+export interface CallStore {
+  append(record: Rec): void | PromiseLike<void>;
+  read(): readonly Rec[] | PromiseLike<readonly Rec[]>;
+}
+
+/** Whether a `logCalls` value is a store of one's own. */
+export function isStore(v: unknown): v is CallStore {
+  return typeof v === "object" && v !== null && typeof (v as CallStore).append === "function" && typeof (v as CallStore).read === "function";
+}
+
+/** A call log in this process's memory (`logCalls: new MemoryCalls()`): for tests, and to see what a store is given. */
+export class MemoryCalls implements CallStore {
+  readonly records: Rec[] = [];
+  append(record: Rec): void {
+    this.records.push(copyData(record));
+  }
+  read(): readonly Rec[] {
+    return this.records.map((r) => copyData(r));
+  }
+}
+
+/** The folder calls are logged to under this setting (or the store), or null when off. */
+export function folderOf(setting: Settings["logCalls"]): string | CallStore | null {
   if (setting === false) return null;
+  if (isStore(setting)) return setting;
   const raw = (env()["FUNCTAI_LOG_CALLS"] ?? "").trim();
   const on = !OFF.has(raw.toLowerCase());
   const envFolder = on && !ON.has(raw.toLowerCase()) ? raw : null;
@@ -167,6 +199,10 @@ export class Call {
   readonly root: string;
   readonly started = now();
   readonly exchanges: Exchange[] = [];
+  /** The outermost call of its tree in this process. */
+  readonly top: Call;
+  /** The outermost call only: `[model, usage]` of each request a provider answered in this tree (plugins: limits). */
+  readonly spent: (readonly [string, Record<string, number>])[] = [];
   provider: string | null = null;
   /**
    * Its inputs as the record holds them, by its interface's names, each as
@@ -232,7 +268,8 @@ export class Call {
   }
 
   readonly program: () => Program;
-  readonly folder: string | null;
+  /** Where its record goes: a log folder, a store of one's own, or nowhere. */
+  readonly folder: string | CallStore | null;
   /** Its fields (interface inputs and outputs, and those FunctAI adds), for what the log keeps. */
   readonly fields: CallFields;
   /** Whether each field's value is written (calls.md, "Content"). */
@@ -241,8 +278,9 @@ export class Call {
   /** Cancels the call (its caller's signal, a stream closed, a parent cancelled). */
   readonly signal: AbortSignal | undefined;
 
-  constructor(program: () => Program, parent: Call | undefined, folder: string | null, fields: CallFields,
+  constructor(program: () => Program, parent: Call | undefined, folder: string | CallStore | null, fields: CallFields,
     keep: Record<string, boolean>, caller: Rec, signal?: AbortSignal) {
+    this.top = parent?.top ?? this;
     this.program = program;
     this.folder = folder;
     this.fields = fields;
@@ -272,6 +310,7 @@ export class Call {
 
   exchange(model: string, request: Request, response: Response | null, started: number, seconds: number,
     opts: { cached?: boolean; error?: unknown; streamed?: boolean; firstDelta?: number | null; requestHash?: string | null } = {}): void {
+    if (response && !opts.cached) this.top.spent.push([model, usageOf(response)]);
     this.exchanges.push({
       model, provider: this.provider, started, seconds, cached: opts.cached ?? false, request, response,
       requestHash: opts.requestHash ?? null, error: opts.error ?? null, streamed: opts.streamed ?? false, firstDelta: opts.firstDelta ?? null,
@@ -279,7 +318,7 @@ export class Call {
   }
 
   /** Make one of its events (streaming.md) when anything watches it: its streams, observers, the tree's journal. */
-  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry" | "approval" | "approved", fields: Rec) {
+  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry" | "approval" | "approved" | "note" | "later", fields: Rec) {
     return this.node?.log.emit(this.node, kind, fields) ?? null;
   }
 
@@ -290,6 +329,20 @@ export class Call {
 }
 
 export const current = new Context<Call>();
+
+/**
+ * Say that something happened, from code inside a call (a module's body, a
+ * tool): `note("screen captured", { screen: 4, key: "s4.jpg" })`. Whatever
+ * watches the call sees a `note` event (contract/streaming.md), in its place
+ * among the call's events; the kept form of a call whose content is not
+ * whole keeps its name and leaves `data` out. A note is not a value of the
+ * call: the call log does not keep it. Outside any call, or when nothing
+ * watches, it does nothing.
+ */
+export function note(name: string, data: unknown = null): void {
+  if (typeof name !== "string" || !name.trim()) throw new TypeError("a note's name is a non-empty text: what happened (\"screen captured\")");
+  current.get()?.event("note", { name, data: toJson(data)[0] });
+}
 /** A call made while a tool runs: the number of that tool call in the call that asked (engine.ts sets it). */
 export const INVOCATION = new Context<number | null>();
 /** The call of another process a served call is made for (`FunctAI-Parent`): the outermost call's `parent` (serving.md). */
@@ -307,10 +360,19 @@ export interface TurnHooks {
   readonly durable: boolean;
   recordedReply(key: string): Response | null;
   noteReply(key: string, response: Response): void;
-  /** A tool's result kept by an earlier attempt; throws `turn-unfinished` for one that may have run. */
-  recordedTool(call: Call, approval: Approval): string | null;
+  /**
+   * A tool's result kept by an earlier attempt (a `Delivered` for a result that came later, which the
+   * `toolResult` hooks have not seen); throws `turn-unfinished` for one that may have run.
+   */
+  recordedTool(call: Call, approval: Approval): ToolOutput | Delivered | null;
   toolStarted(call: Call, approval: Approval): void;
-  toolDone(call: Call, approval: Approval, output: string): void;
+  toolDone(call: Call, approval: Approval, output: ToolOutput): void;
+  /** A tool returned `later(key)`: it ran, and its result comes later. */
+  toolLater(call: Call, approval: Approval, key: string): void;
+  /** The results already delivered for these keys (read now). */
+  deliveries(keys: readonly string[]): Promise<Map<string, ToolOutput>>;
+  /** Stop the turn to wait for results that come later (throws). */
+  waitLater(later: readonly Rec[]): never;
   /** `[allowed, reason, by, fresh]`: an answer recorded for this question (`fresh`: given while the turn waited). */
   recordedApproval(call: Call, approval: Approval): [boolean, string | null, string | null, boolean] | null;
   noteApproval(call: Call, approval: Approval, allowed: boolean, reason: string | null, by: string | null): void;
@@ -493,15 +555,26 @@ export function append(folder: string, rec: Rec): void {
   fs.appendFileSync(path.join(day, fileName()), line(rec), { mode: 0o600 });
 }
 
-/** End a call: write its line when logging is on. Never throws into the call. */
-export function write(call: Call, ending: Ending): void {
+/** End a call: write its line when logging is on (a store's answer is waited for). Never throws into the call. */
+export async function write(call: Call, ending: Ending): Promise<void> {
   if (!call.folder) return;
+  const where = isStore(call.folder) ? "its store" : call.folder;
+  const failed = (err: unknown) => warnOnce(`${typeof where === "string" ? where : "store"}:${(err as Error)?.name}`,
+    `could not log a call of ${call.program().name} to ${where} (${(err as Error)?.message ?? String(err)}); calls go on, unlogged`);
   try {
-    append(call.folder, record(call, ending));
+    if (isStore(call.folder)) await call.folder.append(parseData(line(record(call, ending))) as Rec);   // as a folder's line holds it
+    else append(call.folder, record(call, ending));
   } catch (err) {
-    warnOnce(`${call.folder}:${(err as Error).name}`,
-      `could not log a call of ${call.program().name} to ${call.folder} (${(err as Error).message}); calls go on, unlogged`);
+    failed(err);
   }
+}
+
+/** Ratings given to a store whose `append` answers later, not yet answered: `flushCalls()` waits for them. */
+const pendingRatings = new Set<Promise<unknown>>();
+
+/** Wait until every rating given to a store of one's own is kept (a store whose `append` answers later). */
+export async function flushCalls(): Promise<void> {
+  while (pendingRatings.size) await Promise.allSettled([...pendingRatings]);
 }
 
 // ------------------------------------------------------------------ reading
@@ -561,15 +634,28 @@ export function sinceOf(since: Date | string | null | undefined): Date | null {
  * continued by a later writer (a resumed turn) is the record of its highest
  * `writer` (calls.md).
  */
-export function read(folder?: string | null, opts: { since?: Date | string | null } = {}): [Rec[], Rec[]] {
-  const fs = builtin("node:fs");
-  const path = builtin("node:path");
-  const root = folder ? expand(folder) : folderOf(true);
-  if (!fs || !path || !root) throw new Error("reading a log folder needs a file system; pass the records instead");
+export function read(folder?: string | CallStore | null, opts: { since?: Date | string | null } = {}): [Rec[], Rec[]] {
   const start = sinceOf(opts.since);
   const cutoff = start ? iso(start.getTime()) : "";
   const calls: Rec[] = [];
   const ratings: Rec[] = [];
+  if (isStore(folder)) {
+    const got = folder.read();
+    if (!Array.isArray(got)) {
+      throw new TypeError("this store reads later (its read() answers with a promise): pass its records instead, { records: await store.read() }");
+    }
+    for (const r of got as readonly Rec[]) {
+      if (typeof r !== "object" || r === null || Array.isArray(r)) continue;
+      if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
+      else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+    }
+    return [latestWriters(calls), ratings];
+  }
+  const fs = builtin("node:fs");
+  const path = builtin("node:path");
+  const root = folder ? expand(folder) : folderOf(true);
+  if (isStore(root)) return read(root, opts);
+  if (!fs || !path || !root) throw new Error("reading a log folder needs a file system; pass the records instead");
   for (const file of logFiles(root, cutoff)) {
     for (const r of linesOf(file)) {
       if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
@@ -605,12 +691,14 @@ export function latestWriters(calls: readonly Rec[]): Rec[] {
  * `rated` made before pruning is made the same after. Returns how many day
  * folders and calls went, and how many calls were kept.
  */
-export function pruneCalls(opts: { olderThan?: Date | string; folder?: string; keepRated?: boolean } = {}): { days: number; calls: number; kept: number } {
+export function pruneCalls(opts: { olderThan?: Date | string; folder?: string | CallStore; keepRated?: boolean } = {}): { days: number; calls: number; kept: number } {
+  if (isStore(opts.folder)) throw new TypeError("pruneCalls deletes old files of a log folder; a store of one's own keeps its records as it chooses: prune them there");
   const fs = builtin("node:fs");
   const path = builtin("node:path");
   const os = builtin("node:os");
   if (!fs || !path) throw new Error("pruning a log folder needs a file system");
-  const root = opts.folder ? expand(opts.folder) : folderOf(true);
+  const root = opts.folder ? expand(opts.folder as string) : folderOf(true);
+  if (isStore(root)) throw new TypeError("pruneCalls deletes old files of a log folder; a store of one's own keeps its records as it chooses: prune them there");
   const start = sinceOf(opts.olderThan ?? "90d");
   if (!root || !start) throw new TypeError("olderThan is a time: \"90d\", a date");
   const first = iso(start.getTime()).slice(0, 10);
@@ -878,7 +966,7 @@ export interface RateOptions {
   by?: string;
   origin?: "review" | "edit";
   sample?: string;
-  folder?: string;
+  folder?: string | CallStore;
 }
 
 /** A rating record (contract/calls.md, "A rating record"), written to the log when there is a folder. */
@@ -903,8 +991,15 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
   if (opts.note) rec["note"] = opts.note;
   rec["origin"] = opts.origin ?? "review";
   if (opts.sample) rec["sample"] = opts.sample;
-  const folder = opts.folder ? expand(opts.folder) : folderOf(settings.logCalls ?? true);
+  const folder = isStore(opts.folder) ? opts.folder : opts.folder ? expand(opts.folder) : folderOf(settings.logCalls ?? true);
   if (!folder) throw new Error("no log folder: pass folder, or turn the call log on (logCalls, or FUNCTAI_LOG_CALLS)");
-  append(folder, rec);
+  if (isStore(folder)) {
+    const kept = folder.append(copyData(rec));
+    if (kept && typeof (kept as PromiseLike<void>).then === "function") {
+      const p: Promise<unknown> = Promise.resolve(kept).catch((err: unknown) => warnOnce(`rating-store:${(err as Error)?.name}`,
+        `a rating could not be kept in its store (${(err as Error)?.message ?? String(err)})`)).finally(() => pendingRatings.delete(p));
+      pendingRatings.add(p);
+    }
+  } else append(folder, rec);
   return rec;
 }

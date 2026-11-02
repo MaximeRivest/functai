@@ -23,6 +23,7 @@ inside it). Another output is an attribute: ``turn.reasoning``.
 | `error` | How a failed turn failed (``{"type", "code", "message"}``); None otherwise. |
 | `id` | The turn's id, which is also the id of its call in the call log (``call``). |
 | `inputs` | The turn's inputs, by name, as they were recorded (a copy). |
+| `later` | The results the turn waits for, from tools that returned |
 | `made_by` | A merge: the program that made it (its rating goes there). |
 | `model` | The model that answered (or, before the end, the one the turn was asked to use). |
 | `outputs` | Every output by name (``result``, ``reasoning``...), once the turn is done; ``{}`` before. |

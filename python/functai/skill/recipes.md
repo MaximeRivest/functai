@@ -126,3 +126,41 @@ More on Attachments inputs:
   the pictures too.
 - Ask questions about many documents with `map`:
   `summarize.map([{"report": att(f)} for f in files], threads=8)`.
+
+## Agents that browse for many steps, and steps that finish elsewhere
+
+A tool may answer with a picture: return `image(...)` (from `lm15.types`),
+or a list of texts and parts. Then steer the loop with plugins, which are
+recorded as data and keep the call replayable:
+
+```python
+from lm15.models import InferencePricing
+from lm15.types import image
+
+@functai.tool(effects="changes")
+def click(target: str):
+    """Click the element, then see the screen."""
+    return [f"clicked {target}", image(data=screenshot_b64(), media_type="image/png")]
+
+PRICES = {"claude-sonnet-5": InferencePricing(input_per_million=3, output_per_million=15,
+                                              cache_read_per_million=0.3, cache_write_per_million=3.75)}
+browse = explore.using(max_steps=200, plugins=[
+    functai.keep_pictures(3, at_once=5),                     # old screenshots out, 5 at a time (prompt cache)
+    functai.limits(cost=3.0, seconds=900, prices=PRICES),   # then the loop answers with what it has
+])
+```
+
+- Never write your own `request` hook to drop pictures or nudge the model:
+  the `step` hook does it (`tools`, `reminder`, `replace`, `stop`) and the
+  call stays replayable.
+- A cost limit with a price that lacks cache rates is reached at once for
+  providers that do not report cache counts: give all four rates.
+- Progress of plain code: `functai.note("screen captured", {"n": 4})`.
+- Work that finishes elsewhere (a cloud browser, a job, a webhook): the tool
+  returns `functai.later(f"harvest:{job_id}")`, the agent runs as a
+  conversation's turn (`agent.conversation(run_id, store=...)`), and the
+  webhook calls `chat.deliver(f"harvest:{job_id}", result)`. Code in a
+  module body is not recorded: anything that must not run twice belongs in
+  a tool that `changes` things.
+- No disk (serverless): `configure(log_calls=MyStore())`, any object with
+  `append(record)` and `read()`.

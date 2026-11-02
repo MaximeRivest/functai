@@ -1,0 +1,335 @@
+{
+ "description": "Content not whole: a note keeps its name, not its data; a later its tool, not its key; a result neither its output nor its parts.",
+ "kind": "kept",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-11-02T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "browse",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "task": "find the price"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-11-02T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-11-02T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "id": "c1",
+   "name": "look",
+   "input": {
+    "page": "home"
+   },
+   "invocation": 1
+  },
+  {
+   "functai_event": 2,
+   "kind": "note",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-11-02T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "name": "screen captured",
+   "data": {
+    "screen": 1,
+    "key": "s1.jpg"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_result",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-11-02T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "id": "c1",
+   "name": "look",
+   "output": "page home",
+   "parts": [
+    {
+     "type": "text",
+     "text": "page home"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ],
+   "invocation": 1
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-11-02T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "request": 2,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-11-02T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "id": "c2",
+   "name": "start_harvest",
+   "input": {
+    "url": "a.com"
+   },
+   "invocation": 2
+  },
+  {
+   "functai_event": 2,
+   "kind": "later",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-11-02T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "id": "c2",
+   "invocation": 2,
+   "name": "start_harvest",
+   "key": "harvest:1"
+  }
+ ],
+ "kept": {
+  "01926c00-0001-7000-8000-000000000000": {
+   "inputs": {
+    "task": false
+   },
+   "outputs": {
+    "result": true
+   }
+  }
+ },
+ "expect": {
+  "events": [
+   {
+    "functai_event": 2,
+    "kind": "started",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 1,
+    "after": null,
+    "at": "2026-11-02T10:00:00.010000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "parent": null,
+    "root": "01926c00-0001-7000-8000-000000000000",
+    "program": {
+     "name": "browse",
+     "kind": "ai",
+     "module": "shop",
+     "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+     "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+     "answer": "result"
+    },
+    "content": false,
+    "omitted": {
+     "inputs": [
+      "task"
+     ],
+     "outputs": []
+    },
+    "saw": []
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 2,
+    "after": {
+     "writer": 1,
+     "seq": 1
+    },
+    "at": "2026-11-02T10:00:00.020000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "request": 1,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 3,
+    "after": {
+     "writer": 1,
+     "seq": 2
+    },
+    "at": "2026-11-02T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "id": "c1",
+    "name": "look",
+    "invocation": 1,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "note",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 3
+    },
+    "at": "2026-11-02T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "name": "screen captured",
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_result",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-11-02T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "id": "c1",
+    "name": "look",
+    "invocation": 1,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "request",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-11-02T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "request": 2,
+    "model": "gpt-4.1-mini"
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 7,
+    "after": {
+     "writer": 1,
+     "seq": 6
+    },
+    "at": "2026-11-02T10:00:00.070000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "id": "c2",
+    "name": "start_harvest",
+    "invocation": 2,
+    "content": false
+   },
+   {
+    "functai_event": 2,
+    "kind": "later",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 8,
+    "after": {
+     "writer": 1,
+     "seq": 7
+    },
+    "at": "2026-11-02T10:00:00.080000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "id": "c2",
+    "invocation": 2,
+    "name": "start_harvest",
+    "content": false
+   }
+  ]
+ }
+}

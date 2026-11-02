@@ -56,16 +56,18 @@ from .errors import EventRefused, JournalError
 
 FORMAT = 2
 KINDS = ("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed",
-         "approval", "approved")
+         "approval", "approved", "note", "later")
 ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 KEYS = {"started": ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"),
         "request": ("request", "model"), "text": ("field", "answer", "text"), "thinking": ("text",),
         "tool_call": ("id", "name", "input", "content", "invocation"),
-        "tool_result": ("id", "name", "output", "content", "invocation"),
+        "tool_result": ("id", "name", "output", "parts", "content", "invocation"),
         "retry": ("reason", "wait", "content"), "done": ("value", "content"), "failed": ("error", "content"),
         # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
         "approval": ("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
-        "approved": ("id", "invocation", "verdict", "by", "reason", "plugin", "content")}
+        "approved": ("id", "invocation", "verdict", "by", "reason", "plugin", "content"),
+        # code says something happened (functai.note); a tool's result comes later (functai.later)
+        "note": ("name", "data", "content"), "later": ("id", "invocation", "name", "key", "content")}
 ERROR_KEYS = ("type", "message", "code")
 PROGRAM_KEYS = ("name", "kind", "module", "version", "signature", "interface", "answer", "saved", "file", "line")
 SAW_KEYS = frozenset({"call", "steps", "without", "slot", "saw_of"})
@@ -251,6 +253,11 @@ def kept_event(event: Mapping[str, Any], keep: Mapping[str, Mapping[str, bool]],
         out.pop("reason", None)
     elif kind == "tool_result":
         out.pop("output", None)
+        out.pop("parts", None)
+    elif kind == "note":
+        out.pop("data", None)
+    elif kind == "later":
+        out.pop("key", None)
     elif kind == "retry":
         out.pop("reason", None)
     elif kind == "done":

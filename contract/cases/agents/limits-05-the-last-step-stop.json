@@ -1,0 +1,23 @@
+{
+ "description": "The last step, with then stop: no change (the loop ends as max_steps says).",
+ "kind": "limits",
+ "limits": {
+  "seconds": 600,
+  "then": "stop"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 1
+ },
+ "at": {
+  "hook": "step",
+  "step": 8,
+  "max_steps": 8,
+  "tools": [
+   "look"
+  ]
+ },
+ "expect": {
+  "change": null
+ }
+}

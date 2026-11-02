@@ -37,10 +37,11 @@ format or a kind it does not know, and keys it does not know.
 | `turn` | when a turn is sent, before its call | `turn`, `parent` (a turn, or null), `program` (its version), `inputs` (bound, as the call record holds them, after the `turn_start` hooks), `request_id`?, `settings`? (`lm` when the turn chose one), `reads`? and `made_by`? (a merge), `context`? (what it was shown, when a `context` hook ran) and `changes`? ([plugins.md](plugins.md), *Records*) |
 | `lease` | with the `turn` record, then every 10 seconds while it runs, and when a process resumes it | `turn`, `holder` (`<host>:<pid>:<random>`), `until` (the lease's end, 30 seconds on), `attempt` (1, then one more for each resumption) |
 | `ended` | when the turn's call ends | `turn`, `state` (`done`, `failed`, `stopped`, `abandoned`), `outputs` (done: every output, the fields FunctAI adds included), `value` (what the code returned), `lmcc` (an AI function: the lmcc turn its call made, with its steps), `saw`, `error`, `model`, `usage` (tokens, summed over every model call inside, as a call's are: [calls.md](calls.md), *Token counts*), `seconds`, `attempt` |
-| `waiting` | when the turn stops to wait for a person ([tools.md](tools.md)) | `turn`, `approvals`, `saw`, `attempt` |
+| `waiting` | when the turn stops to wait: for a person, or for results that come later ([tools.md](tools.md)) | `turn`, `approvals` (maybe empty), `later`? (each `site`, `invocation`, `id`, `name`, `key`, `path`), `saw`, `attempt` |
 | `approval` | a person's answer | `turn`, `site`, `invocation`, `plugin` (the plugin that asked; absent: `approval`), `path`, `verdict` (`yes`, `no`), `by`, `reason` |
 | `entry` | a plugin keeps something ([plugins.md](plugins.md), *Entries*) | `plugin`, `entry` (its kind), `data`, `turn`? (its branches; absent: every branch) |
-| `tool` | before a tool that changes things runs (`started`), after a tool ran (`done`), or when a person says what a tool that may have run did (`given`) or asks it to run again (`rerun`) | `turn`, `site`, `invocation`, `id`, `name`, `state`, `input`? (started), `effects`?, `output` (done, given) |
+| `tool` | before a tool that changes things runs (`started`), after a tool ran (`done`), when a tool said its result comes later (`later`), or when a person says what a tool that may have run did (`given`) or asks it to run again (`rerun`) | `turn`, `site`, `invocation`, `id`, `name`, `state`, `input`? (started, later), `effects`?, `key` (later), `output` (done, given: a text or a list of lm15 parts, [tools.md](tools.md), *What a tool returns*) |
+| `delivered` | a result that comes later is delivered ([tools.md](tools.md), *A result that comes later*) | `key`, `output`, `by`? (no `turn`: it belongs to the conversation) |
 | `reply` | each model reply of a turn that can be resumed (a module's, or an AI function's with tools) | `turn`, `key` ([replies.md](replies.md)), `response` (lm15's canonical JSON), `attempt` |
 | `call` | when a helper the conversation remembers ends a call in a turn | `turn`, `call`, `site`, `program` (`name`, `module`, `signature`), `lmcc`, `saw`, `attempt` |
 | `stop` | anyone asks a running turn to stop | `turn` |
@@ -64,7 +65,11 @@ From its records, in order:
 A turn's **unanswered** approvals are those of its last `waiting` record
 that no later `approval` names (by `site`, `invocation` and `plugin`). Its
 **unfinished** tools are those whose last `tool` record for a `site` and
-`invocation` is `started`: they may have run.
+`invocation` is `started`: they may have run. Its **undelivered** results
+are its tools whose last `tool` record is `later` with a `key` no
+`delivered` record of the conversation names (the first `delivered`
+record of a key is the one kept). A waiting turn goes on only when it has
+no unanswered approval and no undelivered result.
 
 ## Where a new turn goes
 

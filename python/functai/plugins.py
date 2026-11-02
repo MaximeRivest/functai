@@ -55,7 +55,8 @@ SUPPORTED = (1,)
 HOOKS: Dict[str, Tuple[str, Tuple[str, ...]]] = {
     "turn_start": ("change", ("inputs",)),
     "context": ("change", ("keep", "without", "sections")),
-    "before_call": ("change", ("instruction", "sections", "lm", "settings", "tools")),
+    "before_call": ("change", ("instruction", "sections", "lm", "settings", "tools", "stop")),
+    "step": ("change", ("tools", "reminder", "replace", "stop")),
     "request": ("change", ()),                      # returns an lm15 Request: the escape hatch
     "tool_call": ("change", ("inputs", "block")),
     "tool_result": ("change", ("output",)),
@@ -71,6 +72,8 @@ class PluginError(FunctAIError):
     ``plugin-change`` (a change this hook cannot make, or a value that does
     not fit), ``plugin-failed`` (its handler raised: the call stops, since
     a change it was meant to make, a redaction say, did not happen),
+    ``plugin-stopped`` (a ``before_call`` or ``step`` handler stopped the call,
+    with its reason: a limit reached),
     ``plugin-load`` (a file that does not define one). ``plugin`` and
     ``hook`` name where."""
 
@@ -99,7 +102,14 @@ class Change:
     - ``inputs``: inputs replaced, by name (``turn_start``: the turn's;
       ``tool_call``: the tool's);
     - ``block``: the tool call may not run, and why (``tool_call``);
-    - ``output``: the tool's result as the model is shown it (``tool_result``).
+    - ``output``: the tool's result as the model is shown it: text, or a list
+      of lm15 parts (a picture with a caption) (``tool_result``);
+    - ``reminder``: text the model is shown after this step's tool results,
+      in this request and the ones after (``step``);
+    - ``replace``: earlier tool results, by invocation, shown as this from
+      this request on: text, or a list of lm15 parts (``step``);
+    - ``stop``: the call stops here, and why (``before_call``, ``step``): it
+      raises ``PluginError`` (``plugin-stopped``).
     """
     instruction: Optional[str] = None
     sections: Optional[Sequence[str]] = None
@@ -110,7 +120,10 @@ class Change:
     without: Any = None
     inputs: Optional[Mapping[str, Any]] = None
     block: Optional[str] = None
-    output: Optional[str] = None
+    output: Any = None
+    reminder: Optional[str] = None
+    replace: Optional[Mapping[int, Any]] = None
+    stop: Optional[str] = None
 
     def fields(self) -> Dict[str, Any]:
         return {f.name: getattr(self, f.name) for f in dataclasses.fields(self) if getattr(self, f.name) is not None}
@@ -184,8 +197,13 @@ class Plugin:
         return self.on("context", fn)
 
     def before_call(self, fn: Callable[..., Any]) -> Callable[..., Any]:
-        """An AI function is about to be asked: sections, model, settings, tools."""
+        """An AI function is about to be asked: sections, model, settings, tools; or stop it."""
         return self.on("before_call", fn)
+
+    def step(self, fn: Callable[..., Any]) -> Callable[..., Any]:
+        """A call with tools is about to ask the model again, after its tools ran:
+        the tools offered, a reminder, earlier results shown otherwise; or stop it."""
+        return self.on("step", fn)
 
     def request(self, fn: Callable[..., Any]) -> Callable[..., Any]:
         """The escape hatch: rewrite the provider request (the call is then not replayable)."""
@@ -303,7 +321,7 @@ def _record(change: Change) -> Dict[str, Any]:
     out = {}
     for k, v in change.fields().items():
         out[k] = list(v) if k in ("sections", "tools", "keep") else _json(dict(v)) if k in ("settings", "inputs") \
-            else _json(v)
+            else {str(i): _json(r) for i, r in dict(v).items()} if k == "replace" else _json(v)
     return out
 
 
@@ -354,6 +372,7 @@ def run(hook: str, plugins: Sequence[Plugin], event: Any, applied: Applied,
                                      plugin=ext.name, hook=hook)
             if not fields:
                 continue
+            event._ext = ext                            # a change that stops the call names its plugin
             try:
                 apply(got)
             except PluginError:
@@ -361,6 +380,8 @@ def run(hook: str, plugins: Sequence[Plugin], event: Any, applied: Applied,
             except (TypeError, ValueError) as exc:
                 raise PluginError("plugin-change", f"plugin {ext.name}: {hook}: {exc}",
                                      plugin=ext.name, hook=hook) from None
+            finally:
+                event._ext = None
             applied.add(ext, hook, _record(got))
 
 
@@ -431,6 +452,87 @@ class Context(_Event):
         return self.conversation.entries(self._ext.name if self._ext else "", kind, branch=self.parent)
 
 
+class Spent:
+    """What a call tree spent so far in this process (contract/plugins.md,
+    *What a tree spent*): each request a provider answered, as ``(model,
+    usage)`` (lm15's token counts, by name); replies from the reply cache and
+    replies a resumed turn reuses cost nothing now and are not in it.
+    ``requests``, ``usage`` (summed: a counter only when every request
+    reported it), ``tokens`` (``total_tokens`` summed, or None when a request
+    did not report it), ``seconds`` (since the tree's outermost call started)
+    and ``cost(prices)``."""
+
+    def __init__(self, exchanges: Sequence[Tuple[str, Mapping[str, int]]], seconds: float):
+        self.exchanges = [(m, dict(u)) for m, u in exchanges]
+        self.seconds = seconds
+
+    @property
+    def requests(self) -> int:
+        return len(self.exchanges)
+
+    @property
+    def usage(self) -> Dict[str, int]:
+        from .data import sum_usage
+        return sum_usage(u for _, u in self.exchanges)
+
+    @property
+    def tokens(self) -> Optional[int]:
+        return self.usage.get("total_tokens") if self.exchanges else 0
+
+    def cost(self, prices: Mapping[str, Any]) -> Optional[float]:
+        """The list-price cost of the requests, from ``prices`` (a model's
+        name, as asked, to an lm15 ``InferencePricing`` or a dict of its
+        fields): exact or None, never a guess (a model without a price, or a
+        request whose counts do not settle its price, makes it None)."""
+        total = 0.0
+        for model, usage in self.exchanges:
+            price = pricing(prices, model)
+            if price is None:
+                return None
+            got = price.estimate(_usage_obj(usage))
+            if got is None:
+                return None
+            total += got
+        return total
+
+    def __repr__(self) -> str:
+        return f"<Spent {self.requests} requests, {self.tokens} tokens, {self.seconds:.1f}s>"
+
+
+def pricing(prices: Mapping[str, Any], model: str) -> Any:
+    """``prices[model]`` as an lm15 ``InferencePricing``, or None."""
+    from lm15.models import InferencePricing
+    p = prices.get(model) if prices else None
+    if p is None and isinstance(model, str) and ":" in model:
+        p = prices.get(model.split(":", 1)[1])          # "anthropic:claude-..." priced by the model's own name
+    if p is None:
+        return None
+    if isinstance(p, InferencePricing):
+        return p
+    if isinstance(p, Mapping):
+        return InferencePricing(**dict(p))
+    raise TypeError(f"a price is an lm15 InferencePricing (lm15.models) or a dict of its fields, "
+                    f"not {type(p).__name__}")
+
+
+def _usage_obj(usage: Mapping[str, int]) -> Any:
+    import lm15
+    names = {f.name for f in dataclasses.fields(lm15.Usage)}
+    return lm15.Usage(**{k: v for k, v in usage.items() if k in names})
+
+
+def spent_of(call: Any) -> Spent:
+    """What ``call``'s tree spent so far (its outermost call in this process)."""
+    import time as _time
+    if call is None:
+        return Spent([], 0.0)
+    top = call.top
+    from .calllog import _id_lock
+    with _id_lock:
+        exchanges = list(top.spent)
+    return Spent(exchanges, max(0.0, _time.time() - top.started))
+
+
 @dataclasses.dataclass
 class BeforeCall(_Event):
     """An AI function about to be asked: ``function`` (its name), ``program``,
@@ -438,7 +540,8 @@ class BeforeCall(_Event):
     replacement), ``lm`` and ``settings`` (as they stand), ``tools`` (the
     names offered), ``all_tools`` (the function's own), ``sections`` so far,
     ``path`` (its place in the call tree: ``support/answer``),
-    ``conversation`` and ``turn`` (when it runs in one); ``entries(kind)``,
+    ``conversation`` and ``turn`` (when it runs in one), ``spent`` (what its
+    call tree spent so far: ``Spent``); ``entries(kind)``,
     ``remember(kind, data)``: this plugin's entries in that conversation."""
     instruction: str
     function: str
@@ -452,6 +555,50 @@ class BeforeCall(_Event):
     path: str
     conversation: Optional[str] = None
     turn: Optional[str] = None
+    spent: Optional[Spent] = None
+
+
+@dataclasses.dataclass
+class StepResult:
+    """A tool result of the call so far, as the model is shown it now:
+    ``invocation``, ``name``, ``input``, ``output`` (text, or a list of lm15
+    parts in their JSON form), ``pictures`` (how many image parts it holds)."""
+    invocation: int
+    name: str
+    input: Any
+    output: Any
+
+    @property
+    def pictures(self) -> int:
+        return 0 if isinstance(self.output, str) else sum(1 for p in self.output if p.get("type") == "image")
+
+
+@dataclasses.dataclass
+class Step(_Event):
+    """A call with tools is about to ask the model again, after the tools of
+    its last reply ran: ``function``, ``path``, ``step`` (the number of the
+    request about to be made: 2 for the first after tools), ``max_steps``
+    (the last request the call may make), ``results`` (every tool result of
+    the call so far, oldest first, as shown now: ``StepResult``), ``tools``
+    (the names offered now), ``all_tools`` (the names the call was offered),
+    ``lm``, ``spent`` (what its call tree spent so far: ``Spent``),
+    ``conversation`` and ``turn``; ``entries(kind)``, ``remember(kind, data)``."""
+    function: str
+    path: str
+    step: int
+    max_steps: int
+    results: List[StepResult]
+    tools: List[str]
+    all_tools: List[str]
+    lm: Any
+    spent: Spent
+    conversation: Optional[str] = None
+    turn: Optional[str] = None
+
+    @property
+    def last_step(self) -> bool:
+        """Whether this is the last request the call may make (``max_steps``)."""
+        return self.step >= self.max_steps
 
 
 @dataclasses.dataclass
@@ -500,11 +647,12 @@ class ToolCall(_Event):
 
 @dataclasses.dataclass
 class ToolResult(_Event):
-    """A tool ran: ``name``, ``input``, ``output`` (text, as it stands),
-    ``path``, ``invocation``, ``function``."""
+    """A tool ran: ``name``, ``input``, ``output`` (as it stands: text, or a
+    list of lm15 parts in their JSON form when it holds a picture, a sound or
+    a document), ``path``, ``invocation``, ``function``."""
     name: str
     input: Any
-    output: str
+    output: Any
     path: str
     invocation: int
     function: str
@@ -591,7 +739,8 @@ def before_call(program: Any, inputs: Mapping[str, Any], settings: Dict[str, Any
                        {k: v for k, v in settings.items() if k in CONFIG_FIELDS and v is not None},
                        list(all_tools), list(all_tools), list(sections), _names(call),
                        conversation=conv.get("id") or (turn_run.conv.id if turn_run is not None else None),
-                       turn=conv.get("turn") or (turn_run.turn if turn_run is not None else None))
+                       turn=conv.get("turn") or (turn_run.turn if turn_run is not None else None),
+                       spent=spent_of(call if call is not None else _current()))
     event._turn_run = turn_run
     out = dict(settings)
     offered: List[Optional[List[str]]] = [None]
@@ -621,9 +770,30 @@ def before_call(program: Any, inputs: Mapping[str, Any], settings: Dict[str, Any
                 raise ValueError(f"{program.__name__} has no tool {unknown[0]!r} (its tools: "
                                  f"{', '.join(all_tools) or 'none'})")
             offered[0] = event.tools = [n for n in all_tools if n in names]
+        if c.stop is not None:
+            stop_here(c.stop, event, "before_call", applied, program.__name__, call)
 
     run("before_call", exts, event, applied, apply)
     return Shaped(out, instruction[0], event.sections, given, offered[0], applied)
+
+
+def _current() -> Any:
+    from .calllog import current
+    return current()
+
+
+def stop_here(reason: Any, event: Any, hook: str, applied: "Applied", function: str, call: Any) -> None:
+    """A ``stop`` change: kept with the call's changes, then the call stops
+    (``plugin-stopped``)."""
+    if not isinstance(reason, str) or not reason.strip():
+        raise TypeError("stop is the reason, a text")
+    ext = event._ext
+    applied.add(ext, hook, {"stop": reason})
+    if call is not None:
+        call.changes.extend(applied.items)
+        applied.items.clear()
+    raise PluginError("plugin-stopped", f"{function}: stopped by plugin {ext.name}: {reason}",
+                      plugin=ext.name, hook=hook)
 
 
 def _names(call: Any) -> str:
@@ -675,6 +845,102 @@ def request(request_: Any, call: Any, function: str) -> Tuple[Any, bool]:
     return event.request, changed
 
 
+class Steering:
+    """The ``step`` hook of one call's tool loop (contract/plugins.md): what
+    its handlers changed so far (the tools offered, earlier results shown
+    otherwise, reminders), and the request it makes next, as a view of the
+    call's turn: the turn itself keeps every result as the tool gave it."""
+
+    def __init__(self, call: Any, function: str, max_steps: int, tool_specs: Sequence[Any], lm: Any):
+        self.call = call
+        self.function = function
+        self.max_steps = max_steps
+        self.all_tools = [t.name for t in tool_specs]
+        self.offered: List[str] = list(self.all_tools)
+        self.lm = lm
+        self.exts = [e for e in around(call.program) if e.handlers.get("step")] if call is not None else []
+        self.results: List[StepResult] = []         # every tool result, as shown now
+        self.given: Dict[int, Any] = {}             # invocation -> its result as the tool gave it
+
+    def ran(self, invocation: int, name: str, tool_input: Any, output: Any) -> None:
+        self.results.append(StepResult(invocation, name, copy.deepcopy(tool_input), output))
+        self.given[invocation] = output
+
+    def before(self, step: int) -> None:
+        """Run the ``step`` handlers before request ``step`` (2 or more)."""
+        if not self.exts:
+            return
+        from .engine import check_result
+        call = self.call
+        turn_run = getattr(call, "turn_run", None)
+        conv = call.conversation or {}
+        event = Step(self.function, _names(call), step, self.max_steps, copy.deepcopy(self.results),
+                     list(self.offered), list(self.all_tools), self.lm, spent_of(call),
+                     conversation=conv.get("id") or (turn_run.conv.id if turn_run is not None else None),
+                     turn=conv.get("turn") or (turn_run.turn if turn_run is not None else None))
+        event._turn_run = turn_run
+        applied = Applied()
+        by_inv = {r.invocation: r for r in self.results}
+
+        def apply(c: Change) -> None:
+            if c.tools is not None:
+                names = list(c.tools)
+                unknown = sorted(set(names) - set(self.all_tools))
+                if unknown:
+                    raise ValueError(f"{self.function} was not offered tool {unknown[0]!r} (offered: "
+                                     f"{', '.join(self.all_tools) or 'none'})")
+                self.offered = event.tools = [n for n in self.all_tools if n in names]
+            if c.replace is not None:
+                if not isinstance(c.replace, Mapping):
+                    raise TypeError("replace is a dict: {invocation: what the model is shown instead}")
+                for inv, out in dict(c.replace).items():
+                    n = int(inv)
+                    if n not in by_inv:
+                        raise ValueError(f"{self.function} has no tool result {n} (it has "
+                                         f"{', '.join(map(str, by_inv)) or 'none'})")
+                    by_inv[n].output = check_result(out, f"replace[{n}]")
+                event.results = copy.deepcopy(self.results)
+            if c.reminder is not None:
+                if not isinstance(c.reminder, str) or not c.reminder.strip():
+                    raise TypeError("reminder is a text")
+                if not self.results:
+                    raise ValueError("a reminder follows a tool result, and the call has none")
+                last = self.results[-1]
+                last.output = (last.output + "\n\n" + c.reminder if isinstance(last.output, str)
+                               else [*last.output, {"type": "text", "text": c.reminder}])
+                event.results = copy.deepcopy(self.results)
+            if c.stop is not None:
+                stop_here(c.stop, event, "step", applied, self.function, call)
+
+        try:
+            run("step", self.exts, event, applied, apply)
+        finally:
+            call.changes.extend(applied.items)
+
+    def view(self, turn: Any) -> Any:
+        """The call's turn as the next request shows it: earlier results as the
+        handlers left them, and only the tools they offer."""
+        import lmcc
+        shown = {r.invocation: r.output for r in self.results if r.output is not self.given.get(r.invocation)}
+        if not shown and self.offered == self.all_tools:
+            return turn
+        steps, k = [], 0
+        invocations = [r.invocation for r in self.results]
+        for s in turn.steps:
+            if isinstance(s, lmcc.ToolStep):
+                inv = invocations[k] if k < len(invocations) else None
+                k += 1
+                if inv in shown:
+                    out = shown[inv]
+                    s = dataclasses.replace(s, output=((({"type": "text", "text": out},) if isinstance(out, str)
+                                                        else tuple(dict(p) for p in out))))
+            steps.append(s)
+        inputs = turn.inputs
+        if self.offered != self.all_tools:
+            inputs = {**inputs, "tools": [t for t in inputs.get("tools", []) if t.name in self.offered]}
+        return dataclasses.replace(turn, steps=tuple(steps), inputs=inputs)
+
+
 def tool_call(call: Any, approval: Any, settings: Mapping[str, Any]) -> Tuple[Any, Optional[str]]:
     """``tool_call`` for one tool call: (the input it runs with, or None and
     what the model is shown instead). Handlers run in order, then the
@@ -719,7 +985,7 @@ def tool_call(call: Any, approval: Any, settings: Mapping[str, Any]) -> Tuple[An
     return event.input, None
 
 
-def tool_result(call: Any, approval: Any, tool_input: Any, output: str) -> str:
+def tool_result(call: Any, approval: Any, tool_input: Any, output: Any) -> Any:
     """``tool_result``: what the model is shown of a tool's result."""
     exts = around(call.program)
     if not any(e.handlers.get("tool_result") for e in exts):
@@ -729,9 +995,8 @@ def tool_result(call: Any, approval: Any, tool_input: Any, output: str) -> str:
     applied = Applied()
 
     def apply(c: Change) -> None:
-        if not isinstance(c.output, str):
-            raise TypeError("output is the text the model is shown")
-        event.output = c.output
+        from .engine import check_result
+        event.output = check_result(c.output, "output")
 
     run("tool_result", exts, event, applied, apply)
     call.changes.extend(applied.items)

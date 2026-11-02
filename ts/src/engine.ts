@@ -20,7 +20,9 @@ import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
-import { copyData, entriesOf, setOwn, writeData } from "./values.ts";
+import { copyData, entriesOf, setOwn } from "./values.ts";
+import { Delivered, Later, resultOf, resultText, type ToolOutput } from "./results.ts";
+import { ConversationError } from "./errors.ts";
 import { warnOnce } from "./calllog.ts";
 import { configOf, type Settings } from "./settings.ts";
 import { prepareInputs } from "./signature.ts";
@@ -430,7 +432,7 @@ function untilAborted<T>(p: PromiseLike<T> | T, signal: AbortSignal | undefined)
   });
 }
 
-async function runTool(tools: readonly Tool[], call: { name: string; input?: unknown }, errors: string, signal?: AbortSignal): Promise<string> {
+async function runTool(tools: readonly Tool[], call: { name: string; input?: unknown }, errors: string, signal?: AbortSignal): Promise<ToolOutput | Later> {
   const tool = tools.find((t) => t.name === call.name);
   if (!tool) {
     if (errors === "raise") throw new Error(`the model called unknown tool ${JSON.stringify(call.name)}`);
@@ -444,7 +446,64 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
     const e = err as { name?: unknown; message?: unknown } | null | undefined;      // a tool may throw anything, undefined included
     return `error: ${typeof e?.name === "string" ? e.name : "Error"}: ${typeof e?.message === "string" ? e.message : String(err)}`;
   }
-  return typeof out === "string" ? out : writeData(out);     // members in the value's order
+  if (out instanceof Later) return out;
+  return resultOf(out);                                      // text, a value as JSON, or pictures and other parts
+}
+
+/** The `tool_result` event: `output` the result's text, `parts` the whole result when it holds more than text (streaming.md). */
+function showResult(call: Call, id: string, name: string, output: ToolOutput, invocation: number): void {
+  if (typeof output === "string") call.event("tool_result", { id, name, output, invocation });
+  else call.event("tool_result", { id, name, output: resultText(output), parts: copyData(output), invocation });
+}
+
+/** A tool call whose result comes later (`later(key)`). */
+class Pending {
+  readonly key: string;
+  readonly approval: Approval;
+  readonly input: unknown;
+  readonly asked: { id: string; name: string };
+  constructor(key: string, approval: Approval, input: unknown, asked: { id: string; name: string }) {
+    this.key = key;
+    this.approval = approval;
+    this.input = input;
+    this.asked = asked;
+  }
+}
+
+/** A result that came later, as the model is shown it: given to the `toolResult` hooks, then kept as the tool's result. */
+async function delivered(job: Job, approval: Approval, input: unknown, output: ToolOutput): Promise<ToolOutput> {
+  const current = job.call;
+  current.node?.log.frontier();
+  const shown = await plugins.toolResult(job.plugins, current, approval, input, output);
+  current.turnRun?.toolDone(current, approval, shown);
+  return shown;
+}
+
+/**
+ * The step's results, with those that come later: each one already delivered
+ * is used now; when one is not, the turn stops and waits for them (every
+ * other tool call of the step ran, and is kept).
+ */
+async function resultsLater(job: Job, ran: readonly (ToolOutput | Pending)[]): Promise<ToolOutput[]> {
+  const run = job.call.turnRun!;
+  const pending = ran.filter((o): o is Pending => o instanceof Pending);
+  const got = await run.deliveries(pending.map((p) => p.key));
+  const missing = pending.filter((p) => !got.has(p.key));
+  if (missing.length) {
+    run.waitLater(missing.map((p) => ({ site: job.call.path, invocation: p.approval.invocation, id: p.asked.id, name: p.asked.name,
+      key: p.key, path: p.approval.path })));
+  }
+  const out: ToolOutput[] = [];
+  for (const o of ran) {
+    if (!(o instanceof Pending)) {
+      out.push(o);
+      continue;
+    }
+    const shown = await delivered(job, o.approval, o.input, got.get(o.key)!);
+    showResult(job.call, o.asked.id, o.asked.name, shown, o.approval.invocation);
+    out.push(shown);
+  }
+  return out;
 }
 
 /**
@@ -455,7 +514,7 @@ async function runTool(tools: readonly Tool[], call: { name: string; input?: unk
  * required journal), run, its result given to the `toolResult` hooks, and
  * shown.
  */
-async function oneTool(job: Job, asked: { id: string; name: string; input?: unknown }): Promise<string> {
+async function oneTool(job: Job, asked: { id: string; name: string; input?: unknown }): Promise<ToolOutput | Pending> {
   const current = job.call;
   const n = ++current.invocations;
   const tool = job.tools.find((t) => t.name === asked.name);
@@ -466,12 +525,13 @@ async function oneTool(job: Job, asked: { id: string; name: string; input?: unkn
     path: pathOf(current, asked.name), site: current.path, plugin: "approval",
   };
   const [input, refused] = await plugins.toolCall(job.plugins, current, approval, job.settings as unknown as Rec);
-  let output: string;
+  let output: ToolOutput;
   if (refused !== null) output = refused;
   else {
     const run = current.turnRun;
     const known = run ? run.recordedTool(current, approval) : null;
-    if (known !== null) output = known;                        // a turn resumed: this tool ran before; its result is kept
+    if (known instanceof Delivered) output = await delivered(job, approval, input, known.output);   // a result that came later
+    else if (known !== null) output = known;                   // a turn resumed: this tool ran before; its result is kept
     else {
       current.node?.log.frontier();
       if (effects !== "reads") {
@@ -480,13 +540,21 @@ async function oneTool(job: Job, asked: { id: string; name: string; input?: unkn
         run?.toolStarted(current, { ...approval, input });
       }
       stopped(job);
-      output = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors, current.signal));
+      const got = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors, current.signal));
+      if (got instanceof Later) {
+        if (!run) {
+          throw new ConversationError("later-unavailable", `${approval.path} returned later(${JSON.stringify(got.key)}), and its result can only be waited for in a conversation's turn (fn.conversation(...)): this call runs in none. Whatever the tool started may be running.`);
+        }
+        await run.toolLater(current, { ...approval, input }, got.key);
+        current.event("later", { id: asked.id, invocation: n, name: asked.name, key: got.key });
+        return new Pending(got.key, approval, input, asked);
+      }
       // the result as the model is shown it; a turn resumed later reuses it, hooks and all
-      output = await plugins.toolResult(job.plugins, current, approval, input, output);
+      output = await plugins.toolResult(job.plugins, current, approval, input, got);
       run?.toolDone(current, approval, output);
     }
   }
-  current.event("tool_result", { id: asked.id, name: asked.name, output, invocation: n });
+  showResult(current, asked.id, asked.name, output, n);
   return output;
 }
 
@@ -499,8 +567,12 @@ export async function run(job: Job): Promise<Prediction> {
   const responses: Response[] = [];
   const toolCalls: Rec[] = [];               // every tool call the model asked for, across steps (outputs.calls)
   const steps = Math.max(1, job.settings.maxSteps);
+  const steering = job.tools.length
+    ? new plugins.Steering(job.call, job.function, steps, job.tools.map((t) => t.name), typeof job.settings.lm === "string" ? job.settings.lm : null, job.plugins)
+    : null;
   for (let i = 0; i < steps; i++) {
-    const rendered = plan.render(turn, { turns: [...job.past] });
+    if (i > 0 && steering) await steering.before(i + 1);     // the step hook: tools offered, reminders, results shown otherwise
+    const rendered = plan.render(steering ? steering.view(turn) : turn, { turns: [...job.past] });
     let got: [Response, lmcc.Reading];
     try {
       got = await complete(job, rendered, responses);
@@ -518,7 +590,9 @@ export async function run(job: Job): Promise<Prediction> {
       return pred;
     }
     const [response, reading] = got;
-    turn = bridge.step(rendered, response);
+    // the reply as the rendered turn's next model step; the call's turn keeps every result as its tool gave it (plugins.md, "The step hook")
+    const stepped = bridge.step(rendered, response);
+    turn = steering ? turn.withStep(stepped.steps[stepped.steps.length - 1]!) : stepped;
     const calls = ((reading.values as Rec)["calls"] ?? []) as Array<{ id: string; name: string; input?: unknown }>;
     toolCalls.push(...(calls as unknown as Rec[]));
     if (!calls.length) {
@@ -530,11 +604,18 @@ export async function run(job: Job): Promise<Prediction> {
       if (job.tools.length) Object.defineProperty(pred, "toolCalls", { value: toolCalls, enumerable: false });
       return pred;
     }
+    const first = job.call.invocations + 1;
+    let ran: (ToolOutput | Pending)[] = [];
     for (const c of calls) {
       stopped(job);
-      const output = await oneTool(job, c);
-      turn = turn.tool(c.id, output);
+      ran.push(await oneTool(job, c));
     }
+    if (ran.some((o) => o instanceof Pending)) ran = await resultsLater(job, ran);
+    calls.forEach((c, k) => {
+      const output = ran[k] as ToolOutput;
+      turn = turn.tool(c.id, output as never);
+      steering?.ran(first + k, c.name, c.input ?? {}, output);
+    });
   }
   throw new StepLimit(`${job.function}: no answer after ${steps} model steps`, turn);
 }

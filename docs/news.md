@@ -4,6 +4,45 @@
 
 ## Unreleased
 
+### Long agents and pipelines
+
+For agents that click through a site for hundreds of steps, and pipelines
+whose steps finish elsewhere (design/17; contract: tools.md, plugins.md,
+streaming.md, calls.md; cases `agents/`).
+
+- **A tool answers with pictures.** Return an lm15 part
+  (`image(data=..., media_type=...)`, `image(path=...)`) or a list of texts
+  and parts: the model sees the picture itself. Before, it was written into
+  the result as JSON text. A part read from a file is kept with its bytes.
+  The `tool_result` event keeps `output` (the text) and adds `parts`.
+- **The `step` hook.** Before each request after the first in a tool loop,
+  a plugin may change the tools offered (`[]`: answer now), add a
+  `reminder`, show earlier results otherwise (`replace`), or `stop` the
+  call. Recorded as data: the call stays replayable, unlike the `request`
+  hook.
+- **`functai.keep_pictures(3, at_once=1)`**: a loop is shown only its newest
+  pictures; `at_once` drops several together, for the prompt cache.
+- **`functai.limits(tokens=, cost=, seconds=, prices=, then="answer")`**:
+  opt-in limits on a call tree. A loop at a limit, or at its last step, is
+  told to answer with what it has instead of failing with `StepLimit`; a
+  call that would start past a limit stops (`PluginError`,
+  `plugin-stopped`). Prices are yours to give (lm15's `InferencePricing`);
+  an unknown cost counts as reached. `before_call` and `step` handlers get
+  `spent` (`Spent`: requests, usage, tokens, seconds, `cost(prices)`), and
+  `before_call` may `stop` a call too.
+- **`functai.note(name, data)`**: plain code says what happened; whatever
+  watches the call sees a `note` event.
+- **`log_calls` takes a store of your own**: any object with
+  `append(record)` and `read()` (a database, a bucket), for machines that
+  keep no files. `calls`, `rated` and `rate` read and write it.
+  `functai.MemoryCalls()` for tests.
+- **Results that come later.** A tool returns `functai.later("harvest:42")`;
+  in a conversation the turn runs the step's other tools, then waits, saved
+  (`Waiting.later`, `turn.later`). `chat.deliver("harvest:42", result)`, from
+  any process (a webhook), gives the tool its result and the turn goes on;
+  the tool never runs twice, and no model answer is paid for twice.
+  Outside a conversation: `ConversationError` `later-unavailable`.
+
 ### lm15 2: one meaning per token count
 
 FunctAI now requires lm15 2 (`lm15>=2.0,<3`) and lmcc 0.8.8, the lmcc made for it. lm15 2 gives each token

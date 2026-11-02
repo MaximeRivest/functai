@@ -81,10 +81,13 @@ export interface Approval {
 export class Waiting extends FunctAIError {
   readonly turn: unknown;
   readonly approvals: readonly Approval[];
-  constructor(message: string, turn: unknown, approvals: readonly Approval[]) {
+  /** The results it waits for, from tools that returned `later(key)`: each with its `key` (`chat.deliver(key, result)`). */
+  readonly later: readonly Record<string, unknown>[];
+  constructor(message: string, turn: unknown, approvals: readonly Approval[], later: readonly Record<string, unknown>[] = []) {
     super("turn-waiting", message);
     this.turn = turn;
     this.approvals = approvals;
+    this.later = later;
   }
 }
 

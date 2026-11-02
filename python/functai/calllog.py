@@ -222,11 +222,46 @@ def safe_str(error: BaseException) -> str:
 # ------------------------------------------------------------------ settings
 
 
+def is_store(value: Any) -> bool:
+    """Whether a ``log_calls`` value is a store of one's own (contract/calls.md,
+    *A store of one's own*): an object with ``append(record)`` and ``read()``."""
+    return not isinstance(value, (bool, str, os.PathLike, type(None))) \
+        and callable(getattr(value, "append", None)) and callable(getattr(value, "read", None))
+
+
+class MemoryCalls:
+    """A call log kept in this process's memory (``log_calls=MemoryCalls()``):
+    for tests, and to see what a store of one's own is given. ``records``
+    holds every record appended, in order; ``read()`` gives them back.
+
+    A store of one's own is any object with these two methods: ``append(record)``
+    keeps one record (a dict: a call, or a rating) and ``read()`` gives back
+    every record kept, in the order appended. Put it in front of a database,
+    a bucket or a queue when a machine keeps no files (a serverless function,
+    a container that goes away)."""
+
+    def __init__(self) -> None:
+        self.records: List[Dict[str, Any]] = []
+        self._lock = threading.Lock()
+
+    def append(self, record: Dict[str, Any]) -> None:
+        with self._lock:
+            self.records.append(record)
+
+    def read(self) -> List[Dict[str, Any]]:
+        with self._lock:
+            return list(self.records)
+
+    def __repr__(self) -> str:
+        return f"<MemoryCalls: {len(self.records)} records>"
+
+
 def check_settings(settings: Mapping[str, Any]) -> None:
     """Refuse log settings that could only fail later (called by ``config.check``)."""
     where = settings.get("log_calls")
-    if where is not None and not isinstance(where, (bool, str, os.PathLike)):
-        raise TypeError(f"log_calls is a folder, True or False, not {type(where).__name__}")
+    if where is not None and not isinstance(where, (bool, str, os.PathLike)) and not is_store(where):
+        raise TypeError(f"log_calls is a folder, True, False, or a store (an object with append(record) and "
+                        f"read()), not {type(where).__name__}")
     if isinstance(where, str) and not where.strip():
         raise ValueError("log_calls is a folder, True or False, not an empty text")
     content = settings.get("log_content")
@@ -266,10 +301,12 @@ def _env_folder() -> Tuple[bool, Optional[Path]]:
 _folders: Dict[tuple, Optional[Path]] = {}
 
 
-def _folder_of(setting: Any) -> Optional[Path]:
-    """The folder calls are logged to under this setting, or None when off."""
+def _folder_of(setting: Any) -> Any:
+    """The folder calls are logged to under this setting (or the store), or None when off."""
     if setting is False:
         return None
+    if is_store(setting):
+        return setting
     key = (setting if isinstance(setting, (str, bool, type(None))) else os.fspath(setting),
            os.environ.get(ENV_FOLDER), os.environ.get("XDG_DATA_HOME"), os.getcwd())
     try:
@@ -481,7 +518,7 @@ def tagged(key: str) -> Callable[[Callable[..., Any]], Callable[..., Any]]:
 
 @dataclasses.dataclass(frozen=True)
 class _Target:
-    folder: Path
+    folder: Any                                # a Path, or a store of one's own
     caller: Dict[str, Any]
 
 
@@ -492,9 +529,11 @@ def _target(settings: Mapping[str, Any]) -> Optional[_Target]:
     return _Target(folder, caller_of(settings))
 
 
-def reading_folder(folder: Any = None) -> Path:
-    """The folder to read: the one given, else the one calls are logged to
-    here, else the default one."""
+def reading_folder(folder: Any = None) -> Any:
+    """The folder to read (or a store): the one given, else the one calls are
+    logged to here, else the default one."""
+    if is_store(folder):
+        return folder
     if folder is not None:
         return Path(os.fspath(folder)).expanduser().absolute()
     from .config import effective
@@ -523,13 +562,16 @@ class Call:
                  "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
                  "journal_status", "context", "pid", "path", "names", "invocation", "invocations", "conversation",
-                 "writer", "turn_run", "bound", "changes", "replayable", "sections", "__weakref__")
+                 "writer", "turn_run", "bound", "changes", "replayable", "sections", "top", "spent", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"], id: Optional[str] = None):
         self.id = id or new_id()
         self.parent = parent.id if parent is not None else None
         self.parent_call = parent
         self.root = parent.root if parent is not None else self.id
+        self.top: "Call" = parent.top if parent is not None else self   # the outermost call of its tree here
+        self.spent: List[Tuple[str, Dict[str, int]]] = []    # outermost call only: (model, usage) of each request
+        #                                                    a provider answered in this tree (plugins: limits)
         self.program = program
         self.function: str = getattr(program, "__name__", "program")
         self.started = time.time()
@@ -920,6 +962,10 @@ def exchange(model: str, request: Any, response: Any = None, *, started: float, 
     ``first_delta``: seconds to the first piece of a streamed reply;
     ``request_hash``: lmcc's hash of the rendered request it came from."""
     call = _CURRENT.get()
+    if call is not None and response is not None and not cached:
+        from .data import usage_of
+        with _id_lock:
+            call.top.spent.append((model, usage_of(response)))
     if call is not None and call.target is not None:
         call.exchanges.append((model, call.provider, started, seconds, cached, request, response, error,
                                streamed, first_delta, request_hash))
@@ -1368,7 +1414,10 @@ def _line(rec: Dict[str, Any]) -> bytes:
 def _finish(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseException] = None) -> None:
     try:
         line = _line(_record(call, returned=returned, error=error))
-        _writer(call.target.folder).write(line)
+        if is_store(call.target.folder):
+            call.target.folder.append(json.loads(line))     # the record as the folder's line holds it
+        else:
+            _writer(call.target.folder).write(line)
     except Exception as exc:  # noqa: BLE001 — logging never stands in the way of a call
         why = f"{type(exc).__name__}: {exc}" if isinstance(exc, OSError) else type(exc).__name__
         _warn_once((str(call.target.folder), type(exc).__name__),
@@ -1485,6 +1534,16 @@ def read(folder: Any = None, *, since: Any = None) -> Tuple[List[Dict[str, Any]]
     cutoff = _iso(start.timestamp()) if start else ""
     calls: List[Dict[str, Any]] = []
     ratings: List[Dict[str, Any]] = []
+    if is_store(root):
+        for rec in root.read():
+            if not isinstance(rec, Mapping):
+                continue
+            rec = dict(rec)
+            if rec.get("functai_call") in READS and rec.get("started", "") >= cutoff:
+                calls.append(rec)
+            elif rec.get("functai_rating") == RATING_FORMAT and rec.get("at", "") >= cutoff:
+                ratings.append(rec)
+        return _latest_writers(calls), ratings
     for path in _files(root, start):
         try:
             data = path.read_bytes()
@@ -1549,6 +1608,9 @@ def prune_calls(older_than: Any = "90d", *, folder: Any = None, keep_rated: bool
     '''
     import shutil
     root = reading_folder(folder)
+    if is_store(root):
+        raise TypeError("prune_calls deletes old files of a log folder; a store of one's own keeps its records "
+                        "as it chooses: prune them there")
     start = _since(older_than)
     if start is None:
         raise ValueError("older_than is a time: '90d', a date, a timedelta")
@@ -2360,7 +2422,7 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
         verdict = _VERDICTS[verdict]
     if corrected and verdict != "wrong":
         raise ValueError("a right answer needs no correction: give answer= or outputs= only with 'wrong'")
-    root = Path(os.fspath(folder)).expanduser().absolute() if folder is not None else None
+    root = reading_folder(folder) if folder is not None else None
     from .config import effective
     settings = effective()
     if root is None:
@@ -2386,8 +2448,11 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
         rec["origin"] = str(origin)
     if sample:
         rec["sample"] = str(sample)
-    _writer(root).write((json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
+    if is_store(root):
+        root.append(json.loads(json.dumps(rec, ensure_ascii=False)))
+    else:
+        _writer(root).write((json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
     return rec
 
 
-__all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept", "prune_calls"]
+__all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept", "prune_calls", "MemoryCalls"]

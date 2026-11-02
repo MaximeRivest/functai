@@ -8,6 +8,34 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### Long agents and pipelines
+
+For agents that click through a site for hundreds of steps, and pipelines
+whose steps finish elsewhere (design/17; contract: tools.md, plugins.md,
+streaming.md, calls.md; cases `agents/`).
+
+- **A tool answers with pictures**: return lm15's `image(...)` (or a list of
+  texts and parts) and the model sees the picture; a part read from a file
+  is kept with its bytes. The `tool_result` event keeps `output` (the text)
+  and adds `parts`.
+- **The `step` hook** (`plugin.step(...)`): before each request after the
+  first in a tool loop, change the tools offered (`[]`: answer now), add a
+  `reminder`, show earlier results otherwise (`replace`), or `stop`.
+  Recorded as data: the call stays replayable.
+- **`keepPictures(3, { atOnce })`** and **`limits({ tokens, cost, seconds,
+  prices, then })`**: built on it. A loop at a limit, or at its last step,
+  answers with what it has instead of failing with `StepLimit`. `Spent` is
+  given to `beforeCall` and `step` handlers; `beforeCall` may `stop`.
+- **`note(name, data)`**: plain code says what happened (a `note` event).
+- **`logCalls` takes a store of your own** (`{ append, read }`: a database,
+  a bucket); an async `append` is waited for before the call returns.
+  `calls()` and `rated()` read it (or `records`); `MemoryCalls`;
+  `flushCalls()` waits for ratings given to an async store.
+- **Results that come later**: a tool returns `later("harvest:42")`; in a
+  conversation the turn waits, saved, and `await chat.deliver(key, result)`
+  from any process gives the tool its result and the turn goes on.
+  Outside a conversation: `later-unavailable`.
+
 ### lm15 2: one meaning per token count
 
 - **Requires `@lm15/lm15` 2 and lmcc 0.8.8** (the first lmcc that accepts lm15 2; not on npm yet). Each token counter now means one thing on

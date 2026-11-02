@@ -10,5 +10,7 @@ implement), ``plugin-hook`` (no such hook), ``plugin-name``,
 ``plugin-change`` (a change this hook cannot make, or a value that does
 not fit), ``plugin-failed`` (its handler raised: the call stops, since
 a change it was meant to make, a redaction say, did not happen),
+``plugin-stopped`` (a ``before_call`` or ``step`` handler stopped the call,
+with its reason: a limit reached),
 ``plugin-load`` (a file that does not define one). ``plugin`` and
 ``hook`` name where.

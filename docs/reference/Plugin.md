@@ -48,11 +48,12 @@ configure(plugins=(<Plugin no-deletes 1.0.0: tool_call>,))
 
 | Name | Description |
 | --- | --- |
-| [before_call](#functai.Plugin.before_call) | An AI function is about to be asked: sections, model, settings, tools. |
+| [before_call](#functai.Plugin.before_call) | An AI function is about to be asked: sections, model, settings, tools; or stop it. |
 | [context](#functai.Plugin.context) | Which earlier turns a turn is shown, and sections about them. |
 | [describe](#functai.Plugin.describe) | Its manifest, as data: name, version, api, the hooks it uses. |
 | [on](#functai.Plugin.on) | Register ``fn`` for ``hook`` (as a decorator when ``fn`` is left out). |
 | [request](#functai.Plugin.request) | The escape hatch: rewrite the provider request (the call is then not replayable). |
+| [step](#functai.Plugin.step) | A call with tools is about to ask the model again, after its tools ran: |
 | [tool_call](#functai.Plugin.tool_call) | A tool is about to run: change its input, block it, or ask a person. |
 | [tool_result](#functai.Plugin.tool_result) | A tool ran: change what the model is shown. |
 | [turn_end](#functai.Plugin.turn_end) | A turn ended (hears only; may keep entries in its conversation). |
@@ -64,7 +65,7 @@ configure(plugins=(<Plugin no-deletes 1.0.0: tool_call>,))
 Plugin.before_call(fn)
 ```
 
-An AI function is about to be asked: sections, model, settings, tools.
+An AI function is about to be asked: sections, model, settings, tools; or stop it.
 
 ### context { #functai.Plugin.context }
 
@@ -97,6 +98,15 @@ Plugin.request(fn)
 ```
 
 The escape hatch: rewrite the provider request (the call is then not replayable).
+
+### step { #functai.Plugin.step }
+
+```{.python .no-run}
+Plugin.step(fn)
+```
+
+A call with tools is about to ask the model again, after its tools ran:
+the tools offered, a reminder, earlier results shown otherwise; or stop it.
 
 ### tool_call { #functai.Plugin.tool_call }
 

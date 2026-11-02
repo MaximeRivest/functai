@@ -201,15 +201,18 @@ class ToolCall(Event):
 
 @dataclasses.dataclass(frozen=True)
 class ToolResult(Event):
-    """The tool ran; ``output`` is what the model is shown."""
+    """The tool ran; ``output`` is the text the model is shown, and ``parts``,
+    when the result holds more than text (a picture, a sound, a document),
+    the whole result as lm15 parts (their JSON form), else None."""
     id: str
     name: str
     output: str
+    parts: Optional[List[Dict[str, Any]]] = _optional()
     invocation: Optional[int] = _optional()
     kind = "tool_result"
 
     def _dropped(self, name, keep, program):
-        return name == "output"
+        return name in ("output", "parts")
 
 
 @dataclasses.dataclass(frozen=True)
@@ -291,8 +294,58 @@ class Approved(Event):
         return name == "reason"
 
 
+@dataclasses.dataclass(frozen=True)
+class Note(Event):
+    """Code in the call said something happened (``functai.note``): ``name``
+    (what, as the code names it: ``"screen captured"``) and ``data`` (any JSON
+    value, or None)."""
+    name: str
+    data: Any = None
+    kind = "note"
+
+    def _dropped(self, name, keep, program):
+        return name == "data"
+
+    def _json(self, name, value, keep=None):
+        return calllog.to_json(value)[0] if name == "data" else value
+
+
+@dataclasses.dataclass(frozen=True)
+class Later(Event):
+    """A tool's result comes later (``functai.later``): the tool call's ``id``,
+    ``invocation`` and ``name``, and the ``key`` its result is delivered under.
+    In a conversation's turn the turn then waits for it."""
+    id: str
+    invocation: int
+    name: str
+    key: str
+    kind = "later"
+
+    def _dropped(self, name, keep, program):
+        return name == "key"
+
+
 _KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed,
-                               Approval, Approved)}
+                               Approval, Approved, Note, Later)}
+
+
+def note(name: str, data: Any = None) -> None:
+    """Say that something happened, from code inside a call (a module's body,
+    a tool): ``functai.note("screen captured", {"screen": 4, "key": "s4.jpg"})``.
+
+    Whatever watches the call sees a ``note`` event (a stream, an observer, a
+    journal: contract/streaming.md), in its place among the call's events.
+    ``data`` is any JSON value; the kept form of a call whose content is not
+    whole keeps the note's ``name`` and leaves ``data`` out. A note is not a
+    value of the call: the call log does not keep it. Outside any call, or
+    when nothing watches, it does nothing. A resumed turn does not show again
+    the notes it made before it stopped."""
+    if not isinstance(name, str) or not name.strip():
+        raise TypeError("a note's name is a non-empty text: what happened (\"screen captured\")")
+    call = calllog.current()
+    if call is None:
+        return
+    call.emit("note", name=name, data=data)
 
 
 def make_event(kind: str, **fields: Any) -> Event:
@@ -1052,6 +1105,9 @@ class Stream:
                     field_of.pop(e.call, None)
                 elif isinstance(e, ToolResult):
                     shown = e.output if len(e.output) <= 200 else e.output[:199] + "…"
+                    if e.parts:
+                        media = [p.get("media_type") or p.get("type") for p in e.parts if p.get("type") != "text"]
+                        shown = " ".join(x for x in (shown, *(f"[{m}]" for m in media)) if x)
                     line(f"← {shown}")
                 elif isinstance(e, Retry):
                     line(f"[asked again: {e.reason}]")
@@ -1134,4 +1190,4 @@ def stream(program: Any, args: tuple, kwargs: Dict[str, Any]) -> Stream:
 
 
 __all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "ToolCall", "ToolResult",
-           "Retry", "Done", "Failed", "Approval", "Approved", "partial_json"]
+           "Retry", "Done", "Failed", "Approval", "Approved", "Note", "Later", "note", "partial_json"]

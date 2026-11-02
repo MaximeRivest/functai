@@ -114,6 +114,15 @@ thing it cannot do yet wait for it, and are not failures.
 | `context/` | a rated call's earlier turns, as a row keeps them | every language whose `rated` gives `earlier` |
 | `plugins/` | the order plugins run in, and how their changes combine | every language with plugins |
 | `baked/` | what a generative student is trained on and called with: its signature, the hashes of fixed and derived inputs, the conversations | every language that writes training examples or calls baked students |
+| `agents/` `result-*`, `kept-*` | what a tool returns (pictures included), and the kept form of `note`, `later` and a result with `parts` | every language with tools and streaming |
+| `agents/` `state-*` | a turn that waits for results that come later | every language with conversations |
+| `agents/` `limits-*`, `spent-*`, `pictures-*` | the `limits` and `keep_pictures` plugins, what a tree spent (a `cost` compared within 1e-12) | every language with plugins |
+
+`agents/` (2026-11-02, `../design/17-long-agents.md`) is read by Python
+and TypeScript; R and Julia have none of what it pins yet (tools that
+answer with pictures, `note`, the `step` hook and its plugins, results
+that come later, a store for the call log), and wait for it: they never
+read the folder.
 
 Stages 1.2 to 5 (2026-09-30) were built in Python first
 (`../design/10-stages-1.2-to-5-python.md`), then in Julia and R
@@ -169,10 +178,12 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `journal-policy`, `journal-scope`, `journal-barrier`, `journal-end` | [streaming.md](streaming.md) | the codes of `JournalError`: a tree whose layers break the journal policy (a program's own setting replacing or removing a host's journal; any closer layer replacing, weakening or removing a required one), refused before it runs; a required journal set only inside a tree, refused when the call inside starts; a call stopped at a required journal's barrier; a call whose end the journal did not confirm |
 | `event-malformed`, `event-conflict`, `event-gap`, `event-after-end`, `event-start`, `event-unknown` | [streaming.md](streaming.md) | a store refusing an append, a claim or a read |
 | `conversation-id`, `conversation-content`, `conversation-opaque`, `conversation-signature`, `conversation-busy`, `conversation-nested`, `turn-unknown`, `turn-state`, `turn-unfinished`, `store-conflict` | [conversations.md](conversations.md) | a conversation or a turn refusing what was asked |
-| `turn-waiting` | [tools.md](tools.md) | a turn stopped to wait for a person's answer (`Waiting`) |
+| `turn-waiting` | [tools.md](tools.md) | a turn stopped to wait for a person's answer, or for results that come later (`Waiting`) |
+| `later-unavailable` | [tools.md](tools.md), *A result that comes later* | a tool returned `later(key)` outside a conversation's turn, where nothing can wait for its result |
 | `approval-required` | [tools.md](tools.md) | a tool call a rule asks about, and nobody to ask (a plain call) |
 | `serve-opaque`, `serve-keys` | [serving.md](serving.md) | a program that cannot be served as asked |
 | `plugin-api`, `plugin-hook`, `plugin-name`, `plugin-change`, `plugin-failed`, `plugin-load` | [plugins.md](plugins.md) | a plugin refused, or failed (`PluginError`) |
+| `plugin-stopped` | [plugins.md](plugins.md), *The fields* | a `before_call` or `step` handler stopped the call (`stop`: a limit reached) |
 
 Each rule of "Rows with known answers" was broken on purpose in the
 Python implementation (thirteen breaks: the earliest rating instead of

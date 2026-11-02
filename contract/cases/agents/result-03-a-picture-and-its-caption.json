@@ -1,0 +1,48 @@
+{
+ "description": "A list holding a picture: each text a text part, in order; the event's output is the texts, its parts the whole result.",
+ "kind": "result",
+ "returned": [
+  "page 2: pricing",
+  {
+   "type": "image",
+   "media_type": "image/png",
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+  },
+  "the price is at the top right"
+ ],
+ "expect": {
+  "result": [
+   {
+    "type": "text",
+    "text": "page 2: pricing"
+   },
+   {
+    "type": "image",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+   },
+   {
+    "type": "text",
+    "text": "the price is at the top right"
+   }
+  ],
+  "event": {
+   "output": "page 2: pricing\nthe price is at the top right",
+   "parts": [
+    {
+     "type": "text",
+     "text": "page 2: pricing"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    },
+    {
+     "type": "text",
+     "text": "the price is at the top right"
+    }
+   ]
+  }
+ }
+}

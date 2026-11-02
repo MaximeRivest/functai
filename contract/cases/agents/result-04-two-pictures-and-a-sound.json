@@ -1,0 +1,60 @@
+{
+ "description": "Several parts of several kinds, as they are.",
+ "kind": "result",
+ "returned": [
+  {
+   "type": "image",
+   "media_type": "image/png",
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+  },
+  {
+   "type": "image",
+   "media_type": "image/png",
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+  },
+  {
+   "type": "audio",
+   "media_type": "audio/wav",
+   "url": "https://example.com/a.wav"
+  }
+ ],
+ "expect": {
+  "result": [
+   {
+    "type": "image",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+   },
+   {
+    "type": "image",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+   },
+   {
+    "type": "audio",
+    "media_type": "audio/wav",
+    "url": "https://example.com/a.wav"
+   }
+  ],
+  "event": {
+   "output": "",
+   "parts": [
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    },
+    {
+     "type": "audio",
+     "media_type": "audio/wav",
+     "url": "https://example.com/a.wav"
+    }
+   ]
+  }
+ }
+}
