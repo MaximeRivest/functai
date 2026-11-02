@@ -17,6 +17,11 @@ def _num(x: Optional[float], fmt: str = ",.0f") -> str:
     return "—" if x is None or (isinstance(x, float) and math.isnan(x)) else format(x, fmt)
 
 
+def _tokens_per_row(lab: Dict[str, Any]) -> str:
+    n = lab.get("tokens_per_row")
+    return f"{n:,.0f} tokens a row" if n is not None else "tokens not reported"
+
+
 @dataclasses.dataclass
 class FieldScores:
     name: str
@@ -126,7 +131,7 @@ class BakeReport:
         if lab.get("rows"):
             cost = f", ${lab['dollars']:.2f}" if lab.get("dollars") is not None else ""
             lines.append(f"  teacher labels: {lab['rows']:,} rows from {lab.get('teacher')} in {lab.get('seconds', 0):.0f} s"
-                         f" ({lab.get('tokens_per_row', 0):,.0f} tokens a row{cost}"
+                         f" ({_tokens_per_row(lab)}{cost}"
                          + (f"; {lab['failed']} failed" if lab.get("failed") else "") + ")")
         b = self.breakeven
         if b.get("rows_time") is not None:

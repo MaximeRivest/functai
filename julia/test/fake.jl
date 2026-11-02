@@ -1,7 +1,7 @@
 # A fake lm15 router: answers each request from a script, records every
 # request. No network. `Whole(router)` has no stream: replies arrive whole.
 
-using LM15
+using LanguageModel15
 
 mutable struct FakeRouter
     replies::Vector{Any}

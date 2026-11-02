@@ -45,7 +45,15 @@ fields_of <- function(d, cot, tools) {
   out
 }
 
+# calls.md, Versions: a media shape's sample is a part addressed by a web address, by kind
+media_samples <- list(image = c("image/png", "png"), audio = c("audio/wav", "wav"), video = c("video/mp4", "mp4"),
+                      document = c("application/pdf", "pdf"), binary = c("application/octet-stream", "bin"))
+
 sample_value <- function(shape) {
+  if (is.character(shape$media) && length(shape$media) == 1L && shape$media %in% names(media_samples)) {
+    s <- media_samples[[shape$media]]
+    return(list(media_type = s[[1L]], url = paste0("https://example.com/sample.", s[[2L]])))
+  }
   if (!is.null(shape$enum)) return(shape$enum[[1L]])
   if (!is.null(shape$anyOf)) {
     opts <- Filter(function(s) !identical(s$type, "null"), shape$anyOf)

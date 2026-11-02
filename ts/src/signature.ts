@@ -9,6 +9,7 @@ import * as lmcc from "lmcc";
 import { trimWhite } from "./text.ts";
 import { copyData, getOwn, setOwn, unboxed, writeData } from "./values.ts";
 import { dataShape } from "./interface.ts";
+import { mediaSample } from "./media.ts";
 
 type JsonObject = Record<string, unknown>;
 
@@ -19,6 +20,8 @@ export interface FieldDef {
   readonly desc?: string | null;
   /** Inputs only: a caller may leave it out. */
   readonly optional?: boolean;
+  /** The type name the contract needs (`Artifacts`, files: functions.md); TypeScript names no other. */
+  readonly type?: string;
 }
 
 /** A shape without its own `default` (functions.md: a default is how a call is bound, not what the model is told). */
@@ -91,7 +94,7 @@ const typeOf = (d: Definition, name: string): { type?: string } => {
 export function fields(d: Definition): lmcc.FieldInput[] {
   const out: lmcc.FieldInput[] = d.inputs.map((f) => ({
     name: f.name, direction: "input", shape: withoutDefault(f.shape) as lmcc.JsonObject, purpose: "plain", ...(f.desc ? { desc: f.desc } : {}),
-    ...typeOf(d, f.name),
+    ...(f.type ? { type: f.type } : typeOf(d, f.name)),
   }));
   if (d.tools) out.push({ name: "tools", direction: "input", shape: TOOL_LIST as lmcc.JsonObject, purpose: "tools", type: "list[Tool]" });
   const names = new Set([...d.inputs.map((f) => f.name), ...d.outputs.map((f) => f.name)]);
@@ -109,6 +112,8 @@ const BY_TYPE: Readonly<Record<string, unknown>> = { string: "example text", int
 
 /** A value for a shape, for the sample input. */
 export function sample(shape: JsonObject): unknown {
+  const media = mediaSample(shape);                                     // a part by web address (calls.md)
+  if (media) return media;
   if (Array.isArray(shape["enum"])) return shape["enum"][0];
   if (Array.isArray(shape["anyOf"])) {
     const options = (shape["anyOf"] as JsonObject[]).filter((s) => s["type"] !== "null");

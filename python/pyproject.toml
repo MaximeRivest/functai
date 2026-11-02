@@ -33,8 +33,8 @@ classifiers = [
 # lmcc lays out each call and reads each reply; lm15 talks to the providers.
 # lmcc ships lmcc_std (tools, reasoning, json) and lmcc_lm15 (the lm15 bridge).
 dependencies = [
-    "lmcc>=0.8.6,<0.9",
-    "lm15>=1.0.1,<2",
+    "lmcc>=0.8.8,<0.9",
+    "lm15>=2.0,<3",
 ]
 
 [project.scripts]
@@ -106,10 +106,10 @@ build-backend = "hatchling.build"
 
 # Development runs on lmcc's and attachments' checkouts beside this repository
 # (../../lmcc, as ts/ does; ../../attachments). A built wheel ignores this
-# table: it requires lmcc>=0.8.6 from PyPI (a reply the provider stopped
+# table: it requires lmcc>=0.8.7 from PyPI (a reply the provider stopped
 # refuses parse-filtered; a type's JSON form on its binding; lm15's media
-# parts as types: on PyPI since 2026-10-08), and attachments>=1.0.0b2 with
-# the `files` extra.
+# parts as types; lists of pictures sent as pictures, D-64: on PyPI since
+# 2026-10-09), and attachments>=1.0.0b2 with the `files` extra.
 [tool.uv.sources]
 lmcc = { path = "../../lmcc/python", editable = true }
 attachments = { path = "../../attachments", editable = true }

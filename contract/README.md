@@ -93,7 +93,8 @@ thing it cannot do yet wait for it, and are not failures.
 
 | cases | what they check | who must pass them |
 |---|---|---|
-| `functions/`, `scores/` | an AI function's request and version; scores | every language |
+| `functions/`, `scores/` | an AI function's request and version (pictures, sounds and documents included); scores | every language |
+| `files/` | an AI function reading files (an `Artifacts` input): its version, what it sends, refusing a file that failed | every language that reads files; every other language passes them by refusing each function `files-unavailable` |
 | `rated/` | reading the call log into rows (formats 1 and 2) | every language |
 | `content/` | the record a call writes, per `log_content` | every language |
 | `saw/` of kind `read` | what a call saw, and whether the log keeps what showing it again needs | every language |
@@ -161,6 +162,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 |---|---|---|
 | `interface-input`, `interface-output` | [programs.md](programs.md) | a program's call given an input that does not bind to its interface, or a module returning what its interface does not give (`InterfaceError`) |
 | `interface-malformed` | [programs.md](programs.md) | an interface refused when its program (a module, or an AI function) is defined, or when it is read from a saved folder |
+| `files-unavailable` | [functions.md](functions.md), *Pictures, sounds, documents and files* | a function with an `Artifacts` input (files) in a language or an install that has no Attachments |
 | `log-content-field` | [calls.md](calls.md) | a `log_content` key that names no field of the program, or is not a name |
 | `saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`, `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface` | [saved.md](saved.md) | loading or describing a saved folder |
 | `not-recorded`, `missing-call`, `unknown-key`, `saw-cycle`, `not-kept`, `turn-invalid` (lmcc's word) | [calls.md](calls.md), *Saw* | what a call saw cannot be known, or shown again |

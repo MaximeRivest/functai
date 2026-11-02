@@ -36,8 +36,8 @@ using Printf: @sprintf
 using Random: Xoshiro, shuffle, shuffle!
 using ScopedValues: ScopedValue, with
 import LMCC
-import LM15
-import LM15: stream, text, configure
+import LanguageModel15 as LM15            # lm15 for Julia: the package is LanguageModel15 since 2.0
+import LanguageModel15: stream, text, configure
 import LMCC: render, tool
 import MLJModelInterface as MMI
 import StatsAPI
@@ -104,7 +104,7 @@ export model_capabilities, casefold, normalize_text
 export conversation, Conversation, Turn, turns, continue_from, all_turns, last_turns, remember, earlier
 export approve!, deny!, resume!, abandon!, stop!, wait_turn, MemoryConversations, FolderStore
 export Plugin, Change, on!, load_plugin, compaction, delegate, Approval
-export Waiting, ApprovalError, ConversationError, PluginError, FunctAIError
+export Waiting, ApprovalError, ConversationError, PluginError, FunctAIError, FilesUnavailable
 export serve, remote, quotes_found, prune_calls, train_test, inspect_history, phistory
 
 # observers and journal writers work off the calls' tasks: give them a moment when Julia exits

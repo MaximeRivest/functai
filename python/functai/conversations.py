@@ -34,6 +34,7 @@ from contextvars import ContextVar
 from typing import Any, Callable, Deque, Dict, Iterable, Iterator, List, Mapping, Optional, Sequence, Tuple
 
 from . import calllog, stores
+from .data import sum_usage, usage_of
 from .errors import ConversationError, Waiting
 
 FORMAT = 1
@@ -493,7 +494,7 @@ class _TurnRun:
         self.root: Any = None                           # the turn's call (calllog.Call)
         self.root_taken = False
         self.helper_calls: List[Dict[str, Any]] = []   # remembered helpers' calls made in this turn so far
-        self.usage: Dict[str, int] = {}
+        self.exchanges: List[Dict[str, int]] = []      # the token counts of each model call made in this turn so far
         self.later = later
         self.start_seq = 0                              # the records before this run's own lease: older stops are not its
         self.settings: Dict[str, Any] = {}             # the turn's settings (the conversation's and its own)
@@ -564,8 +565,7 @@ class _TurnRun:
         pred = call.pred
         if pred is not None:
             with self.lock:
-                for k, v in pred.usage.items():
-                    self.usage[k] = self.usage.get(k, 0) + v
+                self.exchanges.extend(usage_of(r) for r in pred.responses)
         if call.id == self.turn:
             self.root = call
             return
@@ -920,7 +920,8 @@ class Turn:
     @property
     def usage(self) -> Dict[str, int]:
         """Tokens, summed over every model call inside the turn (a module's helpers and tool loops
-        included): ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``..."""
+        included): ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``...;
+        a counter one of those calls did not report is absent."""
         return dict((self._st.ended or {}).get("usage") or {})
 
     @property
@@ -2041,7 +2042,7 @@ class TurnStream(Stream):
             return Waiting(f"turn {self.turn_id} waits for a person's answer: {a.path}({_short(a.input, 80)})",
                            turn=conv.turn(self.turn_id), approvals=conv.turn(self.turn_id).waiting)
         rec: Dict[str, Any] = {**base, "kind": "ended", "saw": saw,
-                               "seconds": round(time.perf_counter() - self._t_start, 6), "usage": dict(run.usage)}
+                               "seconds": round(time.perf_counter() - self._t_start, 6), "usage": sum_usage(run.exchanges)}
         if error is not None:
             rec["state"] = "stopped" if isinstance(error, Cancelled) else "failed"
             rec["error"] = calllog._error(error)

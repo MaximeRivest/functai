@@ -1,0 +1,181 @@
+{
+ "description": "A list of pictures (lmcc 0.8.7, D-64): each picture is its own image part, in order; none sends nothing at the input's place. Its sample is [] (an array).",
+ "definition": {
+  "name": "compare",
+  "description": "Which picture is brighter? Answer with its position, from 1.",
+  "inputs": [
+   {
+    "name": "pictures",
+    "shape": {
+     "type": "array",
+     "items": {
+      "media": "image"
+     }
+    }
+   },
+   {
+    "name": "question",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "integer"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: compare\n\nWhich picture is brighter? Answer with its position, from 1.",
+   "fields": [
+    {
+     "name": "pictures",
+     "direction": "input",
+     "shape": {
+      "type": "array",
+      "items": {
+       "media": "image"
+      }
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "question",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "integer"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "pictures": [],
+   "question": "example text"
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: compare\n\nWhich picture is brighter? Answer with its position, from 1.\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<pictures>\n\n</pictures>\n<question>\nexample text\n</question>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "</result>"
+    ]
+   }
+  },
+  "request_hash": "sha256:7f6de23f116f1fd3d41a990a733f1b5e55dbe0eb0b7e17ddadb4282ec80d7cfb",
+  "version": "sha256:570767d9c4b2e2590c5daa5abb41fc8b4825fc11f370fe0f768f96ae9b4c9d09",
+  "signature_id": "sha256:e6af0bca8a4e072d942e6dcc1a2a803458f0ffb4425c6375d9bdeb3b8c6bbd89"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "pictures": [
+     {
+      "type": "image",
+      "media_type": "image/png",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+     },
+     {
+      "type": "image",
+      "media_type": "image/png",
+      "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+     }
+    ],
+    "question": "Which is brighter?"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: compare\n\nWhich picture is brighter? Answer with its position, from 1.\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<pictures>\n"
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "\n</pictures>\n<question>\nWhich is brighter?\n</question>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "pictures": [],
+    "question": "Which is brighter?"
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: compare\n\nWhich picture is brighter? Answer with its position, from 1.\n\nReply in exactly this form:\n<result>\n(integer)\n</result>\n",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<pictures>\n\n</pictures>\n<question>\nWhich is brighter?\n</question>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "</result>"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

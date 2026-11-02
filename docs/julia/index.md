@@ -24,7 +24,7 @@ You need Julia 1.10 or later, and a key for at least one model provider (OpenAI'
 ```{.julia .no-run}
 using Pkg
 Pkg.add(url = "https://github.com/MaximeRivest/lmcc", subdir = "julia")
-Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
+Pkg.add(url = "https://github.com/lm15-dev/LanguageModel15.jl")
 Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 Pkg.add(["DataFrames", "CairoMakie", "HypothesisTests", "MLJ", "NaiveBayes", "MLJNaiveBayesInterface",
          "GLM", "StatsModels", "CategoricalArrays", "DecisionTree"])

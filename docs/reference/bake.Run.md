@@ -31,6 +31,7 @@ rate, validation loss, seconds), ``log.txt`` (the trainer's own output),
 
 | Name | Description |
 | --- | --- |
+| `notices` | What the run decided on its own (see ``notice``). |
 | `plan` | Every setting the run was decided with (its ``plan.json``). |
 | `state` | ``planned``, ``starting``, ``running``, ``stopping``, ``stopped`` (by ``stop()``, or its |
 | `status` | run.json, with a process that ended without saying so shown as such. |
@@ -46,6 +47,7 @@ rate, validation loss, seconds), ``log.txt`` (the trainer's own output),
 | [log](#functai.bake.Run.log) | The last ``lines`` lines of the trainer's own output (``log.txt``): read it when a run fails. |
 | [log_metric](#functai.bake.Run.log_metric) | Append one line to metrics.jsonl (what trainers call). |
 | [metrics](#functai.bake.Run.metrics) | The logged steps as a dpyr table (a list of dicts without dpyr). |
+| [notice](#functai.bake.Run.notice) | Something the run decided on its own that changes what it makes (smaller batches, 4-bit |
 | [progress](#functai.bake.Run.progress) | Where it is now: ``state``, ``step`` of ``steps``, the last ``loss`` and ``eval_loss``, |
 | [records](#functai.bake.Run.records) | The lines of ``metrics.jsonl`` so far, as dicts (``metrics()`` gives them as a table). |
 | [resume](#functai.bake.Run.resume) | Continue a stopped or crashed run from its last checkpoint. |
@@ -104,6 +106,15 @@ bake.Run.metrics()
 ```
 
 The logged steps as a dpyr table (a list of dicts without dpyr).
+
+### notice { #functai.bake.Run.notice }
+
+```{.python .no-run}
+bake.Run.notice(text)
+```
+
+Something the run decided on its own that changes what it makes (smaller batches, 4-bit
+weights): kept in run.json, shown by ``wait`` and written into the baked model's record.
 
 ### progress { #functai.bake.Run.progress }
 

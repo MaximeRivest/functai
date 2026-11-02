@@ -24,11 +24,14 @@ import { iso, warnOnce } from "./calllog.ts";
 import { Cancelled } from "./errors.ts";
 import { builtin, env, pid } from "./host.ts";
 import { canonicalData } from "./values.ts";
+import { usageRead } from "./usage.ts";
 
 type Rec = Record<string, unknown>;
 
-/** The reply cache's format (replies.md). */
-export const FORMAT = 1;
+/** The format of the rows this writes (replies.md, *The file*): a reply as lm15 2 writes it. */
+export const FORMAT = 2;
+/** The version of the key's document; a new one would make every kept reply unreachable. */
+export const KEY_FORMAT = 1;
 /** Seconds a claim holds a key against other processes. */
 const LEASE = 120;
 
@@ -61,7 +64,7 @@ export type CacheSetting = boolean | "memory" | "disk" | string | ReplyCache | n
  * request>, "replicate": n}`, the same in every language.
  */
 export function replyKey(request: Request, replicate = 0): string {
-  return lmcc.sha256({ functai_reply: FORMAT, request: canonicalData(Request.toJSON(request)), replicate: Math.trunc(replicate || 0) } as unknown as lmcc.Json);
+  return lmcc.sha256({ functai_reply: KEY_FORMAT, request: canonicalData(Request.toJSON(request)), replicate: Math.trunc(replicate || 0) } as unknown as lmcc.Json);
 }
 
 const sleep = (ms: number, signal?: AbortSignal) => new Promise<void>((resolve, reject) => {
@@ -231,9 +234,12 @@ export class DiskReplies implements ReplyCache {
 
   get(key: string): Rec | undefined {
     const row = this.db.prepare("SELECT response, format FROM replies WHERE key = ?").get(key);
-    if (!row || row["format"] !== FORMAT) return undefined;
+    if (!row || (row["format"] !== FORMAT && row["format"] !== 1)) return undefined;
     try {
-      return parseJson(row["response"] as string) as Rec;      // lm15 reads it: member order and big integers kept
+      const reply = parseJson(row["response"] as string) as Rec;      // lm15 reads it: member order and big integers kept
+      // format 1: written with lm15 1, whose token counts were each provider's own (replies.md)
+      if (row["format"] === 1) reply["usage"] = usageRead(reply["usage"], null);
+      return reply;
     } catch {
       return undefined;                                         // a row this reader cannot read is no reply
     }

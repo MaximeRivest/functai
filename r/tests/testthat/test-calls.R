@@ -598,7 +598,10 @@ test_that("api_key and base_url: the function's own key and address; the address
   listening <- function() file.exists(pid_file) &&
     !inherits(try(suppressWarnings(close(socketConnection("127.0.0.1", port, timeout = 1))), silent = TRUE), "try-error")
   for (i in 1:100) if (listening()) break else Sys.sleep(0.1)
-  on.exit(if (file.exists(pid_file)) tools::pskill(as.integer(readLines(pid_file))), add = TRUE)
+  # its process id read now: an on.exit() reading the file ran after withr had deleted it, so the server was never
+  # stopped, and it kept r/check's lock (inherited) for good: the next r/check waited forever
+  pid <- if (file.exists(pid_file)) as.integer(readLines(pid_file)) else NA_integer_
+  withr::defer(if (!is.na(pid)) tools::pskill(pid))
   url <- sprintf("http://127.0.0.1:%d/v1", port)
   f <- ai(mood ~ review, "How?", mood = choice("happy", "unhappy"), .lm = "openai:qwen3", .api_key = "sk-local",
           .base_url = url, .api_retries = 0L, .log_calls = FALSE, .on_error = "stop")

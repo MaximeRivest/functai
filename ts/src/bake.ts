@@ -188,7 +188,7 @@ export function chatMessages(request: Rec): Rec[] {
     const role = m["role"] as string;
     if (!["user", "assistant", "system", "developer"].includes(role)) throw new BakeError("bake-rows", `a generative student reads text chats; the request has a ${JSON.stringify(role)} message`);
     const texts = (m["parts"] as Rec[]).map((p) => {
-      if (p["type"] !== "text") throw new BakeError("bake-rows", `a generative student reads text; the request carries a ${p["type"]} part`);
+      if (p["type"] !== "text") throw new BakeError("bake-rows", `a generative student reads text; the request carries a ${p["type"]} part (images and files are not trained yet)`);
       return p["text"] as string;
     });
     out.push({ role: role === "developer" ? "system" : role, content: texts.join("") });

@@ -6,7 +6,8 @@
 # what has no kept reply. A reply is kept only once it was read; one flight
 # per key, in this session and across processes (a claim with a lease).
 
-REPLY_FORMAT <- 1L
+REPLY_FORMAT <- 2L      # the rows this writes: a reply as lm15 2 writes it (replies.md, *The file*)
+REPLY_KEY_FORMAT <- 1L  # the version of the key's document; a new one would make every kept reply unreachable
 REPLY_LEASE <- 120
 
 #' The reply cache's key of a request
@@ -20,7 +21,7 @@ REPLY_LEASE <- 120
 #' @export
 reply_key <- function(request, replicate = 0L) {
   req <- if (inherits(request, "lm15_Request") || inherits(request, "lm15_value")) plain_lm15(request) else request
-  lmcc::sha256_of(list(functai_reply = REPLY_FORMAT, request = req, replicate = as.integer(replicate %||% 0L)))
+  lmcc::sha256_of(list(functai_reply = REPLY_KEY_FORMAT, request = req, replicate = as.integer(replicate %||% 0L)))
 }
 
 reply_owner <- function() {
@@ -29,7 +30,13 @@ reply_owner <- function() {
 }
 
 response_text <- function(response) lmcc::canonical_json(plain_lm15(response))
-response_from <- function(text) tryCatch(lm15::from_dict(lmcc::parse_json(text), "response"), error = function(e) NULL)
+# A kept reply; a format-1 row was written with lm15 1, whose token counts were
+# each provider's own: they are read by usage_read() (replies.md, *The file*).
+response_from <- function(text, format = REPLY_FORMAT) tryCatch({
+  data <- lmcc::parse_json(text)
+  if (identical(as.integer(format), 1L)) data$usage <- usage_read(data$usage, NULL)
+  lm15::from_dict(data, "response")
+}, error = function(e) NULL)
 
 # ---------------------------------------------------------------- stores
 
@@ -91,8 +98,8 @@ disk_replies <- function(path = NULL) {
   }
   s$get <- function(key) {
     row <- DBI::dbGetQuery(db, "SELECT response, format FROM replies WHERE key = ?", params = list(key))
-    if (!nrow(row) || row$format[[1L]] != REPLY_FORMAT) return(NULL)
-    response_from(row$response[[1L]])
+    if (!nrow(row) || !(row$format[[1L]] %in% c(1L, REPLY_FORMAT))) return(NULL)
+    response_from(row$response[[1L]], row$format[[1L]])
   }
   s$put <- function(key, response) transaction({
     DBI::dbExecute(db, "INSERT OR REPLACE INTO replies (key, format, created, model, response) VALUES (?, ?, ?, ?, ?)",

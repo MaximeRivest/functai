@@ -365,7 +365,8 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
     const { field: declared, rule, code } = declareInput(field, spec, `${name}.input.${field}`, "ai");
     rules.set(field, rule);
     if (code !== undefined) setOwn(defaultCode, field, code);
-    return { name: field, shape: declared.shape, desc: declared.desc ?? null, ...(rule.optional ? { optional: true } : {}) };
+    return { name: field, shape: declared.shape, desc: declared.desc ?? null, ...(rule.optional ? { optional: true } : {}),
+      ...(declared.type ? { type: declared.type } : {}) };
   });
   const outputSpecs: [string, FieldSpec][] = def.outputs
     ? Object.entries(def.outputs)
@@ -399,7 +400,8 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
 
 /** An AI function's interface: its definition's description, inputs (optional ones with their default) and outputs. */
 export function interfaceOf(d: sig.Definition): Interface {
-  const field = (f: sig.FieldDef) => ({ name: f.name, shape: f.shape, ...(f.desc ? { desc: f.desc } : {}), ...(f.optional ? { optional: true as const } : {}) });
+  const field = (f: sig.FieldDef) => ({ name: f.name, shape: f.shape, ...(f.desc ? { desc: f.desc } : {}),
+    ...(f.type ? { type: f.type } : {}), ...(f.optional ? { optional: true as const } : {}) });
   return { description: d.description, inputs: d.inputs.map(field), outputs: d.outputs.map(field) };
 }
 

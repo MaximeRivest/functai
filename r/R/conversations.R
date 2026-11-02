@@ -753,7 +753,7 @@ conv_entries <- function(c, plugin, kind, through, only_turnless = TRUE, all = F
 new_turn_run <- function(c, tid, attempt, context, replay = NULL, later = NULL) {
   run <- new.env(parent = emptyenv())
   run$conv <- c; run$store <- c$store; run$program <- c$program; run$turn <- tid; run$attempt <- as.integer(attempt)
-  run$context <- context; run$root_taken <- FALSE; run$helper_calls <- list(); run$usage <- list(); run$later <- later
+  run$context <- context; run$root_taken <- FALSE; run$helper_calls <- list(); run$exchanges <- list(); run$later <- later
   run$start_seq <- 0L; run$settings <- list(); run$durable <- durable_turns(c); run$root <- NULL
   run$replies <- list(); run$tools <- list(); run$unfinished <- list(); run$answers <- list()
   run$seen <- 0L; run$renewed <- as.numeric(Sys.time()); run$polled <- 0
@@ -795,7 +795,7 @@ attach_turn <- function(call, core) {
 turn_call_ended <- function(call, err) {
   run <- call$turn_run
   if (is.null(run)) return(invisible())
-  for (e in call$exchanges) if (!is.null(e$response)) for (k in names(u <- usage_of(e$response))) run$usage[[k]] <- (run$usage[[k]] %||% 0L) + u[[k]]
+  for (e in call$exchanges) if (!is.null(e$response)) run$exchanges[[length(run$exchanges) + 1L]] <- usage_of(e$response)
   if (identical(call$id, run$turn) || !is.null(err) || is.null(call$lmcc) || is.null(call$core) || identical(call$core$kind, "module")) return(invisible())
   memory <- run$conv$remembers[[call$core$definition$name]]
   if (!inherits(memory, "functai_memory")) return(invisible())
@@ -1046,7 +1046,7 @@ conclude_turn <- function(c, run, value, err, started) {
   rec <- record_base(run, "ended")
   rec$saw <- saw
   rec$seconds <- round(as.numeric(Sys.time()) - started, 6)
-  rec$usage <- if (length(run$usage)) run$usage else lmcc::jobj()
+  rec$usage <- sum_usage(run$exchanges)           # calls.md, *Token counts*
   if (!is.null(err)) {
     rec$state <- if (inherits(err, "functai_cancelled")) "stopped" else "failed"
     rec$error <- error_json(err)

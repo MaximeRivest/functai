@@ -7,7 +7,7 @@ Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
 FunctAI = "feb8c6c9-9090-4354-9aa7-5403c44e4a77"
 GLM = "38e38edf-8417-5370-95a0-9cbb8c7f171a"
 HypothesisTests = "09f84164-cd44-5f33-b23f-e6b0d136a0d5"
-LM15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
+LanguageModel15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
 LMCC = "1f0b48a1-bcdc-478a-822a-9743feb77dca"
 MLJ = "add582a8-e3ab-11e8-2d5e-e98b27df1bc7"
 MLJNaiveBayesInterface = "33e4bacb-b9e2-458e-9a13-5d9a90b235fa"
@@ -16,5 +16,5 @@ StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 
 [sources]
 FunctAI = {path = ".."}
-LM15 = {path = "../../../lm15-dev/lm15-jl"}
+LanguageModel15 = {path = "../../../lm15-dev/lm15-jl"}
 LMCC = {path = "../../../lmcc/julia"}

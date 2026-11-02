@@ -3,11 +3,16 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
 import * as z from "zod";
-import { ai, Cancelled, configure, t, tool } from "../src/index.ts";
+import { readFileSync } from "node:fs";
+import { ai, Cancelled, configure, t, tool, VERSION } from "../src/index.ts";
 import { FakeRouter } from "./fake.ts";
 
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
 configure({ lm: "gpt-4.1-mini", logCalls: false });
+
+test("the version a call record names is the package's", () => {
+  assert.equal(VERSION, JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version);
+});
 
 const echo = (router: FakeRouter) => ai("echo", { description: "Echo.", input: { text: t.string() }, router });
 const lastText = (router: FakeRouter) => (router.requests.at(-1)!.messages.at(-1)!.parts as unknown as { text?: string }[]).map((p) => p.text ?? "").join("");

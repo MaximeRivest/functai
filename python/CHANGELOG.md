@@ -2,6 +2,72 @@
 
 ## Unreleased
 
+### lm15 2: one meaning per token count
+
+FunctAI now requires lm15 2 (`lm15>=2.0,<3`) and lmcc 0.8.8, the lmcc made for it. lm15 2 gives each token
+counter one meaning on every provider: `input_tokens` includes cached
+tokens, `output_tokens` includes reasoning (contract/calls.md, *Token
+counts*). In lm15 1, Anthropic's input left the cache out and Gemini's and
+xAI's output left the thinking out, so the same column meant different
+things depending on the model.
+
+- **A sum of token counts is exact or absent.** `pred.usage`, a call
+  record's `usage`, a turn's, an evaluation row's and bake's teacher
+  totals include a counter only when every model call reported it. Before,
+  a counter one call did not report was skipped, so the sum was a part of
+  the total that looked like all of it.
+- **Counts lm15 1 wrote are shown only when they cannot mislead.**
+  `functai.calls()` reads a record's counts with the lm15 that wrote it
+  (`process.lm15`): from lm15 1 they are shown when `total_tokens` is
+  `input_tokens + output_tokens` and no cache count is above 0, else null.
+  Records are never rewritten.
+- **The reply cache writes rows of format 2** (contract/replies.md). Rows
+  lm15 1 wrote are still used, with the same rule for their counts, so no
+  reply is asked for again. Keys are unchanged. An older FunctAI skips the
+  new rows and asks the model again.
+- **Bake's teacher cost is unknown when tokens are.** A row whose tokens
+  were not all reported made the dollar figure an undercount; it is now
+  left out, with a note, and the report says "tokens not reported". The
+  cost is still plain input and output list prices (a cached prompt's
+  discount is not taken off).
+
+Pictures and files, checked against TypeScript, R and Julia (contract:
+`functions.md`, *Pictures, sounds, documents and files*; cases
+`functions/19`–`23` and `files/`).
+
+- **A picture function has a version of its own.** A media input
+  (`ImagePart`, `AudioPart`, …) had no sample value: its sample render was
+  refused, so every function with a picture input had the one version
+  `{"request": "refused:value-invalid"}`, whatever its instruction, layout or
+  worked examples, and their ratings pooled. Its sample is now a picture by
+  web address (contract/calls.md, *Versions*). Every picture function gets a
+  new version once; cached replies are unaffected (they are keyed by the
+  request).
+- **Lists of pictures are sent as pictures** (lmcc 0.8.7, D-64, now
+  required): `list[ImagePart]` sends each picture as an image part, and
+  `Optional[ImagePart]` left out is the text `null`. The warning that a list
+  of pictures was written as base64 text is gone. A dataclass holding a
+  picture is refused before anything is sent (`no-format`) instead of
+  being sent as base64 text.
+- **A function reading files, loaded from a folder another language wrote,
+  reads them.** Loaded from data, an `Artifacts` input was not bound to
+  Attachments (lmcc binds by the Python type, which a saved signature names
+  only as text), so the sample sent `[]` as JSON and the load refused
+  `saved-differs`; calls would have sent the artifacts as JSON text.
+- **Files are a whole input.** `Optional[Artifacts]`, `list[Artifacts]` and
+  a record holding `Artifacts` sent the artifacts as JSON text, pictures as
+  base64; they are refused when the function is defined
+  (`interface-malformed`). For no files, give `att([])`: the model sees
+  `(no content)`.
+- **A failed file in a served call is refused.** Artifacts given in their
+  wire form (a served call, a replay) were not checked for files that failed
+  to read; they are refused before any request, as `att()`'s result is, and so
+  is a value Attachments' `from_wire` refuses (`interface-input`).
+- **`FilesUnavailable`** (code `files-unavailable`, an `ImportError`): a
+  function reading files where Attachments is not installed.
+- The `Artifacts` input's shape no longer carries a description (it named a
+  file Attachments has since moved); its signature id changes once.
+
 What the transcripts of real projects and the coding-agent evaluation
 (`evals/skill/findings.md`) showed was wrong or slow.
 

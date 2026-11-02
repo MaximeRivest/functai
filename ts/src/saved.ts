@@ -17,7 +17,8 @@ import { passes } from "./schema.ts";
 import { checkSettings, type Settings } from "./settings.ts";
 import * as sig from "./signature.ts";
 import { VERSION } from "./calllog.ts";
-import { copyData, parseData, setOwn, writeData } from "./values.ts";
+import { copyData, getOwn, parseData, setOwn, writeData } from "./values.ts";
+import { ARTIFACTS, filesReader } from "./files-binding.ts";
 import * as bridge from "lmcc/lm15";
 
 type Rec = Record<string, unknown>;
@@ -178,7 +179,13 @@ export function fromManifest(manifest: unknown, opts: { node?: string; savedId?:
     includeName: own.includeFnName !== false, written: signature.instructions, types,
   };
   const fallback = signatureInterface(data);
-  const iface: Interface = declared && !malformed(declared, { ai: true }) ? declared : fallback;
+  const read: Interface = declared && !malformed(declared, { ai: true }) ? declared : fallback;
+  // files (an input typed Artifacts, functions.md): bound by the type the signature names, and only with Attachments here
+  const files = inputs.filter((f) => getOwn(types, f.name) === ARTIFACTS).map((f) => f.name);
+  if (files.length) filesReader(`${key} (loaded)`);
+  const iface: Interface = files.length
+    ? { ...read, inputs: read.inputs.map((f) => (files.includes(f.name) ? { ...f, type: ARTIFACTS } : f)) }
+    : read;
   // an input's default that counts by its code: the node keeps the code (saved.md, a node's defaults)
   const defaultCode: Record<string, string> = {};
   for (const [k, v] of Object.entries((node!["defaults"] ?? {}) as Record<string, { code: string }>)) setOwn(defaultCode, k, v.code);

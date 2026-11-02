@@ -1,0 +1,174 @@
+{
+ "description": "A sound and a document (a PDF given whole, which providers read themselves) in the chat layout: each is a part of its kind. Samples: audio/wav and application/pdf by web address.",
+ "definition": {
+  "name": "minutes",
+  "description": "Write the minutes of the meeting, following the agenda.",
+  "inputs": [
+   {
+    "name": "recording",
+    "shape": {
+     "media": "audio"
+    }
+   },
+   {
+    "name": "agenda",
+    "shape": {
+     "media": "document"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {
+   "adapter": "Chat"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: minutes\n\nWrite the minutes of the meeting, following the agenda.",
+   "fields": [
+    {
+     "name": "recording",
+     "direction": "input",
+     "shape": {
+      "media": "audio"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "agenda",
+     "direction": "input",
+     "shape": {
+      "media": "document"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "recording": {
+    "media_type": "audio/wav",
+    "url": "https://example.com/sample.wav"
+   },
+   "agenda": {
+    "media_type": "application/pdf",
+    "url": "https://example.com/sample.pdf"
+   }
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: minutes\n\nWrite the minutes of the meeting, following the agenda.\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## result ## ]]\n...\n\n[[ ## completed ## ]]",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "[[ ## recording ## ]]\n"
+      },
+      {
+       "type": "audio",
+       "media_type": "audio/wav",
+       "url": "https://example.com/sample.wav"
+      },
+      {
+       "type": "text",
+       "text": "\n\n[[ ## agenda ## ]]\n"
+      },
+      {
+       "type": "document",
+       "media_type": "application/pdf",
+       "url": "https://example.com/sample.pdf"
+      },
+      {
+       "type": "text",
+       "text": "\n\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "stop": [
+     "[[ ## completed ## ]]"
+    ]
+   }
+  },
+  "request_hash": "sha256:ff996471f05cae5bfe49de37dfffb2eb3f64aa4fff68bdf4d92a7fff0cbfe9b6",
+  "version": "sha256:0dade298846127666be4a4fbd7f4f2f3cb425a0dbd31ee173d5d810ced274f12",
+  "signature_id": "sha256:6259d6fb26be561961dc75df94ee9b0fecbb48960eb6c325fa59e9f731598153"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "recording": {
+     "type": "audio",
+     "media_type": "audio/wav",
+     "data": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+    },
+    "agenda": {
+     "type": "document",
+     "media_type": "application/pdf",
+     "data": "JVBERi0xLjQKJcOkw7zDtsOfCg=="
+    }
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: minutes\n\nWrite the minutes of the meeting, following the agenda.\n\nRespond with the corresponding output fields, each under its header, then end with [[ ## completed ## ]]:\n\n[[ ## result ## ]]\n...\n\n[[ ## completed ## ]]",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "[[ ## recording ## ]]\n"
+        },
+        {
+         "type": "audio",
+         "media_type": "audio/wav",
+         "data": "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+        },
+        {
+         "type": "text",
+         "text": "\n\n[[ ## agenda ## ]]\n"
+        },
+        {
+         "type": "document",
+         "media_type": "application/pdf",
+         "data": "JVBERi0xLjQKJcOkw7zDtsOfCg=="
+        },
+        {
+         "type": "text",
+         "text": "\n\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "stop": [
+       "[[ ## completed ## ]]"
+      ]
+     }
+    }
+   }
+  }
+ ]
+}

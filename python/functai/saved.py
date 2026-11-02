@@ -275,7 +275,15 @@ def _probe_inputs(fn, spec, examples: Iterable[Dict[str, Any]]) -> List[Dict[str
     return unique
 
 
+#: contract/calls.md, Versions: a media shape's sample, by kind: a part addressed by a web address.
+_MEDIA_SAMPLE = {"image": ("image/png", "png"), "audio": ("audio/wav", "wav"), "video": ("video/mp4", "mp4"),
+                 "document": ("application/pdf", "pdf"), "binary": ("application/octet-stream", "bin")}
+
+
 def _sample(shape: Dict[str, Any]) -> Any:
+    if isinstance(shape.get("media"), str) and shape["media"] in _MEDIA_SAMPLE:
+        media_type, ext = _MEDIA_SAMPLE[shape["media"]]
+        return {"media_type": media_type, "url": f"https://example.com/sample.{ext}"}
     if "enum" in shape:
         return shape["enum"][0]
     if "anyOf" in shape:
@@ -1510,6 +1518,10 @@ def _loaded_class():
             from .config import CONFIG_FIELDS
             data = node["ai"]
             self._saved_core = lmcc.signature_from_dict(data["signature"])
+            from . import files
+            for f in self._saved_core.fields:              # files: bound by the host type, named here only as text
+                if f.type == files.TYPE_NAME and f.direction == "input":
+                    f.annotation = files.host_type()
             self._saved_node = node
             self._saved_interface = copy.deepcopy(interface) if interface is not None else None
             self._saved_id = saved_id

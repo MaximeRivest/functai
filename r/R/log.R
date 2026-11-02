@@ -16,10 +16,10 @@ log_folder <- function(folder) folder %||% folder_of(effective()$log_calls %||% 
 #'   the names of the fields whose values were not kept, as `inputs` and
 #'   `outputs`; `NULL` otherwise), `saw` (the earlier calls it was shown,
 #'   `NULL` when its record does not say).
-#'   Providers count differently: OpenAI's and Anthropic's `output_tokens`
-#'   include the model's hidden reasoning, Gemini's leave it out (it is in
-#'   `reasoning_tokens`). Every one bills `total_tokens - input_tokens` as
-#'   output.
+#'   Token counts mean the same on every provider (lm15 2): `input_tokens`
+#'   includes cached tokens, `output_tokens` the model's hidden reasoning.
+#'   A count not reported is `NA`, and so are counts lm15 1 wrote that may
+#'   mean something else.
 #' @export
 calls <- function(fn = NULL, folder = NULL, since = NULL) {
   recs <- read_log(log_folder(folder), since)$calls
@@ -31,6 +31,9 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
   recs <- recs[order(vapply(recs, function(c) paste0(c$started, "\u0001", c$id), ""), method = "radix")]
   chr <- function(f) vapply(recs, function(c) { v <- f(c); if (is.null(v)) NA_character_ else as.character(v) }, "")
   num <- function(f) vapply(recs, function(c) { v <- f(c); if (is.null(v)) NA_real_ else as.numeric(v) }, 0)
+  # counts with lm15 2's meaning; those lm15 1 wrote only when they cannot mislead (calls.md, *Token counts*)
+  usage <- lapply(recs, function(c) usage_read(c$usage, c$process$lm15))
+  tokens <- function(k) vapply(usage, function(u) if (is.null(u[[k]])) NA_real_ else as.numeric(u[[k]]), 0)
   tibble::tibble(
     id = chr(function(c) c$id),
     started = as.POSIXct(chr(function(c) c$started), format = "%Y-%m-%dT%H:%M:%OSZ", tz = "UTC"),
@@ -39,8 +42,8 @@ calls <- function(fn = NULL, folder = NULL, since = NULL) {
     seconds = num(function(c) c$seconds),
     inputs = lapply(recs, function(c) c$inputs), outputs = lapply(recs, function(c) c$outputs),
     error = chr(function(c) if (is.null(c$error)) NULL else paste0(c$error$type, if (!is.null(c$error$message)) paste0(": ", c$error$message))),
-    input_tokens = num(function(c) c$usage$input_tokens), output_tokens = num(function(c) c$usage$output_tokens),
-    reasoning_tokens = num(function(c) c$usage$reasoning_tokens), total_tokens = num(function(c) c$usage$total_tokens),
+    input_tokens = tokens("input_tokens"), output_tokens = tokens("output_tokens"),
+    reasoning_tokens = tokens("reasoning_tokens"), total_tokens = tokens("total_tokens"),
     parent = chr(function(c) c$parent), caller = lapply(recs, function(c) c$caller),
     language = chr(function(c) c$process$language),
     content = vapply(recs, function(c) isTRUE(c$content), NA),

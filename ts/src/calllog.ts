@@ -21,6 +21,7 @@ import type { Settings } from "./settings.ts";
 import { copyData, entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
 import { FunctAIError, type Approval } from "./errors.ts";
 import { earlierOf, needsContext, recordsById, SawUnknown } from "./saw.ts";
+import { sumUsage } from "./usage.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -31,7 +32,7 @@ export const RATING_FORMAT = 1;
 const MAX_LINE = 8 * 1024 * 1024;
 const OFF = new Set(["", "0", "false", "no", "off"]);
 const ON = new Set(["1", "true", "yes", "on"]);
-export const VERSION = "0.1.0";
+export const VERSION = "1.0.0";
 
 type Json = unknown;
 type Rec = Record<string, unknown>;
@@ -214,11 +215,13 @@ export class Call {
   escalated = false;
   /** `{ output: { answer: probability } }`, when the model measured them. */
   probabilities: Record<string, Record<string, number>> | null = null;
-  /** Tokens of its own exchanges, by kind. */
+  /** Tokens of its own exchanges, by kind: a count one of them did not report is absent (calls.md, *Token counts*). */
   get usage(): Record<string, number> {
-    const usage: Record<string, number> = {};
-    for (const e of this.exchanges) if (e.response) for (const [k, v] of Object.entries(usageOf(e.response))) usage[k] = (usage[k] ?? 0) + v;
-    return usage;
+    return sumUsage(this.exchangeUsages());
+  }
+  /** The token counts of each exchange that got a reply. */
+  exchangeUsages(): Record<string, number>[] {
+    return this.exchanges.filter((e) => e.response).map((e) => usageOf(e.response!));
   }
   /** The value its program gave (an AI function's prediction), once it has one: what a remembered helper's call keeps. */
   value: unknown = undefined;
@@ -348,7 +351,7 @@ export function errorJson(err: unknown, content = true): Rec {
   return out;
 }
 
-function usageOf(response: Response): Record<string, number> {
+export function usageOf(response: Response): Record<string, number> {
   const u = (Response.toJSON(response)["usage"] ?? {}) as Rec;
   const out: Record<string, number> = {};
   for (const [k, v] of Object.entries(u)) if (typeof v === "number" && Number.isInteger(v)) setOwn(out, k, v);
@@ -419,8 +422,7 @@ export function record(call: Call, ending: Ending): Rec {
   const failed = ending.failed;
   const [outputs, outSizes] = call.outputs && !failed ? values(call.outputs, "outputs") : [null, {}];
   const answered = call.exchanges.filter((e) => e.response !== null);
-  const usage: Record<string, number> = {};
-  for (const e of answered) for (const [k, v] of Object.entries(usageOf(e.response!))) setOwn(usage, k, (getOwn(usage, k) ?? 0) + v);
+  const usage = sumUsage(answered.map((e) => usageOf(e.response!)));
   const rec: Rec = {
     functai_call: FORMAT, id: call.id, parent: call.parent, root: call.root, program,
     started: iso(call.started), seconds: round6((now() - call.started) / 1000), content: true,

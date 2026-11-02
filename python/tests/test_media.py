@@ -75,11 +75,49 @@ def test_a_picture_addressed_by_url_is_left_for_the_provider(fake):
     assert sent.url == "https://example.com/cat.png" and sent.data is None
 
 
-def test_pictures_inside_a_list_are_warned_about(recwarn):
+def test_a_list_of_pictures_is_sent_as_pictures_and_null_as_text(fake):
+    """lmcc 0.8.7 (D-64): each picture of a list is its own image part; an optional one left null is the text null."""
+    fake()
+
     @ai
     def compare(pictures: list[ImagePart], one: ImagePart | None = None) -> str:
         """Which is brighter?"""
         ...
-    compare._spec()
-    said = [str(w.message) for w in recwarn if "holds pictures" in str(w.message)]
-    assert len(said) == 1 and "'pictures'" in said[0] and "'one'" not in said[0] and "issue #7" in said[0]
+    a, b = image(data=PNG_A, media_type="image/png"), image(data=PNG_B, media_type="image/png")
+    request = compare.render([a, b])
+    assert [p.data for p in images_sent(request)] == [base64.b64encode(PNG_A).decode(), base64.b64encode(PNG_B).decode()]
+    assert all("iVBOR" not in (p.text or "") for m in request.messages for p in m.parts if p.type == "text")
+    assert "null" in "".join(p.text or "" for m in request.messages for p in m.parts if p.type == "text")
+    assert images_sent(compare.render([])) == []
+
+
+def test_a_record_holding_a_picture_is_refused_not_sent_as_text(fake):
+    """No layout writes a record's picture as a part, and none may write it as base64 text: refused at bind."""
+    import dataclasses
+    import lmcc
+    fake()
+
+    @dataclasses.dataclass
+    class Listing:
+        title: str
+        photo: ImagePart
+
+    @ai
+    def describe(listing: Listing) -> str:
+        """Describe the item."""
+        ...
+    with pytest.raises(lmcc.Refusal) as err:
+        describe.render(Listing("mug", image(data=PNG_A, media_type="image/png")))
+    assert err.value.code == "no-format"
+
+
+def test_a_picture_function_has_a_version_of_its_own():
+    """calls.md, Versions: a picture's sample is a picture by web address, so the version holds the instruction
+    (it was one version for every picture function, the sample being refused)."""
+    @ai
+    def colour_too(picture: ImagePart) -> str:
+        """Another instruction."""
+        ...
+    from functai.calllog import _sha, canonical
+    refused = _sha(canonical({"request": "refused:value-invalid"}))
+    assert colour.version != colour_too.version and refused not in (colour.version, colour_too.version)

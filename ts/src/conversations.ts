@@ -41,6 +41,7 @@ import type { Stream } from "./stream.ts";
 import { holderName } from "./replies.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
 import { View } from "./views.ts";
+import { sumUsage } from "./usage.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -399,7 +400,8 @@ class TurnRun implements TurnRunLike {
   root: Call | null = null;
   startSeq = 0;
   settings: Settings = {};
-  readonly usage: Record<string, number> = {};
+  /** The token counts of each model call made in this turn so far. */
+  readonly exchanges: Record<string, number>[] = [];
   model: string | null = null;
   readonly helperCalls: Rec[] = [];
   readonly later: { writer: number; after: Position | null; at: string; requests: number } | null;
@@ -523,7 +525,7 @@ class TurnRun implements TurnRunLike {
   }
 
   ended(call: Call, failed: boolean): void {
-    for (const [k, v] of Object.entries(call.usage)) this.usage[k] = (this.usage[k] ?? 0) + v;
+    this.exchanges.push(...call.exchangeUsages());
     const last = [...call.exchanges].reverse().find((e) => e.response);
     if (last) this.model = last.model;
     if (call.id === this.turn || failed) return;
@@ -1880,7 +1882,7 @@ export class TurnStream implements AsyncIterable<string>, PromiseLike<unknown> {
         this.fail(err);
         return;
       }
-      const rec: Rec = record("ended", { ...base, saw, seconds: Math.round((performance.now() - started) * 1000) / 1e6, usage: { ...run.usage } });
+      const rec: Rec = record("ended", { ...base, saw, seconds: Math.round((performance.now() - started) * 1000) / 1e6, usage: sumUsage(run.exchanges) });
       let out: unknown = ok?.value;
       if (!ok) {
         rec["state"] = error instanceof Cancelled ? "stopped" : "failed";

@@ -46,16 +46,12 @@ from typing import Any, Dict, List, Optional
 #: served program is recognised by.
 TYPE_NAME = "Artifacts"
 
-#: The input's shape: a list of Attachments artifacts in their wire form
-#: (Attachments' ``spec/artifact.schema.json`` describes each; it is checked
-#: by ``Artifacts.from_wire``, which knows it, rather than copied here, where
-#: it would fall behind Attachments' additive changes).
-SHAPE: Dict[str, Any] = {
-    "type": "array",
-    "items": {"type": "object"},
-    "description": "Attachments artifacts in their wire form (attachments' spec/artifact.schema.json): "
-                   "each {text, images: [{name, mimetype, bytes_b64, page?}], audio, video, meta}",
-}
+#: The input's shape (contract/functions.md, *Pictures, sounds, documents and
+#: files*): a list of Attachments artifacts in their wire form. Each is checked
+#: by ``Artifacts.from_wire``, whose refusals Attachments' contract pins
+#: (``cases/wire.json``), rather than by a copy of its schema here, which would
+#: fall behind Attachments' additive changes.
+SHAPE: Dict[str, Any] = {"type": "array", "items": {"type": "object"}}
 
 _lock = threading.Lock()
 _installed: set = set()
@@ -81,20 +77,84 @@ def describe_errors(errors: List[Dict[str, Any]]) -> str:
     return "; ".join(shown) + more
 
 
-def check_inputs(inputs: Dict[str, Any], *, program: str = "") -> None:
-    """Refuse an ``Artifacts`` input holding a file that could not be read
-    (``interface-input``, naming the input), before any request."""
-    if "attachments" not in sys.modules:
-        return
-    from attachments import Artifacts
-    for name, value in inputs.items():
-        if isinstance(value, Artifacts) and value.errors:
-            from .errors import InterfaceError
+def check_inputs(inputs: Dict[str, Any], names: Any, *, program: str = "") -> None:
+    """Refuse an ``Artifacts`` input (``names``: the inputs whose type is
+    ``Artifacts``) holding a file that could not be read, or a value
+    ``Artifacts.from_wire`` refuses (``interface-input``, naming the input),
+    before any request (contract/functions.md)."""
+    from .errors import InterfaceError
+    where = f"{program + ': ' if program else ''}input"
+    for name in names:
+        if name not in inputs or inputs[name] is None:
+            continue
+        ensure_for({TYPE_NAME})
+        try:
+            artifacts = _artifacts(inputs[name])
+        except (TypeError, ValueError) as exc:
             raise InterfaceError("interface-input", name,
-                                 f"{program + ': ' if program else ''}input {name!r}: {len(value.errors)} of its files "
-                                 f"could not be read, so the model would get an empty or partial document: "
-                                 f"{describe_errors(value.errors)}. Do what each says "
-                                 f"(att(...).errors lists them), or leave that file out")
+                                 f"{where} {name!r} takes att(...)'s result or its wire form "
+                                 f"(Artifacts.to_wire()): {exc}") from None
+        if artifacts.errors:
+            raise InterfaceError("interface-input", name,
+                                 f"{where} {name!r}: {len(artifacts.errors)} of its files could not be read, so the "
+                                 f"model would get an empty or partial document: {describe_errors(artifacts.errors)}. "
+                                 f"Do what each says (att(...).errors lists them), or leave that file out")
+
+
+def _holds(tp: Any, artifacts: type, seen: set) -> bool:
+    """Whether a type holds ``Artifacts`` anywhere: itself, a type argument, a record's field."""
+    import dataclasses
+    import typing
+    if isinstance(tp, type) and issubclass(tp, artifacts):
+        return True
+    if id(tp) in seen:
+        return False
+    seen.add(id(tp))
+    if any(_holds(a, artifacts, seen) for a in typing.get_args(tp)):
+        return True
+    if isinstance(tp, type) and (dataclasses.is_dataclass(tp) or hasattr(tp, "model_fields")):
+        try:
+            hints = typing.get_type_hints(tp)
+        except Exception:  # noqa: BLE001 — a record whose hints do not resolve holds nothing we can see
+            return False
+        return any(_holds(h, artifacts, seen) for h in hints.values())
+    return False
+
+
+def refuse_misused(name: str, direction: str, annotation: Any) -> None:
+    """Files are a whole input (contract/functions.md): an input whose type is
+    exactly ``Artifacts``. Inside another type (``Optional``, a list, a
+    record) or as an output, a layout would write them as JSON text, so it is
+    refused when the function is defined (``interface-malformed``)."""
+    module = sys.modules.get("attachments")
+    artifacts = getattr(module, "Artifacts", None) if module is not None else None
+    if artifacts is None:
+        return
+    from .signature import unannotate
+    base = unannotate(annotation)[0]
+    whole = isinstance(base, type) and issubclass(base, artifacts)
+    if (direction == "input" and whole) or not _holds(base, artifacts, set()):
+        return
+    from .errors import InterfaceError
+    if direction != "input":
+        raise InterfaceError("interface-malformed", name, f"{name}: files (Artifacts) are an input; a model does not write them")
+    raise InterfaceError("interface-malformed", name,
+                         f"{name}: files (Artifacts) are a whole input: not Optional, not in a list or a record. "
+                         f"To call it with no files, give att([]): the model is shown \"(no content)\"")
+
+
+def file_inputs(signature: Any) -> List[str]:
+    """The names of a signature's inputs of files (type ``Artifacts``)."""
+    return [f.name for f in signature.fields if f.direction == "input" and f.type == TYPE_NAME]
+
+
+def host_type() -> Any:
+    """``attachments.Artifacts``, the host type a field of files is bound by (a
+    signature read from data names it only as text). Raises
+    ``FilesUnavailable`` when attachments is not installed."""
+    ensure_for({TYPE_NAME})
+    from attachments import Artifacts
+    return Artifacts
 
 
 def _write(value: Any) -> List[Dict[str, Any]]:
@@ -133,8 +193,9 @@ def ensure_for(type_names: Any) -> None:
     program, defined where attachments was never imported)."""
     if TYPE_NAME in type_names and not _installed:
         if not install():
-            raise ImportError("this function reads files (an Artifacts input) and attachments is not installed: "
-                              "pip install 'functai[files]'")
+            from .errors import FilesUnavailable
+            raise FilesUnavailable("this function reads files (an Artifacts input) and attachments is not "
+                                   "installed: pip install 'functai[files]'")
 
 
 # ------------------------------------------------------------------ binding when attachments is imported

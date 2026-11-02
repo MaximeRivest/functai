@@ -19,7 +19,8 @@ Everything one call produced.
 - the outputs, by name (``pred.result``, ``pred.reasoning``, ``dict(pred)``)
 - ``pred.turn``: the lmcc turn (inputs, every model and tool step, outputs)
 - ``pred.response`` / ``pred.responses``: the lm15 responses
-- ``pred.usage``: tokens summed over every model call
+- ``pred.usage``: tokens summed over every model call (a counter one of
+  them did not report is absent)
 - ``pred.repairs``: what the reader forgave in the reply
 - ``pred.call_id``: the call's id, for ``functai.rate`` and the call log
 
@@ -28,3 +29,4 @@ Everything one call produced.
 | Name | Description |
 | --- | --- |
 | `confidence` | How sure the model was: the probability it gave its own answer, the lowest |
+| `usage` | Tokens summed over this call's model calls (a count one did not report is absent). |

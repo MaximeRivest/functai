@@ -12,9 +12,11 @@ pack) for that step only. It never imports FunctAI.
 A case file: {"description", "definition": {name, description, inputs
 (each {name, shape, desc?, optional?, default_code?}), outputs, settings,
 state, tools?}, "expect": {"signature", "sample",
-"request", "request_hash", "version", "signature_id"}}. ``signature`` is
-lmcc's plain-data form without host type names (compare with ``type``
-left out).
+"request", "request_hash", "version", "signature_id"}, "sends"?: [{"inputs",
+"expect": {"request"}}]}. ``signature`` is lmcc's plain-data form without
+host type names (compare with ``type`` left out). ``sends``: the function
+given ``inputs`` (as data: a picture is lm15's part data) sends exactly
+``request``, rendered as the probe is (the probe facts, no memory).
 """
 
 import copy
@@ -41,9 +43,12 @@ CALL_LIST = {"type": "array", "items": {"type": "object", "properties": {
     "required": ["id", "name", "input"]}}
 
 
-def registry() -> lmcc.Registry:
+def registry(d: dict = None) -> lmcc.Registry:
     r = lmcc.Registry()
     lmcc_std.install(r)
+    if d is not None and any(f.get("type") == "Artifacts" for f in d["inputs"]):
+        import files                                  # an input of files: its binding (functions.md)
+        files.bind(r)
     return r
 
 
@@ -81,7 +86,8 @@ def without_default(shape: dict) -> dict:
 def fields(d: dict) -> list:
     """The signature's fields, with the host type names the two tool fields need."""
     out = [{"name": f["name"], "direction": "input", "shape": without_default(f["shape"]), "purpose": "plain",
-            **({"desc": f["desc"]} if f.get("desc") else {})} for f in d["inputs"]]
+            **({"desc": f["desc"]} if f.get("desc") else {}), **({"type": f["type"]} if f.get("type") else {})}
+           for f in d["inputs"]]
     tools = bool(d.get("tools"))
     if tools:
         out.append({"name": "tools", "direction": "input", "shape": TOOL_LIST, "purpose": "tools",
@@ -98,7 +104,15 @@ def fields(d: dict) -> list:
     return out
 
 
+#: calls.md, Versions: a media shape's sample is a part addressed by a web address, by kind.
+MEDIA_SAMPLE = {"image": ("image/png", "png"), "audio": ("audio/wav", "wav"), "video": ("video/mp4", "mp4"),
+                "document": ("application/pdf", "pdf"), "binary": ("application/octet-stream", "bin")}
+
+
 def sample(shape: dict):
+    if "media" in shape:
+        media_type, ext = MEDIA_SAMPLE[shape["media"]]
+        return {"media_type": media_type, "url": f"https://example.com/sample.{ext}"}
     if "enum" in shape:
         return shape["enum"][0]
     if "anyOf" in shape:
@@ -153,19 +167,32 @@ def examples(d: dict, plan: lmcc.Plan) -> list:
     return turns
 
 
-def expect(d: dict) -> dict:
-    reg = registry()
+def probe(d: dict):
+    """The plan a definition renders its probes with (the probe facts), and a function rendering values."""
+    reg = registry(d)
     sig_dict = {"instructions": instructions(d), "fields": fields(d)}
     signature = lmcc.signature_from_dict(copy.deepcopy(sig_dict))
+    for f in signature.fields:
+        if f.type == "Artifacts":                     # lmcc's Python binding is found by the host type
+            import files
+            f.annotation = files.host_type()
     plan = layout(d, reg).bind(signature, dict(PROBE), registry=reg)
-    values = d["_sample"] if "_sample" in d else {f["name"]: sample(f["shape"]) for f in d["inputs"]}
     text_in = {f["name"] for f in d["inputs"] if f["shape"].get("type") == "string" and "enum" not in f["shape"]}
-    turn_values = {k: as_text(v) if k in text_in and v is not None else v for k, v in values.items()}
-    if d.get("tools"):
-        from lmcc_std.tools import Tool
-        turn_values["tools"] = [Tool(**t) for t in d["tools"]]
-    request = plan.render(plan.turn(turn_values), turns=examples(d, plan)).request("probe")
-    request = json.loads(json.dumps(request))
+
+    def render(values: dict) -> dict:
+        turn_values = {k: as_text(v) if k in text_in and v is not None else v for k, v in values.items()}
+        if d.get("tools"):
+            from lmcc_std.tools import Tool
+            turn_values["tools"] = [Tool(**t) for t in d["tools"]]
+        request = plan.render(plan.turn(turn_values), turns=examples(d, plan)).request("probe")
+        return json.loads(json.dumps(request))
+    return sig_dict, render
+
+
+def expect(d: dict) -> dict:
+    sig_dict, render = probe(d)
+    values = d["_sample"] if "_sample" in d else {f["name"]: sample(f["shape"]) for f in d["inputs"]}
+    request = render(values)
     request_hash = sha(request)
     identity = [{"direction": f["direction"], "name": f["name"], "purpose": f.get("purpose", "plain"),
                  "shape": no_defaults(f["shape"]), "type": ""} for f in sig_dict["fields"]]
@@ -315,12 +342,91 @@ DEFINITIONS = {
                      "how soon to answer\n  - high: the customer is losing money or time now"),
                     ("result", {"enum": ["shipping", "billing"], "type": "string"},
                      "one of:\n  - shipping: where the parcel is, damage in transit\n  - billing: charges, refunds")])),
+    "19-a-picture": (
+        "A picture input ({\"media\": \"image\"}): the model is sent the picture as an image part at the input's "
+        "place, never as text. Its sample is a picture addressed by a web address (calls.md, Versions), so the "
+        "version holds the instruction and the layout. Sent: a picture's bytes, and one addressed by a web address.",
+        definition("count_items", "How many items are on the shelf?",
+                   [("photo", {"media": "image"}, "a photo of one shelf")], [("result", I, None)])),
+    "20-several-pictures": (
+        "A list of pictures (lmcc 0.8.7, D-64): each picture is its own image part, in order; none sends nothing "
+        "at the input's place. Its sample is [] (an array).",
+        definition("compare", "Which picture is brighter? Answer with its position, from 1.",
+                   [("pictures", {"type": "array", "items": {"media": "image"}}, None), ("question", S, None)],
+                   [("result", I, None)])),
+    "21-an-optional-picture": (
+        "An optional picture: its sample is the picture's (the first non-null option); null is written as the "
+        "text null. The json layout writes the picture as a part too.",
+        definition("describe_item", "Describe the item for a listing.",
+                   [("title", S, None), ("photo", {"anyOf": [{"media": "image"}, {"type": "null"}]}, None)],
+                   [("result", S, None)], settings={"adapter": "json"})),
+    "22-a-recording-and-a-document": (
+        "A sound and a document (a PDF given whole, which providers read themselves) in the chat layout: each "
+        "is a part of its kind. Samples: audio/wav and application/pdf by web address.",
+        definition("minutes", "Write the minutes of the meeting, following the agenda.",
+                   [("recording", {"media": "audio"}, None), ("agenda", {"media": "document"}, None)],
+                   [("result", S, None)], settings={"adapter": "Chat"})),
+    "23-a-video": (
+        "A video input; its sample is video/mp4 by web address.",
+        definition("summarize_clip", "What happens in the clip?", [("clip", {"media": "video"}, None)],
+                   [("result", S, None)])),
 }
+
+# A 1x1 PNG, a WAV header and a PDF header, in base64: what binding a file gives (programs.md).
+PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+PNG_2 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+WAV = "UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAIA+AAACABAAZGF0YQAAAAA="
+PDF = "JVBERi0xLjQKJcOkw7zDtsOfCg=="
+MP4 = "AAAAGGZ0eXBtcDQyAAAAAG1wNDJpc29t"
+
+SENDS = {
+    "19-a-picture": [
+        {"photo": {"type": "image", "media_type": "image/png", "data": PNG}},
+        {"photo": {"media_type": "image/jpeg", "url": "https://example.com/shelf-3.jpg", "detail": "high"}},
+    ],
+    "20-several-pictures": [
+        {"pictures": [{"type": "image", "media_type": "image/png", "data": PNG},
+                      {"type": "image", "media_type": "image/png", "data": PNG_2}],
+         "question": "Which is brighter?"},
+        {"pictures": [], "question": "Which is brighter?"},
+    ],
+    "21-an-optional-picture": [
+        {"title": "A blue mug", "photo": {"type": "image", "media_type": "image/png", "data": PNG}},
+        {"title": "A blue mug", "photo": None},
+    ],
+    "22-a-recording-and-a-document": [
+        {"recording": {"type": "audio", "media_type": "audio/wav", "data": WAV},
+         "agenda": {"type": "document", "media_type": "application/pdf", "data": PDF}},
+    ],
+    "23-a-video": [
+        {"clip": {"type": "video", "media_type": "video/mp4", "data": MP4}},
+    ],
+}
+
+
+def sends(d: dict, inputs: list) -> list:
+    _, render = probe(d)
+    return [{"inputs": x, "expect": {"request": render(x)}} for x in inputs]
+
+
+def media_parts(request: dict) -> list:
+    return [p for m in request["messages"] for p in m["parts"] if p["type"] != "text"]
 
 
 def cases() -> dict:
     out = {name: {"description": text, "definition": d, "expect": expect(d)}
            for name, (text, d) in DEFINITIONS.items()}
+    for name, inputs in SENDS.items():
+        out[name]["sends"] = sends(out[name]["definition"], inputs)
+    # the rules these cases show, checked as they are written: a picture is never text, and a media sample renders
+    for name in SENDS:
+        c = out[name]
+        assert not c["expect"]["version"].startswith("refused"), name
+        for x in c["sends"]:
+            blob = json.dumps([p.get("text", "") for m in x["expect"]["request"]["messages"] for p in m["parts"]])
+            assert all(b not in blob for b in (PNG, PNG_2, WAV, PDF, MP4)), f"{name}: media written as text"
+    assert [p["type"] for p in media_parts(out["20-several-pictures"]["sends"][0]["expect"]["request"])] == ["image"] * 2
+    assert media_parts(out["20-several-pictures"]["sends"][1]["expect"]["request"]) == []
     v = {k: c["expect"]["version"] for k, c in out.items()}
     assert v["14-a-default-by-its-code"] == v["15-the-same-code-another-day"] != v["16-another-default-value"]
     return out

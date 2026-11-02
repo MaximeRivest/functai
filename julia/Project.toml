@@ -7,7 +7,7 @@ authors = ["Maxime Rivest"]
 Base64 = "2a0f44e3-6c83-55bd-87e4-b1978d98bd5f"
 Dates = "ade2ca70-3891-5945-98fb-dc099432e06a"
 HTTP = "cd3eb016-35fb-5094-929b-558a96fad6f3"
-LM15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
+LanguageModel15 = "7a3c8f1e-2d4b-4e6a-9f8c-1b3d5e7a9c2f"
 LMCC = "1f0b48a1-bcdc-478a-822a-9743feb77dca"
 MLJModelInterface = "e80e1ace-859a-464e-9ed9-23947d8ae3ea"
 OrderedCollections = "bac558e1-5e72-5ebc-8fee-abe8a469f55d"
@@ -26,7 +26,7 @@ CategoricalArrays = "324d7699-5711-5eae-9e2f-1d82baa6b597"
 StatsModels = "3eaba693-59b7-5ba5-a881-562e759f1c8d"
 
 [sources]
-LM15 = {path = "../../lm15-dev/lm15-jl"}
+LanguageModel15 = {path = "../../lm15-dev/lm15-jl"}
 LMCC = {path = "../../lmcc/julia"}
 
 [extensions]
@@ -41,8 +41,8 @@ Dates = "1"
 Documenter = "1"
 GLM = "1"
 HTTP = "1.10"
-LM15 = "1"
-LMCC = "0.8.6"
+LanguageModel15 = "2"
+LMCC = "0.8.8"
 MLJBase = "1"
 MLJModelInterface = "1.9"
 OrderedCollections = "1.6"

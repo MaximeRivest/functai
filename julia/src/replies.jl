@@ -13,7 +13,8 @@
 # `log_content` drops any field is never written to disk: a disk cache holds
 # whole requests and replies, which is what `log_content` forbids keeping.
 
-const REPLY_FORMAT = 1
+const REPLY_FORMAT = 2       # the rows this writes: a reply as lm15 2 writes it (replies.md, *The file*)
+const REPLY_KEY_FORMAT = 1   # the version of the key's document; a new one would make every kept reply unreachable
 const REPLY_LEASE = 120.0                  # seconds a claim holds a key against other processes
 
 const REPLY_OWNER = Ref{String}("")
@@ -34,10 +35,15 @@ request>, "replicate": n}`. The same in every language, so a cache written by
 one is read by another.
 """
 reply_key(request::LM15.Request, replicate::Integer=0) =
-    LMCC.sha256_of(LMCC.jobj("functai_reply" => REPLY_FORMAT, "request" => LM15.to_dict(request), "replicate" => Int(replicate)))
+    LMCC.sha256_of(LMCC.jobj("functai_reply" => REPLY_KEY_FORMAT, "request" => LM15.to_dict(request), "replicate" => Int(replicate)))
 
 response_text(r) = LMCC.canonical_json(LM15.to_dict(r))
-response_of(text::AbstractString) = LM15.from_dict(LM15.Response, LMCC.parse_json(text))
+"A kept reply; a format-1 row was written with lm15 1, whose counts are read by `usage_read` (replies.md, *The file*)."
+function response_of(text::AbstractString, format::Integer=REPLY_FORMAT)
+    data = LMCC.parse_json(text)
+    format == 1 && data isa AbstractDict && (data["usage"] = usage_read(get(data, "usage", nothing), nothing))
+    LM15.from_dict(LM15.Response, data)
+end
 
 # ------------------------------------------------------------------ one flight per key, in this process
 
@@ -216,9 +222,9 @@ end
 function reply(d::DiskReplies, key::AbstractString)
     row = with_db(db -> (r = first_row(db, "SELECT response, format FROM replies WHERE key = ?", (String(key),));
                          r === nothing ? nothing : (String(r.response), r.format)), d)
-    (row === nothing || row[2] != REPLY_FORMAT) && return nothing     # a format this reader does not know: no reply
+    (row === nothing || !(row[2] in (1, REPLY_FORMAT))) && return nothing     # a format this reader does not know: no reply
     try
-        response_of(row[1])
+        response_of(row[1], row[2])
     catch
         nothing                                                         # a row this reader cannot read is no reply
     end

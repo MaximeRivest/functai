@@ -306,7 +306,7 @@ mutable struct TurnRun
     context::Dict{Symbol,Any}           # :turns, :ids, :finish, :rows, :parent, :sections, :changes, :recorded, :module_saw
     root_taken::Ref{Bool}
     helper_calls::Vector{JObj}
-    usage::JObj
+    exchanges::Vector{JObj}             # the token counts of each model call made in this turn so far
     later::Any                          # a resumed turn's claim on its log: (writer, after, at, requests)
     start_seq::Int
     settings::Dict{Symbol,Any}
@@ -320,7 +320,7 @@ mutable struct TurnRun
     sink::Any
 end
 function TurnRun(conv, turn::AbstractString; attempt::Int, context::Dict{Symbol,Any}, replay=nothing, later=nothing)
-    run = TurnRun(conv, conv.store, conv.program, String(turn), attempt, context, Ref(false), JObj[], JObj(), later, 0,
+    run = TurnRun(conv, conv.store, conv.program, String(turn), attempt, context, Ref(false), JObj[], JObj[], later, 0,
                   Dict{Symbol,Any}(), ReentrantLock(), is_durable(conv), Dict{String,Vector{Any}}(), Dict{Any,JObj}(),
                   Dict{Any,JObj}(), Dict{Any,Tuple{Bool,Any,Any,Bool}}(), nothing, nothing)
     r = something(replay, Dict{Symbol,Any}())
@@ -389,9 +389,7 @@ end
 "A call of the turn ended: its tokens count in the turn's usage; a helper the conversation remembers keeps its call for later."
 function call_ended!(run::TurnRun, call::Call, err)
     lock(run.lock) do
-        for (k, v) in own_usage(call)
-            run.usage[k] = get(run.usage, k, 0) + v
-        end
+        append!(run.exchanges, exchange_usages(call))
     end
     call.id == run.turn && return
     (err !== nothing || call.lmcc === nothing || !(call.fn isa AIFunction)) && return
@@ -1399,7 +1397,7 @@ function conclude_turn(c::Conversation, run::TurnRun, value, err, started)
     rec = record_base(run, "ended")
     rec["saw"] = saw
     rec["seconds"] = round6(time() - started)
-    rec["usage"] = copy(run.usage)
+    rec["usage"] = sum_usage(run.exchanges)               # calls.md, *Token counts*
     if err !== nothing
         rec["state"] = err isa Cancelled ? "stopped" : "failed"
         rec["error"] = error_json(err, true)

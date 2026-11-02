@@ -18,6 +18,7 @@ import { earlierOf, SawUnknown } from "../src/saw.ts";
 import { Applied, beforeCall, inOrder, toolCall, toolResult } from "../src/plugins.ts";
 import { bakeEntry, studentMessages } from "../src/bake.ts";
 import { Call } from "../src/calllog.ts";
+import { sumUsage, usageRead } from "../src/usage.ts";
 import { cases, tsFunction, type Rec } from "./cases.ts";
 import { FakeRouter } from "./fake.ts";
 
@@ -34,6 +35,12 @@ test("the reply key reads a number lm15 keeps as written as the number it is (0.
   const raw = Request.fromJSON(lmcc.parseJson('{"model": "m", "messages": [{"role": "user", "parts": [{"type": "text", "text": "x"}]}], "config": {"temperature": 0.0}}') as never);
   assert.equal(replyKey(raw), replyKey(plain));
 });
+
+for (const [name, c] of cases("usage")) {
+  test(`usage case ${name}`, () => {
+    assert.deepEqual(c.kind === "sum" ? sumUsage(c.usages) : usageRead(c.usage, c.lm15), c.expect.usage);
+  });
+}
 
 for (const [name, c] of cases("conversations")) {
   test(`conversations case ${name}`, async () => {
@@ -197,7 +204,7 @@ for (const [name, c] of cases("baked")) {
 }
 
 test("the contract has cases of every new kind", () => {
-  for (const folder of ["replies", "conversations", "tools", "views", "context", "plugins", "baked"]) assert.ok(cases(folder).length, folder);
+  for (const folder of ["replies", "usage", "conversations", "tools", "views", "context", "plugins", "baked"]) assert.ok(cases(folder).length, folder);
 });
 
 void Applied;

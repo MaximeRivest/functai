@@ -245,12 +245,13 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
     targets), else its answer (hard). Returns targets (None for rows that failed)
     and what labeling cost."""
     from ..core import FunctAIFunc
+    from ..data import sum_usage, usage_of
     from ..evaluation import parallel
     from .examples import row_inputs
     tfn = teacher if isinstance(teacher, FunctAIFunc) else fn.using(lm=teacher)
     name = getattr(teacher, "__name__", None) if isinstance(teacher, FunctAIFunc) else getattr(teacher, "name", teacher)
     soft = [0]
-    tokens = {"input_tokens": 0, "output_tokens": 0}
+    exchanges: List[Dict[str, int]] = []      # the token counts of each teacher call
     failures: List[str] = []
     done = [0]
     lock = threading.Lock()        # the counters are shared by the labeling threads
@@ -262,10 +263,8 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
         except Exception as exc:  # noqa: BLE001 — a failed row is dropped and counted
             failures.append(f"{type(exc).__name__}: {exc}")
             return None
-        usage = pred.usage
         with lock:
-            for k in tokens:
-                tokens[k] += usage.get(k, 0)
+            exchanges.extend(usage_of(r) for r in pred.responses)
         out = []
         for f in fields:
             dist = (pred.probabilities or {}).get(f.name)
@@ -289,13 +288,17 @@ def _teacher_labels(fn, teacher: Any, rows: List[Dict[str, Any]], fields: Sequen
     targets = parallel(one, rows, max(1, num_threads))
     seconds = time.time() - t0
     ok = sum(t is not None for t in targets)
+    tokens = sum_usage(exchanges)                  # a count some call did not report is unknown, not 0
+    n_in, n_out = tokens.get("input_tokens"), tokens.get("output_tokens")
+    known = n_in is not None and n_out is not None
     info: Dict[str, Any] = {"teacher": name, "rows": ok, "failed": len(rows) - ok, "seconds": round(seconds, 1),
                             "soft": soft[0] >= ok * len(fields) and ok > 0,
-                            "tokens_per_row": (tokens["input_tokens"] + tokens["output_tokens"]) / max(1, ok),
+                            "tokens_per_row": (n_in + n_out) / max(1, ok) if known else None,
                             "seconds_per_row": seconds / max(1, ok), "concurrency": num_threads}
     price = (prices or {}).get("teacher")
-    if price:
-        info["dollars"] = (tokens["input_tokens"] * price[0] + tokens["output_tokens"] * price[1]) / 1e6
+    if price and known:
+        # list prices for plain input and output: a cached prompt's discount is not taken off
+        info["dollars"] = (n_in * price[0] + n_out * price[1]) / 1e6
         info["dollars_per_row"] = info["dollars"] / max(1, ok)
     if failures:
         info["first_failure"] = failures[0]

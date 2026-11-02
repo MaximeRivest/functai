@@ -36,15 +36,15 @@ from typing import Any, Callable, Dict, Iterator, List, Optional, Sequence, Tupl
 
 from . import calllog
 from .core import _STATE_OVERRIDE, _TRACE, FunctAIFunc, ProgramState
-from .data import Prediction
+from .data import Prediction, sum_usage, usage_of
 from .engine import LoginRequired
 
 States = Dict[FunctAIFunc, ProgramState]
 
 _DPYR_HINT = 'tables need dpyr: pip install "functai[data]"'
 # columns every run table has besides the data, the predictions and the metrics
-# (Gemini's output_tokens leave its hidden reasoning out; every provider bills
-# total_tokens - input_tokens as output)
+# (lm15 2: on every provider input_tokens includes cached tokens and
+# output_tokens includes reasoning; a count not reported exactly is null)
 _RUN_COLUMNS = ("error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run")
 
 
@@ -276,11 +276,9 @@ class RowRun:
 
     @property
     def usage(self) -> Dict[str, int]:
-        total: Dict[str, int] = {}
-        for _fn, p in self.trace:
-            for k, v in p.usage.items():
-                total[k] = total.get(k, 0) + v
-        return total
+        """Tokens summed over the row's model calls; a counter one of them did
+        not report is absent (``functai.data.sum_usage``)."""
+        return sum_usage(usage_of(r) for _fn, p in self.trace for r in p.responses)
 
     @property
     def model(self) -> Optional[str]:

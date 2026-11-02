@@ -10,6 +10,7 @@ import { Request, stringifyJson } from "@lm15/lm15";
 import * as lmcc from "lmcc";
 import { spawn } from "node:child_process";
 import { ai, describe, load, LoadRefused, rate, rated, remote, save, serve, t } from "../src/index.ts";
+import { artifacts } from "../src/files.ts";
 import { FakeRouter } from "../tests/fake.ts";
 
 const work = process.argv[2]!;
@@ -32,6 +33,17 @@ for (const [name, want] of Object.entries(python)) {
     assert.equal(fn.settings.onUnreadable, "record");
   }
   console.log(`  ok    ${name}: saved in Python, loaded here, same version and same request${name === "route" ? ", baseUrl and onUnreadable" : ""}`);
+}
+
+// 6. a function reading files (Attachments' artifacts), saved in Python: loads here, and sends the same bytes
+const pythonFiles = JSON.parse(readFileSync(join(work, "python-files.json"), "utf8")) as typeof python;
+for (const [name, want] of Object.entries(pythonFiles)) {
+  const fn = load(join(work, "saved", name));
+  assert.equal(fn.version, want.version, `${name}: version`);
+  assert.equal(fn.signatureId, want.signature, `${name}: signature`);
+  const mine = lmcc.canonicalJson(JSON.parse(stringifyJson(Request.toJSON(await fn.render(want.inputs)))));
+  assert.equal(mine, lmcc.canonicalJson(want.request as lmcc.Json), `${name}: the request`);
+  console.log(`  ok    ${name}: reads files, saved in Python, loaded here, same version and same request (each page's picture a picture)`);
 }
 
 // 2. the same function, written here
@@ -58,11 +70,32 @@ assert.equal(route.version, python["route"]!.version, "route: version");
 assert.equal(route.signatureId, python["route"]!.signature, "route: signature");
 console.log("  ok    route written in TypeScript (t.choice, each answer described) has Python's version and signature");
 
+// 6. a function reading files that Python serves, called here: the files travel as their wire form, a failed one
+// is refused here before it is sent
+const filesServed = JSON.parse(readFileSync(join(work, "served-files.json"), "utf8")) as { url: string };
+const summarizeThere = await remote(filesServed.url);
+assert.equal(await summarizeThere({ report: pythonFiles["summarize"]!.inputs["report"] } as never), "mixed");
+await assert.rejects(summarizeThere({ report: [{ text: "", images: [], audio: [], video: [],
+  meta: { source: "scan.pdf", error: { code: "missing-dependency", message: "needs pypdf" } } }] } as never),
+(e: unknown) => (e as { code?: string }).code === "interface-input");
+console.log("  ok    a function reading files Python serves is called here: the files as their wire form, a failed file refused before sending");
+
+// 6. a picture and files, written here: Python's versions and signatures
+const colour = ai("colour", { description: "The main colour of the picture.", definedIn: "shop", lm: "gpt-4.1-mini", temperature: 0,
+  input: { picture: t.image() }, output: t.string() });
+assert.equal(colour.version, python["colour"]!.version, "colour: version");
+assert.equal(colour.signatureId, python["colour"]!.signature, "colour: signature");
+const summarize = ai("summarize", { description: "The report in three sentences.", definedIn: "shop", lm: "gpt-4.1-mini", temperature: 0,
+  input: { report: artifacts() }, output: t.string() });
+assert.equal(summarize.version, pythonFiles["summarize"]!.version, "summarize: version");
+assert.equal(summarize.signatureId, pythonFiles["summarize"]!.signature, "summarize: signature");
+console.log("  ok    colour (t.image()) and summarize (artifacts()) written in TypeScript have Python's versions and signatures");
+
 // 5. what TypeScript saves, Python loads (it checks the version and the request this gives)
 const savedHere: Record<string, unknown> = {};
-for (const [name, fn] of [["mood", mood], ["route", route]] as const) {
+for (const [name, fn] of [["mood", mood], ["route", route], ["colour", colour], ["summarize", summarize]] as const) {
   save(fn as never, join(work, "typescript-saved", name));
-  const inputs = python[name]!.inputs;
+  const inputs = (python[name] ?? pythonFiles[name])!.inputs;
   savedHere[name] = { version: fn.version, inputs, request: JSON.parse(stringifyJson(Request.toJSON(await fn.render(inputs as never)))) };
 }
 writeFileSync(join(work, "typescript-saved.json"), stringifyJson(savedHere));

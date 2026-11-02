@@ -16,7 +16,7 @@ The refund desk from tutorial 4 decides better when it knows what state the item
 
 ```julia
 using FunctAI, DataFrames, CairoMakie, Statistics, HypothesisTests
-import LM15
+import LanguageModel15 as LM15     # lm15 for Julia
 
 log_folder = mktempdir()
 FunctAI.configure!(log_calls = log_folder)

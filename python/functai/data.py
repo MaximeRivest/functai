@@ -61,13 +61,68 @@ def _answer_key(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
 
+def usage_of(response: Any) -> Dict[str, int]:
+    """The token counts one lm15 response reported, by name (``input_tokens``,
+    ``output_tokens``, ``reasoning_tokens``, ``total_tokens``, ...). lm15 2
+    gives each counter one meaning on every provider: input includes cached
+    tokens, output includes reasoning. A counter the provider did not report
+    exactly is absent, never a guess."""
+    usage = getattr(response, "usage", None)
+    if usage is None or not dataclasses.is_dataclass(usage):
+        return {}
+    out: Dict[str, int] = {}
+    for f in dataclasses.fields(usage):
+        v = getattr(usage, f.name)
+        if isinstance(v, int) and not isinstance(v, bool):
+            out[f.name] = v
+    return out
+
+
+def sum_usage(parts: Iterable[Mapping[str, int]]) -> Dict[str, int]:
+    """Token counts summed over model calls (contract/calls.md, ``usage``):
+    a counter is in the sum only when every call reported it, so a sum is
+    exact or absent, never a part of the total. No calls: ``{}``."""
+    total: Optional[Dict[str, int]] = None
+    for part in parts:
+        if total is None:
+            total = dict(part)
+        else:
+            total = {k: v + part[k] for k, v in total.items() if k in part}
+    return total or {}
+
+
+def usage_read(usage: Optional[Mapping[str, Any]], lm15_version: Optional[str]) -> Dict[str, int]:
+    """Token counts kept by an earlier run, with the meaning lm15 2 gives them
+    (contract/calls.md, *Token counts written with lm15 1*).
+
+    ``lm15_version`` is the lm15 that wrote them (a call record's
+    ``process.lm15``); None when the writer did not say. lm15 1 kept each
+    provider's own counting: Anthropic's input left the cached tokens out,
+    Gemini's and xAI's output left the reasoning out. Those counts are kept
+    only when they cannot differ from lm15 2's: ``total_tokens`` is
+    ``input_tokens + output_tokens`` (no reasoning or tool tokens outside
+    them) and no cache count is above 0. Otherwise every count is unknown
+    (``{}``): a number that may mean something else is worse than none."""
+    counts = {k: v for k, v in (usage or {}).items() if isinstance(v, int) and not isinstance(v, bool)}
+    major = str(lm15_version or "").split(".", 1)[0]
+    if major.isdigit() and int(major) >= 2:
+        return counts
+    i, o, t = counts.get("input_tokens"), counts.get("output_tokens"), counts.get("total_tokens")
+    if i is None or o is None or t is None or t != i + o:
+        return {}
+    if counts.get("cache_read_tokens", 0) > 0 or counts.get("cache_write_tokens", 0) > 0:
+        return {}
+    return counts
+
+
 class Prediction(_Record):
     """Everything one call produced.
 
     - the outputs, by name (``pred.result``, ``pred.reasoning``, ``dict(pred)``)
     - ``pred.turn``: the lmcc turn (inputs, every model and tool step, outputs)
     - ``pred.response`` / ``pred.responses``: the lm15 responses
-    - ``pred.usage``: tokens summed over every model call
+    - ``pred.usage``: tokens summed over every model call (a counter one of
+      them did not report is absent)
     - ``pred.repairs``: what the reader forgave in the reply
     - ``pred.call_id``: the call's id, for ``functai.rate`` and the call log
     """
@@ -107,12 +162,5 @@ class Prediction(_Record):
 
     @property
     def usage(self) -> Dict[str, int]:
-        total: Dict[str, int] = {}
-        for r in self.responses:
-            usage = getattr(r, "usage", None)
-            if usage is None:
-                continue
-            for k, v in dataclasses.asdict(usage).items():
-                if isinstance(v, int):
-                    total[k] = total.get(k, 0) + v
-        return total
+        """Tokens summed over this call's model calls (a count one did not report is absent)."""
+        return sum_usage(usage_of(r) for r in self.responses)

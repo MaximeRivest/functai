@@ -7,6 +7,8 @@
 
 import * as lmcc from "lmcc";
 import { InterfaceError } from "./interface.ts";
+import { carriesFiles, FILES } from "./files-binding.ts";
+import type { AudioInput, BinaryInput, DocumentInput, ImageInput, VideoInput } from "./media.ts";
 import { oneLine, withChoices } from "./text.ts";
 import { copyData, entriesOf, setOwn } from "./values.ts";
 
@@ -95,12 +97,24 @@ export function meaningsOf(shape: unknown): Meanings {
   return ((shape as Record<symbol, unknown>)[MEANINGS] as Meanings | undefined) ?? [];
 }
 
-/** `to`, carrying `from`'s described answers. */
+/** `to`, carrying `from`'s described answers, and its being files (refused anywhere but a whole input). */
 function carry<S>(from: unknown, to: S): S {
   const m = meaningsOf(from);
   if (m.length) Object.defineProperty(to, MEANINGS, { value: m });
+  if (carriesFiles(from)) Object.defineProperty(to, FILES, { value: true });
   return to;
 }
+
+/** Files are a whole input (functions.md): never a record's member or a map's value. */
+function noFiles(builder: string, shapes: readonly unknown[]): void {
+  if (shapes.some(carriesFiles)) {
+    throw new TypeError(`t.${builder}: files (artifacts()) are a whole input of their own, not a member of a record or a map`);
+  }
+}
+
+/** A media field's shape (lmcc's `{"media": kind}`), with extra keys that add to it (`{ description }`). */
+const media = <V>(kind: string, extra: Extra | undefined): Shape<V> =>
+  ({ media: kind, ...extraOf(extra, kind, ["media", "type"]) }) as unknown as Shape<V>;
 
 /** A property's shape with its choice's meanings in its `description`, where the model reads them (a record's schema). */
 function described(shape: unknown): unknown {
@@ -156,10 +170,10 @@ export const t = {
   list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => carry(items, { ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
   /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
   object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
-    ({ ...lmcc.t.object(Object.fromEntries(entriesOf(properties).map(([k, v]) => [k, described(v)])) as P), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
+    (noFiles("object", Object.values(properties)), { ...lmcc.t.object(Object.fromEntries(entriesOf(properties).map(([k, v]) => [k, described(v)])) as P), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
   /** A map from text keys to values: `t.record(t.integer())`. */
   record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> =>
-    ({ type: "object", additionalProperties: described(values), ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
+    (noFiles("record", [values]), { type: "object", additionalProperties: described(values), ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
   /** The shape or null; a caller may leave it out, and it is then null. */
   optional: <T>(shape: Shape<T>): Shape<T | null> => carry(shape, lmcc.t.nullable(shape)),
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
@@ -194,6 +208,22 @@ export const t = {
     if (described.length) Object.defineProperty(shape, MEANINGS, { value: Object.freeze(described) });
     return shape as Shape<A[number]>;
   },
+  /**
+   * A picture: lm15's `image({ path: "shelf.jpg" })` (also `{ url }`,
+   * `{ data }`, `{ fileId }`), or the same as data (`{ media_type, data }`).
+   * The model is sent the picture itself; a file is read when the call is
+   * bound, so a changed file is a new request. `t.list(t.image())` sends
+   * each picture, in order; `t.optional(t.image())` may be null.
+   */
+  image: (extra?: Extra): Shape<ImageInput> => media<ImageInput>("image", extra),
+  /** A recording (lm15's `audio(...)`), sent to the model as sound. */
+  audio: (extra?: Extra): Shape<AudioInput> => media<AudioInput>("audio", extra),
+  /** A video (lm15's `video(...)`), sent to the model as video. */
+  video: (extra?: Extra): Shape<VideoInput> => media<VideoInput>("video", extra),
+  /** A document given whole (lm15's `document(...)`, a PDF), which providers that read PDFs read themselves. For any file read into text and page pictures, see `artifacts()` in `functai/files`. */
+  document: (extra?: Extra): Shape<DocumentInput> => media<DocumentInput>("document", extra),
+  /** Bytes of any media type (lm15's `binary(...)`), for a provider that takes them. */
+  binary: (extra?: Extra): Shape<BinaryInput> => media<BinaryInput>("binary", extra),
   /** Any JSON value (shape `{}`), with words about it if you like: `t.json({ description: "each input by name" })`. */
   json: (extra: Extra = {}): Shape<Json> => ({ ...extra }) as Shape<Json>,
   /**
@@ -291,7 +321,7 @@ function fromZod(schema: JsonObject): JsonObject {
  * becomes the desc. `field`: the interface field it declares (then a spec
  * that is not a shape refuses `interface-malformed`, naming it).
  */
-export function readField(spec: FieldSpec, where: string, field?: string): { shape: JsonObject; desc: string | null } {
+export function readField(spec: FieldSpec, where: string, field?: string): { shape: JsonObject; desc: string | null; files: boolean } {
   let desc: string | null = null;
   let raw: unknown = spec;
   const refuse = (why: string): never => {
@@ -331,7 +361,7 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];
   }
-  return { shape, desc: withChoices(desc, meanings) };
+  return { shape, desc: withChoices(desc, meanings), files: carriesFiles(raw) };
 }
 
 /**

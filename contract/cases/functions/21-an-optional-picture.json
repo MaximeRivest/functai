@@ -1,0 +1,227 @@
+{
+ "description": "An optional picture: its sample is the picture's (the first non-null option); null is written as the text null. The json layout writes the picture as a part too.",
+ "definition": {
+  "name": "describe_item",
+  "description": "Describe the item for a listing.",
+  "inputs": [
+   {
+    "name": "title",
+    "shape": {
+     "type": "string"
+    }
+   },
+   {
+    "name": "photo",
+    "shape": {
+     "anyOf": [
+      {
+       "media": "image"
+      },
+      {
+       "type": "null"
+      }
+     ]
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {
+   "adapter": "json"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "expect": {
+  "signature": {
+   "instructions": "Function: describe_item\n\nDescribe the item for a listing.",
+   "fields": [
+    {
+     "name": "title",
+     "direction": "input",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "photo",
+     "direction": "input",
+     "shape": {
+      "anyOf": [
+       {
+        "media": "image"
+       },
+       {
+        "type": "null"
+       }
+      ]
+     },
+     "purpose": "plain"
+    },
+    {
+     "name": "result",
+     "direction": "output",
+     "shape": {
+      "type": "string"
+     },
+     "purpose": "plain"
+    }
+   ]
+  },
+  "sample": {
+   "title": "example text",
+   "photo": {
+    "media_type": "image/png",
+    "url": "https://example.com/sample.png"
+   }
+  },
+  "request": {
+   "model": "probe",
+   "system": "Function: describe_item\n\nDescribe the item for a listing.",
+   "messages": [
+    {
+     "role": "user",
+     "parts": [
+      {
+       "type": "text",
+       "text": "<title>\nexample text\n</title>\n<photo>\n"
+      },
+      {
+       "type": "image",
+       "media_type": "image/png",
+       "url": "https://example.com/sample.png"
+      },
+      {
+       "type": "text",
+       "text": "\n</photo>\n"
+      }
+     ]
+    }
+   ],
+   "config": {
+    "response_format": {
+     "type": "json_schema",
+     "schema": {
+      "type": "object",
+      "properties": {
+       "result": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "result"
+      ],
+      "additionalProperties": false
+     }
+    }
+   }
+  },
+  "request_hash": "sha256:c560ea73e5f83386ccd42a855d0043e4ed054a0922057bcddb39e44e4372e03f",
+  "version": "sha256:746c83312fa79f755fb391262a885aa10f03c471bae6fbafd66eae3a203909e6",
+  "signature_id": "sha256:008cab003dca8d9189a08ef521987a4d65b7a6a9ac3407fb5133f90d50c23f11"
+ },
+ "sends": [
+  {
+   "inputs": {
+    "title": "A blue mug",
+    "photo": {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+    }
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: describe_item\n\nDescribe the item for a listing.",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<title>\nA blue mug\n</title>\n<photo>\n"
+        },
+        {
+         "type": "image",
+         "media_type": "image/png",
+         "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
+        },
+        {
+         "type": "text",
+         "text": "\n</photo>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "response_format": {
+       "type": "json_schema",
+       "schema": {
+        "type": "object",
+        "properties": {
+         "result": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "result"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  },
+  {
+   "inputs": {
+    "title": "A blue mug",
+    "photo": null
+   },
+   "expect": {
+    "request": {
+     "model": "probe",
+     "system": "Function: describe_item\n\nDescribe the item for a listing.",
+     "messages": [
+      {
+       "role": "user",
+       "parts": [
+        {
+         "type": "text",
+         "text": "<title>\nA blue mug\n</title>\n<photo>\nnull\n</photo>\n"
+        }
+       ]
+      }
+     ],
+     "config": {
+      "response_format": {
+       "type": "json_schema",
+       "schema": {
+        "type": "object",
+        "properties": {
+         "result": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "result"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    }
+   }
+  }
+ ]
+}

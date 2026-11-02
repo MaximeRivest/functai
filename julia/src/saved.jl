@@ -146,6 +146,13 @@ function from_manifest(manifest; node=nothing, types=(;), saved_id=nothing)
     catch err
         err isa LMCC.Refusal ? refuse_load("saved-malformed", "$key: $(err.hint)") : rethrow()
     end
+    # files (an input typed Artifacts, functions.md) are read through Attachments, which Julia does not have: refused
+    # here, before anything is sent (without it, a layout would write the artifacts as JSON text the model cannot read)
+    for f in sig.fields
+        f.direction == "input" && f.type == "Artifacts" &&
+            throw(FilesUnavailable("$key reads files (its input $(f.name) is Attachments' artifacts), and Julia has no " *
+                                   "Attachments: call it where it was saved, or serve it there and call it with remote()", f.name))
+    end
     declared = haskey(n, "interface") ? JObj(check_node_interface(key, n)) : nothing
     declared === nothing && signature_interface(key, n)            # an old folder's: checked, as describing checks it
     optional = Dict{String,Any}()          # an optional input's default, from the node's interface (saved.md, step 5)

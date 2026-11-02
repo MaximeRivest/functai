@@ -150,8 +150,17 @@ function signature_of(d::Definition, improved, include_name::Bool, reasoning::Bo
     LMCC.signature_from_dict(LMCC.jobj("instructions" => instructions_of(d, improved, include_name), "fields" => fields))
 end
 
+"calls.md, Versions: a media shape's sample is a part addressed by a web address, by kind."
+const MEDIA_SAMPLES = Dict("image" => ("image/png", "png"), "audio" => ("audio/wav", "wav"), "video" => ("video/mp4", "mp4"),
+                           "document" => ("application/pdf", "pdf"), "binary" => ("application/octet-stream", "bin"))
+
 "A value for a shape, for the sample input (contract/calls.md, \"Versions\")."
 function sample_value(shape::AbstractDict)
+    kind = get(shape, "media", nothing)
+    if kind isa AbstractString && haskey(MEDIA_SAMPLES, kind)
+        media_type, ext = MEDIA_SAMPLES[kind]
+        return JObj("media_type" => media_type, "url" => "https://example.com/sample.$ext")
+    end
     haskey(shape, "enum") && return first(shape["enum"])
     if haskey(shape, "anyOf")
         options = [s for s in shape["anyOf"] if get(s, "type", nothing) != "null"]

@@ -1201,15 +1201,8 @@ def _error(exc: BaseException, content: bool = True) -> Dict[str, Any]:
 
 
 def _usage(response: Any) -> Dict[str, int]:
-    usage = getattr(response, "usage", None)
-    if usage is None or not dataclasses.is_dataclass(usage):
-        return {}
-    out = {}
-    for f in dataclasses.fields(usage):
-        v = getattr(usage, f.name)
-        if isinstance(v, int) and not isinstance(v, bool):
-            out[f.name] = v
-    return out
+    from .data import usage_of
+    return usage_of(response)
 
 
 def _exchange_record(ex: tuple) -> Dict[str, Any]:
@@ -1289,10 +1282,8 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
     refusal = getattr(pred, "refusal", None) if pred is not None else None
     failure = error if error is not None else refusal
     answered = [ex for ex in call.exchanges if ex[6] is not None]
-    usage: Dict[str, int] = {}
-    for ex in answered:
-        for k, v in _usage(ex[6]).items():
-            usage[k] = usage.get(k, 0) + v
+    from .data import sum_usage
+    usage = sum_usage(_usage(ex[6]) for ex in answered)
     rec: Dict[str, Any] = {
         "functai_call": FORMAT, "id": call.id, "parent": call.parent, "root": call.root, "program": program,
         "started": _iso(call.started), "seconds": round(time.perf_counter() - call.t0, 6), "content": True,
@@ -2094,9 +2085,10 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
         (for one program; else ``program``, ``inputs`` and ``outputs``),
         ``rating`` (the latest judgement: ``right``, ``wrong``, or null),
         ``error``, ``started``, ``seconds``, ``input_tokens``,
-        ``output_tokens``, ``reasoning_tokens``, ``total_tokens`` (Gemini's
-        ``output_tokens`` leave its hidden reasoning out; a cost is
-        ``total_tokens - input_tokens`` at the output price), ``model``, ``version``, ``purpose`` (``use``, or
+        ``output_tokens``, ``reasoning_tokens``, ``total_tokens`` (with lm15 2's
+        meaning on every provider: input includes cached tokens, output
+        includes reasoning; null when not known, as for counts lm15 1 wrote
+        that may mean something else), ``model``, ``version``, ``purpose`` (``use``, or
         ``evaluation`` and ``optimization`` for calls that answered known
         questions), ``caller`` (who called, as JSON), ``call`` (its id)
         and ``parent`` (the call it ran in).
@@ -2126,6 +2118,7 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
     '''
     from .evaluation import _cell, _dpyr, _tabular
     _dpyr()
+    from .data import usage_read
     root = reading_folder(folder)
     found, ratings = read(root, since=since)
     name = module = None
@@ -2149,7 +2142,7 @@ def calls(program: Any = None, *, folder: Any = None, since: Any = None):
     records = []
     for c in found:
         p = c.get("program") or {}
-        usage = c.get("usage") or {}
+        usage = usage_read(c.get("usage"), (c.get("process") or {}).get("lm15"))
         rec: Dict[str, Any] = {}
         if program is not None:
             rec.update({k: _cell((c.get("inputs") or {}).get(k)) for k in inputs})

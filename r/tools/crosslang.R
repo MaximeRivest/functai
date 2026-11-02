@@ -20,7 +20,8 @@ for (name in names(python)) {
   fn <- read_ai(file.path(work, "saved", name))
   stopifnot_eq(ai_version(fn), want$version, paste(name, "version"))
   stopifnot_eq(ai_signature_id(fn), want$signature, paste(name, "signature"))
-  mine <- lmcc::canonical_json(do.call(ai_render, c(list(fn), want$inputs)))
+  one <- lapply(want$inputs, function(v) if (is.list(v)) list(v) else v)   # a picture (a list) is one row of a list column
+  mine <- lmcc::canonical_json(do.call(ai_render, c(list(fn), one)))
   stopifnot_eq(mine, lmcc::canonical_json(want$request), paste(name, "request"))
   if (name == "route") {                   # the settings saved with it travel too (its address, its rule)
     own <- functai:::core_of(fn)$own
@@ -28,6 +29,13 @@ for (name in names(python)) {
     stopifnot_eq(own$on_unreadable, "record", "route on_unreadable")
   }
   say(name, ": saved in Python, loaded in R, same version and same request", if (name == "route") ", base_url and on_unreadable")
+}
+
+# 6. a function reading files: R has no Attachments, so it is refused when it is loaded, and nothing is sent
+for (name in names(read_json(file.path(work, "python-files.json")))) {
+  err <- tryCatch(read_ai(file.path(work, "saved", name)), functai_refusal = function(e) e)
+  stopifnot_eq(err$code, "files-unavailable", name)
+  say(name, ": reads files; refused in R (files-unavailable: R has no Attachments)")
 }
 
 # 2. the same function, written here

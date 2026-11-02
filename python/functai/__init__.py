@@ -60,8 +60,8 @@ from .core import (
     signature_text,
 )
 from .calllog import calls, rate, rated
-from .errors import (ApprovalError, ConversationError, EventRefused, FunctAIError, InterfaceError, JournalError,
-                     LogContentError, Outcome, SawError, ServeError, Waiting)
+from .errors import (ApprovalError, ConversationError, EventRefused, FilesUnavailable, FunctAIError, InterfaceError,
+                     JournalError, LogContentError, Outcome, SawError, ServeError, Waiting)
 from .eventlog import Follower, Journal, MemoryStore, Store, flush
 from .interface import JSON
 from .streaming import Cancelled, Stream
@@ -111,7 +111,7 @@ __all__ = [
     "Verification",
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
     "calls", "rate", "rated",
-    "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "Outcome",
+    "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "FilesUnavailable", "Outcome",
     "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "Conversation", "Turn", "all_turns", "last_turns", "remember", "earlier", "FolderStore", "MemoryConversations",
     "tool", "Tool", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",

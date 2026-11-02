@@ -143,7 +143,7 @@ loses its exchanges' messages, then its values (`truncated: true`).
 | `sizes` | always: for each input and output, the length in Unicode code points of its canonical JSON (see *Canonical JSON*). |
 | `error` | `null`, or `{"type", "message", "code"?}`: the error the call's program ended with (its outcome). `type` is the exception's class name (`Refusal`, `LoginRequired`, `StepLimit`, `RateLimitError`, `InterfaceError`, `JournalError`, …), `code` lmcc's refusal code (or FunctAI's) when there is one. When `content` is false it keeps only `type` and `code`: `message` can quote the reply or an input, and a member this contract does not name (a later version's) may hold a value. A call cancelled by closing its stream has `type` `Cancelled`; a call stopped at a required journal's barrier, `JournalError` with code `journal-barrier` ([streaming.md](streaming.md)). A reply kept with no values (`on_unreadable="record"`) is `outputs: {}` with the refusal as `error`. |
 | `model` | the model asked for the answer (the last exchange that got a reply), or `null` when no model was called. |
-| `usage` | token counts summed over this call's own exchanges (integers only). A module's usage is in its children; sum a tree for its cost. |
+| `usage` | token counts summed over this call's own answered exchanges (integers only), with lm15 2's meaning (see *Token counts*). A count is in the sum only when every one of those exchanges reported it: a sum is exact or absent, never part of a total. A module's usage is in its children; sum a tree for its cost. |
 | `confidence` | the probability the model gave its own answer (the lowest over the outputs it measured), or `null`. Only baked models and providers that return probabilities measure it. |
 | `probabilities` | `{output: {answer: probability}}` when measured, for the outputs recorded. Absent when none is. |
 | `escalated` | `true` when a first model was unsure and another answered; absent otherwise. |
@@ -522,7 +522,12 @@ version, and its ratings pool.
   canonical JSON. It is the first entry of `fingerprints.requests` in a
   saved program's `functai.json`, so a saved folder names the version it
   holds. The sample input has, for each input field, by its JSON Schema:
-  the first `enum` value; the first non-null option of an `anyOf`; for
+  for a media shape (`{"media": kind}`, [functions.md](functions.md)),
+  a part addressed by a web address, `{"media_type": T, "url":
+  "https://example.com/sample.E"}`, with `T` and `E` by kind (`image`:
+  `image/png`, `png`; `audio`: `audio/wav`, `wav`; `video`: `video/mp4`,
+  `mp4`; `document`: `application/pdf`, `pdf`; `binary`:
+  `application/octet-stream`, `bin`), which nothing fetches; the first `enum` value; the first non-null option of an `anyOf`; for
   a `type` that is a list, the first non-null type in it (`["string",
   "null"]` is a string); `"example text"` for a string, `3` for an integer, `2.5` for a number,
   `true` for a boolean, `[]` for an array, `{}` for an object. The fixed
@@ -531,7 +536,11 @@ version, and its ratings pool.
   `native_reasoning` and `assistant_prefill` false; provider `"probe"`.
   A function on a baked model renders with the layout and facts the
   model was trained with. When the sample cannot be rendered, `R` is
-  `"refused:<lmcc refusal code>"`.
+  `"refused:<lmcc refusal code>"`. (Until 2026-10-31 a media shape had
+  no sample of its own: it was given `"example text"`, which lmcc
+  refuses, so every function with a picture (or other media) input had
+  the one version `{"request": "refused:value-invalid"}`, whatever its
+  instruction, layout or worked examples.)
 - The model writes the whole body when the body holds nothing but a
   description, output declarations and "the answer is the value". Python:
   after the docstring, only `x = _ai`, `x: T = _ai`, `x: T = _ai["…"]`,
@@ -604,6 +613,35 @@ hashes (a TypeScript module's `input` and `output`). Versions computed
 before 2026-09-28 have no `"interface"`: every module's version changed
 once then. Versions computed before 2026-09-30 have no `"defaults"`:
 every program with a default got a new version once then.
+
+## Token counts
+
+An exchange's `usage` is the lm15 response's `Usage`, its integer
+counters by name (`input_tokens`, `output_tokens`, `total_tokens`,
+`cache_read_tokens`, `cache_write_tokens`, `reasoning_tokens`,
+`input_audio_tokens`, `output_audio_tokens`); a counter lm15 left
+unknown is absent. Since lm15 2 (lm15-contract MAP-19, 2026-10-31) each
+counter means one thing on every provider: `input_tokens` is every token
+the model read, cached tokens included; `output_tokens` every token it
+wrote, reasoning included; the cache, reasoning and audio counters are
+parts of one of the two; `total_tokens` is their sum.
+
+A call's `usage`, a turn's ([conversations.md](conversations.md)) and
+any sum a reader makes over calls (a table's row, a run) add a counter
+only when every model call summed reported it; otherwise the sum leaves
+it out (null in a table). A module call with no exchanges adds nothing.
+
+**Token counts written with lm15 1.** Before, each counter was the
+provider's own: Anthropic's input left the cached tokens out, Gemini's
+and xAI's output left the reasoning out (and Gemini's input its own
+tools' tokens). A record says which lm15 wrote it (`process.lm15`; a
+record without it was written with lm15 1). A reader shows the counts
+of a record written with lm15 1 only when they cannot differ from lm15
+2's: `input_tokens`, `output_tokens` and `total_tokens` are all there,
+`total_tokens` is `input_tokens + output_tokens`, and neither cache
+counter is above 0. Otherwise it reads the record's `usage` as `{}`:
+every count unknown. The record itself is never rewritten. Kept replies
+follow the same rule ([replies.md](replies.md), *The file*).
 
 ## Canonical JSON
 

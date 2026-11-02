@@ -55,12 +55,13 @@ function calls(f=nothing; folder=nothing, since=nothing)
     mine = [c for c in recs if name === nothing ||
             (getpath(c, "program", "name") == name && (mod === nothing || getpath(c, "program", "module") == mod))]
     sort!(mine; by=c -> (string(get(c, "started", "")), string(get(c, "id", ""))))
+    tokens(c, k) = get(usage_read(get(c, "usage", nothing), getpath(c, "process", "lm15")), k, nothing)   # calls.md, *Token counts*
     [(id=c["id"], started=log_time(get(c, "started", nothing)), name=getpath(c, "program", "name"),
       module_name=getpath(c, "program", "module"), version=getpath(c, "program", "version"), model=something(get(c, "model", nothing), missing),
       seconds=something(get(c, "seconds", nothing), missing), inputs=getpath(c, "inputs"), outputs=getpath(c, "outputs"),
       error=get(c, "error", nothing) isa AbstractDict ? c["error"]["type"] * (haskey(c["error"], "message") ? ": " * c["error"]["message"] : "") : missing,
-      input_tokens=getpath(c, "usage", "input_tokens"), output_tokens=getpath(c, "usage", "output_tokens"),
-      reasoning_tokens=getpath(c, "usage", "reasoning_tokens"), total_tokens=getpath(c, "usage", "total_tokens"),
+      input_tokens=tokens(c, "input_tokens"), output_tokens=tokens(c, "output_tokens"),
+      reasoning_tokens=tokens(c, "reasoning_tokens"), total_tokens=tokens(c, "total_tokens"),
       parent=something(get(c, "parent", nothing), missing), caller=something(get(c, "caller", nothing), Dict{String,Any}()),
       language=getpath(c, "process", "language")) for c in mine]
 end

@@ -38,6 +38,13 @@ model writes and refines as calls come in, training rows a teacher writes,
 `optimization_runs()`, `verify`, `check` and `runs`, and the coding-agent
 skill; each language's README lists them.*
 
+*2026-10-31: pictures, sounds, videos and documents in every language,
+with one sample rule (a picture function had one version whatever it did)
+and cases that send real pictures; files (Attachments' `att()`) in Python
+and TypeScript (`functai/files`), refused `files-unavailable` in R and
+Julia. TypeScript 1.0.0 is ready on the branch `ts-1.0`, to publish once
+lmcc 0.8.7 and attachments-dev are on npm (design/15).*
+
 ## What we want
 
 FunctAI should exist natively in **Python, TypeScript/JavaScript, R and

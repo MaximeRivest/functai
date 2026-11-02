@@ -131,6 +131,9 @@ def annotation(shape: dict, name: str, classes: list) -> str:
         plain = {k: v for k, v in shape.items() if k not in _BOUNDS}
         args = ", ".join(f"{k}={v!r}" for k, v in bounds.items())
         return f"Annotated[{annotation(plain, name, classes)}, Field({args})]"
+    if "media" in shape:                          # lmcc's media shape: lm15's part of that kind
+        return {"image": "ImagePart", "audio": "AudioPart", "video": "VideoPart", "document": "DocumentPart",
+                "binary": "BinaryPart"}[shape["media"]]
     if "enum" in shape:
         return "Literal[" + ", ".join(repr(v) for v in shape["enum"]) + "]"
     if "anyOf" in shape:
@@ -208,8 +211,8 @@ def python_function(d: dict):
         if "\n" in f.get("desc", ""):
             params.append(described_choice(f, default))
             continue
-        params.append(f"    {f['name']}: {annotation(f['shape'], f['name'], classes)}{default},"
-                      + (f"  # {f['desc']}" if f.get("desc") else ""))
+        typed = "Artifacts" if f.get("type") == "Artifacts" else annotation(f["shape"], f["name"], classes)
+        params.append(f"    {f['name']}: {typed}{default}," + (f"  # {f['desc']}" if f.get("desc") else ""))
     *extras, main = d["outputs"]
     body = [f'    """{d["description"]}"""'] if d["description"] else []
     for f in extras:
@@ -225,7 +228,9 @@ def python_function(d: dict):
     namespace = {"__name__": "contract_case"}
     # a real file, so inspect finds the source (comments are guidance)
     path = Path(tempfile.mkdtemp()) / "contract_case.py"
+    files = "from attachments import Artifacts\n" if any(f.get("type") == "Artifacts" for f in d["inputs"]) else ""
     path.write_text("import dataclasses\nfrom typing import Annotated, Literal, Optional\nfrom pydantic import Field\n"
+                    "from lm15.types import AudioPart, BinaryPart, DocumentPart, ImagePart, VideoPart\n" + files +
                     "from functai import _ai\n\n" + source)
     exec(compile(path.read_text(), str(path), "exec"), namespace)
     fn = namespace[d["name"]]

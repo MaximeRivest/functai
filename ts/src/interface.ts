@@ -8,6 +8,8 @@
 
 import * as lmcc from "lmcc";
 import { builtin } from "./host.ts";
+import { ARTIFACTS, bindFiles, FilesRefused } from "./files-binding.ts";
+import { holdsMedia, mediaAsData, mediaKind } from "./media.ts";
 import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn, toJson } from "./values.ts";
 
 type Rec = Record<string, unknown>;
@@ -459,6 +461,8 @@ function sameJson(a: unknown, b: unknown): boolean {
  */
 export function bindValue(value: unknown, field: InterfaceField): [boolean, unknown] {
   if (field.opaque) return [true, value];
+  if (field.type === ARTIFACTS) return [true, bindFiles(value, `input ${field.name}`)];   // functions.md: files, as their wire form
+  if (holdsMedia(field.shape)) value = mediaAsData(value);       // lm15-ts's parts as lm15's part data (functions.md, Media)
   const shape = ownDefaultOut(field.shape);
   const data = isMissing(value) ? undefined : jsonForm(value);
   const start: unknown = isMissing(value) ? null : data === undefined ? new NoJson(value) : data;
@@ -494,7 +498,14 @@ export function refusalMessage(where: string, field: InterfaceField, value: unkn
   }
   const points = [...text];
   if (points.length > 80) text = points.slice(0, 80).join("") + "\u2026";
-  return `${where}: ${direction} ${field.name}: ${text} ${data === undefined ? "has no JSON form, and " : ""}${verb} ${wants}`;
+  return `${where}: ${direction} ${field.name}: ${text} ${data === undefined ? "has no JSON form, and " : ""}${verb} ${wants}${mediaHint(field.shape)}`;
+}
+
+/** How a media value is given (functions.md, Media), for a refusal of one. */
+function mediaHint(shape: Rec): string {
+  if (!holdsMedia(shape)) return "";
+  const kind = mediaKind(shape) ?? "image";
+  return `: give lm15's ${kind}({ path }) (or { url }, { data }), or its data { media_type, data } (base64)`;
 }
 
 const quotes = (dropped: readonly string[], name: string) => !dropped.includes("*") && !dropped.includes(name);
@@ -596,6 +607,7 @@ export function checkInputs(iface: Interface, given: Readonly<Rec>, where: strin
         [ok, bound] = bindValue(value, f);
       } catch (err) {
         if (err instanceof UnreadableFile) throw new InterfaceError("interface-input", f.name, `${where}: input ${f.name}: ${err.message}`);
+        if (err instanceof FilesRefused) throw new InterfaceError("interface-input", f.name, `${where}: input ${f.name} ${err.message}`);
         throw err;
       }
       if (!ok) throw new InterfaceError("interface-input", f.name, refusalMessage(where, f, value, "input", quotes(dropped, f.name)));
@@ -625,7 +637,11 @@ export function recordedInputs(iface: Interface, given: Readonly<Rec>): Rec {
       try {
         bound = bindValue(value, f)[1];
       } catch (err) {
-        if (!(err instanceof UnreadableFile)) throw err;           // a file that cannot be read: recorded as given
+        // a file that cannot be read, or files refused: recorded as given (their wire form when they have one)
+        if (err instanceof FilesRefused) {
+          const wire = typeof (value as { toWire?: unknown })?.toWire === "function" ? (value as { toWire(): unknown }).toWire() : value;
+          bound = jsonForm(wire) ?? value;
+        } else if (!(err instanceof UnreadableFile)) throw err;
       }
       setOwn(out, f.name, bound);
     } else if (Object.hasOwn(f.shape, "default")) setOwn(out, f.name, copyData(f.shape["default"]));

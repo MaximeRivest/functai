@@ -47,6 +47,56 @@ def test_function_case(path):
     assert request_fingerprint(request) == expect["request_hash"]
     assert fn.version == expect["version"]
     assert calllog.signature_id(spec.signature) == expect["signature_id"]
+    for sent in case.get("sends", []):
+        assert sends(fn, sent["inputs"]) == sent["expect"], sent["inputs"]
+
+
+def sends(fn, inputs: dict) -> dict:
+    """What the function sends for these inputs, as the probe is rendered (functions/ and files/ ``sends``): the
+    request, or the refusal its binding gives, before any request."""
+    spec, settings = fn._spec(), fn._effective()
+    try:
+        bound = fn._bind_inputs((), dict(inputs))
+    except functai.InterfaceError as err:
+        return {"refuses": err.code, "field": err.field}
+    plan, past = probe_plan(fn, spec, settings)
+    return {"request": json.loads(json.dumps(probe_request(fn, spec, plan, past, bound)))}
+
+
+@pytest.mark.parametrize("path", case_files("files"), ids=lambda p: p.stem)
+def test_files_case(path):
+    """An AI function reading files (functions.md, Pictures, sounds, documents and files): defined in Python and
+    loaded from the folder another language saved, it has the case's signature, sample, request and version, and
+    sends (or refuses) what the case says."""
+    case = load(path)
+    d, expect = case["definition"], case["expect"]
+    defined = python_function(d)
+    manifest = dict(case["manifest"], language="typescript")       # read as data, as another language's folder
+    loaded = functai.saved.from_manifest(manifest, case["node"]) if case["node"] != manifest["entry"] \
+        else functai.saved.from_manifest(manifest)
+    for fn in (defined, loaded):
+        spec, settings = fn._spec(), fn._effective()
+        assert without_type(spec.signature)["fields"] == [{**f, "purpose": f.get("purpose", "plain")}
+                                                          for f in expect["signature"]["fields"]]
+        assert functai.saved._sample_inputs(spec) == expect["sample"]
+        plan, past = probe_plan(fn, spec, settings)
+        assert json.loads(json.dumps(probe_request(fn, spec, plan, past, expect["sample"]))) == expect["request"]
+        assert fn.version == expect["version"]
+        assert calllog.signature_id(spec.signature) == expect["signature_id"]
+        for sent in case["sends"]:
+            assert sends(fn, sent["inputs"]) == sent["expect"], sent["inputs"]
+
+
+def test_files_cases_without_attachments_refuse_files_unavailable(monkeypatch):
+    """A Python without Attachments refuses a function reading files, and sends nothing (files-unavailable)."""
+    from functai import files
+    monkeypatch.setattr(files, "_installed", set())
+    monkeypatch.setattr(files, "install", lambda registry=None: False)
+    for path in case_files("files"):
+        case = load(path)
+        with pytest.raises(functai.FilesUnavailable) as err:
+            functai.saved.from_manifest(dict(case["manifest"], language="typescript"))
+        assert err.value.code == "files-unavailable" and isinstance(err.value, ImportError)
 
 
 def test_the_contract_has_function_cases():

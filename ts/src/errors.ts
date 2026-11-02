@@ -25,6 +25,17 @@ export class FunctAIError extends Error {
 }
 
 /**
+ * A function reads files (an `artifacts()` input: Attachments' `att()`
+ * results), and Attachments is not here (code `files-unavailable`): import
+ * `"functai/files"` once, with `attachments-dev` installed. Nothing was sent.
+ */
+export class FilesUnavailable extends FunctAIError {
+  constructor(message: string) {
+    super("files-unavailable", message);
+  }
+}
+
+/**
  * A conversation refused (contract/conversations.md): `conversation-id`,
  * `conversation-content`, `conversation-opaque`, `conversation-signature`,
  * `conversation-busy`, `conversation-nested`, `turn-unknown`, `turn-state`,

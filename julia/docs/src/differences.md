@@ -36,7 +36,7 @@ Julia refuses to guess when two packages loaded with `using` export different fu
 ## By design, for the stages Python built first
 
 - **`train_test`** is Python's `functai.split` (`split` is Base's).
-- **`merge!(chat, branches, judge)`** is Python's `chat.merge(...)`; `turns(chat; all = true)` its `chat.all_turns()`; `approve!`, `deny!`, `resume!`, `abandon!`, `stop!` its turn methods; `on!(f, plugin, hook)` its decorators. A conversation's turn is `FunctAI.turn(chat, id)` (`turn` is LM15's export).
+- **`merge!(chat, branches, judge)`** is Python's `chat.merge(...)`; `turns(chat; all = true)` its `chat.all_turns()`; `approve!`, `deny!`, `resume!`, `abandon!`, `stop!` its turn methods; `on!(f, plugin, hook)` its decorators. A conversation's turn is `FunctAI.turn(chat, id)` (`turn` is lm15's export).
 - **A baked student is called through a server** (vLLM's OpenAI-compatible chat endpoint, with the student's chat template and thinking off), not in this process: Julia has no Hugging Face tokenizer with chat templates. The messages are the ones it was trained on, so the tokens are too, when the server serves the baked folder's tokenizer.
 - **Refusals of a bake carry codes** (`baked-fixed`, `baked-derived`, `baked-changed`, `baked-format`, `bake-rows`): Python's `BakeError` says the same in its message.
 - **A served program runs on HTTP.jl** (`serve`); the same routes, keys, views and errors as Python's.

@@ -1,0 +1,8 @@
+{
+ "description": "No model call: nothing.",
+ "kind": "sum",
+ "usages": [],
+ "expect": {
+  "usage": {}
+ }
+}

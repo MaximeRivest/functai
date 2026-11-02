@@ -98,3 +98,40 @@ test("a stream from the cache shows the whole answer, and ends with the same val
   assert.equal(text.trim(), "happy");
   assert.equal(router.requests.length, 1);
 });
+
+test("on disk, a reply is kept as format 2; a reply lm15 1 kept (format 1) is reused, its counts kept only when they cannot mislead", async () => {
+  const { DatabaseSync } = await import("node:sqlite");
+  const folder = mkdtempSync(join(tmpdir(), "functai-cache-"));
+  const router = new FakeRouter([], () => "<result>\nhappy\n</result>");
+  const f = mood(router, { cacheReplies: folder });
+  await f("Kept.");
+  const db = new DatabaseSync(join(folder, "replies.sqlite"));
+  assert.deepEqual(db.prepare("SELECT format FROM replies").all().map((r) => r["format"]), [2]);
+  const asLm15v1 = (usage: Record<string, number>) => {
+    const row = db.prepare("SELECT key, response FROM replies").get()!;
+    const reply = JSON.parse(row["response"] as string);
+    reply["usage"] = usage;
+    db.prepare("UPDATE replies SET format = 1, response = ? WHERE key = ?").run(JSON.stringify(reply), row["key"] as string);
+  };
+  asLm15v1({ input_tokens: 20, output_tokens: 5, total_tokens: 25, cache_read_tokens: 4873 });   // Anthropic's input left the cache out
+  let pred = await f.predict({ review: "Kept." });
+  assert.equal(pred.answer, "happy");
+  assert.equal(router.requests.length, 1);                      // reused: no model call
+  assert.deepEqual(pred.usage, {});                             // its counts may mean something else
+  asLm15v1({ input_tokens: 20, output_tokens: 5, total_tokens: 25, cache_read_tokens: 0 });
+  pred = await f.predict({ review: "Kept." });
+  assert.equal(router.requests.length, 1);
+  assert.deepEqual(pred.usage, { inputTokens: 20, outputTokens: 5, totalTokens: 25, cacheReadTokens: 0 });
+  db.close();
+});
+
+test("a call's tokens: a count one of its model calls did not report is absent", async () => {
+  const { Message, Response } = await import("@lm15/lm15");
+  const usages = [{ inputTokens: 3, outputTokens: 2, totalTokens: 5, reasoningTokens: 1 }, { inputTokens: 4, outputTokens: 2, totalTokens: 6 }];
+  const texts = ["no tags at all", "<result>\nhappy\n</result>"];
+  const router = new FakeRouter([], (request, i) => new Response({
+    model: request.model, message: Message.assistant([{ type: "text", text: texts[i]! }] as never), finishReason: "stop" as never, usage: usages[i]!,
+  }));
+  const pred = await mood(router, { cacheReplies: false }).predict({ review: "Twice." });
+  assert.deepEqual(pred.usage, { inputTokens: 7, outputTokens: 4, totalTokens: 11 });
+});

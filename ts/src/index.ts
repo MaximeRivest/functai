@@ -17,6 +17,7 @@ import { metaOf, withContext } from "./calllog.ts";
 import { effective, type Settings } from "./settings.ts";
 import { readField, type FieldSpec, type ValueOf } from "./shapes.ts";
 import { setOwn } from "./values.ts";
+import { usageRead } from "./usage.ts";
 
 export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column, type Definition, type Demo, type Expected, type Input,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
@@ -24,11 +25,15 @@ export { module, type AnyModule, type Module, type ModuleArgs, type ModuleContex
   type ModuleSpec } from "./module.ts";
 export { t, describe, type FieldWith, type Json, type Shape, type FieldSpec, type StandardSchemaLike, type ValueOf, type ZodLike } from "./shapes.ts";
 export { configure, withSettings, type Settings } from "./settings.ts";
+// pictures, sounds, videos and documents as inputs: lm15's own parts (t.image(), t.audio(), …), so no second install
+export { image, audio, video, document, binary } from "@lm15/lm15";
+export type { ImagePart, AudioPart, VideoPart, DocumentPart, BinaryPart } from "@lm15/lm15";
+export type { AudioInput, BinaryInput, DocumentInput, ImageInput, MediaData, MediaKind, VideoInput } from "./media.ts";
 export { SettingError, type LogContent } from "./content.ts";
 export { InterfaceError, checkInterface, interfaceSignature, type Interface, type InterfaceCode, type InterfaceField } from "./interface.ts";
 export { Prediction, StepLimit } from "./engine.ts";
-export { Cancelled, FunctAIError, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError, BakeError,
-  type Approval } from "./errors.ts";
+export { Cancelled, FunctAIError, FilesUnavailable, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError,
+  BakeError, type Approval } from "./errors.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
 export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
   ToolResultHook, TurnEndHook } from "./plugins.ts";
@@ -83,7 +88,8 @@ export function tool<I extends Record<string, FieldSpec>>(
   }
   const properties: Rec = {};
   for (const [field, f] of Object.entries(spec.input)) {
-    const { shape, desc } = readField(f, `${name}.${field}`);
+    const { shape, desc, files } = readField(f, `${name}.${field}`);
+    if (files) throw new TypeError(`tool("${name}"): ${field}: a tool's input is what the model writes, never files (artifacts())`);
     setOwn(properties, field, desc ? { ...shape, description: desc } : shape);
   }
   // no additionalProperties: Gemini refuses the keyword in function declarations
@@ -119,7 +125,11 @@ export interface LoggedCall {
   outputs: Rec | null;
   error: { type: string; message?: string; code?: string } | null;
   model: string | null;
-  /** Tokens, summed over the call's requests: `inputTokens`, `outputTokens`, `totalTokens`, … */
+  /**
+   * Tokens, summed over the call's requests: `inputTokens`, `outputTokens`, `totalTokens`, … with lm15 2's
+   * meaning (input includes cached tokens, output includes reasoning). A count not reported is absent; so are
+   * counts lm15 1 wrote that may mean something else (calls.md, *Token counts written with lm15 1*).
+   */
   usage: Record<string, number>;
   confidence: number | null;
   /** Who called: `{ evaluation: "…" }`, `{ optimization: "…" }`, `$FUNCTAI_CALLER`'s keys. */
@@ -137,7 +147,7 @@ function loggedCall(r: Rec): LoggedCall {
     content: r["content"] === true, omitted: r["content"] === true ? null : omitted ?? { inputs: [], outputs: [] },
     inputs: (r["inputs"] as Rec | undefined) ?? null, outputs: (r["outputs"] as Rec | undefined) ?? null,
     error: (r["error"] as LoggedCall["error"] | undefined) ?? null, model: (r["model"] as string | null) ?? null,
-    usage: Object.fromEntries(Object.entries((r["usage"] ?? {}) as Record<string, number>).map(([k, v]) => [camel(k), v])),
+    usage: Object.fromEntries(Object.entries(usageRead(r["usage"], (r["process"] as Rec | undefined)?.["lm15"])).map(([k, v]) => [camel(k), v])),
     confidence: (r["confidence"] as number | null | undefined) ?? null, caller: (r["caller"] ?? {}) as Rec, record: r,
   };
 }

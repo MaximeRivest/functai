@@ -38,7 +38,7 @@ GitHub, in this order:
 ```julia
 using Pkg
 Pkg.add(url = "https://github.com/MaximeRivest/lmcc", subdir = "julia")
-Pkg.add(url = "https://github.com/lm15-dev/LM15.jl")
+Pkg.add(url = "https://github.com/lm15-dev/LanguageModel15.jl")
 Pkg.add(url = "https://github.com/MaximeRivest/functai", subdir = "julia")
 ```
 

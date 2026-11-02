@@ -14,6 +14,7 @@ import { INVOCATION } from "./calllog.ts";
 import { effectsOf, pathOf, type Tool } from "./tools.ts";
 import type { Approval } from "./errors.ts";
 import { Cancelled } from "./errors.ts";
+import { sumUsage } from "./usage.ts";
 import * as bridge from "lmcc/lm15";
 import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Config, type Request, type Response,
   type StreamEvent } from "@lm15/lm15";
@@ -99,15 +100,19 @@ export class Prediction<O = Rec, A = unknown> {
     return this.first !== null;
   }
 
-  /** Tokens, summed over every reply: `inputTokens`, `outputTokens`, `totalTokens`, … */
+  /**
+   * Tokens, summed over every reply: `inputTokens`, `outputTokens`, `totalTokens`, …
+   * (lm15 2: input includes cached tokens, output includes reasoning). A count one
+   * reply did not report is absent: a sum is exact or absent.
+   */
   get usage(): Record<string, number> {
-    const total: Record<string, number> = {};
-    for (const r of this.responses) {
+    return sumUsage(this.responses.map((r) => {
+      const counts: Record<string, number> = {};
       for (const [k, v] of Object.entries((r.usage ?? {}) as Record<string, unknown>)) {
-        if (typeof v === "number" && Number.isInteger(v)) total[k] = (total[k] ?? 0) + v;
+        if (typeof v === "number" && Number.isInteger(v)) counts[k] = v;
       }
-    }
-    return total;
+      return counts;
+    }));
   }
 
   get attempts(): number {

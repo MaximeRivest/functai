@@ -1,0 +1,21 @@
+{
+ "description": "Written with lm15 2: as written.",
+ "kind": "read",
+ "usage": {
+  "input_tokens": 4893,
+  "output_tokens": 5,
+  "total_tokens": 4898,
+  "cache_read_tokens": 4873,
+  "cache_write_tokens": 0
+ },
+ "lm15": "2.0.0",
+ "expect": {
+  "usage": {
+   "input_tokens": 4893,
+   "output_tokens": 5,
+   "total_tokens": 4898,
+   "cache_read_tokens": 4873,
+   "cache_write_tokens": 0
+  }
+ }
+}

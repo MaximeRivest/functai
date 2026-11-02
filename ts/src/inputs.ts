@@ -5,6 +5,7 @@
  */
 
 import { bindValue, InterfaceError, type InterfaceField } from "./interface.ts";
+import { ARTIFACTS, FILES_SHAPE } from "./files-binding.ts";
 import { allowsNull, isOpaque, readField, saysOptional, standardOf, type FieldSpec, type StandardResult, type StandardSchemaLike } from "./shapes.ts";
 import { byCodePoint, copyData, entriesOf, getOwn, jsonForm, setOwn } from "./values.ts";
 
@@ -64,7 +65,18 @@ export function defaultCode(f: (...args: never[]) => unknown): string {
  * input with no default stays left out.
  */
 export function declareInput(name: string, spec: FieldSpec, where: string, program: "ai" | "module"): DeclaredInput {
-  const { shape: written, desc } = readField(spec, where, name);
+  const { shape: written, desc, files } = readField(spec, where, name);
+  if (files) {
+    // files are a whole input (functions.md): never optional, never inside another shape
+    if (JSON.stringify(written) !== JSON.stringify(FILES_SHAPE)) {
+      throw new InterfaceError("interface-malformed", name, `${where}: files (artifacts()) are a whole input: not optional, not in a list, `
+        + `with no default. To call it with no files, give att([]): the model is shown "(no content)"`);
+    }
+    return {
+      field: { name, shape: { ...FILES_SHAPE, items: { ...(FILES_SHAPE["items"] as Rec) } }, ...(desc ? { desc } : {}), type: ARTIFACTS },
+      rule: { optional: false, schema: null },
+    };
+  }
   // a default given as a function (`t.string({ default: () => today() })`) is computed at each call that leaves the
   // input out; the interface holds the value it gives now, and the version counts its code
   let read = written;
@@ -142,7 +154,8 @@ export function declareOutput(name: string, spec: FieldSpec, where: string, prog
   if (opaque && program === "ai") {
     throw new InterfaceError("interface-malformed", name, `${where}: an AI function's output is written by a model: it cannot be opaque`);
   }
-  const { shape, desc } = readField(spec, where, name);
+  const { shape, desc, files } = readField(spec, where, name);
+  if (files) throw new InterfaceError("interface-malformed", name, `${where}: files (artifacts()) are an input; a model does not write them`);
   return { name, shape, ...(desc ? { desc } : {}), ...(opaque ? { opaque: true as const } : {}) };
 }
 

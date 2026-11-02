@@ -18,6 +18,7 @@ import { RemoteError } from "./errors.ts";
 import { checkInterface, InterfaceError, type Interface } from "./interface.ts";
 import { module, type AnyModule } from "./module.ts";
 import { parseData, toJson, writeData } from "./values.ts";
+import { ARTIFACTS, filesShape } from "./files-binding.ts";
 import type { CallOptions } from "./fn.ts";
 
 type Rec = Record<string, unknown>;
@@ -71,7 +72,9 @@ export async function remote(url: string, opts: { key?: string | null; timeout?:
   }
   const iface = checkInterface(described["interface"] as Interface, { ai: described["kind"] === "ai", where: `remote("${url}")` });
   const names = iface.outputs.map((f) => f.name);
-  const shapeOf = (f: Interface["inputs"][number]) => ({ shape: f.shape, ...(f.desc ? { desc: f.desc } : {}), ...(f.optional ? { optional: true } : {}) });
+  // an input of files (type Artifacts) is bound as one here too: att()'s result sent as its wire form, a failed file refused before it is sent
+  const shapeOf = (f: Interface["inputs"][number]) => ({ shape: f.type === ARTIFACTS ? filesShape() : f.shape, ...(f.desc ? { desc: f.desc } : {}),
+    ...(f.optional ? { optional: true } : {}) });
   const program = module(described["name"] as string, {
     _remote: { url: base, version: described["version"] as string },
     description: iface.description ?? "",
