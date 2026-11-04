@@ -8,7 +8,7 @@ rat:
 # Plugin { #functai.Plugin }
 
 ```{.python .no-run}
-Plugin(name, *, version='0.0.0', api=API, description='')
+Plugin(name, *, version='0.0.0', api=API, description='', config=None)
 ```
 
 A named, versioned set of hooks.

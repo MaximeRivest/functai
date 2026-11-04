@@ -82,6 +82,16 @@ Find everything a program depends on, save it to a folder, prove it runs elsewhe
 | [describe](describe.md#functai.describe) | What a saved program takes and gives, without loading it or running |
 | [file](file.md#functai.file) | A data file the program reads: ``open(functai.file("data/stopwords.txt"))``. |
 
+## What a program runs on
+
+A version says what a program is; its setup what runs it (the model each step asks, settings, plugins, tools' code, what it may reach). `fn.setup`, `fn.setup_document()`; the `wall` setting; tools' and modules' `needs`.
+
+| | |
+| --- | --- |
+| [setup_diff](setup_diff.md#functai.setup_diff) | What differs between two setups, step by step: each ``{"program", "field", |
+| [spend](spend.md#functai.spend) | Say what code inside a call spent beyond the models' tokens, in dollars |
+| [ReachError](ReachError.md#functai.ReachError) | A program needs to reach what the wall it runs behind does not let |
+
 ## Streaming
 
 Watch a call while it is made. `fn.stream(...)` returns a Stream; its events are in `functai.streaming`.
@@ -91,6 +101,8 @@ Watch a call while it is made. `fn.stream(...)` returns a Stream; its events are
 | [Stream](Stream.md#functai.Stream) | One call of an AI function or a module, watched while it is made. |
 | [Cancelled](Cancelled.md#functai.Cancelled) | The stream was closed before its call ended. |
 | [note](note.md#functai.note) | Say that something happened, from code inside a call (a module's body, |
+| [Note](Note.md#functai.Note) | A note a program declares (contract/programs.md, *Notes*): what its |
+| [answer_so_far](answer_so_far.md#functai.answer_so_far) | The answer so far, read from its text by its shape (contract/streaming.md, |
 
 ## Observers and journals
 

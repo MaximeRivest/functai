@@ -109,6 +109,10 @@ verdict = "unclear" if c["low"] <= 0 <= c["high"] else ("better" if c["diff"] > 
   `metric(row, prediction) -> number`; or a judge `@ai` function.
 - Quotes as evidence: `functai.quotes_found(text, quotes)` checks them, free.
 - Never score on rows used for examples; a model's answers are not gold labels.
+- **A score belongs to a setup**, not a version: `fn.setup` changes with the model,
+  its settings, plugins, tools' code and the wall; `fn.version` does not. Compare
+  two runs only with the setup each ran on (every record has `program.setup`);
+  `functai.setup_diff(a, b)` says what differs.
 
 ## 4. Pictures and files
 

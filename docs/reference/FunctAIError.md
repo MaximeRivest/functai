@@ -24,6 +24,6 @@ except functai.FunctAIError as err:
 The subclasses say where the error comes from: ``InterfaceError``,
 ``LogContentError``, ``SawError``, ``EventRefused``, ``JournalError``,
 ``ConversationError``, ``Waiting``, ``ApprovalError``, ``ServeError``,
-``PluginError``, and ``RemoteError`` (``from functai.remote import
+``PluginError``, ``ReachError``, and ``RemoteError`` (``from functai.remote import
 RemoteError``). A reply the model wrote that cannot be read is lmcc's
 ``Refusal``, with lmcc's codes (see *When the model gets it wrong*).

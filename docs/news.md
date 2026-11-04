@@ -4,6 +4,74 @@
 
 ## Unreleased
 
+### What a program runs on: setups
+
+A version says what a program **is**; its **setup** now says what it runs
+on: which model answers each step, with which settings and plugins, with
+which tool code, able to reach what (design/18; contract: calls.md
+*Setups*; cases `setup/`). Two runs of one version on Claude Haiku and on
+GPT-6 Luna were indistinguishable before, except by the model written in
+each record.
+
+- **`fn.setup`** (and `module.setup`): `sha256:` of `fn.setup_document()`,
+  worked out where the program runs, from the settings in force there,
+  without the network. It holds the version, the model as lm15 routes it,
+  lm15's settings set in any layer, FunctAI's settings that change what the
+  model is asked (`max_steps`, `retries`, `tool_errors`, `on_unreadable`,
+  `capabilities`), the backup model (`escalate_to`), the plugins that run
+  with their settings, each tool's code (`code_id=` for what that code
+  cannot say: a tool made by a factory), and what the program may reach. A
+  module's names the setup of every AI function it reaches. Not in it: the
+  server address, keys, network retries, the reply cache, the call log.
+- **Every call record** has `program.setup`, and `placement` (the wall it
+  ran behind, the server address it asked) when there is one.
+- **`functai.setup_diff(a, b)`** and **`functai setup-diff A B`**: what
+  differs between two programs or two saved folders, step by step
+  (`stock: model.model: "gpt-4.1-mini" -> "claude-haiku-4-5"`).
+- **Reach and the wall.** Tools and modules say what their code reaches
+  (`needs={"domains": [...], "secrets": [...]}`: names, never values). The
+  host says what wall programs run behind (the `wall` setting: a name, or
+  what it lets through and its limits). With no wall, reach is `"open"`, a
+  setup of its own: an instruction improved where an agent could reach
+  anything may be wrong behind a wall. A program that needs what its wall
+  does not let through is refused before its code runs (`ReachError`,
+  `needs-unmet`), and the refusal is recorded.
+- **`functai.spend(usd)`**: code inside a call (a tool, a module) says what
+  it spent beyond tokens (a browsing service's charge). The record keeps
+  the sum (`spent`), and `limits(cost=...)` counts it, with no price needed.
+- **Saved folders** write each program's setup and each module's version
+  and needs. A tool made with `functai.tool` can now be saved and loaded
+  (it was refused as "not a function"), keeping its effects, needs, notes
+  and `code_id`.
+- Plugins say their settings (`Plugin(..., config=...)`); `limits` and
+  `keep_pictures` do, so a setup counts them.
+
+### Notes that are typed, and the answer so far
+
+(design/19; contract: programs.md *Notes*, streaming.md; cases
+`programs/27`-`30`, `views/outside-04`, `partial/`.)
+
+- **A program declares its notes**: `@module(notes={"stage":
+  functai.Note(Literal["walking", "writing"], latest=True, outside=True),
+  "page captured": Page})`, and a tool its own (`functai.tool(notes=...)`),
+  which every AI function that has it declares. Each note is checked where
+  it is made: a name the program does not declare, or data that does not
+  fit, raises `InterfaceError` (`interface-note`). Notes are in the
+  interface (and in `describe`), never in its signature: declaring one
+  splits no records or ratings.
+- **The outside view shows notes declared `outside`**, from any call of the
+  tree, as the program's: a served program's caller sees the stage and the
+  pages captured, and never a helper's prompt or a tool's input.
+- **The answer so far is read by its shape**: a choice inside a record
+  (`severity: Literal["low", "medium", "high"]`) shows only once whole,
+  never as "med". `functai.answer_so_far(text, shape)` reads it for a page
+  that knows the program. A text that cannot be the start of JSON gives
+  None (`partial_json` raised before).
+- A follower's state holds each call's notes, in order.
+- The first call of a module no longer reads every installed package each
+  time (about 13 seconds in a large environment, now about 3 once per
+  process).
+
 ### Long agents and pipelines
 
 For agents that click through a site for hundreds of steps, and pipelines

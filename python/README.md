@@ -96,6 +96,56 @@ only `append` is sent every event through its `append`. At exit, FunctAI waits a
 seconds for observers and journals to catch up. In a process forked
 inside a call, calls start a tree of their own.
 
+### What a program runs on
+
+A version says what a program **is** (its instruction, examples, code);
+its **setup** says what runs it: the model each step asks, the settings
+and plugins in force, its tools' code, and what it may reach. Every call
+records it (`program.setup`), so a score or a comparison belongs to one
+thing that ran:
+
+```python
+with functai.configure(lm="claude-haiku-4-5"):
+    haiku = walker.setup
+with functai.configure(lm="gpt-6-luna"):
+    assert walker.setup != haiku                    # another setup of the same version
+functai.setup_diff("saved/haiku", "saved/luna")     # [{"program": "walker", "field": "model.model", ...}]
+```
+
+Tools and modules say what their code reaches, and the host says what
+wall programs run behind. A program that needs more than its wall lets
+through is refused before its code runs (`ReachError`); a run with no wall
+has reach `"open"`, a setup of its own. Code says what it spent beyond
+tokens with `functai.spend(usd)`, and `limits(cost=...)` counts it:
+
+```python
+@functai.tool(effects="reads", needs={"domains": ["*.browser-use.com"], "secrets": ["BROWSER_USE_API_KEY"]})
+def walk(url: str) -> str:
+    ...
+    functai.spend(0.05)
+    return report
+
+functai.configure(wall={"name": "srt", "domains": ["*.browser-use.com"], "secrets": ["BROWSER_USE_API_KEY"]})
+```
+
+### Notes, typed
+
+Code says what happened while it runs with `functai.note(name, data)`. A
+program declares its notes, and each is checked where it is made; those
+declared `outside` are shown to a caller who sees only the program's
+boundary (a served program's), and nothing else of its inside is:
+
+```python
+@functai.module(notes={"stage": functai.Note(Literal["walking", "writing"], latest=True, outside=True),
+                       "page captured": functai.Note(Page, outside=True)})
+def insight_finder(url: str) -> Report:
+    functai.note("stage", "walking")
+    ...
+
+s = write_insights.stream(pages)
+s.partial          # the answer so far, by its shape: a severity shows once whole, never "med"
+```
+
 ## Conversations, plugins, tools that ask first, serving
 
 A conversation is a program's calls that remember each other. The
