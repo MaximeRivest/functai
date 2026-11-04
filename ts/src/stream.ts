@@ -20,6 +20,7 @@ import {
 } from "./events.ts";
 import { JournalError, type Node, type Watcher } from "./log.ts";
 import { View as NamedView, type ViewName } from "./views.ts";
+import { answerSoFar, type SoFar } from "./partial.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -72,9 +73,9 @@ class Former {
   private readonly shown = new Map<string, boolean>();
   private readonly opts: EventsOptions;
   private readonly named: NamedView | null;
-  constructor(opts: EventsOptions, answerFrom: string | null = null) {
+  constructor(opts: EventsOptions, answerFrom: string | null = null, notes: readonly string[] = []) {
     this.opts = opts;
-    this.named = typeof opts.view === "string" ? new NamedView(opts.view, { answerFrom }) : null;
+    this.named = typeof opts.view === "string" ? new NamedView(opts.view, { answerFrom, notes }) : null;
   }
 
   take(e: StreamEvent, keep: KeptFields, program: { kind: string; answer: string }): StreamEvent | null {
@@ -115,6 +116,11 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   readonly passive: boolean;
   /** @internal A module's answer as it is written: the AI function whose answer text is the module's (the outside view). */
   answerFrom: string | null = null;
+  /** @internal The notes its program declares `outside` (programs.md, *Notes*): the outside view shows them. */
+  outsideNotes: readonly string[] = [];
+  /** @internal An AI function's answer shape, which says how the answer so far is read (streaming.md). */
+  answerShape: unknown = undefined;
+  private value: { ok: true; value: A } | null = null;
   private readonly calls = new Set<string>();
 
   constructor(start: (stream: Stream<A>) => Promise<A>, signal?: AbortSignal, passive = false) {
@@ -130,6 +136,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
     } catch (err) {
       started = Promise.reject(err);
     }
+    started.then((value) => { this.value = { ok: true, value }; }, () => undefined);
     this.result = started.finally(() => {
       if (onAbort) signal!.removeEventListener("abort", onAbort);   // a long-lived signal keeps no finished stream
       this.finished = true;
@@ -156,6 +163,19 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   /** The answer so far: its text since the call's latest request (streaming.md, law 3). Provisional: `result` has the typed value. */
   get text(): string {
     return this.answerText;
+  }
+
+  /**
+   * The answer so far as a value (streaming.md, *The answer so far*): the
+   * text for a text answer; for a record or a list, the JSON read so far
+   * (members and items may be missing; a choice shows once complete, never
+   * "med" for "medium"); `undefined` for any other answer until the call is
+   * done; the answer itself once it is. A module's is `undefined` until done.
+   */
+  get partial(): SoFar<A> | undefined {
+    if (this.value) return this.value.value as SoFar<A>;
+    if (this.answerShape === undefined) return undefined;
+    return answerSoFar(this.answerText, this.answerShape) as SoFar<A> | undefined;
   }
 
   /** Stop the call: no new request starts, and it ends with `Cancelled`. */
@@ -223,7 +243,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
   }
 
   private project(opts: EventsOptions, upTo = this.log.length): StreamEvent[] {
-    const former = new Former(opts, this.answerFrom);
+    const former = new Former(opts, this.answerFrom, this.outsideNotes);
     const out: StreamEvent[] = [];
     for (const { event, node } of this.log.slice(0, upTo)) {
       const x = former.take(event, node.keep, node.program);
@@ -250,7 +270,7 @@ export class Stream<A = unknown> implements AsyncIterable<string>, PromiseLike<A
    * (`EventUnknown` when the form has none).
    */
   async *events(opts: EventsOptions = {}): AsyncGenerator<StreamEvent> {
-    const former = new Former(opts, this.answerFrom);
+    const former = new Former(opts, this.answerFrom, this.outsideNotes);
     let skipping = opts.after !== undefined && opts.after !== null;
     if (skipping && "refuses" in this.read(null, opts.after!, opts)) {
       throw new EventUnknown(`this stream has no event ${opts.after!.writer}:${opts.after!.seq} in that form`);

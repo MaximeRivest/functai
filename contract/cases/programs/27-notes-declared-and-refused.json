@@ -1,0 +1,786 @@
+{
+ "description": "Notes declared: each {name, shape, desc?, latest?, outside?}, a name with a character other than a space, tab or line break, used once among the notes (a note may share a field's name); a shape of the checked vocabulary, as a module's field's, for every program. A fault names the note, after every field; notes that are not a list name none. Notes are not in the signature: the first five accepted interfaces have one.",
+ "program": "definitions",
+ "interfaces": [
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:3c60b241ca592dba3dbdd25b74e7e1dc6e81a0d467b434409b3240f85f63bbe1"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": []
+   },
+   "expect": {
+    "signature": "sha256:3c60b241ca592dba3dbdd25b74e7e1dc6e81a0d467b434409b3240f85f63bbe1"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {
+       "enum": [
+        "walking",
+        "writing"
+       ]
+      },
+      "desc": "where the walk is",
+      "latest": true,
+      "outside": true
+     },
+     {
+      "name": "page captured",
+      "shape": {
+       "type": "object",
+       "properties": {
+        "url": {
+         "type": "string"
+        },
+        "title": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "url",
+        "title"
+       ],
+       "additionalProperties": false
+      },
+      "outside": true
+     },
+     {
+      "name": "cost so far",
+      "shape": {
+       "type": "number"
+      },
+      "latest": true
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:3c60b241ca592dba3dbdd25b74e7e1dc6e81a0d467b434409b3240f85f63bbe1"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "result",
+      "shape": {}
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:3c60b241ca592dba3dbdd25b74e7e1dc6e81a0d467b434409b3240f85f63bbe1"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": " page\tcaptured ",
+      "shape": {}
+     }
+    ]
+   },
+   "expect": {
+    "signature": "sha256:3c60b241ca592dba3dbdd25b74e7e1dc6e81a0d467b434409b3240f85f63bbe1"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": {
+     "stage": {}
+    }
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": null
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {}
+     },
+     {
+      "name": "stage",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": " \t\n",
+      "shape": {}
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": " \t\n"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {},
+      "keep": "latest"
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {},
+      "latest": false
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {
+       "type": "text"
+      }
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {
+       "type": "string",
+       "pattern": "^[a-z]+$"
+      }
+     }
+    ]
+   },
+   "ai": true,
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage",
+      "shape": {
+       "type": "string"
+      },
+      "desc": 3
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage"
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "stage"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "the pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     {
+      "name": "stage"
+     }
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": "the pages"
+   }
+  },
+  {
+   "interface": {
+    "description": "Write insights.",
+    "inputs": [
+     {
+      "name": "pages",
+      "shape": {
+       "type": "array",
+       "items": {
+        "type": "object",
+        "properties": {
+         "url": {
+          "type": "string"
+         },
+         "title": {
+          "type": "string"
+         }
+        },
+        "required": [
+         "url",
+         "title"
+        ],
+        "additionalProperties": false
+       }
+      }
+     }
+    ],
+    "outputs": [
+     {
+      "name": "result",
+      "shape": {
+       "type": "string"
+      }
+     }
+    ],
+    "notes": [
+     "stage"
+    ]
+   },
+   "expect": {
+    "refuses": "interface-malformed",
+    "field": null
+   }
+  }
+ ]
+}

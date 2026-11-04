@@ -1,0 +1,33 @@
+{
+ "description": "A text answer (string, or string or null, no enum): the text so far, whatever it holds.",
+ "shape": {
+  "anyOf": [
+   {
+    "type": "string"
+   },
+   {
+    "type": "null"
+   }
+  ]
+ },
+ "checks": [
+  {
+   "text": "",
+   "expect": {
+    "value": ""
+   }
+  },
+  {
+   "text": "Hel",
+   "expect": {
+    "value": "Hel"
+   }
+  },
+  {
+   "text": "Hello, {\"not\": json",
+   "expect": {
+    "value": "Hello, {\"not\": json"
+   }
+  }
+ ]
+}

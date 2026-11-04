@@ -30,9 +30,11 @@ import enum
 import importlib.metadata as md
 import inspect
 import json
+import os
 import re
 import sys
 import textwrap
+import threading
 import types
 import typing
 from pathlib import Path
@@ -86,8 +88,32 @@ _STDLIB = frozenset(sys.stdlib_module_names) | {"builtins", "__future__"}
 _RUNTIME = ("functai", "lmcc", "lmcc_std", "lmcc_lm15", "lm15")
 
 
+_DISTS_LOCK = threading.Lock()
+_DISTS: Optional[Tuple[Tuple[Tuple[str, Optional[int]], ...], Dict[str, List[str]]]] = None
+
+
+def _path_stamp() -> Tuple[Tuple[str, Optional[int]], ...]:
+    """The folders packages are imported from, and when each last changed: installing or removing
+    a package changes its folder, so the same stamp means the same installed packages."""
+    out = []
+    for p in sys.path:
+        try:
+            out.append((p, os.stat(p or ".").st_mtime_ns))
+        except OSError:
+            out.append((p, None))
+    return tuple(out)
+
+
 def _distributions() -> Dict[str, List[str]]:
-    return md.packages_distributions()
+    """Which distribution provides each top-level module. Reading it walks every installed
+    package (seconds in a large environment), so it is read once and again only when a folder
+    on ``sys.path`` changed; threads asking at the same time wait for one reading."""
+    global _DISTS
+    stamp = _path_stamp()
+    with _DISTS_LOCK:
+        if _DISTS is None or _DISTS[0] != stamp:
+            _DISTS = (stamp, md.packages_distributions())
+        return _DISTS[1]
 
 
 class Origins:

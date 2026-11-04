@@ -27,6 +27,7 @@ are refused, and how values are bound and checked against one.
 | `description` | what the program does, in words (Python: the docstring). May be empty. |
 | `inputs` | in order, each field `{name, shape, desc?, type?, opaque?, optional?}`. |
 | `outputs` | in order, at least one, each field `{name, shape, desc?, type?, opaque?}`. The **last is the answer** (`program.answer` in the call log). A program with one output usually names it `result`. |
+| `notes` | optional: the notes the program may make while it runs (*Notes*), in order, each `{name, shape, desc?, latest?, outside?}`. Absent when it declares none. |
 
 A field:
 
@@ -39,8 +40,8 @@ A field:
 | `opaque` | `true` when the field's values may have no JSON form in the language that declared it (a data frame, a file handle, an unannotated Python argument, Python's `Any`). Its shape is `{}`. Its values are never checked. It says what the field accepts and where it may go, not how a value is written: the log writes each value by what it is (JSON when it has a JSON form, else a description: calls.md, *Values*). A boundary that needs data (serving, a conversation store: stages 2 and 3) cannot carry the field, and says so before any call. |
 | `optional` | inputs only: `true` when a caller may leave the input out (*Checking values*). |
 
-An interface and its fields have only the keys above. A later contract
-may add some (kinds of data for `log_content` and views, question 1 of
+An interface and its fields have only the keys above (and a note's,
+*Notes*). A later contract may add some (kinds of data for `log_content` and views, question 1 of
 design/08); until a reader knows a key, it refuses the interface
 (`interface-malformed`) rather than ignore it, since a key it does not
 know may narrow what the program accepts or say how a field must be
@@ -68,6 +69,9 @@ default is behaviour: it is in the program's version, by its logic
 calls, compare their interfaces, leaving out `description`, `desc` and
 `type`. Values written as descriptions are not data even when the
 signatures match: `rated` and replay leave them out (calls.md).
+**Notes are not in it**: a note is an event, never a value of a call
+([streaming.md](streaming.md), *Notes*), so declaring one, or changing
+one, never splits a program's records or ratings.
 
 ## Interfaces that are refused
 
@@ -136,12 +140,67 @@ with a default of 5, which pydantic does not check, refuses there).
   TypeScript takes it as data (`module(name, { input, output | outputs,
   uses }, run)`, `run` given one object of the inputs). Julia derives it
   from `@program`'s typed arguments and return type (`Any` is opaque).
+- **Notes.** A module declares them (Python `@module(notes={...})`,
+  TypeScript `module(name, { notes }, run)`). An AI function's are its
+  tools' (`tool(..., notes=...)`): each tool's, in the order of its tools,
+  each in the order the tool declares them; two tools that declare one
+  name differently refuse the function's definition (`interface-malformed`,
+  naming the note).
 - **Outputs.** A program's return type is one output, whatever its shape:
   a record (a Python dataclass or `TypedDict`, a TypeScript object, a
   Julia `NamedTuple`) is one output of object shape, named `result`
   unless the declaration names it. A module has several outputs only when
   it declares them as several (TypeScript `outputs`; each language says
   how), and returns them as one record by name.
+
+## Notes
+
+A program may say which **notes** its code makes while it runs
+([streaming.md](streaming.md), *Notes*: "page captured", "the stage is
+now writing"), and what each holds, so a page that shows them can be
+checked against the program, as a caller's code is against its outputs.
+A note declared is `{name, shape, desc?, latest?, outside?}`:
+
+| key | meaning |
+|---|---|
+| `name` | the note's name, as the code makes it: text with a character other than a space, a tab, a line feed or a carriage return in it, used once among the program's notes (a note may share a name with a field: they are never confused). |
+| `shape` | what its `data` holds, as a module's field's shape: JSON Schema read by the keywords *Checking values* lists, and no other, for every program (FunctAI checks it, never lmcc). `{}`: any JSON value. A note made with no data holds `null`. |
+| `desc` | words about it. |
+| `latest` | `true` when only its latest value matters (a stage, a count so far): a reader may keep the latest alone. Absent: each one matters (each page captured). |
+| `outside` | `true` when a caller who sees only the program's boundary may see it (the `outside` view, [streaming.md](streaming.md), *Views*). Absent: it is the program's own, and that view never shows it. A note can hold a prompt, a customer's data or text a web page wrote: shown outside only when declared. |
+
+**Refused** `interface-malformed`, naming the note, after every input and
+output (in order): `notes` that is not a list; a note that is not an
+object, has another key, has a name that is not text with a character
+other than a space, a tab, a line feed or a carriage return in it, or is
+used twice, has a shape that is not
+an object or that breaks the rules a module's field's shape keeps (a
+keyword *Checking values* does not list, a value of the wrong kind, a
+reference back to itself), a `desc` that is not text, or `latest` or
+`outside` that is not `true`. (`notes` itself malformed names no note.)
+
+**Checking a note.** When code makes a note inside a call, its `data` is
+taken as its JSON form (calls.md, *Values*: a record as its members; a
+value with no JSON form is refused), then:
+
+1. the innermost program running (the call's own: a module's body, or
+   the AI function whose tool runs) refuses it when it declares notes and
+   not this one: a note renamed in the code and not in the declaration
+   would leave every page that shows it blank, silently;
+2. every program of the calls it runs inside (the innermost, its parent,
+   up to the outermost) that declares this name refuses it when its
+   `data` does not fit that declaration's shape. So a note a program's
+   readers are promised, whoever made it inside, has the shape promised.
+
+A refusal is an `InterfaceError` with code `interface-note` and `field`
+the note's name, raised where the note is made, before anything sees it:
+the code broke its program's promise, as a module returning what its
+interface does not give does. A program that declares no notes refuses
+none by rule 1, as before notes were declared. Outside any call a note is
+nothing, and nothing is checked.
+
+`cases/programs/` pin notes declared, refused and checked (`program`
+`notes`).
 
 ## Binding a call's inputs
 

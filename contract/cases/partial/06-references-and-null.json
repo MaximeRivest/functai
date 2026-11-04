@@ -1,0 +1,98 @@
+{
+ "description": "$ref is followed, and an anyOf of one shape and null is read as that shape: a choice inside an Insight reached through either waits for its closing quote.",
+ "shape": {
+  "type": "object",
+  "properties": {
+   "insights": {
+    "type": "array",
+    "items": {
+     "$ref": "#/$defs/Insight"
+    }
+   },
+   "best": {
+    "anyOf": [
+     {
+      "$ref": "#/$defs/Insight"
+     },
+     {
+      "type": "null"
+     }
+    ]
+   }
+  },
+  "required": [
+   "insights",
+   "best"
+  ],
+  "$defs": {
+   "Insight": {
+    "type": "object",
+    "properties": {
+     "title": {
+      "type": "string"
+     },
+     "severity": {
+      "enum": [
+       "low",
+       "medium",
+       "high"
+      ]
+     },
+     "pages": {
+      "type": "integer"
+     },
+     "fixed": {
+      "type": "boolean"
+     }
+    },
+    "required": [
+     "title",
+     "severity",
+     "pages",
+     "fixed"
+    ],
+    "additionalProperties": false
+   }
+  }
+ },
+ "checks": [
+  {
+   "text": "{\"insights\": [{\"title\": \"A\", \"severity\": \"lo",
+   "expect": {
+    "value": {
+     "insights": [
+      {
+       "title": "A"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"insights\": [], \"best\": {\"severity\": \"hi",
+   "expect": {
+    "value": {
+     "insights": [],
+     "best": {}
+    }
+   }
+  },
+  {
+   "text": "{\"insights\": [], \"best\": null",
+   "expect": {
+    "value": {
+     "insights": []
+    }
+   }
+  },
+  {
+   "text": "{\"insights\": [], \"best\": null}",
+   "expect": {
+    "value": {
+     "insights": [],
+     "best": null
+    }
+   }
+  }
+ ]
+}

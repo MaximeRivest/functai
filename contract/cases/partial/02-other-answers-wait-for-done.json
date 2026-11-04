@@ -1,0 +1,24 @@
+{
+ "description": "A number, a choice or a boolean: nothing until done, even when the text looks whole.",
+ "shape": {
+  "enum": [
+   "low",
+   "medium",
+   "high"
+  ]
+ },
+ "checks": [
+  {
+   "text": "med",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "medium",
+   "expect": {
+    "nothing": true
+   }
+  }
+ ]
+}

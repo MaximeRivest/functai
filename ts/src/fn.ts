@@ -26,7 +26,7 @@ import { chatOf, Conversation, contextFor, sectionsFor, type ConversationOptions
 import { Context as Slot } from "./host.ts";
 import { Progress, showProgress } from "./progress.ts";
 import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
-import { checkInputs, checkInterface, interfaceSignature, recordedInputs, type Interface } from "./interface.ts";
+import { checkInputs, checkInterface, interfaceSignature, mergedNotes, recordedInputs, type Interface, type InterfaceNote } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, modelString, PROBE } from "./models.ts";
 import { explicitRouter, routerFor } from "./accounts.ts";
@@ -40,6 +40,7 @@ import { bakedJob, isBaked } from "./bake.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
+import { outsideNotes } from "./views.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -386,7 +387,9 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   };
   // lmcc checks the signature first (signature-malformed), then the interface is checked by the contract's rules
   const signature = sig.signature(definition, def.instructions ?? null);
-  const iface = checkInterface(interfaceOf(definition), { ai: true, where: `ai("${name}")` });
+  // its notes are its tools' (programs.md, *How each program has one*)
+  const notes = mergedNotes((def.tools ?? []).map((t) => (t as { notes?: readonly InterfaceNote[] }).notes), `ai("${name}")`);
+  const iface = checkInterface({ ...interfaceOf(definition), ...(notes !== undefined ? { notes } : {}) }, { ai: true, where: `ai("${name}")` });
   checkSettings(own, `ai("${name}")`, fieldsOf(iface, signature));
   const core: Core = {
     definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],
@@ -730,7 +733,7 @@ export function make(core: Core): AIFunction {
       }
     }
     return runCall<Prediction>({
-      program: () => program(s), fields, own: core.own, options: extra as Settings, self: fn,
+      program: () => program(s), fields, own: core.own, options: extra as Settings, self: fn, notes: core.interface.notes,
       settings: s, stream, signal, inputs: given, ...(refused !== undefined ? { refused } : {}),
       prepare: (call) => prepare(call, s),
       body: async (call) => {
@@ -814,7 +817,10 @@ export function make(core: Core): AIFunction {
   const fn = ((input: unknown, options?: CallOptions) => answerOf(predict(input, options))) as unknown as AIFunction;
   const streamOf = (input: unknown, options: CallOptions, passive: boolean) => {
     bindInputs(input);                                 // wrong arguments fail here, not in the stream
-    return new PredictionStream<unknown, Prediction>((st) => predict(input, options, st as PredictionStream), (p) => p.answer, options.signal, passive);
+    const st = new PredictionStream<unknown, Prediction>((st) => predict(input, options, st as PredictionStream), (p) => p.answer, options.signal, passive);
+    st.answerShape = core.interface.outputs[core.interface.outputs.length - 1]!.shape;
+    st.outsideNotes = outsideNotes(fn as never);
+    return st;
   };
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },

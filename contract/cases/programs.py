@@ -32,6 +32,11 @@ Four kinds of case, told apart by "program":
 - "same-data": {"interfaces": [...], "expect": {"signatures": [...]},
   "checks": [{"inputs", "expect": [one result per interface]}]}. The
   signature says what data looks like, not which calls are accepted.
+- "notes": {"chain": [interface, ...], "checks": [{"name", "data",
+  "expect": {"ok": true} or {"refuses": "interface-note", "field": name}}]}.
+  A note made inside calls of the programs of ``chain``, outermost first,
+  the innermost last (programs.md, *Checking a note*); ``data`` is already
+  its JSON form.
 
 "Fits" is programs.md's: the keywords it lists, read as it says, for
 every interface (an AI function's other keywords are never read). This
@@ -63,6 +68,8 @@ ASSERTIONS = {"type", "enum", "const", "anyOf", "items", "prefixItems", "minItem
 REF = re.compile(r"#/\$defs/([A-Za-z0-9_.-]+)")         # matched whole: no escapes, no newline after it
 INPUT_KEYS = {"name", "shape", "desc", "type", "opaque", "optional"}
 OUTPUT_KEYS = {"name", "shape", "desc", "type", "opaque"}
+NOTE_KEYS = {"name", "shape", "desc", "latest", "outside"}
+SPACE = " \t\n\r"                                    # a note's name has a character other than these
 
 
 # ------------------------------------------------------------------ the rules
@@ -430,7 +437,7 @@ def malformed(interface, *, ai: bool = False):
     field's own default must fit; a default inside a shape is a word, never checked."""
     def refuse(field):
         return {"refuses": "interface-malformed", "field": field}
-    if not isinstance(interface, dict) or set(interface) - {"description", "inputs", "outputs"} \
+    if not isinstance(interface, dict) or set(interface) - {"description", "inputs", "outputs", "notes"} \
             or not isinstance(interface.get("description"), str) or not isinstance(interface.get("inputs"), list) \
             or not isinstance(interface.get("outputs"), list) or not interface["outputs"]:
         return refuse(None)
@@ -461,7 +468,47 @@ def malformed(interface, *, ai: bool = False):
                 ds = own_default_out(shape)
                 if not fits_shape(shape["default"], ds, ds):
                     return at_fault             # data holds a bound default: it fits (programs.md, "Binding")
+    return malformed_notes(interface)
+
+
+def malformed_notes(interface: dict):
+    """programs.md, *Notes*: the first note at fault, after every field; null when ``notes`` is not a list."""
+    if "notes" not in interface:
+        return None
+    notes = interface["notes"]
+    if not isinstance(notes, list):
+        return {"refuses": "interface-malformed", "field": None}
+    seen = set()
+    for n in notes:
+        name = n.get("name") if isinstance(n, dict) else None
+        at_fault = {"refuses": "interface-malformed", "field": name if isinstance(name, str) else None}
+        if not isinstance(n, dict) or set(n) - NOTE_KEYS:
+            return at_fault
+        if not isinstance(name, str) or not name.strip(SPACE) or name in seen:
+            return at_fault
+        seen.add(name)
+        if "desc" in n and not isinstance(n["desc"], str):
+            return at_fault
+        if any(k in n and n[k] is not True for k in ("latest", "outside")):
+            return at_fault
+        shape = n.get("shape")
+        if not isinstance(shape, dict) or not well_formed(shape, shape, carry=False) or loops(shape):
+            return at_fault
     return None
+
+
+def note_check(chain: list, name: str, data) -> dict:
+    """programs.md, *Checking a note*: a note made inside calls of the programs of ``chain`` (outermost first),
+    its data already its JSON form."""
+    refuse = {"refuses": "interface-note", "field": name}
+    own = chain[-1].get("notes")
+    if own is not None and name not in [n["name"] for n in own]:
+        return refuse
+    for iface in reversed(chain):
+        for n in iface.get("notes", []):
+            if n["name"] == name and not fits_shape(data, n["shape"], n["shape"]):
+                return refuse
+    return {"ok": True}
 
 
 def check_inputs(interface: dict, given: dict) -> dict:
@@ -532,6 +579,11 @@ def rerun(case: dict) -> None:
             expect = got | {"quotes": None if dropped(content, got["field"]) else
                             quoted(c["inputs"][got["field"]])}
             assert expect == c["expect"], (case["description"], c)
+    elif kind == "notes":
+        for x in case["chain"]:
+            assert malformed(x) is None, x
+        for c in case["checks"]:
+            assert note_check(case["chain"], c["name"], c["data"]) == c["expect"], (case["description"], c)
     elif kind == "same-data":
         assert [signature(x) for x in case["interfaces"]] == case["expect"]["signatures"]
         for c in case["checks"]:
@@ -711,6 +763,79 @@ def message_case() -> dict:
                            "(quotes null: the message holds no part of the value). log_content here is the "
                            "program's own setting; a host's layer drops as well.",
             "program": "message", "interface": MESSAGE, "checks": checks}
+
+
+PAGE = {"type": "object", "properties": {"url": S, "title": S}, "required": ["url", "title"],
+        "additionalProperties": False}
+STAGE = {"enum": ["walking", "writing"]}
+WALKER = {**interface("Walk a site and say what is wrong with it.", [("url", S, {})], [("result", S, {})]),
+          "notes": [{"name": "stage", "shape": STAGE, "desc": "where the walk is", "latest": True, "outside": True},
+                    {"name": "page captured", "shape": PAGE, "outside": True},
+                    {"name": "cost so far", "shape": N, "latest": True}]}
+
+
+def note_case(description, chain, checks):
+    for x in chain:
+        assert malformed(x) is None and schemas.INTERFACE.is_valid(x), x
+    return {"description": description, "program": "notes", "chain": chain,
+            "checks": [{"name": n, "data": d, "expect": note_check(chain, n, d)} for n, d in checks]}
+
+
+def note_cases() -> dict:
+    plain = interface("Write insights.", [("pages", {"type": "array", "items": PAGE}, {})], [("result", S, {})])
+    helper = {**plain, "notes": [{"name": "page captured", "shape": {"type": "object"}}]}
+    with_notes = definitions_case(
+        "Notes declared: each {name, shape, desc?, latest?, outside?}, a name with a character other than a "
+        "space, tab or line break, used once among the notes (a note may share a field's name); a shape of the "
+        "checked vocabulary, as a module's field's, for every program. A fault names the note, after every "
+        "field; notes that are not a list name none. Notes are not in the signature: the first five accepted "
+        "interfaces have one.",
+        [plain,
+         {**plain, "notes": []},
+         {**plain, "notes": WALKER["notes"]},
+         {**plain, "notes": [{"name": "result", "shape": {}}]},
+         {**plain, "notes": [{"name": " page\tcaptured ", "shape": {}}]},
+         {**plain, "notes": {"stage": {}}},
+         {**plain, "notes": [{"name": "stage", "shape": {}}, {"name": "stage", "shape": S}]},
+         {**plain, "notes": [{"name": " \t\n", "shape": {}}]},
+         {**plain, "notes": [{"name": "stage", "shape": {}, "keep": "latest"}]},
+         {**plain, "notes": [{"name": "stage", "shape": {}, "latest": False}]},
+         {**plain, "notes": [{"name": "stage", "shape": {"type": "text"}}]},
+         {**plain, "notes": [{"name": "stage", "shape": {"type": "string", "pattern": "^[a-z]+$"}}]},
+         {**plain, "notes": [{"name": "stage", "shape": S, "desc": 3}]},
+         {**plain, "notes": [{"name": "stage"}]},
+         {**field_with(plain, "inputs", 0, name="the pages"), "notes": [{"name": "stage"}]},
+         {**plain, "notes": ["stage"]}],
+        ai=(11,))
+    got = [x["expect"] for x in with_notes["interfaces"]]
+    assert len({g.get("signature") for g in got[:5]}) == 1, got[:5]
+    assert [g.get("field") for g in got[5:]] == [None, "stage", " \t\n", "stage", "stage", "stage", "stage",
+                                                  "stage", "stage", "the pages", None], got[5:]
+    return {
+        "27-notes-declared-and-refused": with_notes,
+        "28-a-note-is-checked-where-it-is-made": note_case(
+            "A note is checked where it is made: the innermost program refuses a name it does not declare when it "
+            "declares notes (a renamed note would leave a page blank); every program of the calls around it "
+            "that declares the name refuses data that does not fit (null when made with no data). A program that "
+            "declares none refuses nothing of its own.",
+            [WALKER],
+            [("stage", "walking"), ("stage", "walk"), ("page captured", {"url": "https://a.example/", "title": "A"}),
+             ("page captured", {"url": "https://a.example/"}), ("page captured", None), ("cost so far", 0.02),
+             ("cost so far", "0.02"), ("stage changed", "writing")]),
+        "29-a-note-is-checked-by-every-program-around-it": note_case(
+            "Made inside a helper of the walker: the helper declares page captured as any object, the walker as "
+            "a page; the walker's shape holds too, since its readers were promised it. The helper declares notes, "
+            "so a stage note made there is refused (rule 1), even though the walker declares stage. A helper "
+            "that declares none refuses only what does not fit a program around it.",
+            [WALKER, helper],
+            [("page captured", {"url": "https://a.example/", "title": "A"}), ("page captured", {"url": 3}),
+             ("stage", "walking")]),
+        "30-a-helper-that-declares-none": note_case(
+            "The helper declares no notes: every name is its own to make (rule 1 does not apply), and the walker "
+            "around it still checks the names it declares.",
+            [WALKER, plain],
+            [("stage", "writing"), ("stage", "resting"), ("anything", {"x": 1})]),
+    }
 
 
 def field_with(iface, where, i, **change):
@@ -962,6 +1087,7 @@ def cases() -> dict:
                    {"message": {"$type": "object", "$repr": "<object object at 0x7f>"}}]),
     }
     out["26-the-message-quotes-the-value"] = message_case()
+    out.update(note_cases())
     same = [out["01-an-ai-function-is-its-definition"], out["02-several-outputs-keep-their-words"],
             out["13-an-optional-input-of-an-ai-function"]]
     assert all(c["expect"]["signature"] == c["expect"]["signature_id"] for c in same)

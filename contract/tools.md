@@ -41,6 +41,15 @@ unknown effects, which every rule treats as `changes`: forgetting to
 declare is safe. An AI function used as a tool reads, unless one of its
 own tools changes things or declares nothing.
 
+## Notes a tool makes
+
+A tool may declare the notes its code makes (Python
+`@functai.tool(notes={...})`, TypeScript `tool(name, { notes }, run)`),
+as a module does ([programs.md](programs.md), *Notes*). They are the
+interface's `notes` of every AI function that has the tool, and are
+checked as that function's: a browsing agent's `page captured`, made by
+its screenshot tool, is typed for whoever shows the agent's progress.
+
 ## Approval
 
 Approval is a plugin ([plugins.md](plugins.md)): the built-in `approval`

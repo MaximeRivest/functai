@@ -534,10 +534,19 @@ class FunctAIFunc(Generic[P, R]):
         return list(self._tools)
     @tools.setter
     def tools(self, seq):
-        self._tools = list(seq or [])
+        tools = list(seq or [])
+        from . import interface as _interface
+        _interface.merged_notes([getattr(t, "notes", None) for t in tools], program=self.__name__)  # refused first
+        self._tools = tools
         self._tool_specs = [engine.tool_spec(t) for t in self._tools]
         self._spec_cache.clear()
         self._plan_cache.clear()
+        self._interface_cache = None
+
+    def _declared_notes(self) -> Optional[List[Dict[str, Any]]]:
+        """The notes its tools declare (its interface's ``notes``), or None (contract/programs.md, *Notes*)."""
+        from . import interface as _interface
+        return _interface.merged_notes([getattr(t, "notes", None) for t in self._tools], program=self.__name__)
 
     @property
     def optimizer(self):

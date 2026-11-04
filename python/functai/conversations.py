@@ -1135,7 +1135,7 @@ class Turn:
             yield from stores.follow(self._conv.store, self.id, after, timeout=timeout, stop=stop)
             return
         # a view is made from the kept form from its first event; a reader resumes it after a position it holds
-        v = views.View(view, answer_from=getattr(self._conv.program, "_answer_from", None))
+        v = views.for_program(view, self._conv.program)
         waiting_for = dict(after) if after is not None else None
         for e in stores.follow(self._conv.store, self.id, None, timeout=timeout, stop=stop):
             shown = v.apply(e)

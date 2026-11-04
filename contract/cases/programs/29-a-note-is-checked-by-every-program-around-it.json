@@ -1,0 +1,139 @@
+{
+ "description": "Made inside a helper of the walker: the helper declares page captured as any object, the walker as a page; the walker's shape holds too, since its readers were promised it. The helper declares notes, so a stage note made there is refused (rule 1), even though the walker declares stage. A helper that declares none refuses only what does not fit a program around it.",
+ "program": "notes",
+ "chain": [
+  {
+   "description": "Walk a site and say what is wrong with it.",
+   "inputs": [
+    {
+     "name": "url",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "notes": [
+    {
+     "name": "stage",
+     "shape": {
+      "enum": [
+       "walking",
+       "writing"
+      ]
+     },
+     "desc": "where the walk is",
+     "latest": true,
+     "outside": true
+    },
+    {
+     "name": "page captured",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url",
+       "title"
+      ],
+      "additionalProperties": false
+     },
+     "outside": true
+    },
+    {
+     "name": "cost so far",
+     "shape": {
+      "type": "number"
+     },
+     "latest": true
+    }
+   ]
+  },
+  {
+   "description": "Write insights.",
+   "inputs": [
+    {
+     "name": "pages",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "url": {
+         "type": "string"
+        },
+        "title": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "url",
+        "title"
+       ],
+       "additionalProperties": false
+      }
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "notes": [
+    {
+     "name": "page captured",
+     "shape": {
+      "type": "object"
+     }
+    }
+   ]
+  }
+ ],
+ "checks": [
+  {
+   "name": "page captured",
+   "data": {
+    "url": "https://a.example/",
+    "title": "A"
+   },
+   "expect": {
+    "ok": true
+   }
+  },
+  {
+   "name": "page captured",
+   "data": {
+    "url": 3
+   },
+   "expect": {
+    "refuses": "interface-note",
+    "field": "page captured"
+   }
+  },
+  {
+   "name": "stage",
+   "data": "walking",
+   "expect": {
+    "refuses": "interface-note",
+    "field": "stage"
+   }
+  }
+ ]
+}

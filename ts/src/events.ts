@@ -145,6 +145,8 @@ export const samePosition = (a: Position | null | undefined, b: Position | null 
 export interface CallState {
   ended: null | "done" | "failed";
   fields: Record<string, string>;
+  /** Its notes, in order (`data` only when the event has it): present once it made one. */
+  notes?: { name: string; data?: unknown }[];
 }
 
 /** What a watcher of a form saw after an event: the calls started so far, and whether the log is finished. */
@@ -159,8 +161,8 @@ export const knownFormat = (e: unknown): boolean =>
 
 /**
  * Replaying a form of a log (streaming.md, "Replaying"): `started` adds a
- * call; `request` and `retry` empty its fields; `text` appends; `done` and
- * `failed` end it. A kind it does not know changes nothing; an event of a
+ * call; `request` and `retry` empty its fields; `text` appends; `note` adds
+ * to its notes; `done` and `failed` end it. A kind it does not know changes nothing; an event of a
  * format it does not know stops it (`stopped`): it applies nothing more.
  */
 export class Replay {
@@ -187,7 +189,11 @@ export class Replay {
     const call = getOwn(this.calls, c);
     if (!call) return this;                         // its started is not in this form: nothing to apply it to
     if (kind === "request" || kind === "retry") call.fields = {};
-    else if (kind === "text") {
+    else if (kind === "note") {
+      const note: { name: string; data?: unknown } = { name: e["name"] as string };
+      if (Object.hasOwn(e, "data")) note.data = copyData(e["data"]);
+      (call.notes ??= []).push(note);
+    } else if (kind === "text") {
       const field = e["field"] as string;
       setOwn(call.fields, field, (getOwn(call.fields, field) ?? "") + (e["text"] as string));
     } else if (kind === "done" || kind === "failed") {

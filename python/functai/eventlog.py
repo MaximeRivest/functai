@@ -148,6 +148,8 @@ class Replay:
             return True                    # a call whose start this form does not show
         if kind in ("request", "retry"):
             state["fields"] = {}
+        elif kind == "note":                # its call's notes, in order (data only when the event has it)
+            state.setdefault("notes", []).append({k: copy.deepcopy(event[k]) for k in ("name", "data") if k in event})
         elif kind == "text":
             state["fields"][event["field"]] = state["fields"].get(event["field"], "") + event["text"]
         elif kind in ("done", "failed"):
@@ -158,7 +160,8 @@ class Replay:
 
     @property
     def state(self) -> Dict[str, Any]:
-        """``{"calls": {call: {"ended", "fields"}}, "finished": bool}``, a copy."""
+        """``{"calls": {call: {"ended", "fields", "notes"?}}, "finished": bool}``, a copy
+        (``notes``: the call's notes, in order, once it made one)."""
         return {"calls": copy.deepcopy(self.calls), "finished": self.finished}
 
 

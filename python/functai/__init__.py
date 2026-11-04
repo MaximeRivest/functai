@@ -65,8 +65,8 @@ from .calllog import MemoryCalls, calls, rate, rated
 from .errors import (ApprovalError, ConversationError, EventRefused, FilesUnavailable, FunctAIError, InterfaceError,
                      JournalError, LogContentError, Outcome, SawError, ServeError, Waiting)
 from .eventlog import Follower, Journal, MemoryStore, Store, flush
-from .interface import JSON
-from .streaming import Cancelled, Stream, note
+from .interface import JSON, Note
+from .streaming import Cancelled, Stream, answer_so_far, note
 from .conversations import Conversation, Turn, all_turns, earlier, last_turns, remember
 from .stores import FolderStore, MemoryConversations
 from .tools import Approval, Tool, later, tool
@@ -114,7 +114,7 @@ __all__ = [
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
     "calls", "rate", "rated", "MemoryCalls",
     "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "FilesUnavailable", "Outcome",
-    "Stream", "Cancelled", "note", "Journal", "MemoryStore", "Store", "Follower", "flush",
+    "Stream", "Cancelled", "note", "Note", "answer_so_far", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "Conversation", "Turn", "all_turns", "last_turns", "remember", "earlier", "FolderStore", "MemoryConversations",
     "tool", "Tool", "later", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",
     "Plugin", "Change", "PluginError", "load_plugin", "compaction", "delegate", "limits", "keep_pictures",

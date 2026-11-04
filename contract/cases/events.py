@@ -216,6 +216,9 @@ class Writer:
     def done(self, n, value):
         return self.ev("done", n, value=value)
 
+    def note(self, n, name, data=None, *, kept_data=True):
+        return self.ev("note", n, name=name, **({"data": data} if kept_data else {"content": False}))
+
     def failed(self, n, error):
         return self.ev("failed", n, error=error)
 
@@ -229,7 +232,9 @@ def replay(events: list) -> dict:
     tree = events[0]["tree"] if events else None
     for e in events:
         c, kind = e["call"], e["kind"]
-        if kind not in KINDS:
+        if kind == "note" and c in calls:           # its call's notes, in order (data only when the event has it)
+            calls[c].setdefault("notes", []).append({k: e[k] for k in ("name", "data") if k in e})
+        elif kind not in KINDS:
             pass                                    # a kind this reader does not know: its place, nothing else
         elif kind == "started":
             calls[c] = {"ended": None, "fields": {}}
@@ -1192,6 +1197,19 @@ def cases() -> dict:
     out["replay-14-a-kind-this-reader-does-not-know"] = replay_case(
         "An event of a kind this reader does not know (a later stage's approval) changes nothing: the state "
         "after it is the state before it.", a_later_kind(a_tool().events, 5))
+
+    w = Writer(1)
+    w.started(1, "walker", {"url": "https://example.com"})
+    w.request(1)
+    w.note(1, "stage", "walking")
+    w.note(1, "page captured", {"url": "https://example.com/", "title": "Home"})
+    w.text(1, "result", "Two pages")
+    w.note(1, "page captured", kept_data=False)
+    w.note(1, "stage", "writing")
+    w.done(1, "Two pages")
+    out["replay-15-notes-in-order"] = replay_case(
+        "Each note is added to its call's notes, in order, with its data when the event has one (a kept form "
+        "whose content is not whole has none): a request does not empty them, as it empties fields.", w.events)
 
     w = one_call()
     whole_log = w.events

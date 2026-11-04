@@ -1,0 +1,67 @@
+{
+ "description": "Escapes are read; an escape still being written is left out (a lone backslash, \\u with fewer than four digits, a surrogate's first half waiting for its second).",
+ "shape": {
+  "type": "object",
+  "properties": {
+   "t": {
+    "type": "string"
+   }
+  }
+ },
+ "checks": [
+  {
+   "text": "{\"t\": \"a\\n",
+   "expect": {
+    "value": {
+     "t": "a\n"
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"a\\",
+   "expect": {
+    "value": {
+     "t": "a"
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"\\u00e9t",
+   "expect": {
+    "value": {
+     "t": "ét"
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"\\u00e",
+   "expect": {
+    "value": {
+     "t": ""
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"\\ud83d",
+   "expect": {
+    "value": {
+     "t": ""
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"\\ud83d\\ude00!\"}",
+   "expect": {
+    "value": {
+     "t": "😀!"
+    }
+   }
+  },
+  {
+   "text": "{\"t\": \"\\x\"}",
+   "expect": {
+    "nothing": true
+   }
+  }
+ ]
+}

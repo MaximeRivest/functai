@@ -22,6 +22,12 @@ class _Got(Exception):
     """The code ran and saw its inputs: the check of the call's inputs is over."""
 
 
+def sample_inputs(iface):
+    """Values that fit a declared interface's required inputs (the notes cases' programs take simple ones)."""
+    by_type = {"string": "x", "array": [], "object": {}, "integer": 0, "number": 0, "boolean": False}
+    return {f["name"]: by_type[f["shape"].get("type", "object")] for f in iface["inputs"] if not f.get("optional")}
+
+
 def declared(iface):
     """A module declaring ``iface``, whose code keeps what it got (its inputs)."""
     got = {}
@@ -170,6 +176,26 @@ def test_programs_case(path, tmp_path):
                 value = check["inputs"][expect["field"]]
                 for part in {canonical(value), json.dumps(value), str(value)}:
                     assert part not in message, (message, check)
+    elif kind == "notes":
+        # real modules, one inside the other, outermost first; the innermost's code makes the note
+        now = {}
+
+        def innermost(**_inputs):
+            functai.note(now["name"], native(now["data"]))
+            return "ok"
+        program = module(interface=case["chain"][-1])(innermost)
+        for iface in reversed(case["chain"][:-1]):
+            inner, inner_iface = program, program.interface
+            program = module(interface=iface)(lambda _p=inner, _i=inner_iface, **_inputs: _p(**sample_inputs(_i)))
+        for check in case["checks"]:
+            now.update(check)
+            try:
+                program(**sample_inputs(case["chain"][0]))
+            except functai.InterfaceError as err:
+                got = refusal(err)
+            else:
+                got = {"ok": True}
+            assert got == check["expect"], check
     elif kind == "same-data":
         modules = [declared(iface) for iface in case["interfaces"]]
         assert [interface.signature(m.interface) for m, _ in modules] == case["expect"]["signatures"]
@@ -180,4 +206,4 @@ def test_programs_case(path, tmp_path):
 
 
 def test_the_contract_has_program_cases():
-    assert len(CASES) >= 26
+    assert len(CASES) >= 30

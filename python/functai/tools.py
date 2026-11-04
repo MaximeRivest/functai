@@ -48,7 +48,7 @@ class Tool:
     """
 
     def __init__(self, fn: Callable[..., Any], *, effects: Optional[str] = None, name: Optional[str] = None,
-                 description: Optional[str] = None):
+                 description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None):
         if not callable(fn):
             raise TypeError("functai.tool wraps a function")
         if effects is not None and effects not in EFFECTS:
@@ -61,6 +61,9 @@ class Tool:
             self.__name__ = name
         if description is not None:
             self.__doc__ = description
+        from .interface import notes_of
+        # the notes its code makes (contract/tools.md, *Notes a tool makes*): every AI function that has it declares them
+        self.notes = notes_of(notes, where=f"tool {self.__name__}")
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._fn(*args, **kwargs)
@@ -74,7 +77,7 @@ class Tool:
 
 
 def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = None, name: Optional[str] = None,
-         description: Optional[str] = None) -> Any:
+         description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None) -> Any:
     '''Make a function a tool that says what it does to the world.
 
     Parameters
@@ -88,6 +91,11 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     name, description : str, optional
         What the model is told, instead of the function's name and
         docstring.
+    notes : dict, optional
+        The notes its code makes (``functai.note(name, data)``), by name: a
+        type, or ``functai.Note(type, latest=..., outside=...)``. Every AI
+        function that has the tool declares them, and each note it makes is
+        checked against them (``InterfaceError``, code ``interface-note``).
 
     Returns
     -------
@@ -106,7 +114,7 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     ```
     '''
     def wrap(f: Callable[..., Any]) -> Tool:
-        return Tool(f, effects=effects, name=name, description=description)
+        return Tool(f, effects=effects, name=name, description=description, notes=notes)
     return wrap(fn) if fn is not None else wrap
 
 

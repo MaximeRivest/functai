@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Literal, Optional
+from typing import List, Literal, Optional, TypedDict
 
 import lm15
 import pytest
@@ -599,11 +599,39 @@ def test_partial_json(text, value):
     assert partial_json(text) == value
 
 
-def test_partial_json_refuses_what_is_not_json():
-    with pytest.raises(ValueError):
-        partial_json('{"a": nope}')
-    with pytest.raises(ValueError):
-        partial_json('{a: 1}')
+def test_partial_json_gives_nothing_for_what_is_not_json():
+    # contract/streaming.md, *The answer so far*: a text that cannot be the start of JSON gives nothing
+    assert partial_json('{"a": nope}') is None
+    assert partial_json('{a: 1}') is None
+
+
+class Finding(TypedDict):
+    title: str
+    severity: Literal["low", "medium", "high"]
+
+
+@ai
+def findings(page: str) -> List[Finding]:
+    """What is wrong with this page?"""
+    ...
+
+
+def test_a_choice_shows_only_once_it_is_whole():
+    """Every answer so far holds only values the choice allows: never "med" on the way to "medium"."""
+    reply = XML.format('[{"title": "Fees appear late", "severity": "medium"}, {"title": "No search", "severity": "high"}]')
+    gate = Gate(reply)
+    functai.configure(lm="gpt-4.1-mini", client=gate)
+    s = findings.stream("checkout")
+    seen = []
+    while not s.done:
+        gate.go.put(None)
+        time.sleep(0.005)
+        if not s.done:
+            seen.append(s.partial)
+    severities = [f["severity"] for p in seen if p for f in p if "severity" in f]
+    assert severities and set(severities) <= {"medium", "high"}
+    assert any(f.get("title", "").startswith("Fees app") and "severity" not in f for p in seen if p for f in p)
+    assert s.partial == s.result
 
 
 def test_a_thinking_model_streams_its_thinking_as_the_reasoning(fake):

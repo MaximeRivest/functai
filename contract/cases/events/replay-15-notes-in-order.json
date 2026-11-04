@@ -1,0 +1,314 @@
+{
+ "description": "Each note is added to its call's notes, in order, with its data when the event has one (a kept form whose content is not whole has none): a request does not empty them, as it empties fields.",
+ "kind": "replay",
+ "events": [
+  {
+   "functai_event": 2,
+   "kind": "started",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 1,
+   "after": null,
+   "at": "2026-09-28T10:00:00.010000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "shop",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "interface": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+    "answer": "result"
+   },
+   "inputs": {
+    "url": "https://example.com"
+   },
+   "content": true,
+   "saw": []
+  },
+  {
+   "functai_event": 2,
+   "kind": "request",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 2,
+   "after": {
+    "writer": 1,
+    "seq": 1
+   },
+   "at": "2026-09-28T10:00:00.020000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "request": 1,
+   "model": "gpt-4.1-mini"
+  },
+  {
+   "functai_event": 2,
+   "kind": "note",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 3,
+   "after": {
+    "writer": 1,
+    "seq": 2
+   },
+   "at": "2026-09-28T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "name": "stage",
+   "data": "walking"
+  },
+  {
+   "functai_event": 2,
+   "kind": "note",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-09-28T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "name": "page captured",
+   "data": {
+    "url": "https://example.com/",
+    "title": "Home"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "text",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-09-28T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "field": "result",
+   "answer": true,
+   "text": "Two pages"
+  },
+  {
+   "functai_event": 2,
+   "kind": "note",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-09-28T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "name": "page captured",
+   "content": false
+  },
+  {
+   "functai_event": 2,
+   "kind": "note",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-09-28T10:00:00.070000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "name": "stage",
+   "data": "writing"
+  },
+  {
+   "functai_event": 2,
+   "kind": "done",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 8,
+   "after": {
+    "writer": 1,
+    "seq": 7
+   },
+   "at": "2026-09-28T10:00:00.080000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "walker",
+   "value": "Two pages"
+  }
+ ],
+ "expect": {
+  "views": [
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {}
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {},
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {},
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       },
+       {
+        "name": "page captured",
+        "data": {
+         "url": "https://example.com/",
+         "title": "Home"
+        }
+       }
+      ]
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Two pages"
+      },
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       },
+       {
+        "name": "page captured",
+        "data": {
+         "url": "https://example.com/",
+         "title": "Home"
+        }
+       }
+      ]
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Two pages"
+      },
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       },
+       {
+        "name": "page captured",
+        "data": {
+         "url": "https://example.com/",
+         "title": "Home"
+        }
+       },
+       {
+        "name": "page captured"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": null,
+      "fields": {
+       "result": "Two pages"
+      },
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       },
+       {
+        "name": "page captured",
+        "data": {
+         "url": "https://example.com/",
+         "title": "Home"
+        }
+       },
+       {
+        "name": "page captured"
+       },
+       {
+        "name": "stage",
+        "data": "writing"
+       }
+      ]
+     }
+    }
+   },
+   {
+    "calls": {
+     "01926c00-0001-7000-8000-000000000000": {
+      "ended": "done",
+      "fields": {
+       "result": "Two pages"
+      },
+      "notes": [
+       {
+        "name": "stage",
+        "data": "walking"
+       },
+       {
+        "name": "page captured",
+        "data": {
+         "url": "https://example.com/",
+         "title": "Home"
+        }
+       },
+       {
+        "name": "page captured"
+       },
+       {
+        "name": "stage",
+        "data": "writing"
+       }
+      ]
+     }
+    }
+   }
+  ],
+  "finished": true
+ },
+ "resume": []
+}

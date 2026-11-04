@@ -393,8 +393,8 @@ def E(kind: str, seq: int, call: str, function: str, **kw) -> dict:
 PROGRAM_KEYS = ("name", "kind", "module", "version", "signature", "interface", "answer")
 
 
-def outside(events: list, answer_from) -> list:
-    """streaming.md, *Views*: the outside view."""
+def outside(events: list, answer_from, notes=()) -> list:
+    """streaming.md, *Views*: the outside view. ``notes``: the names the outermost program declares outside."""
     root = events[0]["call"]
     root_fn = events[0]["function"]
     prog = events[0]["program"]
@@ -411,6 +411,11 @@ def outside(events: list, answer_from) -> list:
     for ev in events:
         e = copy.deepcopy(ev)
         k, c = e["kind"], e["call"]
+        if k == "note":
+            if e["name"] in notes:                  # declared outside: from any call, re-addressed to the outermost
+                e["call"], e["function"] = root, root_fn
+                link(e)
+            continue
         if k in ("approval", "approved"):
             if k == "approval" and e.get("to") != "caller":
                 continue
@@ -510,6 +515,27 @@ def view_cases() -> dict:
              ai_events, None)]:
         out[name] = {"description": why, "kind": "view", "view": "outside", "answer_from": af, "events": evs,
                      "expect": {"events": outside(evs, af)}}
+    shown = ["stage", "page captured"]
+    noted = [*events[:2],
+             E("note", 3, m, "support", name="stage", data="reading"),
+             E("note", 4, top, "topic", name="page captured", data={"url": "https://a.example/", "title": "A"}),
+             E("note", 5, top, "topic", name="cost so far", data=0.01),
+             E("note", 6, top, "topic", name="page captured", content=False),
+             *[{**e, "seq": e["seq"] + 4} for e in events[2:6]],
+             E("note", 11, m, "support", name="debug", data={"prompt": "SECRET"}),
+             E("note", 12, m, "support", name="stage", data="answering"),
+             *[{**e, "seq": e["seq"] + 6} for e in events[6:]]]
+    noted = copy.deepcopy(noted)                    # the other cases keep their own events
+    for i, e in enumerate(noted):
+        e["seq"] = i + 1
+        e["after"] = None if i == 0 else {"writer": noted[i - 1]["writer"], "seq": i}
+    out["outside-04-notes-declared-outside"] = {
+        "description": "The notes the outermost program declares outside (here stage and page captured), made by "
+                       "any call of its tree, re-addressed to it, with their data when the form has it (a kept "
+                       "form whose content is not whole has none). Every other note (cost so far, debug: its "
+                       "own) is never shown.",
+        "kind": "view", "view": "outside", "answer_from": "answer", "notes": shown, "events": noted,
+        "expect": {"events": outside(noted, "answer", shown)}}
     return out
 
 

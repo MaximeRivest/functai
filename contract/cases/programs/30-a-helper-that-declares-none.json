@@ -1,0 +1,127 @@
+{
+ "description": "The helper declares no notes: every name is its own to make (rule 1 does not apply), and the walker around it still checks the names it declares.",
+ "program": "notes",
+ "chain": [
+  {
+   "description": "Walk a site and say what is wrong with it.",
+   "inputs": [
+    {
+     "name": "url",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "notes": [
+    {
+     "name": "stage",
+     "shape": {
+      "enum": [
+       "walking",
+       "writing"
+      ]
+     },
+     "desc": "where the walk is",
+     "latest": true,
+     "outside": true
+    },
+    {
+     "name": "page captured",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url",
+       "title"
+      ],
+      "additionalProperties": false
+     },
+     "outside": true
+    },
+    {
+     "name": "cost so far",
+     "shape": {
+      "type": "number"
+     },
+     "latest": true
+    }
+   ]
+  },
+  {
+   "description": "Write insights.",
+   "inputs": [
+    {
+     "name": "pages",
+     "shape": {
+      "type": "array",
+      "items": {
+       "type": "object",
+       "properties": {
+        "url": {
+         "type": "string"
+        },
+        "title": {
+         "type": "string"
+        }
+       },
+       "required": [
+        "url",
+        "title"
+       ],
+       "additionalProperties": false
+      }
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ]
+  }
+ ],
+ "checks": [
+  {
+   "name": "stage",
+   "data": "writing",
+   "expect": {
+    "ok": true
+   }
+  },
+  {
+   "name": "stage",
+   "data": "resting",
+   "expect": {
+    "refuses": "interface-note",
+    "field": "stage"
+   }
+  },
+  {
+   "name": "anything",
+   "data": {
+    "x": 1
+   },
+   "expect": {
+    "ok": true
+   }
+  }
+ ]
+}

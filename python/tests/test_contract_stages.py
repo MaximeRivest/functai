@@ -3,6 +3,7 @@ run through this implementation."""
 
 import pytest
 
+import functai
 from functai import calllog, conversations, replies, tools, views
 from functai.errors import SawError
 
@@ -112,7 +113,8 @@ def test_tool_denial(path):
 @pytest.mark.parametrize("path", cases("views"), ids=lambda p: p.stem)
 def test_views(path):
     case = load(path)
-    assert views.outside(case["events"], answer_from=case["answer_from"]) == case["expect"]["events"]
+    assert views.outside(case["events"], answer_from=case["answer_from"], notes=case.get("notes", ())) \
+        == case["expect"]["events"]
 
 
 @pytest.mark.parametrize("path", cases("context"), ids=lambda p: p.stem)
@@ -221,3 +223,14 @@ def test_plugin_changes_combine(path, fake):
         else:
             assert plugins.tool_result(call, approval, {}, start["output"]) == expect["output"]
     assert len(ran) == expect["ran"]
+
+
+@pytest.mark.parametrize("path", cases("partial"), ids=lambda p: p.stem)
+def test_the_answer_so_far(path):
+    """contract/streaming.md, *The answer so far*: read from the answer's text by its shape."""
+    case = load(path)
+    for check in case["checks"]:
+        expect = check["expect"]
+        assert expect.get("value", 0) is not None, "Python's None is nothing: a case never expects null whole"
+        got = functai.answer_so_far(check["text"], case["shape"])
+        assert got == (None if expect.get("nothing") else expect["value"]), check

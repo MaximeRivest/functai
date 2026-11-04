@@ -28,9 +28,10 @@ import { Binder, declareInput, declareOutput, type InputRule, type InputRules } 
 import { checkInputs, checkInterface, checkReturned, dataShape, interfaceSignature, recordedInputs, type Interface, type InterfaceField } from "./interface.ts";
 import { droppedFields, recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
-import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
+import { notesOf, type FieldSpec, type InputValueOf, type IsOptional, type NoteSpec, type ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
 import { copyData, getOwn, setOwn, toJson } from "./values.ts";
+import { outsideNotes } from "./views.ts";
 
 type Rec = Record<string, unknown>;
 type Fields = Record<string, FieldSpec>;
@@ -56,6 +57,14 @@ export interface ModuleSpec<I extends Fields, O extends Fields | undefined, A ex
    * answer text as the module's, live.
    */
   answerFrom?: AnyAIFunction | null;
+  /**
+   * The notes its code makes (`note(name, data)`), by name: a shape, or
+   * `{ shape, desc?, latest?, outside? }` (programs.md, *Notes*). Declared,
+   * each note is checked where it is made (`InterfaceError`, code
+   * `interface-note`), and those marked `outside` are shown to a caller who
+   * sees only the module's boundary (a served program's).
+   */
+  notes?: Readonly<Record<string, NoteSpec>>;
   /** @internal A program served elsewhere (remote.ts). */
   _remote?: { readonly url: string; readonly version: string };
 }
@@ -223,7 +232,7 @@ function makeModule(core: ModuleCore): AnyModule {
     }
     return runCall<unknown>({
       program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs: recordInputs(names, inputs),
-      self: fn, prepare: (c) => {
+      self: fn, notes: core.iface.notes, prepare: (c) => {
         const saw = moduleSaw(fn, c);                       // a module's turn: the conversation so far
         if (saw) c.saw = saw;
       },
@@ -291,12 +300,14 @@ function makeModule(core: ModuleCore): AnyModule {
     stream: (input: unknown, options: CallOptions = {}) => {
       const st = new Stream((x) => call(input, options, x), options.signal);
       st.answerFrom = core.answerFrom ?? null;
+      st.outsideNotes = outsideNotes(fn as never);
       return st;
     },
     conversation: (id?: string | null, options: ConversationOptions = {}) => chatOf(new Conversation(fn as never, id ?? null, options)),
     _stream: (input: unknown, options: CallOptions, passive: boolean) => {
       const st = new Stream((x) => call(input, options, x), options.signal, passive);
       st.answerFrom = core.answerFrom ?? null;
+      st.outsideNotes = outsideNotes(fn as never);
       return st;
     },
     _kind: "module",
@@ -352,7 +363,9 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
   });
   const outputSpecs: [string, FieldSpec][] = spec.outputs ? Object.entries(spec.outputs) : [["result", spec.output as FieldSpec]];
   const outputs: InterfaceField[] = outputSpecs.map(([field, s]) => declareOutput(field, s, `${name}.outputs.${field}`, "module"));
-  const iface = checkInterface({ description: spec.description ?? "", inputs, outputs }, { where: `module("${name}")` });
+  const notes = notesOf(spec.notes, `module("${name}")`);
+  const iface = checkInterface({ description: spec.description ?? "", inputs, outputs, ...(notes !== undefined ? { notes } : {}) },
+    { where: `module("${name}")` });
   const own: Settings = {};
   for (const [k, v] of Object.entries(spec)) if (SETTING_KEYS.has(k)) (own as Rec)[k] = v;
   checkSettings(own, `module("${name}")`, { inputs: inputs.map((f) => f.name), outputs: outputs.map((f) => f.name), added: [] });

@@ -14,6 +14,7 @@ import { env } from "./host.ts";
 import { journalOf, JournalError, TreeLog, type Node, type Observer, type ResolvedJournal, type Watcher } from "./log.ts";
 import { checkSettings, layersOf, type Settings } from "./settings.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
+import type { InterfaceNote } from "./interface.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -52,6 +53,8 @@ export interface CallSpec<R> {
   readonly body: (call: Call) => Promise<Ended<R>>;
   /** The program object itself: a conversation's turn knows its own call by it. */
   readonly self?: object;
+  /** The notes the program declares (its interface's), which every note made inside it is checked against. */
+  readonly notes?: readonly InterfaceNote[];
   /**
    * What the call is shown as context, worked out before it starts (its
    * `saw`): a conversation's earlier turns, a helper's memory, a row asked
@@ -155,6 +158,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   const turnRun = turnRunFor(parent);
   const signal = combine(spec.signal, spec.stream?.signal, parent?.signal, turnRun?.signal);
   const call = new Call(spec.program, parent, folder, spec.fields, keep, calllog.callerOf(spec.settings), signal);
+  call.notes = spec.notes;
   call.turnRun = turnRun;
   if (turnRun && !turnRun.rootTaken && spec.self !== undefined && spec.self === turnRun.self) {
     turnRun.rootTaken = true;
