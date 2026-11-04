@@ -28,10 +28,11 @@ hook would otherwise never run.
 |---|---|---|---|
 | `turn_start` | a conversation's turn is sent, before it is recorded | `inputs` | the inputs, the conversation, the turn it continues |
 | `context` | the turn's earlier turns are chosen ([conversations.md](conversations.md), *What a turn is shown*) | `keep`, `without`, `sections` | the earlier turns the conversation's rule picked, the sections so far, the conversation |
-| `before_call` | an AI function's call is about to be asked (each call, helpers included) | `instruction`, `sections`, `lm`, `settings`, `tools` | the function, its bound inputs, its instruction, model, settings, the tools offered and its own, its place in the tree, its conversation and turn |
+| `before_call` | an AI function's call is about to be asked (each call, helpers included) | `instruction`, `sections`, `lm`, `settings`, `tools`, `stop` | the function, its bound inputs, its instruction, model, settings, the tools offered and its own, its place in the tree, its conversation and turn, what its tree spent |
+| `step` | a call with tools is about to ask the model again, after the tools of its last reply ran (*The step hook*) | `tools`, `reminder`, `replace`, `stop` | the function, its place in the tree, the step, `max_steps`, every tool result so far as shown now, the tools offered now and at its start, its model, what its tree spent, its conversation and turn |
 | `request` | a provider request is about to be sent | the request itself (the escape hatch) | the lm15 request |
 | `tool_call` | a tool is about to run | `inputs`, `block`; or ask a person | the tool, its input, effects, approval path, invocation |
-| `tool_result` | a tool ran | `output` | the tool, its input, its output |
+| `tool_result` | a tool ran | `output` | the tool, its input, its output (a text or a list of parts: [tools.md](tools.md), *What a tool returns*) |
 | `turn_end` | a conversation's turn ended, before its end is recorded | (hears) | the turn's outcome, the conversation; it may keep entries |
 
 A handler returns a change (Python `functai.Change(...)`) or nothing (no
@@ -51,7 +52,12 @@ not take).
   `{turn id: [names]}`.
 - `inputs`: inputs replaced, by name (the turn's, or the tool's).
 - `block`: the tool may not run; the reason.
-- `output`: the tool's result as the model is shown it.
+- `output`: the tool's result as the model is shown it: a text or a list
+  of lm15 parts.
+- `stop`: the call stops here, and why (a text): it raises `PluginError`
+  `plugin-stopped`, naming the plugin and the reason; the change is kept
+  in the call's record first. The handlers after it do not run.
+- `reminder`, `replace` (`step`): *The step hook*.
 
 ## Order
 
@@ -73,6 +79,56 @@ handlers see what the program's did, and have the last word.
   so does a person's refusal. The `approval` plugin, which the `approve`
   setting drives ([tools.md](tools.md)), runs after every other handler,
   on the input they left: a host's rule judges what will run.
+
+## The step hook
+
+A call with tools asks the model, runs the tools of its reply, and asks
+again, up to `max_steps` requests ([functions.md](functions.md)). Before
+each request after the first, its `step` handlers are given:
+
+- `step`: the number of the request about to be made (2 for the first
+  after tools), `max_steps`, and whether it is the last the call may make;
+- `results`: every tool result of the call so far, oldest first, as the
+  model is shown it now (after earlier `replace` and `reminder` changes),
+  each with its `invocation`, `name` and `input`;
+- `tools`: the names offered now; `all_tools`: those the call was offered
+  when it started (after `before_call`); the model; what its tree spent
+  (*What a tree spent*); its place in the tree, conversation and turn.
+
+Changes:
+
+- `tools`: the tools offered from this request on, from `all_tools`
+  (`[]`: none: the model must answer).
+- `reminder`: a text the model is shown after this step's last tool
+  result (a text part added to its end), in this request and every one
+  after.
+- `replace`: `{invocation: result}`: earlier tool results shown as this
+  from this request on (a picture taken out, a long text cut).
+- `stop`: the call stops (*The fields*).
+
+What the model is shown changes; what happened does not. The call's lmcc
+turn, its `tool_result` events and a conversation's `tool` records keep
+every result as the tool gave it. Each exchange of the call log holds the
+request it sent, and its `request_hash` is lmcc's hash of that request,
+rendered from the turn as the changes show it: the changes are recorded
+(*Records*), so the call stays replayable, unlike a `request` change. A
+resumed turn runs its `step` handlers again: when one decides otherwise
+(a time limit), the request differs, and a new one is sent (it costs,
+never misleads).
+
+**What a tree spent.** `before_call` and `step` handlers are given what
+the call tree spent so far in this process: each request a provider
+answered, as its model (as asked) and lm15's token counts; replies from
+the reply cache and replies a resumed turn reuses cost nothing now and
+are not in it. From it: the number of requests, the counts summed as a
+call's are ([calls.md](calls.md), *Token counts*), the tokens
+(`total_tokens` summed; unknown when a request did not report it), the
+seconds since the tree's outermost call started, and the cost at prices
+the host gives: each request's lm15 `InferencePricing.estimate`, summed,
+exact or unknown (a model with no price, or a request whose counts do not
+settle its price). A model named `provider:model` is priced by its own
+name when the prices do not name it whole. FunctAI ships no prices: they
+change, and a wrong one would mislead.
 
 ## Plugins and layouts
 
@@ -101,6 +157,8 @@ consequences:
 
 ## When a handler fails
 
+- A `stop` change is not a failure: the handler decided, and the call
+  stops with `plugin-stopped` and the handler's reason.
 - A handler of a hook that changes things that raises stops the call
   (`plugin-failed`, naming the plugin and the hook): the change it was
   meant to make (a redaction, a guard) did not happen, and the call must
@@ -121,7 +179,8 @@ A call's record ([calls.md](calls.md)) keeps:
 
 - `changes`: each change made to it, in order: `{"plugin", "version",
   "hook", "change"}`, the change as data (a `request` change is
-  `{"request": "replaced"}`: the request is in the exchange). The changes
+  `{"request": "replaced"}`: the request is in the exchange; a `step`
+  change's `replace` is keyed by the invocation as text, `{"3": ...}`). The changes
   of the turn's `turn_start` and `context` hooks are on its turn's call.
   When content is not whole, each keeps its plugin and hook, not what it
   changed.
@@ -185,6 +244,49 @@ are not in API 1.
   delegation recorded on this branch (an entry of `delegate`), so it
   remembers what it was asked earlier on this branch only. Its calls are
   under the tool call in the asking turn's tree.
+- **limits** (`limits(tokens, cost, seconds, prices, then)`, named
+  `limits`, version 1.0.0): opt-in limits on a call tree. Nothing is
+  limited by default. At least one of `tokens`, `cost`, `seconds` (each a
+  number above 0); `cost` needs `prices` (a model's name → its
+  `InferencePricing`); `then` is `answer` (the default) or `stop`. A limit
+  is **reached** when the tree's tokens, cost or seconds are at or above
+  it, or when its count is unknown (it cannot be checked). Each reached
+  limit is named `<n> tokens`, `cost <n>`, `<n> seconds` (a whole number
+  without a fraction), in that order, with, when its count is unknown,
+  why: `a request did not say how many it used`; `no price is known for
+  <models, sorted, joined by ", ">`; or `a request's cost is not known
+  from its token counts (a price without cache_read_per_million and
+  cache_write_per_million is exact only for requests that report their
+  cache counts; give both, equal to input_per_million when the provider
+  does not charge them apart)`. Its `stop` reason is `limit reached: `
+  and each limit, `<limit> (<why>)` when there is a why, joined by `; `.
+  - `before_call`: a limit reached stops the call; so does a cost limit
+    when the call's model is named and has no price (why: `no price is
+    known for <model>`), before anything is sent.
+  - `step`: a limit reached with `then` `stop` stops the call. With
+    `answer`, while tools are offered, a limit reached changes `tools`
+    to `[]` and `reminder` to `This task has reached its limit
+    (<limits, joined by ", ">). Do not ask for any more tools: give your
+    answer now, from what you have found so far.`; and at the last step
+    (`step` = `max_steps`), with no limit reached, the same with
+    `reminder` `This is the last step this task may take. Do not ask for
+    any more tools: give your answer now, from what you have found so
+    far.`, so the call ends with an answer instead of `StepLimit`.
+  Limits are checked between requests: one request may go past one.
+- **keep_pictures** (`keep_pictures(last, at_once)`, named
+  `keep-pictures`, version 1.0.0; `last` 0 or more, default 3; `at_once`
+  1 or more, default 1): its `step` counts the image parts of the
+  results as shown now, from the newest (the last part of the last
+  result) back; every one after the first `last` is due to go. When at
+  least `at_once` are due, it changes `replace`: each result holding one
+  is shown with each such part replaced by the text part `(A picture was
+  here. It is no longer shown, to save space.)`, its other parts as they
+  are. A provider's prompt cache keeps a request's start only while it
+  stays the same, and every replacement changes it: `at_once` drops
+  several at a time.
+
+`cases/agents/` pin `limits` (`limits-*`), what a tree spent
+(`spent-*`) and `keep_pictures` (`pictures-*`).
 
 ## Versions
 

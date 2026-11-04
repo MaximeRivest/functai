@@ -1,0 +1,44 @@
+{
+ "description": "A request that reports no cache counts, priced with cache rates that differ from input's: its cost is not known, so the limit is reached.",
+ "kind": "limits",
+ "limits": {
+  "cost": 5,
+  "prices": {
+   "claude-sonnet-5": {
+    "input_per_million": 3,
+    "output_per_million": 15,
+    "cache_read_per_million": 0.3,
+    "cache_write_per_million": 3.75
+   }
+  },
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 1000,
+     "output_tokens": 10,
+     "total_tokens": 1010
+    }
+   ]
+  ],
+  "seconds": 0
+ },
+ "at": {
+  "hook": "step",
+  "step": 4,
+  "max_steps": 8,
+  "tools": [
+   "look",
+   "click"
+  ]
+ },
+ "expect": {
+  "change": {
+   "tools": [],
+   "reminder": "This task has reached its limit (cost 5). Do not ask for any more tools: give your answer now, from what you have found so far."
+  }
+ }
+}

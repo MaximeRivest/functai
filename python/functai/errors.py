@@ -171,6 +171,8 @@ class ConversationError(FunctAIError):
     - ``turn-unknown``, ``turn-state`` (the turn cannot do that now),
       ``turn-unfinished`` (resuming needs to know what a tool that may have
       run returned);
+    - ``later-unavailable``: a tool answered later (``functai.later``)
+      outside a conversation's turn, where nothing can wait for its result;
     - ``store-conflict``: a conditional append found the conversation
       changed (FunctAI reads again and retries).
 
@@ -182,16 +184,20 @@ class ConversationError(FunctAIError):
 
 
 class Waiting(FunctAIError):
-    """A turn stopped to wait for a person's answer (code ``turn-waiting``):
-    a tool call its ``approve`` rule asks about, with no function to ask.
-    ``turn`` is the turn (``functai.conversations.Turn``) and ``approvals``
-    what waits: ``turn.approve(...)`` or ``turn.deny(...)``, from any process
-    that opens the conversation, answers and resumes it."""
+    """A turn stopped to wait (code ``turn-waiting``): for a person's answer
+    (a tool call its ``approve`` rule asks about, with no function to ask),
+    or for results that come later (tools that returned ``functai.later``).
+    ``turn`` is the turn (``functai.conversations.Turn``), ``approvals`` the
+    questions (``turn.approve(...)`` or ``turn.deny(...)``) and ``later`` the
+    results awaited (each a dict with its ``key``: ``chat.deliver(key,
+    result)``), from any process that opens the conversation; once nothing
+    waits, the turn goes on."""
 
-    def __init__(self, message: str, *, turn: Any = None, approvals: Any = ()):
+    def __init__(self, message: str, *, turn: Any = None, approvals: Any = (), later: Any = ()):
         super().__init__("turn-waiting", message)
         self.turn = turn
         self.approvals = list(approvals)
+        self.later = list(later)
 
 
 class ApprovalError(FunctAIError):

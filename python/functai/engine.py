@@ -419,7 +419,10 @@ def tool_spec(fn: Callable) -> Tool:
     return Tool(fn.__name__, inspect.cleandoc(fn.__doc__ or ""), parameters)
 
 
-def run_tool(tools: Dict[str, Callable], call: ToolCall, *, errors: str) -> str:
+def run_tool(tools: Dict[str, Callable], call: ToolCall, *, errors: str) -> Any:
+    """Run one tool: what it returned, as the model is shown it (``result_of``),
+    or the error the model is told. A tool that answers later returns its
+    ``Later`` as it is."""
     fn = tools.get(call.name)
     if fn is None:
         if errors == "raise":
@@ -431,11 +434,84 @@ def run_tool(tools: Dict[str, Callable], call: ToolCall, *, errors: str) -> str:
         if errors == "raise":
             raise
         return f"error: {type(exc).__name__}: {exc}"
-    if isinstance(out, str):
+    from .tools import Later
+    if isinstance(out, Later):
         return out
+    return result_of(out)
+
+
+# the kinds of lm15 part a tool's result may hold (contract/tools.md, *What a tool returns*)
+RESULT_PARTS = ("text", "image", "audio", "video", "document")
+
+
+def _is_part(value: Any) -> bool:
+    from lm15.serde import PART_TYPES
+    return isinstance(value, tuple(PART_TYPES.values()))
+
+
+def _part(value: Any) -> Dict[str, Any]:
+    """An lm15 part as its JSON form; a part read from a file holds the file's
+    bytes, so the result is whole wherever it is read again (a resumed turn,
+    another process)."""
+    import base64
+    from lm15.serde import part_to_dict
+    if value.type not in RESULT_PARTS:
+        raise TypeError(f"a tool's result holds text, pictures, sounds, videos and documents; not a {value.type} part")
+    if getattr(value, "path", None) is not None and getattr(value, "data", None) is None:
+        value = dataclasses.replace(value, data=base64.b64encode(value.bytes).decode("ascii"), path=None)
+    return part_to_dict(value)
+
+
+def _as_text(value: Any) -> str:
+    if isinstance(value, str):
+        return value
     from .interface import json_form
-    ok, data = json_form(out)          # a record as its JSON (a pydantic model, a dataclass), not its str()
-    return json.dumps(data if ok else out, default=str, ensure_ascii=False)
+    ok, data = json_form(value)        # a record as its JSON (a pydantic model, a dataclass), not its str()
+    return json.dumps(data if ok else value, default=str, ensure_ascii=False)
+
+
+def result_of(out: Any) -> Any:
+    """What a tool returned, as the model is shown it (contract/tools.md, *What
+    a tool returns*): text (a text; any other value, as JSON), or, when it
+    returned a part (a picture, a sound, a document) or a list holding one,
+    a list of lm15 parts in their JSON form: each text a text part, each part
+    itself, each other value a text part of its JSON."""
+    if _is_part(out):
+        return [_part(out)]
+    if isinstance(out, (list, tuple)) and any(_is_part(x) for x in out):
+        return [_part(x) if _is_part(x) else {"type": "text", "text": _as_text(x)} for x in out]
+    return _as_text(out)
+
+
+def result_text(output: Any) -> str:
+    """A tool result's text: itself, or its text parts joined by a new line."""
+    if isinstance(output, str):
+        return output
+    return "\n".join(p.get("text", "") for p in output if isinstance(p, dict) and p.get("type") == "text")
+
+
+def check_result(output: Any, where: str) -> Any:
+    """A tool result given as data (a plugin's change, a result given for a
+    tool that may have run, a result delivered later): text, or a list of lm15
+    parts (their JSON form, or lm15's objects)."""
+    if isinstance(output, str):
+        return output
+    if _is_part(output):
+        return [_part(output)]
+    if isinstance(output, (list, tuple)) and output:
+        parts = []
+        for p in output:
+            if _is_part(p):
+                parts.append(_part(p))
+            elif isinstance(p, dict) and p.get("type") in RESULT_PARTS:
+                parts.append(dict(p))
+            elif isinstance(p, str):
+                parts.append({"type": "text", "text": p})
+            else:
+                raise TypeError(f"{where}: a part of a tool's result is text, a picture, a sound, a video or a "
+                                f"document (an lm15 part), not {type(p).__name__}")
+        return parts
+    raise TypeError(f"{where} is text, or a list of lm15 parts (text, pictures, sounds, videos, documents)")
 
 
 # ------------------------------------------------------------------ the call
@@ -611,8 +687,15 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
     responses: List[Any] = []
     asked: List[Any] = []                   # every tool call the model asked for, across steps (outputs.calls)
     max_steps = max(1, int(settings.get("max_steps") or 1))
-    for _ in range(max_steps):
-        rendered = plan.render(turn, turns=list(past))
+    from . import plugins
+    current = calllog.current()
+    steering = plugins.Steering(current, function, max_steps, tool_specs, settings.get("lm")) \
+        if current is not None and tool_specs else None
+    for step in range(1, max_steps + 1):
+        if step > 1 and steering is not None:
+            steering.before(step)                 # the step hook: tools offered, reminders, results shown otherwise
+        shown = steering.view(turn) if steering is not None else turn
+        rendered = plan.render(shown, turns=list(past))
         try:
             response, reading = _complete(plan, rendered, router=router, model=model, settings=settings,
                                           function=function, responses=responses, annotations=spec.annotations)
@@ -641,14 +724,18 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
             if spec.tools:
                 object.__setattr__(pred, "tool_calls", list(asked))
             return pred
-        current = calllog.current()
-        for call in calls:
-            output = _one_tool(current, tools, call, settings)
+        first = (current.invocations + 1) if current is not None else 0
+        ran = [_one_tool(current, tools, call, settings) for call in calls]
+        if any(isinstance(o, _Pending) for o in ran):
+            ran = _results_later(current, ran)    # results that come later: used when delivered, else the turn waits
+        for i, (call, output) in enumerate(zip(calls, ran)):
             turn = turn.tool(call.id, output)
+            if steering is not None:
+                steering.ran(first + i, call.name, call.input, output)
     raise StepLimit(f"{function}: no answer after {max_steps} model steps", turn)
 
 
-def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings: Dict[str, Any]) -> str:
+def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings: Dict[str, Any]) -> Any:
     """One tool call of the call in progress (contract/tools.md,
     contract/plugins.md): numbered (its invocation), shown, given to the
     ``tool_call`` hooks (which may change its input, block it, or ask a
@@ -658,7 +745,12 @@ def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings
     from . import plugins, tools as _tools
     errors = settings.get("tool_errors") or "report"
     if current is None:
-        return run_tool(tools, call, errors=errors)
+        output = run_tool(tools, call, errors=errors)
+        if isinstance(output, _tools.Later):
+            from .errors import ConversationError
+            raise ConversationError("later-unavailable", f"{call.name} returned functai.later({output.key!r}) "
+                                                         f"outside a conversation's turn")
+        return output
     current.invocations += 1
     n = current.invocations
     fn = tools.get(call.name)
@@ -672,8 +764,11 @@ def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings
     else:
         run = current.turn_run
         known = run.recorded_tool(current, approval) if run is not None else None
-        if known is not None:
+        from . import conversations
+        if known is not None and not isinstance(known, conversations.Delivered):
             output = known                            # a turn resumed: this tool ran before; its result is kept
+        elif isinstance(known, conversations.Delivered):
+            output = _delivered(current, approval, tool_input, known.output)   # a result that came later
         else:
             from .conversations import frontier
             frontier()
@@ -688,12 +783,81 @@ def _one_tool(current: Any, tools: Dict[str, Callable], call: ToolCall, settings
                 output = run_tool(tools, asked, errors=errors)
             finally:
                 calllog.INVOCATION.reset(token)
+            if isinstance(output, _tools.Later):
+                return _later(current, run, approval, tool_input, output.key, call)
             # the result as the model is shown it; a turn resumed later reuses it, hooks and all
             output = plugins.tool_result(current, approval, tool_input, output)
             if run is not None:
                 run.tool_done(current, approval, output)
-    current.emit("tool_result", id=call.id, name=call.name, output=output, invocation=n)
+    show_result(current, call.id, call.name, output, n)
     return output
+
+
+@dataclasses.dataclass
+class _Pending:
+    """A tool call whose result comes later (``functai.later``)."""
+    key: str
+    approval: Any
+    input: Any
+    call: Any
+
+
+def _later(current: Any, run: Any, approval: Any, tool_input: Any, key: str, call: ToolCall) -> "_Pending":
+    """A tool returned ``functai.later(key)``: kept (it ran; its result comes
+    later) and shown (a ``later`` event). Outside a conversation's turn
+    nothing could wait for it: ``later-unavailable``."""
+    from .errors import ConversationError
+    if run is None:
+        raise ConversationError("later-unavailable",
+                                f"{approval.path} returned functai.later({key!r}), and its result can only be waited "
+                                f"for in a conversation's turn (fn.conversation(...)): this call runs in none. "
+                                f"Whatever the tool started may be running.")
+    run.tool_later(current, dataclasses.replace(approval, input=tool_input), key)
+    current.emit("later", id=call.id, invocation=approval.invocation, name=call.name, key=key)
+    return _Pending(key, approval, tool_input, call)
+
+
+def _delivered(current: Any, approval: Any, tool_input: Any, output: Any) -> Any:
+    """A result that came later, as the model is shown it: given to the
+    ``tool_result`` hooks, then kept as the tool's result."""
+    from . import plugins
+    from .conversations import frontier
+    frontier()
+    output = plugins.tool_result(current, approval, tool_input, output)
+    current.turn_run.tool_done(current, approval, output)
+    return output
+
+
+def _results_later(current: Any, ran: List[Any]) -> List[Any]:
+    """The step's results, with those that came later: each one already
+    delivered is used now; when one is not, the turn stops and waits for them
+    (every other tool call of the step ran, and is kept)."""
+    run = current.turn_run
+    pending = [o for o in ran if isinstance(o, _Pending)]
+    got = run.deliveries([p.key for p in pending])
+    missing = [p for p in pending if p.key not in got]
+    if missing:
+        from .conversations import TurnWaiting
+        raise TurnWaiting(later=[{"site": current.path, "invocation": p.approval.invocation, "id": p.call.id,
+                                  "name": p.call.name, "key": p.key, "path": p.approval.path} for p in missing])
+    out = []
+    for o in ran:
+        if isinstance(o, _Pending):
+            p = o
+            o = _delivered(current, p.approval, p.input, got[p.key])
+            show_result(current, p.call.id, p.call.name, o, p.approval.invocation)
+        out.append(o)
+    return out
+
+
+def show_result(current: Any, id: str, name: str, output: Any, invocation: int) -> None:
+    """The ``tool_result`` event: ``output`` the result's text, ``parts`` the
+    whole result when it holds more than text (contract/streaming.md)."""
+    if isinstance(output, str):
+        current.emit("tool_result", id=id, name=name, output=output, invocation=invocation)
+    else:
+        current.emit("tool_result", id=id, name=name, output=result_text(output), parts=list(output),
+                     invocation=invocation)
 
 
 def fit_turn(plan: lmcc.Plan, spec: Spec, demo: Any) -> Optional[lmcc.Turn]:

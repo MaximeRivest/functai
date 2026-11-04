@@ -83,7 +83,8 @@ export interface Settings {
   /** `"report"` (the model sees a tool's error) or `"raise"`. */
   toolErrors?: "report" | "raise";
   /** The call log: a folder, `true` (the default folder), or `false`. Unset: `FUNCTAI_LOG_CALLS` decides. */
-  logCalls?: string | boolean | null;
+  /** A folder, `true` (the default folder), `false` (never), or a store of one's own (`{ append, read }`: calls.md). */
+  logCalls?: string | boolean | import("./calllog.ts").CallStore | null;
   /**
    * Which values the call log and the kept form of events keep: `true`,
    * `false` (sizes, times and tokens only), or by field (`{ transcript: false }`;

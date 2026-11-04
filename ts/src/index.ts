@@ -36,8 +36,9 @@ export { Cancelled, FunctAIError, FilesUnavailable, ConversationError, Waiting, 
   BakeError, type Approval } from "./errors.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
 export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
-  ToolResultHook, TurnEndHook } from "./plugins.ts";
-export { compaction, delegate } from "./builtins.ts";
+  ToolResultHook, TurnEndHook, StepHook, Spent, pricing, type StepResult, type Price } from "./plugins.ts";
+export { compaction, delegate, limits, keepPictures, type LimitsOptions } from "./builtins.ts";
+export { later, Later, type ToolOutput } from "./results.ts";
 export { Conversation, Turn, TurnStream, type ConversationProgram, allTurns, lastTurns, remember, earlier, type ContextRule, type Memory, type ConversationOptions,
   type TurnOptions } from "./conversations.ts";
 export { MemoryConversations, FolderStore, FolderEvents, type ConversationStore } from "./stores.ts";
@@ -55,7 +56,7 @@ export {
   type JournalChoice, type ReceiverLayer,
   type FailedEvent, type FollowResult, type KeptFields, type LogState, type Position, type ProgramInfo, type ReadAnswer,
   type RequestEvent, type RetryEvent, type SawEntry, type StartedEvent, type StoreCode, type StreamEvent, type TextEvent,
-  type ThinkingEvent, type ToolCallEvent, type ToolResultEvent, type ApprovalEvent, type ApprovedEvent,
+  type ThinkingEvent, type ToolCallEvent, type ToolResultEvent, type ApprovalEvent, type ApprovedEvent, type NoteEvent, type LaterEvent,
 } from "./events.ts";
 export { JournalError, flush, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
 export { sawOf, keepsSaw, SawUnknown, type SawCode } from "./saw.ts";
@@ -67,7 +68,7 @@ export { load, fromManifest, save, toManifest, describeSaved, LoadRefused } from
 export { capabilities } from "./models.ts";
 export { clearCache, replyKey, MemoryReplies, DiskReplies, type ReplyCache, type CacheSetting } from "./replies.ts";
 export { normalize, casefold } from "./text.ts";
-export { VERSION, pruneCalls, split } from "./calllog.ts";
+export { VERSION, pruneCalls, split, note, MemoryCalls, flushCalls, type CallStore } from "./calllog.ts";
 export { login, logins, logout } from "./accounts.ts";
 export { Refusal, isRefusal } from "lmcc";
 
@@ -153,8 +154,11 @@ function loggedCall(r: Rec): LoggedCall {
 }
 
 /** Every logged call (of one function, when given), oldest first. */
-export function calls(fn?: AIFunction | AnyModule | string, opts: { folder?: string; since?: Date } = {}): LoggedCall[] {
-  const [all] = calllog.read(opts.folder ?? calllog.folderOf(effective({}).logCalls ?? true), { since: opts.since ?? null });
+export function calls(fn?: AIFunction | AnyModule | string,
+  opts: { folder?: string | calllog.CallStore; since?: Date; records?: readonly Rec[] } = {}): LoggedCall[] {
+  const [all] = opts.records
+    ? [calllog.latestWriters(opts.records.filter((r) => "functai_call" in r))]
+    : calllog.read(opts.folder ?? calllog.folderOf(effective({}).logCalls ?? true), { since: opts.since ?? null });
   const name = typeof fn === "string" ? fn : fn?.name;
   const module = typeof fn === "object" || typeof fn === "function" ? fn?.module : undefined;
   return all
@@ -182,7 +186,7 @@ export interface LeftOut {
  * somewhere else than the log folder.
  */
 export function rated(fn: AIFunction | AnyModule | string,
-  opts: { folder?: string; by?: string; since?: Date; records?: readonly Rec[]; anyFile?: boolean } = {}): { rows: Rec[]; leftOut: LeftOut } {
+  opts: { folder?: string | calllog.CallStore; by?: string; since?: Date; records?: readonly Rec[]; anyFile?: boolean } = {}): { rows: Rec[]; leftOut: LeftOut } {
   const records = opts.records
     ? [opts.records.filter((r) => "functai_call" in r), opts.records.filter((r) => "functai_rating" in r)] as [Rec[], Rec[]]
     : calllog.read(opts.folder ?? calllog.folderOf(effective({}).logCalls ?? true), { since: opts.since ?? null });

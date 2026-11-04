@@ -90,6 +90,7 @@ Watch a call while it is made. `fn.stream(...)` returns a Stream; its events are
 | --- | --- |
 | [Stream](Stream.md#functai.Stream) | One call of an AI function or a module, watched while it is made. |
 | [Cancelled](Cancelled.md#functai.Cancelled) | The stream was closed before its call ended. |
+| [note](note.md#functai.note) | Say that something happened, from code inside a call (a module's body, |
 
 ## Observers and journals
 
@@ -118,12 +119,12 @@ A program's calls that remember each other, kept in a store; branches, what the 
 | [earlier](earlier.md#functai.earlier) | The conversation so far, as data: inside a module's turn, one row per |
 | [FolderStore](FolderStore.md#functai.FolderStore) | Conversations kept in a folder, shared by every process that opens it: |
 | [MemoryConversations](MemoryConversations.md#functai.MemoryConversations) | Conversations kept in this process's memory (lost when it ends): the |
-| [Waiting](Waiting.md#functai.Waiting) | A turn stopped to wait for a person's answer (code ``turn-waiting``): |
+| [Waiting](Waiting.md#functai.Waiting) | A turn stopped to wait (code ``turn-waiting``): for a person's answer |
 | [ConversationError](ConversationError.md#functai.ConversationError) | A conversation, or one of its turns, refused what was asked |
 
 ## Plugins
 
-Hooks over turns, context, calls, requests and tools; every change is data and recorded. Approval, compaction and delegation are plugins too.
+Hooks over turns, context, calls, the steps of a tool loop, requests and tools; every change is data and recorded. Approval, compaction, delegation, limits and keep_pictures are plugins too.
 
 | | |
 | --- | --- |
@@ -133,6 +134,9 @@ Hooks over turns, context, calls, requests and tools; every change is data and r
 | [load_plugin](load_plugin.md#functai.load_plugin) | A plugin from a Python file that defines ``plugin`` (an |
 | [compaction](compaction.md#functai.compaction) | Keep a long conversation short: older turns are folded into a summary. |
 | [delegate](delegate.md#functai.delegate) | Another program as a tool: an assistant hands part of its work to it. |
+| [limits](limits.md#functai.limits) | Stop a call tree (an agent, a pipeline) when it has used enough: tokens, |
+| [keep_pictures](keep_pictures.md#functai.keep_pictures) | Show a long tool loop only its newest pictures: before each step, the |
+| [plugins.Spent](plugins.Spent.md#functai.plugins.Spent) | What a call tree spent so far in this process (contract/plugins.md, |
 
 ## Tools that ask first
 
@@ -142,6 +146,7 @@ Tools say what they do to the world; a person can be asked before they run.
 | --- | --- |
 | [tool](tool.md#functai.tool) | Make a function a tool that says what it does to the world. |
 | [Tool](Tool.md#functai.Tool) | A function the model may call, with what it does to the world. Made by |
+| [later](later.md#functai.later) | What a tool returns when its result comes later: it started something |
 | [Approval](Approval.md#functai.Approval) | One tool call waiting for a person's answer. |
 | [ApprovalError](ApprovalError.md#functai.ApprovalError) | A tool call needs a person's answer and nobody can be asked (code |
 
@@ -167,6 +172,7 @@ Keep every call on disk, mark answers right or wrong, and turn the corrections i
 | [rated](rated.md#functai.rated) | The calls people rated, as rows with known answers. |
 | [split](split.md#functai.split) | Two tables, with every group of rows on one side: ``train, test = |
 | [prune_calls](prune_calls.md#functai.prune_calls) | Delete the call log's day folders older than a time, keeping what |
+| [MemoryCalls](MemoryCalls.md#functai.MemoryCalls) | A call log kept in this process's memory (``log_calls=MemoryCalls()``): |
 
 ## Long runs
 

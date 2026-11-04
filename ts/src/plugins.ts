@@ -20,13 +20,15 @@
  * runs another program's conversation.
  */
 
-import { Config, type Request } from "@lm15/lm15";
+import { Config, InferencePricing, Usage, type Request } from "@lm15/lm15";
+import * as lmcc from "lmcc";
 import type { Call } from "./calllog.ts";
-import { warnOnce } from "./calllog.ts";
+import { current as currentCallContext, warnOnce } from "./calllog.ts";
 import { Cancelled, FunctAIError, PluginError, type Approval } from "./errors.ts";
 import { layersOf, type Layer, type Settings } from "./settings.ts";
 import { askPerson, asks, denial, type ApproveFunction } from "./tools.ts";
 import { copyData, toJson } from "./values.ts";
+import { picturesIn, resultData, type ToolOutput } from "./results.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -34,13 +36,14 @@ type Rec = Record<string, unknown>;
 export const API = 1;
 
 /** The hooks, as TypeScript names them (records use the contract's: `before_call`, …). */
-export type Hook = "turnStart" | "context" | "beforeCall" | "request" | "toolCall" | "toolResult" | "turnEnd";
+export type Hook = "turnStart" | "context" | "beforeCall" | "step" | "request" | "toolCall" | "toolResult" | "turnEnd";
 
 /** Each hook's name in records (the contract's), and the change fields it may return. */
 const HOOKS: Record<Hook, { readonly name: string; readonly fields: readonly (keyof Change)[] }> = {
   turnStart: { name: "turn_start", fields: ["inputs"] },
   context: { name: "context", fields: ["keep", "without", "sections"] },
-  beforeCall: { name: "before_call", fields: ["instruction", "sections", "lm", "settings", "tools"] },
+  beforeCall: { name: "before_call", fields: ["instruction", "sections", "lm", "settings", "tools", "stop"] },
+  step: { name: "step", fields: ["tools", "reminder", "replace", "stop"] },
   request: { name: "request", fields: [] },
   toolCall: { name: "tool_call", fields: ["inputs", "block"] },
   toolResult: { name: "tool_result", fields: ["output"] },
@@ -60,7 +63,10 @@ const HOOKS: Record<Hook, { readonly name: string; readonly fields: readonly (ke
  *   earlier turns, a list for every turn or `{ [turnId]: names }` (`context`);
  * - `inputs`: inputs replaced, by name (`turnStart`: the turn's; `toolCall`: the tool's);
  * - `block`: the tool may not run, and why (`toolCall`);
- * - `output`: the tool's result as the model is shown it (`toolResult`).
+ * - `output`: the tool's result as the model is shown it: text, or lm15 parts (a picture and its caption) (`toolResult`);
+ * - `reminder`: text the model is shown after this step's tool results, in this request and the ones after (`step`);
+ * - `replace`: earlier tool results, by invocation, shown as this from this request on (`step`);
+ * - `stop`: the call stops here, and why: it throws `PluginError` (`plugin-stopped`) (`beforeCall`, `step`).
  */
 export interface Change {
   readonly instruction?: string;
@@ -72,10 +78,14 @@ export interface Change {
   readonly without?: readonly string[] | Readonly<Record<string, readonly string[]>>;
   readonly inputs?: Readonly<Rec>;
   readonly block?: string;
-  readonly output?: string;
+  readonly output?: string | readonly unknown[];
+  readonly reminder?: string;
+  readonly replace?: Readonly<Record<number | string, string | readonly unknown[]>>;
+  readonly stop?: string;
 }
 
-const CHANGE_FIELDS = new Set(["instruction", "sections", "lm", "settings", "tools", "keep", "without", "inputs", "block", "output"]);
+const CHANGE_FIELDS = new Set(["instruction", "sections", "lm", "settings", "tools", "keep", "without", "inputs", "block", "output",
+  "reminder", "replace", "stop"]);
 const NAME = /^[a-z][a-z0-9_-]{0,63}$/;
 
 type Handler = (event: any) => unknown;
@@ -129,6 +139,8 @@ export class Plugin {
   context(fn: (event: ContextHook) => Change | void | undefined | null): this { return this.on("context", fn); }
   /** An AI function is about to be asked: its instruction, sections, model, settings, tools. */
   beforeCall(fn: (event: BeforeCallHook) => Change | void | undefined | null): this { return this.on("beforeCall", fn); }
+  /** A call with tools is about to ask the model again, after its tools ran: tools offered, a reminder, earlier results shown otherwise; or stop it. */
+  step(fn: (event: StepHook) => Change | void | undefined | null | Promise<Change | void | undefined | null>): this { return this.on("step", fn); }
   /** The escape hatch: replace the provider request (the call is then not replayable). */
   request(fn: (event: RequestHook) => Request | void | undefined | null): this { return this.on("request", fn); }
   /** A tool is about to run: change its input, block it, or ask a person (`event.ask()`). */
@@ -219,9 +231,16 @@ function recorded(change: Change): Rec {
   const out: Rec = {};
   for (const [k, v] of Object.entries(change)) {
     if (v === undefined || v === null) continue;
-    out[k] = k === "settings" ? settingsJson(v as Rec) : toJson(v)[0];
+    out[k] = k === "settings" ? settingsJson(v as Rec) : k === "output" ? toJson(resultData(v, "output"))[0]
+      : k === "replace" ? Object.fromEntries(Object.entries(v as Rec).map(([i, r]) => [String(i), toJson(resultData(r, `replace[${i}]`))[0]]))
+      : toJson(v)[0];
   }
   return out;
+}
+
+function stoppedName(event: HookEvent): string {
+  const f = (event as unknown as { function?: unknown }).function;
+  return typeof f === "string" ? f : "the call";
 }
 
 /** Text sections: a list of texts, the blank ones left out. */
@@ -299,6 +318,15 @@ export async function runHook(hook: Hook, plugins: readonly Plugin[], event: Hoo
         throw new PluginError("plugin-change", `plugin ${plugin.name}: ${HOOKS[hook].name}: ${(err as Error).message}`, { plugin: plugin.name, hook: HOOKS[hook].name });
       }
       applied.add(plugin, hook, recorded(got as Change));
+      const halt = (got as Change).stop;
+      if (halt !== undefined && halt !== null) {
+        if (typeof halt !== "string" || !halt.trim()) {
+          applied.items.pop();
+          throw new PluginError("plugin-change", `plugin ${plugin.name}: ${HOOKS[hook].name}: stop is the reason, a text`, { plugin: plugin.name, hook: HOOKS[hook].name });
+        }
+        // a handler decided: the call stops here, its change kept (the caller adds `applied` to the call's record)
+        throw new PluginError("plugin-stopped", `${stoppedName(event)}: stopped by plugin ${plugin.name}: ${halt}`, { plugin: plugin.name, hook: HOOKS[hook].name });
+      }
     }
   }
 }
@@ -381,9 +409,11 @@ export class BeforeCallHook extends HookEvent {
   readonly path: string;
   readonly conversation: string | null;
   readonly turn: string | null;
+  /** What its call tree spent so far (plugins.md, "What a tree spent"). */
+  readonly spent: Spent;
   constructor(f: {
     instruction: string; function: string; program: unknown; inputs: Rec; lm: string | null; settings: Rec; tools: string[];
-    allTools: readonly string[]; sections: string[]; path: string; conversation: string | null; turn: string | null;
+    allTools: readonly string[]; sections: string[]; path: string; conversation: string | null; turn: string | null; spent?: Spent;
   }) {
     super();
     this.instruction = f.instruction;
@@ -398,6 +428,7 @@ export class BeforeCallHook extends HookEvent {
     this.path = f.path;
     this.conversation = f.conversation;
     this.turn = f.turn;
+    this.spent = f.spent ?? new Spent([], 0);
   }
 }
 
@@ -467,11 +498,12 @@ export class ToolCallHook extends HookEvent {
 export class ToolResultHook extends HookEvent {
   readonly name: string;
   readonly input: unknown;
-  output: string;
+  /** The result as it stands: text, or lm15 parts as data (`{ type: "image", media_type, data }`). */
+  output: ToolOutput;
   readonly path: string;
   readonly invocation: number;
   readonly function: string;
-  constructor(approval: Approval, input: unknown, output: string, fn: string) {
+  constructor(approval: Approval, input: unknown, output: ToolOutput, fn: string) {
     super();
     this.name = approval.name;
     this.input = input;
@@ -555,13 +587,14 @@ export async function beforeCall(plugins: readonly Plugin[], spec: {
     instruction: spec.instruction, function: spec.name, program: spec.program, inputs: copyData(spec.inputs),
     lm: typeof s.lm === "string" ? s.lm : null, settings: lm15, tools: [...spec.tools], allTools: [...spec.tools], sections,
     path: call ? namesOf(call) : "", conversation: (conv?.["id"] as string) ?? null, turn: (conv?.["turn"] as string) ?? null,
+    spent: spentOf(call ?? currentCall()),
   });
   const run = call?.turnRun as unknown as { conversation?: EntriesHost; turn: string } | null;
   if (run?.conversation) event._turn = { conversation: run.conversation, turn: run.turn };
   const out: Rec = { ...spec.settings };
   let offered: string[] | null = null;
   let instruction: string | null = null;
-  await runHook("beforeCall", plugins, event, applied, (c) => {
+  await stopsKept(call, applied, () => runHook("beforeCall", plugins, event, applied, (c) => {
     if (c.instruction !== undefined) {
       if (typeof c.instruction !== "string" || !c.instruction.trim()) throw new TypeError("instruction is the text of an instruction");
       instruction = event.instruction = c.instruction;
@@ -586,7 +619,7 @@ export async function beforeCall(plugins: readonly Plugin[], spec: {
       if (unknown.length) throw new TypeError(`${spec.name} has no tool ${JSON.stringify(unknown[0])} (its tools: ${spec.tools.join(", ") || "none"})`);
       offered = event.tools = spec.tools.filter((n) => names.includes(n));
     }
-  });
+  }));
   return { settings: out as Settings, instruction, sections: event.sections, contextSections: [...spec.given], tools: offered, applied };
 }
 
@@ -672,18 +705,258 @@ export async function toolCall(plugins: readonly Plugin[], call: Call, approval:
 }
 
 /** `toolResult`: what the model is shown of a tool's result. */
-export async function toolResult(plugins: readonly Plugin[], call: Call, approval: Approval, input: unknown, output: string): Promise<string> {
+export async function toolResult(plugins: readonly Plugin[], call: Call, approval: Approval, input: unknown, output: ToolOutput): Promise<ToolOutput> {
   if (!plugins.some((p) => p.handlers.toolResult?.length)) return output;
   const event = new ToolResultHook(approval, input, output, call.node?.name ?? "");
   const run = call.turnRun as unknown as { conversation?: EntriesHost; turn: string } | null;
   if (run?.conversation) event._turn = { conversation: run.conversation, turn: run.turn };
   const applied = new Applied();
   await runHook("toolResult", plugins, event, applied, (c) => {
-    if (typeof c.output !== "string") throw new TypeError("output is the text the model is shown");
-    event.output = c.output;
+    event.output = resultData(c.output, "output");
   });
   call.changes.push(...applied.items);
   return event.output;
+}
+
+// ------------------------------------------------------------------ what a tree spent, and the step hook
+
+/** A price as the host gives it: lm15's `InferencePricing`, or its JSON form (`input_per_million`, …). */
+export type Price = InferencePricing | Readonly<Rec>;
+
+/** `prices[model]` as lm15's `InferencePricing`, or null; a model named `provider:model` is priced by its own name too. */
+export function pricing(prices: Readonly<Record<string, Price>> | null | undefined, model: string): InferencePricing | null {
+  if (!prices) return null;
+  let p = Object.hasOwn(prices, model) ? prices[model] : undefined;
+  if (p === undefined && model.includes(":")) {
+    const own = model.slice(model.indexOf(":") + 1);
+    p = Object.hasOwn(prices, own) ? prices[own] : undefined;
+  }
+  if (p === undefined || p === null) return null;
+  if (typeof p !== "object") throw new TypeError("a price is lm15's InferencePricing, or its JSON form");
+  const snake = Object.keys(p).some((k) => k.includes("_"));
+  return snake ? InferencePricing.fromJSON(p as never) : InferencePricing.create(p);
+}
+
+/**
+ * What a call tree spent so far in this process (plugins.md, "What a tree
+ * spent"): each request a provider answered, as `[model, usage]` (lm15's
+ * token counts, in the call log's snake_case); replies from the reply cache,
+ * and those a resumed turn reuses, cost nothing now and are not in it.
+ */
+export class Spent {
+  readonly exchanges: readonly (readonly [string, Readonly<Record<string, number>>])[];
+  /** Since the tree's outermost call started. */
+  readonly seconds: number;
+  constructor(exchanges: readonly (readonly [string, Readonly<Record<string, number>>])[], seconds: number) {
+    this.exchanges = exchanges.map(([m, u]) => [m, { ...u }] as const);
+    this.seconds = seconds;
+  }
+  get requests(): number {
+    return this.exchanges.length;
+  }
+  /** The counts summed: a counter only when every request reported it. */
+  get usage(): Record<string, number> {
+    let total: Record<string, number> | null = null;
+    for (const [, u] of this.exchanges) {
+      if (total === null) total = { ...u };
+      else {
+        const next: Record<string, number> = {};
+        for (const [k, v] of Object.entries(total)) if (Object.hasOwn(u, k)) next[k] = v + u[k]!;
+        total = next;
+      }
+    }
+    return total ?? {};
+  }
+  /** Every token read and written (`total_tokens` summed), or null when a request did not report it. */
+  get tokens(): number | null {
+    if (!this.exchanges.length) return 0;
+    return this.usage["total_tokens"] ?? null;
+  }
+  /** The list price of the requests at these prices: exact, or null (a model with no price, a request whose counts do not settle its price). */
+  cost(prices: Readonly<Record<string, Price>>): number | null {
+    let total = 0;
+    for (const [model, u] of this.exchanges) {
+      const p = pricing(prices, model);
+      if (!p) return null;
+      const got = InferencePricing.estimate(p, Usage.fromJSON(u as never));
+      if (got === undefined) return null;
+      total += got;
+    }
+    return total;
+  }
+}
+
+/** The call running now, if any. */
+export function currentCall(): Call | null {
+  return currentCallContext.get() ?? null;
+}
+
+/** What `call`'s tree spent so far (its outermost call in this process). */
+export function spentOf(call: Call | null | undefined): Spent {
+  if (!call) return new Spent([], 0);
+  return new Spent([...call.top.spent], Math.max(0, (Date.now() - call.top.started) / 1000));
+}
+
+/** Run hooks; when one stops the call, its changes are kept in the call's record first. */
+async function stopsKept(call: Call | null, applied: Applied, run: () => Promise<void>): Promise<void> {
+  try {
+    await run();
+  } catch (err) {
+    if (call && err instanceof PluginError && err.code === "plugin-stopped") {
+      call.changes.push(...applied.items);
+      applied.items.length = 0;
+    }
+    throw err;
+  }
+}
+
+/** A tool result of the call so far, as the model is shown it now. */
+export interface StepResult {
+  readonly invocation: number;
+  readonly name: string;
+  readonly input: unknown;
+  /** Text, or lm15 parts as data. */
+  readonly output: ToolOutput;
+  /** How many pictures it holds. */
+  readonly pictures: number;
+}
+
+/**
+ * A call with tools is about to ask the model again, after the tools of its
+ * last reply ran (plugins.md, "The step hook"). A handler may change the
+ * tools offered (`[]`: the model must answer), add a `reminder`, show
+ * earlier results otherwise (`replace`), or `stop` the call.
+ */
+export class StepHook extends HookEvent {
+  readonly function: string;
+  readonly path: string;
+  /** The number of the request about to be made (2 for the first after tools). */
+  readonly step: number;
+  /** The last request the call may make. */
+  readonly maxSteps: number;
+  /** Every tool result so far, oldest first, as shown now. */
+  results: StepResult[];
+  /** The names offered now. */
+  tools: string[];
+  /** The names the call was offered when it started. */
+  readonly allTools: readonly string[];
+  readonly lm: string | null;
+  readonly spent: Spent;
+  readonly conversation: string | null;
+  readonly turn: string | null;
+  constructor(f: { function: string; path: string; step: number; maxSteps: number; results: StepResult[]; tools: string[];
+    allTools: readonly string[]; lm: string | null; spent: Spent; conversation: string | null; turn: string | null }) {
+    super();
+    this.function = f.function;
+    this.path = f.path;
+    this.step = f.step;
+    this.maxSteps = f.maxSteps;
+    this.results = f.results;
+    this.tools = f.tools;
+    this.allTools = f.allTools;
+    this.lm = f.lm;
+    this.spent = f.spent;
+    this.conversation = f.conversation;
+    this.turn = f.turn;
+  }
+  /** Whether this is the last request the call may make. */
+  get lastStep(): boolean {
+    return this.step >= this.maxSteps;
+  }
+}
+
+const shown = (r: { invocation: number; name: string; input: unknown; output: ToolOutput }): StepResult =>
+  ({ invocation: r.invocation, name: r.name, input: copyData(r.input), output: copyData(r.output), pictures: picturesIn(r.output) });
+
+/**
+ * The `step` hook of one call's tool loop: what its handlers changed so far,
+ * and the turn the next request renders (a view: the turn itself keeps every
+ * result as the tool gave it).
+ */
+export class Steering {
+  private readonly results: { invocation: number; name: string; input: unknown; output: ToolOutput; given: ToolOutput }[] = [];
+  offered: string[];
+  private readonly hooked: readonly Plugin[];
+  private readonly call: Call;
+  private readonly fn: string;
+  private readonly maxSteps: number;
+  readonly allTools: readonly string[];
+  private readonly lm: string | null;
+  constructor(call: Call, fn: string, maxSteps: number, allTools: readonly string[], lm: string | null, plugins: readonly Plugin[]) {
+    this.call = call;
+    this.fn = fn;
+    this.maxSteps = maxSteps;
+    this.allTools = allTools;
+    this.lm = lm;
+    this.offered = [...allTools];
+    this.hooked = plugins.filter((p) => p.handlers.step?.length);
+  }
+
+  ran(invocation: number, name: string, input: unknown, output: ToolOutput): void {
+    this.results.push({ invocation, name, input: copyData(input), output, given: output });
+  }
+
+  /** Run the `step` handlers before request `step` (2 or more). */
+  async before(step: number): Promise<void> {
+    if (!this.hooked.length) return;
+    const call = this.call;
+    const conv = (call.conversation ?? null) as Rec | null;
+    const run = call.turnRun as unknown as { conversation?: EntriesHost; turn: string } | null;
+    const event = new StepHook({
+      function: this.fn, path: namesOf(call), step, maxSteps: this.maxSteps, results: this.results.map(shown),
+      tools: [...this.offered], allTools: this.allTools, lm: this.lm, spent: spentOf(call),
+      conversation: (conv?.["id"] as string) ?? null, turn: (conv?.["turn"] as string) ?? null,
+    });
+    if (run?.conversation) event._turn = { conversation: run.conversation, turn: run.turn };
+    const applied = new Applied();
+    try {
+      await runHook("step", this.hooked, event, applied, (c) => {
+        if (c.tools !== undefined) {
+          const names = [...c.tools];
+          const unknown = names.filter((n) => !this.allTools.includes(n));
+          if (unknown.length) throw new TypeError(`${this.fn} was not offered tool ${JSON.stringify(unknown[0])} (offered: ${this.allTools.join(", ") || "none"})`);
+          this.offered = event.tools = this.allTools.filter((n) => names.includes(n));
+        }
+        if (c.replace !== undefined) {
+          if (typeof c.replace !== "object" || c.replace === null || Array.isArray(c.replace)) throw new TypeError("replace is { invocation: what the model is shown instead }");
+          for (const [inv, out] of Object.entries(c.replace)) {
+            const r = this.results.find((x) => x.invocation === Number(inv));
+            if (!r) throw new TypeError(`${this.fn} has no tool result ${inv} (it has ${this.results.map((x) => x.invocation).join(", ") || "none"})`);
+            r.output = resultData(out, `replace[${inv}]`);
+          }
+          event.results = this.results.map(shown);
+        }
+        if (c.reminder !== undefined) {
+          if (typeof c.reminder !== "string" || !c.reminder.trim()) throw new TypeError("reminder is a text");
+          const last = this.results[this.results.length - 1];
+          if (!last) throw new TypeError("a reminder follows a tool result, and the call has none");
+          last.output = typeof last.output === "string" ? `${last.output}\n\n${c.reminder}` : [...last.output, { type: "text", text: c.reminder }];
+          event.results = this.results.map(shown);
+        }
+      });
+    } finally {
+      call.changes.push(...applied.items);
+    }
+  }
+
+  /** The turn as the next request shows it: earlier results as the handlers left them, and only the tools they offer. */
+  view(turn: lmcc.Turn): lmcc.Turn {
+    const changed = this.results.some((r) => r.output !== r.given);
+    const fewer = this.offered.length !== this.allTools.length;
+    if (!changed && !fewer) return turn;
+    let k = 0;
+    const steps = turn.steps.map((s) => {
+      if (s.kind !== "tool") return s;
+      const r = this.results[k++];
+      if (!r || r.output === r.given) return s;
+      const out = typeof r.output === "string" ? [{ type: "text", text: r.output }] : r.output.map((p) => ({ ...p }));
+      return new lmcc.ToolStep(s.id, s.name, out as never, s.children);
+    });
+    const inputs = fewer
+      ? { ...turn.inputs, tools: ((turn.inputs["tools"] ?? []) as { name: string }[]).filter((t) => this.offered.includes(t.name)) }
+      : turn.inputs;
+    return new lmcc.Turn(turn.signature, inputs, steps, turn.outputs, turn.score, turn.meta);
+  }
 }
 
 // ------------------------------------------------------------------ the approval plugin (approve)

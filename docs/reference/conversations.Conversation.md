@@ -51,6 +51,7 @@ send that is repeated (a double click) one turn.
 | --- | --- |
 | [all_turns](#functai.conversations.Conversation.all_turns) | Every turn of every branch, in the order they were made. |
 | [continue_from](#functai.conversations.Conversation.continue_from) | This conversation, continuing after ``turn`` (a Turn, its id, or its |
+| [deliver](#functai.conversations.Conversation.deliver) | Give a tool that returned ``functai.later(key)`` its result, from |
 | [entries](#functai.conversations.Conversation.entries) | A plugin's entries of a kind on the branch through ``branch`` |
 | [merge](#functai.conversations.Conversation.merge) | A turn after this conversation's head made from several branches by |
 | [predict](#functai.conversations.Conversation.predict) | One turn of an AI function: the whole call (``p.turn`` is the lmcc |
@@ -76,6 +77,24 @@ conversations.Conversation.continue_from(turn)
 
 This conversation, continuing after ``turn`` (a Turn, its id, or its
 index in ``turns``): the next turn is a new branch. Nothing is deleted.
+
+### deliver { #functai.conversations.Conversation.deliver }
+
+```{.python .no-run}
+conversations.Conversation.deliver(key, result, *, by=None, resume=True)
+```
+
+Give a tool that returned ``functai.later(key)`` its result, from
+any process that opens the conversation (a webhook's handler).
+
+``result`` is what the tool would have returned: text, a value, a
+picture (an lm15 part) or a list of them. It is kept in the
+conversation (a ``delivered`` record), and the tool's turn uses it:
+when nothing else keeps that turn waiting, it goes on here and this
+returns its answer (``resume=False``: later, ``turn.resume()``); else
+it returns None. A result delivered before the turn waits for it is
+used when it does. The first delivery of a key is the one kept;
+delivering it again does nothing (a webhook may be sent twice).
 
 ### entries { #functai.conversations.Conversation.entries }
 

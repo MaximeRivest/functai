@@ -1,0 +1,48 @@
+{
+ "description": "Texts are joined by a new line in the event's output.",
+ "kind": "result",
+ "returned": [
+  "first",
+  "second",
+  {
+   "type": "image",
+   "media_type": "image/png",
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+  }
+ ],
+ "expect": {
+  "result": [
+   {
+    "type": "text",
+    "text": "first"
+   },
+   {
+    "type": "text",
+    "text": "second"
+   },
+   {
+    "type": "image",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+   }
+  ],
+  "event": {
+   "output": "first\nsecond",
+   "parts": [
+    {
+     "type": "text",
+     "text": "first"
+    },
+    {
+     "type": "text",
+     "text": "second"
+    },
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  }
+ }
+}

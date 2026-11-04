@@ -143,6 +143,29 @@ Approval is one of them; long conversations are summarized by
 `functai.compaction`; `functai.delegate(program)` hands work to another
 program in a conversation of its own.
 
+Long agents get the same footing. A tool may answer with pictures (return
+`image(...)` from `lm15.types`, or a list of texts and parts); the `step`
+hook steers a tool loop between requests, and two plugins are built on it:
+`functai.keep_pictures(3)` shows the loop only its newest screenshots, and
+`functai.limits(tokens=, cost=, seconds=, prices=)` (opt-in) stops a call
+tree when it has used enough, letting a loop answer with what it has
+rather than fail. Plain code reports progress with `functai.note(name,
+data)`. A tool whose work ends elsewhere returns `functai.later(key)`: the
+turn waits, saved, and `chat.deliver(key, result)` from any process (a
+webhook) resumes it, with the tool never run twice. A machine with no disk
+logs calls to a store of its own: `log_calls=` any object with
+`append(record)` and `read()`.
+
+```python
+@functai.tool(effects="changes")
+def click(target: str):
+    """Click, then see the screen."""
+    return [f"clicked {target}", image(data=screenshot(), media_type="image/png")]
+
+browse = agent.using(max_steps=200, plugins=[functai.keep_pictures(3),
+                                             functai.limits(cost=3.0, seconds=900, prices=PRICES)])
+```
+
 A program is served with `functai serve saved/ --keys keys.txt` (or
 `functai.serve(program)`), to callers who see only its boundary; on
 their side, `functai.remote(url, key=...)` is a program again. Replies

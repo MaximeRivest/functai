@@ -89,7 +89,15 @@ export type RequestEvent = Envelope<"request"> & { readonly request: number; rea
 export type TextEvent = Envelope<"text"> & { readonly field: string; readonly answer: boolean; readonly text: string };
 export type ThinkingEvent = Envelope<"thinking"> & { readonly text: string };
 export type ToolCallEvent = Envelope<"tool_call"> & { readonly id: string; readonly name: string; readonly input?: unknown; readonly invocation?: number; readonly content?: false };
-export type ToolResultEvent = Envelope<"tool_result"> & { readonly id: string; readonly name: string; readonly output?: string; readonly invocation?: number; readonly content?: false };
+/**
+ * A tool ran: `output` is the result's text (itself, or its text parts joined by a new line); `parts`, only
+ * when the result holds more than text (a picture), the whole result as lm15 parts (contract/tools.md).
+ */
+export type ToolResultEvent = Envelope<"tool_result"> & { readonly id: string; readonly name: string; readonly output?: string; readonly parts?: readonly Rec[]; readonly invocation?: number; readonly content?: false };
+/** Code in the call says something happened (`note(name, data)`): what, and any JSON value. */
+export type NoteEvent = Envelope<"note"> & { readonly name: string; readonly data?: unknown; readonly content?: false };
+/** A tool's result comes later (`later(key)`): in a conversation's turn, the turn then waits for its delivery. */
+export type LaterEvent = Envelope<"later"> & { readonly id: string; readonly invocation: number; readonly name: string; readonly key?: string; readonly content?: false };
 /** A person is asked whether a tool call may run (contract/tools.md). */
 export type ApprovalEvent = Envelope<"approval"> & {
   readonly id: string; readonly invocation: number; readonly name: string; readonly input?: unknown; readonly effects: string | null;
@@ -107,20 +115,22 @@ export type FailedEvent = Envelope<"failed"> & { readonly error: ErrorInfo; read
 
 /** An event of a call tree's log (streaming.md, format 2). */
 export type StreamEvent = StartedEvent | RequestEvent | TextEvent | ThinkingEvent | ToolCallEvent | ToolResultEvent
-  | RetryEvent | DoneEvent | FailedEvent | ApprovalEvent | ApprovedEvent;
+  | RetryEvent | DoneEvent | FailedEvent | ApprovalEvent | ApprovedEvent | NoteEvent | LaterEvent;
 
 /** Any object read as an event: a known kind, or one a later writer added (readers skip what they do not know). */
 export type EventLike = Readonly<Rec> & { readonly kind?: unknown };
 
-const KINDS = new Set(["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed", "approval", "approved"]);
+const KINDS = new Set(["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed", "approval", "approved",
+  "note", "later"]);
 const ENVELOPE = ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"];
 const KEYS: Record<string, readonly string[]> = {
   started: ["parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"], request: ["request", "model"],
   text: ["field", "answer", "text"], thinking: ["text"], tool_call: ["id", "name", "input", "content", "invocation"],
-  tool_result: ["id", "name", "output", "content", "invocation"], retry: ["reason", "wait", "content"], done: ["value", "content"],
+  tool_result: ["id", "name", "output", "parts", "content", "invocation"], retry: ["reason", "wait", "content"], done: ["value", "content"],
   failed: ["error", "content"],
   approval: ["id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"],
   approved: ["id", "invocation", "verdict", "by", "reason", "plugin", "content"],
+  note: ["name", "data", "content"], later: ["id", "invocation", "name", "key", "content"],
 };
 
 /** An event's own position. */
@@ -437,6 +447,13 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
       break;
     case "tool_result":
       delete out["output"];
+      delete out["parts"];
+      break;
+    case "note":
+      delete out["data"];
+      break;
+    case "later":
+      delete out["key"];
       break;
     case "retry":
       delete out["reason"];

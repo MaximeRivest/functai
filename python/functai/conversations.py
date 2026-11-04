@@ -271,9 +271,20 @@ class _TurnState:
             k = (t.get("site"), t.get("invocation"))
             if t.get("state") == "started":
                 started[k] = t
-            elif t.get("state") in ("done", "given", "rerun"):
+            elif t.get("state") in ("done", "given", "rerun", "later"):
                 started.pop(k, None)
         return list(started.values())
+
+    def later(self) -> List[Dict[str, Any]]:
+        """Tools whose result comes later (their last record says ``later``), each its record."""
+        last: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        for t in self.tools:
+            last[(t.get("site"), t.get("invocation"))] = t
+        return [t for t in last.values() if t.get("state") == "later"]
+
+    def undelivered(self, delivered: Mapping[str, Any]) -> List[Dict[str, Any]]:
+        """The results the turn waits for that no one delivered yet."""
+        return [t for t in self.later() if t.get("key") not in delivered]
 
 
 def _akey(a: Mapping[str, Any]) -> Tuple[Any, int, str]:
@@ -293,6 +304,7 @@ class _Log:
         self.request_ids: Dict[str, str] = {}
         self.programs: Dict[str, Dict[str, Any]] = {}
         self.entries: List[Dict[str, Any]] = []
+        self.delivered: Dict[str, Dict[str, Any]] = {}  # a later result's key -> the first delivery of it
         self.stops_seen = 0
 
     def apply(self, records: Sequence[Dict[str, Any]]) -> None:
@@ -306,6 +318,10 @@ class _Log:
                 continue
             if kind == "entry":
                 self.entries.append(r)
+                continue
+            if kind == "delivered":
+                if isinstance(r.get("key"), str):
+                    self.delivered.setdefault(r["key"], r)
                 continue
             tid = r.get("turn")
             if kind == "turn":
@@ -445,14 +461,18 @@ def _check_signature(program: Any, log: _Log, turns: List[_TurnState], earlier_w
 
 
 class TurnWaiting(BaseException):
-    """A turn stops to wait for a person (a BaseException, like ``Cancelled``:
-    code inside the call must not catch it and carry on)."""
+    """A turn stops to wait, for a person or for results that come later (a
+    BaseException, like ``Cancelled``: code inside the call must not catch it
+    and carry on). ``later``: ``[{"site", "invocation", "id", "name", "key",
+    "path"}]``."""
 
     code = "turn-waiting"
 
-    def __init__(self, approval: Any):
-        super().__init__(f"{approval.path} waits for a person's answer")
+    def __init__(self, approval: Any = None, *, later: Sequence[Dict[str, Any]] = ()):
+        what = approval.path if approval is not None else ", ".join(x["key"] for x in later)
+        super().__init__(f"{what} waits for " + ("a person's answer" if approval is not None else "its result"))
         self.approval = approval
+        self.later = list(later)
 
 
 _ACTIVE: ContextVar[Optional["_TurnRun"]] = ContextVar("functai_turn", default=None)
@@ -507,13 +527,19 @@ class _TurnRun:
             self.replies.setdefault(rec["key"], deque()).append(rec["response"])
         self.tools: Dict[Tuple[str, int], Dict[str, Any]] = {}
         self.unfinished: Dict[Tuple[str, int], Dict[str, Any]] = {}
+        self.laters: Dict[Tuple[str, int], Dict[str, Any]] = {}   # tools whose result comes later
+        self.delivered: Dict[str, Dict[str, Any]] = dict(r.get("delivered") or {})
         for t in r.get("tools", []):
             k = (t.get("site"), int(t.get("invocation") or 0))
             if t.get("state") in ("done", "given"):
                 self.tools[k] = t
                 self.unfinished.pop(k, None)
+                self.laters.pop(k, None)
             elif t.get("state") == "rerun":
                 self.tools.pop(k, None)
+                self.unfinished.pop(k, None)
+            elif t.get("state") == "later" and k not in self.tools:
+                self.laters[k] = t
                 self.unfinished.pop(k, None)
             elif t.get("state") == "started" and k not in self.tools:
                 self.unfinished[k] = t
@@ -634,10 +660,20 @@ class _TurnRun:
                             "attempt": self.attempt, "key": key,
                             "response": json.loads(calllog.canonical(response_to_dict(response)))}])
 
-    def recorded_tool(self, call: Any, approval: Any) -> Optional[str]:
+    def recorded_tool(self, call: Any, approval: Any) -> Any:
+        """A tool's result kept by an earlier attempt of this turn: its output;
+        a ``Delivered`` for a result that came later (the tool_result hooks have
+        not seen it yet); None when it has none."""
         k = (call.path, approval.invocation)
         if k in self.tools:
             return self.tools[k].get("output")
+        if k in self.laters:
+            key = self.laters[k].get("key")
+            got = self.delivered.get(key) or self.conv._read().delivered.get(key)
+            if got is None:
+                raise ConversationError("turn-state", f"{approval.path} waits for its result ({key!r}): deliver it "
+                                                      f"first (chat.deliver({key!r}, result))", turn=self.turn)
+            return Delivered(got.get("output"))
         if k in self.unfinished:
             raise ConversationError("turn-unfinished",
                                     f"{approval.path} started before the turn stopped, and whether it ran is not "
@@ -651,7 +687,21 @@ class _TurnRun:
                             "id": approval.id, "name": approval.name, "input": _json(approval.input),
                             "effects": approval.effects, "state": "started"}])
 
-    def tool_done(self, call: Any, approval: Any, output: str) -> None:
+    def tool_later(self, call: Any, approval: Any, key: str) -> None:
+        """A tool returned ``functai.later(key)``: it ran, and its result comes later."""
+        self.conv._append([{"functai_conversation": FORMAT, "kind": "tool", "at": _iso(), "turn": self.turn,
+                            "attempt": self.attempt, "site": call.path, "invocation": approval.invocation,
+                            "id": approval.id, "name": approval.name, "input": _json(approval.input),
+                            "effects": approval.effects, "state": "later", "key": key}])
+
+    def deliveries(self, keys: Sequence[str]) -> Dict[str, Any]:
+        """The results already delivered for these keys (read now): {key: output}."""
+        found = self.conv._read().delivered
+        with self.lock:
+            self.delivered.update({k: found[k] for k in keys if k in found})
+        return {k: self.delivered[k].get("output") for k in keys if k in self.delivered}
+
+    def tool_done(self, call: Any, approval: Any, output: Any) -> None:
         self.conv._append([{"functai_conversation": FORMAT, "kind": "tool", "at": _iso(), "turn": self.turn,
                             "attempt": self.attempt, "site": call.path, "invocation": approval.invocation,
                             "id": approval.id, "name": approval.name, "state": "done", "output": output}])
@@ -673,6 +723,12 @@ class _TurnRun:
         self.root = call
         call.conversation = {"id": self.conv.id, "turn": self.turn, "parent": self.context.get("parent")}
         call.changes.extend(copy.deepcopy(self.context.get("changes") or []))
+
+
+@dataclasses.dataclass(frozen=True)
+class Delivered:
+    """A result that came later, found when a turn resumes."""
+    output: Any
 
 
 # hooks the engine calls (engine._complete)
@@ -951,6 +1007,16 @@ class Turn:
         when none. Answer with ``turn.approve(...)`` or ``turn.deny(...)``."""
         from .tools import Approval
         return [Approval.from_dict(a) for a in self._st.unanswered()]
+
+    @property
+    def later(self) -> List[Dict[str, Any]]:
+        """The results the turn waits for, from tools that returned
+        ``functai.later(key)``: each ``{"key", "invocation", "id", "name",
+        "input", "site"}``; ``[]`` when none. Deliver one with
+        ``chat.deliver(key, result)``."""
+        delivered = self._conv._read().delivered
+        return [{"key": t.get("key"), "invocation": t["invocation"], "id": t.get("id"), "name": t.get("name"),
+                 "input": t.get("input"), "site": t.get("site")} for t in self._st.undelivered(delivered)]
 
     @property
     def unfinished(self) -> List[Dict[str, Any]]:
@@ -1731,13 +1797,20 @@ class Conversation:
                 if st.unanswered():
                     raise ConversationError("turn-state", f"turn {tid} still waits for "
                                                           f"{len(st.unanswered())} approval(s)", turn=tid)
+                missing = st.undelivered(log.delivered)
+                if missing:
+                    raise ConversationError("turn-state", f"turn {tid} still waits for "
+                                                          f"{len(missing)} result(s) to be delivered: "
+                                                          f"{', '.join(repr(t.get('key')) for t in missing)}",
+                                            turn=tid)
                 given: List[Dict[str, Any]] = []
                 for t in st.unfinished():
                     inv = int(t["invocation"])
                     keys = {inv, str(inv), t.get("id")}
                     hit = next((v for k, v in results.items() if k in keys), _NONE)
                     if hit is not _NONE:
-                        given.append({**_tool_base(tid, t), "state": "given", "output": str(hit)})
+                        from .engine import result_of
+                        given.append({**_tool_base(tid, t), "state": "given", "output": result_of(hit)})
                     elif any(r in keys for r in rerun):
                         given.append({**_tool_base(tid, t), "state": "rerun"})
                     else:
@@ -1768,7 +1841,8 @@ class Conversation:
             except Exception:  # noqa: BLE001 — no log to continue: this writer starts none (watching only)
                 later = None
         replay = {"replies": [r for r in st.replies], "tools": list(st.tools),
-                  "answers": list(st.answers), "waiting_seq": (st.waiting or {}).get("seq", 0)}
+                  "answers": list(st.answers), "waiting_seq": (st.waiting or {}).get("seq", 0),
+                  "delivered": dict(log.delivered)}
         fixed = st.record.get("context")              # what the turn was shown when it was made (context hooks ran)
         run = _TurnRun(self, tid, attempt=attempt, context=self._context(log, st.parent, self.settings, fixed),
                        replay=replay, later=later)
@@ -1779,6 +1853,54 @@ class Conversation:
         if (st.record.get("settings") or {}).get("lm"):
             settings["lm"] = st.record["settings"]["lm"]
         return self._start(run, inputs, settings, passive=True)
+
+    def deliver(self, key: str, result: Any, *, by: Optional[str] = None, resume: bool = True) -> Any:
+        """Give a tool that returned ``functai.later(key)`` its result, from
+        any process that opens the conversation (a webhook's handler).
+
+        ``result`` is what the tool would have returned: text, a value, a
+        picture (an lm15 part) or a list of them. It is kept in the
+        conversation (a ``delivered`` record), and the tool's turn uses it:
+        when nothing else keeps that turn waiting, it goes on here and this
+        returns its answer (``resume=False``: later, ``turn.resume()``); else
+        it returns None. A result delivered before the turn waits for it is
+        used when it does. The first delivery of a key is the one kept;
+        delivering it again does nothing (a webhook may be sent twice)."""
+        from .engine import result_of
+        if not isinstance(key, str) or not key.strip():
+            raise TypeError("a later result's key is a non-empty text")
+        output = result_of(result)
+        while True:
+            log = self._read()
+            if key in log.delivered:
+                return None
+            rec: Dict[str, Any] = {"functai_conversation": FORMAT, "kind": "delivered", "at": _iso(), "key": key,
+                                   "output": output}
+            if by is not None:
+                rec["by"] = str(by)
+            try:
+                self._append([rec], expect=log.n)
+            except ConversationError as exc:
+                if exc.code == "store-conflict":
+                    continue
+                raise
+            break
+        if not resume:
+            return None
+        log = self._read()
+        for tid in log.order:
+            st = log.turns[tid]
+            if st.state() != "waiting" or not any(t.get("key") == key for t in st.later()):
+                continue
+            if st.unanswered() or st.undelivered(log.delivered):
+                return None
+            try:
+                return self._resume(tid, {}, []).result
+            except ConversationError as exc:
+                if exc.code == "turn-state":
+                    return None                       # another process resumed it first
+                raise
+        return None
 
     # ----- the rest
 
@@ -1916,6 +2038,18 @@ class _nothing:
         return None
 
 
+def _go_on(conv: "Conversation", tid: str) -> None:
+    """Resume a waiting turn that has nothing left to wait for, unless another
+    process already did (the conditional append makes one resumption win)."""
+    try:
+        conv._resume(tid, {}, []).result
+    except ConversationError as exc:
+        if exc.code != "turn-state":
+            raise
+    except Exception:  # noqa: BLE001 — the turn's own end records what happened
+        pass
+
+
 def _tool_base(tid: str, t: Dict[str, Any]) -> Dict[str, Any]:
     return {"functai_conversation": FORMAT, "kind": "tool", "at": _iso(), "turn": tid, "site": t.get("site"),
             "invocation": t["invocation"], "id": t.get("id"), "name": t.get("name")}
@@ -2038,9 +2172,20 @@ class TurnStream(Stream):
         base = {"functai_conversation": FORMAT, "at": _iso(), "turn": self.turn_id, "attempt": run.attempt}
         if isinstance(error, TurnWaiting):
             a = error.approval
-            conv._append([{**base, "kind": "waiting", "approvals": [{**a.to_dict(), "site": a.site}], "saw": saw}])
-            return Waiting(f"turn {self.turn_id} waits for a person's answer: {a.path}({_short(a.input, 80)})",
-                           turn=conv.turn(self.turn_id), approvals=conv.turn(self.turn_id).waiting)
+            rec = {**base, "kind": "waiting", "approvals": [{**a.to_dict(), "site": a.site}] if a is not None else [],
+                   "saw": saw}
+            if error.later:
+                rec["later"] = [dict(x) for x in error.later]
+            conv._append([rec])
+            turn = conv.turn(self.turn_id)
+            if a is None and not turn.later:
+                # every result arrived between the turn's last look and its waiting record: it goes on now
+                threading.Thread(target=_go_on, args=(conv, self.turn_id), daemon=True,
+                                 name=f"functai-turn-{self.turn_id[:8]}-go-on").start()
+            what = (f"a person's answer: {a.path}({_short(a.input, 80)})" if a is not None
+                    else "results that come later: " + ", ".join(repr(x["key"]) for x in error.later))
+            return Waiting(f"turn {self.turn_id} waits for {what}", turn=turn, approvals=turn.waiting,
+                           later=turn.later)
         rec: Dict[str, Any] = {**base, "kind": "ended", "saw": saw,
                                "seconds": round(time.perf_counter() - self._t_start, 6), "usage": sum_usage(run.exchanges)}
         if error is not None:
@@ -2158,7 +2303,8 @@ def _outcome(conv: Conversation, t: Turn) -> Any:
     if state == "done":
         return t.result
     if state == "waiting":
-        raise Waiting(f"turn {t.id} waits for a person's answer", turn=t, approvals=t.waiting)
+        raise Waiting(f"turn {t.id} waits " + ("for a person's answer" if t.waiting else "for results that come later"),
+                      turn=t, approvals=t.waiting, later=t.later)
     err = t.error or {}
     raise ConversationError("turn-state", f"turn {t.id} ended {state}"
                                           + (f": {err.get('type')}: {err.get('message', '')}" if err else ""),

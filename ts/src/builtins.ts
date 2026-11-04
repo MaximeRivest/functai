@@ -14,7 +14,8 @@ import * as calllog from "./calllog.ts";
 import type { AnyAIFunction } from "./fn.ts";
 import { ai } from "./fn.ts";
 import type { AnyModule } from "./module.ts";
-import { Plugin, type ShownTurn } from "./plugins.ts";
+import { Plugin, pricing, type BeforeCallHook, type Price, type ShownTurn, type Spent, type StepHook } from "./plugins.ts";
+import type { ToolOutput } from "./results.ts";
 import { withSettings } from "./settings.ts";
 import { t } from "./shapes.ts";
 import { effectsOf, type Effects, type Tool } from "./tools.ts";
@@ -147,4 +148,144 @@ export function delegate(program: Program, opts: { name?: string; description?: 
     },
     run, effects: opts.effects !== undefined ? opts.effects : effectsOf(program),
   };
+}
+
+// ------------------------------------------------------------------ long tool loops (the step hook)
+
+export const REACHED = (what: string) =>
+  `This task has reached its limit (${what}). Do not ask for any more tools: give your answer now, from what you have found so far.`;
+export const LAST_STEP = "This is the last step this task may take. Do not ask for any more tools: give your answer now, from what you have found so far.";
+export const PICTURE_GONE = "(A picture was here. It is no longer shown, to save space.)";
+
+const numberText = (x: number) => Number.isInteger(x) ? String(x) : String(x);
+
+/** Options of `limits`: at least one of `tokens`, `cost`, `seconds`; `cost` needs `prices`. */
+export interface LimitsOptions {
+  /** Every token read and written (`total_tokens`), summed over the tree. */
+  readonly tokens?: number;
+  /** The list price of the tree's requests, at `prices`. Exact or nothing: an unknown cost counts as reached. */
+  readonly cost?: number;
+  /** Since the tree's outermost call started. */
+  readonly seconds?: number;
+  /** A model's name (as you ask for it) → lm15's `InferencePricing` (or its JSON form). FunctAI ships no prices. */
+  readonly prices?: Readonly<Record<string, Price>>;
+  /** `"answer"` (the default): a tool loop at a limit, or at its last step, is told to answer with what it has; `"stop"`: the call stops. */
+  readonly then?: "answer" | "stop";
+  readonly name?: string;
+}
+
+/** Which limits a tree's spending reached: each `[limit, why]` (why: when its count is not known); `[]` when none. */
+export function reached(spent: Spent, o: LimitsOptions): [string, string | null][] {
+  const out: [string, string | null][] = [];
+  if (o.tokens !== undefined) {
+    const got = spent.tokens;
+    if (got === null) out.push([`${numberText(o.tokens)} tokens`, "a request did not say how many it used"]);
+    else if (got >= o.tokens) out.push([`${numberText(o.tokens)} tokens`, null]);
+  }
+  if (o.cost !== undefined) {
+    const got = spent.cost(o.prices ?? {});
+    if (got === null) {
+      const unknown = [...new Set(spent.exchanges.map(([m]) => m).filter((m) => pricing(o.prices ?? {}, m) === null))].sort();
+      out.push([`cost ${numberText(o.cost)}`, unknown.length ? `no price is known for ${unknown.join(", ")}`
+        : "a request's cost is not known from its token counts (a price without cache_read_per_million and cache_write_per_million is exact only for requests that report their cache counts; give both, equal to input_per_million when the provider does not charge them apart)"]);
+    } else if (got >= o.cost) out.push([`cost ${numberText(o.cost)}`, null]);
+  }
+  if (o.seconds !== undefined && spent.seconds >= o.seconds) out.push([`${numberText(o.seconds)} seconds`, null]);
+  return out;
+}
+
+const stoppedBy = (hit: readonly [string, string | null][]) =>
+  "limit reached: " + hit.map(([l, why]) => why ? `${l} (${why})` : l).join("; ");
+
+/**
+ * Stop a call tree (an agent, a pipeline) when it has used enough tokens,
+ * money or time (contract/plugins.md, "limits"). Nothing is limited by
+ * default; this plugin is opt-in. Counted over the whole tree a call starts,
+ * from the requests a provider answered in this process; checked before each
+ * AI function's call and before each step of a tool loop, so one request may
+ * go past a limit; the next does not start.
+ *
+ * ```ts
+ * const prices = { "claude-opus-5-5": { inputPerMillion: 5, outputPerMillion: 25, cacheReadPerMillion: 0.5, cacheWritePerMillion: 6.25 } };
+ * await withSettings({ plugins: [limits({ cost: 3, seconds: 600, prices })] }, () => conceptTest(url));
+ * ```
+ */
+export function limits(o: LimitsOptions): Plugin {
+  const then = o.then ?? "answer";
+  if (then !== "answer" && then !== "stop") throw new TypeError(`then is "answer" or "stop", not ${JSON.stringify(then)}`);
+  if (o.cost !== undefined && !o.prices) throw new TypeError("a cost limit needs prices: { model: InferencePricing }; FunctAI ships none");
+  for (const [label, v] of [["tokens", o.tokens], ["cost", o.cost], ["seconds", o.seconds]] as const) {
+    if (v !== undefined && (typeof v !== "number" || !(v > 0))) throw new TypeError(`${label} is a number above 0`);
+  }
+  if (o.tokens === undefined && o.cost === undefined && o.seconds === undefined) throw new TypeError("limits needs at least one of tokens, cost, seconds");
+  for (const model of Object.keys(o.prices ?? {})) pricing(o.prices!, model);    // a malformed price is refused now, not mid-run
+  return new Plugin(o.name ?? "limits", { version: "1.0.0", description: "stop a call tree when it used enough tokens, money or time" })
+    .beforeCall((call: BeforeCallHook) => {
+      let hit = reached(call.spent, o);
+      if (!hit.length && o.cost !== undefined && typeof call.lm === "string" && pricing(o.prices ?? {}, call.lm) === null) {
+        hit = [[`cost ${numberText(o.cost)}`, `no price is known for ${call.lm}`]];
+      }
+      return hit.length ? { stop: stoppedBy(hit) } : undefined;
+    })
+    .step((s: StepHook) => {
+      const hit = reached(s.spent, o);
+      if (hit.length && then === "stop") return { stop: stoppedBy(hit) };
+      if (then === "answer" && s.tools.length && (hit.length || s.lastStep)) {
+        return { tools: [], reminder: hit.length ? REACHED(hit.map(([l]) => l).join(", ")) : LAST_STEP };
+      }
+      return undefined;
+    });
+}
+
+/**
+ * Which earlier tool results `keepPictures` shows otherwise, and as what: the
+ * pictures before the newest `last` are replaced by a short text, once at
+ * least `atOnce` of them are due.
+ */
+export function picturesToDrop(results: readonly { invocation: number; output: ToolOutput }[], last: number, atOnce = 1): Record<string, Rec[]> {
+  let seen = 0;
+  const drop = new Map<number, Set<number>>();
+  for (let r = results.length - 1; r >= 0; r--) {
+    const out = results[r]!.output;
+    if (typeof out === "string") continue;
+    for (let i = out.length - 1; i >= 0; i--) {
+      if (out[i]!["type"] !== "image") continue;
+      seen++;
+      if (seen > last) {
+        const inv = results[r]!.invocation;
+        if (!drop.has(inv)) drop.set(inv, new Set());
+        drop.get(inv)!.add(i);
+      }
+    }
+  }
+  if ([...drop.values()].reduce((n, s) => n + s.size, 0) < atOnce) return {};
+  const replace: Record<string, Rec[]> = {};
+  for (const r of results) {
+    const gone = drop.get(r.invocation);
+    if (!gone || typeof r.output === "string") continue;
+    replace[String(r.invocation)] = r.output.map((p, i) => gone.has(i) ? { type: "text", text: PICTURE_GONE } : { ...p });
+  }
+  return replace;
+}
+
+/**
+ * Show a long tool loop only its newest pictures: before each step, the
+ * pictures tool results gave earlier than the newest `last` are replaced by
+ * a short text (their own text stays). `atOnce`: drop old pictures only once
+ * this many are due, together, so a provider's prompt cache keeps the start
+ * of the request longer. The turn and the call log keep every picture.
+ *
+ * ```ts
+ * const agent = browse.using({ plugins: [keepPictures(3)], maxSteps: 200 });
+ * ```
+ */
+export function keepPictures(last = 3, opts: { atOnce?: number; name?: string } = {}): Plugin {
+  const atOnce = opts.atOnce ?? 1;
+  if (!Number.isInteger(last) || last < 0) throw new TypeError("last is how many of the newest pictures stay shown (0 or more)");
+  if (!Number.isInteger(atOnce) || atOnce < 1) throw new TypeError("atOnce is 1 or more");
+  return new Plugin(opts.name ?? "keep-pictures", { version: "1.0.0", description: "show a tool loop only its newest pictures" })
+    .step((s: StepHook) => {
+      const replace = picturesToDrop(s.results, last, atOnce);
+      return Object.keys(replace).length ? { replace } : undefined;
+    });
 }

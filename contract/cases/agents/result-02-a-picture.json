@@ -1,0 +1,28 @@
+{
+ "description": "A picture alone: a list of one part; the event's output is empty, its parts the picture.",
+ "kind": "result",
+ "returned": {
+  "type": "image",
+  "media_type": "image/png",
+  "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+ },
+ "expect": {
+  "result": [
+   {
+    "type": "image",
+    "media_type": "image/png",
+    "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+   }
+  ],
+  "event": {
+   "output": "",
+   "parts": [
+    {
+     "type": "image",
+     "media_type": "image/png",
+     "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
+    }
+   ]
+  }
+ }
+}

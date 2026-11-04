@@ -274,6 +274,40 @@ opens the conversation answers with `turn.approve()`, after which it goes
 on without paying for a model answer twice or running a tool twice. A plain
 call has nobody to ask, and refuses (`approval-required`) before the tool runs.
 
+## Long agents
+
+For an agent that clicks through a site for hundreds of steps, and steps
+that finish elsewhere:
+
+```ts
+import { image, keepPictures, later, limits, note, tool } from "functai";
+
+const look = tool("look", { description: "Click, then see the screen.", input: { target: t.string() }, effects: "changes" },
+  async ({ target }) => [`clicked ${target}`, image({ data: await screenshot(), mediaType: "image/png" })]);   // the model sees the picture
+const browse = ai("browse", { description: "Find the price.", input: { task: t.string() }, tools: [look], maxSteps: 200,
+  plugins: [keepPictures(3), limits({ cost: 3, seconds: 900, prices })] });
+```
+
+- **Pictures from tools**: return lm15's `image(...)`, or a list of texts
+  and parts. The `tool_result` event has the text (`output`) and the whole
+  result (`parts`).
+- **`keepPictures(3)`** shows the loop only its newest pictures;
+  **`limits(...)`** (opt-in) stops a call tree at tokens, cost or time, and
+  makes a loop at a limit or at its last step answer with what it has
+  instead of failing. Prices are yours (lm15's `InferencePricing`); an
+  unknown cost counts as reached. Both are plugins on the **`step` hook**:
+  before each request after the first, change the tools offered, add a
+  `reminder`, show earlier results otherwise (`replace`), or `stop`, all
+  recorded as data.
+- **`note("screen captured", { screen: 4 })`** from plain code: a `note`
+  event for whatever watches.
+- **A result that comes later**: a tool returns `later("harvest:42")`; in a
+  conversation the turn waits, saved, and `await chat.deliver("harvest:42",
+  report)` from any process (a webhook) gives the tool its result and the
+  turn goes on. The tool never runs twice.
+- **The call log in your own store**: `logCalls: { append, read }` (a
+  database, a bucket) for machines that keep no files.
+
 ## Your code around AI functions
 
 ```ts
@@ -519,14 +553,15 @@ const careful = new Plugin("careful", { version: "1.0.0" })
 configure({ plugins: [careful] });
 ```
 
-Seven hooks (`turnStart`, `context`, `beforeCall`, `request`, `toolCall`,
-`toolResult`, `turnEnd`), each returning a change as data (or nothing).
+Eight hooks (`turnStart`, `context`, `beforeCall`, `step`, `request`,
+`toolCall`, `toolResult`, `turnEnd`), each returning a change as data (or nothing).
 Every change is recorded in the call's record. The program's own plugins
 run first and the host's last. A plugin that fails stops the call (a
 `toolCall` handler that fails blocks the tool). `approve` is itself a
-plugin. Two come built in: `compaction({ keep: 20 })` folds old turns into
-a summary, and `delegate(program)` makes another program a tool with a
-conversation of its own.
+plugin. Built in: `compaction({ keep: 20 })` folds old turns into a
+summary, `delegate(program)` makes another program a tool with a
+conversation of its own, and `limits(...)` and `keepPictures(n)` steer long
+tool loops (*Long agents*).
 
 ## Serving
 

@@ -1,0 +1,26 @@
+{
+ "description": "No limit reached, but this is the last step: answer now (then answer).",
+ "kind": "limits",
+ "limits": {
+  "seconds": 600,
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 1
+ },
+ "at": {
+  "hook": "step",
+  "step": 8,
+  "max_steps": 8,
+  "tools": [
+   "look"
+  ]
+ },
+ "expect": {
+  "change": {
+   "tools": [],
+   "reminder": "This is the last step this task may take. Do not ask for any more tools: give your answer now, from what you have found so far."
+  }
+ }
+}

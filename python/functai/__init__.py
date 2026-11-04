@@ -14,17 +14,19 @@ API:
 - Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
 - Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Call log:  configure(log_calls=True, log_content={"transcript": False}); calls(fn), rate(prediction, "right"),
-             rated(fn); fn.version
+             rated(fn); fn.version; log_calls=store (append, read): a database, a bucket; MemoryCalls
 - Interfaces: fn.interface, module.interface (checked on every call: InterfaceError); JSON; describe(path)
-- Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s)
+- Streaming: fn.stream(...) → Stream (for piece in s; s.events(); s.result; await s); note(name, data) from code
 - Event logs: configure(observers=[...], journal=Journal(store, required=True)); MemoryStore; Store; Follower;
              flush() (function observers and best-effort journals catch up)
 - Conversations: fn.conversation(id, store="folder/", context=last_turns(10)) → Conversation (chat(...),
              chat.turns, chat.continue_from(turn), chat.render(...), turn.approve()); all_turns, last_turns,
              remember, earlier(); FolderStore
-- Tools:     @tool(effects="reads"|"changes"); approve=ask or "changes"; Waiting, ApprovalError
-- Plugins:   Plugin(name, version=...) with hooks (turn_start, context, before_call, request, tool_call,
-             tool_result, turn_end) returning Change(...); configure(plugins=[...]); compaction(), delegate()
+- Tools:     @tool(effects="reads"|"changes"); a result may hold pictures; approve=ask or "changes"; Waiting,
+             ApprovalError; later(key) and chat.deliver(key, result): a result that comes later
+- Plugins:   Plugin(name, version=...) with hooks (turn_start, context, before_call, step, request, tool_call,
+             tool_result, turn_end) returning Change(...); configure(plugins=[...]); compaction(), delegate(),
+             limits(tokens=, cost=, seconds=, prices=), keep_pictures(3)
 - Serving:   serve(program), Service; remote(url, key=...)
 - Long runs: configure(cache_replies="disk"), replicate=; fn.map(rows, threads=8) (a progress line; run again to
              resume); quotes_found(text, quotes); prune_calls(older_than="90d"); split(rows, by="conversation")
@@ -59,17 +61,17 @@ from .core import (
     sig2str,
     signature_text,
 )
-from .calllog import calls, rate, rated
+from .calllog import MemoryCalls, calls, rate, rated
 from .errors import (ApprovalError, ConversationError, EventRefused, FilesUnavailable, FunctAIError, InterfaceError,
                      JournalError, LogContentError, Outcome, SawError, ServeError, Waiting)
 from .eventlog import Follower, Journal, MemoryStore, Store, flush
 from .interface import JSON
-from .streaming import Cancelled, Stream
+from .streaming import Cancelled, Stream, note
 from .conversations import Conversation, Turn, all_turns, earlier, last_turns, remember
 from .stores import FolderStore, MemoryConversations
-from .tools import Approval, Tool, tool
+from .tools import Approval, Tool, later, tool
 from .plugins import Change, Plugin, PluginError, load_plugin
-from .builtins import compaction, delegate
+from .builtins import compaction, delegate, keep_pictures, limits
 from .serving import Service, serve
 from .remote import RemoteProgram, remote
 from .judges import quotes_found
@@ -110,12 +112,12 @@ __all__ = [
     "check", "save", "load", "verify", "describe", "file", "Report", "Problem", "Refused", "LoadRefused",
     "Verification",
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
-    "calls", "rate", "rated",
+    "calls", "rate", "rated", "MemoryCalls",
     "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "FilesUnavailable", "Outcome",
-    "Stream", "Cancelled", "Journal", "MemoryStore", "Store", "Follower", "flush",
+    "Stream", "Cancelled", "note", "Journal", "MemoryStore", "Store", "Follower", "flush",
     "Conversation", "Turn", "all_turns", "last_turns", "remember", "earlier", "FolderStore", "MemoryConversations",
-    "tool", "Tool", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",
-    "Plugin", "Change", "PluginError", "load_plugin", "compaction", "delegate",
+    "tool", "Tool", "later", "Approval", "Waiting", "ApprovalError", "ConversationError", "ServeError",
+    "Plugin", "Change", "PluginError", "load_plugin", "compaction", "delegate", "limits", "keep_pictures",
     "Service", "serve", "remote", "RemoteProgram", "quotes_found", "prune_calls", "split",
     "labeled_few_shot", "bootstrap_few_shot", "gepa",
     "Optimizer", "LabeledFewShot", "BootstrapFewShot", "BootstrapFewShotWithRandomSearch", "InstructionSearch", "GEPA",

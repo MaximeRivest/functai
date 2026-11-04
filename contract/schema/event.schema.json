@@ -23,7 +23,7 @@
       "properties": {
         "functai_event": {"const": 2},
         "kind": {
-          "description": "streaming.md names nine kinds; a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
+          "description": "streaming.md names its kinds (eleven, then note and later); a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
         },
@@ -107,10 +107,11 @@
             "properties": {
               "id": {"type": "string", "minLength": 1},
               "name": {"type": "string", "minLength": 1},
-              "output": {"type": "string"}
+              "output": {"type": "string", "description": "the result's text: itself, or its text parts joined by a new line"},
+              "parts": {"description": "tools.md, What a tool returns: present when the result holds more than text: the whole result as lm15 parts (text, image, audio, video, document)", "type": "array", "minItems": 1, "items": {"type": "object", "required": ["type"], "properties": {"type": {"enum": ["text", "image", "audio", "video", "document"]}}}}
             },
             "if": {"required": ["content"]},
-            "then": {"not": {"required": ["output"]}},
+            "then": {"not": {"anyOf": [{"required": ["output"]}, {"required": ["parts"]}]}},
             "else": {"required": ["output"]}
           }
         },
@@ -168,6 +169,32 @@
             "if": {"required": ["content"]},
             "then": {"not": {"anyOf": [{"required": ["input"]}, {"required": ["question"]}]}},
             "else": {"required": ["input"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "note"}}},
+          "then": {
+            "description": "streaming.md: code in the call said something happened (note(name, data)).",
+            "required": ["name"],
+            "properties": {"name": {"type": "string", "minLength": 1}, "data": {}},
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["data"]}},
+            "else": {"required": ["data"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "later"}}},
+          "then": {
+            "description": "tools.md: a tool's result comes later, delivered under key.",
+            "required": ["id", "invocation", "name"],
+            "properties": {
+              "id": {"type": "string", "minLength": 1},
+              "name": {"type": "string", "minLength": 1},
+              "key": {"type": "string", "minLength": 1}
+            },
+            "if": {"required": ["content"]},
+            "then": {"not": {"required": ["key"]}},
+            "else": {"required": ["key"]}
           }
         },
         {

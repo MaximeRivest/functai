@@ -79,6 +79,7 @@ quartodoc:
     contents:
     - Stream
     - Cancelled
+    - note
   - title: Observers and journals
     desc: Every event of every call tree, given to your code as it happens, or kept in a
       store while the call runs; read back and followed live.
@@ -104,8 +105,9 @@ quartodoc:
     - Waiting
     - ConversationError
   - title: Plugins
-    desc: Hooks over turns, context, calls, requests and tools; every change is data and recorded.
-      Approval, compaction and delegation are plugins too.
+    desc: Hooks over turns, context, calls, the steps of a tool loop, requests and tools; every
+      change is data and recorded. Approval, compaction, delegation, limits and keep_pictures are
+      plugins too.
     contents:
     - Plugin
     - Change
@@ -113,11 +115,15 @@ quartodoc:
     - load_plugin
     - compaction
     - delegate
+    - limits
+    - keep_pictures
+    - plugins.Spent
   - title: Tools that ask first
     desc: Tools say what they do to the world; a person can be asked before they run.
     contents:
     - tool
     - Tool
+    - later
     - Approval
     - ApprovalError
   - title: Serving
@@ -137,6 +143,7 @@ quartodoc:
     - rated
     - split
     - prune_calls
+    - MemoryCalls
   - title: Long runs
     desc: Replies kept on disk, and a check on a judge's evidence. See also `fn.map` (a
       progress line, and resuming by running again) and `prune_calls`.

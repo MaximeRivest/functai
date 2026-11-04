@@ -110,6 +110,45 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     return wrap(fn) if fn is not None else wrap
 
 
+@dataclasses.dataclass(frozen=True)
+class Later:
+    """A tool's result that comes later (``functai.later(key)``)."""
+    key: str
+
+
+def later(key: str) -> Later:
+    '''What a tool returns when its result comes later: it started something
+    that ends elsewhere (a job, a cloud browser, a person's reply) and whoever
+    learns the result delivers it under ``key``.
+
+    Only in a conversation's turn: the turn runs the step's other tool calls,
+    then stops, saved, and waits (``Waiting``); ``chat.deliver(key, result)``,
+    from any process, gives the tool its result and the turn goes on. The
+    tool does not run again. Anywhere else nothing could wait for it, and the
+    call refuses ``later-unavailable``.
+
+    ``key`` names one result in its conversation (put an id in it:
+    ``"harvest:8f2c"``). A result delivered before the turn waits is used at
+    once.
+
+    Examples
+    --------
+    ```python
+    @functai.tool(effects="changes")
+    def start_harvest(url: str) -> str:
+        """Visit a site in a cloud browser; returns what it saw."""
+        job = harvests.start(url, webhook="https://example.com/done")
+        return functai.later(f"harvest:{job.id}")
+
+    # in the webhook, any process:
+    chat.deliver(f"harvest:{job_id}", report)
+    ```
+    '''
+    if not isinstance(key, str) or not key.strip():
+        raise TypeError("a later result's key is a non-empty text (put an id in it: 'harvest:8f2c')")
+    return Later(key)
+
+
 def effects_of(fn: Any) -> Optional[str]:
     """What a tool says it does: its ``effects``; an AI function used as a tool
     reads, unless one of its own tools changes things (or says nothing)."""

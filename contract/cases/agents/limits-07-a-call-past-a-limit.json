@@ -1,0 +1,21 @@
+{
+ "description": "A call that would start past a limit stops.",
+ "kind": "limits",
+ "limits": {
+  "seconds": 60,
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 61
+ },
+ "at": {
+  "hook": "before_call",
+  "lm": null
+ },
+ "expect": {
+  "change": {
+   "stop": "limit reached: 60 seconds"
+  }
+ }
+}

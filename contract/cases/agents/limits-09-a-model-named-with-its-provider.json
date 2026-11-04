@@ -1,0 +1,27 @@
+{
+ "description": "A model named provider:model is priced by its own name.",
+ "kind": "limits",
+ "limits": {
+  "cost": 5,
+  "prices": {
+   "claude-sonnet-5": {
+    "input_per_million": 3,
+    "output_per_million": 15,
+    "cache_read_per_million": 0.3,
+    "cache_write_per_million": 3.75
+   }
+  },
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 0
+ },
+ "at": {
+  "hook": "before_call",
+  "lm": "anthropic:claude-sonnet-5"
+ },
+ "expect": {
+  "change": null
+ }
+}

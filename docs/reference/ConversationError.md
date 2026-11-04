@@ -23,6 +23,8 @@ A conversation, or one of its turns, refused what was asked
 - ``turn-unknown``, ``turn-state`` (the turn cannot do that now),
   ``turn-unfinished`` (resuming needs to know what a tool that may have
   run returned);
+- ``later-unavailable``: a tool answered later (``functai.later``)
+  outside a conversation's turn, where nothing can wait for its result;
 - ``store-conflict``: a conditional append found the conversation
   changed (FunctAI reads again and retries).
 

@@ -1,0 +1,85 @@
+{
+ "description": "The cost reached (uncached input, cache reads and output at their rates), with then stop: the call stops.",
+ "kind": "limits",
+ "limits": {
+  "cost": 1.0,
+  "prices": {
+   "claude-sonnet-5": {
+    "input_per_million": 3,
+    "output_per_million": 15,
+    "cache_read_per_million": 0.3,
+    "cache_write_per_million": 3.75
+   }
+  },
+  "then": "stop"
+ },
+ "spent": {
+  "exchanges": [
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ],
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ],
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ],
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ],
+   [
+    "claude-sonnet-5",
+    {
+     "input_tokens": 200000,
+     "output_tokens": 10000,
+     "total_tokens": 210000,
+     "cache_read_tokens": 150000,
+     "cache_write_tokens": 0
+    }
+   ]
+  ],
+  "seconds": 30
+ },
+ "at": {
+  "hook": "step",
+  "step": 4,
+  "max_steps": 8,
+  "tools": [
+   "look",
+   "click"
+  ]
+ },
+ "expect": {
+  "change": {
+   "stop": "limit reached: cost 1"
+  }
+ }
+}

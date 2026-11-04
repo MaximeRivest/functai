@@ -12,6 +12,9 @@ Change(
     inputs=None,
     block=None,
     output=None,
+    reminder=None,
+    replace=None,
+    stop=None,
 )
 ```
 
@@ -32,4 +35,11 @@ does not accept refuses ``plugin-change``.
 - ``inputs``: inputs replaced, by name (``turn_start``: the turn's;
   ``tool_call``: the tool's);
 - ``block``: the tool call may not run, and why (``tool_call``);
-- ``output``: the tool's result as the model is shown it (``tool_result``).
+- ``output``: the tool's result as the model is shown it: text, or a list
+  of lm15 parts (a picture with a caption) (``tool_result``);
+- ``reminder``: text the model is shown after this step's tool results,
+  in this request and the ones after (``step``);
+- ``replace``: earlier tool results, by invocation, shown as this from
+  this request on: text, or a list of lm15 parts (``step``);
+- ``stop``: the call stops here, and why (``before_call``, ``step``): it
+  raises ``PluginError`` (``plugin-stopped``).

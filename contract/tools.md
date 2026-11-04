@@ -2,10 +2,36 @@
 
 A tool says what it does to the world, and a person can be asked before
 it runs: at once (a function the program is given), or later, from any
-process (the turn waits, saved). A turn that stopped (to wait, or because
-its process died) goes on without paying for a model answer twice and
-without running a tool twice (Python `python/functai/tools.py`,
-`engine.py`). `cases/tools/` pin the rules and the refusal's text.
+process (the turn waits, saved). A tool answers with text or with
+pictures, sounds and documents, now or later. A turn that stopped (to
+wait, or because its process died) goes on without paying for a model
+answer twice and without running a tool twice (Python
+`python/functai/tools.py`, `engine.py`). `cases/tools/` pin the rules
+and the refusal's text; `cases/agents/` what a tool returns and a turn
+that waits for a later result.
+
+## What a tool returns
+
+What a tool returns becomes its **result**, the tool step the model is
+shown (lmcc's tool step: lm15 parts):
+
+- a text: that text;
+- a part (a picture, a sound, a video, a document: lm15's `image`,
+  `audio`, `video`, `document` parts), or a list holding at least one: a
+  **list of parts**, in order: each text a text part, each part as it is,
+  each other value a text part of its JSON. A part read from a file is
+  given its bytes (`data`), so the result is whole wherever it is read
+  again; a part by web address stays one;
+- anything else: its JSON, as text (as before 2026-11-02).
+
+In data (a conversation's `tool` record, a `tool_result` hook's `output`,
+a result given for a tool that may have run, a result delivered later) a
+result is a text or a list of lm15 parts in lm15's JSON form
+(`{"type": "image", "media_type": "image/png", "data": "<base64>"}`).
+Other part kinds (a tool call, thinking) are refused. A provider that
+cannot take a picture in a tool's result is lm15's to adapt, and its
+response says what it changed. Each exchange of the call log holds the
+request it sent, pictures included ([calls.md](calls.md)).
 
 ## Effects
 
@@ -99,6 +125,8 @@ and the same earlier turns:
 - a tool's result is recorded as the model was shown it, after the
   `tool_result` hooks: replayed, it is shown again as it was, with no hook
   run again.
+- a tool whose result comes later and was delivered is given it (*A result
+  that comes later*).
 
 The log goes on as a later writer's ([streaming.md](streaming.md),
 *Continuing a log*): the process claims the turn's log from the store and
@@ -116,3 +144,50 @@ highest writer ([calls.md](calls.md)).
 
 A turn that waits or was interrupted may instead be **abandoned** (its
 `ended` record says `abandoned`).
+
+## A result that comes later
+
+A tool may start something that ends elsewhere, minutes later (a job, a
+cloud browser, a person's reply by mail), and say its result comes
+**later**: it returns `later(key)` (Python `functai.later("harvest:8f2c")`).
+`key` names that one result in its conversation (a text; put an id in
+it).
+
+- **Only in a conversation's turn.** Anywhere else nothing could wait for
+  it: the call refuses `later-unavailable` (the tool ran; what it started
+  may be running).
+- **It ran.** A `tool` record `later` (`site`, `invocation`, `id`, `name`,
+  `input`, `effects`, `key`) is written when it returns; it is never run
+  again. The log shows a `later` event (`id`, `invocation`, `name`, `key`).
+- **The step goes on.** Every other tool call of the same model reply runs.
+  Then, for each later result, a `delivered` record with its key settles
+  it: when every one is delivered, the call goes on with them now; else
+  the turn **waits**, as for an approval ([conversations.md](conversations.md)):
+  a `waiting` record whose `later` lists them (`site`, `invocation`, `id`,
+  `name`, `key`, `path`), and the call and every call it is inside stop
+  without ending; the caller gets `Waiting` (`turn-waiting`) with what it
+  waits for.
+- **Delivering.** Any process that opens the conversation delivers a
+  result (Python `chat.deliver(key, result)`): `result` is what the tool
+  would have returned, turned into a result as *What a tool returns*
+  says, and kept in a `delivered` record (`key`, `output`, `by`?) that
+  belongs to no turn, so a result delivered before the tool said it would
+  come later is used when it does. The first `delivered` record of a key
+  is the one kept: delivering again changes nothing (a webhook may be sent
+  twice). Then a turn that waits and has nothing left to wait for (every
+  approval answered, every result delivered) goes on in the delivering
+  process (unless asked not to), and the delivery returns its answer.
+- **Going on.** The turn resumes as any waiting turn does (*Resuming*):
+  the tool's result is its delivery, given to the `tool_result` hooks,
+  recorded `done` and shown (`tool_result`). A turn that still waits for
+  a result refuses to resume (`turn-state`).
+- **No lost wake-up.** A turn that found a result undelivered writes its
+  `waiting` record, then reads the conversation again: when every result
+  it waits for is delivered by then, it goes on itself. Two processes may
+  both try: the lease's conditional append lets one go on, and the other
+  is told `turn-state`, which a delivery takes as "already going on".
+
+This is the one way FunctAI waits for the world. Code of a module that
+starts work outside a tool (and so outside these records) runs again when
+the turn resumes: make such work a tool that changes things, or keep it
+in the host's own workflow.

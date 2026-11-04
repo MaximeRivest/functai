@@ -15,6 +15,8 @@ implementation's output:
                  ../streaming.md "Views", ../calls.md "Rows that keep their context"   (stages.py)
     plugins/     ../plugins.md, "Order"                      (plugins.py)
     baked/       ../baked.md, "The examples"                 (baked.py)
+    agents/      ../tools.md "What a tool returns", "A result that comes later"; ../streaming.md "The kept
+                 form"; ../plugins.md "The step hook", "limits", "keep_pictures"   (agents.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -30,6 +32,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
+import agents  # noqa: E402
 import baked  # noqa: E402
 import content  # noqa: E402
 import events  # noqa: E402
@@ -82,7 +85,7 @@ def check(folder: str, cases: dict) -> None:
                 ifaces = [case["interface"]]
             for iface in ifaces:
                 schemas.check(schemas.INTERFACE, iface, f"{where} interface")
-        elif folder == "conversations":
+        elif folder == "conversations" or (folder == "agents" and case["kind"] == "state"):
             for i, rec in enumerate(case["records"]):
                 schemas.check(schemas.CONVERSATION, rec, f"{where} records[{i}]")
         elif folder == "views":
@@ -91,6 +94,9 @@ def check(folder: str, cases: dict) -> None:
         elif folder == "context":
             for i, rec in enumerate(case["records"]):
                 schemas.record(rec, f"{where} records[{i}]")
+        elif folder == "agents" and case["kind"] == "kept":
+            for i, e in enumerate(case["events"] + case["expect"]["events"]):
+                schemas.check(schemas.EVENT, e, f"{where} event {i}")
         elif folder == "events":
             kind = case["kind"]
             if kind == "receivers":
@@ -140,4 +146,5 @@ if __name__ == "__main__":
         n += write(folder, made)
     n += write("plugins", plugins.cases())
     n += write("baked", baked.cases())
+    n += write("agents", agents.cases())
     print(f"{n} cases written")

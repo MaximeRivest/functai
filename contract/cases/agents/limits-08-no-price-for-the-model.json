@@ -1,0 +1,29 @@
+{
+ "description": "A cost limit and a call to a model with no price: stopped before it is asked (a limit that cannot be checked is reached).",
+ "kind": "limits",
+ "limits": {
+  "cost": 5,
+  "prices": {
+   "claude-sonnet-5": {
+    "input_per_million": 3,
+    "output_per_million": 15,
+    "cache_read_per_million": 0.3,
+    "cache_write_per_million": 3.75
+   }
+  },
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 0
+ },
+ "at": {
+  "hook": "before_call",
+  "lm": "gpt-6"
+ },
+ "expect": {
+  "change": {
+   "stop": "limit reached: cost 5 (no price is known for gpt-6)"
+  }
+ }
+}
