@@ -3,7 +3,8 @@
 *Status, 2026-11-04: built in Python and TypeScript on the branch
 `setup-and-events`, with the contract (calls.md *Setups*, *Reach*,
 *Spending*; plugins.md, tools.md, saved.md) and its cases (`setup/`,
-`agents/spent-04` to `06`). R and Julia do not have it yet. What was built,
+`agents/spent-04` to `06`); in R and Julia on 2026-11-04 (branch
+`rj-catch-up`). What was built,
 and where it differs from the proposal below, is at the end (*What was
 built*). The proposal is kept as it was written.*
 
@@ -331,6 +332,14 @@ each other's records and folders: 58 checks).
 says how they would count; FunctAI runs neither yet); a wall's limits
 checked by FunctAI (the host holds them: FunctAI records them); the model
 a server address really serves (the record of which model answered is the
-guard). R and Julia: they refuse an interface with `notes` (a key they do
-not know) and skip `program.setup` (a record key they do not know), as the
-contract asks of a reader, until they catch up.
+guard).
+
+**R and Julia (2026-11-04).** The same document and hash for every
+`setup/` case. A tool's code is read as each language reads a program's
+own: Julia each of the tool's methods as written in its file (parsed, as
+`@program` hashes its expression; lowered code when the file cannot be
+read, a REPL), R the function deparsed without its source references.
+Neither follows the functions a tool calls, as TypeScript does not; a
+tool's `code_id` says what identifies it beyond that. Julia and R now save
+a program with the AI functions it reaches and an agent with its tools as
+data, each node with its setup.

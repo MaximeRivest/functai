@@ -1,7 +1,8 @@
 # The call log's face: rate calls, list them, and turn ratings into rows
 # with known answers for `evaluate` and the optimizers.
 
-log_root(folder) = folder === nothing ? folder_of(something(setting(effective(Dict{Symbol,Any}()), :log_calls), true)) : expand(folder)
+log_root(folder) = folder === nothing ? folder_of(something(setting(effective(Dict{Symbol,Any}()), :log_calls), true)) :
+                   is_call_store(folder) ? folder : expand(folder)
 
 """
     rate(call, verdict; answer, outputs, note, reasons, by, origin, sample, folder)
@@ -18,8 +19,8 @@ rate(p; answer = mixed, note = "broken item, happy with the help")
 rate.(predictions, :right)          # many at once
 ```
 
-The rating is written to the call log folder (the `log_calls` setting, or
-`folder`). `by` defaults to the caller's `user`, else your account's name.
+The rating is written to the call log (the `log_calls` setting, or `folder`:
+a folder, or a store of one's own). `by` defaults to the caller's `user`, else your account's name.
 """
 rate(p::Prediction, verdict=NOTHING_GIVEN; kw...) = rate(p.call, verdict; kw...)
 function rate(call::AbstractString, verdict=NOTHING_GIVEN; answer=NOTHING_GIVEN, outputs=nothing, note=nothing, reasons=nothing,
@@ -28,7 +29,7 @@ function rate(call::AbstractString, verdict=NOTHING_GIVEN; answer=NOTHING_GIVEN,
     rec = rating_record(call, verdict, s; answer, outputs, note, reasons, by, origin, sample)
     root = log_root(folder)
     root === nothing && throw(ArgumentError("no log folder: pass folder, or turn the call log on (log_calls = true, or FUNCTAI_LOG_CALLS)"))
-    append_record(root, rec)
+    root isa AbstractString ? append_record(root, rec) : keep_record(root, rec)
     rec
 end
 

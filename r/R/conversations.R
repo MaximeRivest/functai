@@ -78,13 +78,23 @@ unfinished <- function(st) {
   for (t in st$tools) {
     k <- paste(t$site %||% "", t$invocation %||% "", sep = "\u0001")
     if (identical(t$state, "started")) started[[k]] <- t
-    else if (t$state %in% c("done", "given", "rerun")) started[[k]] <- NULL
+    else if (t$state %in% c("done", "given", "rerun", "later")) started[[k]] <- NULL
   }
   unname(started)
 }
 
+# Tools whose result comes later (their last record says `later`), each its record.
+later_tools <- function(st) {
+  last <- list()
+  for (t in st$tools) last[[paste(t$site %||% "", t$invocation %||% "", sep = "\u0001")]] <- t
+  unname(Filter(function(t) identical(t$state, "later"), last))
+}
+
+# The results a turn waits for that no one delivered yet (conversations.md, "A turn's state").
+undelivered <- function(st, delivered) Filter(function(t) is.null(delivered[[t$key %||% ""]]), later_tools(st))
+
 new_conv_log <- function() { l <- new.env(parent = emptyenv()); l$n <- 0L; l$turns <- list(); l$order <- character(0); l$head <- NULL
-                             l$request_ids <- list(); l$programs <- list(); l$entries <- list(); l }
+                             l$request_ids <- list(); l$programs <- list(); l$entries <- list(); l$delivered <- list(); l }
 
 apply_records <- function(log, records) {
   for (r in records) {
@@ -93,6 +103,7 @@ apply_records <- function(log, records) {
     kind <- r$kind %||% ""
     if (kind == "program") { if (is.null(log$programs[[r$version]])) log$programs[[r$version]] <- r; next }
     if (kind == "entry") { log$entries[[length(log$entries) + 1L]] <- r; next }
+    if (kind == "delivered") { if (is_str(r$key) && is.null(log$delivered[[r$key]])) log$delivered[[r$key]] <- r; next }   # the first delivery of a key is kept
     tid <- r$turn
     if (!is_str(tid)) next
     if (kind == "turn") {
@@ -377,6 +388,8 @@ turn_object <- function(c, st) structure(list(conv = c, id = turn_id(st), st = s
     state = turn_state_of(st), model = ended$model %||% st$record$settings$lm, error = ended$error, usage = ended$usage %||% list(),
     reads = unlist(st$record$reads), made_by = st$record$made_by, saw = turn_saw(c, st),
     waiting = lapply(unanswered(st), approval_from),
+    later = lapply(undelivered(st, read_conv(c)$delivered), function(t) list(key = t$key, invocation = t$invocation, id = t$id, name = t$name,
+                                                                              input = t$input, site = t$site)),
     unfinished = lapply(unfinished(st), function(t) list(invocation = t$invocation, id = t$id, name = t$name, input = t$input, site = t$site)),
     ended_outputs(st)[[name]])
 }
@@ -756,12 +769,14 @@ new_turn_run <- function(c, tid, attempt, context, replay = NULL, later = NULL) 
   run$context <- context; run$root_taken <- FALSE; run$helper_calls <- list(); run$exchanges <- list(); run$later <- later
   run$start_seq <- 0L; run$settings <- list(); run$durable <- durable_turns(c); run$root <- NULL
   run$replies <- list(); run$tools <- list(); run$unfinished <- list(); run$answers <- list()
+  run$laters <- list(); run$delivered <- replay$delivered %||% list()
   run$seen <- 0L; run$renewed <- as.numeric(Sys.time()); run$polled <- 0
   for (rec in replay$replies) run$replies[[rec$key]] <- c(run$replies[[rec$key]], list(rec$response))
   for (t in replay$tools) {
     k <- paste(t$site %||% "", as.integer(t$invocation %||% 0L), sep = "\u0001")
-    if (t$state %in% c("done", "given")) { run$tools[[k]] <- t; run$unfinished[[k]] <- NULL }
+    if (t$state %in% c("done", "given")) { run$tools[[k]] <- t; run$unfinished[[k]] <- NULL; run$laters[[k]] <- NULL }
     else if (identical(t$state, "rerun")) { run$tools[[k]] <- NULL; run$unfinished[[k]] <- NULL }
+    else if (identical(t$state, "later") && is.null(run$tools[[k]])) { run$laters[[k]] <- t; run$unfinished[[k]] <- NULL }
     else if (identical(t$state, "started") && is.null(run$tools[[k]])) run$unfinished[[k]] <- t
   }
   last_wait <- replay$waiting_seq %||% 0L
@@ -852,7 +867,14 @@ tool_recorded <- function(call, n) {
   run <- call$turn_run
   if (is.null(run)) return(NULL)
   k <- paste(call$site, n, sep = "\u0001")
-  if (!is.null(run$tools[[k]])) return(as.character(run$tools[[k]]$output %||% ""))
+  if (!is.null(run$tools[[k]])) { out <- run$tools[[k]]$output; return(if (is.list(out)) out else as.character(out %||% "")) }
+  if (!is.null(run$laters[[k]])) {
+    key <- run$laters[[k]]$key
+    got <- run$delivered[[key]] %||% read_conv(run$conv)$delivered[[key]]
+    if (is.null(got)) stop(conversation_error("turn-state", sprintf("%s waits for its result (\"%s\"): deliver it first (deliver(chat, \"%s\", result))",
+                                                                    run$laters[[k]]$name, key, key), turn = run$turn))
+    return(structure(list(output = got$output), class = "functai_delivered"))
+  }
   if (!is.null(run$unfinished[[k]])) stop(conversation_error("turn-unfinished", sprintf(
     "%s started before the turn stopped, and whether it ran is not known: resume_turn(turn, results = list(\"%d\" = what it returned)) or resume_turn(turn, rerun = %d)",
     run$unfinished[[k]]$name, n, n), turn = run$turn))
@@ -872,8 +894,27 @@ tool_done <- function(call, tool, c, n, out) {
   run <- call$turn_run
   if (is.null(run)) return(invisible())
   rec <- record_base(run, "tool")
-  rec$site <- call$site; rec$invocation <- n; rec$id <- c$id; rec$name <- c$name; rec$state <- "done"; rec$output <- as.character(out)
+  rec$site <- call$site; rec$invocation <- n; rec$id <- c$id; rec$name <- c$name; rec$state <- "done"
+  rec$output <- if (is.list(out)) out else as.character(out)
   add_records(run$conv, list(rec))
+}
+
+# A tool returned ai_later(key): it ran, and its result comes later.
+tool_later <- function(call, tool, c, n, input, key) {
+  run <- call$turn_run
+  rec <- record_base(run, "tool")
+  rec$site <- call$site; rec$invocation <- n; rec$id <- c$id; rec$name <- c$name; rec$input <- value_json(input)
+  rec["effects"] <- list(tool$effects); rec$state <- "later"; rec$key <- key
+  add_records(run$conv, list(rec))
+}
+
+# The results already delivered for these keys (read now): key = output.
+deliveries <- function(run, keys) {
+  found <- read_conv(run$conv)$delivered
+  for (k in keys) if (!is.null(found[[k]])) run$delivered[[k]] <- found[[k]]
+  out <- list()
+  for (k in keys) if (!is.null(run$delivered[[k]])) out[[k]] <- run$delivered[[k]]$output
+  out
 }
 
 recorded_approval <- function(run, call, a) run$answers[[paste(call$site, as.integer(a$invocation), a$plugin, sep = "\u0001")]]
@@ -885,8 +926,10 @@ note_approval <- function(run, call, a, allowed, reason, by) {
   add_records(run$conv, list(rec))
 }
 
-turn_waiting <- function(a) structure(class = c("functai_turn_waiting", "error", "condition"),
-  list(message = sprintf("waiting for a person's answer: %s", a$path), call = NULL, approval = a))
+turn_waiting <- function(a, later = list()) structure(class = c("functai_turn_waiting", "error", "condition"),
+  list(message = if (!is.null(a)) sprintf("waiting for a person's answer: %s", a$path) else
+         sprintf("waiting for results that come later: %s", paste(vapply(later, function(x) x$key, ""), collapse = ", ")),
+       call = NULL, approval = a, later = later))
 
 # ---- what a call is shown
 
@@ -1012,6 +1055,7 @@ start_turn <- function(c, run, given, settings) {
   err <- if (inherits(out, "condition")) out else NULL
   value <- if (is.null(err)) out$value else NULL
   err <- conclude_turn(c, run, value, err, started)
+  if (inherits(err, "functai_went_on")) return(err$value)       # it waited, then went on here: its answer
   if (!is.null(err)) stop(err)
   value
 }
@@ -1037,11 +1081,22 @@ conclude_turn <- function(c, run, value, err, started) {
   if (inherits(err, "functai_turn_waiting")) {
     a <- err$approval
     rec <- record_base(run, "waiting")
-    rec$approvals <- list(approval_json(a)); rec$saw <- saw
+    rec$approvals <- if (is.null(a)) list() else list(approval_json(a))
+    if (length(err$later)) rec$later <- err$later
+    rec$saw <- saw
     add_records(c, list(rec))
     t <- turn_object(c, read_conv(c)$turns[[run$turn]])
+    if (is.null(a) && !length(t$later)) {
+      # every result arrived between the turn's last look and its waiting record: it goes on now (no lost wake-up)
+      went <- tryCatch(list(value = resume_turn(t)), functai_turn_state = function(e) NULL, error = identity)
+      if (is.list(went) && !inherits(went, "condition")) return(structure(went, class = "functai_went_on"))
+      if (inherits(went, "condition")) return(went)
+      t <- turn_object(c, read_conv(c)$turns[[run$turn]])
+    }
+    what <- if (!is.null(a)) sprintf("a person's answer: %s(%s); approve() or deny() it", a$path, short_text(lmcc::canonical_json(value_json(a$input))))
+      else sprintf("results that come later: %s; deliver() them", paste(vapply(err$later, function(x) encodeString(x$key, quote = "\""), ""), collapse = ", "))
     return(rlang::error_cnd(c("functai_waiting", "functai_turn_waiting_user", "functai_refusal"), code = "turn-waiting", turn = t, approvals = t$waiting,
-      functai_type = "Waiting", message = sprintf("turn %s waits for a person's answer: %s(%s); approve() or deny() it", run$turn, a$path, short_text(lmcc::canonical_json(value_json(a$input))))))
+      later = t$later, functai_type = "Waiting", message = sprintf("turn %s waits for %s", run$turn, what)))
   }
   rec <- record_base(run, "ended")
   rec$saw <- saw
@@ -1097,7 +1152,8 @@ turn_outcome <- function(t) {
   state <- t$state
   if (state == "done") return(t$value)
   if (state == "waiting") stop(rlang::error_cnd(c("functai_waiting", "functai_refusal"), code = "turn-waiting", turn = t, approvals = t$waiting,
-                                                functai_type = "Waiting", message = sprintf("turn %s waits for a person's answer", t$id)))
+                                                later = t$later, functai_type = "Waiting",
+                                                message = sprintf("turn %s waits %s", t$id, if (length(t$waiting)) "for a person's answer" else "for results that come later")))
   err <- t$error
   stop(conversation_error("turn-state", sprintf("turn %s ended %s%s", t$id, state, if (length(err)) paste0(": ", err$type, ": ", err$message %||% "") else ""), turn = t$id))
 }
@@ -1174,9 +1230,57 @@ answer_turn <- function(t, approval, allowed, reason, by, resume) {
               path = target$path, plugin = target$plugin %||% "approval", verdict = if (allowed) "yes" else "no")
   rec["by"] <- list(by); rec["reason"] <- list(reason)
   add_records(c, list(rec))
-  st <- read_conv(c)$turns[[t$id]]
-  if (resume && !length(unanswered(st))) return(resume_turn(turn_object(c, st)))
+  log <- read_conv(c)
+  st <- log$turns[[t$id]]
+  # a turn that still waits for a result that comes later goes on when it is delivered (deliver())
+  if (resume && !length(unanswered(st)) && !length(undelivered(st, log$delivered))) return(resume_turn(turn_object(c, st)))
   invisible()
+}
+
+#' Deliver a result that came later
+#'
+#' Give a tool that returned [ai_later()] its result, from any process that
+#' opens the conversation (a webhook's handler). `result` is what the tool
+#' would have returned: text, a value, a picture (an lm15 part) or a list of
+#' them. It is kept in the conversation (a `delivered` record), and the
+#' tool's turn uses it: when nothing else keeps that turn waiting, it goes on
+#' here and this returns its answer (`resume = FALSE`: later, with
+#' [resume_turn()]); else it returns `NULL`. A result delivered before the
+#' turn waits for it is used when it does. The first delivery of a key is the
+#' one kept: delivering it again does nothing (a webhook may be sent twice).
+#' @param chat A conversation ([ai_conversation()]).
+#' @param key The key the tool returned (`ai_later(key)`).
+#' @param result What the tool would have returned.
+#' @param by Who (or what) delivers it.
+#' @param resume Whether the turn goes on now.
+#' @return The turn's answer, when it went on; else `NULL`, invisibly.
+#' @examples
+#' \dontrun{
+#' chat <- ai_conversation(researcher, "visits", store = "chats/")
+#' deliver(chat, "harvest:8f2c", report)     # in the webhook's handler: the turn that waited goes on
+#' }
+#' @export
+deliver <- function(chat, key, result, by = NULL, resume = TRUE) {
+  c <- conv_of(chat)
+  if (!is_str(key) || !nzchar(trimws(key))) cli::cli_abort("a later result's key is a non-empty text")
+  output <- result_of(result)
+  repeat {
+    log <- read_conv(c)
+    if (!is.null(log$delivered[[key]])) return(invisible(NULL))
+    rec <- list(functai_conversation = CONVERSATION_FORMAT, kind = "delivered", at = iso(Sys.time()), key = key, output = output)
+    if (!is.null(by)) rec$by <- as.character(by)
+    done <- tryCatch({ add_records(c, list(rec), expect = log$n); TRUE }, functai_store_conflict = function(e) FALSE)
+    if (done) break
+  }
+  if (!resume) return(invisible(NULL))
+  log <- read_conv(c)
+  for (tid in log$order) {
+    st <- log$turns[[tid]]
+    if (!identical(turn_state_of(st), "waiting") || !any(vapply(later_tools(st), function(t) identical(t$key, key), NA))) next
+    if (length(unanswered(st)) || length(undelivered(st, log$delivered))) return(invisible(NULL))
+    return(tryCatch(resume_turn(turn_object(c, st)), functai_turn_state = function(e) invisible(NULL)))   # another process resumed it first
+  }
+  invisible(NULL)
 }
 
 #' @rdname wait_turn
@@ -1190,12 +1294,15 @@ resume_turn <- function(turn, results = list(), rerun = integer(0)) {
     state <- turn_state_of(st)
     if (!state %in% c("waiting", "interrupted")) stop(conversation_error("turn-state", sprintf("turn %s is %s: only a waiting or interrupted turn goes on", tid, state), turn = tid))
     if (length(unanswered(st))) stop(conversation_error("turn-state", sprintf("turn %s still waits for %d approval(s)", tid, length(unanswered(st))), turn = tid))
+    waits <- undelivered(st, log$delivered)
+    if (length(waits)) stop(conversation_error("turn-state", sprintf("turn %s still waits for %d result(s) to be delivered: %s", tid, length(waits),
+                                                                      paste(vapply(waits, function(t) encodeString(t$key %||% "", quote = "\""), ""), collapse = ", ")), turn = tid))
     given <- list()
     for (x in unfinished(st)) {
       inv <- as.integer(x$invocation)
       base <- list(functai_conversation = CONVERSATION_FORMAT, kind = "tool", at = iso(Sys.time()), turn = tid, site = x$site, invocation = inv, id = x$id, name = x$name)
       hit <- results[[as.character(inv)]] %||% results[[x$id %||% ""]]
-      if (!is.null(hit)) given[[length(given) + 1L]] <- c(base, list(state = "given", output = as.character(hit)))
+      if (!is.null(hit)) given[[length(given) + 1L]] <- c(base, list(state = "given", output = result_of(hit)))
       else if (inv %in% rerun) given[[length(given) + 1L]] <- c(base, list(state = "rerun"))
       else stop(conversation_error("turn-unfinished", sprintf("turn %s: %s (invocation %d) started and may have run: resume_turn(turn, results = list(\"%d\" = what it returned)) or resume_turn(turn, rerun = %d)",
                                                               tid, x$name, inv, inv, inv), turn = tid))
@@ -1213,7 +1320,7 @@ resume_turn <- function(turn, results = list(), rerun = integer(0)) {
     reqs <- vapply(Filter(function(e) e$kind == "request" && identical(e$call, tid), kept), function(e) as.integer(e$request), 0L)
     list(writer = claim$writer, after = claim$after, at = if (length(kept)) kept[[length(kept)]]$at else "", requests = if (length(reqs)) max(reqs) else 0L)
   }, error = function(e) NULL)
-  replay <- list(replies = st$replies, tools = st$tools, answers = st$answers, waiting_seq = seq_of(st$waiting))
+  replay <- list(replies = st$replies, tools = st$tools, answers = st$answers, waiting_seq = seq_of(st$waiting), delivered = log$delivered)
   context <- turn_context(c, log, st$record$parent, c$settings, st$record$context)
   context$changes <- list()
   run <- new_turn_run(c, tid, attempt, context, replay, later)
@@ -1243,7 +1350,7 @@ turn_events <- function(turn, after = NULL, view = c("kept", "outside"), timeout
   events <- c$store$events
   if (is.null(events)) return(list())
   out <- list(); last <- NULL; quiet <- as.numeric(Sys.time())
-  v <- if (view == "outside") new_view("outside", program_core_of(c$program)$answer_from) else NULL
+  v <- if (view == "outside") new_view("outside", program_core_of(c$program)$answer_from, outside_notes(c$program)) else NULL
   waiting_for <- after
   repeat {
     got <- tryCatch(events$read(turn$id, last), functai_event_unknown = function(e) list())

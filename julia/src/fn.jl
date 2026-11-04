@@ -206,7 +206,24 @@ The same JSON in every language.
 FunctAI.interface(mood)["inputs"]       # [{"name": "review", "shape": {"type": "string"}, "type": "String"}]
 ```
 """
-interface(f::AIFunction) = f.declared === nothing ? interface_of(f.definition) : f.declared
+interface(f::AIFunction) = f.declared === nothing ? with_tool_notes(interface_of(f.definition), f) : f.declared
+
+"An AI function's interface with the notes its tools declare (programs.md, *Notes*: its notes are its tools')."
+function with_tool_notes(iface, f::AIFunction)
+    notes = declared_notes(f)
+    notes === nothing && return iface
+    out = copy(iface)
+    out["notes"] = notes
+    out
+end
+
+"""
+The notes a program declares (its interface's `notes`), or `nothing`: an AI
+function's are its tools', in the order of its tools; a program's its own.
+"""
+declared_notes(f::AIFunction) = f.declared === nothing ? merged_notes((t.notes for t in f.tools); program=f.definition.name) :
+                                                         (n = get(f.declared, "notes", nothing); n === nothing ? nothing : Any[n...])
+declared_notes(_) = nothing
 
 """
     interface_signature(f)
@@ -462,6 +479,7 @@ function program_of(f::AIFunction)
     p = LMCC.jobj("name" => f.definition.name, "kind" => "ai", "module" => f.module_name, "version" => version(f),
                   "signature" => signature_id(f), "interface" => interface_signature(f), "answer" => answer_name(f))
     f.saved === nothing || (p["saved"] = f.saved)
+    known_setup!(p, f)
     file = f.module_name == "__main__" ? top_level_file(f.file) : f.file
     file === nothing || (p["file"] = file)
     f.line === nothing || (p["line"] = f.line)
@@ -637,6 +655,7 @@ function predict_inputs(f::AIFunction, inputs::AbstractDict)
     prediction = Ref{Any}(nothing)
     prepare_context!(call, f, s)            # what it is shown of its conversation (its saw), before it starts
     run_call(call) do call
+        check_reach(f, s)                    # what it needs, against the wall it runs behind (calls.md, Reach)
         # the before_call hooks: the instruction, the sections, the model, settings, tools offered
         base = signature_now(f, s)
         shaped = shape_call(f, code_inputs(inputs), s, call, base.instructions)

@@ -52,9 +52,56 @@ end
 
 expand(p::AbstractString) = abspath(expanduser(p))
 
-"The folder calls are logged to under this setting, or `nothing` when logging is off."
+# ------------------------------------------------------------------ a store of one's own (contract/calls.md)
+
+"""
+    FunctAI.records(store) -> Vector
+
+Every record a store of one's own kept, in the order kept (contract/calls.md,
+*A store of one's own*). A store is any object with two methods:
+`push!(store, record)` keeps one record (a call record or a rating, a `Dict`
+as a log folder's line holds it) and `FunctAI.records(store)` gives back
+every record kept. Put one in front of a database, a bucket or a queue when
+a machine keeps no files (a serverless function, a container that goes
+away), and give it as `log_calls`: every reader of the log (`calls`,
+`rated`, `rate`) takes it where it takes a folder.
+
+```julia
+struct TableCalls; db; end
+Base.push!(s::TableCalls, record) = (insert(s.db, record); s)
+FunctAI.records(s::TableCalls) = rows(s.db)
+configure!(log_calls = TableCalls(db))
+```
+"""
+function records end
+
+"Whether a `log_calls` value is a store of one's own: an object with `push!(store, record)` and `FunctAI.records(store)`."
+is_call_store(v) = !(v isa Union{Bool,AbstractString,Nothing}) && hasmethod(records, Tuple{typeof(v)}) && hasmethod(push!, Tuple{typeof(v),JObj})
+
+"""
+    MemoryCalls()
+
+A call log kept in this process's memory (`log_calls = MemoryCalls()`): for
+tests, and to see what a store of one's own is given. `FunctAI.records(m)`
+gives every record kept, in order.
+"""
+struct MemoryCalls
+    items::Vector{JObj}
+    lock::ReentrantLock
+end
+MemoryCalls() = MemoryCalls(JObj[], ReentrantLock())
+Base.push!(m::MemoryCalls, record::AbstractDict) = (lock(() -> push!(m.items, JObj(record)), m.lock); m)
+records(m::MemoryCalls) = lock(() -> copy(m.items), m.lock)
+Base.length(m::MemoryCalls) = lock(() -> length(m.items), m.lock)
+Base.show(io::IO, m::MemoryCalls) = print(io, "MemoryCalls(", length(m), " records)")
+
+"Keep one record in a store, as a folder's line holds it (after the 8 MiB rule)."
+keep_record(store, rec::AbstractDict) = (push!(store, LMCC.parse_json(log_line(rec))); nothing)
+
+"The folder calls are logged to under this setting (or the store of one's own), or `nothing` when logging is off."
 function folder_of(setting)
     setting === false && return nothing
+    is_call_store(setting) && return setting
     raw = strip(get(ENV, "FUNCTAI_LOG_CALLS", ""))
     on = !(lowercase(raw) in OFF)
     env_folder = on && !(lowercase(raw) in ON) ? String(raw) : nothing
@@ -123,7 +170,7 @@ mutable struct Call
     const started::Float64
     const program::JObj                 # the call log's program object
     const name::String
-    const folder::Union{Nothing,String}
+    const folder::Any                   # where its record goes: a folder, a store of one's own, or nothing
     const caller::JObj
     const tree::TreeLog
     const fields::NamedTuple            # (inputs, outputs, added): the call's fields, by name
@@ -163,6 +210,10 @@ mutable struct Call
     lmcc::Any                           # an AI function's lmcc turn, as JSON, once it answered (a helper's memory)
     escalated::Bool                     # its first model was not sure enough: another answered (escalate_to)
     kept::Any                           # on_unreadable = :record: the refusal of the unreadable reply it kept, its record's error
+    own_spent::Union{Nothing,Float64}   # dollars its own code and tools said they spent (spend)
+    tree_spent::Float64                 # its tree's outermost call only: every amount its tree's code said it spent
+    spent::Vector{Tuple{String,JObj}}   # its tree's outermost call only: (model, usage) of each request a provider answered
+    placement::Union{Nothing,JObj}      # where it ran (the wall, the server address): its record's `placement`
 end
 
 const CURRENT_CALL = ScopedValue{Union{Nothing,Call}}(nothing)
@@ -177,6 +228,11 @@ const SCRIPTED = ScopedValue{Any}(nothing)
 
 function exchange!(call::Call, model, request, response, started, seconds; cached=false, error=nothing, streamed=false,
                    first_delta=nothing, request_hash=nothing)
+    if response !== nothing && !cached              # what the tree spent (plugins: limits): a reply a provider answered now
+        top = top_call(call)
+        u = usage_of(response)
+        lock(() -> push!(top.spent, (String(model), u)), call.tree.lock)
+    end
     push!(call.exchanges, Exchange(model, call.provider, started, seconds, cached, request, response, error, streamed,
                                    first_delta, request_hash))
     remember_exchange(call.name, model, request, response, cached, error, started)
@@ -350,7 +406,8 @@ function new_call(parent, program::JObj, name::AbstractString, s::AbstractDict{S
                 Exchange[], nothing, JObj(), JObj(), String[], nothing, nothing, false, nothing, nothing,
                 later === nothing ? 0 : later.requests, parent, 0, false, false,
                 fn, site, Dict{String,Int}(), invocation, 0, turn_run, nothing, later === nothing ? nothing : later.writer,
-                Any[], nothing, Any[], true, String[], nothing, nothing, false, nothing)
+                Any[], nothing, Any[], true, String[], nothing, nothing, false, nothing, nothing, 0.0, Tuple{String,JObj}[],
+                placement_of(s; ai=fn isa AIFunction))
     for (k, v) in inputs
         data, described = logvalue_described(v)
         call.inputs[String(k)] = data
@@ -392,6 +449,27 @@ exchange_usages(call::Call) = JObj[usage_of(e.response) for e in call.exchanges 
 "Tokens summed over a call's own exchanges (integers only); a count one of them did not report is absent."
 own_usage(call::Call) = sum_usage(exchange_usages(call))
 
+"""
+    spend(usd)
+
+Say what code inside a call spent beyond the models' tokens, in dollars (a
+browsing service's charge, a paid API): `spend(0.05)`, from a program's code
+or a tool (contract/calls.md, *Spending*). The call's record keeps the sum
+(`spent`), and the [`limits`](@ref) plugin counts it in the tree's cost.
+Outside any call it does nothing.
+"""
+function spend(usd::Real)
+    (usd isa Bool || !isfinite(usd) || usd < 0) && throw(ArgumentError("spend(usd): a number of dollars, at least 0; not $(repr(usd))"))
+    call = CURRENT_CALL[]
+    call === nothing && return nothing
+    top = top_call(call)
+    lock(call.tree.lock) do
+        call.own_spent = something(call.own_spent, 0.0) + Float64(usd)
+        top.tree_spent += Float64(usd)
+    end
+    nothing
+end
+
 "Make one of this call's events and give it to its readers."
 function emit!(call::Call, kind::Symbol, data::JObj; kw...)
     call.ended && error("FunctAI: a $kind event of call $(call.id) after its end (a fault of FunctAI, not of your code)")
@@ -409,7 +487,7 @@ function error_json(err, content::Bool)
 end
 
 "lmcc's refusal code, or FunctAI's own (contract/README.md, \"Refusal codes FunctAI defines\"), or nothing."
-error_code(err) = err isa Union{LMCC.Refusal,InterfaceError,JournalError,LogContentError,LoadRefused,StoreRefusal,SawUnknown} ? err.code : nothing
+error_code(err) = err isa Union{LMCC.Refusal,FunctAIError,InterfaceError,JournalError,LogContentError,LoadRefused,StoreRefusal,SawUnknown} ? err.code : nothing
 
 unwrap(err) = err isa TaskFailedException ? unwrap(err.task.exception) :
               err isa CompositeException && !isempty(err.exceptions) ? unwrap(first(err.exceptions)) : err
@@ -560,6 +638,8 @@ function call_record(call::Call; error=nothing, journal=nothing)
     rec["confidence"] = call.confidence
     rec["exchanges"] = Any[exchange_json(e, true) for e in call.exchanges]
     call.escalated && (rec["escalated"] = true)
+    call.own_spent === nothing || (rec["spent"] = LMCC.jobj("usd" => round(call.own_spent; digits=12)))
+    call.placement === nothing || (rec["placement"] = copy(call.placement))
     call.steps === nothing || (rec["steps"] = LMCC.deepcopy_json(call.steps))
     rec["saw"] = LMCC.deepcopy_json(call.saw)
     call.invocation === nothing || (rec["invocation"] = call.invocation)
@@ -617,10 +697,11 @@ end
 function finish_call(call::Call; kw...)
     call.folder === nothing && return nothing
     try
-        append_record(call.folder, call_record(call; kw...))
+        rec = call_record(call; kw...)
+        call.folder isa AbstractString ? append_record(call.folder, rec) : keep_record(call.folder, rec)
     catch err
-        warn_once("$(call.folder):$(typeof(err))",
-                  "could not log a call to $(call.folder) ($(sprint(showerror, err))); calls go on, unlogged")
+        where = call.folder isa AbstractString ? call.folder : repr(call.folder)
+        warn_once("$where:$(typeof(err))", "could not log a call to $where ($(sprint(showerror, err))); calls go on, unlogged")
     end
     nothing
 end
@@ -634,11 +715,22 @@ folder's top level (what `prune_calls` kept). A call continued by a later
 writer (a resumed turn) is the record of its highest `writer`.
 """
 function read_log(folder=nothing; since=nothing)
-    root = folder === nothing ? folder_of(true) : expand(folder)
+    root = folder === nothing ? folder_of(true) : is_call_store(folder) ? folder : expand(folder)
     cutoff = since === nothing ? "" : since isa AbstractString ? String(since) :
              since isa Dates.DateTime ? iso(Dates.datetime2unix(since)) : since isa Dates.Date ? iso(Dates.datetime2unix(Dates.DateTime(since))) :
              throw(ArgumentError("since is a Date, a DateTime or an RFC 3339 time"))
     calls, ratings = JObj[], JObj[]
+    if root !== nothing && is_call_store(root)           # a store of one's own: its records, read as a folder's lines are
+        for rec in records(root)
+            rec isa AbstractDict || continue
+            if get(rec, "functai_call", nothing) in READ_FORMATS && string(get(rec, "started", "")) >= cutoff
+                push!(calls, JObj(rec))
+            elseif get(rec, "functai_rating", nothing) == RATING_FORMAT && string(get(rec, "at", "")) >= cutoff
+                push!(ratings, JObj(rec))
+            end
+        end
+        return (latest_writers(calls), ratings)
+    end
     (root === nothing || !isdir(root)) && return (calls, ratings)
     files = String[joinpath(root, f) for f in sort(readdir(root)) if endswith(f, ".jsonl") && isfile(joinpath(root, f))]
     for day in sort(readdir(root))
@@ -691,7 +783,7 @@ function latest_writers(calls)
 end
 
 "Whether record `a` is later than `b` by `key` (a time), then by id."
-function later(a, b, key)
+function later_than(a, b, key)
     ta, tb = string(get(a, key, "")), string(get(b, key, ""))
     ta != tb && return ta > tb
     string(get(a, "id", "")) > string(get(b, "id", ""))
@@ -711,7 +803,7 @@ function current_ratings(ratings; by=nothing)
         key = person isa AbstractString && !isempty(person) ? (get(r, "call", nothing), :by, person) :
                                                               (get(r, "call", nothing), :rating, get(r, "id", nothing))
         had = get(latest, key, nothing)
-        (had === nothing || later(r, had, "at")) && (latest[key] = r)
+        (had === nothing || later_than(r, had, "at")) && (latest[key] = r)
     end
     out = Dict{String,Vector{Any}}()
     for r in values(latest)
@@ -719,7 +811,7 @@ function current_ratings(ratings; by=nothing)
         push!(get!(out, string(r["call"]), Any[]), r)
     end
     for list in values(out)
-        sort!(list; lt=(a, b) -> later(b, a, "at"))
+        sort!(list; lt=(a, b) -> later_than(b, a, "at"))
     end
     out
 end

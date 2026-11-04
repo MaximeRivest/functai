@@ -69,19 +69,23 @@ Base.showerror(io::IO, e::ConversationError) = print(io, "ConversationError [", 
 """
     Waiting
 
-A turn stopped to wait for a person's answer (code `turn-waiting`): a tool
-call its `approve` rule (or a plugin) asks about, with no function to ask.
-`turn` is the [`Turn`](@ref) and `approvals` what waits;
-[`approve!`](@ref) or [`deny!`](@ref), from any process that opens the
-conversation, answers and resumes it.
+A turn stopped to wait (code `turn-waiting`): for a person's answer (a tool
+call its `approve` rule, or a plugin, asks about, with no function to ask),
+or for results that come later (tools that returned [`later`](@ref)).
+`turn` is the [`Turn`](@ref), `approvals` the questions ([`approve!`](@ref)
+or [`deny!`](@ref)) and `later` the results awaited (`(key, invocation, id,
+name, input, site)` each: [`deliver!`](@ref) one), from any process that
+opens the conversation; once nothing waits, the turn goes on.
 """
 struct Waiting <: FunctAIError
     code::String
     msg::String
     turn::Any
     approvals::Vector{Any}
+    later::Vector{Any}
 end
-Waiting(msg::AbstractString; turn=nothing, approvals=Any[]) = Waiting("turn-waiting", String(msg), turn, Any[approvals...])
+Waiting(msg::AbstractString; turn=nothing, approvals=Any[], later=Any[]) =
+    Waiting("turn-waiting", String(msg), turn, Any[approvals...], Any[later...])
 Base.showerror(io::IO, e::Waiting) = print(io, "Waiting [turn-waiting]: ", e.msg)
 
 """
@@ -133,12 +137,34 @@ end
 Base.showerror(io::IO, e::ServeError) = print(io, "ServeError [", e.code, "]: ", e.msg)
 
 """
-A turn stops to wait for a person (inside the call that asked; the turn's
+    ReachError
+
+A program needs to reach what the wall it runs behind does not let through
+(code `needs-unmet`: contract/calls.md, *Reach*), refused before its first
+call: it would fail later, halfway, for a reason no score would show.
+`missing` is `{"domains": [...], "secrets": [...]}`, what it needs and is
+not let through.
+"""
+struct ReachError <: FunctAIError
+    code::String
+    msg::String
+    missing::Dict{String,Any}
+end
+ReachError(msg::AbstractString, missing) = ReachError("needs-unmet", String(msg), Dict{String,Any}(missing))
+Base.showerror(io::IO, e::ReachError) = print(io, "ReachError [needs-unmet]: ", e.msg)
+
+"""
+A turn stops to wait, for a person or for results that come later (inside
+the call that asked; the turn's
 end turns it into [`Waiting`](@ref)). Code inside a call never treats it as
 an ordinary failure: no call it passes through ends, and nothing is recorded
 as failed.
 """
 struct TurnWaiting <: Exception
-    approval::Any
+    approval::Any                   # the approval it waits for, or nothing
+    later::Vector{Any}              # the results it waits for: {"site", "invocation", "id", "name", "key", "path"} each
 end
-Base.showerror(io::IO, e::TurnWaiting) = print(io, "TurnWaiting: ", e.approval.path, " waits for a person's answer")
+TurnWaiting(approval) = TurnWaiting(approval, Any[])
+Base.showerror(io::IO, e::TurnWaiting) = e.approval !== nothing ?
+    print(io, "TurnWaiting: ", e.approval.path, " waits for a person's answer") :
+    print(io, "TurnWaiting: waits for ", join((repr(x["key"]) for x in e.later), ", "))

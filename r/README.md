@@ -257,6 +257,9 @@ support <- ai(reply ~ message, "Answer the customer, looking up their order.",
 ```
 
 A tool's inputs are the function's arguments, and its name the function's.
+A tool returns text, a value (shown as its JSON), a picture or any lm15 part
+(`lm15::image_part(path = "page.png")`), a list holding one (a picture with
+its caption), or `ai_later(key)` when its result comes later.
 
 ## The call log and ratings
 
@@ -382,8 +385,8 @@ that needs a person refuses (`approval-required`).
 
 ## Plugins
 
-Plugins change what programs do through seven hooks (`turn_start`,
-`context`, `before_call`, `request`, `tool_call`, `tool_result`,
+Plugins change what programs do through eight hooks (`turn_start`,
+`context`, `before_call`, `step`, `request`, `tool_call`, `tool_result`,
 `turn_end`), and every change is recorded as data in the call's record, so
 a rated call is asked again as it was.
 
@@ -396,6 +399,45 @@ chat <- ai_conversation(assistant, "work", plugins = list(review, compaction(kee
 Approval is one of them; `compaction()` folds long conversations into a
 summary; `delegate(program)` hands work to another program, in a
 conversation of its own.
+
+## Long agents and pipelines
+
+```r
+look <- function(page) list(paste("page", page), lm15::image_part(path = shot(page)))   # a tool answers with a picture
+agent <- update(browse, max_steps = 200L, plugins = list(keep_pictures(3), limits(cost = 3, seconds = 600, prices = prices)))
+
+walk <- ai_program(result ~ url, "Walk a site.", function(url) {
+  ai_note("stage", "walking")                          # a page shows it; checked against the declaration
+  write_insights(url)
+}, .notes = list(stage = note_type(choice("walking", "writing"), latest = TRUE, outside = TRUE)))
+
+start_harvest <- function(url) ai_later(paste0("harvest:", start_job(url)))   # in a turn: it waits, saved
+deliver(chat, "harvest:8f2c", report)                  # from the webhook, any process: it goes on
+ai_config(log_calls = memory_calls())                  # or any store: $append(record) and $read()
+answer_so_far(text_so_far, insights)                   # an answer being written, read by its shape
+```
+
+The `step` hook steers a long tool loop (the tools offered, a reminder,
+earlier results shown otherwise), every change recorded, so the call stays
+replayable; `keep_pictures()` and `limits()` (tokens, cost at the prices you
+give, seconds, and what code reported with `ai_spend()`) are built on it.
+Notes a program declares are typed and checked where they are made; those
+declared `outside` are shown to a served program's caller.
+
+## What a program runs on
+
+```r
+ai_setup(mood)                          # "sha256:...": its version, model, settings, plugins, tools' code, reach
+ai_setup_document(mood)                 # the same, as data
+ai_setup_diff("releases/v1", "releases/v2")    # what differs, step by step: a tibble
+with_ai_config(code, wall = list(name = "srt", domains = "*.browser-use.com"))   # what programs may reach
+```
+
+A version says what a program is; its setup says what it runs on, so a
+score belongs to exactly one thing that ran. Every call records both, and
+where it ran (`placement`). A tool or a program says what its code reaches
+(`.needs = list(domains = ..., secrets = ...)`); behind a wall that lets
+through less, it is refused before its first call (`needs-unmet`).
 
 ## Serving it, and long runs
 
@@ -438,9 +480,10 @@ each call tree's events while it is written.
 
 Compared with Python: training models itself (`bake_examples()` writes what
 any trainer reads, and `baked()` runs the result when it writes text; a
-baked classifier, a *head*, runs only in Python), saving a program's own R
-code or tools in a folder (an AI function saves; a program does not yet),
-Python's `verify`, `check` and `runs`, templates written as R functions, an
+baked classifier, a *head*, runs only in Python), running a saved
+program's R code or tools from its folder (`write_ai()` saves a program with
+its AI functions, and an agent with its tools described, for every
+language to describe; their code stays here), Python's `verify`, `check` and `runs`, templates written as R functions, an
 instruction the model writes and refines as calls come in (`autoinstruct`,
 `instruction_autorefine_calls`, `freeze()`), training rows a teacher model
 writes (`opt(n_synth = …)`), the record of how a copy was improved

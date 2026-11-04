@@ -21,7 +21,7 @@ const SETTING_DOCS = (
     api_max_wait = "the longest a provider may ask to wait before a re-send, in seconds (default 60); a longer wait (a spent subscription window) raises at once, saying until when",
     max_steps = "model requests per tool loop (default 8)",
     tool_errors = ":report (the model sees a tool's error, default) or :raise",
-    log_calls = "the call log: a folder, true (the default folder) or false; unset: the environment variable `FUNCTAI_LOG_CALLS` decides",
+    log_calls = "the call log: a folder, true (the default folder), false, or a store of one's own (push!(store, record), FunctAI.records(store); MemoryCalls() in memory); unset: the environment variable `FUNCTAI_LOG_CALLS` decides",
     log_content = "what the call log keeps: false (sizes, times and tokens, never values or messages), or a map of fields: (transcript = false,), Dict(\"*\" => false, \"question\" => true); layers only remove",
     observers = "functions (or Channels) given the kept form of every event of the calls in scope: [e -> println(e)]; layers add up",
     journal = "where each call tree's kept log is kept while it is written: a store (best effort), Journal(store; required = true), or false (none)",
@@ -36,6 +36,7 @@ const SETTING_DOCS = (
     program_plugins = "false (a host's block or configure!): the plugins a program sets for itself do not run. Only removes",
     escalate_to = "when the model is less sure of its answer than escalate_below, another answers instead: a model name, a baked model, or an AI function (needs a model that measures its confidence)",
     escalate_below = "the confidence under which escalate_to answers (default 0.9)",
+    wall = "the wall the host runs programs behind (contract/calls.md, Reach): nothing (none it says: reach is open), a name (\"srt\": made from each program's needs), or (name = …, domains = […], secrets = […], limits = Dict(…)): what it lets through, and its limits. A program that needs what the wall does not let through is refused before its first call (ReachError)",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
@@ -85,7 +86,8 @@ function check_setting(name::Symbol, value)
     name === :api_max_wait && !(value isa Real && !(value isa Bool) && value >= 0) &&
         throw(ArgumentError("api_max_wait is a number of seconds, at least 0, not $(repr(value))"))
     name in (:reasoning, :include_name) && !(value isa Bool) && throw(ArgumentError("$name is true or false, not $(repr(value))"))
-    name === :log_calls && !(value isa Union{Bool,AbstractString}) && throw(ArgumentError("log_calls is a folder, true or false, not $(repr(value))"))
+    name === :log_calls && !(value isa Union{Bool,AbstractString} || is_call_store(value)) &&
+        throw(ArgumentError("log_calls is a folder, true, false, or a store (an object with push!(store, record) and FunctAI.records(store)), not $(repr(value))"))
     name === :lm && !(value isa AbstractString || value isa BakedModel) &&
         throw(ArgumentError("lm is a model name like \"gpt-4.1-mini\", or a baked model (FunctAI.baked(folder; url)), not $(repr(value))"))
     name === :caller && !(value isa AbstractDict || value isa NamedTuple) && throw(ArgumentError("caller is a Dict, not $(repr(value))"))
@@ -101,7 +103,32 @@ function check_setting(name::Symbol, value)
     name === :escalate_to && !(value isa Union{AbstractString,BakedModel,AIFunction}) &&
         throw(ArgumentError("escalate_to is a model name, a baked model, or an AI function, not $(repr(value))"))
     name === :escalate_below && !(value isa Real && 0 < value <= 1) && throw(ArgumentError("escalate_below is a probability in (0, 1], not $(repr(value))"))
+    name === :wall && wall_setting(value)
     nothing
+end
+
+"""
+The `wall` setting as data (contract/calls.md, *Reach*): a name, or
+`{"name", "domains"?, "secrets"?, "limits"?}`, the domains in lower case,
+each list sorted and once each.
+"""
+function wall_setting(v)
+    v isa Union{AbstractString,Symbol} && !isempty(strip(String(v))) && return String(v)
+    bad = ArgumentError("wall is the name of the wall programs run behind (\"srt\"), or (name = …, domains = […], secrets = […], limits = Dict(…)): what it lets through, and its limits; not $(repr(v))")
+    v isa Union{AbstractDict,NamedTuple} || throw(bad)
+    given = Dict{String,Any}(String(k) => x for (k, x) in pairs(v))
+    (issubset(keys(given), ("name", "domains", "secrets", "limits")) && get(given, "name", nothing) isa Union{AbstractString,Symbol} &&
+     !isempty(strip(String(given["name"])))) || throw(bad)
+    out = LMCC.jobj("name" => String(given["name"]))
+    lets = needs_value(Dict(k => given[k] for k in ("domains", "secrets") if haskey(given, k)); where="wall")
+    for k in ("domains", "secrets")
+        haskey(given, k) && (out[k] = lets[k])
+    end
+    if haskey(given, "limits")
+        given["limits"] isa Union{AbstractDict,NamedTuple} || throw(ArgumentError("wall's limits is an object: memory, processor, seconds, as the host says them"))
+        out["limits"] = jsonvalue(given["limits"])
+    end
+    out
 end
 
 function settings_dict(kw)
@@ -118,7 +145,8 @@ function settings_dict(kw)
                     name === :journal ? journal_setting(v) :
                     name === :cache_replies ? cache_setting(v) :
                     name === :approve ? approve_setting(v) :
-                    name === :plugins ? plugins_setting(v) : v
+                    name === :plugins ? plugins_setting(v) :
+                    name === :wall ? wall_setting(v) : v
     end
     out
 end

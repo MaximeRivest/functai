@@ -255,7 +255,7 @@ function serve_stream(s::Service, data, parent)
     bound = served_inputs(s, data)
     st = in_service(() -> s.program isa AIFunction ? start_stream(() -> predict_inputs(s.program, bound)) :
                           start_stream(() -> run_program(s.program, bound)), s, parent)
-    v = View(:outside; answer_from=answer_from_of(s.program))
+    v = view_for(:outside, s.program)
     sse_reply(() -> close(st)) do put
         for e in eachevent(st)
             shown = apply_view!(v, e)

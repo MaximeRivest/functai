@@ -173,6 +173,8 @@ same after. Returns `(days, calls, kept)`: folders deleted, calls deleted, calls
 """
 function prune_calls(older_than="90d"; folder=nothing, keep_rated::Bool=true)
     root = log_root(folder)
+    root === nothing || root isa AbstractString ||
+        throw(ArgumentError("prune_calls deletes old files of a log folder; a store of one's own keeps its records as it chooses: prune them there"))
     (root === nothing || !isdir(root)) && return (days=0, calls=0, kept=0)
     first_day = Dates.format(time_before(older_than), dateformat"yyyy-mm-dd")
     old_days = sort!([joinpath(root, d) for d in readdir(root) if occursin(r"^\d{4}-\d{2}-\d{2}$", d) && isdir(joinpath(root, d)) && d < first_day])

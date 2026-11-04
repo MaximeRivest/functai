@@ -239,10 +239,10 @@ field by field; `nothing` when it is not. `ai`: an AI function's, whose
 shapes may carry lmcc's other keywords.
 """
 function interface_fault(iface; ai::Bool=false)
-    (iface isa AbstractDict && issubset(keys(iface), ("description", "inputs", "outputs")) &&
+    (iface isa AbstractDict && issubset(keys(iface), ("description", "inputs", "outputs", "notes")) &&
      get(iface, "description", nothing) isa AbstractString && get(iface, "inputs", nothing) isa AbstractVector &&
      get(iface, "outputs", nothing) isa AbstractVector && !isempty(iface["outputs"])) ||
-        return malformed(nothing, "an interface is an object of description, inputs and outputs (at least one), and nothing else")
+        return malformed(nothing, "an interface is an object of description, inputs and outputs (at least one), notes when it declares some, and nothing else")
     seen = Set{String}()
     for direction in ("inputs", "outputs")
         allowed = direction == "inputs" ? INPUT_KEYS : OUTPUT_KEYS
@@ -269,6 +269,152 @@ function interface_fault(iface; ai::Bool=false)
                 ds = data_shape(shape)
                 fits_shape(shape["default"], ds, ds) || return malformed(at, "its default $(LMCC.json_text(shape["default"])) does not fit its shape")
             end
+        end
+    end
+    notes_fault(iface)
+end
+
+# ------------------------------------------------------------------ notes (programs.md, "Notes")
+
+const NOTE_KEYS = Set(["name", "shape", "desc", "latest", "outside"])
+"A note's name: text with a character other than a space, a tab, a line feed or a carriage return."
+is_note_name(x) = x isa AbstractString && any(c -> !(c in (' ', '\t', '\n', '\r')), x)
+note_malformed(name, why) = malformed(name, name === nothing ? "its notes are refused: $why" : "note $(repr(name)) is refused: $why")
+
+"""
+The first note an interface declares that is refused (programs.md, *Notes*),
+after every field; `nothing` when none is (or it declares none). A note's
+shape is read by the checked vocabulary alone, in every program: FunctAI
+checks it, never lmcc.
+"""
+function notes_fault(iface)
+    haskey(iface, "notes") || return nothing
+    notes = iface["notes"]
+    notes isa AbstractVector || return note_malformed(nothing, "notes is a list")
+    seen = Set{String}()
+    for n in notes
+        n isa AbstractDict || return note_malformed(nothing, "each note is a JSON object")
+        name = get(n, "name", nothing)
+        at = name isa AbstractString ? String(name) : nothing
+        extra = setdiff(keys(n), NOTE_KEYS)
+        isempty(extra) || return note_malformed(at, "it has keys a note does not have ($(join(sort!(collect(extra)), ", "))); " *
+                                                    "a note is {name, shape, desc?, latest?, outside?}")
+        is_note_name(name) || return note_malformed(at, "a note's name is text with something other than spaces and line breaks")
+        name in seen && return note_malformed(at, "the name is used twice among the notes")
+        push!(seen, name)
+        haskey(n, "desc") && !(n["desc"] isa AbstractString) && return note_malformed(at, "its desc is text")
+        for k in ("latest", "outside")
+            haskey(n, k) && n[k] !== true && return note_malformed(at, "$k, when present, is true")
+        end
+        shape = get(n, "shape", nothing)
+        shape isa AbstractDict || return note_malformed(at, "its shape is a JSON object")
+        (well_formed(shape, shape) && !loops(shape)) ||
+            return note_malformed(at, "its shape uses a keyword the vocabulary does not list, one with a value of the wrong kind, or a reference that does not end")
+    end
+    nothing
+end
+
+"""
+    Note(type = nothing; desc = nothing, latest = false, outside = false)
+
+A note a program declares (contract/programs.md, *Notes*): what its data
+holds (a type, as a field's: `String`, a `NamedTuple` type, `OneOf(...)`, a
+JSON Schema `Dict`; `nothing` or `Any`: any JSON value), words about it,
+whether only its latest value matters (`latest = true`: a stage, a count so
+far), and whether a caller who sees only the program's boundary may see it
+(`outside = true`: the `:outside` view, a served program's caller).
+
+```julia
+@program notes = ["stage" => Note(OneOf(:walking, :writing); latest = true, outside = true),
+                  "page captured" => @NamedTuple{url::String, title::String}] function walk(url::String)::String
+    note("stage", "walking")
+    …
+end
+```
+"""
+struct Note
+    type::Any
+    desc::Union{Nothing,String}
+    latest::Bool
+    outside::Bool
+end
+Note(type=nothing; desc=nothing, latest::Bool=false, outside::Bool=false) =
+    Note(type, desc === nothing ? nothing : String(desc), latest, outside)
+
+"""
+Notes declared in Julia (pairs of a name and a type or a [`Note`](@ref), in
+order; or the interface's own `notes`, as data) as an interface's `notes`;
+`nothing` when none were declared. Refused `interface-malformed` as
+programs.md refuses them.
+"""
+function notes_of(declared; where::AbstractString="")
+    declared === nothing && return nothing
+    declared isa AbstractDict && !(declared isa OrderedDict) &&
+        throw(ArgumentError("$where: notes are in order: [\"stage\" => Note(...), \"page captured\" => Page] (a Dict has no order)"))
+    items = declared isa NamedTuple ? collect(pairs(declared)) : collect(declared)
+    out = Any[]
+    for item in items
+        if item isa AbstractDict                    # an interface's note, as data
+            push!(out, LMCC.deepcopy_json(JObj(String(k) => v for (k, v) in item)))
+            continue
+        end
+        item isa Pair || throw(ArgumentError("$where: a note is name => type, or name => Note(type; latest, outside); not $(repr(item))"))
+        name, spec = item
+        name isa Union{AbstractString,Symbol} || throw(InterfaceError("interface-malformed", nothing, "$where: a note's name is text, not $(repr(name))"))
+        note = spec isa Note ? spec : Note(spec)
+        entry = LMCC.jobj("name" => String(name))
+        entry["shape"] = (note.type === nothing || note.type === Any) ? JObj() : shape_of(note.type; where="$where: note $(repr(String(name)))")
+        note.desc === nothing || (entry["desc"] = note.desc)
+        note.latest && (entry["latest"] = true)
+        note.outside && (entry["outside"] = true)
+        push!(out, entry)
+    end
+    fault = notes_fault(LMCC.jobj("notes" => out))
+    fault === nothing || throw(InterfaceError(fault.code, fault.field, isempty(where) ? fault.msg : "$where: $(fault.msg)"))
+    out
+end
+
+"""
+The notes of several tools, as one AI function's (programs.md, *How each
+program has one*): in order, once each; one name declared differently
+refuses (`interface-malformed`, naming the note). `nothing` when none declares notes.
+"""
+function merged_notes(lists; program::AbstractString="")
+    out = Any[]
+    by_name = Dict{String,Any}()
+    any_said = false
+    for notes in lists
+        notes === nothing && continue
+        any_said = true
+        for n in notes
+            was = get(by_name, n["name"], nothing)
+            if was === nothing
+                by_name[n["name"]] = n
+                push!(out, LMCC.deepcopy_json(n))
+            elseif !same_json(was, n)
+                throw(InterfaceError("interface-malformed", String(n["name"]),
+                                     "$(isempty(program) ? "" : "$program: ")note $(repr(n["name"])) is refused: two of its tools declare this note differently"))
+            end
+        end
+    end
+    any_said ? out : nothing
+end
+
+"""
+Why a note made inside calls whose programs declare `chain` (outermost
+first; `nothing`: declares none) is refused (programs.md, *Checking a
+note*), or `nothing`. `data` is its JSON form.
+"""
+function note_refusal(chain, name::AbstractString, data)
+    own = isempty(chain) ? nothing : last(chain)
+    if own !== nothing && !any(n -> n["name"] == name, own)
+        return "this program declares its notes, and $(repr(name)) is not one of them ($(isempty(own) ? "none" : join((repr(n["name"]) for n in own), ", ")))"
+    end
+    for notes in Iterators.reverse(chain)
+        for n in something(notes, ())
+            n["name"] == name || continue
+            shape = data_shape(n["shape"])
+            fits_shape(data, shape, shape) || return "its data $(first(LMCC.json_text(data), 80)) does not fit the shape declared for it"
         end
     end
     nothing

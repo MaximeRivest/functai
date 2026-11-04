@@ -90,7 +90,7 @@ rate <- function(call, verdict = NULL, answer = NULL, note = NULL, reasons = NUL
     a <- if (is.null(answers)) NULL else plain_json(answers[[i]])
     if (!is.null(a) && !identical(v, "wrong")) cli::cli_abort("a right answer needs no correction: give {.arg answer} only with \"wrong\"")
     rec <- rating_record(call[[i]], v, a, NULL, note, reasons, by, origin, sample, s)
-    append_record(root, rec)
+    if (is_call_store(root)) keep_record(root, rec) else append_record(root, rec)
     rec
   })
   invisible(tibble::tibble(id = vapply(recs, function(r) r$id, ""), call = as.character(call),

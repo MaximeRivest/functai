@@ -23,10 +23,11 @@ Use them where settings go: `configure!(plugins = [guard])` for every call, `wit
 |---|---|---|
 | `turn_start` | a conversation's turn is sent, before it is recorded | `inputs` |
 | `context` | its earlier turns are chosen | `keep`, `without`, `sections` |
-| `before_call` | an AI function is about to be asked (helpers too) | `instruction`, `sections`, `lm`, `settings`, `tools` |
+| `before_call` | an AI function is about to be asked (helpers too) | `instruction`, `sections`, `lm`, `settings`, `tools`, `stop` |
+| `step` | a call with tools is about to ask the model again, after its tools ran | `tools`, `reminder`, `replace`, `stop` |
 | `request` | a provider request is about to be sent | returns another `LM15.Request` (the escape hatch) |
 | `tool_call` | a tool is about to run | `inputs`, `block`; or `FunctAI.ask(event)` a person |
-| `tool_result` | a tool ran | `output` |
+| `tool_result` | a tool ran | `output` (text, or a list of lm15 parts: a picture with its caption) |
 | `turn_end` | a turn ended (hears only; may `FunctAI.remember!` entries) | |
 
 A handler is given an event with the fields of its hook (`call.function`, `call.inputs`, `call.instruction`, `call.path`, `call.tools`; `t.name`, `t.input`, `t.effects`, `t.path`; …) and returns a `Change` or `nothing`. A field its hook does not take refuses `plugin-change` ([`PluginError`](@ref)), and so does a value that does not fit (a tool the function does not have, a turn not on the branch). A hook that does not exist refuses `plugin-hook` when it is registered: a misspelt hook would otherwise never run.
@@ -53,6 +54,8 @@ A plugin keeps what it needs later as **entries** of a conversation, at a turn (
 
 - [`compaction`](@ref)`(keep = 20, every = 10)`: keeps a long conversation short. When more than `keep + every` turns of a branch are not summarized, every turn but the last `keep` is folded into a summary (by an AI function, or `summarize = (earlier_summary, rows) -> text`), kept as an entry at that turn; the next turns are shown the summary as a section of the instruction, and only the turns after it. Each branch has its own.
 - [`delegate`](@ref)`(program)`: another program as a tool; asked inside a turn, it answers in a conversation of its own (`<conversation>.<tool>`, same store) that follows the branch of the turn that asked.
+- [`limits`](@ref)`(; tokens, cost, seconds, prices, then)`: stops a call tree that used enough; a tool loop at a limit, or at its last step, is told to answer instead (guide *Long agents and pipelines*).
+- [`keep_pictures`](@ref)`(last; at_once)`: a long tool loop is shown only its newest pictures.
 
 ```julia
 chat = conversation(tutor, "alex"; store = "tutoring/", plugins = [compaction(keep = 20, every = 10)])
@@ -61,6 +64,16 @@ researcher = delegate(research; description = "Look things up in the notes.")
     "Help with the request."
 end
 ```
+
+## The step hook
+
+Before each request after the first in a tool loop, `step` handlers are given the step (`s.step`, `s.max_steps`, `s.last_step`), every tool result so far as the model is shown it now (`s.results`: `invocation`, `name`, `input`, `output`), the tools offered now and at the start (`s.tools`, `s.all_tools`), the model and what the tree spent (`s.spent`, a [`Spent`](@ref)). A `Change` of `tools` (`String[]`: the model must answer), `reminder` (text after the step's last result), `replace` (`Dict(invocation => what is shown instead)`) or `stop` (the call ends, [`PluginError`](@ref) `plugin-stopped`). What the model is shown changes; what happened does not: the turn, the events and a conversation's records keep each result as the tool gave it, and each change is recorded, so the call stays replayable (unlike a `request` change).
+
+```julia
+wrap = Plugin("wrap"; step = s -> s.step >= 20 ? Change(tools = String[], reminder = "Answer now, from what you found.") : nothing)
+```
+
+A `before_call` handler may `stop` too: a call that would start past a limit never sends anything.
 
 ## Plugins and layouts
 

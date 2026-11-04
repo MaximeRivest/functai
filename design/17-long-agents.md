@@ -2,8 +2,8 @@
 
 *Status, 2026-11-02: built in Python and TypeScript on the branch
 `pipelines` (from `lm15-2`), with the contract and its cases
-(`contract/cases/agents/`). R and Julia do not have it yet: they never read
-`agents/` (contract/README.md, *Which cases each language passes*).*
+(`contract/cases/agents/`). 2026-11-04: built in R and Julia (branch
+`rj-catch-up`); every language reads `agents/`.*
 
 ## Why
 
@@ -121,8 +121,13 @@ from it.
 - **A resumed turn runs its `step` handlers again**: a time limit may
   decide otherwise, and then a new request is sent (it costs, never
   misleads).
-- **R and Julia** have none of this yet. Their harnesses do not read
-  `agents/`; the cross-language check does not exercise it. The usual
-  catch-up branch follows (as stages 1.2 to 5 did).
+- **R and Julia** caught up on 2026-11-04 (branch `rj-catch-up`). Each
+  language's names: Julia `note`, `later`, `deliver!`, `limits`,
+  `keep_pictures`, `MemoryCalls` (a store is `push!` and
+  `FunctAI.records`); R `ai_note()`, `ai_later()`, `deliver()`,
+  `limits()`, `keep_pictures()`, `memory_calls()` (a store is `$append`
+  and `$read`, as R's conversation stores are). R is single-threaded: a
+  turn whose results all arrived while it wrote its waiting record goes on
+  in the same call instead of on another thread.
 - **TypeScript ratings to an async store** are not awaited by `rate()`
   (it stays synchronous); `flushCalls()` waits for them.

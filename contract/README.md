@@ -121,18 +121,13 @@ thing it cannot do yet wait for it, and are not failures.
 | `partial/` | the answer so far, read from its text by its shape | every language that streams |
 | `setup/` | an AI function's setup: its document and its hash, under settings, plugins and walls | every language |
 
-`setup/`, `partial/`, `programs/27` to `30`, `views/outside-04`,
-`events/replay-15`, `agents/spent-04` to `06` and
-`agents/limits-cost-reported-by-code` (2026-11-04,
-`../design/18-setup.md` and `../design/19-notes-and-the-answer-so-far.md`)
-are read by Python and TypeScript; R and Julia wait for them (they refuse
-an interface with `notes`, as an interface key they do not know).
-
-`agents/` (2026-11-02, `../design/17-long-agents.md`) is read by Python
-and TypeScript; R and Julia have none of what it pins yet (tools that
-answer with pictures, `note`, the `step` hook and its plugins, results
-that come later, a store for the call log), and wait for it: they never
-read the folder.
+`agents/` (2026-11-02, `../design/17-long-agents.md`), and `setup/`,
+`partial/`, `programs/27` to `30`, `views/outside-04`, `events/replay-15`,
+`agents/spent-04` to `06` and `agents/limits-cost-reported-by-code`
+(2026-11-04, `../design/18-setup.md` and
+`../design/19-notes-and-the-answer-so-far.md`) were built in Python and
+TypeScript first, then in R and Julia (2026-11-04): every harness reads
+them.
 
 Stages 1.2 to 5 (2026-09-30) were built in Python first
 (`../design/10-stages-1.2-to-5-python.md`), then in Julia and R

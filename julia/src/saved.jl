@@ -266,12 +266,60 @@ end
 The manifest of an AI function defined here: the part every language reads
 (contract/saved.md). See [`save`](@ref).
 """
-function to_manifest(f::AIFunction)
+to_manifest(f::AIFunction) = manifest_of(f)
+to_manifest(p::AIProgram) = manifest_of(p)
+
+function manifest_of(program)
+    nodes = JObj()
+    add_node!(nodes, program)
+    LMCC.jobj("functai_saved" => SAVED_FORMAT, "language" => "julia", "entry" => node_key(program),
+              "created" => Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS") * "+00:00",
+              "functai" => string(FUNCTAI_VERSION), "nodes" => nodes)
+end
+
+node_key(f::AIFunction) = "$(f.module_name):$(f.definition.name)"
+node_key(p::AIProgram) = "$(p.module_name):$(p.name)"
+
+"A program's node, and those of the AI functions and programs it reaches (saved.md): each with the setup it had here."
+function add_node!(nodes, f::AIFunction)
+    key = node_key(f)
+    haskey(nodes, key) && return
+    nodes[key] = saved_node(f, ai_entry(f))
+    nodes[key]["setup"] = setup_document(f)          # what it ran on where it was saved: a loader never refuses for it
+end
+function add_node!(nodes, p::AIProgram)
+    key = node_key(p)
+    haskey(nodes, key) && return
+    p.remote === nothing || refuse_load("saved-code", "$(p.name) is served elsewhere ($(p.remote.url)): save it where it runs")
+    node = LMCC.jobj("kind" => "module", "module" => p.module_name, "name" => p.name, "interface" => LMCC.deepcopy_json(p.interface),
+                     "version" => version(p))
+    p.needs === nothing || (node["needs"] = LMCC.deepcopy_json(p.needs))
+    node["setup"] = setup_document(p)
+    nodes[key] = node
+    foreach(x -> add_node!(nodes, x), reaches(p))   # its code runs only here; another language describes it and loads its AI functions
+end
+
+"""
+A tool as a saved folder describes it (saved.md, `tools`): what the model is
+told, the hash of its code (the folder carries no Julia code: another
+language, and this one, describe the agent and refuse to run it), and what
+it says of itself.
+"""
+function saved_tool(t::AITool)
+    entry = LMCC.jobj("tool" => LMCC.jobj("name" => t.name, "description" => something(t.description, ""),
+                                          "parameters" => LMCC.deepcopy_json(t.parameters)))
+    merge!(entry, tool_entry(t))
+    t.effects === nothing || (entry["effects"] = t.effects)
+    t.needs === nothing || (entry["needs"] = LMCC.deepcopy_json(t.needs))
+    t.notes === nothing || (entry["notes"] = LMCC.deepcopy_json(t.notes))
+    entry
+end
+
+"An AI function's `ai` entry (saved.md)."
+function ai_entry(f::AIFunction)
     f.body === nothing || refuse_load("saved-code",
         "$(f.definition.name) runs Julia code of its own after the model answers; a saved folder carries no Julia code yet")
-    isempty(f.tools) || refuse_load("saved-tools", "$(f.definition.name) has tools: a tool is code, and a saved folder carries none from Julia yet")
     s = f.own
-    key = "$(f.module_name):$(f.definition.name)"
     settings = LMCC.jobj("module" => get(s, :reasoning, false) ? "cot" : "predict",
                          "include_fn_name_in_instructions" => get(s, :include_name, true))
     get(s, :lm, nothing) isa AbstractString && (settings["lm"] = s[:lm])
@@ -293,15 +341,12 @@ function to_manifest(f::AIFunction)
     end
     ai = LMCC.jobj("settings" => settings, "config" => config === nothing ? JObj() : LM15.to_dict(config),
                    "template" => haskey(s, :template) ? Any[template_messages(s[:template])...] : nothing,
-                   "tools" => Any[], "teacher" => nothing,
+                   "tools" => Any[saved_tool(t) for t in f.tools], "teacher" => nothing,
                    "state" => LMCC.jobj("instructions" => f.instructions, "demos" => Any[LMCC.deepcopy_json(d) for d in f.demos]),
                    "requires" => Any[], "signature" => LMCC.signature_to_dict(sig), "probes" => probes,
                    "fingerprints" => LMCC.jobj("signature" => LMCC.signature_fingerprint(sig), "requests" => Any[requests...]),
                    "body" => nothing, "version" => version(f))
-    LMCC.jobj("functai_saved" => SAVED_FORMAT, "language" => "julia", "entry" => key,
-              "created" => Dates.format(Dates.now(Dates.UTC), dateformat"yyyy-mm-ddTHH:MM:SS") * "+00:00",
-              "functai" => string(FUNCTAI_VERSION),
-              "nodes" => LMCC.jobj(key => saved_node(f, ai)))
+    ai
 end
 
 "An AI node (saved.md): its interface, the code of each default that counts by it, and its `ai` entry."
@@ -315,15 +360,18 @@ function saved_node(f::AIFunction, ai)
 end
 
 """
-    FunctAI.save(path, f) -> the manifest's path
+    FunctAI.save(path, program) -> the manifest's path
 
-Write an AI function to a folder (its `functai.json`), for any language's
-loader: the signature, the instruction, the worked examples, the layout and
-the settings, with the fingerprints a loader checks. A function with code of
-its own or tools is refused: they are Julia code, which the folder cannot
-carry yet.
+Write an AI function (or a program, with each AI function and program it
+reaches) to a folder (its `functai.json`), for any language's loader: the
+signature, the instruction, the worked examples, the layout and the
+settings, with the fingerprints a loader checks, and each one's setup where
+it was saved ([`setup_diff`](@ref) compares two folders). An agent's tools
+and a program's code are described, with their code's hash: the folder
+carries no Julia code, so any language describes them and refuses to run
+them. A function with code of its own after the model answers is refused.
 """
-function save(path::AbstractString, f::AIFunction)
+function save(path::AbstractString, f::Union{AIFunction,AIProgram})
     manifest = to_manifest(f)
     mkpath(path)
     file = joinpath(path, "functai.json")

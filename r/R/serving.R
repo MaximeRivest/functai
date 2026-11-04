@@ -256,7 +256,7 @@ serve_call <- function(s, data, parent) {
 serve_stream <- function(s, data, parent) {
   given <- served_inputs(s, data)
   got <- watched_call(s, given, parent)
-  v <- new_view("outside", program_core_of(s$program)$answer_from)
+  v <- new_view("outside", program_core_of(s$program)$answer_from, outside_notes(s$program))
   shown <- Filter(Negate(is.null), lapply(got$stream$events, function(e) view_event(v, e)))
   list(status = 200L, headers = list("Content-Type" = "text/event-stream", "Cache-Control" = "no-cache"), body = sse_text(shown))
 }

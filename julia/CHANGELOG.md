@@ -2,6 +2,56 @@
 
 ## Unreleased
 
+Caught up with Python and TypeScript (design/17, 18, 19): every case of
+`contract/cases/agents`, `setup` and `partial`, `programs/27` to `30`,
+`views/outside-04` and `events/replay-15` passes.
+
+- **Tools answer with pictures** (contract/tools.md, *What a tool returns*):
+  a tool returns text, a value, an lm15 part (`LM15.image(; path)`) or a
+  list holding one; a part read from a file is given its bytes. The
+  `tool_result` event adds `parts`; `tool_result` plugins see and change
+  them; a conversation's tool records keep them.
+- **The `step` hook**: before each request after the first in a tool loop,
+  change the tools offered, add a `reminder`, show earlier results
+  otherwise (`replace`), or `stop`; recorded as data, so the call stays
+  replayable. `before_call` may `stop` too (`PluginError` `plugin-stopped`).
+  Its handlers and `before_call`'s are given `spent` (`Spent`: what the
+  tree spent).
+- **`limits(; tokens, cost, seconds, prices, then)`** and
+  **`keep_pictures(last; at_once)`**, built-in plugins on the step hook.
+  Plugins have a `config` (a setup counts it).
+- **`note(name, data)`** from plain code, a `note` event; `later` events.
+  **Declared notes**: `@program notes = [...]`, `tool(f; notes)`,
+  `Note(type; latest, outside)`; each note is checked where it is made
+  (`InterfaceError` `interface-note`), declared notes are in the interface
+  (not its signature), and the outside view shows those declared
+  `outside`. A reader's state keeps each call's notes.
+- **Results that come later**: a tool returns `later(key)`; in a
+  conversation's turn the turn waits (`Waiting`'s `later`, `turn.later`)
+  and `deliver!(chat, key, result)` from any process resumes it; a
+  delivery made first is used at once, a second one changes nothing.
+  `later-unavailable` outside a turn. Answering an approval no longer
+  resumes a turn that still waits for a delivery: the delivery does.
+- **A store of one's own for the call log**: `log_calls` takes any object
+  with `push!(store, record)` and `FunctAI.records(store)`; `MemoryCalls()`.
+- **The answer so far**, read by its shape: `answer_so_far(stream)` and
+  `answer_so_far(text, shape)` (a choice only once whole).
+- **Setups** (contract/calls.md, *Setups*): `setup(program)`,
+  `setup_document`, `setup_diff`; `program.setup` and `placement` on every
+  record; `needs` on tools and programs, the `wall` setting and
+  `ReachError` (`needs-unmet`) before a call's first request; `spend(usd)`
+  and a record's `spent`. A tool's code counts in the setup, read as each
+  of its methods is written in its file; `tool(f; code_id)` says what
+  identifies it beyond that.
+- **Saving**: a program (`@program`) is saved with the AI functions it
+  reaches, an agent with its tools as data (loading it refuses
+  `saved-tools`, as in every language); every node keeps its setup. A
+  program's version counts the notes it declares (they are its interface's).
+- **A record's error carries the code of every FunctAI error** (a plugin's
+  stop, a refused reach), not only those of the interface and the journal.
+- **The contract's `minProperties` and `[\s\S]`** are read: the schemas the
+  setup added stopped Julia from loading once they were copied in.
+
 - **lm15 for Julia 2.0, now called `LanguageModel15`** (same UUID; Julia's
   General registry refused the name `LM15`). FunctAI loads it as
   `import LanguageModel15 as LM15`; your own code says `using

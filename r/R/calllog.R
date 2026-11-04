@@ -51,8 +51,44 @@ default_log_folder <- function() {
   file.path(base, "functai", "calls")
 }
 
+#' A call log kept in memory
+#'
+#' A store of one's own for the call log (contract/calls.md, "A store of
+#' one's own"), kept in this session's memory: for tests, and to see what a
+#' store is given. A store is any object with two functions: `$append(record)`
+#' keeps one record (a call record or a rating, the list a log folder's line
+#' holds) and `$read()` gives back every record kept, in the order appended.
+#' Put one in front of a database, a bucket or a queue when a machine keeps
+#' no files, and give it as `log_calls`: [calls()], [rated()] and [rate()]
+#' take it where they take a folder; [prune_calls()] refuses one (the store
+#' prunes as it chooses).
+#' @return A store: `$append()`, `$read()`, `$records`.
+#' @examples
+#' log <- memory_calls()
+#' ai_config(log_calls = log)
+#' log$read()
+#' ai_config(log_calls = NULL)
+#' @export
+memory_calls <- function() {
+  s <- new.env(parent = emptyenv())
+  s$records <- list()
+  s$append <- function(record) { s$records[[length(s$records) + 1L]] <- record; invisible() }
+  s$read <- function() s$records
+  structure(s, class = "functai_memory_calls")
+}
+
+#' @export
+print.functai_memory_calls <- function(x, ...) { cat(sprintf("<memory calls> %d records\n", length(x$records))); invisible(x) }
+
+# Whether a log_calls value is a store of one's own: an object with $append(record) and $read().
+is_call_store <- function(x) (is.environment(x) || (is.list(x) && !is.null(names(x)))) && is.function(x$append) && is.function(x$read)
+
+# Keep one record in a store, as a folder's line holds it (after the 8 MiB rule).
+keep_record <- function(store, rec) store$append(lmcc::parse_json(record_line(rec)))
+
 folder_of <- function(setting) {
   if (isFALSE(setting)) return(NULL)
+  if (is_call_store(setting)) return(setting)
   raw <- trimws(Sys.getenv("FUNCTAI_LOG_CALLS"))
   on <- !tolower(raw) %in% OFF
   env_folder <- if (on && !tolower(raw) %in% ON) raw else NULL
@@ -115,6 +151,8 @@ start_call <- function(program, settings, inputs, fields, keep, own = list(), la
   call$caller <- caller_of(settings)
   call$inputs <- if (length(inputs)) inputs else lmcc::jobj()
   call$later <- later
+  call$own_spent <- NULL; call$tree_spent <- 0; call$spent <- list()
+  call$placement <- placement_of(settings, ai = !identical(core$kind, "module") && !is.null(core))
   call <- open_call(call, own)
   call$turn_run <- if (own_turn) starting else if (!is.null(call$up)) call$up$turn_run else NULL
   if (own_turn) attach_turn(call, core)
@@ -127,6 +165,10 @@ start_call <- function(program, settings, inputs, fields, keep, own = list(), la
 # render with FunctAI's own words, and carries its hash.
 exchange <- function(call, model, request, response, started, seconds, error = NULL, request_hash = NULL,
                      cached = FALSE, streamed = FALSE, first_delta = NULL) {
+  if (!is.null(response) && !isTRUE(cached)) {          # what the tree spent (plugins: limits): a reply a provider answered now
+    top <- top_call(call)
+    top$spent[[length(top$spent) + 1L]] <- list(model = as.character(model), usage = usage_of(response))
+  }
   call$exchanges[[length(call$exchanges) + 1L]] <- list(model = model, provider = call$provider, started = started,
     seconds = seconds, request = request, request_hash = request_hash, response = response, error = error,
     cached = cached, streamed = streamed, first_delta = first_delta)
@@ -212,6 +254,8 @@ call_record <- function(call, error = NULL) {
   rec$saw <- call$saw %||% list()
   if (!is.null(call$returned)) rec["returned"] <- list(call$returned)
   if (isTRUE(call$escalated)) rec$escalated <- TRUE
+  if (!is.null(call$own_spent)) rec$spent <- list(usd = round(call$own_spent, 12))
+  if (!is.null(call$placement)) rec$placement <- call$placement
   rec$caller <- call$caller
   rec$process <- process_json()
   if (!is.null(call$steps)) rec$steps <- call$steps
@@ -257,17 +301,52 @@ append_record <- function(folder, rec) {
 
 finish_call <- function(call, error = NULL) {
   if (is.null(call$folder)) return(invisible())
-  tryCatch(append_record(call$folder, call_record(call, error)), error = function(e)
-    warn_once(paste0(call$folder, conditionMessage(e)), sprintf("could not log a call to %s (%s); calls go on, unlogged", call$folder, conditionMessage(e))))
+  store <- is_call_store(call$folder)
+  where <- if (store) "a store of one's own" else call$folder
+  tryCatch({
+    rec <- call_record(call, error)
+    if (store) keep_record(call$folder, rec) else append_record(call$folder, rec)
+  }, error = function(e)
+    warn_once(paste0(where, conditionMessage(e)), sprintf("could not log a call to %s (%s); calls go on, unlogged", where, conditionMessage(e))))
+  invisible()
+}
+
+#' Say what code spent
+#'
+#' Say what code inside a call spent beyond the models' tokens, in dollars (a
+#' browsing service's charge, a paid API): `ai_spend(0.05)`, from a program's
+#' code or a tool (contract/calls.md, "Spending"). The call's record keeps the
+#' sum (`spent`), and the [limits()] plugin counts it in the tree's cost.
+#' Outside any call it does nothing.
+#' @param usd A number of dollars, at least 0.
+#' @return Nothing, invisibly.
+#' @examples
+#' ai_spend(0.05)     # outside any call: nothing happens
+#' @export
+ai_spend <- function(usd) {
+  if (!is_num(usd) || !is.finite(usd) || usd < 0) cli::cli_abort("{.fn ai_spend}: a number of dollars, at least 0")
+  call <- the$current
+  if (is.null(call)) return(invisible())
+  call$own_spent <- (call$own_spent %||% 0) + as.numeric(usd)
+  top <- top_call(call)
+  top$tree_spent <- (top$tree_spent %||% 0) + as.numeric(usd)
   invisible()
 }
 
 # ---------------------------------------------------------------- reading
 
 read_log <- function(folder = NULL, since = NULL) {
-  root <- normalizePath(path.expand(folder %||% folder_of(TRUE)), mustWork = FALSE)
   cutoff <- if (is.null(since)) "" else iso(time_since(since))
   calls <- list(); ratings <- list()
+  if (is_call_store(folder)) {                          # a store of one's own: its records, read as a folder's lines are
+    for (rec in folder$read()) {
+      if (!is.list(rec) || is.null(names(rec))) next
+      if (is_format(rec$functai_call, CALL_FORMATS) && !before(rec$started %||% "", cutoff)) calls[[length(calls) + 1L]] <- rec
+      else if (is_format(rec$functai_rating, RATING_FORMAT) && !before(rec$at %||% "", cutoff)) ratings[[length(ratings) + 1L]] <- rec
+    }
+    return(list(calls = highest_writer(calls), ratings = ratings))
+  }
+  root <- normalizePath(path.expand(folder %||% folder_of(TRUE)), mustWork = FALSE)
   if (!dir.exists(root)) return(list(calls = calls, ratings = ratings))
   # the files at the top (what prune_calls() kept), then each day's
   files <- sort(list.files(root, pattern = "\\.jsonl$", full.names = TRUE), method = "radix")
@@ -329,6 +408,8 @@ time_since <- function(x) {
 #' @return Counts, invisibly: `days` deleted, `calls` deleted, `kept`.
 #' @export
 prune_calls <- function(older_than = "90d", folder = NULL, keep_rated = TRUE) {
+  if (is_call_store(log_folder(folder)))
+    cli::cli_abort("{.fn prune_calls} deletes old files of a log folder; a store of one's own keeps its records as it chooses: prune them there")
   root <- normalizePath(path.expand(log_folder(folder) %||% cli::cli_abort("no log folder: pass {.arg folder}")), mustWork = FALSE)
   first <- substr(iso(time_since(older_than)), 1L, 10L)
   none <- list(days = 0L, calls = 0L, kept = 0L)
@@ -376,7 +457,7 @@ prune_calls <- function(older_than = "90d", folder = NULL, keep_rated = TRUE) {
 # skipped whole: a later format may mean something else by the same keys).
 is_format <- function(v, known) is_num(v) && num(v) %in% known
 
-later <- function(a, b, key) {
+later_than <- function(a, b, key) {
   ta <- a[[key]] %||% ""; tb <- b[[key]] %||% ""
   if (!identical(ta, tb)) return(before(tb, ta))
   before(b$id %||% "", a$id %||% "")
@@ -391,7 +472,7 @@ current_ratings <- function(ratings, by = NULL) {
   for (r in ratings) {
     if (!is.null(by) && !identical(r$by, by)) next
     key <- if (is_str(r$by) && nzchar(r$by)) paste0(r$call, "\u0001by\u0001", r$by) else paste0(r$call, "\u0001rating\u0001", r$id)
-    if (is.null(latest[[key]]) || later(r, latest[[key]], "at")) latest[[key]] <- r
+    if (is.null(latest[[key]]) || later_than(r, latest[[key]], "at")) latest[[key]] <- r
   }
   out <- list()
   for (r in latest) if (identical(r$verdict, "right") || identical(r$verdict, "wrong")) out[[r$call]] <- c(out[[r$call]], list(r))

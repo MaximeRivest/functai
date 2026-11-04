@@ -6,9 +6,9 @@
 # - `:outside`: a caller who sees only the program's boundary (a served
 #   program's customer): its `started` (its program object without its file
 #   and line), its answer's text as it is written, the approvals addressed to
-#   it, and its `done`, or its `failed` with the error's type and code and no
-#   message. Never a helper's answer, a tool call or result, a thinking, or
-#   why a request was retried.
+#   it, the notes it declares `outside`, and its `done`, or its `failed` with
+#   the error's type and code and no message. Never a helper's answer, a tool
+#   call or result, a thinking, or why a request was retried.
 #
 # A view keeps each event's `writer` and `seq` and sets `after` to the event
 # before it in the view. It never alters a value it shows and never invents
@@ -30,13 +30,20 @@ mutable struct View
     requests::Int
     last::Union{Nothing,Position}
     caller_asked::Set{Tuple{String,Any}}
+    notes::Set{String}              # the notes the outermost program declares outside: shown, re-addressed to it
 end
-function View(name::Symbol; answer_from=nothing)
+function View(name::Symbol; answer_from=nothing, notes=())
     name in VIEW_NAMES || throw(ArgumentError("a view is one of $(join(VIEW_NAMES, ", ")); not $(repr(name))"))
     from = answer_from === nothing ? nothing : answer_from isa AbstractString ? String(answer_from) :
            answer_from isa AIFunction ? answer_from.definition.name : string(nameof(answer_from))
-    View(name, from, nothing, nothing, "ai", "result", Dict{String,Bool}(), 0, nothing, Set{Tuple{String,Any}}())
+    View(name, from, nothing, nothing, "ai", "result", Dict{String,Bool}(), 0, nothing, Set{Tuple{String,Any}}(), Set{String}(String.(notes)))
 end
+
+"The names of the notes a program declares `outside` (its interface's): a view of its calls shows those."
+outside_notes(program) = String[n["name"] for n in something(declared_notes(program), Any[]) if get(n, "outside", false) === true]
+
+"The view `name` of a log of `program`'s calls, with what the program declares for it (its `answer_from`, its notes shown outside)."
+view_for(name::Symbol, program) = View(name; answer_from=answer_from_of(program), notes=outside_notes(program))
 
 function link!(v::View, e::Event)
     out = relinked(e, v.last)
@@ -55,6 +62,10 @@ function apply_view!(v::View, e::Event)
         program = something(datum(e, "program"), JObj())
         v.root_kind = String(get(program, "kind", "ai"))
         v.answer = String(something(get(program, "answer", nothing), "result"))
+    end
+    if e.kind === :note                      # a note declared outside, made by any call of the tree: the outermost's
+        datum(e, "name") in v.notes || return nothing
+        return link!(v, with_kind(e, :note, v.root, v.root_function, JObj(getfield(e, :data))))
     end
     e.call == v.root ? view_root!(v, e) : view_inside!(v, e)
 end
@@ -125,13 +136,14 @@ function as_request!(v::View, e::Event)
 end
 
 """
-    FunctAI.outside(events; answer_from = nothing) -> Vector{Event}
+    FunctAI.outside(events; answer_from = nothing, notes = ()) -> Vector{Event}
 
 A whole form of a log as the outside view shows it (contract/streaming.md,
-"Views"): what a served program's caller may see.
+"Views"): what a served program's caller may see. `notes`: the names of
+the notes the outermost program declares `outside`.
 """
-function outside(events; answer_from=nothing)
-    v = View(:outside; answer_from)
+function outside(events; answer_from=nothing, notes=())
+    v = View(:outside; answer_from, notes)
     Event[x for x in (apply_view!(v, Event(e)) for e in events) if x !== nothing]
 end
 

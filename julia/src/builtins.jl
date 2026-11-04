@@ -124,5 +124,182 @@ function delegate(program::Union{AIFunction,AIProgram}; name=nothing, descriptio
         value
     end
     eff = effects === nothing ? (program isa AIFunction ? effects_of(program) : nothing) : effects_value(effects)
-    program_tool(interface(program), tool_name, something(description, Some(nothing)), run, eff)
+    program_tool(interface(program), tool_name, something(description, Some(nothing)), run, eff, program)
+end
+
+# ------------------------------------------------------------------ long tool loops (the step hook)
+
+const LIMIT_REACHED = "This task has reached its limit (%s). Do not ask for any more tools: give your answer now, from what you have found so far."
+const LAST_STEP = "This is the last step this task may take. Do not ask for any more tools: give your answer now, from what you have found so far."
+const PICTURE_GONE = "(A picture was here. It is no longer shown, to save space.)"
+const COST_UNKNOWN = "a request's cost is not known from its token counts (a price without cache_read_per_million and " *
+                     "cache_write_per_million is exact only for requests that report their cache counts; give both, equal to " *
+                     "input_per_million when the provider does not charge them apart)"
+
+"A limit as the model is told it: a whole number without a fraction."
+limit_number(x) = isinteger(x) ? string(Int(x)) : @sprintf("%g", x)
+
+"""
+Which limits a tree's spending reached (contract/plugins.md, *limits*): each
+`(limit, why)`, the limit as the model is told it (`"cost 5"`) and why it
+counts as reached when its count is not known (else `nothing`). A count that
+is not known cannot be checked, and counts as reached.
+"""
+function limits_reached(spent::Spent; tokens=nothing, cost=nothing, seconds=nothing, prices=nothing)
+    out = Tuple{String,Union{Nothing,String}}[]
+    if tokens !== nothing
+        got = spent.tokens
+        got === nothing ? push!(out, ("$(limit_number(tokens)) tokens", "a request did not say how many it used")) :
+                          got >= tokens && push!(out, ("$(limit_number(tokens)) tokens", nothing))
+    end
+    if cost !== nothing
+        got = FunctAI.cost(spent, prices)
+        if got === nothing
+            unknown = sort!(unique(String[m for (m, _) in spent.exchanges if pricing(prices, m) === nothing]))
+            push!(out, ("cost $(limit_number(cost))", isempty(unknown) ? COST_UNKNOWN : "no price is known for $(join(unknown, ", "))"))
+        elseif got >= cost
+            push!(out, ("cost $(limit_number(cost))", nothing))
+        end
+    end
+    seconds !== nothing && spent.seconds >= seconds && push!(out, ("$(limit_number(seconds)) seconds", nothing))
+    out
+end
+
+"The reason a `limits` stop gives: each limit reached, and why when its count is not known."
+stopped_by(hit) = "limit reached: " * join((why === nothing ? label : "$label ($why)" for (label, why) in hit), "; ")
+
+"A price in `limits`' config: its fields by lm15's names, without those at lm15's defaults (an unset rate, USD, no tiers)."
+function price_config(p::LM15.InferencePricing)
+    d = LM15.to_dict(p)
+    JObj(String(k) => v for (k, v) in d if v !== nothing && !(k == "currency" && v == "USD") && !(k == "tiers" && isempty(v)))
+end
+
+"""
+    limits(; tokens, cost, seconds, prices, then = :answer, name = "limits") -> Plugin
+
+Stop a call tree (an agent, a pipeline) when it has used enough: tokens,
+money or time. Nothing is limited by default; this plugin is opt-in.
+
+Counted over the whole tree a call starts (every AI function inside a
+program, every tool's own calls), from the requests a provider answered in
+this process (replies from the reply cache, and those a resumed turn
+reuses, cost nothing now and are not counted), plus what code said it
+spent ([`spend`](@ref)). Checked before each AI function's call and before
+each step of a tool loop, so one request may go past a limit; the next does
+not start.
+
+- `tokens`: every token read and written (`total_tokens`), summed.
+- `cost`: the list price of the requests, from `prices` (needed with it).
+  Exact or nothing: a request to a model with no price, or whose counts do
+  not settle its price, counts as reaching the limit.
+- `seconds`: since the tree's outermost call started.
+- `prices`: a model's name (as you ask for it) => an lm15
+  `InferencePricing`, or its fields (`(input_per_million = 3,
+  output_per_million = 15, cache_read_per_million = 0.3,
+  cache_write_per_million = 3.75)`). FunctAI ships no price list: prices
+  change, and a wrong price would mislead.
+- `then`: `:answer` (the default): a tool loop that reaches a limit is
+  offered no more tools and told to answer with what it has; so is a loop
+  at its last step (`max_steps`), instead of failing with `StepLimit`.
+  `:stop`: the call stops. Either way a call that would start past a limit
+  stops ([`PluginError`](@ref), code `plugin-stopped`).
+
+```julia
+prices = Dict("claude-opus-5-5" => (input_per_million = 5, output_per_million = 25))
+with_settings(plugins = [limits(cost = 3.0, seconds = 600, prices)]) do
+    concept_test(url)
+end
+```
+"""
+function limits(; tokens=nothing, cost=nothing, seconds=nothing, prices=nothing, then=:answer, name::AbstractString="limits")
+    String(then) in ("answer", "stop") || throw(ArgumentError("then is :answer or :stop, not $(repr(then))"))
+    cost !== nothing && (prices === nothing || isempty(prices)) &&
+        throw(ArgumentError("a cost limit needs prices: Dict(model => (input_per_million = …, output_per_million = …)); FunctAI ships none"))
+    for (label, v) in (("tokens", tokens), ("cost", cost), ("seconds", seconds))
+        v === nothing || (v isa Real && !(v isa Bool) && isfinite(v) && v > 0) || throw(ArgumentError("$label is a number above 0, not $(repr(v))"))
+    end
+    tokens === nothing && cost === nothing && seconds === nothing && throw(ArgumentError("limits needs at least one of tokens, cost, seconds"))
+    priced = prices === nothing ? nothing : Dict{String,LM15.InferencePricing}(String(k) => pricing(Dict(String(k) => v), String(k)) for (k, v) in pairs(prices))
+    config = JObj()
+    tokens === nothing || (config["tokens"] = tokens)
+    cost === nothing || (config["cost"] = cost)
+    seconds === nothing || (config["seconds"] = seconds)
+    priced === nothing || (config["prices"] = JObj(k => price_config(p) for (k, p) in sort!(collect(priced); by=first)))
+    config["then"] = String(then)
+    limit = (tokens=tokens, cost=cost, seconds=seconds, prices=priced)
+    before = function (call)
+        hit = limits_reached(call.spent; limit...)
+        if isempty(hit) && cost !== nothing && call.lm isa AbstractString && pricing(priced, call.lm) === nothing
+            hit = [("cost $(limit_number(cost))", "no price is known for $(call.lm)")]
+        end
+        isempty(hit) ? nothing : Change(stop=stopped_by(hit))
+    end
+    step = function (s)
+        hit = limits_reached(s.spent; limit...)
+        !isempty(hit) && String(then) == "stop" && return Change(stop=stopped_by(hit))
+        if String(then) == "answer" && !isempty(s.tools) && (!isempty(hit) || s.last_step)
+            return Change(tools=String[], reminder=isempty(hit) ? LAST_STEP :
+                                                   replace(LIMIT_REACHED, "%s" => join((label for (label, _) in hit), ", ")))
+        end
+        nothing
+    end
+    Plugin(name; version="1.0.0", description="stop a call tree when it used enough tokens, money or time", config,
+           before_call=before, step)
+end
+
+"""
+Which earlier tool results `keep_pictures` shows otherwise, and as what
+(contract/plugins.md): the pictures before the newest `last` are replaced by
+a short text, once at least `at_once` of them are due. `invocation => result`.
+"""
+function pictures_to_drop(results; last::Integer, at_once::Integer=1)
+    seen = 0
+    drop = Dict{Int,Vector{Int}}()
+    for r in Iterators.reverse(results)
+        r.output isa AbstractString && continue
+        for i in length(r.output):-1:1
+            get(r.output[i], "type", nothing) == "image" || continue
+            seen += 1
+            seen > last && push!(get!(() -> Int[], drop, r.invocation), i)
+        end
+    end
+    sum(length, values(drop); init=0) < at_once && return Dict{Int,Any}()
+    out = Dict{Int,Any}()
+    for r in results
+        haskey(drop, r.invocation) || continue
+        gone = Set(drop[r.invocation])
+        out[r.invocation] = Any[i in gone ? LMCC.textpart(PICTURE_GONE) : LMCC.deepcopy_json(p) for (i, p) in enumerate(r.output)]
+    end
+    out
+end
+
+"""
+    keep_pictures(last = 3; at_once = 1, name = "keep-pictures") -> Plugin
+
+Show a long tool loop only its newest pictures: before each step, the
+pictures tool results gave earlier than the newest `last` are replaced by a
+short text (the results' own text stays). A browsing agent that takes a
+screenshot at every click otherwise sends every screenshot again with every
+request.
+
+`at_once`: drop old pictures only once this many are due, all together. A
+provider's prompt cache keeps the start of a request only while it stays
+the same, and every drop changes it: with caching on, `at_once = 5` drops
+five pictures every fifth step instead of one at each. The turn and the
+call log keep every picture as the tool gave it; each request in the call
+log holds what it sent.
+
+```julia
+agent = configure(browse; plugins = [keep_pictures(3)], max_steps = 200)
+```
+"""
+function keep_pictures(last::Integer=3; at_once::Integer=1, name::AbstractString="keep-pictures")
+    (last isa Bool || last < 0) && throw(ArgumentError("last is how many of the newest pictures stay shown (0 or more)"))
+    (at_once isa Bool || at_once < 1) && throw(ArgumentError("at_once is 1 or more"))
+    step = function (s)
+        drop = pictures_to_drop(s.results; last, at_once)
+        isempty(drop) ? nothing : Change(replace=drop)
+    end
+    Plugin(name; version="1.0.0", description="show a tool loop only its newest pictures",
+           config=LMCC.jobj("last" => Int(last), "at_once" => Int(at_once)), step)
 end

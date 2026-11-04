@@ -79,6 +79,7 @@ makedocs(;
             "guides/plugins.md",
             "guides/serving.md",
             "guides/long-runs.md",
+            "guides/long-agents.md",
             "guides/baking.md",
         ],
         "Where Julia differs" => "differences.md",

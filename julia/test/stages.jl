@@ -78,7 +78,7 @@ end
 end
 
 @testset "views case $name" for (name, c) in cases("views")
-    got = FunctAI.outside(c["events"]; answer_from=c["answer_from"])
+    got = FunctAI.outside(c["events"]; answer_from=c["answer_from"], notes=get(c, "notes", Any[]))
     @test same(Any[FunctAI.event_json(e) for e in got], c["expect"]["events"])
 end
 

@@ -5,7 +5,14 @@
 \alias{on_hook}
 \title{A plugin: hooks that change what programs do}
 \usage{
-ai_plugin(name, version = "0.0.0", ..., description = "", api = 1L)
+ai_plugin(
+  name,
+  version = "0.0.0",
+  ...,
+  description = "",
+  api = 1L,
+  config = NULL
+)
 
 on_hook(plugin, hook, handler)
 }
@@ -20,6 +27,10 @@ letter: its changes and entries are named by it.}
 \item{description}{What it does.}
 
 \item{api}{The plugin API it was written for (1).}
+
+\item{config}{Its settings, as JSON data: a program's setup counts them
+(\code{\link[=ai_setup]{ai_setup()}}), so two plugins of one name and version with other
+settings make two setups.}
 
 \item{plugin}{A plugin.}
 
@@ -41,10 +52,11 @@ call's record, so a rated call is asked again as it was.
    hook \tab when \tab it may change \cr
    \code{turn_start} \tab a conversation's turn is sent, before it is recorded \tab \code{inputs} \cr
    \code{context} \tab the turn's earlier turns are chosen \tab \code{keep}, \code{without}, \code{sections} \cr
-   \code{before_call} \tab an AI function is about to be asked (a program's steps too) \tab \code{instruction}, \code{sections}, \code{lm}, \code{settings}, \code{tools} \cr
+   \code{before_call} \tab an AI function is about to be asked (a program's steps too) \tab \code{instruction}, \code{sections}, \code{lm}, \code{settings}, \code{tools}, \code{stop} \cr
+   \code{step} \tab a call with tools is about to ask the model again, after its tools ran \tab \code{tools}, \code{reminder}, \code{replace}, \code{stop} \cr
    \code{request} \tab a provider request is about to be sent \tab returns another lm15 request \cr
    \code{tool_call} \tab a tool is about to run \tab \code{inputs}, \code{block}; or \code{\link[=ai_ask]{ai_ask()}} a person \cr
-   \code{tool_result} \tab a tool ran \tab \code{output} \cr
+   \code{tool_result} \tab a tool ran \tab \code{output} (text, or a list of lm15 parts) \cr
    \code{turn_end} \tab a turn ended (hears only; may \code{\link[=keep_entry]{keep_entry()}} entries) \tab  \cr
 }
 
@@ -56,6 +68,17 @@ then each layer out to the session's, so the host's handlers see what the
 program's did and have the last word. A host's \code{program_plugins = FALSE}
 drops the program's own. A handler runs in the call's own R session, with
 all its power: a plugin is code you trust.
+
+\strong{The step hook.} Before each request after the first in a tool loop,
+\code{step} handlers are given \code{step} (the number of the request about to be
+made: 2 for the first after tools), \code{max_steps}, \code{last_step}, \code{results}
+(every tool result so far, as the model is shown it now: \code{invocation},
+\code{name}, \code{input}, \code{output}), \code{tools} (offered now), \code{all_tools}, \code{lm} and
+\code{spent} (what the call tree spent: \code{\link[=ai_spent]{ai_spent()}}). A change of \code{tools}
+(\code{character(0)}: the model must answer), \code{reminder}, \code{replace} or \code{stop}.
+What the model is shown changes; what happened does not, and each change
+is recorded, so the call stays replayable. \code{\link[=limits]{limits()}} and
+\code{\link[=keep_pictures]{keep_pictures()}} are built on it.
 }
 \examples{
 careful <- ai_plugin("careful", version = "1.0.0",

@@ -13,7 +13,9 @@ ai_program(
   .data = NULL,
   .name = NULL,
   .defined_in = NULL,
-  .answer_from = NULL
+  .answer_from = NULL,
+  .notes = NULL,
+  .needs = NULL
 )
 
 program_from_interface(
@@ -21,7 +23,8 @@ program_from_interface(
   .body,
   name = "program",
   .defined_in = NULL,
-  ai = FALSE
+  ai = FALSE,
+  needs = NULL
 )
 }
 \arguments{
@@ -40,12 +43,22 @@ settings, as dotted names (\code{.log_content}, \code{.observers}, \code{.plugin
 as the program's answer as it is written (a served program's callers
 see it stream).}
 
+\item{.notes}{The notes its code makes (\code{\link[=ai_note]{ai_note()}}), by name: a type,
+or \code{\link[=note_type]{note_type()}}. Declared, each note is checked where it is made (a
+name it does not declare, or data that does not fit, refuses
+\code{interface-note}), and those declared \code{outside} are shown to a caller
+who sees only the program's boundary.}
+
+\item{.needs}{What its own code reaches, as in \code{\link[=ai_tool]{ai_tool()}}: \code{list(domains = ..., secrets = ...)}.}
+
 \item{interface}{A program's interface, as data (\code{\link[=ai_interface]{ai_interface()}}'s form).}
 
 \item{name}{The program's name.}
 
 \item{ai}{Whether the interface is an AI function's (its shapes may carry
 lmcc's other keywords).}
+
+\item{needs}{What its own code reaches, as in \code{\link[=ai_tool]{ai_tool()}}.}
 }
 \value{
 A program (class \code{functai_program}), a function.

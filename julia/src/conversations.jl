@@ -136,10 +136,22 @@ function unfinished(st::TurnState)
         k = (get(t, "site", nothing), get(t, "invocation", nothing))
         state = get(t, "state", nothing)
         state == "started" && (started[k] = t)
-        state in ("done", "given", "rerun") && delete!(started, k)
+        state in ("done", "given", "rerun", "later") && delete!(started, k)
     end
     collect(values(started))
 end
+
+"Tools whose result comes later (their last record says `later`), each its record."
+function later_tools(st::TurnState)
+    last_of = OrderedDict{Any,JObj}()
+    for t in st.tools
+        last_of[(get(t, "site", nothing), get(t, "invocation", nothing))] = t
+    end
+    JObj[t for t in values(last_of) if get(t, "state", nothing) == "later"]
+end
+
+"The results a turn waits for that no one delivered yet (contract/conversations.md, *A turn's state*)."
+undelivered(st::TurnState, delivered::AbstractDict) = JObj[t for t in later_tools(st) if !haskey(delivered, get(t, "key", nothing))]
 
 "A conversation's records, applied in order (read again incrementally)."
 mutable struct ConvLog
@@ -150,8 +162,9 @@ mutable struct ConvLog
     request_ids::Dict{String,String}
     programs::Dict{String,JObj}
     entries::Vector{JObj}
+    delivered::Dict{String,JObj}        # a later result's key => the first delivery of it
 end
-ConvLog() = ConvLog(0, Dict{String,TurnState}(), String[], nothing, Dict{String,String}(), Dict{String,JObj}(), JObj[])
+ConvLog() = ConvLog(0, Dict{String,TurnState}(), String[], nothing, Dict{String,String}(), Dict{String,JObj}(), JObj[], Dict{String,JObj}())
 
 function apply!(log::ConvLog, records)
     for r in records
@@ -163,6 +176,10 @@ function apply!(log::ConvLog, records)
             continue
         elseif kind == "entry"
             push!(log.entries, r)
+            continue
+        elseif kind == "delivered"
+            key = get(r, "key", nothing)
+            key isa AbstractString && !haskey(log.delivered, key) && (log.delivered[String(key)] = r)
             continue
         end
         tid = get(r, "turn", nothing)
@@ -315,6 +332,8 @@ mutable struct TurnRun
     replies::Dict{String,Vector{Any}}   # a resumed turn's recorded replies, by key, in order
     tools::Dict{Any,JObj}               # (site, invocation) => its done (or given) tool record
     unfinished::Dict{Any,JObj}
+    laters::Dict{Any,JObj}              # (site, invocation) => its later record: a result that comes later
+    delivered::Dict{String,JObj}        # a later result's key => its delivery, as read so far
     answers::Dict{Any,Tuple{Bool,Any,Any,Bool}}   # (site, invocation, plugin) => (allowed, reason, by, fresh)
     root::Any
     sink::Any
@@ -322,7 +341,8 @@ end
 function TurnRun(conv, turn::AbstractString; attempt::Int, context::Dict{Symbol,Any}, replay=nothing, later=nothing)
     run = TurnRun(conv, conv.store, conv.program, String(turn), attempt, context, Ref(false), JObj[], JObj[], later, 0,
                   Dict{Symbol,Any}(), ReentrantLock(), is_durable(conv), Dict{String,Vector{Any}}(), Dict{Any,JObj}(),
-                  Dict{Any,JObj}(), Dict{Any,Tuple{Bool,Any,Any,Bool}}(), nothing, nothing)
+                  Dict{Any,JObj}(), Dict{Any,JObj}(), Dict{String,JObj}(get(something(replay, Dict{Symbol,Any}()), :delivered, Dict{String,JObj}())),
+                  Dict{Any,Tuple{Bool,Any,Any,Bool}}(), nothing, nothing)
     r = something(replay, Dict{Symbol,Any}())
     for rec in get(r, :replies, Any[])
         push!(get!(() -> Any[], run.replies, String(rec["key"])), rec["response"])
@@ -333,8 +353,12 @@ function TurnRun(conv, turn::AbstractString; attempt::Int, context::Dict{Symbol,
         if state in ("done", "given")
             run.tools[k] = t
             delete!(run.unfinished, k)
+            delete!(run.laters, k)
         elseif state == "rerun"
             delete!(run.tools, k)
+            delete!(run.unfinished, k)
+        elseif state == "later" && !haskey(run.tools, k)
+            run.laters[k] = t
             delete!(run.unfinished, k)
         elseif state == "started" && !haskey(run.tools, k)
             run.unfinished[k] = t
@@ -462,9 +486,30 @@ function note_reply(call::Call, request, response, s)
     end
 end
 
+"A result that came later, found when a turn resumes (the tool_result hooks have not seen it yet)."
+struct Delivered
+    output::Any
+end
+
+"""
+A tool's result kept by an earlier attempt of this turn: its output (text or
+lm15 parts); a `Delivered` for a result that came later; `nothing` when it
+has none.
+"""
 function recorded_tool(run::TurnRun, call::Call, a::Approval)
     k = (call.site, a.invocation)
-    haskey(run.tools, k) && return String(something(get(run.tools[k], "output", nothing), ""))
+    if haskey(run.tools, k)
+        out = get(run.tools[k], "output", nothing)
+        return out isa AbstractVector ? Any[out...] : String(something(out, ""))
+    end
+    if haskey(run.laters, k)
+        key = String(run.laters[k]["key"])
+        got = get(run.delivered, key, nothing)
+        got === nothing && (got = get(read_log!(run.conv).delivered, key, nothing))
+        got === nothing && throw(ConversationError("turn-state", "$(a.path) waits for its result ($(repr(key))): deliver it first " *
+                                                   "(deliver!(chat, $(repr(key)), result))"; turn=run.turn))
+        return Delivered(LMCC.deepcopy_json(got["output"]))
+    end
     haskey(run.unfinished, k) && throw(ConversationError("turn-unfinished",
         "$(a.path) started before the turn stopped, and whether it ran is not known: resume!(turn; results = Dict($(a.invocation) => " *
         "what it returned)) or resume!(turn; rerun = [$(a.invocation)])"; turn=run.turn))
@@ -479,8 +524,25 @@ end
 function tool_done!(run::TurnRun, call::Call, a::Approval, output)
     rec = record_base(run, "tool")
     merge!(rec, LMCC.jobj("site" => call.site, "invocation" => a.invocation, "id" => a.id, "name" => a.name, "state" => "done",
-                          "output" => String(output)))
+                          "output" => output isa AbstractString ? String(output) : LMCC.deepcopy_json(Any[output...])))
     append_records!(run.store, run.conv.id, [rec])
+end
+"A tool returned `later(key)`: it ran, and its result comes later."
+function tool_later!(run::TurnRun, call::Call, a::Approval, key::AbstractString)
+    rec = record_base(run, "tool")
+    merge!(rec, LMCC.jobj("site" => call.site, "invocation" => a.invocation, "id" => a.id, "name" => a.name,
+                          "input" => logvalue(a.input), "effects" => a.effects, "state" => "later", "key" => String(key)))
+    append_records!(run.store, run.conv.id, [rec])
+end
+"The results already delivered for these keys (read now): key => output."
+function deliveries(run::TurnRun, keys)
+    found = read_log!(run.conv).delivered
+    lock(run.lock) do
+        for k in keys
+            haskey(found, k) && (run.delivered[k] = found[k])
+        end
+        Dict{String,Any}(k => LMCC.deepcopy_json(run.delivered[k]["output"]) for k in keys if haskey(run.delivered, k))
+    end
 end
 recorded_approval(run::TurnRun, call::Call, a::Approval) = get(run.answers, (call.site, a.invocation, a.plugin), nothing)
 function note_approval!(run::TurnRun, call::Call, a::Approval, allowed::Bool, reason, by)
@@ -827,6 +889,8 @@ call's id in the call log), `parent`, `inputs`, `outputs`, `result` (the
 answer, typed), `state` (`"running"`, `"waiting"`, `"interrupted"`, `"done"`,
 `"failed"`, `"stopped"`, `"abandoned"`), `saw` (the earlier turns it was
 shown), `model`, `error`, `waiting` (the [`Approval`](@ref)s it waits for),
+`later` (the results it waits for, from tools that returned [`later`](@ref):
+`(key, invocation, id, name, input, site)` each; [`deliver!`](@ref) one),
 `unfinished` (tools that may have run when it stopped), `usage` (tokens over
 every call inside it), `request_id`, `reads` and `made_by` (a merge). Another
 output is a property too: `turn.reasoning`.
@@ -836,7 +900,7 @@ struct Turn
     st::TurnState
 end
 const TURN_PROPERTIES = (:id, :call, :conversation, :parent, :request_id, :inputs, :outputs, :result, :state, :model, :error,
-                         :usage, :reads, :made_by, :saw, :waiting, :unfinished)
+                         :usage, :reads, :made_by, :saw, :waiting, :later, :unfinished)
 Base.propertynames(t::Turn) = (TURN_PROPERTIES..., Symbol.(keys(ended_outputs(getfield(t, :st))))...)
 function Base.getproperty(t::Turn, name::Symbol)
     c, st = getfield(t, :conv), getfield(t, :st)
@@ -856,6 +920,8 @@ function Base.getproperty(t::Turn, name::Symbol)
     name === :made_by ? LMCC.deepcopy_json(get(st.record, "made_by", nothing)) :
     name === :saw ? turn_saw(t) :
     name === :waiting ? Approval[approval_from(a) for a in unanswered(st)] :
+    name === :later ? Any[(key=x["key"], invocation=x["invocation"], id=get(x, "id", nothing), name=get(x, "name", nothing),
+                           input=get(x, "input", nothing), site=get(x, "site", nothing)) for x in undelivered(st, read_log!(c).delivered)] :
     name === :unfinished ? Any[(invocation=x["invocation"], id=x["id"], name=x["name"], input=get(x, "input", nothing),
                                 started=get(x, "at", nothing), site=get(x, "site", nothing)) for x in unfinished(st)] :
     haskey(ended_outputs(st), String(name)) ? ended_outputs(st)[String(name)] :
@@ -1293,7 +1359,8 @@ Base.close(::StoredTurn) = nothing
 function turn_outcome(c::Conversation, t::Turn)
     state = t.state
     state == "done" && return t.result
-    state == "waiting" && throw(Waiting("turn $(t.id) waits for a person's answer"; turn=t, approvals=t.waiting))
+    state == "waiting" && throw(Waiting("turn $(t.id) waits " * (isempty(t.waiting) ? "for results that come later" : "for a person's answer");
+                                        turn=t, approvals=t.waiting, later=t.later))
     err = something(t.error, JObj())
     throw(ConversationError("turn-state", "turn $(t.id) ended $state" * (isempty(err) ? "" : ": $(get(err, "type", "")): $(get(err, "message", ""))");
                             turn=t.id))
@@ -1311,7 +1378,8 @@ const LAST_TURN_ERROR = Ref("")
 function start_turn(c::Conversation, run::TurnRun, inputs, settings; passive::Bool=false)
     fn = c.program
     started = time()
-    s = start_stream(; passive, turn=(c, run.turn)) do
+    shape = fn isa AIFunction ? last(interface(fn)["outputs"])["shape"] : nothing     # how its answer so far is read
+    s = start_stream(; passive, turn=(c, run.turn), shape) do
         value, err = nothing, nothing
         try
             value = with(TURN_STARTING => run) do
@@ -1388,11 +1456,18 @@ function conclude_turn(c::Conversation, run::TurnRun, value, err, started)
     if err isa TurnWaiting
         a = err.approval
         rec = record_base(run, "waiting")
-        rec["approvals"] = Any[approval_json(a)]
+        rec["approvals"] = a === nothing ? Any[] : Any[approval_json(a)]
+        isempty(err.later) || (rec["later"] = LMCC.deepcopy_json(err.later))
         rec["saw"] = saw
         add_records!(c, [rec])
         t = turn(c, run.turn)
-        return Waiting("turn $(run.turn) waits for a person's answer: $(a.path)($(short_text(logvalue(a.input), 80)))"; turn=t, approvals=t.waiting)
+        if a === nothing && isempty(t.later)
+            # every result arrived between the turn's last look and its waiting record: it goes on now (no lost wake-up)
+            errormonitor(Threads.@spawn go_on(c, run.turn))
+        end
+        what = a !== nothing ? "a person's answer: $(a.path)($(short_text(logvalue(a.input), 80)))" :
+               "results that come later: " * join((repr(x["key"]) for x in err.later), ", ")
+        return Waiting("turn $(run.turn) waits for $what"; turn=t, approvals=t.waiting, later=t.later)
     end
     rec = record_base(run, "ended")
     rec["saw"] = saw
@@ -1565,8 +1640,73 @@ function answer_turn!(t::Turn, approval, allowed::Bool, reason, by, resume::Bool
                           "site" => get(target, "site", nothing), "invocation" => target["invocation"], "path" => get(target, "path", nothing),
                           "plugin" => something(get(target, "plugin", nothing), "approval"), "verdict" => allowed ? "yes" : "no",
                           "by" => by, "reason" => reason)])
-    st = read_log!(c).turns[t.id]
-    resume && isempty(unanswered(st)) && return resume!(Turn(c, st))
+    log = read_log!(c)
+    st = log.turns[t.id]
+    # a turn that still waits for a result that comes later goes on when it is delivered (deliver!)
+    resume && isempty(unanswered(st)) && isempty(undelivered(st, log.delivered)) && return resume!(Turn(c, st))
+    nothing
+end
+
+"Resume a waiting turn that has nothing left to wait for, unless another process already did (the lease's conditional append lets one win)."
+function go_on(c::Conversation, tid::AbstractString)
+    try
+        fetch(resume_turn(c, tid, Dict(), ()))
+    catch err
+        unwrap(err) isa InterruptException && rethrow()
+        # another process resumed it first (turn-state), or the turn ended otherwise: its own end records what happened
+    end
+    nothing
+end
+
+"""
+    deliver!(chat, key, result; by = nothing, resume = true)
+
+Give a tool that returned [`later`](@ref)`(key)` its result, from any
+process that opens the conversation (a webhook's handler). `result` is what
+the tool would have returned: text, a value, a picture (an lm15 part) or a
+list of them. It is kept in the conversation (a `delivered` record), and
+the tool's turn uses it: when nothing else keeps that turn waiting, it goes
+on here and this returns its answer (`resume = false`: later,
+[`resume!`](@ref)); else it returns `nothing`. A result delivered before the
+turn waits for it is used when it does. The first delivery of a key is the
+one kept: delivering it again does nothing (a webhook may be sent twice).
+
+```julia
+chat = conversation(agent, "visits"; store = "chats/")
+deliver!(chat, "harvest:8f2c", report)          # the turn that waited goes on: its answer
+```
+"""
+function deliver!(c::Conversation, key::AbstractString, result; by=nothing, resume::Bool=true)
+    isempty(strip(key)) && throw(ArgumentError("a later result's key is a non-empty text"))
+    output = result_of(result)
+    while true
+        log = read_log!(c)
+        haskey(log.delivered, key) && return nothing
+        rec = LMCC.jobj("functai_conversation" => CONVERSATION_FORMAT, "kind" => "delivered", "at" => iso(time()), "key" => String(key),
+                        "output" => output)
+        by === nothing || (rec["by"] = String(by))
+        try
+            add_records!(c, [rec]; expect=log.n)
+        catch err
+            (err isa ConversationError && err.code == "store-conflict") && continue
+            rethrow()
+        end
+        break
+    end
+    resume || return nothing
+    log = read_log!(c)
+    for tid in log.order
+        st = log.turns[tid]
+        (turn_state(st) == "waiting" && any(t -> get(t, "key", nothing) == key, later_tools(st))) || continue
+        (isempty(unanswered(st)) && isempty(undelivered(st, log.delivered))) || return nothing
+        try
+            return fetch(resume_turn(c, tid, Dict(), ()))
+        catch err
+            err = unwrap(err)
+            err isa ConversationError && err.code == "turn-state" && return nothing    # another process resumed it first
+            rethrow(err)
+        end
+    end
     nothing
 end
 
@@ -1594,6 +1734,9 @@ function resume_turn(c::Conversation, tid::AbstractString, results, rerun)
             state in ("waiting", "interrupted") ||
                 throw(ConversationError("turn-state", "turn $tid is $state: only a waiting or interrupted turn goes on"; turn=tid))
             isempty(unanswered(st)) || throw(ConversationError("turn-state", "turn $tid still waits for $(length(unanswered(st))) approval(s)"; turn=tid))
+            waits = undelivered(st, log.delivered)
+            isempty(waits) || throw(ConversationError("turn-state", "turn $tid still waits for $(length(waits)) result(s) to be delivered: " *
+                                                      join((repr(get(x, "key", nothing)) for x in waits), ", "); turn=tid))
             given = JObj[]
             for x in unfinished(st)
                 inv = Int(x["invocation"])
@@ -1602,7 +1745,7 @@ function resume_turn(c::Conversation, tid::AbstractString, results, rerun)
                 base = LMCC.jobj("functai_conversation" => CONVERSATION_FORMAT, "kind" => "tool", "at" => iso(time()), "turn" => tid,
                                  "site" => get(x, "site", nothing), "invocation" => inv, "id" => get(x, "id", nothing), "name" => get(x, "name", nothing))
                 if hit !== nothing
-                    push!(given, merge(base, LMCC.jobj("state" => "given", "output" => string(results[collect(keys(results))[hit]]))))
+                    push!(given, merge(base, LMCC.jobj("state" => "given", "output" => result_of(results[collect(keys(results))[hit]]))))
                 elseif any(r -> r in keys_of, rerun)
                     push!(given, merge(base, LMCC.jobj("state" => "rerun")))
                 else
@@ -1636,7 +1779,8 @@ function resume_turn(c::Conversation, tid::AbstractString, results, rerun)
             later = nothing                               # no log to continue: this writer starts none
         end
     end
-    replay = Dict{Symbol,Any}(:replies => st.replies, :tools => st.tools, :answers => st.answers, :waiting_seq => seq_of(st.waiting))
+    replay = Dict{Symbol,Any}(:replies => st.replies, :tools => st.tools, :answers => st.answers, :waiting_seq => seq_of(st.waiting),
+                              :delivered => copy(log.delivered))
     fixed = get(st.record, "context", nothing)            # what the turn was shown when it was made (context hooks ran)
     run = TurnRun(c, tid; attempt, context=turn_context(c, log, turn_parent(st), c.settings, fixed), replay, later)
     run.context[:changes] = Any[]                          # the turn's own changes are on its first record
@@ -1685,7 +1829,7 @@ function eachevent(t::Turn; after=nothing, view=:kept, timeout=nothing)
         follow_store(e -> push!(out, e), events, t.id, after; stop, timeout)
         return out
     end
-    v = View(Symbol(view); answer_from=answer_from_of(c.program))
+    v = view_for(Symbol(view), c.program)
     waiting_for = after
     follow_store(events, t.id, nothing; stop, timeout) do e
         shown = apply_view!(v, e)

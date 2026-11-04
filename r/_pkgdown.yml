@@ -51,6 +51,7 @@ reference:
       - defaults_to
       - json_shape
       - ai_tool
+      - ai_later
   - title: Settings
     contents:
       - ai_config
@@ -84,12 +85,18 @@ reference:
     contents:
       - ai_interface
       - ai_version
+  - title: What it runs on
+    desc: A setup beside the version, what a program may reach, what code spent.
+    contents:
+      - ai_setup
+      - ai_spend
   - title: The call log and ratings
     contents:
       - calls
       - rate
       - rated
       - default_log_folder
+      - memory_calls
   - title: Saving, and other languages' functions
     contents:
       - read_ai
@@ -101,6 +108,9 @@ reference:
       - opaque
       - predict.functai_program
       - ai_stream
+      - answer_so_far
+      - ai_note
+      - note_type
   - title: Conversations
     desc: Calls that remember each other, kept in a store; tools that ask a person first.
     contents:
@@ -112,6 +122,7 @@ reference:
       - move_head
       - wait_turn
       - approve
+      - deliver
       - earlier
       - folder_store
   - title: Plugins
@@ -124,6 +135,9 @@ reference:
       - branch_turns
       - compaction
       - delegate
+      - limits
+      - keep_pictures
+      - ai_spent
       - load_plugin
   - title: Serving, and programs served elsewhere
     contents:

@@ -21,12 +21,15 @@ new_job <- function(plan, past, inputs, settings, model, tools, call, core = NUL
   values <- prepare_inputs(plan$signature, inputs)
   if (length(tools)) values$tools <- lapply(tools, function(t) list(name = t$name, description = t$description, parameters = t$parameters))
   job$turn <- lmcc::new_turn(plan, values)
+  # the step hook (contract/plugins.md): the tools offered, reminders, earlier results shown otherwise
+  job$steering <- if (length(tools) && !is.null(call)) new_steering(job) else NULL
   render_next(job)
   job
 }
 
 render_next <- function(job) {
-  job$rendered <- lmcc::render(job$plan, job$turn, if (length(job$past)) job$past else NULL)
+  shown <- steering_view(job)                          # the turn as the next request shows it: the turn itself keeps every result
+  job$rendered <- lmcc::render(job$plan, shown, if (length(job$past)) job$past else NULL)
   job$asked <- lmcc::request_of(job$rendered)          # the lmcc request this exchange sends (calls.md, exchanges)
   job$request_hash <- lmcc::sha256_of(job$asked)
   job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))
@@ -195,7 +198,9 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     return(invisible())
   }
   reply_keep(job, response)                                        # only a reply that was read is kept
-  job$turn <- lmcc::lm15_step(job$rendered, response)
+  # the model's step, added to the turn itself: what the model was shown is the request's, never the turn's
+  stepped <- lmcc::lm15_step(job$rendered, response)
+  job$turn$steps <- c(job$turn$steps, utils::tail(stepped$steps, 1L))
   calls <- reading$values$calls %||% list()
   job$tool_calls <- c(job$tool_calls, calls)
   if (!length(calls)) {
@@ -211,16 +216,77 @@ on_response <- function(job, response, started, seconds, cached = FALSE, streame
     finished(job)
     return(invisible())
   }
+  first <- job$call$invocations + 1L
+  outs <- list()
+  wait <- function(w) { job$state <- "waiting"; job$waiting <- w; finished(job); invisible() }
   for (c in calls) {
     out <- tryCatch(tool_step(job, c), functai_turn_waiting = function(w) w)
-    if (inherits(out, "functai_turn_waiting")) { job$state <- "waiting"; job$waiting <- out; finished(job); return(invisible()) }
-    job$turn <- lmcc::tool_result(job$turn, c$id, out)
+    if (inherits(out, "functai_turn_waiting")) return(wait(out))
+    outs[[length(outs) + 1L]] <- out
+  }
+  if (any(vapply(outs, function(o) inherits(o, "functai_pending"), NA))) {
+    outs <- tryCatch(results_later(job, outs), functai_turn_waiting = function(w) w)   # used when delivered, else the turn waits
+    if (inherits(outs, "functai_turn_waiting")) return(wait(outs))
+  }
+  for (i in seq_along(calls)) {
+    job$turn <- lmcc::tool_result(job$turn, calls[[i]]$id, outs[[i]])
+    if (!is.null(job$steering)) steering_ran(job$steering, first + i - 1L, calls[[i]]$name, calls[[i]]$input %||% lmcc::jobj(), outs[[i]])
   }
   job$steps <- job$steps + 1L
   if (job$steps > job$settings$max_steps)
     return(fail(job, structure(class = c("functai_step_limit", "error", "condition"),
       list(message = sprintf("no answer after %d model steps", job$settings$max_steps), call = NULL))))
+  steered <- tryCatch({ steering_before(job, job$steps); NULL }, error = identity)
+  if (!is.null(steered)) return(fail(job, steered))
   render_next(job)
+}
+
+# A tool call whose result comes later (ai_later()): kept, and waited for.
+pending_result <- function(job, tool, c, n, input, key) {
+  call <- job$call
+  run <- call$turn_run
+  path <- paste(c(sub("#.*$", "", strsplit(call$site, "/", fixed = TRUE)[[1L]]), c$name), collapse = "/")
+  if (is.null(run)) stop(conversation_error("later-unavailable", sprintf(paste0(
+    "%s returned ai_later(\"%s\"), and its result can only be waited for in a conversation's turn (ai_conversation()): ",
+    "this call runs in none. Whatever the tool started may be running."), path, key)))
+  tool_later(call, tool, c, n, input, key)
+  call_emit(call, "later", list(id = c$id, invocation = n, name = c$name, key = key))
+  structure(list(key = key, tool = tool, c = c, n = n, input = input, path = path), class = "functai_pending")
+}
+
+# A result that came later, as the model is shown it: given to the
+# tool_result hooks, then kept as the tool's result.
+delivered_result <- function(job, tool, c, n, input, output) {
+  tree_frontier(job$call$tree)
+  out <- tool_result_hooks(job, tool, c, input, output, n)
+  tool_done(job$call, tool, c, n, out)
+  out
+}
+
+# The step's results, with those that come later: each already delivered is
+# used now; when one is not, the turn stops and waits for them (every other
+# tool call of the step ran, and is kept).
+results_later <- function(job, outs) {
+  call <- job$call
+  pending <- Filter(function(o) inherits(o, "functai_pending"), outs)
+  got <- deliveries(call$turn_run, vapply(pending, function(p) p$key, ""))
+  missing <- Filter(function(p) is.null(got[[p$key]]), pending)
+  if (length(missing)) stop(turn_waiting(NULL, lapply(missing, function(p)
+    list(site = call$site, invocation = p$n, id = p$c$id, name = p$c$name, key = p$key, path = p$path))))
+  lapply(outs, function(o) {
+    if (!inherits(o, "functai_pending")) return(o)
+    out <- delivered_result(job, o$tool, o$c, o$n, o$input, got[[o$key]])
+    show_result(call, o$c, out, o$n)
+    out
+  })
+}
+
+# The tool_result event: `output` the result's text, `parts` the whole result when it holds more than text.
+show_result <- function(call, c, out, n) {
+  data <- list(id = c$id, name = c$name, output = result_text(out))
+  if (!is_str(out)) data$parts <- out
+  data$invocation <- n
+  call_emit(call, "tool_result", data)
 }
 
 on_error <- function(job, err, started, seconds, streamed = FALSE) {
@@ -256,7 +322,8 @@ tool_step <- function(job, c) {
   input <- c$input %||% lmcc::jobj()
   tool_called(call, list(id = c$id, name = c$name, input = input, invocation = n), changes = tool_changes(tool))
   out <- tool_output(job, tool, c, n)
-  call_emit(call, "tool_result", list(id = c$id, name = c$name, output = out, invocation = n))
+  if (inherits(out, "functai_pending")) return(out)            # its result comes later: no tool_result yet
+  show_result(call, c, out, n)
   out
 }
 
@@ -266,6 +333,8 @@ tool_step <- function(job, c) {
 tool_output <- function(job, tool, c, n) {
   call <- job$call
   recorded <- tool_recorded(call, n)
+  if (inherits(recorded, "functai_delivered"))                    # a turn resumed: a result that came later
+    return(delivered_result(job, tool, c, n, c$input %||% lmcc::jobj(), recorded$output))
   if (!is.null(recorded)) return(recorded)
   if (is.null(tool)) {
     if (identical(job$settings$tool_errors, "raise")) stop(sprintf("the model called unknown tool %s", c$name), call. = FALSE)
@@ -282,8 +351,9 @@ tool_output <- function(job, tool, c, n) {
     if (identical(job$settings$tool_errors, "raise")) stop(e)
     sprintf("error: %s: %s", class(e)[[1L]], conditionMessage(e))
   })
-  out <- if (is.character(out) && length(out) == 1L) out else lmcc::json_text(plain_json(out))
-  out <- tool_result_hooks(job, tool, c, gate$input, out)
+  if (inherits(out, "functai_later")) return(pending_result(job, tool, c, n, gate$input, out$key))
+  out <- result_of(out)                                           # text, or a list of lm15 parts (a picture with its caption)
+  out <- tool_result_hooks(job, tool, c, gate$input, out, n)
   tool_done(call, tool, c, n, out)
   out
 }
