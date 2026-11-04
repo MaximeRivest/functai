@@ -116,6 +116,73 @@ function noFiles(builder: string, shapes: readonly unknown[]): void {
 const media = <V>(kind: string, extra: Extra | undefined): Shape<V> =>
   ({ media: kind, ...extraOf(extra, kind, ["media", "type"]) }) as unknown as Shape<V>;
 
+/** The keys of a field written out (`{ shape, desc?, optional?, opaque? }`, what `describe` gives): FunctAI's words, never JSON Schema's. */
+const FIELD_KEYS = ["shape", "desc", "optional", "opaque"] as const;
+
+/** A shape given inside another (a member of `t.object`, a list's items, …): a shape, or `describe(shape, words)`. */
+export type Member = Shape<unknown> | { readonly shape: Shape<unknown>; readonly desc?: string };
+
+function shown(x: unknown): string {
+  if (typeof x === "function") return "a function";
+  try {
+    return JSON.stringify(x) ?? String(x);
+  } catch {
+    return typeof x;
+  }
+}
+
+/** The first key of a written-out field that is not one of its keys, with what was likely meant. */
+function strangeFieldKey(spec: object): string | null {
+  const k = Object.keys(spec).find((key) => !(FIELD_KEYS as readonly string[]).includes(key));
+  if (k === undefined) return null;
+  const meant = k === "description" ? ": its words are desc ({ shape, desc }), or the shape's own description (t.string({ description }))" : "";
+  return `a field written out is { shape, desc?, optional?, opaque? }, and ${JSON.stringify(k)} is not one of them${meant}`;
+}
+
+/**
+ * A shape given inside another, as JSON Schema. `describe(shape, words)` is
+ * the shape with `description: words` (what R's `described()` and Python's
+ * `Field(description=…)` make of a member). What is not a shape is refused,
+ * naming where it is: before this, `t.object({ goal: describe(t.string(), "…") })`
+ * sent the model `{"shape": …, "desc": …}` as the member's schema.
+ */
+function member(spec: unknown, builder: string, where: string): Shape<never> {   // `never`: fits any builder's value type; the caller's signature gives the real one
+  const fail = (why: string): never => {
+    throw new TypeError(`t.${builder}: ${where}${why.startsWith(":") ? "" : " "}${why}`);
+  };
+  if (isZod(spec) || isStandard(spec)) {
+    const vendor = isStandard(spec) ? spec["~standard"].vendor : "zod";
+    return fail(`is a ${vendor} schema: inside t.${builder}, give t's shapes (t.string(), describe(t.string(), "words"), …), or write the whole value in ${vendor} (z.object({ … })). Mixed, its checks and transforms would not run`);
+  }
+  if (isWrapper(spec)) {
+    const strange = strangeFieldKey(spec);
+    if (strange) return fail(`: ${strange}`);
+    if (spec.optional !== undefined) {
+      return fail("says optional: whether a caller may leave a value out is said of a whole input, not of a member inside a shape. A member that may be null is t.optional(shape)");
+    }
+    if (spec.opaque !== undefined) return fail("says opaque: a module's field may hold values with no JSON form, a member inside a shape may not");
+    if (spec.desc !== undefined && typeof spec.desc !== "string") return fail(`has desc ${shown(spec.desc)}: its words are text`);
+    const inner = member(spec.shape, builder, where);
+    return spec.desc === undefined ? inner : carry(inner, { ...(inner as JsonObject), description: spec.desc } as unknown as Shape<never>);
+  }
+  if (typeof spec !== "object" || spec === null || Array.isArray(spec)) {
+    return fail(`is ${shown(spec)}, not a shape: t.string(), t.list(…), describe(t.string(), "words"), or JSON Schema ({ type: "string" })`);
+  }
+  return spec as Shape<never>;
+}
+
+/** Each member of `t.object` or `t.record`, as JSON Schema (what `member` makes of it), in order. */
+function members(properties: Record<string, unknown>, builder: string): Record<string, Shape<never>> {
+  // describe(...) given whole: its desc is text, which no member's shape is (a member may be named shape or desc)
+  const whole = typeof properties === "object" && properties !== null && Object.hasOwn(properties, "shape") && typeof properties["desc"] === "string";
+  if (typeof properties !== "object" || properties === null || Array.isArray(properties) || whole) {
+    throw new TypeError(`t.${builder}(properties): properties is an object, from each member's name to its shape: t.${builder}({ id: t.integer() })${whole ? `; words about the whole object are describe(t.${builder}({ … }), "words")` : ""}`);
+  }
+  const out: Record<string, Shape<never>> = {};
+  for (const [k, v] of entriesOf(properties)) setOwn(out, k, member(v, builder, `member ${JSON.stringify(k)}`));
+  return out;
+}
+
 /** A property's shape with its choice's meanings in its `description`, where the model reads them (a record's schema). */
 function described(shape: unknown): unknown {
   const m = meaningsOf(shape);
@@ -143,6 +210,13 @@ function extraOf<E>(extra: E | undefined, builder: string, structural: readonly 
   if (typeof got !== "object" || got === null || Array.isArray(got)) throw new TypeError(`t.${builder}(…, extra): extra is an object of JSON Schema keys`);
   const bad = structural.filter((k) => Object.hasOwn(got, k));
   if (bad.length) throw new TypeError(`t.${builder}: ${bad.join(", ")} is what t.${builder} makes; extra keys add to it (description, bounds, default), never replace it`);
+  // a field's own words, given where JSON Schema keys go: the model would read an unknown key, and nothing would do what it says
+  const field = FIELD_KEYS.find((k) => Object.hasOwn(got, k));
+  if (field === "desc") throw new TypeError(`t.${builder}: desc is not a JSON Schema key; a shape's words are { description: "…" }`);
+  if (field === "optional") {
+    throw new TypeError(`t.${builder}: optional is not a JSON Schema key; a value that may be null is t.optional(shape), an input a caller may leave out has a default ({ default: … }) or is written { shape, optional: true }`);
+  }
+  if (field !== undefined) throw new TypeError(`t.${builder}: ${field} is not a JSON Schema key but a field's ({ shape, desc?, optional?, opaque? })`);
   return got;
 }
 
@@ -166,18 +240,47 @@ export const t = {
   /** Yes or no; `t.boolean({ default: false })` may be left out. */
   boolean: <const E extends Extra & { readonly default?: boolean } = {}>(extra?: E): Built<E, boolean> =>
     lmcc.t.boolean(extraOf(extra, "boolean", SCALAR) as never) as never,
-  /** A list: `t.list(t.string(), { description: "one per line" })`. */
-  list: <T>(items: Shape<T>, extra: Extra = {}): Shape<T[]> => carry(items, { ...lmcc.t.list(items), ...extraOf(extra, "list", LIST) }) as Shape<T[]>,
-  /** An object with these properties, all required: `t.object({ id: t.integer() }, { description })`. */
-  object: <P extends Record<string, Shape<unknown>>>(properties: P, extra: Extra = {}): ReturnType<typeof lmcc.t.object<P>> =>
-    (noFiles("object", Object.values(properties)), { ...lmcc.t.object(Object.fromEntries(entriesOf(properties).map(([k, v]) => [k, described(v)])) as P), ...extraOf(extra, "object", OBJECT) }) as ReturnType<typeof lmcc.t.object<P>>,
-  /** A map from text keys to values: `t.record(t.integer())`. */
-  record: <V>(values: Shape<V>, extra: Extra = {}): Shape<Record<string, V>> =>
-    (noFiles("record", [values]), { type: "object", additionalProperties: described(values), ...extraOf(extra, "record", RECORD) }) as Shape<Record<string, V>>,
+  /**
+   * A list: `t.list(t.string(), { description: "one per line" })`. Words
+   * about each item: `t.list(describe(t.string(), "a tag"))`.
+   */
+  list: <S extends Member>(items: S, extra: Extra = {}): Shape<ValueOf<S>[]> => {
+    const shape = member(items, "list", "its items");
+    return carry(shape, { ...lmcc.t.list(shape), ...extraOf(extra, "list", LIST) }) as Shape<ValueOf<S>[]>;
+  },
+  /**
+   * An object with these properties, all required: `t.object({ id: t.integer() }, { description })`.
+   * Words about a member: `t.object({ goal: describe(t.string(), "the one thing they came to do") })`,
+   * the same as `t.string({ description: "…" })`.
+   */
+  object: <P extends Record<string, Member>>(properties: P, extra: Extra = {}): Shape<{ [K in keyof P]: ValueOf<P[K]> }> => {
+    const shapes = members(properties, "object");
+    noFiles("object", Object.values(shapes));
+    const described_: Record<string, Shape<never>> = {};
+    for (const [k, v] of entriesOf(shapes)) setOwn(described_, k, described(v) as Shape<never>);
+    return { ...lmcc.t.object(described_), ...extraOf(extra, "object", OBJECT) } as Shape<{ [K in keyof P]: ValueOf<P[K]> }>;
+  },
+  /** A map from text keys to values: `t.record(t.integer())`, or `t.record(describe(t.integer(), "days"))`. */
+  record: <S extends Member>(values: S, extra: Extra = {}): Shape<Record<string, ValueOf<S>>> => {
+    const shape = member(values, "record", "its values");
+    noFiles("record", [shape]);
+    return { type: "object", additionalProperties: described(shape), ...extraOf(extra, "record", RECORD) } as Shape<Record<string, ValueOf<S>>>;
+  },
   /** The shape or null; a caller may leave it out, and it is then null. */
-  optional: <T>(shape: Shape<T>): Shape<T | null> => carry(shape, lmcc.t.nullable(shape)),
+  optional: <S extends Member>(shape: S): Shape<ValueOf<S> | null> => {
+    const inner = member(shape, "optional", "its shape");
+    return carry(inner, lmcc.t.nullable(inner)) as Shape<ValueOf<S> | null>;
+  },
+  /** The shape or null (lmcc's nullable form), as `t.optional`. */
+  nullable: <S extends Member>(shape: S): Shape<ValueOf<S> | null> => {
+    const inner = member(shape, "nullable", "its shape");
+    return carry(inner, lmcc.t.nullable(inner)) as Shape<ValueOf<S> | null>;
+  },
   /** The shape, with the value an input takes when a caller leaves it out: `t.withDefault(t.string(), "kind")`. */
-  withDefault: <T>(shape: Shape<T>, value: T): Shape<T> & { readonly default: T } => carry(shape, { ...shape, default: value }) as Shape<T> & { readonly default: T },
+  withDefault: <S extends Member>(shape: S, value: ValueOf<S>): Shape<ValueOf<S>> & { readonly default: ValueOf<S> } => {
+    const inner = member(shape, "withDefault", "its shape");
+    return carry(inner, { ...inner, default: value }) as Shape<ValueOf<S>> & { readonly default: ValueOf<S> };
+  },
   /**
    * One of these answers; with what some of them mean, which the model reads:
    * `t.choice(["low", "high"], { high: "the customer is losing money or time now" })`.
@@ -225,7 +328,7 @@ export const t = {
   /** Bytes of any media type (lm15's `binary(...)`), for a provider that takes them. */
   binary: (extra?: Extra): Shape<BinaryInput> => media<BinaryInput>("binary", extra),
   /** Any JSON value (shape `{}`), with words about it if you like: `t.json({ description: "each input by name" })`. */
-  json: (extra: Extra = {}): Shape<Json> => ({ ...extra }) as Shape<Json>,
+  json: (extra: Extra = {}): Shape<Json> => ({ ...extraOf(extra, "json", []) }) as Shape<Json>,
   /**
    * A module's field whose values may have no JSON form (a class instance, a
    * buffer, a data frame): never checked, written in the log as a
@@ -329,6 +432,8 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
     throw new TypeError(`${where}: ${why}`);
   };
   if (isWrapper(spec)) {
+    const strange = strangeFieldKey(spec);
+    if (strange) refuse(strange);
     if (spec.desc !== undefined && spec.desc !== null && typeof spec.desc !== "string") refuse("desc is text");
     desc = spec.desc ?? null;
     raw = spec.shape;
@@ -357,11 +462,59 @@ export function readField(spec: FieldSpec, where: string, field?: string): { sha
     }
     return refuse(`expected a shape (t.string(), a Standard Schema such as zod, valibot or arktype, or JSON Schema), not ${shown}`);
   }
+  const stray = strayField(shape, "");
+  if (stray !== null) {
+    return refuse(`${stray || "its shape"} is a field written out ({ shape, desc }, what describe() gives), not JSON Schema. Inside a shape, build it with t.object, t.list, t.record or t.optional, which read describe(), or give the schema its words: { type: "string", description: "…" }`);
+  }
   if (typeof shape["description"] === "string") {
     desc = desc ?? (shape["description"] as string);
     delete shape["description"];
   }
   return { shape, desc: withChoices(desc, meanings), files: carriesFiles(raw) };
+}
+
+/** JSON Schema's keywords whose value is a schema, a list of schemas, or a map of them (draft 2020-12, and draft 7's `items` list, `additionalItems`, `definitions`). */
+const ONE_SCHEMA = ["items", "additionalItems", "additionalProperties", "contains", "not", "if", "then", "else", "propertyNames", "unevaluatedItems", "unevaluatedProperties"];
+const SCHEMA_LISTS = ["anyOf", "oneOf", "allOf", "prefixItems", "items"];
+const SCHEMA_MAPS = ["properties", "patternProperties", "$defs", "definitions", "dependentSchemas"];
+
+/**
+ * Where in a JSON Schema a field written out (`{ shape, desc }`) stands in
+ * for a schema (`properties.goal`; `""` for the schema itself), or null.
+ * `shape` is no JSON Schema keyword, so a schema that has it is one: the
+ * model would be sent FunctAI's words as the schema, and any value would
+ * fit it. Values (`default`, `enum`, `const`, `examples`) are not walked.
+ */
+function strayField(schema: unknown, path: string): string | null {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return null;
+  const s = schema as JsonObject;
+  if (Object.hasOwn(s, "shape")) return path;
+  const at = (key: string) => (path ? `${path}.${key}` : key);
+  for (const k of ONE_SCHEMA) {
+    if (Object.hasOwn(s, k) && !Array.isArray(s[k])) {
+      const found = strayField(s[k], at(k));
+      if (found !== null) return found;
+    }
+  }
+  for (const k of SCHEMA_LISTS) {
+    if (Object.hasOwn(s, k) && Array.isArray(s[k])) {
+      const list = s[k] as unknown[];
+      for (let i = 0; i < list.length; i++) {
+        const found = strayField(list[i], `${at(k)}[${i}]`);
+        if (found !== null) return found;
+      }
+    }
+  }
+  for (const k of SCHEMA_MAPS) {
+    const map = s[k];
+    if (Object.hasOwn(s, k) && typeof map === "object" && map !== null && !Array.isArray(map)) {
+      for (const [name, sub] of entriesOf(map as JsonObject)) {
+        const found = strayField(sub, `${at(k)}.${name}`);
+        if (found !== null) return found;
+      }
+    }
+  }
+  return null;
 }
 
 /**

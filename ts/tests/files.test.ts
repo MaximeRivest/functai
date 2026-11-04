@@ -12,7 +12,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { test } from "node:test";
 import { fileURLToPath } from "node:url";
-import { ai, calls, configure, fromManifest, InterfaceError, remote, serve, t, tool, toManifest, withSettings } from "../src/index.ts";
+import { ai, calls, configure, describe, fromManifest, InterfaceError, remote, serve, t, tool, toManifest, withSettings } from "../src/index.ts";
 import { FakeRouter } from "./fake.ts";
 
 for (const k of ["FUNCTAI_CALLER", "FUNCTAI_LOG_CALLS", "FUNCTAI_LOG_CONTENT"]) delete process.env[k];
@@ -108,6 +108,8 @@ if (!files || !attachments) {
     assert.throws(def({ reports: t.list(artifacts()) }), (e: unknown) => e instanceof InterfaceError && e.code === "interface-malformed");
     assert.throws(def({ report: t.withDefault(artifacts(), [] as never) }), (e: unknown) => e instanceof InterfaceError);
     assert.throws(() => t.object({ report: artifacts() }), TypeError);
+    assert.throws(() => t.object({ report: describe(artifacts(), "the reports") as never }), /files \(artifacts\(\)\) are a whole input/);   // described, still files
+    assert.throws(() => t.record(describe(artifacts(), "a report") as never), TypeError);
     assert.throws(def({ q: t.string() }, artifacts()), (e: unknown) => e instanceof InterfaceError && e.code === "interface-malformed");
     assert.throws(() => tool("read", { input: { report: artifacts() } }, () => ""), TypeError);
   });

@@ -23,7 +23,7 @@ export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
 export { module, type AnyModule, type Module, type ModuleArgs, type ModuleContext, type ModuleInputs, type ModuleResult,
   type ModuleSpec } from "./module.ts";
-export { t, describe, type FieldWith, type Json, type Shape, type FieldSpec, type StandardSchemaLike, type ValueOf, type ZodLike } from "./shapes.ts";
+export { t, describe, type FieldWith, type Json, type Member, type Shape, type FieldSpec, type StandardSchemaLike, type ValueOf, type ZodLike } from "./shapes.ts";
 export { configure, withSettings, type Settings } from "./settings.ts";
 // pictures, sounds, videos and documents as inputs: lm15's own parts (t.image(), t.audio(), …), so no second install
 export { image, audio, video, document, binary } from "@lm15/lm15";

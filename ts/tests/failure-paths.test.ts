@@ -20,7 +20,7 @@ import { test } from "node:test";
 import { RateLimitError, responseToEvents, streamDelta, type Request, type StreamEvent as LmEvent } from "@lm15/lm15";
 import * as z from "zod";
 import {
-  ai, Cancelled, checkInterface, configure, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, LoadRefused, MemoryStore, module, Prediction, replay,
+  ai, Cancelled, checkInterface, configure, describe, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, LoadRefused, MemoryStore, module, Prediction, replay,
   save, SettingError, settle as settleLog, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
 } from "../src/index.ts";
 import { duration } from "../src/engine.ts";
@@ -1249,6 +1249,64 @@ test("a builder's extra keys add to its shape and never replace it", () => {
   assert.throws(() => t.object({ a: t.string() }, { required: [] }), TypeError);
   assert.throws(() => t.record(t.integer(), { additionalProperties: false }), TypeError);
   assert.deepEqual(t.list(t.string(), { description: "one per line", minItems: 1 }), { type: "array", items: { type: "string" }, description: "one per line", minItems: 1 });
+});
+
+test("what is not a shape, inside a shape, is refused where it is written, saying what to write", () => {
+  // a field's own words where JSON Schema keys go: the model would read them, nothing would do what they say
+  assert.throws(() => t.string({ desc: "x" } as never), /t\.string: desc is not a JSON Schema key; a shape's words are \{ description: "…" \}/);
+  assert.throws(() => t.list(t.string(), { optional: true }), /t\.list: optional is not a JSON Schema key; a value that may be null is t\.optional\(shape\)/);
+  assert.throws(() => t.object({ a: t.string() }, { shape: {} }), /shape is not a JSON Schema key/);
+  assert.throws(() => t.json({ desc: "x" }), /t\.json: desc is not a JSON Schema key/);
+  assert.throws(() => t.image({ desc: "x" }), /t\.image: desc/);
+  // members: whether one may be left out is said of a whole input; opaque values are a module's field's
+  assert.throws(() => t.object({ a: { shape: t.string(), desc: "x", optional: true } }), /t\.object: member "a" says optional: .* A member that may be null is t\.optional\(shape\)/);
+  assert.throws(() => t.list({ shape: t.string(), opaque: true }), /t\.list: its items says opaque/);
+  assert.throws(() => t.object({ a: { shape: t.string(), description: "x" } }), /member "a": a field written out is \{ shape, desc\?, optional\?, opaque\? \}, and "description" is not one of them: its words are desc/);
+  assert.throws(() => t.object({ a: { shape: t.string(), desc: 3 } as never }), /member "a" has desc 3: its words are text/);
+  // a member that is no shape at all, or another library's schema (its checks and transforms would not run)
+  assert.throws(() => t.object({ a: "string" as never }), /member "a" is "string", not a shape/);
+  assert.throws(() => t.object({ a: undefined as never }), /member "a" is undefined, not a shape/);
+  assert.throws(() => t.list([t.string()] as never), /its items is \[\{"type":"string"\}\], not a shape/);
+  assert.throws(() => t.optional(null as never), /t\.optional: its shape is null, not a shape/);
+  assert.throws(() => t.object({ a: z.string() as never }), /member "a" is a zod schema: inside t\.object, give t's shapes .* or write the whole value in zod/);
+  assert.throws(() => t.object({ a: describe(z.string(), "x") as never }), /member "a" is a zod schema/);
+  assert.throws(() => t.object(describe(t.string(), "x") as never), /t\.object\(properties\): properties is an object, from each member's name to its shape/);
+  assert.throws(() => t.object([t.string()] as never), /properties is an object/);
+  // the same words given twice: describe()'s win, as at the top (a field's desc over its shape's description)
+  assert.deepEqual(t.optional(describe(t.string({ description: "old" }), "new")), { anyOf: [{ type: "string", description: "new" }, { type: "null" }] });
+  assert.deepEqual(t.withDefault(describe(t.string(), "tone"), "kind"), { type: "string", description: "tone", default: "kind" });
+  assert.deepEqual(t.nullable(describe(t.integer(), "n")), { anyOf: [{ type: "integer", description: "n" }, { type: "null" }] });
+  assert.deepEqual(t.list(describe(t.list(describe(t.string(), "a cell")), "a row")), { type: "array", items: { type: "array", items: { type: "string", description: "a cell" }, description: "a row" } });
+  // plain shapes are kept as they were: a program written without describe() has the version it had
+  const plain = t.object({ a: t.string(), b: t.list(t.integer()), c: t.optional(t.boolean()) }, { description: "d" });
+  assert.deepEqual(plain, { type: "object", properties: { a: { type: "string" }, b: { type: "array", items: { type: "integer" } }, c: { anyOf: [{ type: "boolean" }, { type: "null" }] } }, required: ["a", "b", "c"], description: "d" });
+  // any name is a member, __proto__ included
+  const named = t.object(JSON.parse('{"__proto__": {"type": "string"}, "a": {"type": "integer"}}')) as Record<string, any>;
+  assert.ok(Object.hasOwn(named["properties"], "__proto__"));
+  assert.deepEqual(named["properties"]["__proto__"], { type: "string" });
+  assert.deepEqual(named["required"], ["__proto__", "a"]);
+});
+
+test("a field written out inside a schema written by hand is refused, naming where: the model would read it as the schema", () => {
+  const def = (shape: unknown) => () => ai("f", { description: "d", input: { q: t.string() }, output: shape as never });
+  const refused = (path: string) => (e: unknown) => e instanceof InterfaceError && e.code === "interface-malformed"
+    && e.message.includes(`${path} is a field written out ({ shape, desc }, what describe() gives), not JSON Schema`);
+  // what t.object made of describe() before it read it; what lmcc's t.object still makes of it
+  assert.throws(def({ type: "object", properties: { goal: { shape: { type: "string" }, desc: "the goal" } }, required: ["goal"] }), refused("properties.goal"));
+  assert.throws(def(lmcc.t.object({ goal: describe(t.string(), "the goal") as never })), refused("properties.goal"));
+  assert.throws(def(t.json({ type: "array", items: describe(t.string(), "x") })), refused("items"));
+  assert.throws(def({ anyOf: [{ type: "null" }, { shape: { type: "string" } }] }), refused("anyOf[1]"));
+  assert.throws(def({ type: "object", additionalProperties: { shape: { type: "integer" }, desc: "n" } }), refused("additionalProperties"));
+  assert.throws(def({ $defs: { P: { type: "object", properties: { a: { shape: {} } } } }, $ref: "#/$defs/P" }), refused("$defs.P.properties.a"));
+  assert.throws(def({ shape: t.string(), desc: "x", type: "string" }), refused("its shape"));
+  assert.throws(def({ shape: describe(t.string(), "x") }), refused("its shape"));
+  // a written-out field at the top names its keys
+  assert.throws(() => ai("f", { description: "d", input: { q: { shape: t.string(), description: "x" } as never } }),
+    (e: unknown) => e instanceof InterfaceError && e.code === "interface-malformed" && /"description" is not one of them: its words are desc/.test(e.message));
+  // a property named shape, and values that hold one, are data: not refused
+  ai("f", { description: "d", input: { q: t.string() }, output: t.object({ shape: t.string(), desc: t.string() }) });
+  ai("f", { description: "d", input: { q: t.string() }, output: t.json({ type: "object", default: { shape: 1 }, examples: [{ shape: 2 }], enum: [{ shape: 1 }, { shape: 3 }] }) });
+  ai("f", { description: "d", input: { q: t.string() }, output: t.json({ type: "object", properties: { shape: { type: "string" } }, additionalProperties: false }) });
 });
 
 // ------------------------------------------------------------------ formats

@@ -8,6 +8,26 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### Words about a member reach the model
+
+- **`describe()` inside a shape** (`t.object`, `t.list`, `t.record`,
+  `t.optional`, `t.nullable`, `t.withDefault`) is the shape with that
+  `description`, as R's `record(x = described(...))` and Python's
+  `Field(description=...)` write it. Before, `t.object({ goal:
+  describe(t.string(), "…") })` passed the type checker and sent the model
+  `{"shape": …, "desc": …}` as the member's schema: a model could follow it
+  literally, and any answer fitted it. A function that used it has a new
+  version; one that did not keeps its own.
+- **What is not a shape, where one goes, is refused where it is written**,
+  saying what to write: a zod or other Standard Schema inside `t`'s shapes
+  (also a type error: its checks and transforms would not run), a value
+  that is not a schema (`"string"`), `optional` or `opaque` on a member,
+  `desc`, `optional`, `opaque` or `shape` among a builder's JSON Schema
+  keys, a field written out with a key it does not have (`{ shape,
+  description }`), and a field written out inside a schema written by hand
+  or by lmcc's own `t.object` (`interface-malformed`, naming where:
+  `properties.goal`).
+
 ### Long agents and pipelines
 
 For agents that click through a site for hundreds of steps, and pipelines

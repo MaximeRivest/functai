@@ -74,6 +74,13 @@ p.answer;       // 15
   Schema (zod 4, valibot, arktype, ...), read as the JSON Schema Python
   writes for the same type. A `description` on a field (or
   `describe(shape, text)`, or zod's `.describe`) is guidance the model reads.
+  Inside a shape too: `t.object({ goal: describe(t.string(), "the one thing
+  they came to do") })` is the member with that `description`, as
+  `t.string({ description: "…" })`; so in `t.list`, `t.record`,
+  `t.optional` and `t.withDefault`. What is not a shape there (a zod
+  schema, `"string"`, `{ shape, optional: true }`), and FunctAI's own words
+  where JSON Schema keys go (`t.string({ desc })`), are a `TypeError` that
+  says what to write.
   A builder's extra keys add to its shape (`t.list(t.string(), {
   description, minItems: 1 })`) and never replace what it makes (`type`,
   `items`, `properties`, …: a `TypeError`); a default is a value of its

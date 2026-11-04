@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import * as z from "zod";
 import {
-  ai, bootstrapFewShot, calls, Cancelled, compare, configure, evaluate, fromManifest, InterfaceError, labeledFewShot, module, rate, rated,
+  ai, bootstrapFewShot, calls, Cancelled, compare, configure, describe, evaluate, fromManifest, InterfaceError, labeledFewShot, module, rate, rated,
   StepLimit, t, tool, toManifest, withSettings, type StreamEvent,
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
@@ -494,6 +494,54 @@ test("t.choice: what each answer means reaches the model as every language write
   assert.deepEqual((t.object({ a: t.choice(["p", "q"], { q: "yes" }) }) as Rec)["properties"]["a"], { enum: ["p", "q"], type: "string", description: "one of:\n  - q: yes" });
   assert.throws(() => t.choice(["a", "b"], { c: "no" } as never), /"c" is given a meaning, but it is not one of the answers/);
   assert.throws(() => t.choice(["a", "a"]), /twice/);
+});
+
+test("describe() inside a shape is the shape with its description: the same request, the same version", async () => {
+  // Written either way, a member's words are its schema's description (as R's record(x = described(...))
+  // and Python's Field(description=...) write them). Before, t.object kept describe()'s { shape, desc }
+  // as the member's schema: the model was sent it as is, and any answer fitted it.
+  const reply = '<result>\n{"goal": "buy a gift", "tags": ["gift"], "level": "high", "who": null, "days": {"a": 2}}\n</result>';
+  const urgency = () => t.choice(["low", "high"], { high: "losing money now" });
+  const writtenRouter = new FakeRouter([reply]);
+  const spelledRouter = new FakeRouter([reply]);
+  const written = ai("visitor", {
+    description: "Who is this visitor?", router: writtenRouter,
+    input: { page: t.string() },
+    output: t.object({
+      goal: describe(t.string(), "the one thing they came to do"),
+      tags: t.list(describe(t.string(), "a word for the page")),
+      level: urgency(),
+      who: t.optional(describe(t.string(), "who they are, if the page says")),
+      days: t.record(describe(t.integer(), "whole days")),
+    }),
+  });
+  const spelled = ai("visitor", {
+    description: "Who is this visitor?", router: spelledRouter,
+    input: { page: t.string() },
+    output: t.object({
+      goal: t.string({ description: "the one thing they came to do" }),
+      tags: t.list(t.string({ description: "a word for the page" })),
+      level: urgency(),
+      who: t.optional(t.string({ description: "who they are, if the page says" })),
+      days: t.record(t.integer({ description: "whole days" })),
+    }),
+  });
+  const shape = (t.object({ goal: describe(t.string(), "the one thing they came to do") }) as Rec)["properties"]["goal"];
+  assert.deepEqual(shape, { type: "string", description: "the one thing they came to do" });
+  assert.equal(written.version, spelled.version);
+  assert.deepEqual(written.interface, spelled.interface);
+  const answer = await written({ page: "https://example.com" });
+  await spelled({ page: "https://example.com" });
+  assert.deepEqual(answer, { goal: "buy a gift", tags: ["gift"], level: "high", who: null, days: { a: 2 } });
+  const sent = (router: FakeRouter) => JSON.stringify(router.requests[0]);
+  assert.equal(sent(writtenRouter), sent(spelledRouter));
+  assert.doesNotMatch(sent(writtenRouter), /"desc"|"shape"/);
+  assert.match(sent(writtenRouter), /the one thing they came to do/);
+  // a described choice: its words, then what its answers mean, as everywhere a choice is described (and
+  // the one way to give a choice inside a record words of its own: t.choice takes no description)
+  assert.equal((t.object({ level: describe(urgency(), "how soon to act") }) as Rec)["properties"]["level"]["description"], "how soon to act\n  - high: losing money now");
+  // the words given to describe() are the member's, as at the top (a field's desc over its shape's description)
+  assert.equal((t.list(describe(t.string({ description: "old" }), "new")) as Rec)["items"]["description"], "new");
 });
 
 test("apiKey and baseUrl: a key and an address of the function's own; the address is saved, the key never", async () => {

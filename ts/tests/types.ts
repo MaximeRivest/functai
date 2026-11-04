@@ -5,7 +5,7 @@
  */
 
 import * as z from "zod";
-import { ai, evaluate, gepa, JournalError, labeledFewShot, module, t, tool, type Prediction } from "../src/index.ts";
+import { ai, describe, evaluate, gepa, JournalError, labeledFewShot, module, t, tool, type Prediction, type ValueOf } from "../src/index.ts";
 
 type Equal<A, B> = (<T>() => T extends A ? 1 : 2) extends (<T>() => T extends B ? 1 : 2) ? true : false;
 const is = <T extends true>(_: T) => undefined;
@@ -158,4 +158,27 @@ export async function journalErrors() {
       is<Equal<typeof d, unknown>>(true);                          // never any: say what you expect
     }
   }
+}
+
+export function membersDescribed() {
+  // describe() inside a shape keeps the member's type
+  const visitor = t.object({ goal: describe(t.string(), "the one thing"), level: describe(t.choice(["low", "high"]), "how soon"), n: t.integer() });
+  is<Equal<ValueOf<typeof visitor>, { goal: string; level: "low" | "high"; n: number }>>(true);
+  const tags = t.list(describe(t.string(), "a tag"));
+  is<Equal<ValueOf<typeof tags>, string[]>>(true);
+  const who = t.optional(describe(t.integer(), "age"));
+  is<Equal<ValueOf<typeof who>, number | null>>(true);
+  const days = t.record(describe(t.integer(), "whole days"));
+  is<Equal<ValueOf<typeof days>, Record<string, number>>>(true);
+  const tone = t.withDefault(describe(t.string(), "tone"), "kind");
+  is<Equal<ValueOf<typeof tone>, string>>(true);
+  const fn = ai("visit", { description: "Who?", input: { page: t.string() }, output: visitor });
+  is<Equal<Awaited<ReturnType<typeof fn>>, { goal: string; level: "low" | "high"; n: number }>>(true);
+  // another library's schema is a whole field, not a member of t's shapes (its checks would not run)
+  // @ts-expect-error a zod schema inside t.object
+  t.object({ a: z.string() });
+  // @ts-expect-error a described zod schema inside t.object
+  t.object({ a: describe(z.string(), "x") });
+  // @ts-expect-error a default that is not a value of the shape
+  t.withDefault(describe(t.string(), "tone"), 3);
 }
