@@ -1,0 +1,58 @@
+{
+ "description": "Each item's shape through prefixItems then items; each member's through properties then additionalProperties. Where neither says, the shape is {}: a string shows as it is written.",
+ "shape": {
+  "type": "array",
+  "prefixItems": [
+   {
+    "type": "string"
+   },
+   {
+    "enum": [
+     "low",
+     "medium",
+     "high"
+    ]
+   }
+  ],
+  "items": {
+   "type": "object"
+  }
+ },
+ "checks": [
+  {
+   "text": "[\"abc\", \"lo",
+   "expect": {
+    "value": [
+     "abc"
+    ]
+   }
+  },
+  {
+   "text": "[\"abc\", \"low\", {\"x\": \"anything so",
+   "expect": {
+    "value": [
+     "abc",
+     "low",
+     {
+      "x": "anything so"
+     }
+    ]
+   }
+  },
+  {
+   "text": "[\"abc\", \"low\", {\"x\": 1}, {\"y\": \"z\"}]",
+   "expect": {
+    "value": [
+     "abc",
+     "low",
+     {
+      "x": 1
+     },
+     {
+      "y": "z"
+     }
+    ]
+   }
+  }
+ ]
+}

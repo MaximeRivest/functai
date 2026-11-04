@@ -25,6 +25,7 @@ import { Context } from "./host.ts";
 import { Cancelled, ApprovalError, type Approval } from "./errors.ts";
 import type { Call } from "./calllog.ts";
 
+import type { InterfaceNote } from "./interface.ts";
 type Rec = Record<string, unknown>;
 
 /** What a tool does to the world: it only looks, or it changes something (writes, sends, pays). */
@@ -38,6 +39,12 @@ export interface Tool {
   readonly run: (input: any) => unknown;
   /** `"reads"`, `"changes"`, or unset: unknown, which every approval rule treats as `"changes"`. */
   readonly effects?: Effects | null;
+  /** The notes its code makes (tools.md, *Notes a tool makes*): every AI function that has it declares them. */
+  readonly notes?: readonly InterfaceNote[];
+  /** What its code reaches (tools.md, *What a tool needs*): checked against the wall it runs behind. */
+  readonly needs?: { readonly domains: readonly string[]; readonly secrets: readonly string[] };
+  /** What identifies its code beyond the function's text (a revision, a bundle's hash): counted in a setup. */
+  readonly codeId?: string;
 }
 
 /**

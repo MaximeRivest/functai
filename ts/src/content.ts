@@ -90,7 +90,7 @@ export function keptFields(fields: CallFields, layers: readonly LogContent[], en
 }
 
 const ALWAYS_KEPT = new Set(["functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
-  "confidence", "caller", "process", "saw", "escalated", "truncated", "journal"]);
+  "confidence", "caller", "process", "saw", "escalated", "truncated", "journal", "spent", "placement"]);
 const ERROR_KEPT = ["type", "code"];
 const errorKept = (e: Rec) => Object.fromEntries(Object.entries(e).filter(([k]) => ERROR_KEPT.includes(k)));
 

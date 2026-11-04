@@ -68,7 +68,7 @@ def test_limits(path):
     case = load(path)
     lim = dict(case["limits"])
     plugin = builtins.limits(**lim)
-    spent = Spent([tuple(x) for x in case["spent"]["exchanges"]], case["spent"]["seconds"])
+    spent = Spent([tuple(x) for x in case["spent"]["exchanges"]], case["spent"]["seconds"], case["spent"].get("reported", 0.0))
     at = case["at"]
     if at["hook"] == "before_call":
         [handler] = plugin.handlers["before_call"]
@@ -83,7 +83,7 @@ def test_limits(path):
 @pytest.mark.parametrize("path", cases("spent"), ids=lambda p: p.stem)
 def test_what_a_tree_spent(path):
     case = load(path)
-    s = Spent([tuple(x) for x in case["exchanges"]], 0.0)
+    s = Spent([tuple(x) for x in case["exchanges"]], 0.0, case.get("reported", 0.0))
     assert s.usage == case["expect"]["usage"] and s.tokens == case["expect"]["tokens"]
     cost = s.cost(case["prices"])
     want = case["expect"]["cost"]

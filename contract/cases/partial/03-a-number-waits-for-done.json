@@ -1,0 +1,20 @@
+{
+ "description": "A number answer: nothing until done.",
+ "shape": {
+  "type": "number"
+ },
+ "checks": [
+  {
+   "text": "1",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "12",
+   "expect": {
+    "nothing": true
+   }
+  }
+ ]
+}

@@ -73,6 +73,14 @@ quartodoc:
     - load
     - describe
     - file
+  - title: What a program runs on
+    desc: A version says what a program is; its setup what runs it (the model each step
+      asks, settings, plugins, tools' code, what it may reach). `fn.setup`,
+      `fn.setup_document()`; the `wall` setting; tools' and modules' `needs`.
+    contents:
+    - setup_diff
+    - spend
+    - ReachError
   - title: Streaming
     desc: Watch a call while it is made. `fn.stream(...)` returns a Stream; its events
       are in `functai.streaming`.
@@ -80,6 +88,8 @@ quartodoc:
     - Stream
     - Cancelled
     - note
+    - Note
+    - answer_so_far
   - title: Observers and journals
     desc: Every event of every call tree, given to your code as it happens, or kept in a
       store while the call runs; read back and followed live.

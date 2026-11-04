@@ -18,11 +18,12 @@ import { writtenRecord, type CallFields } from "./content.ts";
 import type { Node, Observer } from "./log.ts";
 import { builtin, Context, env, pid, runtime } from "./host.ts";
 import type { Settings } from "./settings.ts";
-import { copyData, entriesOf, getOwn, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
+import { copyData, entriesOf, getOwn, jsonForm, parseData, recordOf, setOwn, toJson, writeData } from "./values.ts";
 import { FunctAIError, type Approval } from "./errors.ts";
 import { earlierOf, needsContext, recordsById, SawUnknown } from "./saw.ts";
 import { sumUsage } from "./usage.ts";
 import type { Delivered, ToolOutput } from "./results.ts";
+import { InterfaceError, noteRefusal, type InterfaceNote } from "./interface.ts";
 
 /** The call record's format (calls.md): 2 since 2026-09-28. A reader reads 1 and 2. */
 export const FORMAT = 2;
@@ -203,6 +204,12 @@ export class Call {
   readonly top: Call;
   /** The outermost call only: `[model, usage]` of each request a provider answered in this tree (plugins: limits). */
   readonly spent: (readonly [string, Record<string, number>])[] = [];
+  /** Dollars its own code and tools said they spent (`spend`): its record's `spent`. */
+  ownSpent: number | null = null;
+  /** The outermost call only: dollars all code in its tree said it spent. */
+  treeSpent = 0;
+  /** Where it ran (the wall, an AI function's server address): its record's `placement`. */
+  placement: Rec | null = null;
   provider: string | null = null;
   /**
    * Its inputs as the record holds them, by its interface's names, each as
@@ -268,6 +275,10 @@ export class Call {
   }
 
   readonly program: () => Program;
+  /** The call it runs inside, in this process (undefined for the outermost). */
+  readonly parentCall: Call | undefined;
+  /** The notes its program declares (programs.md, *Notes*), or undefined: it declares none. */
+  notes: readonly InterfaceNote[] | undefined = undefined;
   /** Where its record goes: a log folder, a store of one's own, or nowhere. */
   readonly folder: string | CallStore | null;
   /** Its fields (interface inputs and outputs, and those FunctAI adds), for what the log keeps. */
@@ -281,6 +292,7 @@ export class Call {
   constructor(program: () => Program, parent: Call | undefined, folder: string | CallStore | null, fields: CallFields,
     keep: Record<string, boolean>, caller: Rec, signal?: AbortSignal) {
     this.top = parent?.top ?? this;
+    this.parentCall = parent;
     this.program = program;
     this.folder = folder;
     this.fields = fields;
@@ -339,9 +351,33 @@ export const current = new Context<Call>();
  * call: the call log does not keep it. Outside any call, or when nothing
  * watches, it does nothing.
  */
+/**
+ * Say what code inside a call spent beyond the models' tokens, in dollars (a
+ * browsing service's charge, a paid API): `spend(0.05)`, from a module's
+ * code or a tool (calls.md, *Spending*). The call's record keeps the sum
+ * (`spent`), and the `limits` plugin counts it in the tree's cost. Outside
+ * any call it does nothing.
+ */
+export function spend(usd: number): void {
+  if (typeof usd !== "number" || !Number.isFinite(usd) || usd < 0) throw new RangeError(`spend(usd): a number of dollars, at least 0; not ${String(usd)}`);
+  const call = current.get();
+  if (!call) return;
+  call.ownSpent = (call.ownSpent ?? 0) + usd;
+  call.top.treeSpent += usd;
+}
+
 export function note(name: string, data: unknown = null): void {
   if (typeof name !== "string" || !name.trim()) throw new TypeError("a note's name is a non-empty text: what happened (\"screen captured\")");
-  current.get()?.event("note", { name, data: toJson(data)[0] });
+  const call = current.get();
+  if (!call) return;
+  const chain: (readonly InterfaceNote[] | undefined)[] = [];   // each program's declared notes, outermost first
+  for (let c: Call | undefined = call; c; c = c.parentCall) chain.unshift(c.notes);
+  if (chain.some((x) => x !== undefined)) {                   // declared somewhere: checked (programs.md, *Notes*)
+    const json = jsonForm(data);
+    const why = json === undefined ? "its data has no JSON form" : noteRefusal(chain, name, json);
+    if (why) throw new InterfaceError("interface-note", name, `${call.program().name}: the note ${JSON.stringify(name)} is refused: ${why}`);
+  }
+  call.event("note", { name, data: toJson(data)[0] });
 }
 /** A call made while a tool runs: the number of that tool call in the call that asked (engine.ts sets it). */
 export const INVOCATION = new Context<number | null>();
@@ -503,6 +539,8 @@ export function record(call: Call, ending: Ending): Rec {
   rec["confidence"] = call.confidence;
   if (call.probabilities && Object.keys(call.probabilities).length) rec["probabilities"] = copyData(call.probabilities);
   if (call.escalated) rec["escalated"] = true;
+  if (call.ownSpent !== null) rec["spent"] = { usd: Math.round(call.ownSpent * 1e12) / 1e12 };
+  if (call.placement) rec["placement"] = copyData(call.placement);
   rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, true));
   if (call.steps !== null) rec["steps"] = copyData(call.steps);
   rec["saw"] = copyData(call.saw);

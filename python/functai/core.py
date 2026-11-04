@@ -534,10 +534,19 @@ class FunctAIFunc(Generic[P, R]):
         return list(self._tools)
     @tools.setter
     def tools(self, seq):
-        self._tools = list(seq or [])
+        tools = list(seq or [])
+        from . import interface as _interface
+        _interface.merged_notes([getattr(t, "notes", None) for t in tools], program=self.__name__)  # refused first
+        self._tools = tools
         self._tool_specs = [engine.tool_spec(t) for t in self._tools]
         self._spec_cache.clear()
         self._plan_cache.clear()
+        self._interface_cache = None
+
+    def _declared_notes(self) -> Optional[List[Dict[str, Any]]]:
+        """The notes its tools declare (its interface's ``notes``), or None (contract/programs.md, *Notes*)."""
+        from . import interface as _interface
+        return _interface.merged_notes([getattr(t, "notes", None) for t in self._tools], program=self.__name__)
 
     @property
     def optimizer(self):
@@ -773,6 +782,23 @@ class FunctAIFunc(Generic[P, R]):
         choosing another model does not. Logged calls carry it, and a saved
         folder names the version it holds."""
         return calllog.ai_version(self)
+
+    @property
+    def setup(self) -> str:
+        """What the function runs on here: ``sha256:`` of its setup document
+        (contract/calls.md, *Setups*): its version, the model it would ask,
+        the settings and plugins in force, its tools' code, what it may reach.
+        The version says what it is; the setup what runs it. Another model,
+        another temperature or a tool rewritten is another setup, the same
+        version. Logged calls carry it (``program.setup``)."""
+        from .setup import setup_of
+        return setup_of(self)
+
+    def setup_document(self) -> Dict[str, Any]:
+        """The document ``setup`` is the hash of, with the settings in force now
+        (``functai.setup_diff`` says what differs between two)."""
+        from .setup import document_of
+        return document_of(self)
 
     def _layout(self, settings: Dict[str, Any]) -> adapters.Layout:
         if self._template is not None:

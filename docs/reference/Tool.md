@@ -1,7 +1,16 @@
 # Tool { #functai.Tool }
 
 ```{.python .no-run}
-Tool(fn, *, effects=None, name=None, description=None)
+Tool(
+    fn,
+    *,
+    effects=None,
+    name=None,
+    description=None,
+    notes=None,
+    needs=None,
+    code_id=None,
+)
 ```
 
 A function the model may call, with what it does to the world. Made by

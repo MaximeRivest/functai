@@ -1,8 +1,11 @@
 # 18 — Setup: what a program runs on, and what its tools need
 
-*Status, 2026-11-04: proposed, for Maxime to decide. Nothing is built. The
-open questions are at the end; everything above them is a recommendation
-with its reasons.*
+*Status, 2026-11-04: built in Python and TypeScript on the branch
+`setup-and-events`, with the contract (calls.md *Setups*, *Reach*,
+*Spending*; plugins.md, tools.md, saved.md) and its cases (`setup/`,
+`agents/spent-04` to `06`). R and Julia do not have it yet. What was built,
+and where it differs from the proposal below, is at the end (*What was
+built*). The proposal is kept as it was written.*
 
 ## Why
 
@@ -272,3 +275,62 @@ injection.
 3. **Tool spending now** (`spent`), or with the `open` effects later?
 4. **Order**: this note's contract and cases first, then Python and
    TypeScript, then R and Julia, all on one branch merged once.
+
+## What was built
+
+Maxime decided (2026-11-04): the name `setup`; tool code in the setup,
+not the version (portability); the sandbox split in two (what a program
+may reach counts, how the wall is built does not, and a run with no wall
+is `"open"`); all of it in Python and TypeScript now, R and Julia later.
+
+**As proposed**: the setup document of an AI function and of a module,
+`program.setup` and `placement` on every record, `needs` on tools and
+modules, the `wall` setting, `ReachError` (`needs-unmet`) before a
+program's code runs, `spend(usd)` and `spent`, plugins' `config`,
+`setup_diff` / `setupDiff` and `functai setup-diff`, saved folders with
+each program's setup and each module's version, TypeScript agents saved
+with their tools as data.
+
+**Decided while building, each against the reason that would reject it:**
+
+- **Every plugin counts; no "neutral" flag.** What only watches is an
+  observer (the `observers` setting), never a plugin: every plugin hook can
+  change the call. A flag a plugin sets on itself would let a plugin that
+  changes behaviour leave the setup.
+- **`spend(usd)` has no label, and makes no event.** Nothing would keep a
+  label; a live reader that wants a running cost declares a note
+  (`cost so far`). Trade-off: a page cannot show a tool's spending live
+  without one.
+- **`codeId` (Python `code_id`).** Found by the tests: two tools made by one
+  factory have one text and two behaviours, and TypeScript reads only a
+  function's text. A tool's author (or a host that bundles, as Quiver does)
+  says what identifies it beyond that.
+- **A model lm15 cannot route** is `{"provider": null, "model": name}`:
+  named, not routed; the call fails and says why.
+- **A refused reach is a recorded call**, as an input the interface
+  refuses is: the record says `ReachError`, and no request was sent.
+- **A price in `limits`' config** is written without lm15's defaults
+  (`currency` USD, no tiers), so one price is one JSON in both languages
+  (TypeScript's lm15 writes `3.0` as a `RawNumber`; canonical JSON writes
+  `3` either way).
+- **Python could not save a tool made with `functai.tool`** (it was "not a
+  function"). It is saved now as `{"node": key, effects, needs, notes,
+  code_id}` and loaded back as the same tool, with the version and setup it
+  had.
+- **The first call of a module read every installed package** (about 13
+  seconds here; `packages_distributions()` twice per first call). The
+  studio branch had cached it; the same change is on this branch, so both
+  merge as one.
+
+**Checked:** the contract's 333 cases; Python 1,000+ tests and TypeScript
+590+ (each with tests of every part above through calls with a fake
+model); `tools/crosslang.py` (Python, TypeScript, R and Julia reading
+each other's records and folders: 58 checks).
+
+**Not built, and why:** MCP tools and tools a provider runs (the setup
+says how they would count; FunctAI runs neither yet); a wall's limits
+checked by FunctAI (the host holds them: FunctAI records them); the model
+a server address really serves (the record of which model answered is the
+guard). R and Julia: they refuse an interface with `notes` (a key they do
+not know) and skip `program.setup` (a record key they do not know), as the
+contract asks of a reader, until they catch up.

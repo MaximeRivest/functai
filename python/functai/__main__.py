@@ -62,6 +62,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("folder")
     v = sub.add_parser("verify", help="load a saved folder here and compare its fingerprints")
     v.add_argument("folder")
+    sd = sub.add_parser("setup-diff", help="what differs between what two saved folders ran on, step by step")
+    sd.add_argument("before")
+    sd.add_argument("after")
+    sd.add_argument("--json", action="store_true", help="the differences as JSON")
     k = sub.add_parser("skill", help="the skill that teaches coding agents to use functai: where it is, and install it")
     k.add_argument("--install", nargs="*", metavar="DIR",
                    help="copy it into these skills folders (default: every agent's found here)")
@@ -75,6 +79,17 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.command == "verify":
         from .saved import main as verify_main
         return verify_main(["verify", args.folder])
+    if args.command == "setup-diff":
+        from .setup import setup_diff
+        diff = setup_diff(args.before, args.after)
+        if args.json:
+            print(json.dumps(diff, indent=2, ensure_ascii=False))
+        else:
+            for d in diff:
+                print(f"{d['program']}: {d['field']}: {json.dumps(d['before'])} -> {json.dumps(d['after'])}")
+            if not diff:
+                print("the same setup")
+        return 0
     from .serving import Service
     program = _program(args.program, trust=args.trust)
     service = Service(program, keys=args.keys, store=args.store, lm=args.lm, approvals=args.approvals)

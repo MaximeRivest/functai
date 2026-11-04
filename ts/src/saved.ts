@@ -20,6 +20,7 @@ import { VERSION } from "./calllog.ts";
 import { copyData, getOwn, parseData, setOwn, writeData } from "./values.ts";
 import { ARTIFACTS, filesReader } from "./files-binding.ts";
 import * as bridge from "lmcc/lm15";
+import { toolEntry } from "./setup.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -247,7 +248,15 @@ function aiEntry(fn: AIFunction): Rec {
     settings["adapter"] = s.adapter instanceof lmcc.Adapter ? lmcc.dump(s.adapter, REGISTRY) : s.adapter;
   }
   for (const [snake, camel] of Object.entries(SNAKE)) if (s[camel] !== undefined && s[camel] !== null) settings[snake] = s[camel];
-  if (fn.tools.length) throw new LoadRefused("saved-tools", `${fn.name} has tools: a tool is code, and a saved folder carries none from TypeScript yet`);
+  // its tools, described as data, with what each says of itself and its code's hash: TypeScript's folder carries
+  // no code, so another language describes the agent and refuses to run it (saved.md, step 3)
+  const tools = fn.tools.map((t) => {
+    const entry: Rec = { tool: { name: t.name, description: t.description ?? "", parameters: copyData(t.parameters) }, ...toolEntry(t) };
+    if (t.effects) entry["effects"] = t.effects;
+    if (t.needs) entry["needs"] = copyData(t.needs);
+    if (t.notes) entry["notes"] = copyData(t.notes);
+    return entry;
+  });
   const config: Rec = { ...(s.config ?? {}) };
   for (const k of ["temperature", "maxTokens", "topP", "stop", "seed"] as const) if (s[k] !== undefined && s[k] !== null) config[k] = s[k];
   const state = fn.state();
@@ -267,7 +276,7 @@ function aiEntry(fn: AIFunction): Rec {
   });
   return {
     settings, config: Object.keys(config).length ? JSON.parse(stringifyJson(Config.toJSON(config as Config))) : {},
-    template: s.template ? [...s.template] : null, tools: [], teacher: null, state, requires: [],
+    template: s.template ? [...s.template] : null, tools, teacher: null, state, requires: [],
     signature: lmcc.signatureToDict(fn.signature), probes,
     fingerprints: { signature: lmcc.signatureFingerprint(fn.signature), requests },
     body: null, version: fn.version,
@@ -291,11 +300,15 @@ export function toManifest(program: AIFunction | AnyModule): Rec {
     // each input whose default counts by its code keeps that code (saved.md, a node's defaults)
     const code = (p as unknown as { defaultCode?: Record<string, string> }).defaultCode ?? {};
     const defaults = Object.keys(code).length ? { defaults: Object.fromEntries(Object.entries(code).map(([k, c]) => [k, { code: c }])) } : {};
+    // what it ran on where it was saved (saved.md): a loader never refuses for it
+    const setup = { setup: p.setupDocument() };
     if (isModule(p)) {
-      nodes[key] = { kind: "module", module: p.module, name: p.name, interface: p.interface, ...defaults };
+      const own = (p as unknown as { _ownNeeds?: unknown })._ownNeeds;      // what its own code reaches
+      nodes[key] = { kind: "module", module: p.module, name: p.name, interface: p.interface, ...defaults, version: p.version,
+        ...(own !== undefined ? { needs: copyData(own) } : {}), ...setup };
       for (const u of p.uses) add(u);
     } else {
-      nodes[key] = { kind: "ai", module: p.module, name: p.name, interface: p.interface, ...defaults, ai: aiEntry(p) };
+      nodes[key] = { kind: "ai", module: p.module, name: p.name, interface: p.interface, ...defaults, ai: aiEntry(p), ...setup };
     }
   };
   add(program);

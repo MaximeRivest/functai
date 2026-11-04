@@ -32,11 +32,13 @@ class View:
     shows it (a new dict), or None when the view leaves it out. Events are
     given in the order of one form of one log."""
 
-    def __init__(self, name: str, *, answer_from: Any = None):
+    def __init__(self, name: str, *, answer_from: Any = None, notes: Any = ()):
         if name not in NAMES:
             raise ValueError(f"a view is one of {', '.join(NAMES)}; not {name!r}")
         self.name = name
         self.answer_from = getattr(answer_from, "__name__", answer_from)
+        # the notes the outermost program declares outside (contract/programs.md, *Notes*): shown, re-addressed
+        self.notes = frozenset(notes or ())
         self.root: Optional[str] = None
         self.root_function: Optional[str] = None
         self.root_kind: Optional[str] = None
@@ -63,6 +65,11 @@ class View:
             program = e.get("program") or {}
             self.root_kind = program.get("kind", "ai")
             self.answer = program.get("answer") or "result"
+        if kind == "note":
+            if e.get("name") not in self.notes:
+                return None
+            e["call"], e["function"] = self.root, self.root_function
+            return self._link(e)
         if call == self.root:
             return self._root(e, kind)
         return self._inside(e, kind)
@@ -139,10 +146,25 @@ class View:
         return self._link(out)
 
 
-def outside(events: Any, *, answer_from: Any = None) -> list:
-    """A whole form of a log as the outside view shows it."""
-    v = View("outside", answer_from=answer_from)
+def outside(events: Any, *, answer_from: Any = None, notes: Any = ()) -> list:
+    """A whole form of a log as the outside view shows it. ``notes``: the
+    names of the notes the outermost program declares ``outside``."""
+    v = View("outside", answer_from=answer_from, notes=notes)
     return [x for x in (v.apply(e) for e in events) if x is not None]
 
 
-__all__ = ["View", "outside", "NAMES"]
+def outside_notes(program: Any) -> list:
+    """The names of the notes a program declares ``outside`` (its interface's)."""
+    try:
+        iface = program.interface
+    except Exception:  # noqa: BLE001 — a program with no interface shows none
+        return []
+    return [n["name"] for n in (iface.get("notes") or []) if n.get("outside")]
+
+
+def for_program(name: str, program: Any) -> View:
+    """The view ``name`` of a log of ``program``'s calls, with what the program declares for it."""
+    return View(name, answer_from=getattr(program, "_answer_from", None), notes=outside_notes(program))
+
+
+__all__ = ["View", "outside", "outside_notes", "for_program", "NAMES"]

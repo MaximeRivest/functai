@@ -30,9 +30,11 @@ import enum
 import importlib.metadata as md
 import inspect
 import json
+import os
 import re
 import sys
 import textwrap
+import threading
 import types
 import typing
 from pathlib import Path
@@ -86,8 +88,32 @@ _STDLIB = frozenset(sys.stdlib_module_names) | {"builtins", "__future__"}
 _RUNTIME = ("functai", "lmcc", "lmcc_std", "lmcc_lm15", "lm15")
 
 
+_DISTS_LOCK = threading.Lock()
+_DISTS: Optional[Tuple[Tuple[Tuple[str, Optional[int]], ...], Dict[str, List[str]]]] = None
+
+
+def _path_stamp() -> Tuple[Tuple[str, Optional[int]], ...]:
+    """The folders packages are imported from, and when each last changed: installing or removing
+    a package changes its folder, so the same stamp means the same installed packages."""
+    out = []
+    for p in sys.path:
+        try:
+            out.append((p, os.stat(p or ".").st_mtime_ns))
+        except OSError:
+            out.append((p, None))
+    return tuple(out)
+
+
 def _distributions() -> Dict[str, List[str]]:
-    return md.packages_distributions()
+    """Which distribution provides each top-level module. Reading it walks every installed
+    package (seconds in a large environment), so it is read once and again only when a folder
+    on ``sys.path`` changed; threads asking at the same time wait for one reading."""
+    global _DISTS
+    stamp = _path_stamp()
+    with _DISTS_LOCK:
+        if _DISTS is None or _DISTS[0] != stamp:
+            _DISTS = (stamp, md.packages_distributions())
+        return _DISTS[1]
 
 
 class Origins:
@@ -783,9 +809,33 @@ class Analysis:
     # ---- AI functions
 
     def _ai(self, node: Node, fn: FunctAIFunc) -> None:
+        from .tools import Tool
         node.requires = tuple(getattr(fn, "_requires", ()) or ())
         for t in fn._tools:
-            if isinstance(t, FunctAIFunc):
+            if isinstance(t, Tool):
+                # a tool that says what it does (functai.tool): its code, and what it says of itself beside it
+                inner = t._fn
+                meta = {k: v for k, v in (("effects", t.effects), ("needs", t.needs), ("notes", t.notes),
+                                          ("code_id", getattr(t, "code_id", None))) if v is not None}
+                if t.__name__ != getattr(inner, "__name__", None):
+                    meta["name"] = t.__name__
+                if (t.__doc__ or "") != (getattr(inner, "__doc__", None) or ""):
+                    meta["description"] = t.__doc__ or ""
+                if inspect.isfunction(inner) and self.origins.of(inner.__module__) == "local":
+                    k = self.code(inner, where=f"{node.key} tools")
+                    if k:
+                        node.tools.append({"node": k, **meta})
+                        if k not in node.uses:
+                            node.uses.append(k)
+                else:
+                    path = self._import_path(inner) if inspect.isfunction(inner) or inspect.isbuiltin(inner) else None
+                    if path is None:
+                        self.problem("unsaveable-value", node.key, f"the tool {t!r} cannot be imported by name",
+                                     "wrap it in a function of your own")
+                    else:
+                        node.tools.append({"import": f"{path[0]}:{path[1]}", **meta})
+                        self._package(path[0])
+            elif isinstance(t, FunctAIFunc):
                 k = self.code(t, where=f"{node.key} tools")
                 if k:
                     node.tools.append(k)

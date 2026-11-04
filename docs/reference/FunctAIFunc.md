@@ -39,6 +39,7 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | `lm` | The model this function's own settings name (``@ai(lm=...)``, ``fn.lm = ...``); None when it |
 | `module` | How the model answers: ``"predict"`` (the default) or ``"cot"`` (it writes its reasoning |
 | `optimizer` | The optimizer ``fn.opt(rows)`` uses when none is given (default: ``BootstrapFewShot``). |
+| `setup` | What the function runs on here: ``sha256:`` of its setup document |
 | `signature` | The lmcc signature: inputs, outputs, instruction. |
 | `temperature` | The sampling temperature this function's own settings name; None when it uses the one |
 | `template` | The chat template the function writes its conversation with |
@@ -65,6 +66,7 @@ the same in async code (an ``async def`` AI function is awaited directly).
 | [predict](#functai.FunctAIFunc.predict) | The call, with everything it produced: every output (``p.result``, |
 | [render](#functai.FunctAIFunc.render) | The exact request the next call would send, without sending it. |
 | [save](#functai.FunctAIFunc.save) | Write the instruction and demos to a JSON file (``load`` reads it back). |
+| [setup_document](#functai.FunctAIFunc.setup_document) | The document ``setup`` is the hash of, with the settings in force now |
 | [state](#functai.FunctAIFunc.state) | The instruction and demos in use. |
 | [stream](#functai.FunctAIFunc.stream) | Call the function and watch the answer being written. |
 | [to_dspy](#functai.FunctAIFunc.to_dspy) | Removed: FunctAI no longer runs on DSPy, so there is no DSPy program to give. |
@@ -387,6 +389,15 @@ FunctAIFunc.save(path)
 ```
 
 Write the instruction and demos to a JSON file (``load`` reads it back).
+
+### setup_document { #functai.FunctAIFunc.setup_document }
+
+```{.python .no-run}
+FunctAIFunc.setup_document()
+```
+
+The document ``setup`` is the hash of, with the settings in force now
+(``functai.setup_diff`` says what differs between two).
 
 ### state { #functai.FunctAIFunc.state }
 

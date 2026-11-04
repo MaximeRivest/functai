@@ -1,0 +1,134 @@
+{
+ "description": "A note is checked where it is made: the innermost program refuses a name it does not declare when it declares notes (a renamed note would leave a page blank); every program of the calls around it that declares the name refuses data that does not fit (null when made with no data). A program that declares none refuses nothing of its own.",
+ "program": "notes",
+ "chain": [
+  {
+   "description": "Walk a site and say what is wrong with it.",
+   "inputs": [
+    {
+     "name": "url",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "outputs": [
+    {
+     "name": "result",
+     "shape": {
+      "type": "string"
+     }
+    }
+   ],
+   "notes": [
+    {
+     "name": "stage",
+     "shape": {
+      "enum": [
+       "walking",
+       "writing"
+      ]
+     },
+     "desc": "where the walk is",
+     "latest": true,
+     "outside": true
+    },
+    {
+     "name": "page captured",
+     "shape": {
+      "type": "object",
+      "properties": {
+       "url": {
+        "type": "string"
+       },
+       "title": {
+        "type": "string"
+       }
+      },
+      "required": [
+       "url",
+       "title"
+      ],
+      "additionalProperties": false
+     },
+     "outside": true
+    },
+    {
+     "name": "cost so far",
+     "shape": {
+      "type": "number"
+     },
+     "latest": true
+    }
+   ]
+  }
+ ],
+ "checks": [
+  {
+   "name": "stage",
+   "data": "walking",
+   "expect": {
+    "ok": true
+   }
+  },
+  {
+   "name": "stage",
+   "data": "walk",
+   "expect": {
+    "refuses": "interface-note",
+    "field": "stage"
+   }
+  },
+  {
+   "name": "page captured",
+   "data": {
+    "url": "https://a.example/",
+    "title": "A"
+   },
+   "expect": {
+    "ok": true
+   }
+  },
+  {
+   "name": "page captured",
+   "data": {
+    "url": "https://a.example/"
+   },
+   "expect": {
+    "refuses": "interface-note",
+    "field": "page captured"
+   }
+  },
+  {
+   "name": "page captured",
+   "data": null,
+   "expect": {
+    "refuses": "interface-note",
+    "field": "page captured"
+   }
+  },
+  {
+   "name": "cost so far",
+   "data": 0.02,
+   "expect": {
+    "ok": true
+   }
+  },
+  {
+   "name": "cost so far",
+   "data": "0.02",
+   "expect": {
+    "refuses": "interface-note",
+    "field": "cost so far"
+   }
+  },
+  {
+   "name": "stage changed",
+   "data": "writing",
+   "expect": {
+    "refuses": "interface-note",
+    "field": "stage changed"
+   }
+  }
+ ]
+}

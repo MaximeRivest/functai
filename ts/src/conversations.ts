@@ -41,7 +41,7 @@ import type { Stream } from "./stream.ts";
 import { holderName } from "./replies.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
 import { Delivered, resultOf, type ToolOutput } from "./results.ts";
-import { View } from "./views.ts";
+import { View, outsideNotes } from "./views.ts";
 import { sumUsage } from "./usage.ts";
 
 type Rec = Record<string, unknown>;
@@ -978,7 +978,7 @@ export class Turn {
       return;
     }
     // a view is made from the kept form from its first event; a reader resumes it after a position it holds
-    const v = new View(opts.view!, { answerFrom: this._conv.program._answerFrom ?? null });
+    const v = new View(opts.view!, { answerFrom: this._conv.program._answerFrom ?? null, notes: outsideNotes(this._conv.program as never) });
     let waitingFor = opts.after ?? null;
     for await (const e of follow(this._conv.store, this.id, null, follower)) {
       const shown = v.apply(e);

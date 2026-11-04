@@ -1,0 +1,63 @@
+{
+ "description": "A backup model when the first is unsure: its route and the probability below which it answers.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini",
+  "escalate_to": "anthropic:claude-sonnet-4-5",
+  "escalate_below": 0.8
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "escalate": {
+    "to": {
+     "provider": "anthropic",
+     "model": "claude-sonnet-4-5"
+    },
+    "below": 0.8
+   },
+   "reach": "open"
+  },
+  "setup": "sha256:08f2f64f36fe87f8dab4a134e20d43313345418dc706640a4fcf39b3d6be696f"
+ }
+}

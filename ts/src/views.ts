@@ -41,11 +41,15 @@ export class View {
   private requests = 0;
   private last: { writer: number; seq: number } | null = null;
 
-  constructor(name: ViewName, opts: { answerFrom?: string | { name: string } | null } = {}) {
+  /** The notes the outermost program declares `outside` (programs.md, *Notes*): shown, re-addressed to it. */
+  readonly notes: ReadonlySet<string>;
+
+  constructor(name: ViewName, opts: { answerFrom?: string | { name: string } | null; notes?: Iterable<string> } = {}) {
     if (name !== "full" && name !== "kept" && name !== "outside") throw new TypeError(`a view is "full", "kept" or "outside"; not ${JSON.stringify(name)}`);
     this.name = name;
     const a = opts.answerFrom ?? null;
     this.answerFrom = a === null ? null : typeof a === "string" ? a : a.name;
+    this.notes = new Set(opts.notes ?? []);
   }
 
   private link(e: Rec): Rec {
@@ -66,6 +70,12 @@ export class View {
       const program = (e["program"] ?? {}) as Rec;
       this.rootKind = (program["kind"] ?? "ai") as string;
       this.answer = (program["answer"] ?? "result") as string;
+    }
+    if (kind === "note") {
+      if (!this.notes.has(e["name"] as string)) return null;
+      e["call"] = this.root;
+      e["function"] = this.rootFunction;
+      return this.link(e);
     }
     return call === this.root ? this.atRoot(e, kind) : this.inside(e, kind);
   }
@@ -142,7 +152,7 @@ export class View {
 }
 
 /** A whole form of a log as the outside view shows it. */
-export function outside(events: Iterable<Readonly<Rec>>, opts: { answerFrom?: string | { name: string } | null } = {}): Rec[] {
+export function outside(events: Iterable<Readonly<Rec>>, opts: { answerFrom?: string | { name: string } | null; notes?: Iterable<string> } = {}): Rec[] {
   const v = new View("outside", opts);
   const out: Rec[] = [];
   for (const e of events) {
@@ -150,4 +160,9 @@ export function outside(events: Iterable<Readonly<Rec>>, opts: { answerFrom?: st
     if (x) out.push(x);
   }
   return out;
+}
+
+/** The names of the notes a program declares `outside` (its interface's: programs.md, *Notes*). */
+export function outsideNotes(program: { readonly interface?: { readonly notes?: readonly { name: string; outside?: true }[] } }): string[] {
+  return (program.interface?.notes ?? []).filter((n) => n.outside === true).map((n) => n.name);
 }

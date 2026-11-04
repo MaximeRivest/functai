@@ -1,17 +1,30 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/maximerivest/functai/contract/schema/interface.schema.json",
-  "title": "A program's interface (contract/programs.md): the inputs it takes and the outputs it gives. Closed: a key this schema does not name is refused (interface-malformed), since it could change what a program accepts or how a field is kept. What the schema cannot check (names used once, shapes of the checked vocabulary, defaults that fit) programs.md refuses too.",
+  "title": "A program's interface (contract/programs.md): the inputs it takes, the outputs it gives, and the notes it may make while it runs. Closed: a key this schema does not name is refused (interface-malformed), since it could change what a program accepts or how a field is kept. What the schema cannot check (names used once, shapes of the checked vocabulary, defaults that fit) programs.md refuses too.",
   "type": "object",
   "required": ["description", "inputs", "outputs"],
   "properties": {
     "description": {"type": "string"},
     "inputs": {"type": "array", "items": {"$ref": "#/$defs/input"}},
-    "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/output"}}
+    "outputs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/output"}},
+    "notes": {"type": "array", "items": {"$ref": "#/$defs/note"}}
   },
   "additionalProperties": false,
   "$defs": {
     "name": {"type": "string", "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"},
+    "note": {
+      "type": "object",
+      "required": ["name", "shape"],
+      "properties": {
+        "name": {"type": "string", "pattern": "^[\\s\\S]*[^ \\t\\n\\r][\\s\\S]*$"},
+        "shape": {"type": "object"},
+        "desc": {"type": "string"},
+        "latest": {"const": true},
+        "outside": {"const": true}
+      },
+      "additionalProperties": false
+    },
     "output": {
       "type": "object",
       "required": ["name", "shape"],

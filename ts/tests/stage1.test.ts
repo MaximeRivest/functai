@@ -9,7 +9,7 @@ import assert from "node:assert/strict";
 import { shownTurn } from "../src/saw.ts";
 import { test } from "node:test";
 import {
-  ai, checkInterface, configure, InterfaceError, keepsSaw, module, sawOf, SawUnknown, SettingError, t,
+  note, ai, checkInterface, configure, InterfaceError, keepsSaw, module, sawOf, SawUnknown, SettingError, t,
   type AnyModule, type Interface, type StreamEvent,
 } from "../src/index.ts";
 import { checkLogContent, keptFields, writtenRecord } from "../src/content.ts";
@@ -32,10 +32,16 @@ function tsModule(iface: Rec, run: (inputs: Rec) => unknown): AnyModule {
     shape: f.opaque ? t.opaque() : f.shape, ...(f.desc ? { desc: f.desc } : {}), ...(input ? { optional: Boolean(f.optional) } : {}),
   });
   const outputs = Object.fromEntries(iface.outputs.map((f: Rec) => [f.name, field(f, false)]));
+  // notes as a TypeScript user declares them: { shape, desc?, latest?, outside? }
+  const notes = iface.notes === undefined ? {} : {
+    notes: Object.fromEntries(iface.notes.map((n: Rec) => [n.name, { shape: n.shape, ...(n.desc ? { desc: n.desc } : {}),
+      ...(n.latest ? { latest: true } : {}), ...(n.outside ? { outside: true } : {}) }])),
+  };
   return module("program", {
     description: iface.description,
     input: Object.fromEntries(iface.inputs.map((f: Rec) => [f.name, field(f, true)])),
     ...(iface.outputs.length === 1 && iface.outputs[0].name === "result" ? { output: outputs["result"] } : { outputs }),
+    ...notes,
   } as never, run as never) as AnyModule;
 }
 
@@ -123,7 +129,39 @@ for (const [name, c] of cases("programs")) {
           got = { refuses: err.code, field: err.field };
         }
         assert.deepEqual(got, x.expect, JSON.stringify(x.interface));
-        if (!x.ai && !got.refuses) assert.equal(tsModule(x.interface, () => "").interfaceId, x.expect.signature);   // defining it gives the same
+        if (!x.ai && !got.refuses) {
+          const m = tsModule(x.interface, () => "");                // defining it gives the same
+          assert.equal(m.interfaceId, x.expect.signature);
+          assert.deepEqual(m.interface.notes, x.interface.notes);
+        }
+      }
+      return;
+    }
+    if (c.program === "notes") {
+      // real modules, one inside the other, outermost first; the innermost's code makes the note
+      const sample = (iface: Rec): Rec => Object.fromEntries(iface.inputs.filter((f: Rec) => !f.optional)
+        .map((f: Rec) => [f.name, ({ string: "x", array: [], object: {}, integer: 0, number: 0, boolean: false } as Rec)[f.shape.type ?? "object"]]));
+      const now: Rec = {};
+      let program = tsModule(c.chain[c.chain.length - 1], () => {
+        note(now.name, native(now.data));
+        return "ok";
+      });
+      for (const iface of [...c.chain.slice(0, -1)].reverse()) {
+        const inner = program;
+        const innerIface = inner.interface as unknown as Rec;
+        program = tsModule(iface, () => inner(sample(innerIface) as never));
+      }
+      for (const check of c.checks) {
+        Object.assign(now, check);
+        let got: Rec;
+        try {
+          await program(sample(c.chain[0]) as never);
+          got = { ok: true };
+        } catch (err) {
+          if (!(err instanceof InterfaceError)) throw err;
+          got = { refuses: err.code, field: err.field };
+        }
+        assert.deepEqual(got, check.expect, JSON.stringify(check));
       }
       return;
     }

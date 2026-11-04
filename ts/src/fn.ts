@@ -15,8 +15,10 @@
  */
 
 import * as lmcc from "lmcc";
-import type { Request } from "@lm15/lm15";
+import { Config, stringifyJson, type Request } from "@lm15/lm15";
+import { pluginEntry, reachOf, setupHash, SETTINGS as SETUP_SETTINGS, toolEntry, toolNeeds, type HasSetup } from "./setup.ts";
 import type * as calllog from "./calllog.ts";
+import { warnOnce } from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { lm15Request, run as runEngine, Prediction, type Router } from "./engine.ts";
 import { Cancelled, PluginError } from "./errors.ts";
@@ -26,13 +28,13 @@ import { chatOf, Conversation, contextFor, sectionsFor, type ConversationOptions
 import { Context as Slot } from "./host.ts";
 import { Progress, showProgress } from "./progress.ts";
 import { Binder, declareInput, declareOutput, rulesOf, type InputRule, type InputRules } from "./inputs.ts";
-import { checkInputs, checkInterface, interfaceSignature, recordedInputs, type Interface } from "./interface.ts";
+import { checkInputs, checkInterface, interfaceSignature, mergedNotes, recordedInputs, type Interface, type InterfaceNote } from "./interface.ts";
 import { bind } from "./layouts.ts";
 import { adjustSettings, callCapabilities, defaultModel, modelString, PROBE } from "./models.ts";
 import { explicitRouter, routerFor } from "./accounts.ts";
 import { droppedFields, recordInputs, runCall } from "./program.ts";
 import type { FieldSpec, InputValueOf, IsOptional, ValueOf } from "./shapes.ts";
-import { checkSettings, configOf, effective, type Settings } from "./settings.ts";
+import { checkSettings, configOf, effective, mergedNeeds, type Settings } from "./settings.ts";
 import { JournalError } from "./log.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson, writeData } from "./values.ts";
 import { dataShape } from "./interface.ts";
@@ -40,6 +42,7 @@ import { bakedJob, isBaked } from "./bake.ts";
 import { builtin, env } from "./host.ts";
 import * as sig from "./signature.ts";
 import { PredictionStream } from "./stream.ts";
+import { outsideNotes } from "./views.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -157,6 +160,15 @@ export interface AIFunction<I extends Rec = Rec, O extends Rec = Rec, A = unknow
   set demos(items: Array<Demo | Rec>);
   /** A fingerprint of what the function sends besides its inputs (contract/calls.md, "Versions"). */
   readonly version: string;
+  /**
+   * What it runs on here: `"sha256:"` of its setup document (calls.md,
+   * *Setups*): its version, the model each step asks, the settings and
+   * plugins in force, its tools' code, what it may reach. Another model is
+   * another setup of the same version. Logged calls carry it (`program.setup`).
+   */
+  readonly setup: string;
+  /** The document `setup` is the hash of, with the settings in force now (`setupDiff` says what differs between two). */
+  setupDocument(): Record<string, unknown>;
   /** The call log's `program.signature`: the fields' names and shapes. */
   readonly signatureId: string;
   /** What it takes and gives, as data (contract/programs.md): its inputs (optional ones with their default) and outputs. */
@@ -336,7 +348,7 @@ export function defaultsDocument(iface: Interface, code: Readonly<Record<string,
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "apiMaxWait", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
-  "escalateBelow", "apiKey", "baseUrl", "onUnreadable"]);
+  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall"]);
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -386,7 +398,9 @@ export function ai<I extends Fields, O extends Fields | undefined = undefined, A
   };
   // lmcc checks the signature first (signature-malformed), then the interface is checked by the contract's rules
   const signature = sig.signature(definition, def.instructions ?? null);
-  const iface = checkInterface(interfaceOf(definition), { ai: true, where: `ai("${name}")` });
+  // its notes are its tools' (programs.md, *How each program has one*)
+  const notes = mergedNotes((def.tools ?? []).map((t) => (t as { notes?: readonly InterfaceNote[] }).notes), `ai("${name}")`);
+  const iface = checkInterface({ ...interfaceOf(definition), ...(notes !== undefined ? { notes } : {}) }, { ai: true, where: `ai("${name}")` });
   checkSettings(own, `ai("${name}")`, fieldsOf(iface, signature));
   const core: Core = {
     definition: { ...definition, cot: false, includeName: true }, interface: iface, rules, own, tools: [...(def.tools ?? [])],
@@ -546,12 +560,67 @@ export function make(core: Core): AIFunction {
   };
 
   const interfaceId = interfaceSignature(core.interface);
-  const program = (s: Settings = settingsNow()): calllog.Program => ({
-    name: core.definition.name, kind: "ai", module: core.module, version: version(),
-    signature: sig.signatureId(signatureNow(s)), interface: interfaceId, answer,
-    ...(core.saved ? { saved: core.saved } : {}),
-    ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
-  });
+
+  // ---- what it runs on (calls.md, *Setups*)
+  /** What its tools' code reaches (tools.md, *What a tool needs*). */
+  const needs = () => mergedNeeds(...core.tools.map(toolNeeds));
+  /** The model a setup names: as lm15 routes it; null when none can be named; a name lm15 cannot route, unrouted. */
+  const modelOf = (s: Settings, lm: string | null | undefined = s.lm): Rec | null => {
+    const name = lm ?? (s.router ? null : defaultModel(env()));
+    if (!name) return null;
+    try {
+      const r = route({ ...s, lm: name });
+      return { provider: r.provider, model: r.wire };
+    } catch {
+      return { provider: null, model: modelString(name) };
+    }
+  };
+  /** The lm15 settings set in any layer, as lm15's canonical JSON; null when none is. */
+  const lm15ConfigOf = (s: Settings): Rec | null => {
+    const config: Rec = { ...(s.config ?? {}) };
+    for (const k of ["temperature", "maxTokens", "topP", "stop", "seed"] as const) if (s[k] !== undefined && s[k] !== null) config[k] = s[k];
+    if (!Object.keys(config).length) return null;
+    const json = JSON.parse(stringifyJson(Config.toJSON(config as Config))) as Rec;
+    return Object.keys(json).length ? json : null;
+  };
+  /** Its setup document with these settings (and a call's options: the plugins around it). */
+  const setupDocument = (s: Settings = settingsNow(), extra: Settings = {}): Rec => {
+    const doc: Rec = { version: version(), model: modelOf(s) };
+    const config = lm15ConfigOf(s);
+    if (config) doc["config"] = config;
+    const settings: Rec = {};
+    for (const [name, key, fallback] of SETUP_SETTINGS) settings[name] = (s as Rec)[key] ?? fallback;
+    if (s.capabilities !== undefined && s.capabilities !== null) settings["capabilities"] = copyData(s.capabilities);
+    doc["settings"] = settings;
+    const target = s.escalateTo;
+    if (target !== undefined && target !== null) {
+      const to = typeof target === "string" ? modelOf(s, target) : { setup: (target as unknown as HasSetup).setup };
+      doc["escalate"] = { to, below: s.escalateBelow ?? 0.9 };
+    }
+    const running = plugins.around(core.own, extra);
+    if (running.length) doc["plugins"] = running.map(pluginEntry);
+    if (core.tools.length) doc["tools"] = Object.fromEntries(core.tools.map((t) => [t.name, toolEntry(t)]));
+    doc["reach"] = reachOf(needs(), s);
+    return doc;
+  };
+  const setupId = (s: Settings, extra: Settings): string | undefined => {
+    try {
+      return setupHash(setupDocument(s, extra));
+    } catch (err) {                                  // a setup that cannot be worked out never stops a call
+      warnOnce(`setup:${core.definition.name}`, `the setup of ${core.definition.name} could not be worked out (${(err as Error).message}); its records name none`);
+      return undefined;
+    }
+  };
+
+  const program = (s: Settings = settingsNow(), extra: Settings = {}): calllog.Program => {
+    const setup = setupId(s, extra);
+    return {
+      name: core.definition.name, kind: "ai", module: core.module, version: version(),
+      signature: sig.signatureId(signatureNow(s)), interface: interfaceId, answer,
+      ...(core.saved ? { saved: core.saved } : {}), ...(setup ? { setup } : {}),
+      ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
+    };
+  };
 
   /** Every output the model gave, the fields FunctAI added included (`reasoning`, `calls`: the last step's), in the signature's order: the record's. */
   const recordOutputs = (pred: Prediction, signature: lmcc.Signature): Rec => {
@@ -730,7 +799,8 @@ export function make(core: Core): AIFunction {
       }
     }
     return runCall<Prediction>({
-      program: () => program(s), fields, own: core.own, options: extra as Settings, self: fn,
+      program: () => program(s, extra as Settings), fields, own: core.own, options: extra as Settings, self: fn, notes: core.interface.notes,
+      needs,
       settings: s, stream, signal, inputs: given, ...(refused !== undefined ? { refused } : {}),
       prepare: (call) => prepare(call, s),
       body: async (call) => {
@@ -814,7 +884,10 @@ export function make(core: Core): AIFunction {
   const fn = ((input: unknown, options?: CallOptions) => answerOf(predict(input, options))) as unknown as AIFunction;
   const streamOf = (input: unknown, options: CallOptions, passive: boolean) => {
     bindInputs(input);                                 // wrong arguments fail here, not in the stream
-    return new PredictionStream<unknown, Prediction>((st) => predict(input, options, st as PredictionStream), (p) => p.answer, options.signal, passive);
+    const st = new PredictionStream<unknown, Prediction>((st) => predict(input, options, st as PredictionStream), (p) => p.answer, options.signal, passive);
+    st.answerShape = core.interface.outputs[core.interface.outputs.length - 1]!.shape;
+    st.outsideNotes = outsideNotes(fn as never);
+    return st;
   };
   const props: PropertyDescriptorMap = {
     name: { value: core.definition.name },
@@ -839,6 +912,7 @@ export function make(core: Core): AIFunction {
     definition: { get: () => core.definition },
     tools: { get: () => core.tools },
     saved: { get: () => core.saved },
+    setup: { get: () => setupHash(setupDocument()) },
   };
   Object.defineProperties(fn, props);
   Object.assign(fn, {
@@ -857,6 +931,8 @@ export function make(core: Core): AIFunction {
       return recordOf(entriesOf(bound).map(([k, v]) => [k, toJson(v)[0]] as const));
     },
     _programInfo: () => program(),
+    setupDocument: () => setupDocument(),
+    _needs: needs,
     _exampleTurn: (inputs: Rec, outputs: Rec) => {
       const plan = planFor(settingsNow()).plan;
       const turn = plan.example(sig.prepareInputs(plan.signature, parseInputsNow(inputs)), outputs);

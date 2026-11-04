@@ -31,6 +31,7 @@ import contextvars
 import copy
 import dataclasses
 import os
+import re
 import threading
 import time
 import warnings
@@ -335,16 +336,37 @@ def note(name: str, data: Any = None) -> None:
 
     Whatever watches the call sees a ``note`` event (a stream, an observer, a
     journal: contract/streaming.md), in its place among the call's events.
-    ``data`` is any JSON value; the kept form of a call whose content is not
-    whole keeps the note's ``name`` and leaves ``data`` out. A note is not a
-    value of the call: the call log does not keep it. Outside any call, or
-    when nothing watches, it does nothing. A resumed turn does not show again
-    the notes it made before it stopped."""
+    ``data`` is any JSON value (a record is given as its members); the kept
+    form of a call whose content is not whole keeps the note's ``name`` and
+    leaves ``data`` out. A note is not a value of the call: the call log does
+    not keep it. Outside any call it does nothing. A resumed turn does not
+    show again the notes it made before it stopped.
+
+    A program may declare its notes (``@module(notes=...)``,
+    ``@functai.tool(notes=...)``: contract/programs.md, *Notes*). Then, inside
+    its calls, a note it does not declare, or whose data does not fit what a
+    program around it declares, raises ``InterfaceError`` (code
+    ``interface-note``) here, whether or not anything watches."""
     if not isinstance(name, str) or not name.strip():
         raise TypeError("a note's name is a non-empty text: what happened (\"screen captured\")")
     call = calllog.current()
     if call is None:
         return
+    chain = []                                        # each program's declared notes, outermost first
+    c = call
+    while c is not None:
+        declared = getattr(c.program, "_declared_notes", None)
+        chain.append(declared() if callable(declared) else None)
+        c = c.parent_call
+    chain.reverse()
+    if any(x is not None for x in chain):             # declared somewhere: checked (contract/programs.md, *Notes*)
+        from .errors import InterfaceError
+        from .interface import json_form, note_refusal
+        ok, json_data = json_form(data)
+        why = note_refusal(chain, name, json_data) if ok else "its data has no JSON form"
+        if why:
+            raise InterfaceError("interface-note", name, f"{call.function}: the note {name!r} is refused: {why}")
+        data = json_data
     call.emit("note", name=name, data=data)
 
 
@@ -495,108 +517,147 @@ class _Projection:
 # ------------------------------------------------------------------ the answer so far
 
 
-def partial_json(text: str) -> Any:
-    """The JSON value that the start of a JSON text says so far: complete values
-    as they are, a string still being written as its text so far, containers
-    closed; a number, true, false or null only once complete. None when the
-    text is not JSON so far."""
-    s = text.strip()
-    if s.startswith("```"):                           # a fenced block
-        s = s.split("\n", 1)[1] if "\n" in s else ""
-        if s.rstrip().endswith("```"):
-            s = s.rstrip()[:-3]
-    s = s.strip()
-    if not s or s[0] not in "[{":
-        return None
-    value, _i, _ok = _value(s, 0)
-    return value if value is not _INCOMPLETE else None
-
-
-_INCOMPLETE = object()
-_WS = " \t\r\n"
+_SPACE = " \t\n\r"                                  # JSON's white space
+_NOTHING = object()
+_HEX = frozenset("0123456789abcdefABCDEF")
 _ESCAPES = {'"': '"', "\\": "\\", "/": "/", "b": "\b", "f": "\f", "n": "\n", "r": "\r", "t": "\t"}
+_NUMBER = re.compile(r"-?(?:0|[1-9][0-9]*)(?:\.[0-9]+)?(?:[eE][+-]?[0-9]+)?")
 
 
-def _skip(s: str, i: int) -> int:
-    while i < len(s) and s[i] in _WS:
-        i += 1
-    return i
+class _NotJSON(Exception):
+    pass
+
+
+def _resolve(shape: Any, root: Any) -> Dict[str, Any]:
+    """A shape as the reader follows it (contract/streaming.md, *The answer so
+    far*): ``$ref`` followed; an ``anyOf`` of one shape and null read as that
+    shape; any other ``anyOf``, or what it cannot follow, ``{}``."""
+    seen: set = set()
+    while isinstance(shape, dict) and isinstance(shape.get("$ref"), str):
+        ref = shape["$ref"]
+        if ref in seen or not ref.startswith("#/$defs/") or not isinstance(root, dict):
+            return {}
+        seen.add(ref)
+        shape = (root.get("$defs") or {}).get(ref[len("#/$defs/"):], {})
+    if not isinstance(shape, dict):
+        return {}
+    options = shape.get("anyOf")
+    if isinstance(options, list):
+        rest = [o for o in options if o != {"type": "null"}]
+        return _resolve(rest[0], root) if len(rest) == 1 and len(options) == 2 else {}
+    return shape
+
+
+def _choice(shape: Dict[str, Any]) -> bool:
+    return "enum" in shape or "const" in shape
+
+
+def _member(shape: Dict[str, Any], key: str, root: Any) -> Dict[str, Any]:
+    props = shape.get("properties")
+    if isinstance(props, dict) and key in props:
+        return _resolve(props[key], root)
+    extra = shape.get("additionalProperties")
+    return _resolve(extra, root) if isinstance(extra, dict) else {}
+
+
+def _item(shape: Dict[str, Any], i: int, root: Any) -> Dict[str, Any]:
+    prefix = shape.get("prefixItems")
+    if isinstance(prefix, list) and i < len(prefix):
+        return _resolve(prefix[i], root)
+    items = shape.get("items")
+    return _resolve(items, root) if isinstance(items, dict) else {}
 
 
 def _string(s: str, i: int) -> tuple:
-    """(text, index after, complete) for the string starting at s[i] == '"'."""
-    out = []
+    """(text so far, index after, closed) for the string whose quote is s[i]."""
+    out: List[str] = []
     i += 1
     while i < len(s):
         c = s[i]
         if c == '"':
             return "".join(out), i + 1, True
-        if c == "\\":
-            if i + 1 >= len(s):
-                break
-            e = s[i + 1]
-            if e == "u":
-                digits = s[i + 2:i + 6]
-                if len(digits) < 4:
-                    break
-                try:
-                    code = int(digits, 16)
-                except ValueError:
-                    raise ValueError("bad escape") from None
-                if 0xD800 <= code < 0xDC00:           # a surrogate pair: wait for its second half
-                    low = s[i + 6:i + 12]
-                    if len(low) < 6:
-                        break
-                    code = 0x10000 + ((code - 0xD800) << 10) + (int(low[2:], 16) - 0xDC00)
-                    i += 6
-                out.append(chr(code))
-                i += 6
-                continue
-            if e not in _ESCAPES:
-                raise ValueError("bad escape")
+        if c != "\\":
+            out.append(c)
+            i += 1
+            continue
+        if i + 1 >= len(s):
+            break                                     # an escape still being written
+        e = s[i + 1]
+        if e in _ESCAPES:
             out.append(_ESCAPES[e])
             i += 2
             continue
-        out.append(c)
-        i += 1
+        if e != "u":
+            raise _NotJSON("bad escape")
+        digits = s[i + 2:i + 6]
+        if any(d not in _HEX for d in digits):
+            raise _NotJSON("bad escape")
+        if len(digits) < 4:
+            break
+        code = int(digits, 16)
+        if 0xD800 <= code < 0xDC00:                   # a pair: wait for its second half
+            rest = s[i + 6:i + 12]
+            if len(rest) < 6:
+                if (rest and not "\\u".startswith(rest[:2])) or any(d not in _HEX for d in rest[2:]):
+                    raise _NotJSON("bad escape")
+                break
+            if rest[:2] != "\\u" or any(d not in _HEX for d in rest[2:]):
+                raise _NotJSON("bad escape")
+            low = int(rest[2:], 16)
+            if not 0xDC00 <= low < 0xE000:
+                raise _NotJSON("bad escape")
+            out.append(chr(0x10000 + ((code - 0xD800) << 10) + (low - 0xDC00)))
+            i += 12
+            continue
+        out.append(chr(code))
+        i += 6
     return "".join(out), len(s), False
 
 
-def _value(s: str, i: int) -> tuple:
-    """(value or _INCOMPLETE, index after, complete)."""
+def _skip(s: str, i: int) -> int:
+    while i < len(s) and s[i] in _SPACE:
+        i += 1
+    return i
+
+
+def _value(s: str, i: int, shape: Dict[str, Any], root: Any) -> tuple:
+    """(value or _NOTHING, index after, complete)."""
     i = _skip(s, i)
     if i >= len(s):
-        return _INCOMPLETE, i, False
+        return _NOTHING, i, False
     c = s[i]
     if c == '"':
-        return _string(s, i)
+        text, i, closed = _string(s, i)
+        if not closed and _choice(shape):
+            return _NOTHING, i, False                 # "med" is no value of a choice
+        return text, i, closed
     if c == "{":
-        out: Dict[str, Any] = {}
+        obj: Dict[str, Any] = {}
         i += 1
         while True:
             i = _skip(s, i)
             if i >= len(s):
-                return out, i, False
+                return obj, i, False
             if s[i] == "}":
-                return out, i + 1, True
+                return obj, i + 1, True
             if s[i] == ",":
                 i += 1
                 continue
             if s[i] != '"':
-                raise ValueError("expected a key")
-            key, i, done = _string(s, i)
-            if not done:
-                return out, i, False
+                raise _NotJSON("a key is a string")
+            key, i, closed = _string(s, i)
+            if not closed:
+                return obj, i, False
             i = _skip(s, i)
             if i >= len(s):
-                return out, i, False
+                return obj, i, False
             if s[i] != ":":
-                raise ValueError("expected ':'")
-            value, i, done = _value(s, i + 1)
-            if value is not _INCOMPLETE:
-                out[key] = value
+                raise _NotJSON("expected ':'")
+            value, i, done = _value(s, i + 1, _member(shape, key, root), root)
+            if value is not _NOTHING:
+                obj[key] = value
             if not done:
-                return out, i, False
+                return obj, i, False
     if c == "[":
         items: List[Any] = []
         i += 1
@@ -609,41 +670,74 @@ def _value(s: str, i: int) -> tuple:
             if s[i] == ",":
                 i += 1
                 continue
-            value, i, done = _value(s, i)
-            if value is not _INCOMPLETE:
+            value, i, done = _value(s, i, _item(shape, len(items), root), root)
+            if value is not _NOTHING:
                 items.append(value)
             if not done:
                 return items, i, False
     j = i
-    while j < len(s) and s[j] not in ",]}" + _WS:
+    while j < len(s) and s[j] not in ",]}" + _SPACE:
         j += 1
-    if j >= len(s):                                   # a number or a word that may still grow
-        return _INCOMPLETE, j, False
+    if j >= len(s):                                   # a number or a word that may still grow: 1 may become 12
+        return _NOTHING, j, False
     word = s[i:j]
-    for lit, val in (("true", True), ("false", False), ("null", None)):
-        if word == lit:
-            return val, j, True
-    try:
-        return (int(word) if word.lstrip("-").isdigit() else float(word)), j, True
-    except ValueError:
-        raise ValueError(f"not JSON: {word!r}") from None
+    if word in ("true", "false", "null"):
+        return {"true": True, "false": False, "null": None}[word], j, True
+    if not _NUMBER.fullmatch(word):
+        raise _NotJSON(f"not JSON: {word!r}")
+    return (float(word) if any(x in word for x in ".eE") else int(word)), j, True
 
 
-def _partial_kind(program: Any) -> str:
-    """How the answer so far is read from its text: "text", "json" or "none"."""
-    from .core import FunctAIFunc
-    if not isinstance(program, FunctAIFunc):
-        return "none"
-    spec = program._spec()
-    field = next((f for f in spec.signature.outputs if f.name == spec.main), None)
-    shape = getattr(field, "shape", None) or {}
-    options = shape.get("anyOf") or [shape]
-    types = {o.get("type") for o in options if o.get("type") != "null"}
-    if types == {"string"} and not any("enum" in o or "const" in o for o in options):
+def _kind(shape: Any) -> str:
+    """How an answer of this shape is read so far: "text", "json" or "none"."""
+    s = _resolve(shape, shape)
+    t = s.get("type")
+    types = set(t if isinstance(t, list) else [t]) - {"null"}
+    if types == {"string"} and not _choice(s):
         return "text"
     if types and types <= {"object", "array"}:
         return "json"
     return "none"
+
+
+def answer_so_far(text: str, shape: Any) -> Any:
+    """The answer so far, read from its text by its shape (contract/streaming.md,
+    *The answer so far*): the text for a text answer; the JSON read so far for a
+    record or a list (complete values; a string still being written as its text
+    so far, unless it is a choice, which waits for its closing quote; a number,
+    true, false or null once complete); None for any other answer, and when
+    the text is not the start of what the shape gives. Provisional: the call's
+    result is the typed, checked value."""
+    kind = _kind(shape)
+    if kind == "text":
+        return text
+    if kind == "none":
+        return None
+    return partial_json(text, shape)
+
+
+def partial_json(text: str, shape: Any = None) -> Any:
+    """The JSON value that the start of a JSON text says so far, read by
+    ``shape`` when given (a choice waits for its closing quote; a record starts
+    with ``{``, a list with ``[``): complete values as they are, a string still
+    being written as its text so far, containers closed; a number, true, false
+    or null only once complete. None when the text is not JSON so far."""
+    s = text.strip(_SPACE)
+    if s.startswith("```"):                           # a fenced block: read after its first line break
+        s = s.split("\n", 1)[1] if "\n" in s else ""
+        if s.rstrip(_SPACE).endswith("```"):
+            s = s.rstrip(_SPACE)[:-3]
+        s = s.strip(_SPACE)
+    top = _resolve(shape, shape) if shape is not None else {}
+    t = top.get("type")
+    opens = "".join({"object": "{", "array": "["}.get(x, "") for x in (t if isinstance(t, list) else [t])) or "[{"
+    if not s or s[0] not in opens:
+        return None
+    try:
+        value, _i, _done = _value(s, 0, top, shape)
+    except _NotJSON:
+        return None
+    return None if value is _NOTHING else value
 
 
 # ------------------------------------------------------------------ the stream
@@ -723,7 +817,8 @@ class Stream:
         self.function: str = program.__name__
         self._is_ai = isinstance(program, FunctAIFunc)
         self._answer = program._spec().main if self._is_ai else None
-        self._partial_kind = _partial_kind(program)
+        # the answer's shape, which says how the answer so far is read (contract/streaming.md)
+        self._answer_shape = program.interface["outputs"][-1]["shape"] if self._is_ai else None
         self._events: List[Event] = []
         self._cond = threading.Condition()
         self._async_waiters: List[tuple] = []
@@ -840,7 +935,7 @@ class Stream:
         if view is None or view == "full":
             return self._cursor(lambda e: e)
         from . import eventlog, views
-        v = views.View(view, answer_from=getattr(self.program, "_answer_from", None))
+        v = views.for_program(view, self.program)
 
         def keep(e: Event) -> Any:
             if view == "kept":
@@ -964,20 +1059,14 @@ class Stream:
     @property
     def partial(self) -> Any:
         """The answer so far as a value: the text for a text answer, the JSON read so far for a
-        record or a list (provisional), None for other answers until the call is done; the answer
-        itself once it is."""
+        record or a list (provisional: a choice inside it shows once complete, never "med" for
+        "medium"), None for other answers until the call is done; the answer itself once it is
+        (contract/streaming.md, *The answer so far*)."""
         if self._done and self._error is None:
             return self._value
-        if self._partial_kind == "text":
-            return self.text
-        if self._partial_kind == "json":
-            try:
-                return partial_json(self.text)
-            except ValueError:
-                return None
         if not self._is_ai:
             raise TypeError(f"{self.function} is a module: its value is s.result")
-        return None
+        return answer_so_far(self.text, self._answer_shape)
 
     # ----- closing
 
@@ -1190,4 +1279,5 @@ def stream(program: Any, args: tuple, kwargs: Dict[str, Any]) -> Stream:
 
 
 __all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "ToolCall", "ToolResult",
-           "Retry", "Done", "Failed", "Approval", "Approved", "Note", "Later", "note", "partial_json"]
+           "Retry", "Done", "Failed", "Approval", "Approved", "Note", "Later", "note", "partial_json",
+           "answer_so_far"]

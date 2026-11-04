@@ -55,7 +55,8 @@ class FunctAIModule(Generic[P, R]):
     (``InterfaceError``, which is also a ``TypeError``)."""
 
     def __init__(self, fn: Callable[P, R], *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-                 outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None,
+                 outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, notes: Any = None,
+                 needs: Any = None,
                  _namespace: Optional[Dict[str, Any]] = None,
                  _output_fields: Optional[List[Dict[str, Any]]] = None, **settings: Any):
         if not callable(fn):
@@ -85,6 +86,13 @@ class FunctAIModule(Generic[P, R]):
                                                f"@module on {self.__name__}")
         if interface is not None and outputs is not None:
             raise TypeError(f"@module on {self.__name__}: give interface= (everything, as data) or outputs=, not both")
+        if interface is not None and notes is not None:
+            raise TypeError(f"@module on {self.__name__}: give interface= (everything, notes included, as data) or "
+                            f"notes=, not both")
+        from .interface import notes_of
+        from .tools import needs_of
+        self._notes = notes_of(notes, where=f"@module on {self.__name__}")
+        self._needs = needs_of(needs, where=f"@module on {self.__name__}")       # what its own code reaches
         self._declared = interface is not None
         self._outputs = dict(outputs) if outputs is not None else None
         # outputs declared as data (a saved module's outputs=, rebuilt from its saved interface)
@@ -102,10 +110,30 @@ class FunctAIModule(Generic[P, R]):
     def _derive(self) -> Dict[str, Any]:
         from . import interface as _interface
         if self._interface is None:
-            self._interface = _interface.of_function(self._fn, outputs=self._outputs, output_fields=self._output_fields,
-                                                     localns=self._namespace, program=self.__name__)
-            _interface.check(self._interface, program=self.__name__)
+            iface = _interface.of_function(self._fn, outputs=self._outputs, output_fields=self._output_fields,
+                                           localns=self._namespace, program=self.__name__)
+            if self._notes is not None:
+                iface["notes"] = copy.deepcopy(self._notes)
+            _interface.check(iface, program=self.__name__)
+            self._interface = iface
         return self._interface
+
+    @property
+    def setup(self) -> str:
+        """What the module runs on here: ``sha256:`` of its setup document
+        (contract/calls.md, *Setups*): its version, the setup of every AI
+        function it reaches, what it may reach."""
+        from .setup import setup_of
+        return setup_of(self)
+
+    def setup_document(self) -> Dict[str, Any]:
+        """The document ``setup`` is the hash of, with the settings in force now."""
+        from .setup import document_of
+        return document_of(self)
+
+    def _declared_notes(self) -> Optional[List[Dict[str, Any]]]:
+        """The notes it declares (its interface's ``notes``), or None (contract/programs.md, *Notes*)."""
+        return self._derive().get("notes")
 
     @property
     def _declares_outputs(self) -> bool:
@@ -448,8 +476,8 @@ def module(fn: Callable[P, R], /) -> FunctAIModule[P, R]: ...
 
 @overload
 def module(fn: None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, **settings: Any
-           ) -> Callable[[Callable[P, R]], FunctAIModule[P, R]]:
+           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, notes: Any = None,
+           needs: Any = None, **settings: Any) -> Callable[[Callable[P, R]], FunctAIModule[P, R]]:
     ...
 
 
@@ -469,7 +497,8 @@ def _caller_namespace(depth: int) -> Optional[Dict[str, Any]]:
 
 
 def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), interface: Optional[Mapping[str, Any]] = None,
-           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, **settings: Any) -> Any:
+           outputs: Optional[Mapping[str, Any]] = None, answer_from: Any = None, notes: Any = None,
+           needs: Any = None, **settings: Any) -> Any:
     '''Make a Python function that calls AI functions into one program.
 
     The body is ordinary Python: loops, ifs, helpers, several AI functions.
@@ -502,6 +531,18 @@ def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), inter
         The AI function whose answer, as it is written, is this module's
         answer: a view that shows only the module's boundary (a served
         program's caller) shows that text as the module's.
+    notes : dict, optional
+        The notes its code makes (``functai.note(name, data)``), by name: a
+        type, or ``functai.Note(type, latest=True, outside=True)``.
+        Declared, each note is checked where it is made (a name it does not
+        declare, or data that does not fit, raises ``InterfaceError`` with
+        code ``interface-note``), and those marked ``outside`` are shown to
+        a caller who sees only the module's boundary (a served program's).
+    needs : dict, optional
+        What its own code reaches: ``{"domains": [...], "secrets": [...]}``
+        (names, never values). Behind a wall that lets through less (the
+        ``wall`` setting), its call is refused before its code runs
+        (``ReachError``); its reach counts in its setup.
     log_calls, log_content, caller, observers, journal
         The call log and receiver settings, for this module's calls (as for
         ``@ai``). ``log_content={"transcript": False}`` keeps an input out of
@@ -541,7 +582,8 @@ def module(fn: Callable[..., Any] | None = None, /, *, requires: Any = (), inter
     if fn is None:
         def decorate(real_fn: Callable[..., Any]) -> FunctAIModule:
             return FunctAIModule(real_fn, requires=requires, interface=interface, outputs=outputs,
-                                 answer_from=answer_from, _namespace=_caller_namespace(1), **settings)
+                                 answer_from=answer_from, notes=notes, needs=needs,
+                                 _namespace=_caller_namespace(1), **settings)
         return decorate
     return FunctAIModule(fn, requires=requires, interface=interface, outputs=outputs, answer_from=answer_from,
-                         _namespace=_caller_namespace(1), **settings)
+                         notes=notes, needs=needs, _namespace=_caller_namespace(1), **settings)

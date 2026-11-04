@@ -1,0 +1,222 @@
+{
+ "description": "A record: each member whose key is complete and whose value has started, with its value so far. A string shows its text so far; a choice (enum) only once its closing quote came; a number, true, false or null once a character after it ends it.",
+ "shape": {
+  "type": "object",
+  "properties": {
+   "summary": {
+    "type": "string"
+   },
+   "insights": {
+    "type": "array",
+    "items": {
+     "type": "object",
+     "properties": {
+      "title": {
+       "type": "string"
+      },
+      "severity": {
+       "enum": [
+        "low",
+        "medium",
+        "high"
+       ]
+      },
+      "pages": {
+       "type": "integer"
+      },
+      "fixed": {
+       "type": "boolean"
+      }
+     },
+     "required": [
+      "title",
+      "severity",
+      "pages",
+      "fixed"
+     ],
+     "additionalProperties": false
+    }
+   }
+  },
+  "required": [
+   "summary",
+   "insights"
+  ],
+  "additionalProperties": false
+ },
+ "checks": [
+  {
+   "text": "",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "{",
+   "expect": {
+    "value": {}
+   }
+  },
+  {
+   "text": "{\"summ",
+   "expect": {
+    "value": {}
+   }
+  },
+  {
+   "text": "{\"summary\"",
+   "expect": {
+    "value": {}
+   }
+  },
+  {
+   "text": "{\"summary\": ",
+   "expect": {
+    "value": {}
+   }
+  },
+  {
+   "text": "{\"summary\": \"Che",
+   "expect": {
+    "value": {
+     "summary": "Che"
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"Checkout hides",
+   "expect": {
+    "value": {
+     "summary": "Checkout hides"
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"Checkout hides fees\", \"insights\": [",
+   "expect": {
+    "value": {
+     "summary": "Checkout hides fees",
+     "insights": []
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"med",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"medium\"",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees",
+       "severity": "medium"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"medium\", \"pages\": 1",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees",
+       "severity": "medium"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"medium\", \"pages\": 12,",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees",
+       "severity": "medium",
+       "pages": 12
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"medium\", \"pages\": 12, \"fixed\": fal",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees",
+       "severity": "medium",
+       "pages": 12
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": [{\"title\": \"Fees\", \"severity\": \"medium\", \"pages\": 12, \"fixed\": false}",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": [
+      {
+       "title": "Fees",
+       "severity": "medium",
+       "pages": 12,
+       "fixed": false
+      }
+     ]
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": []}",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": []
+    }
+   }
+  },
+  {
+   "text": "{\"summary\": \"x\", \"insights\": []} and then some words",
+   "expect": {
+    "value": {
+     "summary": "x",
+     "insights": []
+    }
+   }
+  }
+ ]
+}

@@ -6,7 +6,7 @@
  */
 
 import * as lmcc from "lmcc";
-import { InterfaceError } from "./interface.ts";
+import { InterfaceError, type InterfaceNote } from "./interface.ts";
 import { carriesFiles, FILES } from "./files-binding.ts";
 import type { AudioInput, BinaryInput, DocumentInput, ImageInput, VideoInput } from "./media.ts";
 import { oneLine, withChoices } from "./text.ts";
@@ -563,4 +563,46 @@ export function misfit(shape: JsonObject, value: unknown, where: string): string
     }
   }
   return null;
+}
+
+/**
+ * A note a program declares (programs.md, *Notes*): its data's shape (a
+ * shape, zod or another Standard Schema), or `{ shape, desc?, latest?,
+ * outside? }`. `latest`: only its latest value matters (a stage, a count so
+ * far); `outside`: a caller who sees only the program's boundary may see it.
+ */
+export type NoteSpec = Shape<unknown> | ZodLike | StandardSchemaLike
+  | { readonly shape: Shape<unknown> | ZodLike | StandardSchemaLike; readonly desc?: string; readonly latest?: boolean; readonly outside?: boolean };
+
+/** Notes declared in TypeScript (`{ name: NoteSpec }`) as an interface's `notes`, in order; `undefined` when none were declared. */
+export function notesOf(declared: Readonly<Record<string, NoteSpec>> | undefined, where: string): InterfaceNote[] | undefined {
+  if (declared === undefined) return undefined;
+  if (typeof declared !== "object" || declared === null || Array.isArray(declared)) {
+    throw new TypeError(`${where}: notes is an object, from a note's name to its shape or { shape, desc?, latest?, outside? }`);
+  }
+  const out: InterfaceNote[] = [];
+  for (const [name, spec] of entriesOf(declared as Record<string, unknown>)) {
+    let field: unknown = spec;
+    let latest = false;
+    let outside = false;
+    if (isWrapper(spec)) {
+      const { latest: l, outside: o, ...rest } = spec as unknown as Record<string, unknown>;
+      if (l !== undefined && typeof l !== "boolean") throw new InterfaceError("interface-malformed", name, `${where}: note ${JSON.stringify(name)}: latest is true or false`);
+      if (o !== undefined && typeof o !== "boolean") throw new InterfaceError("interface-malformed", name, `${where}: note ${JSON.stringify(name)}: outside is true or false`);
+      if (Object.hasOwn(rest, "optional") || Object.hasOwn(rest, "opaque")) {
+        throw new InterfaceError("interface-malformed", name, `${where}: note ${JSON.stringify(name)}: a note is { shape, desc?, latest?, outside? }; its data is JSON, never left out or opaque`);
+      }
+      latest = l === true;
+      outside = o === true;
+      field = rest;
+    }
+    const { shape, desc, files } = readField(field as FieldSpec, `${where}: note ${JSON.stringify(name)}`, name);
+    if (files || isOpaque(field)) throw new InterfaceError("interface-malformed", name, `${where}: note ${JSON.stringify(name)}: a note's data is JSON`);
+    const note: { name: string; shape: JsonObject; desc?: string; latest?: true; outside?: true } = { name, shape };
+    if (desc) note.desc = desc;
+    if (latest) note.latest = true;
+    if (outside) note.outside = true;
+    out.push(note);
+  }
+  return out;
 }

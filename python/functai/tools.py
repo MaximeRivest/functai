@@ -28,10 +28,45 @@ from __future__ import annotations
 import dataclasses
 import functools
 import inspect
+import re
 import threading
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 EFFECTS = ("reads", "changes")
+# a domain a program needs (contract/calls.md, *Reach*): a host name, or "*." and one (every name under it)
+_DOMAIN = re.compile(r"(\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*")
+
+
+def needs_of(value: Any, *, where: str) -> Optional[Dict[str, List[str]]]:
+    """What code needs to reach, as data (contract/tools.md, *What a tool
+    needs*): ``{"domains": [...], "secrets": [...]}``, domains in lower case,
+    each list sorted and once each; None when nothing was said."""
+    if value is None:
+        return None
+    if not isinstance(value, dict) or set(value) - {"domains", "secrets"}:
+        raise TypeError(f"{where}: needs is {{'domains': [...], 'secrets': [...]}}: the host names its code reaches "
+                        f"and the names of the secrets it uses")
+    out: Dict[str, List[str]] = {}
+    for key in ("domains", "secrets"):
+        items = value.get(key, [])
+        if isinstance(items, str) or not isinstance(items, (list, tuple)) or \
+                not all(isinstance(x, str) and x.strip() for x in items):
+            raise TypeError(f"{where}: needs[{key!r}] is a list of names")
+        if key == "domains":
+            items = [x.strip().lower() for x in items]
+            bad = [x for x in items if not _DOMAIN.fullmatch(x)]
+            if bad:
+                raise TypeError(f"{where}: {bad[0]!r} is not a host name (api.example.com) or *. and one (*.example.com)")
+        out[key] = sorted(set(items))
+    return out
+
+
+def merged_needs(*needs: Optional[Dict[str, List[str]]]) -> Optional[Dict[str, List[str]]]:
+    """Several programs' needs as one (each list sorted, once each); None when none says any."""
+    said = [n for n in needs if n is not None]
+    if not said:
+        return None
+    return {k: sorted({x for n in said for x in n.get(k, [])}) for k in ("domains", "secrets")}
 RULES = ("changes", "all")
 DENIED = "The person did not allow this call."
 
@@ -48,7 +83,8 @@ class Tool:
     """
 
     def __init__(self, fn: Callable[..., Any], *, effects: Optional[str] = None, name: Optional[str] = None,
-                 description: Optional[str] = None):
+                 description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None,
+                 needs: Optional[Dict[str, Any]] = None, code_id: Optional[str] = None):
         if not callable(fn):
             raise TypeError("functai.tool wraps a function")
         if effects is not None and effects not in EFFECTS:
@@ -61,6 +97,15 @@ class Tool:
             self.__name__ = name
         if description is not None:
             self.__doc__ = description
+        from .interface import notes_of
+        # the notes its code makes (contract/tools.md, *Notes a tool makes*): every AI function that has it declares them
+        self.notes = notes_of(notes, where=f"tool {self.__name__}")
+        # what its code reaches (contract/tools.md, *What a tool needs*): checked against the wall it runs behind
+        self.needs = needs_of(needs, where=f"tool {self.__name__}")
+        if code_id is not None and (not isinstance(code_id, str) or not code_id.strip()):
+            raise TypeError(f"tool {self.__name__}: code_id is text: a revision, or a bundle's hash")
+        # what identifies its code beyond what can be read of it (contract/calls.md, *Setups*)
+        self.code_id = code_id
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._fn(*args, **kwargs)
@@ -74,7 +119,8 @@ class Tool:
 
 
 def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = None, name: Optional[str] = None,
-         description: Optional[str] = None) -> Any:
+         description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None,
+         needs: Optional[Dict[str, Any]] = None, code_id: Optional[str] = None) -> Any:
     '''Make a function a tool that says what it does to the world.
 
     Parameters
@@ -88,6 +134,22 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     name, description : str, optional
         What the model is told, instead of the function's name and
         docstring.
+    notes : dict, optional
+        The notes its code makes (``functai.note(name, data)``), by name: a
+        type, or ``functai.Note(type, latest=..., outside=...)``. Every AI
+        function that has the tool declares them, and each note it makes is
+        checked against them (``InterfaceError``, code ``interface-note``).
+    needs : dict, optional
+        What its code reaches: ``{"domains": ["api.browser-use.com"],
+        "secrets": ["BROWSER_USE_API_KEY"]}`` (names, never values). Behind a
+        wall that lets through less (the ``wall`` setting), the function that
+        has it is refused before its first call (``ReachError``); the reach
+        counts in the function's setup.
+    code_id : str, optional
+        What identifies its code beyond the code a setup reads of it: a
+        revision (``"v3"``) or a bundle's hash. Give it when its behaviour
+        comes from values it captured (a tool made by a factory) or from
+        code outside what Python can follow.
 
     Returns
     -------
@@ -106,7 +168,8 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     ```
     '''
     def wrap(f: Callable[..., Any]) -> Tool:
-        return Tool(f, effects=effects, name=name, description=description)
+        return Tool(f, effects=effects, name=name, description=description, notes=notes, needs=needs,
+                    code_id=code_id)
     return wrap(fn) if fn is not None else wrap
 
 

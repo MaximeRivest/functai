@@ -14,6 +14,7 @@ import { replyKey } from "../src/replies.ts";
 import { clock, internals } from "../src/conversations.ts";
 import { asks, denial } from "../src/tools.ts";
 import { outside } from "../src/views.ts";
+import { answerSoFar } from "../src/partial.ts";
 import { earlierOf, SawUnknown } from "../src/saw.ts";
 import { Applied, beforeCall, inOrder, toolCall, toolResult } from "../src/plugins.ts";
 import { bakeEntry, studentMessages } from "../src/bake.ts";
@@ -89,8 +90,17 @@ for (const [name, c] of cases("tools")) {
   });
 }
 
+for (const [name, c] of cases("partial")) {
+  // streaming.md, *The answer so far*: read from the answer's text by its shape; nothing is undefined
+  test(`partial case ${name}`, () => {
+    for (const check of c.checks) {
+      assert.deepEqual(answerSoFar(check.text, c.shape), check.expect.nothing ? undefined : check.expect.value, JSON.stringify(check.text));
+    }
+  });
+}
+
 for (const [name, c] of cases("views")) {
-  test(`views case ${name}`, () => assert.deepEqual(outside(c.events, { answerFrom: c.answer_from }), c.expect.events));
+  test(`views case ${name}`, () => assert.deepEqual(outside(c.events, { answerFrom: c.answer_from, notes: c.notes ?? [] }), c.expect.events));
 }
 
 for (const [name, c] of cases("context")) {
@@ -204,7 +214,7 @@ for (const [name, c] of cases("baked")) {
 }
 
 test("the contract has cases of every new kind", () => {
-  for (const folder of ["replies", "usage", "conversations", "tools", "views", "context", "plugins", "baked"]) assert.ok(cases(folder).length, folder);
+  for (const folder of ["replies", "usage", "conversations", "tools", "views", "context", "plugins", "baked", "partial"]) assert.ok(cases(folder).length, folder);
 });
 
 void Applied;

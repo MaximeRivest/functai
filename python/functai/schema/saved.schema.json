@@ -17,6 +17,12 @@
   },
   "$defs": {
     "key": {"type": "string", "pattern": "^[^:]*:[^:]+$"},
+    "needs": {
+      "description": "tools.md, What a tool needs: what code reaches.",
+      "type": "object", "additionalProperties": false,
+      "properties": {"domains": {"type": "array", "items": {"type": "string", "minLength": 1}},
+                     "secrets": {"type": "array", "items": {"type": "string", "minLength": 1}}}
+    },
     "sha256": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
     "node": {
       "type": "object",
@@ -27,6 +33,9 @@
         "name": {"type": "string", "minLength": 1},
         "ai": {"$ref": "#/$defs/ai"},
         "interface": {"$ref": "interface.schema.json"},
+        "version": {"$ref": "#/$defs/sha256"},
+        "setup": {"description": "calls.md, Setups: the document of its setup when saved.", "type": "object", "required": ["version", "reach"]},
+        "needs": {"$ref": "#/$defs/needs"},
         "defaults": {
           "type": "object",
           "additionalProperties": {

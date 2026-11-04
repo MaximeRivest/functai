@@ -309,7 +309,19 @@ const browse = ai("browse", { description: "Find the price.", input: { task: t.s
   `reminder`, show earlier results otherwise (`replace`), or `stop`, all
   recorded as data.
 - **`note("screen captured", { screen: 4 })`** from plain code: a `note`
-  event for whatever watches.
+  event for whatever watches. A module (`notes`) or a tool declares its
+  notes: each is then checked where it is made (`InterfaceError`,
+  `interface-note`), and those declared `outside` are shown to a caller who
+  sees only the program's boundary:
+
+  ```ts
+  const study = module("study", { input: { url: t.string() }, output: Report, uses: [walker], notes: {
+    stage: { shape: t.choice(["walking", "writing"]), latest: true, outside: true },
+    "page captured": { shape: Page, outside: true },
+  } }, async ({ url }) => { note("stage", "walking"); /* ... */ });
+  ```
+- **What code spent**: `spend(0.05)` from a tool or a module (a browsing
+  service's charge) is in the record (`spent`) and in `limits({ cost })`.
 - **A result that comes later**: a tool returns `later("harvest:42")`; in a
   conversation the turn waits, saved, and `await chat.deliver("harvest:42",
   report)` from any process (a webhook) gives the tool its result and the
@@ -350,6 +362,29 @@ anything it `uses` changes. A field `t.opaque()` takes values with no
 JSON form (a buffer, a class instance), unchecked; `t.json()` any JSON.
 Every program has `.interface`; `checkInterface()` checks one.
 
+## What a program runs on
+
+A version says what a program **is**; its **setup** says what runs it:
+the model each step asks, the settings and plugins in force, its tools'
+code, and what it may reach. Every call records it (`program.setup`), so
+a score or a comparison belongs to one thing that ran. The same function
+on the same model has Python's setup.
+
+```ts
+const haiku = withSettings({ lm: "claude-haiku-4-5" }, () => walker.setup);
+withSettings({ lm: "gpt-6-luna" }, () => walker.setup !== haiku);   // another setup of the same version
+setupDiff("saved/haiku", "saved/luna");                             // [{ program, field: "model.model", before, after }]
+```
+
+Tools and modules say what their code reaches (`needs: { domains,
+secrets }`: names, never values), and the host says what wall programs run
+behind (`wall`: a name, or what it lets through and its limits). A program
+that needs more than its wall lets through is refused before its code runs
+(`ReachError`); a run with no wall has reach `"open"`, a setup of its own.
+A tool's setup counts the function's text: a tool made by a factory, whose
+behaviour comes from what it captured, says what its text cannot with
+`codeId` (a revision, a bundle's hash).
+
 ## Streaming
 
 ```ts
@@ -364,7 +399,9 @@ A stream is the same call, watched: the same retries, tools and log line.
 Its events are the call tree's log (format 2): each has its `tree`, its
 position (`writer` and `seq`) and `after`, the position of the event before
 it in the form you read, so a reader knows when it missed one. `request`
-and `retry` start a field's text afresh (`s.text` is the answer so far).
+and `retry` start a field's text afresh (`s.text` is the answer so far;
+`s.partial` is it as a value, typed `SoFar<A>`: members may be missing, a
+choice shows only once whole, never "med" for "medium").
 `s.events({ form: "kept" })` gives what the log may keep (`logContent`),
 `{ view }` a view of it (`views.boundary(callId)`), and `{ after }`
 resumes after an event you have (`s.read(tree, after)` too).
@@ -523,9 +560,12 @@ its version, and refuses (with the reason) what only the saving language
 can run: a function with code of its own around the model, tools, a baked
 model.
 `save(fn, "folder/")` writes a TypeScript function the same way, with its
-interface; `save(module, "folder/")` writes a module's interface and the AI
-functions it uses (another language describes the module, and loads its
-AI functions by key). `describeSaved("mood/")` says what a saved program (an AI
+interface; `save(module, "folder/")` writes a module's interface, its
+version and the AI functions it uses (another language describes the
+module, and loads its AI functions by key). An agent is saved with each
+tool described as data, with its code's hash, effects, needs and notes:
+another language describes it and refuses to run it (a tool is code).
+Every program is saved with its setup, so `setupDiff` compares two folders. `describeSaved("mood/")` says what a saved program (an AI
 function or a module, in any language) takes and gives, without running
 anything.
 
@@ -624,6 +664,11 @@ out exactly as it was trained.
 - **The disk reply cache needs `node:sqlite`** (Node 22.13+, Deno). In a
   browser, replies are cached in memory, conversations kept in memory or in
   your own store, and a program served through `Service.fetch`.
+- **A setup reads a tool's code as the function's text.** Python follows
+  what a tool calls; JavaScript cannot see what a function imports or what
+  a closure captured. A tool made by a factory, or whose work is in another
+  file, says what identifies it with `codeId`; a host that bundles its code
+  gives the bundle's hash.
 
 ## Not here yet
 

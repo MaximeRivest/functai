@@ -30,7 +30,7 @@ import itertools
 import math
 import re
 import typing
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from typing import Annotated, Any, Dict, List, Optional, Tuple
 
 import lmcc
@@ -62,6 +62,8 @@ COUNTS = ("minItems", "maxItems", "minLength", "maxLength")
 BOUNDS = ("minimum", "maximum", "exclusiveMinimum", "exclusiveMaximum")
 INPUT_KEYS = frozenset({"name", "shape", "desc", "type", "opaque", "optional"})
 OUTPUT_KEYS = frozenset({"name", "shape", "desc", "type", "opaque"})
+NOTE_KEYS = frozenset({"name", "shape", "desc", "latest", "outside"})
+_NOTE_SPACE = " \t\n\r"          # a note's name has a character other than these (programs.md, *Notes*)
 _NOTHING = object()
 
 
@@ -322,7 +324,7 @@ def check(interface: Any, *, ai: bool = False, program: str = "") -> None:
     the vocabulary does not list (lmcc's), which are never read here."""
     if not isinstance(interface, Mapping):
         raise _refuse(None, "an interface is a JSON object", program)
-    extra = sorted(set(interface) - {"description", "inputs", "outputs"})
+    extra = sorted(set(interface) - {"description", "inputs", "outputs", "notes"})
     if extra:
         raise _refuse(None, f"it has keys no interface has ({', '.join(extra)}): an interface is closed", program)
     if not isinstance(interface.get("description"), str):
@@ -368,6 +370,145 @@ def check(interface: Any, *, ai: bool = False, program: str = "") -> None:
                 raise _refuse(at, "an opaque field's shape is {}", program)
             if "default" in shape and not fits_json(shape["default"], {"shape": shape}):
                 raise _refuse(at, f"its default {shape['default']!r} does not fit its shape", program)
+    _check_notes(interface, program)
+    return None
+
+
+def _refuse_note(name: Optional[str], why: str, program: str = "") -> InterfaceError:
+    where = f"{program}: " if program else ""
+    what = f"note {name!r}" if name is not None else "its notes"
+    return InterfaceError("interface-malformed", name, f"{where}{what} is refused: {why}")
+
+
+def _check_notes(interface: Mapping[str, Any], program: str = "") -> None:
+    """programs.md, *Notes*: the first note at fault, after every field."""
+    if "notes" not in interface:
+        return
+    notes = interface["notes"]
+    if not isinstance(notes, list):
+        raise _refuse_note(None, "notes is a list", program)
+    seen: set = set()
+    for n in notes:
+        name = n.get("name") if isinstance(n, Mapping) else None
+        at = name if isinstance(name, str) else None
+        if not isinstance(n, Mapping):
+            raise _refuse_note(None, "each note is a JSON object", program)
+        unknown = sorted(set(n) - NOTE_KEYS)
+        if unknown:
+            raise _refuse_note(at, f"it has keys a note does not have ({', '.join(unknown)}); a note is "
+                                   f"{{name, shape, desc?, latest?, outside?}}", program)
+        if not isinstance(name, str) or not name.strip(_NOTE_SPACE):
+            raise _refuse_note(at, "a note's name is text with something other than spaces and line breaks", program)
+        if name in seen:
+            raise _refuse_note(at, "the name is used twice among the notes", program)
+        seen.add(name)
+        if "desc" in n and not isinstance(n["desc"], str):
+            raise _refuse_note(at, "its desc is text", program)
+        for k in ("latest", "outside"):
+            if k in n and n[k] is not True:
+                raise _refuse_note(at, f"{k}, when present, is true", program)
+        shape = n.get("shape")
+        if not isinstance(shape, dict):
+            raise _refuse_note(at, "its shape is a JSON object", program)
+        fault = _shape_fault(shape, shape, False)
+        if fault:
+            raise _refuse_note(at, fault, program)
+        if _loops(shape):
+            raise _refuse_note(at, "a $defs entry refers back to itself without passing into a value", program)
+
+
+class Note:
+    """A note a program declares (contract/programs.md, *Notes*): what its
+    data holds (a type, as a field's; ``functai.JSON`` or nothing: any JSON
+    value), words about it, whether only its latest value matters
+    (``latest=True``: a stage, a count so far), and whether a caller who sees
+    only the program's boundary may see it (``outside=True``).
+
+        @functai.module(notes={"stage": functai.Note(Literal["walking", "writing"], latest=True, outside=True),
+                               "page captured": Page})
+    """
+
+    __slots__ = ("type", "desc", "latest", "outside")
+
+    def __init__(self, type: Any = None, *, desc: Optional[str] = None, latest: bool = False, outside: bool = False):
+        if desc is not None and not isinstance(desc, str):
+            raise TypeError("a note's desc is text")
+        self.type, self.desc, self.latest, self.outside = type, desc, bool(latest), bool(outside)
+
+    def __repr__(self) -> str:
+        flags = [x for x in ("latest", "outside") if getattr(self, x)]
+        return f"Note({self.type!r}{', ' if flags else ''}{', '.join(f + '=True' for f in flags)})"
+
+
+def notes_of(declared: Any, *, where: str) -> Optional[List[Dict[str, Any]]]:
+    """Notes declared in Python (``{name: type or Note}``) as an interface's
+    ``notes``, in order; None when none were declared. A note's data is JSON:
+    a type with no JSON form refuses (``interface-malformed``)."""
+    if declared is None:
+        return None
+    if isinstance(declared, list):                    # already data (a saved interface's notes): checked, kept
+        _check_notes({"notes": declared}, where)
+        return copy.deepcopy(declared)
+    if not isinstance(declared, Mapping):
+        raise TypeError(f"{where}: notes is a dict, from a note's name to its type or functai.Note(...)")
+    out: List[Dict[str, Any]] = []
+    for name, spec in declared.items():
+        note = spec if isinstance(spec, Note) else Note(spec)
+        if not isinstance(name, str):
+            raise _refuse_note(None, f"a note's name is text, not {name!r}", where)
+        if note.type is None:
+            entry: Dict[str, Any] = {"name": name, "shape": {}}
+        else:
+            f = field_of("note", note.type, where=f"{where}: note {name!r}")
+            if f.get("opaque"):
+                raise _refuse_note(name, f"a note's data is JSON, and {note.type!r} has no JSON form", where)
+            entry = {"name": name, "shape": f["shape"]}
+            if f.get("desc") and note.desc is None:
+                entry["desc"] = f["desc"]
+        if note.desc is not None:
+            entry["desc"] = note.desc
+        if note.latest:
+            entry["latest"] = True
+        if note.outside:
+            entry["outside"] = True
+        out.append(entry)
+    return out
+
+
+def merged_notes(lists: Iterable[Optional[List[Dict[str, Any]]]], *, program: str = "") -> Optional[List[Dict[str, Any]]]:
+    """The notes of several tools, as one AI function's (programs.md, *How each
+    program has one*): in order, once each; one name declared differently
+    refuses. None when none declares notes."""
+    out: List[Dict[str, Any]] = []
+    by_name: Dict[str, Dict[str, Any]] = {}
+    any_ = False
+    for notes in lists:
+        if notes is None:
+            continue
+        any_ = True
+        for n in notes:
+            was = by_name.get(n["name"])
+            if was is None:
+                by_name[n["name"]] = n
+                out.append(copy.deepcopy(n))
+            elif _canonical(was) != _canonical(n):
+                raise _refuse_note(n["name"], "two of its tools declare this note differently", program)
+    return out if any_ else None
+
+
+def note_refusal(chain: List[Optional[List[Dict[str, Any]]]], name: str, data: Any) -> Optional[str]:
+    """programs.md, *Checking a note*: why a note made inside calls whose
+    programs declare ``chain`` (outermost first; None: declares none) is
+    refused, or None. ``data`` is its JSON form."""
+    own = chain[-1] if chain else None
+    if own is not None and not any(n["name"] == name for n in own):
+        return f"this program declares its notes, and {name!r} is not one of them ({', '.join(repr(n['name']) for n in own) or 'none'})"
+    for notes in reversed(chain):
+        for n in notes or ():
+            if n["name"] == name:
+                shape = data_shape(n["shape"])
+                if not _fits_shape(data, shape, shape):
+                    return f"its data {_shown(data)} does not fit the shape declared for it"
     return None
 
 
@@ -1075,7 +1216,11 @@ def of_ai(fn: Any) -> Dict[str, Any]:
         if f.type:
             field["type"] = f.type
         outputs.append(field)
-    return {"description": inspect.cleandoc(fn.__wrapped__.__doc__ or ""), "inputs": inputs, "outputs": outputs}
+    out = {"description": inspect.cleandoc(fn.__wrapped__.__doc__ or ""), "inputs": inputs, "outputs": outputs}
+    notes = fn._declared_notes()                      # its tools' (programs.md, *How each program has one*)
+    if notes is not None:
+        out["notes"] = notes
+    return out
 
 
 __all__ = ["JSON", "check", "signature", "fits", "bind_inputs", "check_outputs", "of_function", "of_ai",

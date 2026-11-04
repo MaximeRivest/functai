@@ -14,12 +14,12 @@ by another; they meet only here.
 | document | what it fixes | cases |
 |---|---|---|
 | [`functions.md`](functions.md) | an AI function: the signature a definition becomes, its layout ([`layouts/`](layouts/)), what a model can do ([`models.json`](models.json)), worked examples, the request, what happens when a reply cannot be read | `cases/functions/` |
-| [`calls.md`](calls.md) | the call log: every call as one line of JSON, ratings, the rows with known answers they make, versions; which values a record keeps (*Content*); the calls a call was shown as context (*Saw*) | `cases/rated/`, `cases/content/`, `cases/saw/` |
+| [`calls.md`](calls.md) | the call log: every call as one line of JSON, ratings, the rows with known answers they make, versions and setups (what a program runs on, what it may reach, what code spent); which values a record keeps (*Content*); the calls a call was shown as context (*Saw*) | `cases/rated/`, `cases/content/`, `cases/saw/`, `cases/setup/` |
 | [`scores.md`](scores.md) | whether an answer is right, the score and its 95% range | `cases/scores/` |
-| [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares; its signature; which are refused; checking values against it | `cases/programs/` |
+| [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares, and the notes it may make; its signature; which are refused; checking values and notes against it | `cases/programs/` |
 | [`saved.md`](saved.md) | a saved program's manifest, and loading its AI functions in another language | `cases/saved/` |
 | [`baked.md`](baked.md) | a baked model: what a generative student is trained on and called with (its signature without the inputs left out, its layout, the conversations), the examples table, the folder (`baked.json` format 2) | `cases/baked/` |
-| [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views (`full`, `kept`, `outside`), keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps | `cases/events/`, `cases/views/` |
+| [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views (`full`, `kept`, `outside`), keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps; the answer so far | `cases/events/`, `cases/views/`, `cases/partial/` |
 | [`replies.md`](replies.md) | the reply cache: its key, what is kept, one flight per request, its file | `cases/replies/` |
 | [`conversations.md`](conversations.md) | conversations: their records, a turn's state, where a new turn goes, what a turn is shown, helpers' memory, stopping, leases, stores | `cases/conversations/` |
 | [`tools.md`](tools.md) | tools' effects, approval rules and paths, waiting turns, keeping what may have happened, resuming a turn | `cases/tools/` |
@@ -116,7 +116,17 @@ thing it cannot do yet wait for it, and are not failures.
 | `baked/` | what a generative student is trained on and called with: its signature, the hashes of fixed and derived inputs, the conversations | every language that writes training examples or calls baked students |
 | `agents/` `result-*`, `kept-*` | what a tool returns (pictures included), and the kept form of `note`, `later` and a result with `parts` | every language with tools and streaming |
 | `agents/` `state-*` | a turn that waits for results that come later | every language with conversations |
-| `agents/` `limits-*`, `spent-*`, `pictures-*` | the `limits` and `keep_pictures` plugins, what a tree spent (a `cost` compared within 1e-12) | every language with plugins |
+| `agents/` `limits-*`, `spent-*`, `pictures-*` | the `limits` and `keep_pictures` plugins, what a tree spent (a `cost` compared within 1e-12), what code reported it spent | every language with plugins |
+| `programs/` of kind `notes`, and `programs/27` | notes a program declares, refused and checked where made | every language with modules and streaming |
+| `partial/` | the answer so far, read from its text by its shape | every language that streams |
+| `setup/` | an AI function's setup: its document and its hash, under settings, plugins and walls | every language |
+
+`setup/`, `partial/`, `programs/27` to `30`, `views/outside-04`,
+`events/replay-15`, `agents/spent-04` to `06` and
+`agents/limits-cost-reported-by-code` (2026-11-04,
+`../design/18-setup.md` and `../design/19-notes-and-the-answer-so-far.md`)
+are read by Python and TypeScript; R and Julia wait for them (they refuse
+an interface with `notes`, as an interface key they do not know).
 
 `agents/` (2026-11-02, `../design/17-long-agents.md`) is read by Python
 and TypeScript; R and Julia have none of what it pins yet (tools that
@@ -170,6 +180,8 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | code | where | when |
 |---|---|---|
 | `interface-input`, `interface-output` | [programs.md](programs.md) | a program's call given an input that does not bind to its interface, or a module returning what its interface does not give (`InterfaceError`) |
+| `interface-note` | [programs.md](programs.md), *Notes* | code made a note its program declares notes without, or whose data does not fit a declaration around it (`InterfaceError`) |
+| `needs-unmet` | [calls.md](calls.md), *Reach* | a program needs a domain or a secret the wall it runs behind does not let through (`ReachError`), before its first call |
 | `interface-malformed` | [programs.md](programs.md) | an interface refused when its program (a module, or an AI function) is defined, or when it is read from a saved folder |
 | `files-unavailable` | [functions.md](functions.md), *Pictures, sounds, documents and files* | a function with an `Artifacts` input (files) in a language or an install that has no Attachments |
 | `log-content-field` | [calls.md](calls.md) | a `log_content` key that names no field of the program, or is not a name |

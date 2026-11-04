@@ -8,6 +8,47 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### What a program runs on: setups
+
+A version says what a program **is**; its **setup** says what it runs on
+(design/18; contract: calls.md *Setups*; cases `setup/`, the same document
+and hash as Python's).
+
+- **`fn.setup`**, **`fn.setupDocument()`** (and a module's): the version,
+  the model as lm15 routes it, lm15's settings, FunctAI's settings that
+  change what the model is asked, the backup model, the plugins with their
+  settings, each tool's code (the function's text; `codeId` for what that
+  text cannot say: a tool made by a factory, code it imports), and what the
+  program may reach. Every call record has `program.setup` and, when there
+  is one, `placement`.
+- **`setupDiff(a, b)`**: what differs between two programs, saved folders
+  or manifests, step by step.
+- **Reach and the wall**: `needs` on tools and modules, the `wall` setting,
+  `ReachError` (`needs-unmet`) before a program's code runs.
+- **`spend(usd)`**: what code spent beyond tokens, in the record (`spent`)
+  and in `limits({ cost })`.
+- **Agents are saved**: `save` and `toManifest` describe each tool as data
+  with its code's hash, effects, needs and notes (another language
+  describes the agent and refuses to run it); modules write their version;
+  every program writes its setup.
+- Plugins say their settings (`new Plugin(name, { config })`); `limits` and
+  `keepPictures` do.
+
+### Notes that are typed, and the answer so far
+
+(design/19; contract: programs.md *Notes*, streaming.md.)
+
+- **Declared notes**: `module(name, { notes: { stage: { shape:
+  t.choice(["walking", "writing"]), latest: true, outside: true } } })`,
+  and `tool(name, { notes })`. Checked where made (`InterfaceError`,
+  `interface-note`); in the interface, never in its signature.
+- **The outside view shows the notes declared `outside`.**
+- **`stream.partial`**: the answer so far as a value, typed `SoFar<A>`
+  (members may be missing; a choice shows only once whole). It was missing
+  from TypeScript, which the contract asked for. `answerSoFar(text,
+  shape)` and `partialJson` read it from text.
+- `Replay` and `Follower` keep each call's notes, in order.
+
 ### Words about a member reach the model
 
 - **`describe()` inside a shape** (`t.object`, `t.list`, `t.record`,

@@ -8,7 +8,7 @@ in every language. lmcc's own refusals (``lmcc.Refusal``) carry lmcc's codes.
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional
 
 
 class FunctAIError(Exception):
@@ -32,7 +32,7 @@ class FunctAIError(Exception):
     The subclasses say where the error comes from: ``InterfaceError``,
     ``LogContentError``, ``SawError``, ``EventRefused``, ``JournalError``,
     ``ConversationError``, ``Waiting``, ``ApprovalError``, ``ServeError``,
-    ``PluginError``, and ``RemoteError`` (``from functai.remote import
+    ``PluginError``, ``ReachError``, and ``RemoteError`` (``from functai.remote import
     RemoteError``). A reply the model wrote that cannot be read is lmcc's
     ``Refusal``, with lmcc's codes (see *When the model gets it wrong*).
     """
@@ -59,9 +59,12 @@ class InterfaceError(FunctAIError, TypeError, ValueError):
 
     ``code`` is ``"interface-input"`` (a call given what the interface does
     not take), ``"interface-output"`` (the code returned what the interface
-    does not give) or ``"interface-malformed"`` (the interface itself breaks
-    the rules, when the program is defined or read from a folder). ``field``
-    names the field at fault, or is None when the fault is no field's.
+    does not give), ``"interface-note"`` (the code made a note its program
+    does not declare, or whose data does not fit the declaration: contract
+    programs.md, *Notes*) or ``"interface-malformed"`` (the interface itself
+    breaks the rules, when the program is defined or read from a folder).
+    ``field`` names the field (or note) at fault, or is None when the fault
+    is no field's.
 
     It is a ``TypeError`` (as Python's own wrong arguments are) and a
     ``ValueError`` (a value that does not fit)."""
@@ -248,3 +251,14 @@ class Outcome:
 
 __all__ = ["FunctAIError", "InterfaceError", "LogContentError", "SawError", "EventRefused", "JournalError",
            "ConversationError", "Waiting", "ApprovalError", "ServeError", "Outcome"]
+
+
+class ReachError(FunctAIError, PermissionError):
+    """A program needs to reach what the wall it runs behind does not let
+    through (code ``"needs-unmet"``: contract/calls.md, *Reach*), refused
+    before its first call. ``missing`` is ``{"domains": [...], "secrets":
+    [...]}``, what it needs and is not let through."""
+
+    def __init__(self, message: str, missing: Dict[str, List[str]]):
+        super().__init__("needs-unmet", message)
+        self.missing = missing

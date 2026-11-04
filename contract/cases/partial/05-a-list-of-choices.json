@@ -1,0 +1,47 @@
+{
+ "description": "A list whose items are choices: an item still being written is left out.",
+ "shape": {
+  "type": "array",
+  "items": {
+   "enum": [
+    "low",
+    "medium",
+    "high"
+   ]
+  }
+ },
+ "checks": [
+  {
+   "text": "[",
+   "expect": {
+    "value": []
+   }
+  },
+  {
+   "text": "[\"low\", \"hi",
+   "expect": {
+    "value": [
+     "low"
+    ]
+   }
+  },
+  {
+   "text": "[\"low\", \"high\"",
+   "expect": {
+    "value": [
+     "low",
+     "high"
+    ]
+   }
+  },
+  {
+   "text": "[\"low\", \"high\"]",
+   "expect": {
+    "value": [
+     "low",
+     "high"
+    ]
+   }
+  }
+ ]
+}

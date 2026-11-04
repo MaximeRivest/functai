@@ -120,6 +120,19 @@ export class PluginError extends FunctAIError {
   }
 }
 
+/**
+ * A program needs to reach what the wall it runs behind does not let through
+ * (code `needs-unmet`: contract/calls.md, *Reach*), refused before its code
+ * runs. `missing`: what it needs and is not let through.
+ */
+export class ReachError extends FunctAIError {
+  readonly missing: { domains: string[]; secrets: string[] };
+  constructor(message: string, missing: { domains: string[]; secrets: string[] }) {
+    super("needs-unmet", message);
+    this.missing = missing;
+  }
+}
+
 /** A program cannot be served (contract/serving.md): `serve-opaque`, `serve-keys`. */
 export class ServeError extends FunctAIError {}
 

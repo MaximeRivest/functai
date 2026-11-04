@@ -40,6 +40,8 @@ module.FunctAIModule(
     interface=None,
     outputs=None,
     answer_from=None,
+    notes=None,
+    needs=None,
     _namespace=None,
     _output_fields=None,
     **settings,
@@ -59,6 +61,7 @@ inputs before its code runs, its outputs when it returns
 | Name | Description |
 | --- | --- |
 | `interface` | What the module takes and gives, as data (contract/programs.md). |
+| `setup` | What the module runs on here: ``sha256:`` of its setup document |
 | `version` | The module's version: a fingerprint of its code and its AI functions. |
 
 #### Methods
@@ -72,6 +75,7 @@ inputs before its code runs, its outputs when it returns
 | [named_ai_functions](#functai.module.FunctAIModule.named_ai_functions) | Every @ai function this module reaches: called by name, under another |
 | [opt](#functai.module.FunctAIModule.opt) | An improved copy: every @ai function this module calls tuned against |
 | [save](#functai.module.FunctAIModule.save) | Every AI function's instruction and demos, in one JSON file. |
+| [setup_document](#functai.module.FunctAIModule.setup_document) | The document ``setup`` is the hash of, with the settings in force now. |
 | [state](#functai.module.FunctAIModule.state) | The instruction and demos each AI function runs with in this module, by name. |
 | [stream](#functai.module.FunctAIModule.stream) | Call the module and watch every AI function it calls, as it works. |
 | [vectorize](#functai.module.FunctAIModule.vectorize) | This module as a dpyr row function (see ``FunctAIFunc.vectorize``); |
@@ -165,6 +169,14 @@ module.FunctAIModule.save(path)
 
 Every AI function's instruction and demos, in one JSON file.
 
+##### setup_document { #functai.module.FunctAIModule.setup_document }
+
+```{.python .no-run}
+module.FunctAIModule.setup_document()
+```
+
+The document ``setup`` is the hash of, with the settings in force now.
+
 ##### state { #functai.module.FunctAIModule.state }
 
 ```{.python .no-run}
@@ -213,6 +225,8 @@ module.module(
     interface=None,
     outputs=None,
     answer_from=None,
+    notes=None,
+    needs=None,
     **settings,
 )
 ```
@@ -235,17 +249,19 @@ value; a parameter with a default is optional.
 
 #### Parameters {.doc-section .doc-section-parameters}
 
-| Name        | Type        | Description                                                                                                                                                                        | Default    |
-|-------------|-------------|------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
-| requires    | list of str | Packages the program needs that functai cannot see from the code (``["numpy>=2"]``), for ``functai.save``.                                                                         | `()`       |
-| outputs     | dict        | Several outputs, by name and type: ``outputs={"team": str, "minutes": int, "result": Reply}``; the code returns a dict of them. The last is the answer.                            | `None`     |
-| interface   | dict        | The whole interface as data (contract/programs.md), instead of deriving it; the code is then called with the inputs by keyword.                                                    | `None`     |
-| answer_from | AI function | The AI function whose answer, as it is written, is this module's answer: a view that shows only the module's boundary (a served program's caller) shows that text as the module's. | `None`     |
-| log_calls   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
-| log_content |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
-| caller      |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
-| observers   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
-| journal     |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                 | _required_ |
+| Name        | Type        | Description                                                                                                                                                                                                                                                                                                                                                                                                   | Default    |
+|-------------|-------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|------------|
+| requires    | list of str | Packages the program needs that functai cannot see from the code (``["numpy>=2"]``), for ``functai.save``.                                                                                                                                                                                                                                                                                                    | `()`       |
+| outputs     | dict        | Several outputs, by name and type: ``outputs={"team": str, "minutes": int, "result": Reply}``; the code returns a dict of them. The last is the answer.                                                                                                                                                                                                                                                       | `None`     |
+| interface   | dict        | The whole interface as data (contract/programs.md), instead of deriving it; the code is then called with the inputs by keyword.                                                                                                                                                                                                                                                                               | `None`     |
+| answer_from | AI function | The AI function whose answer, as it is written, is this module's answer: a view that shows only the module's boundary (a served program's caller) shows that text as the module's.                                                                                                                                                                                                                            | `None`     |
+| notes       | dict        | The notes its code makes (``functai.note(name, data)``), by name: a type, or ``functai.Note(type, latest=True, outside=True)``. Declared, each note is checked where it is made (a name it does not declare, or data that does not fit, raises ``InterfaceError`` with code ``interface-note``), and those marked ``outside`` are shown to a caller who sees only the module's boundary (a served program's). | `None`     |
+| needs       | dict        | What its own code reaches: ``{"domains": [...], "secrets": [...]}`` (names, never values). Behind a wall that lets through less (the ``wall`` setting), its call is refused before its code runs (``ReachError``); its reach counts in its setup.                                                                                                                                                             | `None`     |
+| log_calls   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                                                                                                                                                                                                                                            | _required_ |
+| log_content |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                                                                                                                                                                                                                                            | _required_ |
+| caller      |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                                                                                                                                                                                                                                            | _required_ |
+| observers   |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                                                                                                                                                                                                                                            | _required_ |
+| journal     |             | The call log and receiver settings, for this module's calls (as for ``@ai``). ``log_content={"transcript": False}`` keeps an input out of the log.                                                                                                                                                                                                                                                            | _required_ |
 
 #### Returns {.doc-section .doc-section-returns}
 

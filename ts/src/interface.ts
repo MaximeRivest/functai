@@ -28,21 +28,37 @@ export interface InterfaceField {
   readonly optional?: true;
 }
 
+/** A note a program declares (programs.md, *Notes*): what its code says happened while it runs. */
+export interface InterfaceNote {
+  readonly name: string;
+  /** What its `data` holds: JSON Schema of the checked vocabulary. `{}` is any JSON value. */
+  readonly shape: Rec;
+  readonly desc?: string;
+  /** Only its latest value matters (a stage, a count so far). */
+  readonly latest?: true;
+  /** A caller who sees only the program's boundary (the outside view) may see it. */
+  readonly outside?: true;
+}
+
 /** What a program takes and gives, as data (the same JSON in every language). */
 export interface Interface {
   readonly description: string;
   readonly inputs: readonly InterfaceField[];
   /** At least one; the last is the answer. */
   readonly outputs: readonly InterfaceField[];
+  /** The notes it may make while it runs (absent: it declares none). */
+  readonly notes?: readonly InterfaceNote[];
 }
 
-export type InterfaceCode = "interface-input" | "interface-output" | "interface-malformed";
+export type InterfaceCode = "interface-input" | "interface-output" | "interface-note" | "interface-malformed";
 
 /**
  * A program was given, or returned, what its interface does not take or give
- * (`interface-input`, `interface-output`), or its interface breaks the rules
- * (`interface-malformed`, when it is defined or read). `field` names the
- * first field at fault (null when the fault is not a field's).
+ * (`interface-input`, `interface-output`), its code made a note it does not
+ * declare or whose data does not fit (`interface-note`), or its interface
+ * breaks the rules (`interface-malformed`, when it is defined or read).
+ * `field` names the first field (or note) at fault (null when the fault is
+ * not a field's).
  */
 export class InterfaceError extends TypeError {
   readonly code: InterfaceCode;
@@ -68,6 +84,9 @@ const ASSERTIONS = new Set(["type", "enum", "const", "anyOf", "items", "prefixIt
   "exclusiveMaximum", "$ref", "$defs"]);
 const INPUT_KEYS = new Set(["name", "shape", "desc", "type", "opaque", "optional"]);
 const OUTPUT_KEYS = new Set(["name", "shape", "desc", "type", "opaque"]);
+const NOTE_KEYS = new Set(["name", "shape", "desc", "latest", "outside"]);
+/** A note's name has a character other than a space, a tab, a line feed or a carriage return (programs.md, *Notes*). */
+const NOTE_NAME = /[^ \t\n\r]/;
 
 const isObject = (v: unknown): v is Rec => typeof v === "object" && v !== null && !Array.isArray(v);
 const isNumber = (v: unknown): v is number => typeof v === "number" && Number.isFinite(v);
@@ -518,7 +537,7 @@ const quotes = (dropped: readonly string[], name: string) => !dropped.includes("
  */
 export function malformed(iface: unknown, opts: { ai?: boolean } = {}): { field: string | null; why: string } | null {
   const ai = opts.ai ?? false;
-  if (!isObject(iface) || Object.keys(iface).some((k) => !["description", "inputs", "outputs"].includes(k))
+  if (!isObject(iface) || Object.keys(iface).some((k) => !["description", "inputs", "outputs", "notes"].includes(k))
     || typeof iface["description"] !== "string" || !Array.isArray(iface["inputs"]) || !Array.isArray(iface["outputs"])
     || !iface["outputs"].length) {
     return { field: null, why: "an interface is {description, inputs, outputs}, with at least one output, and nothing else" };
@@ -549,6 +568,76 @@ export function malformed(iface: unknown, opts: { ai?: boolean } = {}): { field:
         const ds = ownDefaultOut(shape);
         if (!fitsShape(shape["default"], ds, ds)) return fault(`its default ${JSON.stringify(shape["default"])} does not fit its shape`);
       }
+    }
+  }
+  return malformedNotes(iface);
+}
+
+/** programs.md, *Notes*: the first note at fault, after every field; `field` null when `notes` is not a list. */
+function malformedNotes(iface: Rec): { field: string | null; why: string } | null {
+  if (!Object.hasOwn(iface, "notes")) return null;
+  const notes = iface["notes"];
+  if (!Array.isArray(notes)) return { field: null, why: "notes is a list" };
+  const seen = new Set<string>();
+  for (const n of notes as unknown[]) {
+    const name = isObject(n) ? n["name"] : undefined;
+    const fault = (why: string) => ({ field: typeof name === "string" ? name : null, why: `note: ${why}` });
+    if (!isObject(n)) return fault("a note is an object");
+    const extra = Object.keys(n).filter((k) => !NOTE_KEYS.has(k));
+    if (extra.length) return fault(`a note is {name, shape, desc?, latest?, outside?}, not ${extra.sort(byCodePoint).join(", ")}`);
+    if (typeof name !== "string" || !NOTE_NAME.test(name)) return fault("a note's name is text with something other than spaces and line breaks");
+    if (seen.has(name)) return fault(`the name ${JSON.stringify(name)} is used twice among the notes`);
+    seen.add(name);
+    if ("desc" in n && typeof n["desc"] !== "string") return fault("desc is text");
+    if (["latest", "outside"].some((k) => k in n && n[k] !== true)) return fault("latest and outside are true when present");
+    const shape = n["shape"];
+    if (!isObject(shape)) return fault("its shape is an object");
+    if (!wellFormed(shape, shape, false)) return fault("its shape uses a keyword the vocabulary does not list, or one with a value of another kind");
+    if (loops(shape)) return fault("its shape has a $defs entry that comes back to itself by $ref and anyOf alone");
+  }
+  return null;
+}
+
+/**
+ * The notes of several tools as one AI function's (programs.md, *How each
+ * program has one*): in order, once each; one name declared differently
+ * refuses (`interface-malformed`, naming the note). `undefined` when none
+ * declares notes.
+ */
+export function mergedNotes(lists: readonly (readonly InterfaceNote[] | undefined)[], where: string): InterfaceNote[] | undefined {
+  let any = false;
+  const out: InterfaceNote[] = [];
+  const byName = new Map<string, string>();
+  for (const notes of lists) {
+    if (notes === undefined) continue;
+    any = true;
+    for (const n of notes) {
+      const text = lmcc.canonicalJson(n as unknown as lmcc.Json);
+      const was = byName.get(n.name);
+      if (was === undefined) {
+        byName.set(n.name, text);
+        out.push(copyData(n) as InterfaceNote);
+      } else if (was !== text) {
+        throw new InterfaceError("interface-malformed", n.name, `${where}: note ${JSON.stringify(n.name)}: two of its tools declare it differently`);
+      }
+    }
+  }
+  return any ? out : undefined;
+}
+
+/**
+ * programs.md, *Checking a note*: why a note made inside calls whose programs
+ * declare `chain` (outermost first; `undefined`: declares none) is refused,
+ * or null. `data` is its JSON form.
+ */
+export function noteRefusal(chain: readonly (readonly InterfaceNote[] | undefined)[], name: string, data: unknown): string | null {
+  const own = chain[chain.length - 1];
+  if (own !== undefined && !own.some((n) => n.name === name)) {
+    return `this program declares its notes, and ${JSON.stringify(name)} is not one of them (${own.map((n) => JSON.stringify(n.name)).join(", ") || "none"})`;
+  }
+  for (let i = chain.length - 1; i >= 0; i--) {
+    for (const n of chain[i] ?? []) {
+      if (n.name === name && !fitsShape(data, n.shape, n.shape)) return `its data does not fit the shape declared for it`;
     }
   }
   return null;

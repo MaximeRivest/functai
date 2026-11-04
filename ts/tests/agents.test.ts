@@ -305,14 +305,14 @@ for (const [name, c] of cases("agents")) {
       assert.deepEqual(keptLog(c.events, c.kept), c.expect.events);
     } else if (c.kind === "limits") {
       const plugin = limits(c.limits);
-      const spent = new Spent(c.spent.exchanges, c.spent.seconds);
+      const spent = new Spent(c.spent.exchanges, c.spent.seconds, c.spent.reported ?? 0);
       const at = c.at;
       const got = at.hook === "before_call"
         ? plugin.handlers.beforeCall![0]!({ spent, lm: at.lm })
         : plugin.handlers.step![0]!({ spent, step: at.step, maxSteps: at.max_steps, tools: at.tools, lastStep: at.step >= at.max_steps });
       assert.deepEqual(got ?? null, c.expect.change);
     } else if (c.kind === "spent") {
-      const s = new Spent(c.exchanges, 0);
+      const s = new Spent(c.exchanges, 0, c.reported ?? 0);
       assert.deepEqual(s.usage, c.expect.usage);
       assert.equal(s.tokens, c.expect.tokens);
       const cost = s.cost(c.prices);

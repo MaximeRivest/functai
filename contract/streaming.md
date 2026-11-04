@@ -136,6 +136,13 @@ keep it. Outside a call, or when nothing watches, making one does
 nothing. A resumed turn does not show again the notes its code makes
 while it replays what it did before (*Continuing a log*). `cases/agents/`
 pin the kept form of `note`, `later` and a `tool_result` with `parts`.
+A program may **declare** its notes in its interface
+([programs.md](programs.md), *Notes*): each is then checked where it is
+made, inside a call, whether or not anything watches (its `data` is the
+JSON form of what the code gave). A reader that knows the program's
+interface may keep only the latest of a note declared `latest`; one that
+does not reads every note as before. A follower's state holds each
+call's notes, in order (*Replaying*).
 
 ## Replaying
 
@@ -147,9 +154,10 @@ log read back from where it was kept shows what was seen live.
 A reader keeps, for each call it has seen start: whether it ended, and
 each field's text so far. `started` adds the call with no fields; `request`
 and `retry` empty every field of their call; `text` appends to its field;
-`done` and `failed` mark the call ended. `thinking`, `tool_call`,
-`tool_result`, `note` and `later` are shown as they come and change no
-field. An event of a
+`done` and `failed` mark the call ended; `note` appends `{name, data}`
+to its call's notes (`data` only when the event has it), which a call has
+once it made one (absent before). `thinking`, `tool_call`, `tool_result`
+and `later` are shown as they come and change no field. An event of a
 kind the reader does not know changes nothing. The log is **finished**
 once its outermost call has ended. `cases/events/replay-*.json` pin this.
 
@@ -300,7 +308,17 @@ Three views are named:
   caller (`to: "caller"`) and its `approved`, re-addressed to the
   outermost call (`call`, `function`). Nothing else: no helper's answer,
   tool call or result, thinking, or reason for a retry (they can quote
-  a helper's reply or a tool's input).
+  a helper's reply or a tool's input). One exception, declared: each
+  `note` whose name the outermost program declares `outside`
+  ([programs.md](programs.md), *Notes*), made by any call of its tree,
+  re-addressed to the outermost call (`call`, `function`), its `name`
+  and, when the form it is made from has it, its `data` (a kept form
+  whose content is not whole has none). Every program in the tree that
+  declares that name has checked it (*Checking a note*), the outermost
+  included, so a caller is given only what was promised, in its shape.
+  Events do not carry a program's interface: whoever makes the view (a
+  server, a host) gives it the names, from the program it runs, as it
+  gives `answer_from`.
 
 **A module's answer as it is written.** A module may say which AI function
 it calls answers for it (Python `@module(answer_from=answer)`). The
@@ -626,12 +644,46 @@ shown as one piece per field (law 6).
 
 ## The answer so far
 
-Implementations offer the answer so far, read from its text (law 3): for
-a text answer, the text; for a record or a list, the JSON read so far
-(complete values, and the text of a string still being written; a number,
-`true`, `false` or `null` only once complete); for any other answer,
-nothing until `done`. It is provisional: `done` has the typed, checked
-value.
+Implementations offer the answer so far, read from its text (law 3) by
+the answer's shape (its interface's last output):
+
+- **a text answer** (a shape whose type is `string`, or `string` or
+  `null`, with no `enum` or `const`): the text;
+- **a record or a list** (type `object` or `array`, or either or `null`):
+  the JSON read so far, by the rules below; nothing when the text is not
+  the start of what the shape gives (`{` for a record, `[` for a list);
+- **any other answer** (a number, a choice, a picture): nothing, until
+  `done`.
+
+**JSON read so far.** White space is skipped. A text that starts with a
+fence (three backticks, then anything up to the first line break) is read
+after it, and a closing fence at its end is left out. Then the value at
+the start, read by its shape (the shape of each member is found through
+`properties`, then `additionalProperties`; each item's through
+`prefixItems`, then `items`; `$ref` followed; an `anyOf` whose options
+are only one shape and `null` read as that shape; a shape it cannot
+follow is `{}`):
+
+- an object: each member whose key is complete and whose value has
+  started, in order, with its value so far; a member whose value is
+  nothing yet is left out;
+- an array: each item whose value has started, with its value so far;
+  an item that is nothing yet is left out;
+- a string: its text so far (escapes read; an escape still being written
+  left out), unless its shape is a **choice** (it has `enum` or `const`):
+  then nothing until its closing quote, since "med" is no value of
+  `["low", "medium", "high"]` and a page would show what was never
+  answered;
+- a number, `true`, `false` or `null`: nothing until a character after it
+  ends it (`,`, `]`, `}` or white space): `1` may become `12`.
+
+A text that cannot be the start of JSON (a key that is not a string, a
+missing `:`, a bad escape, a word that is no literal) gives nothing; what
+follows a value that is complete is not read. The
+answer so far is provisional: `done` has the typed, checked value. A
+reader that knows the program's interface (a page) reads the answer so
+far from a call's `text` events this way too, with the same result:
+`cases/partial/` pin it.
 
 ## In the call log
 

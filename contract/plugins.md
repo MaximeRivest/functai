@@ -18,7 +18,10 @@ FunctAI setting by the same name.
 `name` (lower-case letters, digits, `_`, `-`, at most 64, starting with a
 letter: its changes and entries are named by it), `version` (its own,
 recorded with each change), `api` (the plugin API it was written for: `1`;
-another refuses `plugin-api`), and its handlers by hook. Registering a
+another refuses `plugin-api`), `config` (optional: its settings as JSON,
+which a program's setup counts: [calls.md](calls.md), *Setups*; two
+plugins of one name and version with other settings run otherwise), and
+its handlers by hook. Registering a
 handler for a hook that does not exist refuses `plugin-hook`: a misspelt
 hook would otherwise never run.
 
@@ -126,7 +129,8 @@ call's are ([calls.md](calls.md), *Token counts*), the tokens
 seconds since the tree's outermost call started, and the cost at prices
 the host gives: each request's lm15 `InferencePricing.estimate`, summed,
 exact or unknown (a model with no price, or a request whose counts do not
-settle its price). A model named `provider:model` is priced by its own
+settle its price), plus what code in the tree said it spent (`spend`:
+[calls.md](calls.md), *Spending*), which needs no price. A model named `provider:model` is priced by its own
 name when the prices do not name it whole. FunctAI ships no prices: they
 change, and a wrong one would mislead.
 
@@ -245,7 +249,11 @@ are not in API 1.
   remembers what it was asked earlier on this branch only. Its calls are
   under the tool call in the asking turn's tree.
 - **limits** (`limits(tokens, cost, seconds, prices, then)`, named
-  `limits`, version 1.0.0): opt-in limits on a call tree. Nothing is
+  `limits`, version 1.0.0, `config` `{"tokens"?, "cost"?, "seconds"?,
+  "prices"?, "then"}`, each limit given, `prices` each model's
+  `InferencePricing` as its fields by lm15's names, without those at
+  lm15's defaults: an unset rate, `currency` `"USD"`, no `tiers`):
+  opt-in limits on a call tree. Nothing is
   limited by default. At least one of `tokens`, `cost`, `seconds` (each a
   number above 0); `cost` needs `prices` (a model's name → its
   `InferencePricing`); `then` is `answer` (the default) or `stop`. A limit
@@ -274,8 +282,8 @@ are not in API 1.
     far.`, so the call ends with an answer instead of `StepLimit`.
   Limits are checked between requests: one request may go past one.
 - **keep_pictures** (`keep_pictures(last, at_once)`, named
-  `keep-pictures`, version 1.0.0; `last` 0 or more, default 3; `at_once`
-  1 or more, default 1): its `step` counts the image parts of the
+  `keep-pictures`, version 1.0.0, `config` `{"last", "at_once"}`; `last`
+  0 or more, default 3; `at_once` 1 or more, default 1): its `step` counts the image parts of the
   results as shown now, from the newest (the last part of the last
   result) back; every one after the first `last` is due to go. When at
   least `at_once` are due, it changes `replace`: each result holding one

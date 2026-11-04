@@ -30,6 +30,7 @@ import getpass
 import hashlib
 import inspect
 import json
+import math
 import os
 import platform
 import re
@@ -562,7 +563,8 @@ class Call:
                  "inputs", "sizes", "described", "pred", "exchanges", "provider", "log", "streams", "observers",
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
                  "journal_status", "context", "pid", "path", "names", "invocation", "invocations", "conversation",
-                 "writer", "turn_run", "bound", "changes", "replayable", "sections", "top", "spent", "__weakref__")
+                 "writer", "turn_run", "bound", "changes", "replayable", "sections", "top", "spent", "own_spent",
+                 "tree_spent", "placement", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"], id: Optional[str] = None):
         self.id = id or new_id()
@@ -572,6 +574,9 @@ class Call:
         self.top: "Call" = parent.top if parent is not None else self   # the outermost call of its tree here
         self.spent: List[Tuple[str, Dict[str, int]]] = []    # outermost call only: (model, usage) of each request
         #                                                    a provider answered in this tree (plugins: limits)
+        self.own_spent: Optional[float] = None               # dollars its own code and tools said they spent
+        self.tree_spent = 0.0                                # outermost call only: all its tree's code said it spent
+        self.placement: Optional[Dict[str, Any]] = None      # where it ran (wall, server address): its record's
         self.program = program
         self.function: str = getattr(program, "__name__", "program")
         self.started = time.time()
@@ -805,6 +810,12 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     if parent is not None and parent.delegating:
         parent.delegating = False
         call.answers_for = parent.id
+    try:
+        from .core import FunctAIFunc
+        from .setup import placement_of
+        call.placement = placement_of(settings, ai=isinstance(program, FunctAIFunc))
+    except Exception:  # noqa: BLE001 — where it ran is said when it can be
+        call.placement = None
     if call.target is not None or call.watched:
         try:
             _prepare(call, program, layers, inputs)
@@ -828,6 +839,7 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
             if parent is None and call.log.required and call.log.barrier(call.cancelled) != "confirmed":
                 call.check()                      # a closed stream: the call is cancelled, not refused
                 raise barrier_error(1)
+            _check_reach(program, settings)       # what it needs, against the wall it runs behind (calls.md, Reach)
             value = invoke()
         except BaseException as exc:  # noqa: BLE001 — the outcome, recorded, then raised as it is
             error = exc
@@ -1169,6 +1181,13 @@ def program_info(program: Any) -> Dict[str, Any]:
     info["answer"] = interface["outputs"][-1]["name"]
     if saved_id:
         info["saved"] = saved_id
+    if not remote:
+        try:
+            from .setup import setup_of
+            info["setup"] = setup_of(program)          # what it runs on (calls.md, Setups)
+        except Exception as exc:  # noqa: BLE001 — a setup that cannot be worked out never stops a call
+            _warn_once(("setup", type(exc).__name__), f"the setup of {program.__name__} could not be worked out "
+                                                      f"({type(exc).__name__}: {exc}); its records name none")
     code = getattr(fn, "__code__", None)
     if code is not None and not loaded and not remote:
         where = top_level_file(code.co_filename) if module == "__main__" else code.co_filename
@@ -1176,6 +1195,29 @@ def program_info(program: Any) -> Dict[str, Any]:
             info["file"] = where
         info["line"] = code.co_firstlineno
     return info
+
+
+def _check_reach(program: Any, settings: Mapping[str, Any]) -> None:
+    from .core import FunctAIFunc
+    from .module import FunctAIModule
+    if isinstance(program, (FunctAIFunc, FunctAIModule)) and settings.get("wall") is not None:
+        from .setup import check_reach
+        check_reach(program, settings)
+
+
+def spend(usd: float) -> None:
+    """Say what code inside a call spent beyond the models' tokens, in dollars
+    (a browsing service's charge, a paid API): ``functai.spend(0.05)``, from a
+    module's body or a tool (contract/calls.md, *Spending*). The call's record
+    keeps the sum (``spent``), and the ``limits`` plugin counts it in the
+    tree's cost. Outside any call it does nothing."""
+    if isinstance(usd, bool) or not isinstance(usd, (int, float)) or not math.isfinite(usd) or usd < 0:
+        raise ValueError(f"spend(usd): a number of dollars, at least 0; not {usd!r}")
+    call = current()
+    if call is None:
+        return
+    call.own_spent = (call.own_spent or 0.0) + float(usd)
+    call.top.tree_spent += float(usd)
 
 
 def top_level_file(filename: Optional[str]) -> Optional[str]:
@@ -1348,6 +1390,10 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
         rec["probabilities"] = {k: {str(a): float(p) for a, p in d.items()} for k, d in pred.probabilities.items()}
     if pred is not None and getattr(pred, "escalated", False):
         rec["escalated"] = True
+    if call.own_spent is not None:
+        rec["spent"] = {"usd": round(call.own_spent, 12)}
+    if call.placement:
+        rec["placement"] = dict(call.placement)
     rec["exchanges"] = [_exchange_record(ex) for ex in call.exchanges]
     steps = _steps_of(call)
     if steps is not None:

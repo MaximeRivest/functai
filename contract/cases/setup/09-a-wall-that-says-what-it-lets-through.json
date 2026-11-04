@@ -1,0 +1,81 @@
+{
+ "description": "Behind a wall that says what it lets through and its limits: reach is that, each list sorted and once each. The wall's name is not in it (recorded on each call).",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini",
+  "wall": {
+   "name": "srt",
+   "domains": [
+    "api.browser-use.com",
+    "*.browser-use.com",
+    "api.browser-use.com"
+   ],
+   "secrets": [
+    "BROWSER_USE_API_KEY"
+   ],
+   "limits": {
+    "memory_mb": 2048,
+    "seconds": 600
+   }
+  }
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "reach": {
+    "domains": [
+     "*.browser-use.com",
+     "api.browser-use.com"
+    ],
+    "secrets": [
+     "BROWSER_USE_API_KEY"
+    ],
+    "limits": {
+     "memory_mb": 2048,
+     "seconds": 600
+    }
+   }
+  },
+  "setup": "sha256:b3e10f1955508c64ea4bd5796f125cb1a5da7d9e9e8a87bb547038d0a86eb119"
+ }
+}

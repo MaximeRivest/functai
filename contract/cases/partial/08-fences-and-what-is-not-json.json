@@ -1,0 +1,67 @@
+{
+ "description": "A text in a fence is read after its first line break, a closing fence left out. A text that cannot be the start of JSON gives nothing: prose first, a key that is not a string, a missing colon, a word that is no literal.",
+ "shape": {
+  "type": "object",
+  "additionalProperties": {
+   "enum": [
+    "low",
+    "medium",
+    "high"
+   ]
+  }
+ },
+ "checks": [
+  {
+   "text": "```json\n{\"a\": \"low\", \"b\": \"hi",
+   "expect": {
+    "value": {
+     "a": "low"
+    }
+   }
+  },
+  {
+   "text": "```json\n{\"a\": \"low\"}\n```",
+   "expect": {
+    "value": {
+     "a": "low"
+    }
+   }
+  },
+  {
+   "text": "```",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "Sure! {",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "{a: 1}",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "{\"a\" \"low\"}",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "{\"a\": lo}",
+   "expect": {
+    "nothing": true
+   }
+  },
+  {
+   "text": "[]",
+   "expect": {
+    "nothing": true
+   }
+  }
+ ]
+}

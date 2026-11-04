@@ -1,0 +1,72 @@
+{
+ "description": "lm15's settings as its canonical JSON; FunctAI's as set (capabilities only when set).",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini",
+  "temperature": 0.2,
+  "max_tokens": 300,
+  "seed": 7,
+  "max_steps": 20,
+  "retries": 2,
+  "tool_errors": "raise",
+  "on_unreadable": "record",
+  "capabilities": {
+   "native_structured_output": false
+  }
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "config": {
+    "max_tokens": 300,
+    "temperature": 0.2,
+    "seed": 7
+   },
+   "settings": {
+    "max_steps": 20,
+    "retries": 2,
+    "tool_errors": "raise",
+    "on_unreadable": "record",
+    "capabilities": {
+     "native_structured_output": false
+    }
+   },
+   "reach": "open"
+  },
+  "setup": "sha256:b9a4e0f44cf9dbe370dc1eca4eaed0256b664dbd2c75b2c7c2d2aad1ae13ffff"
+ }
+}
