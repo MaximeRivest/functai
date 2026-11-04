@@ -1,4 +1,5 @@
-"""The command line: ``functai serve``, ``functai describe``, ``functai verify``, ``functai skill``.
+"""The command line: ``functai serve``, ``functai describe``, ``functai verify``, ``functai skill``,
+``functai studio`` (see ``functai studio --help``).
 
     functai serve team/ --lm gpt-4.1-mini --keys keys.txt --port 8080
     functai serve support.py:support --store conversations/
@@ -6,6 +7,7 @@
     python -m functai verify team/          # what verify() runs in a fresh environment
     functai skill                           # where the coding-agent skill is, and which agents have it
     functai skill --install                 # copy it to every agent found here (Claude Code, Pi, Codex)
+    functai studio open                     # Studio: see, judge and share a pipeline (functai studio --help)
 """
 
 from __future__ import annotations
@@ -44,6 +46,9 @@ def _program(target: str, *, trust: bool) -> Any:
 
 def main(argv: Optional[List[str]] = None) -> int:
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] == "studio":
+        from .studio.cli import main as studio_main
+        return studio_main(argv[1:])
     if len(argv) == 2 and argv[0] == "verify":
         from .saved import main as verify_main
         return verify_main(argv)
@@ -62,6 +67,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     d.add_argument("folder")
     v = sub.add_parser("verify", help="load a saved folder here and compare its fingerprints")
     v.add_argument("folder")
+    sub.add_parser("studio", help="Studio: see, judge, fix and share a pipeline (functai studio --help)",
+                   add_help=False)
     k = sub.add_parser("skill", help="the skill that teaches coding agents to use functai: where it is, and install it")
     k.add_argument("--install", nargs="*", metavar="DIR",
                    help="copy it into these skills folders (default: every agent's found here)")

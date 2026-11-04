@@ -1,19 +1,70 @@
+---
+rat:
+  project: ../python
+  python:
+    dependencies: ["-e .[data]", "pandas"]
+---
+
 # functai
 
-*Write a function's signature and one sentence saying what it does. A language model writes the body. You measure how well.*
+You already know how to write a good function: say what goes in and what comes out, say in one sentence what it does, write a few examples with the answers you expect, then write the body and check it against those examples. Teachers call this the *design recipe*. functai keeps every step but one. Your types are the **signature**, your docstring is the **purpose statement**, your table of trusted answers is the **examples**, and a language model writes the **body**. The answer comes back as the type you asked for, so you can **test** it like any other function.
 
-You already know how to write a good function: say what goes in and what
-comes out, say in one sentence what it does, collect a few examples with
-the answers you expect, then write the body and check it against them.
-functai keeps every step but one. The types are the **signature**, the
-sentence is the **purpose**, your table of trusted answers is the
-**examples**, and a language model writes the **body**. The answer comes
-back as the type you asked for, so you **test** it like any other
-function: on a whole table, with a score and an honest range, and again
-after every change.
+Here is the recipe, one step at a time. The **signature** and the **purpose statement** are the first two lines you write, and the ellipsis `...` is the **body** you leave to the model:
 
-It exists in Python, TypeScript, R and Julia, each written the way that
-language writes functions. Here is the same function in all four:
+```python
+from typing import Literal
+import functai as f
+f.login('openai-codex')
+
+@f.ai(lm='openai-codex:gpt-6-sol')
+def mood(review: str) -> Literal['happy', 'unhappy', 'mixed']:
+    """How does the customer feel about what they bought?"""
+    ...
+```
+
+The **examples** are answers you trust, written as plain rows:
+
+```python
+examples = [
+    {'review': 'Arrived early and works perfectly.', 'mood': 'happy'},
+    {'review': 'Broke after two days. Never again.', 'mood': 'unhappy'},
+    {'review': 'Great sound, but the strap snapped.', 'mood': 'mixed'},
+]
+```
+
+The answer comes back as the type you asked for, so you **test** it the way you test any function, one call at a time or on all the examples at once:
+
+```python
+mood('The box was dented, but everything inside is fine.')
+```
+
+```python
+f.evaluate(mood, examples, expected='mood')
+```
+
+The first number `evaluate` gives is how often it was right; the range says how sure that number is. That loop (**write, run, measure, improve**) is what functai is for.
+
+The docstring is the whole instruction, so it can be anything. Here is one that ignores its input on purpose:
+
+```python
+
+@f.ai(lm = 'openai-codex:gpt-6-sol')
+def my_ai_program(my_input):
+  """
+  No matter what, you are only telling dad's jokes.
+  """
+  ...
+
+my_ai_program('Who are you?')
+```
+
+```output
+Already signed in: Login(ChatGPT: saved: use CLI login, ready, until unknown). Use functai.login('openai-codex', again=True) to sign in again.
+"I'm a dad-joke bot. I used to be a banker, but I lost interest."
+```
+
+functai exists in Python, TypeScript, R and Julia, each written the way
+that language writes functions. Here is one function, `team`, in all four:
 
 === "Python"
 

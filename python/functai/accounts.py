@@ -314,7 +314,8 @@ def _choose_method(a: Auth, provider: str, method: Optional[str]) -> Tuple[Optio
 
 
 def login(provider: Optional[str] = None, *, key: Optional[str] = None, method: Optional[str] = None,
-          again: bool = False, open_browser: Optional[bool] = None, auth: Any = None) -> Login:
+          again: bool = False, open_browser: Optional[bool] = None, auth: Any = None, ui: Any = None,
+          say: Any = None) -> Login:
     """Sign in to a provider once; every later session uses it.
 
     For subscriptions (Claude, ChatGPT, GitHub Copilot, xAI, Kimi) a browser
@@ -340,6 +341,12 @@ def login(provider: Optional[str] = None, *, key: Optional[str] = None, method: 
         Default: when this machine has a display.
     auth : str or path, optional
         Another credentials file than lm15's.
+    ui : lm15.login.AuthUI, optional
+        Who talks to the person during a sign-in (links, device codes, codes
+        to paste): default, the terminal. A web page passes its own (Studio's
+        dashboard does).
+    say : callable, optional
+        Where the one-line messages go (default: printed).
 
     Returns
     -------
@@ -364,7 +371,8 @@ def login(provider: Optional[str] = None, *, key: Optional[str] = None, method: 
     a = auth_for(True if auth is None else auth)
     if a is None:
         raise ValueError("login needs a credentials store; auth=False has none")
-    ui = _ui(open_browser)
+    ui = ui if ui is not None else _ui(open_browser)
+    _say = say if say is not None else globals()["_say"]
     if provider is None:
         options = tuple(SelectOption(p, label) for p, label in ACCOUNTS) + (
             SelectOption("api_key", "An API key for another provider (OpenAI, Anthropic, Gemini, Groq, ...)"),)

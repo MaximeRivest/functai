@@ -2,6 +2,101 @@
 
 ## Unreleased
 
+### Studio: see, judge, fix and share a pipeline
+
+`functai studio`: a command line for coding agents and a dashboard for people,
+over the same plain files. Nothing in the contract changes: runs are call records
+whose `caller` names the example they answered (`{"studio": {...}}`), judgements
+are ratings.
+
+- **The map, from the code.** A `@module`'s body is read (never run): which
+  step's answer reaches which step, under which condition (`if kind ==
+  "spam"`), the fixed values some paths use or return, the file values steps
+  read. One deterministic layout; `functai studio map`.
+- **Runs on examples.** `examples/<pipeline>.csv`, one column per input. The
+  cost is estimated first and a run above the budget stops (exit 3); replies
+  already asked come from the project's reply cache, free. `--lm step=model`
+  tries another model for one step without changing the code (a plugin; the
+  change is recorded on each call it makes).
+- **Judgements, and what they carry.** Only people judge (`functai studio
+  rate … --by NAME`, or the dashboard). A judgement carries to the same step's
+  same answer to the same input in a later run; a right answer someone gave
+  judges exactly comparable answers (a choice, a number, yes/no); text that
+  differs is never judged for anyone.
+- **The weak step.** `why #5` gives each step judged wrong its right answer and
+  reruns only what comes after (recorded apart, in `.functai/studio/whatif`);
+  `blame` counts, over every wrong example, which step's fix makes the end right.
+- **Measured changes.** `compare --before HEAD` (or a file, or `--lm
+  step=model`), paired, on judged examples kept aside from whoever wrote the
+  change (about 4 in 10, chosen by a stable hash), with the result in words.
+- **The dashboard** (`functai studio open`): Map, Summary, Table, Code; judging
+  in place and ten at a time; each step's model, tried before it is used (using
+  it edits only that step's `@ai(...)`); costs per message and per month, and a
+  spending limit; who did what; an address per view; live while an agent works.
+  On this computer only, unless `--host` (then with a key).
+- **The summary** (`functai studio page`, or the dashboard's download): one
+  HTML file with what it does, how often it's right, where it goes wrong, what
+  it costs, where data goes, what was tested, a drawing and three examples.
+- **Cost before every action that asks a model**, not only runs: "why", "blame",
+  a trial of another model and a comparison show their cost on their button,
+  wait for a yes above the person's limit (dashboard) and stop above the budget
+  (command line, exit 3). Costs say what the money went on (runs, what-ifs,
+  trials, comparisons).
+- **Who pays**: for each company the steps send to, which steps, and whether
+  this computer has its key (never the key itself); a warning when a step's
+  company has none.
+- **Versions you can go back to**: Studio keeps each version's code the first
+  time it sees it (`.functai/studio/versions/`); the dashboard lists versions
+  with their scores, shows what changed, and puts an old version's code back
+  (the current code is kept too); `functai studio versions` lists them.
+- **Plain words on the map**: each step's card says what it is asked (the first
+  sentence of its instruction).
+- **Review**: one example at a time, every step as what it was given (each input,
+  long ones folded), what it answered (and its reasoning, when the model gave
+  any), and, on request, exactly what was sent and what came back. Right or
+  wrong, what it should have been (choices as buttons) and a note on each step
+  and on the end, with the keyboard (j/k, ↑/↓, 1, 2, n); a filter (not checked,
+  wrong, failed); after judging the end, on to the next.
+- **Everything in the dashboard, for someone with no coding agent and no terminal**:
+  `functai studio` alone opens it; a home page lists the pipelines in the folder.
+  - **AI accounts**: sign in with a subscription (Claude, ChatGPT, GitHub
+    Copilot, xAI, Kimi, OpenRouter: lm15's own sign-in flows, their links,
+    device codes and questions shown in the page, answers typed there), add an
+    API key (checked with a model list, refused keys not kept), see what is
+    connected and sign out. Saved by lm15 in its credentials file, shared with
+    FunctAI scripts; keys and sign-in answers are accepted only from this
+    computer or an encrypted link to it. `functai.login()` gains `ui=` and
+    `say=`, so any interface can drive a sign-in.
+  - **Models from what is connected**: menus list the models of connected
+    accounts first (and say which are not); steps that name no model use the
+    first small model of a connected account; subscriptions and models on this
+    computer cost nothing per use.
+  - **A new pipeline from a sentence**: the AI drafts a plan as data (inputs,
+    facts only the person has, steps with their instructions, inputs and kinds
+    of answer, example inputs); the person edits it; Studio writes the code
+    itself (never a model), the facts as files to fill in (flagged until they
+    are), and the examples. Or a plan written by hand.
+  - **Examples in the dashboard**: add, change, remove, paste many (one per
+    line, or a table from a spreadsheet), upload a CSV, keep a run from
+    elsewhere, or have the AI write ten (inputs only); undoable.
+- **Changing the pipeline in the dashboard, into the code**: a step's model
+  (one step, or every step, in Models), its instruction, its kind of answer
+  (text, choices, a number, yes/no, a list), which value goes into each of its
+  inputs, a fixed value, a file a step reads (an FAQ), a new step after another
+  or at the end, taking a step out, and the code itself. Each change is a precise
+  edit of the file (the rest untouched), refused when it would not be Python or
+  when the file changed since the person looked, kept in a history
+  (`.functai/studio/edits/`) and undone in one click.
+- **The skill** gains `studio.md`, the method for coding agents (including: name
+  every fact the pipeline needs that the person has, and ask where it comes from).
+- **Default model** for steps that name none: `claude-haiku-5-5` (checked
+  against the providers' model lists on 2026-11-02), changeable per project.
+- **Faster `check`, saving and first calls.** Which distribution provides each
+  module was read again from every installed package each time a program's
+  graph was read (seconds in a large environment, and once per thread on a
+  module's first calls); it is now read once, and again only when a folder on
+  `sys.path` changes.
+
 ### lm15 2: one meaning per token count
 
 FunctAI now requires lm15 2 (`lm15>=2.0,<3`) and lmcc 0.8.8, the lmcc made for it. lm15 2 gives each token

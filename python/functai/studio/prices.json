@@ -1,0 +1,131 @@
+{
+ "_about": "List prices in US dollars per million tokens (input, output), used to estimate and count what runs cost. One snapshot: replace it with a newer one, never edit prices by hand. A model not listed has an unknown price: Studio counts its tokens and says the cost is unknown. Replies served from the reply cache cost nothing.",
+ "date": "2026-11-02",
+ "source": "OpenRouter model catalogue (https://openrouter.ai/api/v1/models), read 2026-11-02; for first-party models it lists the maker's own API price.",
+ "suggested": [
+  "claude-haiku-5-5",
+  "gpt-6-luna",
+  "claude-sonnet-5-5",
+  "gpt-6.1-terra",
+  "gpt-6.1-sol",
+  "gemini-3.8-flash",
+  "claude-opus-5-5"
+ ],
+ "models": {
+  "claude-haiku-5-5": {
+   "input": 0.1,
+   "output": 0.5,
+   "listed_as": "anthropic/claude-haiku-5.5"
+  },
+  "claude-sonnet-5-5": {
+   "input": 2.0,
+   "output": 10.0,
+   "listed_as": "anthropic/claude-sonnet-5.5"
+  },
+  "claude-opus-5-5": {
+   "input": 4.0,
+   "output": 20.0,
+   "listed_as": "anthropic/claude-opus-5.5"
+  },
+  "claude-sonnet-5": {
+   "input": 2.0,
+   "output": 10.0,
+   "listed_as": "anthropic/claude-sonnet-5"
+  },
+  "claude-opus-5": {
+   "input": 5.0,
+   "output": 25.0,
+   "listed_as": "anthropic/claude-opus-5"
+  },
+  "claude-haiku-4-5": {
+   "input": 1.0,
+   "output": 5.0,
+   "listed_as": "anthropic/claude-haiku-4.5"
+  },
+  "claude-sonnet-4-5": {
+   "input": 3.0,
+   "output": 15.0,
+   "listed_as": "anthropic/claude-sonnet-4.5"
+  },
+  "gpt-6-luna": {
+   "input": 0.1,
+   "output": 0.5,
+   "listed_as": "openai/gpt-6-luna"
+  },
+  "gpt-6-sol": {
+   "input": 2.0,
+   "output": 10.0,
+   "listed_as": "openai/gpt-6-sol"
+  },
+  "gpt-6.1-sol": {
+   "input": 2.0,
+   "output": 10.0,
+   "listed_as": "openai/gpt-6.1-sol"
+  },
+  "gpt-6.1-terra": {
+   "input": 1.0,
+   "output": 5.0,
+   "listed_as": "openai/gpt-6.1-terra"
+  },
+  "gpt-6-astra": {
+   "input": 10.0,
+   "output": 50.0,
+   "listed_as": "openai/gpt-6-astra"
+  },
+  "gpt-5.6-luna": {
+   "input": 0.2,
+   "output": 1.2,
+   "listed_as": "openai/gpt-5.6-luna"
+  },
+  "gpt-5.6-terra": {
+   "input": 2.0,
+   "output": 12.0,
+   "listed_as": "openai/gpt-5.6-terra"
+  },
+  "gpt-5.6-sol": {
+   "input": 4.0,
+   "output": 20.0,
+   "listed_as": "openai/gpt-5.6-sol"
+  },
+  "gpt-5.4-nano": {
+   "input": 0.2,
+   "output": 1.25,
+   "listed_as": "openai/gpt-5.4-nano"
+  },
+  "gpt-5.4-mini": {
+   "input": 0.75,
+   "output": 4.5,
+   "listed_as": "openai/gpt-5.4-mini"
+  },
+  "gpt-5.4": {
+   "input": 2.5,
+   "output": 15.0,
+   "listed_as": "openai/gpt-5.4"
+  },
+  "gpt-4.1-mini": {
+   "input": 0.4,
+   "output": 1.6,
+   "listed_as": "openai/gpt-4.1-mini"
+  },
+  "gpt-4.1-nano": {
+   "input": 0.1,
+   "output": 0.4,
+   "listed_as": "openai/gpt-4.1-nano"
+  },
+  "gemini-3.8-flash": {
+   "input": 0.825,
+   "output": 4.125,
+   "listed_as": "google/gemini-3.8-flash"
+  },
+  "gemini-3.5-flash-lite": {
+   "input": 0.3,
+   "output": 2.5,
+   "listed_as": "google/gemini-3.5-flash-lite"
+  },
+  "gemini-3.1-pro-preview": {
+   "input": 2.0,
+   "output": 12.0,
+   "listed_as": "google/gemini-3.1-pro-preview"
+  }
+ }
+}

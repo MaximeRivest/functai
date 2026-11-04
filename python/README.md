@@ -158,6 +158,38 @@ Each has its page: [Memory](https://maximerivest.github.io/functai/articles/memo
 [Big tables](https://maximerivest.github.io/functai/articles/tables.html#long-runs)
 and [Watch it being written](https://maximerivest.github.io/functai/articles/streaming.html).
 
+## Studio: make, see, judge and share AI pipelines
+
+```bash
+pip install functai          # or, with nothing installed but uv: uvx functai studio
+functai studio               # opens the dashboard in your browser
+```
+
+The dashboard does everything, with no code and no terminal needed:
+
+1. **Connect an AI**: sign in with a subscription you already have (Claude,
+   ChatGPT, GitHub Copilot, xAI, Kimi, OpenRouter), or paste an API key
+   (Anthropic, OpenAI, Google, …). Saved by lm15 in one private file on your
+   computer, shared with your FunctAI scripts.
+2. **Make a pipeline**: describe it in a sentence and the AI plans the steps
+   (what each is asked, what it answers, the facts only you know, example
+   inputs); check and change the plan; Studio writes it as ordinary Python that
+   is yours. Or plan it yourself, or start from the ready example.
+3. **Examples**: type them, paste a list or a spreadsheet, upload a CSV, or have
+   the AI write some (inputs only: you judge the answers).
+4. **Run, read, judge**: every step's input and answer side by side, the exact
+   text sent to the model, right or wrong and a note in a keystroke; how often
+   it is right, with its honest range; what it costs, before and after.
+5. **Fix**: find the step at fault, change its instruction, its kind of answer,
+   its model or its inputs, add or remove steps, edit the code; every change is
+   written into the code, measured against the last version, and undoable.
+6. **Share**: a one-page summary anyone can open.
+
+Code stays the truth: the pipeline is a `.py` file, runs and judgements are plain
+files beside it (`.functai/`), and coding agents work on the same project from
+the command line (`functai studio --help`; the skill's `studio.md`).
+*New in the next release.*
+
 ## Documentation
 
 **[maximerivest.github.io/functai](https://maximerivest.github.io/functai/python.html)**, with three ways in:

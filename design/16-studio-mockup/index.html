@@ -1,0 +1,771 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Studio — mockup 4 (made-up data)</title>
+<style>
+:root{
+  --bg:#f6f5f1; --panel:#fff; --ink:#1c1c1f; --mute:#6f6e75; --faint:#a3a2a8; --line:#e7e5df;
+  --accent:#4656e8; --accent-soft:#eef0fe;
+  --good:#1e8a4e; --good-soft:#e7f5ed; --bad:#c93b3b; --bad-soft:#fbecec;
+  --fail:#8448c8; --fail-soft:#f3ecfc; --warn:#8a5a12; --warn-soft:#fdf3e1; --code:#22223a;
+  font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{margin:0;background:var(--bg);color:var(--ink);font-size:15px;line-height:1.45}
+button{font:inherit;cursor:pointer;color:inherit}
+a{color:var(--accent)}
+.hidden{display:none!important}
+.ic{width:1em;height:1em;vertical-align:-.15em;flex:none}
+.good-t{color:var(--good)} .bad-t{color:var(--bad)} .fail-t{color:var(--fail)}
+.small{font-size:12.5px;color:var(--mute)}
+.mockbar{background:var(--warn-soft);color:var(--warn);font-size:13px;text-align:center;padding:6px 10px}
+
+/* ---------- home ---------- */
+#home{min-height:100%;display:flex;flex-direction:column}
+.homein{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:36px 20px 40px;gap:20px}
+#home h1{font-size:34px;font-weight:700;margin:0;letter-spacing:-.02em;text-align:center}
+.lede{margin:-8px 0 0;max-width:620px;text-align:center;color:#46464c;font-size:16.5px}
+#homeform{width:min(700px,100%);display:flex;gap:8px;align-items:flex-end;background:#fff;border:1px solid var(--line);border-radius:18px;padding:8px 8px 8px 16px;box-shadow:0 6px 30px rgba(0,0,0,.05)}
+#homein{flex:1;border:0;outline:0;font:inherit;font-size:17px;background:none;resize:none;line-height:1.4;padding:8px 0;max-height:150px}
+.go{border:0;background:var(--accent);color:#fff;border-radius:12px;padding:10px 18px;font-weight:650}
+.startlbl{font-size:12.5px;color:var(--mute);font-weight:650;margin-bottom:-10px}
+.starters{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;max-width:760px}
+.chip{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;font-size:14px}
+.chip:hover{border-color:var(--accent);color:var(--accent)}
+.chip .aud{color:var(--mute);font-size:12px;margin-right:6px}
+.preview{display:flex;flex-direction:column;align-items:center;gap:6px;background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 18px;font-size:13px;color:var(--mute)}
+.preview .flow{display:flex;gap:6px;align-items:center;color:var(--ink)}
+.preview .flow span{border:1px solid var(--line);border-radius:8px;padding:2px 8px;background:#faf9f6}
+.trust{font-size:13.5px;color:#46464c;text-align:center;line-height:1.6}
+.homefoot{font-size:14px;color:var(--mute);display:flex;gap:12px;align-items:center;flex-wrap:wrap;justify-content:center}
+.note{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;width:min(700px,100%)}
+.note p{margin:0 0 6px} .note ol{margin:0 0 8px;padding-left:20px}
+
+/* ---------- app ---------- */
+#app{height:100%;display:flex;flex-direction:column}
+.top{display:flex;align-items:center;gap:10px;padding:10px 20px;flex-wrap:wrap}
+.top .name{font-weight:700;font-size:17px}
+.ver{font-size:12.5px;color:var(--mute);border:1px solid var(--line);border-radius:6px;padding:0 6px;background:#fff}
+.iconbtn{border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 8px;font-size:13px;display:inline-flex;gap:5px;align-items:center}
+.status{font-size:13.5px;color:var(--mute)}
+.status a{cursor:pointer}
+.spent{font-size:13px;border:1px solid var(--line);background:#fff;border-radius:8px;padding:3px 8px;color:var(--mute)}
+.mockpill{margin-left:auto;font-size:12px;color:var(--warn);background:var(--warn-soft);border-radius:6px;padding:2px 8px}
+.seg{display:flex;background:#ebe9e3;border-radius:10px;padding:3px}
+.seg button{border:0;background:none;padding:5px 13px;border-radius:8px;font-size:14px;color:var(--mute);font-weight:600}
+.seg button.on{background:#fff;color:var(--ink);box-shadow:0 1px 2px rgba(0,0,0,.08)}
+.body{flex:1;display:flex;min-height:0}
+.main{flex:1;display:flex;flex-direction:column;min-width:0}
+.stage{flex:1;overflow:auto;padding:4px 20px 24px;position:relative}
+.drawer{width:400px;border-left:1px solid var(--line);background:#fff;display:flex;flex-direction:column;min-height:0}
+.drawer .dh{display:flex;align-items:center;gap:8px;padding:14px 16px;border-bottom:1px solid var(--line)}
+.drawer .dh b{font-size:15px}
+.drawer .dh .x{margin-left:auto;border:0;background:none;font-size:20px;color:var(--mute);line-height:1}
+.drawer .db{flex:1;overflow:auto;padding:14px 16px 24px}
+
+/* the ask bar is part of the layout, so it never covers anything */
+.ask{border-top:1px solid var(--line);background:var(--bg);padding:8px 20px 12px;display:flex;flex-direction:column;align-items:center;gap:6px}
+.sugg{display:flex;gap:6px;flex-wrap:wrap;justify-content:center}
+.sugg .chip{font-size:13px;padding:4px 12px}
+.ask form{width:min(720px,100%);display:flex;gap:8px;align-items:center;background:#fff;border:1px solid var(--line);border-radius:14px;padding:5px 5px 5px 14px}
+.ask input{flex:1;border:0;outline:0;font:inherit;font-size:15px;background:none}
+.ask .thr{border:0;background:none;color:var(--mute);font-size:13px;padding:6px 8px}
+.ask .go{padding:7px 14px}
+
+/* picker */
+.picker{display:flex;align-items:center;gap:10px;margin:6px 0 10px;color:var(--mute);font-size:14px}
+.picker button{border:1px solid var(--line);background:#fff;border-radius:8px;width:28px;height:28px}
+
+/* map */
+.mapbox{position:relative;width:1060px;height:390px;transform-origin:0 0}
+.mapbox svg.wires{position:absolute;inset:0}
+.wire{fill:none;stroke:#d6d4cd;stroke-width:2}
+.wire.on{stroke:var(--accent);stroke-width:2.6}
+.node{position:absolute;background:#fff;border:1.5px solid var(--line);border-radius:14px;padding:10px 12px;cursor:pointer;transition:opacity .25s,border-color .2s}
+.node:hover{border-color:#c9c7f6}
+.node.sel{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.node.off{opacity:.38}
+.node.appear{animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:scale(.92)}to{opacity:1;transform:none}}
+.node .h{display:flex;align-items:center;gap:6px;font-weight:700}
+.node .h .where{margin-left:auto;font-weight:500;font-size:11.5px;color:var(--faint);display:inline-flex;gap:3px;align-items:center}
+.dot{width:8px;height:8px;border-radius:50%;display:inline-block;background:#d3d1ca;flex:none}
+.dot.good{background:var(--good)} .dot.bad{background:var(--bad)} .dot.mid{background:#d9a03a}
+.val{margin-top:6px;font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.val.none{color:var(--faint)}
+.node.ok-1{border-color:#bfe3cd} .node.ok-0{border-color:#f0c3c3} .node.failed{border-color:#d9c4f3}
+.len{font-size:11.5px;color:var(--mute);white-space:nowrap}
+.node.rule{background:#faf9f6;border-style:dashed;cursor:default;padding:8px 12px}
+.node.rule .h{font-weight:600;font-size:13.5px}
+.node.rule .w{font-size:11.5px;color:var(--mute)}
+.node.input{background:#f1f0eb;border-color:#f1f0eb}
+.node.end .big{font-size:18px;font-weight:700;margin-top:4px}
+
+/* table */
+table.t{border-collapse:separate;border-spacing:0;width:100%;font-size:14px;background:#fff;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+table.t th{background:#faf9f6;text-align:left;font-size:12.5px;color:var(--mute);font-weight:650;padding:9px 12px;border-bottom:1px solid var(--line)}
+table.t td{padding:9px 12px;border-bottom:1px solid var(--line);vertical-align:top;cursor:pointer}
+table.t tr:last-child td{border-bottom:0}
+table.t tr.sel td{background:#f7f8ff}
+td .cell{display:flex;gap:6px;align-items:flex-start}
+td .c{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;flex:1}
+td.ok-0 .c{color:var(--bad)} td.failed .c{color:var(--fail)}
+.summary{color:var(--mute);font-size:14px;margin:6px 0 12px}
+
+/* code */
+pre.code{background:var(--code);color:#e8e8f2;border-radius:14px;padding:14px 0;font-size:13.5px;line-height:1.6;overflow:auto;margin:0}
+pre.code .ln{display:block;padding:0 18px}
+pre.code .ln.hl{background:rgba(120,140,255,.18)}
+pre.code .ln.add{background:rgba(70,200,120,.18);box-shadow:3px 0 0 #5fd08e inset}
+.kw{color:#c792ea}.str{color:#c3e88d}.cm{color:#7f8ca8;font-style:italic}.fn{color:#82aaff}.ty{color:#ffcb6b}
+.codehead{display:flex;gap:10px;align-items:center;margin:6px 0 10px;font-size:13.5px;color:var(--mute)}
+select{font:inherit;border:1px solid var(--line);border-radius:8px;padding:3px 6px;background:#fff}
+
+/* story */
+.story{max-width:660px;margin:8px auto}
+.card{background:#fff;border:1px solid var(--line);border-radius:14px;padding:16px 18px;margin:10px 0}
+.card h2{font-size:18px;margin:0 0 10px}
+.facts{display:grid;grid-template-columns:150px 1fr;gap:8px 14px;font-size:14.5px}
+.facts .k{color:var(--mute);font-size:13px;padding-top:1px}
+.frame{background:#fff;border:1px solid var(--line);border-radius:14px;padding:12px 16px;margin:8px 0}
+.frame .q{font-size:13px;color:var(--mute);margin-bottom:4px}
+.frame.ok-0{border-color:#f0c3c3}.frame.ok-1{border-color:#bfe3cd}.frame.failed{border-color:#d9c4f3}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+
+/* drawer content */
+.sec{margin:14px 0}
+.lbl{font-size:12px;font-weight:650;color:var(--mute);text-transform:uppercase;letter-spacing:.04em;margin-bottom:4px}
+.quote{font-size:14.5px;border-left:3px solid var(--line);padding-left:10px}
+.full{background:#faf9f6;border:1px solid var(--line);border-radius:10px;padding:10px 12px;max-height:240px;overflow:auto;white-space:pre-wrap;font-size:14px}
+.btn{border:1px solid var(--line);background:#fff;border-radius:10px;padding:6px 12px;font-weight:600;font-size:13.5px;display:inline-flex;gap:6px;align-items:center}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+.btn.on-good{background:var(--good-soft);border-color:var(--good);color:var(--good)}
+.btn.on-bad{background:var(--bad-soft);border-color:var(--bad);color:var(--bad)}
+.btn:disabled{opacity:.4;cursor:default}
+.should{color:var(--good);font-weight:600;font-size:14px;margin-top:6px}
+.links{font-size:13px;display:flex;gap:14px;margin-top:4px}
+.links a{text-decoration:none;cursor:pointer}
+.privacy{font-size:12.5px;color:var(--mute);margin-top:6px}
+.cmp{width:100%;font-size:13px;border:1px solid var(--line);border-radius:8px;margin:6px 0;border-collapse:separate;border-spacing:0}
+.cmp td,.cmp th{padding:5px 8px;text-align:left;border-bottom:1px solid var(--line)}
+.cmp tr:last-child td{border-bottom:0}
+.num{width:90px;font:inherit;border:1px solid var(--line);border-radius:8px;padding:3px 6px}
+
+/* conversation */
+.msg{margin:0 0 14px}
+.msg .who{font-size:12px;font-weight:650;color:var(--mute);margin-bottom:3px;display:flex;gap:5px;align-items:center}
+.msg.you .bub{background:var(--accent-soft);border-radius:12px;padding:8px 12px;display:inline-block}
+.msg .bub p{margin:0 0 8px} .msg .bub p:last-child{margin:0}
+.msg.fx .bub{background:#f7f6f2;border-radius:10px;padding:8px 12px;font-size:13.5px}
+.diff{font-family:ui-monospace,Menlo,monospace;font-size:12px;border:1px solid var(--line);border-radius:8px;overflow:hidden;margin:8px 0}
+.diff div{padding:1px 8px;white-space:pre-wrap}
+.diff .a{background:#e9f7ee}.diff .d{background:#fcecec;color:#9a3a3a}
+details summary{cursor:pointer;color:var(--accent);font-size:13px;margin-top:4px}
+.acts{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.typing span{display:inline-block;width:6px;height:6px;border-radius:50%;background:var(--faint);margin-right:3px;animation:b 1s infinite}
+.typing span:nth-child(2){animation-delay:.15s}.typing span:nth-child(3){animation-delay:.3s}
+@keyframes b{0%,100%{opacity:.3}50%{opacity:1}}
+
+/* check flow */
+.dots{display:flex;gap:5px;margin:8px 0 14px}
+.dots i{width:14px;height:14px;border-radius:50%;background:#e8e6df;display:inline-block}
+.dots i.r{background:var(--good)} .dots i.w{background:var(--bad)} .dots i.now{box-shadow:0 0 0 2px var(--accent)}
+.bigbtns{display:flex;gap:8px;margin-top:12px}
+.bigbtns .btn{flex:1;justify-content:center;padding:10px;font-size:15px}
+
+.toast{position:fixed;top:14px;left:50%;transform:translateX(-50%);background:#22223a;color:#fff;padding:9px 14px;border-radius:10px;font-size:13px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:760px;z-index:9}
+.toast.on{opacity:1}
+.toast code{font-family:ui-monospace,Menlo,monospace}
+</style>
+</head>
+<body>
+
+<!-- ======================= the start page ======================= -->
+<section id="home">
+  <div class="mockbar">Mockup with made-up data: nothing runs, and it can only build one example (a club's message sorter). Whatever you type, it tells you honestly.</div>
+  <div class="homein">
+    <h1>What do you want to make?</h1>
+    <p class="lede">Describe a small AI helper in plain words. Studio builds it as real code you own, tries it on examples, and shows you how often it gets things right.</p>
+    <form id="homeform"><textarea id="homein" rows="1" placeholder="Describe it in a sentence or two…"></textarea><button class="go">Make</button></form>
+    <div id="homenote" class="note hidden"></div>
+    <div class="startlbl">Things people make</div>
+    <div class="starters">
+      <button class="chip" data-fill="Sort our wholesale inquiry emails into new orders, reorders and questions, and draft a reply to each for me to approve"><span class="aud">For work</span>Sort wholesale inquiries</button>
+      <button class="chip" data-fill="Draft a short, kind reply to each online review of our café, and flag every complaint for me"><span class="aud">For work</span>Reply to café reviews</button>
+      <button class="chip" data-fill="Make a 5-question quiz from my biology notes"><span class="aud">For school</span>Quiz from my notes</button>
+      <button class="chip" data-fill="Sort my robotics club's Discord messages into questions, ideas and spam, and answer the questions from our FAQ"><span class="aud">For a club</span>Sort messages</button>
+      <button class="chip" data-fill="Tell me if a card trade is fair"><span class="aud">For games</span>Is this trade fair?</button>
+      <button class="chip" data-fill="Describe my drawing and suggest a title"><span class="aud">For art</span>Describe my drawing</button>
+    </div>
+    <div class="preview"><div>What you get</div>
+      <div class="flow"><span>message</span>→<span>sort</span>→<span>answer</span>→<span>reply</span></div>
+      <div id="previewticks"></div></div>
+    <div class="trust">Free and open source · no account · undo any change<br>You pay only the AI company you connect, per use: usually a fraction of a cent per message, shown before anything runs.</div>
+    <div class="homefoot"><button class="btn primary hidden" id="continue"></button><button class="btn" id="skip">See a finished example</button><button class="btn hidden" id="fresh">Start fresh</button><a href="#" id="openfolder">Open a folder with FunctAI code</a></div>
+  </div>
+</section>
+
+<!-- ======================= the pipeline ======================= -->
+<section id="app" class="hidden">
+  <div class="top">
+    <button class="iconbtn" data-act="home" title="Back to the start (your work stays saved)"><span data-i="home"></span>Start</button>
+    <span class="name">Club inbox</span><span class="ver" id="ver">Version 1</span>
+    <button class="iconbtn" data-act="copylink" title="Copy a link to this version and view"><span data-i="link"></span>Copy link</button>
+    <span class="status" id="status"></span>
+    <button class="spent" id="spent" data-act="costs" title="What it costs, and your spending limit"></button>
+    <span class="mockpill">Mockup · made-up data</span>
+    <div class="seg" id="seg">
+      <button data-v="map">Map</button><button data-v="story" title="A one-page summary, and one message step by step, with no code">Summary</button><button data-v="table">Table</button><button data-v="code">Code</button>
+    </div>
+  </div>
+  <div class="body">
+    <div class="main">
+      <div class="stage" id="stage"></div>
+      <div class="ask">
+        <div class="sugg" id="sugg"></div>
+        <form id="askform"><input id="askin" autocomplete="off" placeholder="Ask, or say what to change…"><button type="button" class="thr" id="thr">Conversation</button><button class="go" aria-label="Send">↑</button></form>
+      </div>
+    </div>
+    <aside class="drawer hidden" id="drawer">
+      <div class="dh"><b id="dtitle"></b><span id="dsub" class="small"></span><button class="x" id="dclose" title="Close (Esc)">×</button></div>
+      <div class="db" id="dbody"></div>
+    </aside>
+  </div>
+</section>
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================ icons (drawn, so they show on every computer)
+const SV=(d,fill)=>`<svg class="ic" viewBox="0 0 16 16" aria-hidden="true"><path d="${d}" ${fill?'fill="currentColor"':'fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"'}/></svg>`;
+const I={
+  ok:SV("M3 8.5l3 3 7-7"), no:SV("M4.5 4.5l7 7M11.5 4.5l-7 7"),
+  cloud:SV("M4.8 12.5h7a3 3 0 0 0 .3-6 4 4 0 0 0-7.6 1.1A2.5 2.5 0 0 0 4.8 12.5z"),
+  house:SV("M2.5 8.2L8 3.5l5.5 4.7M4.2 7v6h7.6V7"), home:SV("M2.5 8.2L8 3.5l5.5 4.7M4.2 7v6h7.6V7"),
+  pic:SV("M3 3.5h10a1 1 0 0 1 1 1v7a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-7a1 1 0 0 1 1-1zM2.5 11l3.5-3 3 2.5 2-1.5 2.5 2"),
+  link:SV("M7 9a3 3 0 0 0 4.2 0l2-2A3 3 0 0 0 9 2.8l-1 1M9 7a3 3 0 0 0-4.2 0l-2 2A3 3 0 0 0 7 13.2l1-1"),
+  spark:SV("M8 1.5l1.6 4.9L14.5 8l-4.9 1.6L8 14.5l-1.6-4.9L1.5 8l4.9-1.6z",true),
+  down:SV("M8 2.5v8M4.5 7.5L8 11l3.5-3.5M3 13.5h10"),
+};
+document.querySelectorAll("[data-i]").forEach(e=>e.outerHTML=I[e.dataset.i]);
+document.getElementById("previewticks").innerHTML=`<span class="good-t">${I.ok}${I.ok}${I.ok}</span><span class="bad-t">${I.no}</span><span class="good-t">${I.ok}${I.ok}</span><span class="bad-t">${I.no}</span><span class="good-t">${I.ok}${I.ok}</span> &nbsp;7 of 9 right on your examples`;
+
+// ============================================================ data (made up)
+const LONG="Hello and thank you so much for reaching out to the Robotics Club! Our meetings, which are held every Thursday afternoon in room 12, generally conclude at approximately 5:30 pm, although this can sometimes vary a little depending on the specific activities that have been planned for that particular day, such as build sessions or competition practice. If you have any further questions at all, please never hesitate to reach out to any of the club leaders, who are always happy to help!";
+// each step: [value, judged by the example answer key (1 right, 0 wrong, null not judged), the key's right value]
+const ROWS=[
+ {msg:"When is the next meeting?",
+  v1:{kind:["question",1],answer:["Thursday, 4 pm, room 12.",1],reply:["Hi! Next meeting is Thursday at 4 pm in room 12. See you there!",1]},
+  r2:["Thursday, 4 pm, room 12. See you!",1]},
+ {msg:"Can I bring my cousin?",v1:{kind:["spam",0,"question"]},
+  k2:{kind:["question",1],answer:["Guests are welcome if they sign in at the door.",1],reply:["Sure! Guests are welcome, they just sign in at the door.",1]},
+  r2:["Sure, guests just sign in at the door!",1]},
+ {msg:"We should build a robot that sorts Lego!!",v1:{kind:["idea",1],reply:["Love it! Bring it up at Thursday's meeting so we can vote.",1]},r2:["Love it! Pitch it on Thursday.",1]},
+ {msg:"FREE V-BUCKS click here >>> bit.ly/xx",v1:{kind:["spam",1]}},
+ {msg:"Do we have to pay for the regional competition?",
+  v1:{kind:["question",1],answer:["I don't know.",0,"Yes: $20 per team, due Nov 15."],reply:["Good question! I'm not sure, let me check and get back to you.",null]},
+  r2:["Not sure yet, I'll check and tell you!",null]},
+ {msg:"is the club only for 9th grade?",
+  v1:{kind:["question",1],answer:["No, every grade from 9 to 12 is welcome.",1],reply:["Nope! Grades 9 to 12 are all welcome. Come by Thursday!",1]},
+  r2:["Nope, grades 9–12 are all welcome!",1]},
+ {msg:"what time does it end",v1:{kind:["question",1],answer:["5:30 pm.",1],reply:[LONG,0,"It ends at 5:30 pm!"]},r2:["It ends at 5:30 pm. See you Thursday!",1]},
+ {msg:"can my little brother join? he's in 7th",v1:{kind:["spam",0,"question"]},
+  k2:{kind:["question",1],answer:["The club is for grades 9–12; 7th graders can come to the open day on Dec 2.",1],reply:["The club is for grades 9–12, but he's welcome at our open day on Dec 2!",1]},
+  r2:["Club is 9–12, but he can come to open day, Dec 2!",1]},
+ {msg:"[a photo: poster.jpg]",pic:true,v1:{kind:["!fail",null,null,"kind reads text, and this message is a picture."]}},
+];
+// ten more messages, for "check 10 more" (their end results, as the pipeline would give them)
+const EXTRA=[
+ ["Is there a meeting this week? I heard it's cancelled","Yes! Thursday 4 pm in room 12, as usual."],
+ ["can i sell my old lego kits here","(no reply: sorted as spam)"],
+ ["Our robot should have a name. I vote Bolt!","Love it! Pitch it on Thursday."],
+ ["WIN AN IPAD!!! click now","(no reply: sorted as spam)"],
+ ["What do we need to bring to the competition?","I'm not sure, I'll check and tell you!"],
+ ["Who's the club leader this year?","Ms. Ortiz leads the club this year!"],
+ ["I can't come Thursday, sorry","No problem, see you next week!"],
+ ["can parents watch the competition","Yes, parents are welcome to watch!"],
+ ["lol","(no reply: sorted as spam)"],
+ ["Could we do a workshop on 3D printing?","Great idea! Bring it up on Thursday so we can vote."],
+];
+const STEPS={
+  kind:{doc1:'What kind of message did the club get?',doc2:'What kind of message did the club get?\nQuestions about who may come (guests, brothers and\nsisters, other grades) are questions, not spam.'},
+  answer:{doc1:'Answer using only the club FAQ.\nSay "I don\'t know" if it isn\'t there.'},
+  reply:{doc1:'Write a short, friendly reply a club leader would send.\nTwo sentences at most.',doc2:'Write a friendly reply a club leader would send:\none sentence, under 20 words.'},
+};
+const ORDER=["kind","answer","reply"];
+// approximate cost of one step on one message, in cents (made-up prompts of ~300 words)
+const MODELS={"gpt-4.1-mini":{who:"OpenAI",cost:.015,d:0},"claude-haiku-4.5":{who:"Anthropic",cost:.04,d:1},
+  "gemini-2.5-flash-lite":{who:"Google",cost:.004,d:-1},"llama3.2 (this computer)":{who:"",local:true,cost:0,d:-1}};
+const PLANS=[
+  [/wholesale|inquir|order/i,["read each inquiry email","sort it: new order, reorder or question","draft a reply to each, for you to approve before anything is sent"]],
+  [/review|café|cafe|restaurant/i,["read each review","decide: praise, suggestion or complaint","draft a short, kind reply, and flag every complaint for you"]],
+  [/quiz|notes|study|test/i,["read your notes","write 5 questions","check each answer is really in your notes"]],
+  [/trade|fair|card/i,["read both sides of the trade","estimate what each card is worth","say fair or not, and why"]],
+  [/draw|picture|photo|image|art/i,["look at the drawing","describe what's in it","suggest three titles"]],
+];
+
+// ============================================================ state (saved in this browser)
+const KEY="functai-studio-mockup-4";
+const FRESH=()=>({screen:"home",view:"map",row:1,built:0,faq:false,tried:false,kindV2:false,replyV2:false,
+  lm:{kind:"gpt-4.1-mini",answer:"gpt-4.1-mini",reply:"gpt-4.1-mini"},spent:0,chat:[],judg:{},extra:[],monthly:300,cap:1});
+let S=Object.assign(FRESH(),JSON.parse(localStorage.getItem(KEY)||"null")||{});
+let T={sel:null,drawer:null,trial:null,busy:false,appeared:new Set(),storyAt:0,checkAt:null};   // not saved
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+// ============================================================ helpers
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const words=t=>String(t).trim().split(/\s+/).length;
+const cents=c=>c===0?"0¢":c<0.1?(+c.toFixed(3))+"¢":c<1?(+c.toFixed(2))+"¢":c<100?(+c.toFixed(1))+"¢":"$"+(c/100).toFixed(2);
+function toast(t){const e=$("#toast");e.innerHTML=t;e.classList.add("on");clearTimeout(toast.h);toast.h=setTimeout(()=>e.classList.remove("on"),3800)}
+const isFail=c=>c&&c[0]==="!fail";
+function stepsOf(i){
+  const r=ROWS[i]; let s={...r.v1};
+  if(S.kindV2&&r.k2) s={...s,...r.k2};
+  if(S.replyV2&&s.reply&&r.r2) s.reply=r.r2;
+  const out={};
+  for(const [k,c] of Object.entries(s)){ const j=S.judg[i+":"+k]; out[k]=j===undefined?{v:c[0],ok:c[1],fix:c[2],why:c[3],by:c[1]===null?null:"key"}:{v:c[0],ok:j,fix:null,why:c[3],by:"you"}; out[k].fail=isFail(c); }
+  return out;
+}
+function endOf(i){
+  const s=stepsOf(i); if(Object.values(s).some(c=>c.fail)) return {state:"failed",v:"failed"};
+  const v=s.reply?s.reply.v:"(no reply)";
+  return {state:Object.values(s).some(c=>c.ok===0)?"wrong":"right",v};
+}
+function tally(){const t={right:0,wrong:0,failed:0};ROWS.forEach((_,i)=>t[endOf(i).state]++);S.extra.forEach(x=>t[x?"right":"wrong"]++);t.n=ROWS.length+S.extra.length;return t}
+function stepTally(st){let k=0,n=0;ROWS.forEach((_,i)=>{const c=stepsOf(i)[st];if(c&&!c.fail&&c.ok!==null){n++;if(c.ok)k++}});return{k,n}}
+function wilson(k,n){if(!n)return[0,1];const z=1.96,p=k/n,d=1+z*z/n,c=p+z*z/(2*n),m=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n));return[(c-m)/d,(c+m)/d]}
+const pct=x=>Math.round(x*100)+"%";
+function rightWords(){const t=tally();const [lo,hi]=wilson(t.right,t.n);
+  return t.n<15?{short:`${t.right} of ${t.n} right so far`,more:true,long:`${t.right} of ${t.n} checked messages came out right. That's too few for a reliable score: checking 10 more would give one.`}
+              :{short:`${t.right} of ${t.n} right (likely ${pct(lo)}–${pct(hi)})`,more:false,long:`${t.right} of ${t.n} checked messages came out right. The true rate is likely between ${pct(lo)} and ${pct(hi)}.`}}
+function stepWords(st){const {k,n}=stepTally(st);
+  if(!n) return "Nobody has checked it yet.";
+  if(n<10) return `Right ${k} of the ${n} times it was checked. Check ${10-n} more for a reliable score.`;
+  const [lo,hi]=wilson(k,n); return `Right ${pct(k/n)} of the time (likely ${pct(lo)}–${pct(hi)}).`;}
+function dotClass(st){if(!S.tried) return ""; const {k,n}=stepTally(st); if(!n) return ""; const p=k/n; return p===1?"good":p>=.7?"mid":"bad";}
+function version(){return 1+(S.kindV2?1:0)+(S.replyV2?1:0)}
+const perMsg=()=>ORDER.reduce((a,st)=>a+MODELS[S.lm[st]].cost,0);
+const where=m=>MODELS[m].local?`${I.house} this computer`:`${I.cloud} ${MODELS[m].who}`;
+const companies=()=>[...new Set(ORDER.map(st=>MODELS[S.lm[st]]).filter(m=>!m.local).map(m=>m.who))];
+const docOf=id=>(id==="kind"&&S.kindV2?STEPS.kind.doc2:id==="reply"&&S.replyV2?STEPS.reply.doc2:STEPS[id].doc1);
+
+// ============================================================ addresses: every view has one; Back works
+const VIEWS=["map","story","table","code"];
+function urlFor(){return S.screen==="home"?"#/":`#/club-inbox/v${version()}/${S.view}?example=${S.row+1}`}
+function applyUrl(){
+  const m=location.hash.match(/^#\/club-inbox\/v(\d+)\/(\w+)(?:\?example=(\d+))?/);
+  if(m&&S.built){S.screen="app";if(VIEWS.includes(m[2]))S.view=m[2];if(m[3])S.row=Math.max(0,Math.min(ROWS.length-1,+m[3]-1));
+    if(+m[1]!==version()) setTimeout(()=>toast(`That link was to version ${m[1]}; this is version ${version()}. Earlier versions' results are kept.`),50);}
+  else {S.screen="home";T.drawer=null}
+}
+function go(push){const u=urlFor(); if(location.hash!==u){ if(push) history.pushState(null,"",u); else history.replaceState(null,"",u);} }
+window.addEventListener("popstate",()=>{applyUrl();render(false)});
+
+// ============================================================ map
+const N={
+  message:{x:0,y:150,w:190,h:96}, kind:{x:235,y:150,w:190,h:96},
+  noreply:{x:475,y:8,w:150,h:54,rule:"no reply",when:'if kind is "spam"'}, faq:{x:475,y:84,w:150,h:46,input:"faq"},
+  answer:{x:475,y:156,w:200,h:96}, idea:{x:475,y:300,w:200,h:58,rule:'"Love it! Bring it up Thursday."',when:'if kind is "idea"'},
+  reply:{x:715,y:212,w:200,h:96}, end:{x:950,y:150,w:110,h:96},
+};
+const WIRES=[["message","kind"],["kind","noreply"],["kind","answer"],["faq","answer"],["kind","idea"],["answer","reply"],["idea","reply"],["reply","end"],["noreply","end"]];
+function pathD(a,b){if(a==="faq"){const A=N.faq,x=A.x+A.w/2;return`M${x},${A.y+A.h} L${x},${N.answer.y}`}
+  const A=N[a],B=N[b],x1=A.x+A.w,y1=A.y+A.h/2,x2=B.x,y2=B.y+B.h/2,m=(x1+x2)/2;return`M${x1},${y1} C${m},${y1} ${m},${y2} ${x2},${y2}`}
+function builtSet(){if(!S.built)return new Set();const b=new Set(["message"]);if(S.built>=1)b.add("kind");if(S.built>=2){b.add("answer");b.add("faq")}if(S.built>=3)["reply","noreply","idea","end"].forEach(x=>b.add(x));return b}
+function viewMap(){
+  const B=builtSet();
+  if(!B.size) return `<div class="summary" style="margin-top:40px;text-align:center">Nothing is built yet. The plan is in the conversation: say “Build it”, or what to change.</div>`;
+  const r=ROWS[S.row], s=stepsOf(S.row), ran=S.tried, k=s.kind&&!s.kind.fail?s.kind.v:null;
+  const live=new Set(ran?["message-kind"]:[]), used=new Set(["message"]);
+  if(ran){used.add("kind");used.add("end");
+    if(k==="question"){["kind-answer","faq-answer","answer-reply","reply-end"].forEach(x=>live.add(x));["answer","faq","reply"].forEach(x=>used.add(x))}
+    if(k==="spam"){["kind-noreply","noreply-end"].forEach(x=>live.add(x));used.add("noreply")}
+    if(k==="idea"){["kind-idea","idea-reply","reply-end"].forEach(x=>live.add(x));["idea","reply"].forEach(x=>used.add(x))}}
+  let h=`<div class="picker"><button data-act="prev" title="Previous example (k)">‹</button><span>Example ${S.row+1} of ${ROWS.length}</span><button data-act="next" title="Next example (j)">›</button></div>
+    <div class="mapbox" id="mapbox"><svg class="wires" width="1060" height="390">`;
+  WIRES.forEach(([a,b])=>{if(B.has(a)&&B.has(b))h+=`<path class="wire ${live.has(a+"-"+b)?"on":""}" d="${pathD(a,b)}"/>`});
+  h+=`</svg>`;
+  for(const [id,n] of Object.entries(N)){
+    if(!B.has(id)) continue;
+    const appear=!T.appeared.has(id); T.appeared.add(id);
+    const off=ran&&!used.has(id)?"off":"", pos=`left:${n.x}px;top:${n.y}px;width:${n.w}px;min-height:${n.h}px`, an=appear?"appear":"";
+    if(id==="message") h+=`<div class="node input ${off} ${an} ${T.sel===id?"sel":""}" style="${pos}" data-node="message"><div class="h">message</div><div class="val">${r.pic?I.pic+" a photo (poster.jpg)":esc(r.msg)}</div></div>`;
+    else if(n.input) h+=`<div class="node input ${off} ${an}" style="${pos};cursor:default"><div class="h" style="font-size:13.5px">faq</div><div class="small">${S.faq?"club_faq.md · 14 lines":"missing"}</div></div>`;
+    else if(n.rule) h+=`<div class="node rule ${off} ${an}" style="${pos}"><div class="h">${esc(n.rule)}</div><div class="w">${esc(n.when)}</div></div>`;
+    else if(id==="end"){const e=endOf(S.row);
+      h+=`<div class="node end ${off} ${an} ${T.sel===id?"sel":""}" style="${pos}" data-node="end"><div class="h" style="font-weight:600;color:var(--mute);font-size:13px">end result</div>${ran?`<div class="big ${e.state==="right"?"good-t":e.state==="wrong"?"bad-t":"fail-t"}">${e.state}</div>`:`<div class="val none">not run yet</div>`}</div>`;}
+    else{
+      const c=ran?s[id]:null; let cls="",val=`<div class="val none">${ran?"not used here":"not run yet"}</div>`;
+      if(c){ if(c.fail){cls="failed";val=`<div class="val fail-t">couldn't run: ${esc(c.why)}</div>`}
+        else{cls=c.ok===1?"ok-1":c.ok===0?"ok-0":"";const long=words(c.v)>22, tick=c.ok===1?` <span class="good-t">${I.ok}</span>`:c.ok===0?` <span class="bad-t">${I.no}</span>`:"";
+          val=`<div class="val">${long?esc(c.v.split(/\s+/).slice(0,9).join(" "))+`… <span class="len">· ${words(c.v)} words</span>`:esc(c.v)}${tick}</div>`;}}
+      h+=`<div class="node ${cls} ${off} ${T.sel===id?"sel":""} ${an}" style="${pos}" data-node="${id}"><div class="h"><span class="dot ${dotClass(id)}"></span>${id}<span class="where" title="${MODELS[S.lm[id]].local?"Runs on this computer":"Sends this step's text to "+MODELS[S.lm[id]].who}">${where(S.lm[id])}</span></div>${val}</div>`;
+    }
+  }
+  return h+`</div>`;
+}
+
+// ============================================================ table
+function viewTable(){
+  const t=tally();
+  let h=`<div class="summary">${ROWS.length} examples · <span class="good-t">${t.right-S.extra.filter(x=>x).length} right</span> · <span class="bad-t">${t.wrong-S.extra.filter(x=>!x).length} wrong</span> · <span class="fail-t">${t.failed} failed</span>${S.extra.length?` · plus ${S.extra.length} you checked`:""} · click any cell to see it whole and judge it</div>`;
+  h+=`<table class="t"><thead><tr><th style="width:32px">#</th><th>message</th>${ORDER.map(s=>`<th><span class="dot ${dotClass(s)}"></span> ${s}</th>`).join("")}<th>end</th></tr></thead><tbody>`;
+  ROWS.forEach((r,i)=>{const s=stepsOf(i),e=endOf(i);
+    h+=`<tr class="${i===S.row?"sel":""}"><td class="small" data-cell="${i}:message">${i+1}</td><td data-cell="${i}:message"><div class="c">${r.pic?I.pic+" poster.jpg":esc(r.msg)}</div></td>`;
+    ORDER.forEach(st=>{const c=s[st];
+      if(!c){h+=`<td data-cell="${i}:${st}" class="small" style="color:var(--faint)">—</td>`;return}
+      if(c.fail){h+=`<td data-cell="${i}:${st}" class="failed"><div class="c">failed</div></td>`;return}
+      const long=words(c.v)>22, tick=c.ok===1?`<span class="good-t">${I.ok}</span>`:c.ok===0?`<span class="bad-t">${I.no}</span>`:"";
+      h+=`<td data-cell="${i}:${st}" class="ok-${c.ok}"><div class="cell"><div class="c">${long?esc(c.v.split(/\s+/).slice(0,12).join(" "))+"…":esc(c.v)}</div>${tick}</div>${long?`<span class="len">${words(c.v)} words</span>`:""}</td>`});
+    h+=`<td data-cell="${i}:end"><b class="${e.state==="right"?"good-t":e.state==="wrong"?"bad-t":"fail-t"}">${e.state}</b></td></tr>`});
+  return h+`</tbody></table>`;
+}
+
+// ============================================================ code
+function codeText(){
+  const doc=(d,ind)=>{const ls=d.split("\n");return ls.map((l,i)=>(i===0?ind+'"""':ind)+l+(i===ls.length-1?'"""':"")).join("\n")};
+  const lm=st=>S.lm[st].replace(" (this computer)","");
+  return `from typing import Literal
+from functai import ai, module
+
+FAQ = open("club_faq.md").read()   # meetings, fees, who can join
+
+@ai(lm="${lm("kind")}")
+def kind(message: str) -> Literal["question", "idea", "spam"]:
+${doc(docOf("kind"),"    ")}
+
+@ai(lm="${lm("answer")}")
+def answer(question: str, faq: str) -> str:
+${doc(docOf("answer"),"    ")}
+
+@ai(lm="${lm("reply")}")
+def reply(message: str, draft: str) -> str:
+${doc(docOf("reply"),"    ")}
+
+@module
+def club_inbox(message: str) -> str:
+    k = kind(message)
+    if k == "spam":
+        return ""
+    draft = answer(message, FAQ) if k == "question" else "Love it! Bring it up Thursday."
+    return reply(message, draft)`;
+}
+function hilite(line,st){
+  const t=line.trim();
+  if(st.doc||t.startsWith('"""')){const n=(line.match(/"""/g)||[]).length;if(st.doc?n>=1:n===1)st.doc=!st.doc;return`<span class="str">${esc(line)}</span>`}
+  const re=/(#.*$)|("[^"]*")|\b(from|import|def|return|if|else|open)\b|\b(str|Literal)\b|(@ai|@module)/g;
+  let o="",i=0,m;while((m=re.exec(line))){o+=esc(line.slice(i,m.index));o+=`<span class="${m[1]?"cm":m[2]?"str":m[3]?"kw":m[4]?"ty":"fn"}">${esc(m[0])}</span>`;i=m.index+m[0].length}
+  return o+esc(line.slice(i));
+}
+function viewCode(){
+  const lines=codeText().split("\n"),st={doc:false},added=new Set();
+  lines.forEach((l,i)=>{
+    if(S.kindV2&&/Questions about who|sisters, other grades/.test(l))added.add(i);
+    if(S.replyV2&&/one sentence, under 20|reply a club leader would send:/.test(l))added.add(i);
+    ORDER.forEach(s=>{if(S.lm[s]!=="gpt-4.1-mini"&&lines[i+1]&&lines[i+1].startsWith(`def ${s}(`))added.add(i)})});
+  let hl=[-1,-1];if(T.sel&&STEPS[T.sel]){const a=lines.findIndex(l=>l.startsWith(`def ${T.sel}(`));let b=a;while(b+1<lines.length&&lines[b+1].trim())b++;hl=[a-1,b]}
+  return `<div class="codehead"><b style="color:var(--ink)">club.py</b> · version ${version()}${added.size?` · <span class="good-t">green: changes you kept</span>`:""}
+    <span style="margin-left:auto">Show in</span><select id="lang"><option>Python</option><option>TypeScript</option><option>R</option><option>Julia</option></select></div>
+    <pre class="code">${lines.map((l,i)=>`<span class="ln ${added.has(i)?"add":i>=hl[0]&&i<=hl[1]?"hl":""}">${hilite(l,st)||" "}</span>`).join("")}</pre>`;
+}
+
+// ============================================================ summary: one page for people who decide, and one message step by step
+function weakest(){
+  if(!S.kindV2) return "Sorting: it calls questions about who may come (a cousin, a younger brother) spam, so they get no reply.";
+  if(!S.replyV2) return "Replies: some are far too long (84 words to say “5:30 pm”).";
+  return "Questions the FAQ doesn't cover, such as fees: it says “I don't know”, which is honest, but the FAQ needs the fact.";
+}
+function summaryFacts(){
+  const rw=rightWords(), co=companies(), pm=perMsg();
+  return [
+    ["What it does","Sorts messages sent to the club into questions, ideas and spam, answers questions from the club's FAQ, and writes a short reply. Spam gets no reply."],
+    ["How often it's right",rw.long],
+    ["Where it goes wrong",weakest()],
+    ["What it costs",`About ${cents(pm)} per message, paid to ${co.length?co.join(" and "):"nobody (it runs on this computer)"}. At ${S.monthly} messages a month: about ${cents(pm*S.monthly)}.`],
+    ["Where messages go",co.length?`To ${co.join(" and ")}, to get each step's answer. What they keep depends on their rules and the club's account with them.`:"Nowhere: every step runs on this computer."],
+    ["What was tested",`Version ${version()}, on ${ROWS.length} example messages (8 typical, 1 photo)${S.extra.length?` and ${S.extra.length} more checked by a person`:""}. 1 failed: the photo, because it only reads text.`],
+  ];
+}
+function viewStory(){
+  if(!S.tried) return `<div class="summary" style="margin-top:40px;text-align:center">The summary appears after the first run.</div>`;
+  const rw=rightWords();
+  let h=`<div class="story"><div class="card"><h2>Club inbox, in one page</h2><div class="facts">${summaryFacts().map(([k,v])=>`<div class="k">${k}</div><div>${esc(v)}</div>`).join("")}</div>
+    <div class="row" style="margin-top:14px"><button class="btn primary" data-act="download">${I.down} Download this summary</button><button class="btn" data-act="copylink">${I.link} Copy link</button>${rw.more?`<button class="btn" data-act="check">Check 10 more for a reliable score</button>`:""}</div>
+    <div class="privacy">The download is one file with these facts and three examples inside: it opens in any browser, needs no account, and can be attached to an e-mail or printed to PDF.</div></div>`;
+  // one message, step by step
+  const r=ROWS[S.row], s=stepsOf(S.row), e=endOf(S.row);
+  const fr=[{q:"A message came in",t:r.pic?"a photo (poster.jpg)":r.msg}];
+  ORDER.forEach(st=>{const c=s[st];if(!c)return;fr.push({q:`Step “${st}” was asked: ${docOf(st).replace(/\n/g," ")}`,t:c.fail?"It couldn't: "+c.why:c.v,cls:c.fail?"failed":c.ok===0?"ok-0":c.ok===1?"ok-1":"",fix:c.fix})});
+  if(s.kind&&s.kind.v==="spam")fr.push({q:"The rule in the code",t:"Spam gets no reply."});
+  fr.push({q:"End result",t:e.state==="failed"?"It failed.":e.v,cls:e.state==="right"?"ok-1":e.state==="wrong"?"ok-0":"failed"});
+  const at=Math.min(T.storyAt,fr.length-1);
+  h+=`<h3 style="margin:22px 0 4px;font-size:15px">Follow one message <span class="small">· example ${S.row+1} of ${ROWS.length}</span></h3>`;
+  fr.slice(0,at+1).forEach(f=>h+=`<div class="frame ${f.cls||""}"><div class="q">${esc(f.q)}</div>${esc(f.t)}${f.cls==="ok-0"&&f.fix?`<div class="should">The example answer key says it should be: ${esc(f.fix)}</div>`:""}</div>`);
+  h+=`<div class="row"><button class="btn" data-act="sback" ${at?"":"disabled"}>← Back</button><button class="btn primary" data-act="snext" ${at<fr.length-1?"":"disabled"}>Next step →</button><button class="btn" data-act="next">Another message</button></div></div>`;
+  return h;
+}
+function downloadSummary(){
+  const facts=summaryFacts().map(([k,v])=>`<tr><th>${k}</th><td>${esc(v)}</td></tr>`).join("");
+  const ex=[0,1,8].map(i=>{const r=ROWS[i],e=endOf(i),s=stepsOf(i);
+    return `<li><b>${r.pic?"a photo (poster.jpg)":esc(r.msg)}</b> → ${ORDER.filter(x=>s[x]).map(x=>`${x}: ${s[x].fail?"couldn't run":esc(s[x].v.length>80?s[x].v.slice(0,80)+"…":s[x].v)}`).join(" → ")} → <b>${e.state}</b></li>`}).join("");
+  const html=`<!doctype html><meta charset="utf-8"><title>Club inbox: summary</title><style>body{font:16px/1.5 system-ui,sans-serif;max-width:720px;margin:40px auto;padding:0 20px;color:#1c1c1f}th{text-align:left;color:#666;font-weight:600;padding:6px 14px 6px 0;vertical-align:top;width:170px}td{padding:6px 0}li{margin:8px 0}.m{color:#8a5a12;background:#fdf3e1;padding:6px 10px;border-radius:6px;font-size:14px}</style>
+<p class="m">Made from a mockup: the data is made up.</p><h1>Club inbox</h1><p>Version ${version()} · summary made ${new Date().toISOString().slice(0,10)}</p><table>${facts}</table><h2>Three examples</h2><ol>${ex}</ol><p style="color:#666;font-size:14px">Made with FunctAI Studio. The program is ordinary Python (club.py); this page needs nothing to open.</p>`;
+  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([html],{type:"text/html"}));a.download="club-inbox-summary.html";document.body.appendChild(a);a.click();a.remove();
+  toast("Saved club-inbox-summary.html: one file, opens anywhere, can be printed to PDF.");
+}
+
+// ============================================================ drawer: a step, the costs, checking
+function drawerNode(){
+  const r=ROWS[S.row], s=stepsOf(S.row), id=T.sel;
+  if(id==="message"){$("#dtitle").textContent="message";$("#dsub").textContent=`example ${S.row+1}`;
+    return `<div class="sec"><div class="full">${r.pic?"a photo of a poster (poster.jpg, 2.1 MB)":esc(r.msg)}</div></div>`}
+  if(id==="end"){const e=endOf(S.row);$("#dtitle").textContent="end result";$("#dsub").textContent=`example ${S.row+1}`;
+    return `<div class="sec"><div class="full">${esc(e.v)}</div><p class="${e.state==="right"?"good-t":e.state==="wrong"?"bad-t":"fail-t"}"><b>${e.state}</b></p><div class="small">${e.state==="wrong"?`Ask “Why is #${S.row+1} wrong?” below to find which step is at fault.`:e.state==="failed"?"Failed messages are counted apart from wrong ones.":""}</div></div>`}
+  const c=s[id], M=MODELS[S.lm[id]];
+  $("#dtitle").textContent=id; $("#dsub").innerHTML=M.local?`${I.house} runs on this computer`:`${I.cloud} sends to ${M.who}`;
+  let h=`<div class="sec"><div class="lbl">It is asked</div><div class="quote">${esc(docOf(id).replace(/\n/g," "))}</div><div class="privacy">${M.local?"Runs on this computer: nothing leaves it.":`Sends what it reads to ${M.who} to get an answer. What ${M.who} keeps depends on its rules and your account with it.`}</div></div>`;
+  h+=`<div class="sec"><div class="lbl">On example ${S.row+1}</div>`;
+  if(!c) h+=`<div class="small">This example didn't go through ${id}.</div>`;
+  else if(c.fail) h+=`<div class="full fail-t">Couldn't run: ${esc(c.why)}</div><div class="small" style="margin-top:6px">Ask below: “why is #9 failing?”</div>`;
+  else{
+    h+=`<div class="full">${esc(c.v)}</div>${words(c.v)>22?`<div class="small" style="margin-top:4px">${words(c.v)} words</div>`:""}
+      <div class="acts"><button class="btn ${c.ok===1?"on-good":""}" data-act="right">${I.ok} Right</button><button class="btn ${c.ok===0?"on-bad":""}" data-act="wrong">${I.no} Wrong</button></div>
+      ${c.ok!==null?`<div class="small" style="margin-top:6px">Marked ${c.ok?"right":"wrong"} ${c.by==="you"?"by you":"by the example answer key (filled in for this mockup)"}</div>`:""}
+      ${c.ok===0&&c.fix?`<div class="should">Answer key: ${esc(c.fix)}</div>`:""}`;
+  }
+  const {k,n}=stepTally(id), tr=T.trial&&T.trial.step===id?T.trial.model:null;
+  h+=`</div><div class="sec"><div class="lbl">Its AI</div><select id="lmpick" data-step="${id}" style="width:100%">${Object.keys(MODELS).map(m=>`<option ${m===(tr||S.lm[id])?"selected":""}>${m}</option>`).join("")}</select>`;
+  if(tr){const Mt=MODELS[tr],k2=Math.max(0,Math.min(n,k+Mt.d));
+    h+=`<table class="cmp" style="margin-top:8px"><tr><th></th><th>right</th><th>cost of this step</th></tr><tr><td>${esc(S.lm[id])} (now)</td><td>${k} of ${n}</td><td>${cents(M.cost)} a message</td></tr><tr><td><b>${esc(tr)}</b></td><td>${k2} of ${n}</td><td>${Mt.cost?cents(Mt.cost)+" a message":"free"}</td></tr></table>
+      <div class="small">Tried on the ${n} examples that were checked; the code didn't change.${Mt.local?" Nothing left this computer.":""} ${n<10?"Too few to be sure.":""}</div>
+      <div class="acts"><button class="btn primary" data-act="uselm">Use it for ${id}</button><button class="btn" data-act="droplm">Keep ${esc(S.lm[id])}</button></div>`}
+  h+=`</div><div class="sec"><div class="lbl">How often it's right</div><div>${stepWords(id)}</div></div><div class="links"><a data-act="incode">Show in code</a><a data-act="request">The exact request</a></div>`;
+  return h;
+}
+function drawerCosts(){
+  $("#dtitle").textContent="What it costs";$("#dsub").textContent="";
+  const pm=perMsg(),co=companies();
+  return `<div class="sec"><div class="lbl">This session</div><div style="font-size:22px;font-weight:700">${cents(S.spent)}</div><div class="small">Paid to ${co.length?co.join(" and "):"nobody"} with your own account. Studio itself is free and open source: no plans, no subscription, nothing to upgrade.</div></div>
+  <div class="sec"><div class="lbl">Each message</div><div>About <b>${cents(pm)}</b> with today's choice of AI for each step.</div>
+    <table class="cmp">${ORDER.map(st=>`<tr><td>${st}</td><td>${esc(S.lm[st])}</td><td>${MODELS[S.lm[st]].cost?cents(MODELS[S.lm[st]].cost):"free"}</td></tr>`).join("")}</table></div>
+  <div class="sec"><div class="lbl">A month</div><div>If you run it on <input class="num" id="monthly" type="number" min="0" step="50" value="${S.monthly}"> messages a month: about <b id="monthcost">${cents(pm*S.monthly)}</b>.</div>
+    <div class="small" style="margin-top:4px">Based on how long the 9 example messages and their answers were, at these models' list prices (approximate in this mockup). Longer messages cost more; spam stops after the first step and costs less.</div></div>
+  <div class="sec"><div class="lbl">Your limit</div><div>Ask me before any run that would cost more than <input class="num" id="cap" type="number" min="0" step="0.5" value="${S.cap}"> dollars.</div>
+    <div class="small" style="margin-top:4px">Every run already shows its cost first; above this, it waits for you to say yes.</div></div>`;
+}
+function drawerCheck(){
+  $("#dtitle").textContent="Check 10 more";$("#dsub").textContent="";
+  const i=T.checkAt;
+  const dots=`<div class="dots">${EXTRA.map((_,j)=>`<i class="${j<S.extra.length?(S.extra[j]?"r":"w"):j===i?"now":""}"></i>`).join("")}</div>`;
+  if(i===null||i>=EXTRA.length){const rw=rightWords();
+    return `${dots}<p><b>Done.</b> ${rw.long}</p><p class="small">Each check is recorded under your name. The score uses only what people checked, never the AI's own opinion of itself.</p><div class="acts"><button class="btn primary" data-act="closedrawer">Back to the pipeline</button></div>`}
+  const [m,a]=EXTRA[i];
+  return `<div class="small">One at a time: is the end result right for this message? Keys: 1 right, 2 wrong. ${i===0?"These 10 new messages were run first: 24 AI steps, "+cents(10*perMsg())+".":""}</div>${dots}
+   <div class="lbl">Message ${i+1} of 10</div><div class="full">${esc(m)}</div>
+   <div class="lbl" style="margin-top:12px">It answered</div><div class="full">${esc(a)}</div>
+   <div class="bigbtns"><button class="btn" data-act="cright">${I.ok} Right</button><button class="btn" data-act="cwrong">${I.no} Wrong</button></div>`;
+}
+
+// ============================================================ the conversation
+const WHO={you:"You",helper:`${I.spark} Studio's helper`,fx:"Measured"};
+function drawerChat(){
+  $("#dtitle").textContent="Conversation";$("#dsub").textContent="";
+  let h=S.chat.map(m=>`<div class="msg ${m.who}"><div class="who">${WHO[m.who]}</div><div class="bub">${m.html}</div></div>`).join("");
+  if(T.busy)h+=`<div class="msg"><div class="who">${WHO.helper}</div><div class="typing"><span></span><span></span><span></span></div></div>`;
+  if(!S.chat.length&&!T.busy)h=`<div class="small">Ask anything about this pipeline, or say what to change. Every change is tried on your examples first, and only you can keep it.</div>`;
+  return h;
+}
+function say(who,html){S.chat.push({who,html})}
+function helper(steps){
+  T.busy=true;T.drawer="chat";render();
+  let t=0;steps.forEach((st,i)=>{t+=st[2]??750;setTimeout(()=>{say(st[1]||"helper",st[0]);if(st[3])st[3]();T.busy=i<steps.length-1;render();const db=$("#dbody");db.scrollTop=db.scrollHeight},t)});
+}
+const spend=c=>{S.spent+=c};
+const DIFF_KIND=`<div class="diff"><div class="d">-  """What kind of message did the club get?"""</div><div class="a">+  """What kind of message did the club get?</div><div class="a">+  Questions about who may come (guests, brothers and</div><div class="a">+  sisters, other grades) are questions, not spam."""</div></div>`;
+const DIFF_REPLY=`<div class="diff"><div class="d">-  """Write a short, friendly reply a club leader would send.</div><div class="d">-  Two sentences at most."""</div><div class="a">+  """Write a friendly reply a club leader would send:</div><div class="a">+  one sentence, under 20 words."""</div></div>`;
+const R={
+  why2(){helper([
+    [`<p><b>#2 “Can I bring my cousin?”</b>: <i>kind</i> said <b>spam</b>; the answer key says it's a <b>question</b>. Spam gets no reply, so the end was wrong.</p><p>To be sure <i>kind</i> is to blame, I gave it the answer key's answer and reran only the steps after it:</p>`],
+    [`Given “question”, <i>answer</i> said “Guests are welcome if they sign in at the door”, and the reply was right. <b>So the end becomes right.</b> <span class="small">2 AI steps · ${cents(.03)}</span>`,"fx",900,()=>spend(.03)],
+    [`<p>The fault is <i>kind</i>'s. #8 (the little brother) is the same mistake.</p><div class="acts"><button class="btn" data-act="goto" data-row="1">Show #2</button><button class="btn primary" data-act="fixkind">Fix kind</button></div>`]])},
+  fixkind(){if(S.kindV2)return helper([[`<i>kind</i> is already fixed (version ${version()}). The biggest problem left is #5: ask “Why is #5 wrong?”.`]]);
+    helper([
+    [`<p><i>kind</i> causes 2 of the 4 wrong results: it calls questions about <b>who may come</b> spam. I'd tell it that asking who may come is a question, not spam.</p><details><summary>See the exact change</summary>${DIFF_KIND}</details><p class="small">I wrote this looking at 3 of the checked examples. The others were kept aside to test it.</p>`],
+    [`Tested on <b>5 checked examples it hadn't seen</b>: 3 right before the change, <b>5 right after</b>. That's better, but 5 is too few to be sure. <a href="#" data-act="check">Check 10 more</a> for a reliable answer. <span class="small">10 AI steps · ${cents(.15)}</span>`,"fx",1100,()=>spend(.15)],
+    [`<div class="acts"><button class="btn primary" data-act="keepkind">Keep it</button><button class="btn" data-act="discard">Discard</button><button class="btn" data-act="showcode" data-code="functai studio compare club.py --before HEAD">Show me the code</button></div>`]])},
+  shorter(){if(S.replyV2)return helper([[`Replies are already short (version ${version()}).`]]);
+    helper([
+    [`<p>The answer key says #7's reply should be short. I'd ask <i>reply</i> for one sentence, under 20 words.</p><details><summary>See the exact change</summary>${DIFF_REPLY}</details>`],
+    [`On the checked replies: typical length went from 31 words to 11. Still right: 5 of 5, and #7 becomes right. <span class="small">6 AI steps · ${cents(.09)}</span>`,"fx",1000,()=>spend(.09)],
+    [`<div class="acts"><button class="btn primary" data-act="keepreply">Keep it</button><button class="btn" data-act="discard">Discard</button></div>`]])},
+  explore(){if(S.kindV2)return helper([[`The most useful thing now isn't an AI change: #5 is wrong because <b>your FAQ doesn't mention fees</b>. Add them to <code>club_faq.md</code>. Then check 10 more messages so the score means something.<div class="acts"><button class="btn" data-act="check">Check 10 more</button></div>`]]);
+    helper([[`<p>Three ways to fix <i>kind</i>, the step that fails most:</p><p><b>A.</b> Tell it that questions about who may come are questions.<br><b>B.</b> Use a stronger AI for <i>kind</i> (about 3× the cost of that step).<br><b>C.</b> Split it in two: “is it spam?”, then “question or idea?”.</p><div class="acts"><button class="btn primary" data-act="runall">Try all three on the 8 checked messages · about ${cents(.4)}</button></div>`]])},
+  runall(){helper([
+    [`<table class="cmp"><tr><th></th><th>right</th><th>cost a message</th></tr><tr><td>now</td><td>6 of 8</td><td>${cents(perMsg())}</td></tr><tr><td><b>A</b> instruction</td><td>8 of 8</td><td>${cents(perMsg())}</td></tr><tr><td><b>B</b> stronger AI</td><td>7 of 8</td><td>${cents(perMsg()+.025)}</td></tr><tr><td><b>C</b> split in two</td><td>8 of 8</td><td>${cents(perMsg()+.015)}</td></tr></table><span class="small">24 AI steps · ${cents(.4)}</span>`,"fx",1300,()=>spend(.4)],
+    [`<p>A and C tie, and A is simpler and cheaper. These are messages the helper looked at, so check A on new ones before trusting it.</p><div class="acts"><button class="btn primary" data-act="keepkind">Keep A</button><button class="btn" data-act="discard">None of them</button></div>`]])},
+  why5(){helper([[`<p><b>#5 “Do we have to pay…?”</b>: <i>kind</i> was right. <i>answer</i> said “I don't know”, which is what it was told to say when the FAQ doesn't say, and <b>your FAQ has nothing about fees</b>.</p><p>This isn't an AI mistake: a fact is missing. Add the fee to <code>club_faq.md</code> and #5 will likely become right.</p><div class="acts"><button class="btn" data-act="goto" data-row="4">Show #5</button><button class="btn" data-act="openfaq">Open club_faq.md</button></div>`]])},
+  why7(){helper([[`<p><b>#7</b>: <i>kind</i> and <i>answer</i> were right (“5:30 pm.”), but <i>reply</i> wrote <b>84 words</b> for a one-line answer, and the answer key marks it wrong.</p><div class="acts"><button class="btn primary" data-act="shorter">Make replies shorter</button></div>`]])},
+  why9(){helper([[`<p><b>#9</b> is a photo of a poster. <i>kind</i> only reads text, so it couldn't run. That counts as <b>failed</b>, not wrong.</p><p>I can let <i>kind</i> read pictures too (FunctAI handles them). The AI then has to look at images, which costs a bit more per message.</p><div class="acts"><button class="btn" data-act="pictures">Let kind read pictures</button><button class="btn" data-act="discard">Not now</button></div>`]])},
+  costs(){T.drawer="costs";render()},
+  newp(){helper([[`Start a new pipeline? This one stays saved.<div class="acts"><button class="btn primary" data-act="home">New pipeline</button></div>`]])},
+  fallback(){helper([[`In this mockup only some requests are scripted; a real helper would read your code, runs and checks. Try one of the suggestions above the box.`]])},
+};
+function route(q){
+  const t=q.toLowerCase();
+  if(/cost|price|month|spend|pay\b|budget|limit/.test(t)&&!/#?\s?5\b/.test(t))return R.costs();
+  if(/\bnew\b|another pipeline/.test(t))return R.newp();
+  if(/check/.test(t))return startCheck();
+  if((/#?\s?2\b|cousin/.test(t))&&/why/.test(t))return R.why2();
+  if(/#?\s?5\b|fee/.test(t))return R.why5();
+  if(/#?\s?7\b/.test(t)&&/why/.test(t))return R.why7();
+  if(/#?\s?9\b|picture|photo/.test(t))return R.why9();
+  if(/short/.test(t))return R.shorter();
+  if(/try|idea|option|could/.test(t))return R.explore();
+  if(/fix|better|improve|fails/.test(t))return R.fixkind();
+  if(/why/.test(t)){const r=S.row;return r===1||r===7?R.why2():r===4?R.why5():r===6?R.why7():r===8?R.why9():helper([[`Example ${r+1} is ${endOf(r).state}. Every step checked on it was right.`]])}
+  return R.fallback();
+}
+function suggestions(){
+  if(!S.tried)return[];
+  const out=[],r=S.row,e=endOf(r).state;
+  if(e!=="right"){const k=r===1||r===7?"why2":r===4?"why5":r===6?"why7":r===8?"why9":null;if(k)out.push([`Why is #${r+1} ${e==="failed"?"failing":"wrong"}?`,k])}
+  if(!S.kindV2)out.push(["Fix the step that fails most","fixkind"]);
+  if(rightWords().more&&S.kindV2)out.push(["Check 10 more","check"]);
+  if(!S.replyV2)out.push(["Make replies shorter","shorter"]);
+  if(out.length<3)out.push(["What could I try?","explore"]);
+  if(out.length<3)out.push(["What will it cost a month?","costs"]);
+  return out.slice(0,3);
+}
+function startCheck(){if(T.checkAt===null&&!S.extra.length)spend(10*perMsg());T.checkAt=S.extra.length;T.drawer="check";render()}
+
+// ============================================================ building
+function build(text){
+  const n=$("#homenote");
+  if(!/club|discord|inbox/i.test(text)){
+    const plan=(PLANS.find(([re])=>re.test(text))||[0,["read what you give it","do the job you described","check the result"]])[1];
+    n.classList.remove("hidden");
+    n.innerHTML=`<p><b>This mockup can only build one example</b> (a club's message sorter), so it can't make “${esc(text)}”.</p><p>A real helper would first show you a plan like this, and ask before building:</p><ol>${plan.map(x=>`<li>${x}</li>`).join("")}</ol><div class="acts"><button class="btn primary" data-act="clubinstead">Show me the club example instead</button></div>`;
+    return;
+  }
+  n.classList.add("hidden");
+  Object.assign(S,FRESH(),{screen:"app",row:0});T.appeared=new Set();T.sel=null;T.storyAt=0;T.checkAt=null;
+  go(true);
+  say("you",esc(text));
+  helper([[`<p>Here's my plan for a <b>club inbox</b>:</p><ol style="margin:0 0 8px;padding-left:20px"><li><i>kind</i> sorts each message: question, idea or spam</li><li><i>answer</i> answers questions from your FAQ</li><li><i>reply</i> writes back</li></ol><p>Spam gets no reply; ideas get a thank-you. Build it?</p><div class="acts"><button class="btn primary" data-act="buildit">Build it</button><button class="btn" data-act="changeplan">Change something</button></div>`]]);
+}
+function doBuild(){helper([
+  [`Building it…`,"helper",400],
+  [`Step 1 of 3: <i>kind</i> sorts each message.`,"helper",600,()=>{S.built=1}],
+  [`Step 2: <i>answer</i> answers questions from the FAQ.`,"helper",600,()=>{S.built=2}],
+  [`Step 3: <i>reply</i> writes back.`,"helper",600,()=>{S.built=3}],
+  [`<p>Built, as real code you own (the Code tab). One thing is missing: <b>your club's FAQ</b>. I won't make one up.</p><div class="acts"><button class="btn" data-act="pastefaq">Paste it…</button><button class="btn primary" data-act="samplefaq">Use a sample FAQ</button></div><div class="privacy">The FAQ stays in a file on your computer. The <i>answer</i> step sends it to OpenAI with each question, to get an answer.</div>`,"helper",600]])}
+function tryIt(){helper([
+  [`Ran 9 messages: 21 AI steps · ${cents(.32)} · 7 seconds. <span class="small">8 typical messages I wrote (without their right answers) and 1 photo, to see what happens.</span>`,"fx",1200,()=>{S.tried=true;S.row=1;spend(.32)}],
+  [`<p>4 right, 4 wrong, 1 failed, going by <b>an example answer key filled in for this mockup</b>. (Normally you mark the answers yourself: click a step, or open Table.)</p><p>About ${cents(perMsg())} per message: at ${S.monthly} messages a month, about ${cents(perMsg()*S.monthly)} (<a href="#" data-act="costs">costs and your limit</a>).</p><p>A first try is a starting point, and 9 examples are too few for a reliable score. The quickest improvements are above the box. For a one-page summary to share, open <a href="#" data-v="story">Summary</a>.</p>`]])}
+
+// ============================================================ render
+function render(push){
+  $("#home").classList.toggle("hidden",S.screen!=="home");
+  $("#app").classList.toggle("hidden",S.screen!=="app");
+  const has=S.built>0, cont=$("#continue");
+  cont.classList.toggle("hidden",!has); cont.textContent=`Continue: Club inbox (version ${version()}, saved)`;
+  $("#fresh").classList.toggle("hidden",!has);
+  save();
+  if(push!==false) go(push===true);
+  if(S.screen!=="app") return;
+  document.querySelectorAll("#seg button").forEach(b=>b.classList.toggle("on",b.dataset.v===S.view));
+  const rw=rightWords();
+  $("#status").innerHTML=!S.built?"not built yet":S.built<3?"building…":!S.tried?"not run yet":rw.more?`${rw.short} · <a data-act="check">check 10 more for a reliable score</a>`:rw.short;
+  $("#ver").textContent="Version "+version();
+  $("#spent").textContent="Costs · "+cents(S.spent)+" spent";
+  $("#stage").innerHTML={map:viewMap,table:viewTable,code:viewCode,story:viewStory}[S.view]();
+  const mb=$("#mapbox");if(mb){const w=$("#stage").clientWidth-40,k=Math.min(1,w/1060);mb.style.transform=`scale(${k})`;mb.style.height=390*k+"px"}
+  $("#drawer").classList.toggle("hidden",!T.drawer);
+  const body={node:drawerNode,chat:drawerChat,costs:drawerCosts,check:drawerCheck}[T.drawer];
+  if(body){$("#dbody").innerHTML=body(); if(T.drawer==="chat"){const n=S.chat.length+(T.busy?.5:0);if(n!==render.n){render.n=n;$("#dbody").scrollTop=1e6}}}
+  $("#sugg").innerHTML=suggestions().map(([t,k])=>`<button class="chip" data-req="${k}">${esc(t)}</button>`).join("");
+}
+window.addEventListener("resize",()=>render(false));
+
+// ============================================================ events
+const DECISIVE=/^(keep|discard|samplefaq|try|runall|fixkind|shorter|home|pictures|buildit)/;
+document.addEventListener("click",e=>{
+  const t=e.target.closest("[data-fill],[data-v],[data-node],[data-cell],[data-req],[data-act],#skip,#continue,#fresh,#openfolder,#dclose,#thr");if(!t)return;
+  if(t.tagName==="A")e.preventDefault();
+  if(t.id==="skip"){$("#homenote").classList.add("hidden");Object.assign(S,FRESH(),{screen:"app",built:3,faq:true,tried:true,row:1,spent:.32});T.appeared=new Set(Object.keys(N));T.drawer=null;return render(true)}
+  if(t.id==="continue"){S.screen="app";return render(true)}
+  if(t.id==="fresh"){localStorage.removeItem(KEY);S=FRESH();T.drawer=null;$("#homenote").classList.add("hidden");return render(true)}
+  if(t.id==="openfolder")return toast("<code>functai studio open ./my-project</code> &nbsp;reads your code and its runs; changes nothing");
+  if(t.id==="dclose"){T.drawer=null;T.sel=null;return render(false)}
+  if(t.id==="thr"){T.drawer=T.drawer==="chat"?null:"chat";return render(false)}
+  if(t.dataset.fill){const i=$("#homein");i.value=t.dataset.fill;grow();i.focus();return}
+  if(t.dataset.v){S.view=t.dataset.v;T.storyAt=0;return render(true)}
+  if(t.dataset.node){T.sel=t.dataset.node;T.drawer="node";return render(false)}
+  if(t.dataset.cell){const[i,st]=t.dataset.cell.split(":");S.row=+i;T.sel=st;T.drawer="node";return render()}
+  if(t.dataset.req){say("you",esc(t.textContent));if(t.dataset.req==="check")return startCheck();return R[t.dataset.req]()}
+  const a=t.dataset.act;
+  if(DECISIVE.test(a||"")&&t.closest("#dbody")){S.chat.forEach(m=>m.html=m.html.replace(/<div class="acts">[\s\S]*?<\/div>/g,""));S.chat=S.chat.filter(m=>m.html.replace(/<[^>]*>/g,"").trim())}
+  switch(a){
+    case"prev":S.row=(S.row+ROWS.length-1)%ROWS.length;T.storyAt=0;return render();
+    case"next":S.row=(S.row+1)%ROWS.length;T.storyAt=0;return render();
+    case"snext":T.storyAt++;return render(false);
+    case"sback":T.storyAt--;return render(false);
+    case"download":return downloadSummary();
+    case"copylink":{const u=location.href;(navigator.clipboard?navigator.clipboard.writeText(u):Promise.reject()).then(()=>toast("Link copied. It opens this version and view; on your own computer it brings back your saved work."),()=>toast("Link: "+esc(u)));return}
+    case"costs":T.drawer="costs";return render(false);
+    case"check":return startCheck();
+    case"cright":case"cwrong":S.extra.push(a==="cright");T.checkAt++;if(T.checkAt>=EXTRA.length)T.checkAt=EXTRA.length;return render(false);
+    case"closedrawer":T.drawer=null;T.checkAt=null;return render(false);
+    case"right":case"wrong":{if(T.sel){S.judg[S.row+":"+T.sel]=a==="right"?1:0;toast(`<code>functai studio rate #${S.row+1}/${T.sel} ${a} --by you</code> &nbsp;written to the run record, readable without Studio`)}return render(false)}
+    case"incode":S.view="code";return render(true);
+    case"request":return toast("Would show the exact text sent for this step, with this example's values highlighted");
+    case"samplefaq":S.faq=true;say("you","Use a sample FAQ");return helper([[`Got it. Shall I try it on 9 messages? About ${cents(.32)} · 7 seconds.<div class="acts"><button class="btn primary" data-act="try">Try it</button></div>`]]);
+    case"pastefaq":return toast("Would open a box to paste your FAQ; it is saved as club_faq.md next to club.py");
+    case"try":say("you","Try it");return tryIt();
+    case"goto":S.row=+t.dataset.row;S.view="map";T.sel=null;return render(true);
+    case"fixkind":say("you","Fix kind");return R.fixkind();
+    case"shorter":say("you","Make replies shorter");return R.shorter();
+    case"runall":say("you","Try all three");return R.runall();
+    case"keepkind":S.kindV2=true;say("you","Keep it");say("fx",`Saved as version ${version()} (one change to club.py). Version 1's results are kept. Now ${tally().right} of ${tally().n} right.`);return render();
+    case"keepreply":S.replyV2=true;say("you","Keep it");say("fx",`Saved as version ${version()}. Now ${tally().right} of ${tally().n} right.`);return render();
+    case"discard":say("you","Discard");say("fx","Nothing changed.");return render(false);
+    case"showcode":return toast(`<code>${esc(t.dataset.code)}</code>`);
+    case"openfaq":return toast("Would open club_faq.md: 14 lines about meetings and who can join, nothing about fees");
+    case"pictures":return toast("Would propose letting kind take a picture, tried on #9 first, with the extra cost shown");
+    case"uselm":{const st=T.trial.step;S.lm[st]=T.trial.model;T.trial=null;toast(`club.py now says <code>@ai(lm="${esc(S.lm[st].replace(" (this computer)",""))}")</code> for ${st}`);return render(false)}
+    case"droplm":T.trial=null;return render(false);
+    case"home":S.screen="home";T.drawer=null;$("#homein").value="";grow();return render(true);
+    case"clubinstead":$("#homenote").classList.add("hidden");return build("Sort my robotics club's Discord messages into questions, ideas and spam, and answer the questions from our FAQ");
+    case"buildit":say("you",esc(t.textContent));return doBuild();
+    case"changeplan":return toast("You'd say what to change (“also translate replies to French”); the plan updates before anything is built.");
+  }
+});
+function grow(){const i=$("#homein");i.style.height="auto";i.style.height=Math.min(150,i.scrollHeight)+"px"}
+$("#homein").addEventListener("input",grow);
+$("#homein").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey){e.preventDefault();$("#homeform").requestSubmit()}});
+$("#homeform").addEventListener("submit",e=>{e.preventDefault();const v=$("#homein").value.trim();if(!v){$("#homein").focus();return}build(v)});
+$("#askform").addEventListener("submit",e=>{e.preventDefault();const v=$("#askin").value.trim();if(!v)return;$("#askin").value="";say("you",esc(v));route(v)});
+document.addEventListener("change",e=>{
+  if(e.target.id==="lmpick"){const st=e.target.dataset.step,m=e.target.value;T.trial=m===S.lm[st]?null:{step:st,model:m};if(T.trial){spend(.02);toast(`<code>functai studio run club.py --lm ${st}=${esc(m.replace(" (this computer)",""))}</code> &nbsp;tried; the code didn't change`)}return render(false)}
+  if(e.target.id==="monthly"){S.monthly=Math.max(0,+e.target.value||0);return render(false)}
+  if(e.target.id==="cap"){S.cap=Math.max(0,+e.target.value||0);toast(`Runs above $${S.cap} will wait for your yes.`);return render(false)}
+  if(e.target.id==="lang"&&e.target.value!=="Python"){toast("The AI steps carry over exactly; the code around them would be marked “translated, check it”");e.target.value="Python"}
+});
+document.addEventListener("input",e=>{if(e.target.id==="monthly"){S.monthly=Math.max(0,+e.target.value||0);const m=$("#monthcost");if(m)m.textContent=cents(perMsg()*S.monthly);save()}});
+document.addEventListener("keydown",e=>{
+  if(S.screen!=="app")return;
+  if(e.key==="Escape"){T.drawer=null;T.sel=null;return render(false)}
+  if(/INPUT|SELECT|TEXTAREA/.test(e.target.tagName))return;
+  if(T.drawer==="check"&&T.checkAt!==null&&T.checkAt<EXTRA.length&&(e.key==="1"||e.key==="2")){S.extra.push(e.key==="1");T.checkAt++;return render(false)}
+  if(e.key==="/"){e.preventDefault();$("#askin").focus();return}
+  const v={"1":"map","2":"story","3":"table","4":"code"}[e.key];if(v){S.view=v;return render(true)}
+  if(e.key==="j"){S.row=(S.row+1)%ROWS.length;T.storyAt=0;render()}
+  if(e.key==="k"){S.row=(S.row+ROWS.length-1)%ROWS.length;T.storyAt=0;render()}
+});
+applyUrl(); render(false); if(location.hash==="")history.replaceState(null,"",urlFor());
+</script>
+</body>
+</html>

@@ -14,6 +14,7 @@ Side files, only for what this page does not cover:
 - `recipes.md`: two models at once, a nested extraction with quotes checked, more on Attachments (sizes, errors, many documents), older versions
 - `failures.md`: an error you do not understand (safety filters, rate limits, logins, unreadable files)
 - `training.md`: training a small model itself (`bake`), beyond exporting its data
+- `studio.md`: a pipeline someone will use or show (several steps, examples, a person judging the answers in a dashboard, finding the weak step, a summary to share): `functai studio`
 
 The project's Python is `.venv/bin/python`. Choose the model explicitly:
 `functai.configure(lm="gpt-4.1-mini")`; subscriptions are `"claude:claude-opus-5-5"`,

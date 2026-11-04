@@ -10,7 +10,7 @@ before adding a language or changing the contract.
 | Path | What it is | Who it answers to |
 |---|---|---|
 | `contract/` | formats, JSON Schemas and cases every implementation must pass | nothing: it is the authority |
-| `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG | `contract/` |
+| `python/` | the Python package (`functai` on PyPI), self-contained: pyproject, uv.lock, .venv, tests, examples, README (PyPI's page), CHANGELOG. `functai/studio/` is Studio (`functai studio`: the command line, the dashboard in `ui/`, the club example; design/16) | `contract/` |
 | `ts/` | the TypeScript package (`functai` on npm, not published yet): src, tests, tools, README, CHANGELOG. `src/generated/contract.ts` is the contract's data, written by `node tools/generate.ts` | `contract/` |
 | `docs/` | the website: MRMD notebooks with their outputs, each pinned to `python/` as its rat project. `index.md` the four-language home, `python.md` Python's landing; `docs/tutorials/` the Python tutorials, `docs/r/` the R ones (```r cells, outputs written by `r/tutorials`), `docs/julia/` the Julia ones (```julia cells, outputs written by `julia/tutorials`; also the tutorials of the Julia manual); `docs/ts/index.md` and every language's `news.md` are generated from the READMEs and changelogs (`tools/docs.py generate`); plots in `docs/_assets/generated/` | the code they show |
 | `r/` | the R package (`functai`, not on CRAN): R, tests, data, README, NEWS. `inst/contract/` is the contract's data, copied by `r/check`; `tools/env.nix` is its R on NixOS | `contract/` |
