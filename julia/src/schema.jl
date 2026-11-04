@@ -10,7 +10,7 @@
 const SCHEMA_NAMES = ("call", "event", "interface", "saved", "rating")
 const SCHEMA_KEYWORDS = Set(["\$schema", "\$id", "\$defs", "\$ref", "title", "description",
                              "type", "const", "enum", "pattern", "minLength", "minimum", "maximum",
-                             "required", "properties", "additionalProperties", "propertyNames", "maxProperties",
+                             "required", "properties", "additionalProperties", "propertyNames", "maxProperties", "minProperties",
                              "items", "minItems", "uniqueItems", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"])
 
 """
@@ -19,13 +19,16 @@ the end of the text. A pattern that uses a class escape (`\\d`, `\\w`, `\\s`,
 `\\b` and their negations) is refused: Julia's PCRE reads those with Unicode
 properties, ECMA-262 does not (`\\d` is ASCII digits there, `\\s` its own
 list of spaces), so a pattern using one could pass here and fail elsewhere.
+One use is the same in both: `[\\s\\S]`, a class and its negation, is any
+character at all (a line break included), read here as `(?s:.)`.
 """
 function ecma_pattern(p::AbstractString)
     occursin(r"\A[^$]*\$\)*\z", p) || occursin(r"\A[^$]*\z", p) ||
         error("a schema pattern with \$ other than as its last anchor: $p")
-    occursin(r"(?<!\\)(?:\\\\)*\\[dDwWsSbB]", p) &&
+    q = replace(p, "[\\s\\S]" => "(?s:.)")
+    occursin(r"(?<!\\)(?:\\\\)*\\[dDwWsSbB]", q) &&
         error("a schema pattern with a class escape (\\d \\w \\s \\b), which PCRE and ECMA-262 read differently: $p")
-    Regex(replace(p, r"\$(?=\)*\z)" => s"\\z"))
+    Regex(replace(q, r"\$(?=\)*\z)" => s"\\z"))
 end
 
 "Every schema keyword the validator reads; a schema using another is not read."
@@ -128,6 +131,7 @@ function schema_fault(schema, v, doc::AbstractString, at::AbstractString="")
             haskey(v, k) || return "$(at_text(at)): no $k"
         end
         haskey(schema, "maxProperties") && length(v) > schema["maxProperties"] && return "$(at_text(at)): more than $(schema["maxProperties"]) members"
+        haskey(schema, "minProperties") && length(v) < schema["minProperties"] && return "$(at_text(at)): fewer than $(schema["minProperties"]) members"
         props = get(schema, "properties", nothing)
         extra = get(schema, "additionalProperties", nothing)
         names = get(schema, "propertyNames", nothing)

@@ -188,7 +188,7 @@
             "properties": {
               "plugin": {"type": "string", "minLength": 1},
               "version": {"type": "string"},
-              "hook": {"enum": ["turn_start", "context", "before_call", "request", "tool_call", "tool_result"]},
+              "hook": {"enum": ["turn_start", "context", "before_call", "step", "request", "tool_call", "tool_result"]},
               "change": {"type": "object"}
             }
           }
@@ -200,6 +200,16 @@
         "replayable": {
           "description": "plugins.md, Records: false when a request hook replaced a provider request.",
           "const": false
+        },
+        "spent": {
+          "description": "calls.md, Spending: what the call's own code and tools said they spent beyond its models' tokens.",
+          "type": "object", "required": ["usd"], "additionalProperties": false,
+          "properties": {"usd": {"type": "number", "minimum": 0}}
+        },
+        "placement": {
+          "description": "calls.md, Setups: where the call ran, beside what it ran on.",
+          "type": "object", "additionalProperties": false, "minProperties": 1,
+          "properties": {"wall": {"type": ["string", "null"]}, "base_url": {"type": "string"}}
         }
       },
       "allOf": [
@@ -245,6 +255,7 @@
         "interface": {"$ref": "#/$defs/sha256"},
         "answer": {"type": "string", "minLength": 1},
         "saved": {"$ref": "#/$defs/sha256"},
+        "setup": {"description": "calls.md, Setups: what the program ran on.", "$ref": "#/$defs/sha256"},
         "file": {"type": "string"},
         "line": {"type": "integer", "minimum": 0},
         "remote": {"description": "serving.md: a program served elsewhere, called here: where it is served.", "type": "string", "minLength": 1}
