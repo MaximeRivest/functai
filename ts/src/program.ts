@@ -15,6 +15,8 @@ import { journalOf, JournalError, TreeLog, type Node, type Observer, type Resolv
 import { checkSettings, layersOf, type Settings } from "./settings.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
 import type { InterfaceNote } from "./interface.ts";
+import { checkReach, placementOf } from "./setup.ts";
+import type { Needs } from "./settings.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -55,6 +57,8 @@ export interface CallSpec<R> {
   readonly self?: object;
   /** The notes the program declares (its interface's), which every note made inside it is checked against. */
   readonly notes?: readonly InterfaceNote[];
+  /** What its code reaches (calls.md, *Reach*): checked against the wall it runs behind before its code runs. */
+  readonly needs?: () => Needs | undefined;
   /**
    * What the call is shown as context, worked out before it starts (its
    * `saw`): a conversation's earlier turns, a helper's memory, a row asked
@@ -159,6 +163,11 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
   const signal = combine(spec.signal, spec.stream?.signal, parent?.signal, turnRun?.signal);
   const call = new Call(spec.program, parent, folder, spec.fields, keep, calllog.callerOf(spec.settings), signal);
   call.notes = spec.notes;
+  try {
+    call.placement = placementOf(spec.settings, program.kind === "ai");        // where it runs (calls.md, *Setups*)
+  } catch {
+    call.placement = null;
+  }
   call.turnRun = turnRun;
   if (turnRun && !turnRun.rootTaken && spec.self !== undefined && spec.self === turnRun.self) {
     turnRun.rootTaken = true;
@@ -247,6 +256,8 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
     if (spec.refused !== undefined) throw spec.refused;
     if (!parent && await log.barrier(started, call.signal) === "cancelled") throw new Cancelled();
     if (call.signal?.aborted) throw new Cancelled();
+    // what it needs, against the wall it runs behind (calls.md, *Reach*): refused before its code runs, recorded
+    if (spec.needs && spec.settings.wall !== undefined && spec.settings.wall !== null) checkReach(program.name, spec.needs(), spec.settings);
     // the body: this call is current; a call it makes is not made by a tool unless a tool of its own makes it
     const ended = await calllog.current.run(call, () => calllog.INVOCATION.run(null, () => spec.body(call)));
     // closed before it ended: the call is cancelled, whatever its code did after (streaming.md, "Closing")

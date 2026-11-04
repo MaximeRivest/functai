@@ -84,7 +84,7 @@ class Tool:
 
     def __init__(self, fn: Callable[..., Any], *, effects: Optional[str] = None, name: Optional[str] = None,
                  description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None,
-                 needs: Optional[Dict[str, Any]] = None):
+                 needs: Optional[Dict[str, Any]] = None, code_id: Optional[str] = None):
         if not callable(fn):
             raise TypeError("functai.tool wraps a function")
         if effects is not None and effects not in EFFECTS:
@@ -102,6 +102,10 @@ class Tool:
         self.notes = notes_of(notes, where=f"tool {self.__name__}")
         # what its code reaches (contract/tools.md, *What a tool needs*): checked against the wall it runs behind
         self.needs = needs_of(needs, where=f"tool {self.__name__}")
+        if code_id is not None and (not isinstance(code_id, str) or not code_id.strip()):
+            raise TypeError(f"tool {self.__name__}: code_id is text: a revision, or a bundle's hash")
+        # what identifies its code beyond what can be read of it (contract/calls.md, *Setups*)
+        self.code_id = code_id
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._fn(*args, **kwargs)
@@ -116,7 +120,7 @@ class Tool:
 
 def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = None, name: Optional[str] = None,
          description: Optional[str] = None, notes: Optional[Dict[str, Any]] = None,
-         needs: Optional[Dict[str, Any]] = None) -> Any:
+         needs: Optional[Dict[str, Any]] = None, code_id: Optional[str] = None) -> Any:
     '''Make a function a tool that says what it does to the world.
 
     Parameters
@@ -141,6 +145,11 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
         wall that lets through less (the ``wall`` setting), the function that
         has it is refused before its first call (``ReachError``); the reach
         counts in the function's setup.
+    code_id : str, optional
+        What identifies its code beyond the code a setup reads of it: a
+        revision (``"v3"``) or a bundle's hash. Give it when its behaviour
+        comes from values it captured (a tool made by a factory) or from
+        code outside what Python can follow.
 
     Returns
     -------
@@ -159,7 +168,8 @@ def tool(fn: Optional[Callable[..., Any]] = None, *, effects: Optional[str] = No
     ```
     '''
     def wrap(f: Callable[..., Any]) -> Tool:
-        return Tool(f, effects=effects, name=name, description=description, notes=notes, needs=needs)
+        return Tool(f, effects=effects, name=name, description=description, notes=notes, needs=needs,
+                    code_id=code_id)
     return wrap(fn) if fn is not None else wrap
 
 

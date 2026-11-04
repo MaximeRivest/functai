@@ -815,8 +815,8 @@ class Analysis:
             if isinstance(t, Tool):
                 # a tool that says what it does (functai.tool): its code, and what it says of itself beside it
                 inner = t._fn
-                meta = {k: v for k, v in (("effects", t.effects), ("needs", t.needs), ("notes", t.notes))
-                        if v is not None}
+                meta = {k: v for k, v in (("effects", t.effects), ("needs", t.needs), ("notes", t.notes),
+                                          ("code_id", getattr(t, "code_id", None))) if v is not None}
                 if t.__name__ != getattr(inner, "__name__", None):
                     meta["name"] = t.__name__
                 if (t.__doc__ or "") != (getattr(inner, "__doc__", None) or ""):

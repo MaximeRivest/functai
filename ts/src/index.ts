@@ -18,6 +18,7 @@ import { effective, type Settings } from "./settings.ts";
 import { notesOf, readField, type FieldSpec, type NoteSpec, type ValueOf } from "./shapes.ts";
 import { setOwn } from "./values.ts";
 import { usageRead } from "./usage.ts";
+import { needsOf } from "./settings.ts";
 
 export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column, type Definition, type Demo, type Expected, type Input,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
@@ -34,7 +35,9 @@ export { InterfaceError, checkInterface, interfaceSignature, type Interface, typ
 export { answerSoFar, partialJson, type SoFar } from "./partial.ts";
 export { Prediction, StepLimit } from "./engine.ts";
 export { Cancelled, FunctAIError, FilesUnavailable, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError,
-  BakeError, type Approval } from "./errors.ts";
+  BakeError, ReachError, type Approval } from "./errors.ts";
+export { setupDiff, type SetupDifference, type SetupDocument } from "./setup.ts";
+export type { Needs, Wall } from "./settings.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
 export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,
   ToolResultHook, TurnEndHook, StepHook, Spent, pricing, type StepResult, type Price } from "./plugins.ts";
@@ -69,7 +72,7 @@ export { load, fromManifest, save, toManifest, describeSaved, LoadRefused } from
 export { capabilities } from "./models.ts";
 export { clearCache, replyKey, MemoryReplies, DiskReplies, type ReplyCache, type CacheSetting } from "./replies.ts";
 export { normalize, casefold } from "./text.ts";
-export { VERSION, pruneCalls, split, note, MemoryCalls, flushCalls, type CallStore } from "./calllog.ts";
+export { VERSION, pruneCalls, split, note, spend, MemoryCalls, flushCalls, type CallStore } from "./calllog.ts";
 export { login, logins, logout } from "./accounts.ts";
 export { Refusal, isRefusal } from "lmcc";
 
@@ -82,7 +85,18 @@ type Rec = Record<string, unknown>;
  */
 export function tool<I extends Record<string, FieldSpec>>(
   name: string,
-  spec: { description?: string; input: I; effects?: Effects | null; notes?: Readonly<Record<string, NoteSpec>> },
+  spec: {
+    description?: string; input: I; effects?: Effects | null; notes?: Readonly<Record<string, NoteSpec>>;
+    /** What its code reaches: `{ domains?, secrets? }` (names, never values): checked against the wall it runs behind. */
+    needs?: { readonly domains?: readonly string[]; readonly secrets?: readonly string[] };
+    /**
+     * What identifies its code beyond the function's text, which is all a
+     * setup can read of it: a revision (`"v3"`) or a bundle's hash. Give it
+     * when the function's behaviour comes from values it captured (a tool
+     * made by a factory) or code it imports.
+     */
+    codeId?: string;
+  },
   run: (input: { [K in keyof I]: ValueOf<I[K]> }) => unknown,
 ): Tool {
   if (spec.effects !== undefined && spec.effects !== null && spec.effects !== "reads" && spec.effects !== "changes") {
@@ -96,8 +110,15 @@ export function tool<I extends Record<string, FieldSpec>>(
   }
   // no additionalProperties: Gemini refuses the keyword in function declarations
   const notes = notesOf(spec.notes, `tool("${name}")`);
+  const needs = needsOf(spec.needs, `tool("${name}")`);
   return { name, description: spec.description ?? "", parameters: { type: "object", properties, required: Object.keys(spec.input) }, run: run as Tool["run"],
-    effects: spec.effects ?? null, ...(notes !== undefined ? { notes } : {}) };
+    effects: spec.effects ?? null, ...(notes !== undefined ? { notes } : {}), ...(needs !== undefined ? { needs } : {}),
+    ...(spec.codeId !== undefined ? { codeId: checkedCodeId(spec.codeId, name) } : {}) };
+}
+
+function checkedCodeId(id: unknown, name: string): string {
+  if (typeof id !== "string" || !id.trim()) throw new TypeError(`tool("${name}"): codeId is text: a revision, or a bundle's hash`);
+  return id;
 }
 
 /**

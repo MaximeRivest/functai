@@ -19,6 +19,7 @@
 
 import * as lmcc from "lmcc";
 import type * as calllog from "./calllog.ts";
+import { warnOnce } from "./calllog.ts";
 import type { CallFields } from "./content.ts";
 import { Cancelled } from "./errors.ts";
 import { chatOf, Conversation, moduleSaw, interfaceFields, type ConversationOptions, type TurnOptions } from "./conversations.ts";
@@ -30,8 +31,10 @@ import { droppedFields, recordInputs, runCall } from "./program.ts";
 import { checkSettings, effective, type Settings } from "./settings.ts";
 import { notesOf, type FieldSpec, type InputValueOf, type IsOptional, type NoteSpec, type ValueOf } from "./shapes.ts";
 import { Stream } from "./stream.ts";
-import { copyData, getOwn, setOwn, toJson } from "./values.ts";
+import { byCodePoint, copyData, getOwn, setOwn, toJson } from "./values.ts";
 import { outsideNotes } from "./views.ts";
+import { reachOf, setupHash, type HasSetup } from "./setup.ts";
+import { mergedNeeds, needsOf, type Needs } from "./settings.ts";
 
 type Rec = Record<string, unknown>;
 type Fields = Record<string, FieldSpec>;
@@ -65,6 +68,13 @@ export interface ModuleSpec<I extends Fields, O extends Fields | undefined, A ex
    * sees only the module's boundary (a served program's).
    */
   notes?: Readonly<Record<string, NoteSpec>>;
+  /**
+   * What its own code reaches: `{ domains?: [...], secrets?: [...] }` (names,
+   * never values). Behind a wall that lets through less (the `wall` setting),
+   * its call is refused before its code runs (`ReachError`); its reach
+   * counts in its setup.
+   */
+  needs?: { readonly domains?: readonly string[]; readonly secrets?: readonly string[] };
   /** @internal A program served elsewhere (remote.ts). */
   _remote?: { readonly url: string; readonly version: string };
 }
@@ -109,6 +119,15 @@ export interface Module<I extends Rec = Rec, R = unknown> {
   readonly interfaceId: string;
   /** A fingerprint of its code, the AI functions it uses and its interface (contract/calls.md, "Versions"). */
   readonly version: string;
+  /**
+   * What it runs on here: `"sha256:"` of its setup document (calls.md,
+   * *Setups*): its version, the model each step asks, the settings and
+   * plugins in force, its tools' code, what it may reach. Another model is
+   * another setup of the same version. Logged calls carry it (`program.setup`).
+   */
+  readonly setup: string;
+  /** The document `setup` is the hash of, with the settings in force now (`setupDiff` says what differs between two). */
+  setupDocument(): Record<string, unknown>;
   readonly uses: readonly (AnyAIFunction | AnyModule)[];
   readonly settings: Settings;
   /** Call it and watch it being made: every event of its call and the calls inside it. */
@@ -134,7 +153,7 @@ export type AnyModule = Module<any, any>;
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "apiMaxWait", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
-  "escalateBelow", "apiKey", "baseUrl", "onUnreadable"]);
+  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall"]);
 
 interface ModuleCore {
   name: string;
@@ -153,6 +172,8 @@ interface ModuleCore {
   answerFrom?: string | null;
   /** A program served elsewhere (remote.ts): its records say so, with the server's version. */
   remote?: { readonly url: string; readonly version: string } | null;
+  /** What its own code reaches (tools.md, *What a tool needs*). */
+  needs?: Needs;
 }
 
 /** The code and AI versions a module reaches: its own code, and what it uses (their own reach, for modules). */
@@ -182,11 +203,43 @@ function makeModule(core: ModuleCore): AnyModule {
   const defaults = defaultsDocument(iface, core.defaultCode);
   const version = () => core.remote ? core.remote.version : lmcc.sha256({ ...reach(core), interface: plain, ...(defaults ? { defaults } : {}) } as unknown as lmcc.Json);
   const answer = iface.outputs[iface.outputs.length - 1]!.name;
-  const program = (): calllog.Program => ({
-    name, kind: core.remote ? "remote" : "module", module: core.where, version: version(), interface: interfaceId, answer,
-    ...(core.remote ? { remote: core.remote.url } : {}),
-    ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
+
+  // ---- what it runs on (calls.md, *Setups*): its version, the setup of each AI function it reaches, its reach
+  /** Every AI function it reaches, by the keys its version uses. */
+  const aiReached = (): Record<string, HasSetup> => {
+    const out: Record<string, HasSetup> = {};
+    for (const u of core.uses) {
+      const inner = (u as { _aiReached?: () => Record<string, HasSetup> })._aiReached;
+      if (inner) Object.assign(out, inner());
+      else out[`${u.module}:${u.name}`] = u as unknown as HasSetup;
+    }
+    return out;
+  };
+  /** What its code reaches: its own needs, and every program's it uses. */
+  const needs = (): Needs | undefined => mergedNeeds(core.needs,
+    ...core.uses.map((u) => (u as { _needs?: () => Needs | undefined })._needs?.()));
+  const setupDocument = (): Rec => ({
+    version: version(),
+    ai: Object.fromEntries(Object.entries(aiReached()).sort(([a], [b]) => byCodePoint(a, b)).map(([k, fn]) => [k, fn.setup])),
+    reach: reachOf(needs(), effective(core.own)),
   });
+  const setupId = (): string | undefined => {
+    if (core.remote) return undefined;
+    try {
+      return setupHash(setupDocument());
+    } catch (err) {                                  // a setup that cannot be worked out never stops a call
+      warnOnce(`setup:${name}`, `the setup of ${name} could not be worked out (${(err as Error).message}); its records name none`);
+      return undefined;
+    }
+  };
+  const program = (): calllog.Program => {
+    const setup = setupId();
+    return {
+      name, kind: core.remote ? "remote" : "module", module: core.where, version: version(), interface: interfaceId, answer,
+      ...(core.remote ? { remote: core.remote.url } : {}), ...(setup ? { setup } : {}),
+      ...(core.file ? { file: core.file } : {}), ...(core.line ? { line: core.line } : {}),
+    };
+  };
   const fields: CallFields = { inputs: iface.inputs.map((f) => f.name), outputs: iface.outputs.map((f) => f.name), added: [] };
   const names = iface.inputs.map((f) => f.name);
   const binder = new Binder(name, names, core.rules);
@@ -231,7 +284,7 @@ function makeModule(core: ModuleCore): AnyModule {
       inputs = recordedInputs(iface, given);
     }
     return runCall<unknown>({
-      program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs: recordInputs(names, inputs),
+      program, fields, own: core.own, options: extra as Settings, settings: s, stream, signal, inputs: recordInputs(names, inputs), needs,
       self: fn, notes: core.iface.notes, prepare: (c) => {
         const saw = moduleSaw(fn, c);                       // a module's turn: the conversation so far
         if (saw) c.saw = saw;
@@ -291,6 +344,7 @@ function makeModule(core: ModuleCore): AnyModule {
     file: { get: () => (core.topLevel ? core.file : undefined) },
     interfaceId: { value: interfaceId },
     version: { get: version },
+    setup: { get: () => setupHash(setupDocument()) },
     uses: { value: core.uses },
     settings: { get: () => ({ ...core.own }) },
   });
@@ -319,6 +373,10 @@ function makeModule(core: ModuleCore): AnyModule {
     },
     _programInfo: () => program(),
     _aiFunctions: aiFunctions,
+    _aiReached: aiReached,
+    _needs: needs,
+    _ownNeeds: core.needs,
+    setupDocument,
     _answerFrom: core.answerFrom ?? null,
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };
@@ -375,5 +433,6 @@ export function module<I extends Fields, O extends Fields | undefined = undefine
     run: run as ModuleCore["run"], uses: [...(spec.uses ?? [])], own, defaultCode, topLevel: spec.definedIn === undefined,
     answerFrom: spec.answerFrom ? spec.answerFrom.name : null,
     remote: (spec as { _remote?: { url: string; version: string } })._remote ?? null,
+    ...(spec.needs !== undefined ? { needs: needsOf(spec.needs, `module("${name}")`)! } : {}),
   }) as unknown as Module<ModuleArgs<I>, ModuleResult<O, A>>;
 }

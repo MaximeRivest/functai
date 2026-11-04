@@ -41,6 +41,10 @@ export interface Tool {
   readonly effects?: Effects | null;
   /** The notes its code makes (tools.md, *Notes a tool makes*): every AI function that has it declares them. */
   readonly notes?: readonly InterfaceNote[];
+  /** What its code reaches (tools.md, *What a tool needs*): checked against the wall it runs behind. */
+  readonly needs?: { readonly domains: readonly string[]; readonly secrets: readonly string[] };
+  /** What identifies its code beyond the function's text (a revision, a bundle's hash): counted in a setup. */
+  readonly codeId?: string;
 }
 
 /**

@@ -109,9 +109,11 @@ export class Plugin {
   readonly version: string;
   readonly api: number;
   readonly description: string;
+  /** Its settings as JSON (plugins.md, *A plugin*): a program's setup counts them. */
+  readonly config: unknown;
   readonly handlers: Partial<Record<Hook, Handler[]>> = {};
 
-  constructor(name: string, opts: { version?: string; api?: number; description?: string } = {}) {
+  constructor(name: string, opts: { version?: string; api?: number; description?: string; config?: unknown } = {}) {
     if (typeof name !== "string" || !NAME.test(name)) {
       throw new PluginError("plugin-name", `a plugin's name is lower-case letters, digits, '_' or '-' (at most 64), starting with a letter; not ${JSON.stringify(name)}`);
     }
@@ -121,6 +123,18 @@ export class Plugin {
     this.version = String(opts.version ?? "0.0.0");
     this.api = api;
     this.description = opts.description ?? "";
+    if (opts.config !== undefined) {
+      try {
+        JSON.stringify(opts.config, (_k, v) => {
+          if (typeof v === "number" && !Number.isFinite(v)) throw new TypeError("not JSON");
+          if (typeof v === "function" || typeof v === "bigint" || typeof v === "symbol") throw new TypeError("not JSON");
+          return v;
+        });
+      } catch {
+        throw new TypeError(`plugin ${name}: config is its settings as JSON`);
+      }
+    }
+    this.config = opts.config === undefined ? undefined : copyData(opts.config);
   }
 
   /** Register `fn` for `hook`. */
@@ -747,9 +761,12 @@ export class Spent {
   readonly exchanges: readonly (readonly [string, Readonly<Record<string, number>>])[];
   /** Since the tree's outermost call started. */
   readonly seconds: number;
-  constructor(exchanges: readonly (readonly [string, Readonly<Record<string, number>>])[], seconds: number) {
+  /** Dollars code in the tree said it spent (`spend`): counted in `cost`, with no price. */
+  readonly reported: number;
+  constructor(exchanges: readonly (readonly [string, Readonly<Record<string, number>>])[], seconds: number, reported = 0) {
     this.exchanges = exchanges.map(([m, u]) => [m, { ...u }] as const);
     this.seconds = seconds;
+    this.reported = reported;
   }
   get requests(): number {
     return this.exchanges.length;
@@ -772,7 +789,7 @@ export class Spent {
     if (!this.exchanges.length) return 0;
     return this.usage["total_tokens"] ?? null;
   }
-  /** The list price of the requests at these prices: exact, or null (a model with no price, a request whose counts do not settle its price). */
+  /** The list price of the requests at these prices, plus what code said it spent: exact, or null (a model with no price, a request whose counts do not settle its price). */
   cost(prices: Readonly<Record<string, Price>>): number | null {
     let total = 0;
     for (const [model, u] of this.exchanges) {
@@ -782,7 +799,7 @@ export class Spent {
       if (got === undefined) return null;
       total += got;
     }
-    return total;
+    return total + this.reported;
   }
 }
 
@@ -794,7 +811,7 @@ export function currentCall(): Call | null {
 /** What `call`'s tree spent so far (its outermost call in this process). */
 export function spentOf(call: Call | null | undefined): Spent {
   if (!call) return new Spent([], 0);
-  return new Spent([...call.top.spent], Math.max(0, (Date.now() - call.top.started) / 1000));
+  return new Spent([...call.top.spent], Math.max(0, (Date.now() - call.top.started) / 1000), call.top.treeSpent);
 }
 
 /** Run hooks; when one stops the call, its changes are kept in the call's record first. */

@@ -841,7 +841,7 @@ def _rebuild_ai(fn: Any, key: str):
             else:
                 mod, _, attr = t["import"].partition(":")
                 inner = getattr(importlib.import_module(mod), attr)
-            meta = {k: t[k] for k in ("effects", "needs", "notes", "name", "description") if k in t}
+            meta = {k: t[k] for k in ("effects", "needs", "notes", "name", "description", "code_id") if k in t}
             tools.append(_said_tool(inner, meta) if meta else inner)
         else:
             from lmcc_std.tools import Tool
@@ -857,7 +857,8 @@ def _said_tool(fn: Any, meta: Mapping[str, Any]) -> Any:
     from .tools import Tool
     if isinstance(fn, Tool):                          # the saved code applied its decorator again: the function inside
         fn = fn._fn
-    t = Tool(fn, effects=meta.get("effects"), name=meta.get("name"), description=meta.get("description"))
+    t = Tool(fn, effects=meta.get("effects"), name=meta.get("name"), description=meta.get("description"),
+             code_id=meta.get("code_id"))
     t.notes = copy.deepcopy(meta.get("notes"))
     t.needs = copy.deepcopy(meta.get("needs"))
     return t

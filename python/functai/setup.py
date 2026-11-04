@@ -134,6 +134,8 @@ def tool_entry(tool: Any) -> Dict[str, Any]:
         return {"described": True}
     code, ai = _code_of(fn)
     entry: Dict[str, Any] = {"code": {"language": "python", "code": code}}
+    if getattr(tool, "code_id", None) is not None:
+        entry["code"]["id"] = tool.code_id
     if ai:
         entry["ai"] = {k: setup_of(p) for k, p in sorted(ai.items()) if p is not tool}
     return entry

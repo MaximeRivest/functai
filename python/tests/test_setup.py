@@ -233,3 +233,15 @@ def answer(item: str) -> str:
                          capture_output=True, text=True, check=True).stdout
     assert 'setup_shop:stock: model.model: "gpt-4.1-mini" -> "claude-haiku-4-5"' in out
     assert calllog.module_version(loaded) == shop.answer.version
+
+
+def test_what_the_code_a_setup_reads_cannot_say_code_id_says():
+    def made(answer, code_id=None):
+        def look(page: str) -> str:
+            """Look at a page."""
+            return f"page {page}: {answer}"
+        return functai.tool(look, effects="reads", code_id=code_id)
+    with functai.configure(lm="openai:gpt-4.1-mini"):
+        assert agent(made("in stock")).setup == agent(made("sold out")).setup        # one text, two behaviours
+        assert agent(made("in stock", "a")).setup != agent(made("sold out", "b")).setup
+        assert agent(made("x", "v3")).setup_document()["tools"]["look"]["code"]["id"] == "v3"

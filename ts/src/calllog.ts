@@ -204,6 +204,12 @@ export class Call {
   readonly top: Call;
   /** The outermost call only: `[model, usage]` of each request a provider answered in this tree (plugins: limits). */
   readonly spent: (readonly [string, Record<string, number>])[] = [];
+  /** Dollars its own code and tools said they spent (`spend`): its record's `spent`. */
+  ownSpent: number | null = null;
+  /** The outermost call only: dollars all code in its tree said it spent. */
+  treeSpent = 0;
+  /** Where it ran (the wall, an AI function's server address): its record's `placement`. */
+  placement: Rec | null = null;
   provider: string | null = null;
   /**
    * Its inputs as the record holds them, by its interface's names, each as
@@ -345,6 +351,21 @@ export const current = new Context<Call>();
  * call: the call log does not keep it. Outside any call, or when nothing
  * watches, it does nothing.
  */
+/**
+ * Say what code inside a call spent beyond the models' tokens, in dollars (a
+ * browsing service's charge, a paid API): `spend(0.05)`, from a module's
+ * code or a tool (calls.md, *Spending*). The call's record keeps the sum
+ * (`spent`), and the `limits` plugin counts it in the tree's cost. Outside
+ * any call it does nothing.
+ */
+export function spend(usd: number): void {
+  if (typeof usd !== "number" || !Number.isFinite(usd) || usd < 0) throw new RangeError(`spend(usd): a number of dollars, at least 0; not ${String(usd)}`);
+  const call = current.get();
+  if (!call) return;
+  call.ownSpent = (call.ownSpent ?? 0) + usd;
+  call.top.treeSpent += usd;
+}
+
 export function note(name: string, data: unknown = null): void {
   if (typeof name !== "string" || !name.trim()) throw new TypeError("a note's name is a non-empty text: what happened (\"screen captured\")");
   const call = current.get();
@@ -518,6 +539,8 @@ export function record(call: Call, ending: Ending): Rec {
   rec["confidence"] = call.confidence;
   if (call.probabilities && Object.keys(call.probabilities).length) rec["probabilities"] = copyData(call.probabilities);
   if (call.escalated) rec["escalated"] = true;
+  if (call.ownSpent !== null) rec["spent"] = { usd: Math.round(call.ownSpent * 1e12) / 1e12 };
+  if (call.placement) rec["placement"] = copyData(call.placement);
   rec["exchanges"] = call.exchanges.map((e) => exchangeJson(e, true));
   if (call.steps !== null) rec["steps"] = copyData(call.steps);
   rec["saw"] = copyData(call.saw);

@@ -10,6 +10,7 @@
  * ```
  */
 
+import { InferencePricing } from "@lm15/lm15";
 import * as calllog from "./calllog.ts";
 import type { AnyAIFunction } from "./fn.ts";
 import { ai } from "./fn.ts";
@@ -147,7 +148,8 @@ export function delegate(program: Program, opts: { name?: string; description?: 
       required: iface.inputs.filter((f) => !f.optional).map((f) => f.name),
     },
     run, effects: opts.effects !== undefined ? opts.effects : effectsOf(program),
-  };
+    _program: program,                               // a setup counts the program it stands for (calls.md, *Setups*)
+  } as Tool;
 }
 
 // ------------------------------------------------------------------ long tool loops (the step hook)
@@ -194,6 +196,23 @@ export function reached(spent: Spent, o: LimitsOptions): [string, string | null]
   return out;
 }
 
+/** lm15's `InferencePricing` as JSON (plugins.md, *limits*): its fields by lm15's names, without those at lm15's defaults (an unset rate, currency USD, no tiers). */
+function priceJson(p: InferencePricing): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  // lm15's JSON form, as plain numbers (its RawNumber keeps "3.0"; canonical JSON writes 3 either way)
+  const plain = (v: unknown): unknown => {
+    if (Array.isArray(v)) return v.map(plain);
+    if (typeof v !== "object" || v === null) return v;
+    if (typeof (v as { raw?: unknown }).raw === "string" && Object.keys(v).length === 1) return Number((v as { raw: string }).raw);
+    return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, plain(x)]));
+  };
+  for (const [k, v] of Object.entries(plain(InferencePricing.toJSON(p)) as Record<string, unknown>)) {
+    if (v === undefined || v === null || (k === "currency" && v === "USD") || (k === "tiers" && Array.isArray(v) && !v.length)) continue;
+    out[k] = v;
+  }
+  return out;
+}
+
 const stoppedBy = (hit: readonly [string, string | null][]) =>
   "limit reached: " + hit.map(([l, why]) => why ? `${l} (${why})` : l).join("; ");
 
@@ -219,7 +238,14 @@ export function limits(o: LimitsOptions): Plugin {
   }
   if (o.tokens === undefined && o.cost === undefined && o.seconds === undefined) throw new TypeError("limits needs at least one of tokens, cost, seconds");
   for (const model of Object.keys(o.prices ?? {})) pricing(o.prices!, model);    // a malformed price is refused now, not mid-run
-  return new Plugin(o.name ?? "limits", { version: "1.0.0", description: "stop a call tree when it used enough tokens, money or time" })
+  // its settings as JSON (plugins.md, *limits*): a program's setup counts them
+  const config: Record<string, unknown> = {};
+  for (const k of ["tokens", "cost", "seconds"] as const) if (o[k] !== undefined) config[k] = o[k];
+  if (o.prices && Object.keys(o.prices).length) {
+    config["prices"] = Object.fromEntries(Object.keys(o.prices).map((m) => [m, priceJson(pricing(o.prices!, m)!)]));
+  }
+  config["then"] = then;
+  return new Plugin(o.name ?? "limits", { version: "1.0.0", description: "stop a call tree when it used enough tokens, money or time", config })
     .beforeCall((call: BeforeCallHook) => {
       let hit = reached(call.spent, o);
       if (!hit.length && o.cost !== undefined && typeof call.lm === "string" && pricing(o.prices ?? {}, call.lm) === null) {
@@ -283,7 +309,8 @@ export function keepPictures(last = 3, opts: { atOnce?: number; name?: string } 
   const atOnce = opts.atOnce ?? 1;
   if (!Number.isInteger(last) || last < 0) throw new TypeError("last is how many of the newest pictures stay shown (0 or more)");
   if (!Number.isInteger(atOnce) || atOnce < 1) throw new TypeError("atOnce is 1 or more");
-  return new Plugin(opts.name ?? "keep-pictures", { version: "1.0.0", description: "show a tool loop only its newest pictures" })
+  return new Plugin(opts.name ?? "keep-pictures", { version: "1.0.0", description: "show a tool loop only its newest pictures",
+    config: { last, at_once: atOnce } })
     .step((s: StepHook) => {
       const replace = picturesToDrop(s.results, last, atOnce);
       return Object.keys(replace).length ? { replace } : undefined;

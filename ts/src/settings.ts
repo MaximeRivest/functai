@@ -26,6 +26,7 @@ import type { Capabilities } from "./models.ts";
 import { checkCacheSetting, type CacheSetting } from "./replies.ts";
 import { checkApprove, type ApproveSetting } from "./tools.ts";
 import { checkPlugins, type Plugin } from "./plugins.ts";
+import { byCodePoint, copyData } from "./values.ts";
 
 /** What calls go through: an lm15 `LMRouter`, or anything with its `resolve` and `complete` (a fake, in tests). */
 export interface Router {
@@ -33,6 +34,9 @@ export interface Router {
   complete(request: Request, opts?: { signal?: AbortSignal }): Promise<Response>;
   stream?(request: Request, opts?: { signal?: AbortSignal }): AsyncIterable<StreamEvent>;
 }
+
+/** A wall programs run behind, as the host says it (calls.md, *Reach*). */
+export type Wall = string | { readonly name: string; readonly domains?: readonly string[]; readonly secrets?: readonly string[]; readonly limits?: Readonly<Record<string, unknown>> };
 
 export interface Settings {
   /** The model: `"gpt-4.1-mini"`, `"claude-haiku-4-5"`, `"groq:openai/gpt-oss-120b"`, … */
@@ -73,6 +77,14 @@ export interface Settings {
    * still raises.
    */
   onUnreadable?: "raise" | "record";
+  /**
+   * The wall the host runs programs behind (calls.md, *Reach*): a name
+   * (`"srt"`: made from each program's needs), or `{ name, domains?, secrets?,
+   * limits? }` (what it lets through, and its limits). Unset: none it says,
+   * so a program's reach is open. A program that needs what the wall does
+   * not let through is refused before its code runs (`ReachError`).
+   */
+  wall?: Wall | null;
   /** Re-sends after a transient provider error (default 3). */
   apiRetries?: number;
   /** The longest a provider may ask to wait before a re-send, in seconds (default 60). A longer
@@ -188,6 +200,63 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
   if (wait !== undefined && wait !== null && !(typeof wait === "number" && wait >= 0)) {
     throw new TypeError(`${where}: apiMaxWait is a number of seconds, at least 0`);
   }
+  if (settings.wall !== undefined && settings.wall !== null) wallOf(settings.wall, where);
+}
+
+/** A domain a program needs (calls.md, *Reach*): a host name, or `*.` and one (every name under it). */
+const DOMAIN = /^(\*\.)?[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)*$/;
+
+/** What code needs to reach, as data (tools.md, *What a tool needs*): domains in lower case, each list sorted and once each. */
+export interface Needs {
+  readonly domains: readonly string[];
+  readonly secrets: readonly string[];
+}
+
+/** `{ domains?, secrets? }` checked and written as data; `undefined` when nothing was said. */
+export function needsOf(value: unknown, where: string): Needs | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (typeof value !== "object" || Array.isArray(value) || Object.keys(value).some((k) => k !== "domains" && k !== "secrets")) {
+    throw new TypeError(`${where}: needs is { domains?: [...], secrets?: [...] }: the host names its code reaches and the names of the secrets it uses`);
+  }
+  const out: Record<string, string[]> = {};
+  for (const key of ["domains", "secrets"] as const) {
+    const items = (value as Record<string, unknown>)[key] ?? [];
+    if (!Array.isArray(items) || !items.every((x) => typeof x === "string" && x.trim())) throw new TypeError(`${where}: needs.${key} is a list of names`);
+    let list = items as string[];
+    if (key === "domains") {
+      list = list.map((x) => x.trim().toLowerCase());
+      const bad = list.find((x) => !DOMAIN.test(x));
+      if (bad !== undefined) throw new TypeError(`${where}: ${JSON.stringify(bad)} is not a host name (api.example.com) or *. and one (*.example.com)`);
+    }
+    out[key] = [...new Set(list)].sort(byCodePoint);
+  }
+  return { domains: out["domains"]!, secrets: out["secrets"]! };
+}
+
+/** Several programs' needs as one; `undefined` when none says any. */
+export function mergedNeeds(...needs: (Needs | undefined)[]): Needs | undefined {
+  const said = needs.filter((n): n is Needs => n !== undefined);
+  if (!said.length) return undefined;
+  const all = (k: "domains" | "secrets") => [...new Set(said.flatMap((n) => n[k]))].sort(byCodePoint);
+  return { domains: all("domains"), secrets: all("secrets") };
+}
+
+/** The `wall` setting as data: `{ name, domains?, secrets?, limits? }`. */
+export function wallOf(wall: Wall, where = "wall"): { name: string; domains?: string[]; secrets?: string[]; limits?: Record<string, unknown> } {
+  if (typeof wall === "string" && wall.trim()) return { name: wall };
+  if (typeof wall !== "object" || wall === null || Array.isArray(wall) || typeof wall.name !== "string" || !wall.name.trim()
+    || Object.keys(wall).some((k) => !["name", "domains", "secrets", "limits"].includes(k))) {
+    throw new TypeError(`${where}: wall is the name of the wall programs run behind ("srt"), or { name, domains?, secrets?, limits? }`);
+  }
+  const lets = needsOf({ ...(wall.domains !== undefined ? { domains: wall.domains } : {}), ...(wall.secrets !== undefined ? { secrets: wall.secrets } : {}) }, `${where}: wall`)!;
+  const out: { name: string; domains?: string[]; secrets?: string[]; limits?: Record<string, unknown> } = { name: wall.name };
+  if (wall.domains !== undefined) out.domains = [...lets.domains];
+  if (wall.secrets !== undefined) out.secrets = [...lets.secrets];
+  if (wall.limits !== undefined) {
+    if (typeof wall.limits !== "object" || wall.limits === null || Array.isArray(wall.limits)) throw new TypeError(`${where}: wall.limits is an object`);
+    out.limits = copyData(wall.limits) as Record<string, unknown>;
+  }
+  return out;
 }
 
 /**
