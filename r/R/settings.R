@@ -8,7 +8,7 @@ SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "see
               "module", "include_fn_name", "capabilities", "retries", "api_retries", "api_max_wait", "max_steps", "tool_errors",
               "log_calls", "log_content", "caller", "concurrency", "on_error", "observers", "journal", "program_observers",
               "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below",
-              "api_key", "base_url", "on_unreadable")
+              "api_key", "base_url", "on_unreadable", "wall")
 
 check_settings <- function(s, call = rlang::caller_env()) {
   twice <- unique(names(s)[duplicated(names(s))])
@@ -36,6 +36,9 @@ check_settings <- function(s, call = rlang::caller_env()) {
   for (k in intersect(c("api_key", "base_url"), names(s)))
     if (!is.null(s[[k]]) && !(rlang::is_string(s[[k]]) && nzchar(s[[k]]))) cli::cli_abort("{.arg {k}} is one string", call = call)
   if ("plugins" %in% names(s)) s["plugins"] <- list(check_plugins(s$plugins, call = call))
+  if ("wall" %in% names(s)) s["wall"] <- list(check_wall(s$wall, call = call))
+  if ("log_calls" %in% names(s) && !is.null(s$log_calls) && !rlang::is_bool(s$log_calls) && !is_str(s$log_calls) && !is_call_store(s$log_calls))
+    cli::cli_abort("{.arg log_calls} is a folder, TRUE, FALSE, or a store of one's own ({.fn memory_calls}: an object with {.code $append(record)} and {.code $read()})", call = call)
   if ("approve" %in% names(s)) s["approve"] <- list(check_approve(s$approve, call = call))
   s
 }
@@ -90,7 +93,13 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #'   cannot be read once the re-asks are spent ends the call well with no
 #'   answer, `NA`, `predict()`'s `.error` saying why, recorded with no outputs
 #'   and the refusal as its error, and a conversation goes on past it; for
-#'   long runs that must not stop at one bad reply).
+#'   long runs that must not stop at one bad reply); `wall` (the wall the host
+#'   runs programs behind: `NULL`, none it says, so what a program may reach
+#'   is open; a name, `"srt"`, a wall made from each program's needs; or
+#'   `list(name, domains, secrets, limits)`, what it lets through: a program
+#'   that needs what its wall does not let through is refused before its
+#'   first call, `needs-unmet`). `log_calls` may be a store of one's own
+#'   ([memory_calls()]).
 #' @return The settings in force, invisibly (`ai_config()`), or the value of
 #'   `code` (`with_ai_config()`).
 #' @examples

@@ -303,6 +303,8 @@ program_of <- function(core, version = NULL) {
               signature = signature_id(signature_of(core, s)), interface = interface_signature(interface_of(core)),
               answer = answer_name(core))
     if (!is.null(core$saved)) p$saved <- core$saved
+    setup <- known_setup(make_fn(core))                # what it runs on (calls.md, Setups)
+    if (!is.null(setup)) p$setup <- setup
     if (!is.null(core$file)) p$file <- core$file
     p
   }
@@ -378,6 +380,7 @@ run_rows <- function(core, rows, extra = list()) {
     calls[[i]] <- call
     err <- call_begin(call)
     if (is.null(err) && misfit) err <- misfit_error(core, rows[[i]])
+    if (is.null(err)) err <- tryCatch({ check_reach(make_fn(core), s); NULL }, error = identity)   # calls.md, Reach
     if (is.null(err)) {
       hooked <- tryCatch(before_call_hooks(core, call, s, rows[[i]], plan, past), error = identity)
       if (inherits(hooked, "error")) err <- hooked

@@ -9,14 +9,22 @@
 
 OUTSIDE_PROGRAM_KEYS <- c("name", "kind", "module", "version", "signature", "interface", "answer")
 
-new_view <- function(name = c("outside", "full", "kept"), answer_from = NULL) {
+new_view <- function(name = c("outside", "full", "kept"), answer_from = NULL, notes = character(0)) {
   v <- new.env(parent = emptyenv())
   v$name <- match.arg(name)
   v$answer_from <- if (is.null(answer_from)) NULL else if (is.character(answer_from)) answer_from
     else if (inherits(answer_from, "functai_fn")) core_of(answer_from)$definition$name else as.character(answer_from)
   v$root <- NULL; v$root_function <- NULL; v$root_kind <- "ai"; v$answer <- "result"
   v$forwarded <- list(); v$requests <- 0L; v$last <- NULL; v$caller_asked <- character(0)
+  v$notes <- as.character(unlist(notes))       # the notes the outermost program declares outside: shown, re-addressed to it
   v
+}
+
+# The names of the notes a program declares outside (its interface's): a view of its calls shows those.
+outside_notes <- function(p) {
+  core <- tryCatch(program_core_of(p), error = function(e) NULL)
+  notes <- declared_notes(core)
+  as.character(unlist(lapply(Filter(function(n) isTRUE(n$outside), notes %||% list()), function(n) n$name)))
 }
 
 view_link <- function(v, e) { out <- relinked(e, v$last); v$last <- event_position(out); out }
@@ -29,6 +37,10 @@ view_event <- function(v, e) {
     if (e$kind != "started") return(NULL)
     v$root <- e$call; v$root_function <- e[["function"]]
     v$root_kind <- e$program$kind %||% "ai"; v$answer <- e$program$answer %||% "result"
+  }
+  if (e$kind == "note") {                    # a note declared outside, made by any call of the tree: the outermost's
+    if (!isTRUE(e$name %in% v$notes)) return(NULL)
+    return(view_link(v, with_kind(e, "note", v$root, v$root_function, event_data(e))))
   }
   if (identical(e$call, v$root)) view_root(v, e) else view_inside(v, e)
 }
@@ -84,9 +96,11 @@ view_as_request <- function(v, e) {
 #' @param events A call tree's events (its whole log, or its kept form).
 #' @param answer_from The AI function (or its name) whose answer is a
 #'   program's answer, shown as the program's as it is written.
+#' @param notes The names of the notes the outermost program declares
+#'   `outside`: shown, as the outermost program's.
 #' @return The events of the view.
 #' @export
-outside_view <- function(events, answer_from = NULL) {
-  v <- new_view("outside", answer_from)
+outside_view <- function(events, answer_from = NULL, notes = character(0)) {
+  v <- new_view("outside", answer_from, notes)
   Filter(Negate(is.null), lapply(events, function(e) view_event(v, as_event(e))))
 }

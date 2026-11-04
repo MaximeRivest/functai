@@ -33,6 +33,13 @@
 #' @param .answer_from The AI function whose answer is the program's, shown
 #'   as the program's answer as it is written (a served program's callers
 #'   see it stream).
+#' @param .notes The notes its code makes ([ai_note()]), by name: a type,
+#'   or [note_type()]. Declared, each note is checked where it is made (a
+#'   name it does not declare, or data that does not fit, refuses
+#'   `interface-note`), and those declared `outside` are shown to a caller
+#'   who sees only the program's boundary.
+#' @param .needs What its own code reaches, as in [ai_tool()]: `list(domains
+#'   = ..., secrets = ...)`.
 #' @return A program (class `functai_program`), a function.
 #' @examples
 #' team <- ai(team ~ message, "Which team should answer?", team = choice("shipping", "billing"))
@@ -42,7 +49,8 @@
 #' })
 #' support
 #' @export
-ai_program <- function(.formula, .description = "", .body, ..., .data = NULL, .name = NULL, .defined_in = NULL, .answer_from = NULL) {
+ai_program <- function(.formula, .description = "", .body, ..., .data = NULL, .name = NULL, .defined_in = NULL, .answer_from = NULL,
+                       .notes = NULL, .needs = NULL) {
   here <- rlang::current_env()
   if (missing(.body) || !is.function(.body)) cli::cli_abort(c("{.fn ai_program} takes the program's code: a function of its inputs",
     i = "{.code ai_program(reply ~ message, \"Answer.\", function(message) answer(message))}"))
@@ -70,7 +78,8 @@ ai_program <- function(.formula, .description = "", .body, ..., .data = NULL, .n
     cli::cli_abort("the program's code takes its inputs by name: it has no argument {.field {missing_args}}")
   core <- list(kind = "module", definition = list(name = name, description = .description, inputs = inputs, outputs = outputs),
                own = settings, single = single, columns = columns, body = .body, module = .defined_in %||% "__main__",
-               file = if (is.null(.defined_in)) top_level_file() else NULL, answer_from = .answer_from)
+               file = if (is.null(.defined_in)) top_level_file() else NULL, answer_from = .answer_from,
+               notes = notes_of(.notes, sprintf("ai_program %s", name)), needs = needs_value(.needs, sprintf("ai_program %s", name)))
   check_program(core, call = here)
   make_program(core)
 }
@@ -90,11 +99,13 @@ opaque <- function() { f <- new_field(lmcc::jobj(), "opaque"); f$opaque <- TRUE;
 #' @param name The program's name.
 #' @param ai Whether the interface is an AI function's (its shapes may carry
 #'   lmcc's other keywords).
+#' @param needs What its own code reaches, as in [ai_tool()].
 #' @export
-program_from_interface <- function(interface, .body, name = "program", .defined_in = NULL, ai = FALSE) {
-  core <- list(kind = "module", interface = json_normal(interface), own = list(), body = .body, module = .defined_in %||% "__main__")
+program_from_interface <- function(interface, .body, name = "program", .defined_in = NULL, ai = FALSE, needs = NULL) {
+  core <- list(kind = "module", interface = json_normal(interface), own = list(), body = .body, module = .defined_in %||% "__main__",
+               needs = needs_value(needs, sprintf("program %s", name)))
   problem <- interface_problem(core$interface, ai = ai)
-  if (!is.null(problem)) refuse("interface-malformed", c("{name} cannot be defined: {interface_fault(core$interface, problem$field)}"), field = problem$field)
+  if (!is.null(problem)) refuse("interface-malformed", c("{name} cannot be defined: {interface_fault(core$interface, problem$field, problem$why)}"), field = problem$field)
   fields <- function(side) stats::setNames(lapply(core$interface[[side]], function(f) {
     out <- if (isTRUE(f$opaque)) opaque() else field_from_shape(f$shape, f$desc)
     out$shape <- f$shape; out$optional <- isTRUE(f$optional); out$opaque <- isTRUE(f$opaque)
@@ -109,7 +120,7 @@ program_from_interface <- function(interface, .body, name = "program", .defined_
 check_program <- function(core, call = NULL) {
   iface <- program_interface(core)
   problem <- interface_problem(iface, ai = FALSE)
-  if (!is.null(problem)) refuse("interface-malformed", c("{.fn {core$definition$name}} cannot be defined: {interface_fault(iface, problem$field)}",
+  if (!is.null(problem)) refuse("interface-malformed", c("{.fn {core$definition$name}} cannot be defined: {interface_fault(iface, problem$field, problem$why)}",
     i = "a program's fields use only the types every language checks: see {.fn ai_interface}"), field = problem$field, call = call)
   invisible(core)
 }
@@ -144,8 +155,10 @@ program_interface <- function(core) {
     if (isTRUE(f$optional)) out$optional <- TRUE
     out
   }
-  json_normal(list(description = d$description, inputs = unname(Map(field, names(d$inputs), d$inputs)),
-                   outputs = unname(Map(field, names(d$outputs), d$outputs))))
+  out <- list(description = d$description, inputs = unname(Map(field, names(d$inputs), d$inputs)),
+              outputs = unname(Map(field, names(d$outputs), d$outputs)))
+  if (!is.null(core$notes)) out$notes <- core$notes        # in its version too: its interface is
+  json_normal(out)
 }
 
 # The AI functions and programs a program's code names, by key: what its
@@ -187,6 +200,8 @@ program_json <- function(core) {
                 interface = interface_signature(iface), answer = iface$outputs[[length(iface$outputs)]]$name, remote = core$remote$url))
   p <- list(name = core$definition$name, kind = "module", module = core$module, version = program_version(core),
             interface = interface_signature(iface), answer = iface$outputs[[length(iface$outputs)]]$name)
+  setup <- known_setup(make_program(core))           # what it runs on (calls.md, Setups)
+  if (!is.null(setup)) p$setup <- setup
   if (!is.null(core$file)) p$file <- core$file
   p
 }
@@ -312,7 +327,7 @@ program_outputs <- function(core, value) {
   list(outputs = out, fault = NULL)
 }
 
-sort_code_points <- function(x) x[order(x, method = "radix")]
+sort_code_points <- function(x) if (!length(x)) character(0) else x[order(x, method = "radix")]
 
 output_fault <- function(f, name, json, value) {
   if (isTRUE(f$opaque)) return(NULL)
@@ -359,6 +374,7 @@ run_program_row <- function(core, given, i, own_extra = list()) {
   out <- tryCatch(list(value = run_call(call, function(call) {
     if (misfit) stop(rlang::error_cnd(c("functai_interface_input", "functai_refusal"), code = "interface-input", field = row$field,
                                       message = sprintf("%s: input %s", core$definition$name, row$message)))
+    check_reach(make_program(core), s)                   # what it needs, against the wall it runs behind (calls.md, Reach)
     value <- do.call(core$body, attr(row, "code"))
     checked <- program_outputs(core, value)
     if (!is.null(checked$fault)) stop(rlang::error_cnd(c("functai_interface_output", "functai_refusal"), code = "interface-output",

@@ -129,3 +129,235 @@ with_no_stream <- function(code) {
   on.exit({ the$current <- old$current; the$stream_opening <- old$opening })
   force(code)
 }
+
+# ---------------------------------------------------------------- the answer so far, read by its shape
+
+PARTIAL_SPACE <- c(" ", "\t", "\n", "\r")
+PARTIAL_HEX <- strsplit("0123456789abcdefABCDEF", "")[[1L]]
+PARTIAL_ESCAPES <- c('"' = '"', "\\" = "\\", "/" = "/", b = "\b", f = "\f", n = "\n", r = "\r", t = "\t")
+PARTIAL_NUMBER <- "^-?(0|[1-9][0-9]*)(\\.[0-9]+)?([eE][+-]?[0-9]+)?$"
+not_json <- function() stop(structure(class = c("functai_not_json", "error", "condition"), list(message = "not JSON", call = NULL)))
+NOT_YET <- structure(list(), class = "functai_not_yet")
+is_not_yet <- function(x) inherits(x, "functai_not_yet")
+
+# A shape as the reader follows it: $ref followed; an anyOf of one shape and
+# null read as that shape; any other anyOf, or what it cannot follow, {}.
+partial_resolve <- function(shape, root) {
+  seen <- character(0)
+  while (is.list(shape) && is_str(shape[["$ref"]])) {
+    ref <- shape[["$ref"]]
+    if (ref %in% seen || !startsWith(ref, "#/$defs/") || !is.list(root)) return(list())
+    seen <- c(seen, ref)
+    shape <- root[["$defs"]][[substring(ref, 9L)]] %||% list()
+  }
+  if (!is.list(shape)) return(list())
+  options <- shape$anyOf
+  if (is.list(options)) {
+    is_null <- function(o) is.list(o) && length(o) == 1L && identical(o$type, "null")
+    rest <- Filter(Negate(is_null), options)
+    return(if (length(rest) == 1L && length(options) == 2L) partial_resolve(rest[[1L]], root) else list())
+  }
+  shape
+}
+
+partial_choice <- function(shape) has_key(shape, "enum") || has_key(shape, "const")
+
+partial_member <- function(shape, key, root) {
+  props <- shape$properties
+  if (is.list(props) && has_key(props, key)) return(partial_resolve(props[[key]], root))
+  extra <- shape$additionalProperties
+  if (is.list(extra)) partial_resolve(extra, root) else list()
+}
+
+partial_item <- function(shape, i, root) {                    # i: the item's 0-based place
+  prefix <- shape$prefixItems
+  if (is.list(prefix) && i < length(prefix)) return(partial_resolve(prefix[[i + 1L]], root))
+  items <- shape$items
+  if (is.list(items)) partial_resolve(items, root) else list()
+}
+
+# (text so far, index after, closed) for the string whose quote is cs[i].
+partial_string <- function(cs, i) {
+  out <- character(0); n <- length(cs); i <- i + 1L
+  while (i <= n) {
+    c <- cs[[i]]
+    if (c == '"') return(list(text = paste(out, collapse = ""), i = i + 1L, closed = TRUE))
+    if (c != "\\") { out <- c(out, c); i <- i + 1L; next }
+    if (i + 1L > n) break                                       # an escape still being written
+    e <- cs[[i + 1L]]
+    if (e %in% names(PARTIAL_ESCAPES)) { out <- c(out, PARTIAL_ESCAPES[[e]]); i <- i + 2L; next }
+    if (e != "u") not_json()
+    digits <- slice_of(cs, i + 2L, i + 5L)
+    if (!all(digits %in% PARTIAL_HEX)) not_json()
+    if (length(digits) < 4L) break
+    code <- strtoi(paste(digits, collapse = ""), 16L)
+    if (code >= 0xD800 && code < 0xDC00) {                       # a pair: wait for its second half
+      rest <- slice_of(cs, i + 6L, i + 11L)
+      if (length(rest) < 6L) {
+        head <- paste(rest[seq_len(min(2L, length(rest)))], collapse = "")
+        if ((length(rest) && !startsWith("\\u", head)) || !all(rest[-seq_len(min(2L, length(rest)))] %in% PARTIAL_HEX)) not_json()
+        break
+      }
+      if (paste(rest[1:2], collapse = "") != "\\u" || !all(rest[3:6] %in% PARTIAL_HEX)) not_json()
+      low <- strtoi(paste(rest[3:6], collapse = ""), 16L)
+      if (low < 0xDC00 || low >= 0xE000) not_json()
+      out <- c(out, intToUtf8(0x10000 + (code - 0xD800) * 1024 + (low - 0xDC00)))
+      i <- i + 12L; next
+    }
+    out <- c(out, intToUtf8(code))
+    i <- i + 6L
+  }
+  list(text = paste(out, collapse = ""), i = n + 1L, closed = FALSE)
+}
+
+slice_of <- function(cs, a, b) { b <- min(b, length(cs)); if (a > b) character(0) else cs[a:b] }
+
+partial_skip <- function(cs, i) { while (i <= length(cs) && cs[[i]] %in% PARTIAL_SPACE) i <- i + 1L; i }
+
+# list(value or NOT_YET, i after, done)
+partial_value <- function(cs, i, shape, root) {
+  n <- length(cs)
+  i <- partial_skip(cs, i)
+  if (i > n) return(list(value = NOT_YET, i = i, done = FALSE))
+  c <- cs[[i]]
+  if (c == '"') {
+    s <- partial_string(cs, i)
+    if (!s$closed && partial_choice(shape)) return(list(value = NOT_YET, i = s$i, done = FALSE))   # "med" is no value of a choice
+    return(list(value = s$text, i = s$i, done = s$closed))
+  }
+  if (c == "{") {
+    obj <- lmcc::jobj(); i <- i + 1L
+    repeat {
+      i <- partial_skip(cs, i)
+      if (i > n) return(list(value = obj, i = i, done = FALSE))
+      if (cs[[i]] == "}") return(list(value = obj, i = i + 1L, done = TRUE))
+      if (cs[[i]] == ",") { i <- i + 1L; next }
+      if (cs[[i]] != '"') not_json()
+      k <- partial_string(cs, i); i <- k$i
+      if (!k$closed) return(list(value = obj, i = i, done = FALSE))
+      i <- partial_skip(cs, i)
+      if (i > n) return(list(value = obj, i = i, done = FALSE))
+      if (cs[[i]] != ":") not_json()
+      v <- partial_value(cs, i + 1L, partial_member(shape, k$text, root), root); i <- v$i
+      if (!is_not_yet(v$value)) obj[k$text] <- list(v$value)
+      if (!v$done) return(list(value = obj, i = i, done = FALSE))
+    }
+  }
+  if (c == "[") {
+    items <- list(); i <- i + 1L
+    repeat {
+      i <- partial_skip(cs, i)
+      if (i > n) return(list(value = items, i = i, done = FALSE))
+      if (cs[[i]] == "]") return(list(value = items, i = i + 1L, done = TRUE))
+      if (cs[[i]] == ",") { i <- i + 1L; next }
+      v <- partial_value(cs, i, partial_item(shape, length(items), root), root); i <- v$i
+      if (!is_not_yet(v$value)) items[length(items) + 1L] <- list(v$value)
+      if (!v$done) return(list(value = items, i = i, done = FALSE))
+    }
+  }
+  j <- i
+  while (j <= n && !cs[[j]] %in% c(",", "]", "}", PARTIAL_SPACE)) j <- j + 1L
+  if (j > n) return(list(value = NOT_YET, i = j, done = FALSE))   # a number or a word that may still grow: 1 may become 12
+  word <- paste(cs[i:(j - 1L)], collapse = "")
+  if (word == "true") return(list(value = TRUE, i = j, done = TRUE))
+  if (word == "false") return(list(value = FALSE, i = j, done = TRUE))
+  if (word == "null") return(list(value = NULL, i = j, done = TRUE))
+  if (!grepl(PARTIAL_NUMBER, word)) not_json()
+  list(value = if (grepl("[.eE]", word)) as.numeric(word) else { x <- as.numeric(word); if (abs(x) <= .Machine$integer.max) as.integer(x) else x },
+       i = j, done = TRUE)
+}
+
+partial_kind <- function(shape) {
+  s <- partial_resolve(shape, shape)
+  t <- s$type
+  types <- setdiff(if (is.null(t)) "<none>" else unlist(t), "null")
+  if (identical(types, "string") && !partial_choice(s)) return("text")
+  if (length(types) && all(types %in% c("object", "array"))) return("json")
+  "none"
+}
+
+partial_json <- function(text, shape = NULL) {
+  s <- gsub("^[ \t\n\r]+|[ \t\n\r]+$", "", text)
+  if (startsWith(s, "```")) {                                   # a fenced block: read after its first line break
+    k <- regexpr("\n", s, fixed = TRUE)
+    s <- if (k < 0) "" else substring(s, k + 1L)
+    r <- sub("[ \t\n\r]+$", "", s)
+    if (endsWith(r, "```")) s <- substr(r, 1L, nchar(r) - 3L)
+    s <- gsub("^[ \t\n\r]+|[ \t\n\r]+$", "", s)
+  }
+  top <- if (is.null(shape)) list() else partial_resolve(shape, shape)
+  t <- unlist(top$type)
+  opens <- paste(c(if ("object" %in% t) "{", if ("array" %in% t) "["), collapse = "")
+  if (!nzchar(opens)) opens <- "[{"
+  if (!nzchar(s) || !grepl(substr(s, 1L, 1L), opens, fixed = TRUE)) return(NULL)
+  v <- tryCatch(partial_value(strsplit(s, "")[[1L]], 1L, top, shape)$value, functai_not_json = function(e) NOT_YET)
+  if (is_not_yet(v)) NULL else v
+}
+
+#' The answer so far
+#'
+#' The answer a call is writing, read from its text by its shape
+#' (contract/streaming.md, "The answer so far"): the text for a text answer;
+#' the JSON read so far for a record or a list (complete values; a string
+#' still being written as its text so far, unless it is a choice, which waits
+#' for its closing quote: never `"med"` on its way to `"medium"`; a number,
+#' `TRUE`, `FALSE` or `NULL` once a character after it ends it); `NULL` for
+#' any other answer, and when the text is not the start of what the shape
+#' gives. Provisional: the call's value is the typed, checked one. In a
+#' stream's `.each`, collect the answer's `text` events and read them so; a
+#' page that knows the program reads a call's `text` events the same way.
+#' @param text The answer's text so far.
+#' @param shape The answer's shape: an AI function (its answer's), or a JSON
+#'   Schema as a list.
+#' @return A value, or `NULL`.
+#' @examples
+#' shape <- list(type = "object", properties = list(summary = list(type = "string"),
+#'                                                  severity = list(enum = list("low", "medium", "high"))))
+#' answer_so_far('{"summary": "Checkout hi', shape)
+#' answer_so_far('{"summary": "x", "severity": "med', shape)
+#' @export
+answer_so_far <- function(text, shape) {
+  if (inherits(shape, "functai_fn")) { iface <- interface_of(core_of(shape)); shape <- iface$outputs[[length(iface$outputs)]]$shape }
+  kind <- partial_kind(shape)
+  if (kind == "text") return(text)
+  if (kind == "none") return(NULL)
+  partial_json(text, shape)
+}
+
+# ---------------------------------------------------------------- notes (contract/streaming.md, "Notes")
+
+#' Say what happened, from code inside a call
+#'
+#' From a program's code or a tool: `ai_note("screen captured", list(screen =
+#' 4))`. Whatever watches the call sees a `note` event (a stream's `.each`,
+#' an observer, a journal), in its place among the call's events. `data` is
+#' any JSON value; the kept form of a call whose content is not whole keeps
+#' the note's `name` and leaves `data` out. A note is not a value of the
+#' call: the call log does not keep it. Outside any call it does nothing. A
+#' resumed turn does not show again the notes it made before it stopped.
+#'
+#' A program may declare its notes (`ai_program(..., .notes = )`,
+#' `ai_tool(..., .notes = )`: [note_type()]). Then, inside its calls, a note
+#' it does not declare, or whose data does not fit what a program around it
+#' declares, refuses `interface-note` here, whether or not anything watches.
+#' @param name What happened: a non-empty text.
+#' @param data Any JSON value, or `NULL`.
+#' @return Nothing, invisibly.
+#' @examples
+#' ai_note("nothing watches")       # outside any call: nothing happens
+#' @export
+ai_note <- function(name, data = NULL) {
+  if (!is_str(name) || !nzchar(trimws(name))) cli::cli_abort("a note's name is a non-empty text: what happened ({.val screen captured})")
+  call <- the$current
+  if (is.null(call)) return(invisible())
+  chain <- list(); x <- call
+  while (!is.null(x)) { chain <- c(list(declared_notes(x$core)), chain); x <- x$up }
+  if (any(!vapply(chain, is.null, NA))) {                     # declared somewhere: checked (contract/programs.md, Notes)
+    why <- if (!has_json_form(data)) "its data has no JSON form" else note_refusal(chain, name, plain_json(data))
+    if (!is.null(why)) refuse("interface-note", c("{call$name}: the note {.val {name}} is refused: {why}"), field = name)
+    data <- plain_json(data)
+  }
+  d <- list(name = name); d["data"] <- list(value_json(data))
+  call_emit(call, "note", d)
+  invisible()
+}

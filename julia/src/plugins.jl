@@ -19,7 +19,8 @@ const PLUGIN_APIS = (1,)
 const HOOKS = OrderedDict{Symbol,Tuple{Symbol,Tuple}}(
     :turn_start => (:change, (:inputs,)),
     :context => (:change, (:keep, :without, :sections)),
-    :before_call => (:change, (:instruction, :sections, :lm, :settings, :tools)),
+    :before_call => (:change, (:instruction, :sections, :lm, :settings, :tools, :stop)),
+    :step => (:change, (:tools, :reminder, :replace, :stop)),
     :request => (:change, ()),                     # returns an LM15.Request: the escape hatch
     :tool_call => (:change, (:inputs, :block)),
     :tool_result => (:change, (:output,)),
@@ -38,7 +39,8 @@ and returns a [`Change`](@ref) (or `nothing`: no opinion). The hooks:
 |---|---|---|
 | `turn_start` | a conversation's turn is sent, before it is recorded | `inputs` |
 | `context` | its earlier turns are chosen | `keep`, `without`, `sections` |
-| `before_call` | an AI function is about to be asked (helpers too) | `instruction`, `sections`, `lm`, `settings`, `tools` |
+| `before_call` | an AI function is about to be asked (helpers too) | `instruction`, `sections`, `lm`, `settings`, `tools`, `stop` |
+| `step` | a call with tools is about to ask the model again, after its tools ran | `tools`, `reminder`, `replace`, `stop` |
 | `request` | a provider request is about to be sent | returns another `LM15.Request` |
 | `tool_call` | a tool is about to run | `inputs`, `block`; or `ask(event)` a person |
 | `tool_result` | a tool ran | `output` |
@@ -54,7 +56,9 @@ configure!(plugins = [guard])
 
 `name` is lower-case letters, digits, `_` and `-` (its changes and entries
 are named by it); `api` is the plugin API it was written for (`1`; another
-refuses `plugin-api`).
+refuses `plugin-api`); `config` its settings as JSON, which a program's
+[`setup`](@ref) counts (two plugins of one name and version with other
+settings run otherwise).
 """
 struct Plugin
     name::String
@@ -62,13 +66,15 @@ struct Plugin
     api::Int
     description::String
     handlers::OrderedDict{Symbol,Vector{Any}}
+    config::Any                      # its settings, as JSON (a setup counts them), or nothing
 end
-function Plugin(name::AbstractString; version="0.0.0", api::Integer=PLUGIN_API, description::AbstractString="", hooks...)
+function Plugin(name::AbstractString; version="0.0.0", api::Integer=PLUGIN_API, description::AbstractString="", config=nothing, hooks...)
     occursin(PLUGIN_NAME, name) || throw(PluginError("plugin-name", "a plugin's name is lower-case letters, digits, '_' or '-' " *
                                                      "(at most 64), starting with a letter; not $(repr(name))"))
     api in PLUGIN_APIS || throw(PluginError("plugin-api", "plugin $name is written for plugin API $api; this FunctAI implements " *
                                             join(PLUGIN_APIS, ", "); plugin=name))
-    p = Plugin(String(name), string(version), Int(api), String(description), OrderedDict{Symbol,Vector{Any}}())
+    data = config === nothing ? nothing : jsonvalue(config)
+    p = Plugin(String(name), string(version), Int(api), String(description), OrderedDict{Symbol,Vector{Any}}(), data)
     for (hook, f) in hooks
         on!(f, p, hook)
     end
@@ -81,7 +87,7 @@ Base.show(io::IO, p::Plugin) = print(io, "Plugin(", repr(p.name), ", ", p.versio
     on!(f, plugin, hook)
 
 Register `f` (a function of one event) for `hook` (`:turn_start`, `:context`,
-`:before_call`, `:request`, `:tool_call`, `:tool_result`, `:turn_end`). Within
+`:before_call`, `:step`, `:request`, `:tool_call`, `:tool_result`, `:turn_end`). Within
 a plugin, handlers run in the order they were registered. A hook that does
 not exist refuses `plugin-hook`: a misspelt hook would otherwise never run.
 
@@ -101,11 +107,15 @@ function on!(f, p::Plugin, hook)
 end
 
 "A plugin's manifest, as data: name, version, api, description, the hooks it uses."
-describe(p::Plugin) = LMCC.jobj("name" => p.name, "version" => p.version, "api" => p.api, "description" => p.description,
-                                "hooks" => Any[String(h) for h in sort!(collect(keys(p.handlers)))])
+function describe(p::Plugin)
+    out = LMCC.jobj("name" => p.name, "version" => p.version, "api" => p.api, "description" => p.description,
+                    "hooks" => Any[String(h) for h in sort!(collect(keys(p.handlers)))])
+    p.config === nothing || (out["config"] = LMCC.deepcopy_json(p.config))
+    out
+end
 
 """
-    Change(; instruction, sections, lm, settings, tools, keep, without, inputs, block, output)
+    Change(; instruction, sections, lm, settings, tools, keep, without, inputs, block, output, reminder, replace, stop)
 
 What a hook changes, as data (contract/plugins.md, "The fields"). Each hook
 accepts some fields; another refuses `plugin-change`.
@@ -114,12 +124,20 @@ accepts some fields; another refuses `plugin-change`.
   added after it, in order (`before_call`, `context`);
 - `lm`: the model for this call; `settings`: lm15 settings for it
   (`temperature`, `max_tokens`, `reasoning`, …) (`before_call`);
-- `tools`: the names of the tools offered, from the function's own (`before_call`);
+- `tools`: the names of the tools offered, from the function's own (`before_call`;
+  `step`: from those the call was offered, `[]` for none: the model must answer);
 - `keep`: the ids of the earlier turns shown; `without`: fields left out of
   earlier turns, a list for every turn or `Dict(turn => names)` (`context`);
 - `inputs`: inputs replaced, by name (`turn_start`: the turn's; `tool_call`: the tool's);
 - `block`: the tool may not run, and why (`tool_call`);
-- `output`: the tool's result as the model is shown it (`tool_result`).
+- `output`: the tool's result as the model is shown it: text, or a list of
+  lm15 parts (a picture with a caption) (`tool_result`);
+- `reminder`: text the model is shown after this step's tool results, in
+  this request and the ones after (`step`);
+- `replace`: earlier tool results, by invocation (`Dict(3 => "(cut)")`),
+  shown as this from this request on: text, or a list of lm15 parts (`step`);
+- `stop`: the call stops here, and why (`before_call`, `step`): it throws
+  [`PluginError`](@ref) `plugin-stopped`, the change recorded first.
 """
 struct Change
     instruction::Any
@@ -132,10 +150,14 @@ struct Change
     inputs::Any
     block::Any
     output::Any
+    reminder::Any
+    replace::Any
+    stop::Any
 end
 const CHANGE_FIELDS = fieldnames(Change)
 Change(; instruction=nothing, sections=nothing, lm=nothing, settings=nothing, tools=nothing, keep=nothing, without=nothing,
-       inputs=nothing, block=nothing, output=nothing) = Change(instruction, sections, lm, settings, tools, keep, without, inputs, block, output)
+       inputs=nothing, block=nothing, output=nothing, reminder=nothing, replace=nothing, stop=nothing) =
+    Change(instruction, sections, lm, settings, tools, keep, without, inputs, block, output, reminder, replace, stop)
 "The fields a change sets, in order."
 change_fields(c::Change) = [k for k in CHANGE_FIELDS if getfield(c, k) !== nothing]
 function Base.show(io::IO, c::Change)
@@ -148,7 +170,8 @@ function change_record(c::Change)
     for k in change_fields(c)
         v = getfield(c, k)
         out[String(k)] = k in (:sections, :tools, :keep) ? Any[String(x) for x in v] :
-                         k in (:settings, :inputs) ? JObj(String(a) => logvalue(b) for (a, b) in pairs(v)) : logvalue(v)
+                         k in (:settings, :inputs) ? JObj(String(a) => logvalue(b) for (a, b) in pairs(v)) :
+                         k === :replace ? JObj(string(a) => logvalue(b) for (a, b) in pairs(v)) : logvalue(v)
     end
     out
 end
@@ -278,12 +301,15 @@ function run_hook(hook::Symbol, plugins, event, applied::Applied, apply)
                                                 "(it may change $(isempty(allowed) ? "nothing" : join(allowed, ", ")))";
                                                 plugin=p.name, hook=String(hook)))
             isempty(fields) && continue
+            event.plugin = p                        # a change that stops the call names its plugin
             try
                 apply(got)
             catch err
                 err isa PluginError && rethrow()
                 err isa Union{ArgumentError,MethodError,KeyError,InterfaceError} || rethrow()
                 throw(PluginError("plugin-change", "plugin $(p.name): $hook: $(error_message(err))"; plugin=p.name, hook=String(hook)))
+            finally
+                event.plugin = nothing
             end
             add!(applied, p, hook, change_record(got))
         end
@@ -339,7 +365,8 @@ An AI function about to be asked: `function` (its name), `program`, `inputs`
 (bound), `instruction` (as it stands), `lm` and `settings` (as they stand),
 `tools` (the names offered), `all_tools` (its own), `sections` so far,
 `path` (its place in the call tree by names: `support/answer`),
-`conversation` and `turn` (when it runs in one).
+`conversation` and `turn` (when it runs in one), `spent` (what its call
+tree spent so far: a [`Spent`](@ref)).
 """
 mutable struct BeforeCallEvent <: HookEvent
     instruction::String
@@ -356,6 +383,7 @@ mutable struct BeforeCallEvent <: HookEvent
     turn::Union{Nothing,String}
     plugin::Union{Nothing,Plugin}
     turn_run::Any
+    spent::Any
 end
 
 "The provider request about to be sent (`request`, an `LM15.Request`): a handler may return another. `function`, `path`."
@@ -390,11 +418,15 @@ mutable struct ToolCallEvent <: HookEvent
     refused::Union{Nothing,String}
 end
 
-"A tool ran: `name`, `input`, `output` (text, as it stands), `path`, `invocation`, `function`."
+"""
+A tool ran: `name`, `input`, `output` (as it stands: text, or a list of lm15
+parts in their JSON form when it holds a picture, a sound or a document),
+`path`, `invocation`, `function`.
+"""
 mutable struct ToolResultEvent <: HookEvent
     name::String
     input::Any
-    output::String
+    output::Any
     path::String
     invocation::Int
     var"function"::String
@@ -535,7 +567,7 @@ function shape_call(f, inputs, s::Dict{Symbol,Any}, call, base_instruction::Abst
     event = BeforeCallEvent(String(base_instruction), f.definition.name, f, OrderedDict{String,Any}(String(k) => v for (k, v) in inputs),
                             get(s, :lm, nothing), shown, copy(all_tools), copy(all_tools), copy(sections), names_path(call),
                             conv !== nothing ? conv["id"] : run !== nothing ? run.conv.id : nothing,
-                            conv !== nothing ? conv["turn"] : run !== nothing ? run.turn : nothing, nothing, run)
+                            conv !== nothing ? conv["turn"] : run !== nothing ? run.turn : nothing, nothing, run, spent_of(call))
     out = copy(s)
     offered = Ref{Any}(nothing)
     instruction = Ref{Any}(nothing)
@@ -564,6 +596,7 @@ function shape_call(f, inputs, s::Dict{Symbol,Any}, call, base_instruction::Abst
                                                     "$(isempty(all_tools) ? "none" : join(all_tools, ", ")))"))
             offered[] = event.tools = [n for n in all_tools if n in names]
         end
+        c.stop === nothing || stop_here(c.stop, event, :before_call, applied, f.definition.name, call)
     end)
     Shaped(out, instruction[], event.sections, given, offered[], applied)
 end
@@ -652,18 +685,255 @@ function plugin_tool_call(call, a::Approval, s::Dict{Symbol,Any})
     (event.input, nothing)
 end
 
-"`tool_result`: what the model is shown of a tool's result."
-function plugin_tool_result(call, a::Approval, input, output::AbstractString)
+"`tool_result`: what the model is shown of a tool's result (text, or a list of lm15 parts)."
+function plugin_tool_result(call, a::Approval, input, output)
     plugins = plugins_around(call.fn isa AIFunction ? call.fn.own : Dict{Symbol,Any}())
-    has_hook(plugins, :tool_result) || return String(output)
-    event = ToolResultEvent(a.name, input, String(output), a.path, a.invocation, call.name, nothing, call.turn_run)
+    has_hook(plugins, :tool_result) || return output
+    event = ToolResultEvent(a.name, input, LMCC.deepcopy_json(output), a.path, a.invocation, call.name, nothing, call.turn_run)
     applied = Applied()
     run_hook(:tool_result, plugins, event, applied, function (c)
-        c.output isa AbstractString || throw(ArgumentError("output is the text the model is shown"))
-        event.output = String(c.output)
+        event.output = check_result(c.output, "output")
     end)
     append!(call.changes, applied.items)
     event.output
+end
+
+# ------------------------------------------------------------------ what a tree spent (contract/plugins.md)
+
+"""
+    Spent
+
+What a call tree spent so far in this process (contract/plugins.md, *What a
+tree spent*): each request a provider answered, as `(model, usage)` (lm15's
+token counts, by name); replies from the reply cache and replies a resumed
+turn reuses cost nothing now and are not in it. `requests`, `usage` (summed:
+a counter only when every request reported it), `tokens` (`total_tokens`
+summed, or `nothing` when a request did not report it), `seconds` (since the
+tree's outermost call started), `reported` (dollars code in the tree said it
+spent: [`spend`](@ref)); `FunctAI.cost(spent, prices)` counts both.
+"""
+struct Spent
+    exchanges::Vector{Tuple{String,JObj}}
+    seconds::Float64
+    reported::Float64
+end
+Spent(exchanges, seconds) = Spent(exchanges, seconds, 0.0)
+Spent(exchanges::AbstractVector, seconds::Real, reported::Real=0.0) =
+    Spent(Tuple{String,JObj}[(String(m), JObj(String(k) => v for (k, v) in u)) for (m, u) in exchanges], Float64(seconds), Float64(reported))
+function Base.getproperty(s::Spent, name::Symbol)
+    name === :requests && return length(getfield(s, :exchanges))
+    name === :usage && return sum_usage(u for (_, u) in getfield(s, :exchanges))
+    name === :tokens && return isempty(getfield(s, :exchanges)) ? 0 : get(s.usage, "total_tokens", nothing)
+    getfield(s, name)
+end
+Base.propertynames(::Spent) = (:exchanges, :seconds, :reported, :requests, :usage, :tokens)
+Base.show(io::IO, s::Spent) = print(io, "Spent(", s.requests, " requests, ", something(s.tokens, "?"), " tokens, ",
+                                    round(s.seconds; digits=1), " s", s.reported > 0 ? ", \$$(s.reported) reported" : "", ")")
+
+"""
+`prices[model]` as an lm15 `InferencePricing`, or `nothing`: a model named
+`provider:model` is priced by its own name when the prices do not name it whole.
+"""
+function pricing(prices, model::AbstractString)
+    prices === nothing && return nothing
+    get_price(k) = prices isa NamedTuple ? get(prices, Symbol(k), nothing) : get(prices, k, nothing)
+    p = get_price(String(model))
+    p === nothing && occursin(':', model) && (p = get_price(String(split(model, ':'; limit=2)[2])))
+    p === nothing && return nothing
+    p isa LM15.InferencePricing && return p
+    (p isa Union{AbstractDict,NamedTuple}) || throw(ArgumentError("a price is an lm15 InferencePricing or its fields (input_per_million = 3, …), not $(repr(p))"))
+    LM15.from_dict(LM15.InferencePricing, JObj(String(k) => v for (k, v) in pairs(p)))
+end
+
+"""
+    FunctAI.cost(spent, prices) -> Float64 or nothing
+
+The list-price cost of a tree's requests, from `prices` (a model's name, as
+asked, to an lm15 `InferencePricing` or its fields), plus what code
+reported it spent: exact or `nothing`, never a guess (a model without a
+price, or a request whose counts do not settle its price, makes it `nothing`).
+"""
+function cost(s::Spent, prices)
+    total = 0.0
+    for (model, usage) in getfield(s, :exchanges)
+        price = pricing(prices, model)
+        price === nothing && return nothing
+        got = LM15.estimate(price, LM15.from_dict(LM15.Usage, usage))
+        got === nothing && return nothing
+        total += got
+    end
+    total + getfield(s, :reported)
+end
+
+"The outermost call of a call's tree in this process."
+function top_call(call)
+    while call.up !== nothing
+        call = call.up
+    end
+    call
+end
+
+"What `call`'s tree spent so far (its outermost call in this process)."
+function spent_of(call)
+    call === nothing && return Spent(Tuple{String,JObj}[], 0.0, 0.0)
+    top = top_call(call)
+    lock(call.tree.lock) do
+        Spent(copy(top.spent), max(0.0, time() - top.started), top.tree_spent)
+    end
+end
+
+# ------------------------------------------------------------------ the step hook (contract/plugins.md, "The step hook")
+
+"""
+A tool result of a call so far, as the model is shown it now: `invocation`,
+`name`, `input`, `output` (text, or a list of lm15 parts in their JSON
+form); `FunctAI.pictures(r)` counts the pictures it holds.
+"""
+mutable struct StepResult
+    invocation::Int
+    name::String
+    input::Any
+    output::Any
+end
+pictures(r::StepResult) = r.output isa AbstractString ? 0 : count(p -> get(p, "type", nothing) == "image", r.output)
+Base.copy(r::StepResult) = StepResult(r.invocation, r.name, LMCC.deepcopy_json(r.input), LMCC.deepcopy_json(r.output))
+
+"""
+A call with tools is about to ask the model again, after the tools of its
+last reply ran: `function`, `path`, `step` (the number of the request about
+to be made: 2 for the first after tools), `max_steps`, `last_step` (whether
+it is the last request the call may make), `results` (every tool result of
+the call so far, oldest first, as shown now: [`FunctAI.StepResult`](@ref)s),
+`tools` (the names offered now), `all_tools` (those the call was offered
+when it started), `lm`, `spent` (a [`Spent`](@ref)), `conversation`, `turn`.
+"""
+mutable struct StepEvent <: HookEvent
+    var"function"::String
+    path::String
+    step::Int
+    max_steps::Int
+    last_step::Bool
+    results::Vector{StepResult}
+    tools::Vector{String}
+    all_tools::Vector{String}
+    lm::Any
+    spent::Spent
+    conversation::Union{Nothing,String}
+    turn::Union{Nothing,String}
+    plugin::Union{Nothing,Plugin}
+    turn_run::Any
+end
+
+"""
+A `stop` change: kept with the call's changes, then the call stops
+(`PluginError`, `plugin-stopped`, naming the plugin and the reason).
+"""
+function stop_here(reason, event, hook::Symbol, applied::Applied, function_name, call)
+    (reason isa AbstractString && !isempty(strip(reason))) || throw(ArgumentError("stop is the reason, a text"))
+    p = event.plugin
+    add!(applied, p, hook, LMCC.jobj("stop" => String(reason)))
+    if call !== nothing
+        append!(call.changes, applied.items)
+        empty!(applied.items)
+    end
+    throw(PluginError("plugin-stopped", "$function_name: stopped by plugin $(p.name): $reason"; plugin=p.name, hook=String(hook)))
+end
+
+"""
+The `step` hook of one call's tool loop: what its handlers changed so far
+(the tools offered, earlier results shown otherwise, reminders), and the
+request it makes next, as a view of the call's turn: the turn itself keeps
+every result as the tool gave it.
+"""
+mutable struct Steering
+    call::Any
+    function_name::String
+    max_steps::Int
+    all_tools::Vector{String}
+    offered::Vector{String}
+    lm::Any
+    plugins::Vector{Plugin}
+    results::Vector{StepResult}          # every tool result, as shown now
+    given::Dict{Int,Any}                 # invocation => its result as the tool gave it
+end
+function Steering(call, function_name, max_steps, tools, lm)
+    names = String[t.name for t in tools]
+    ps = call === nothing ? Plugin[] : Plugin[p for p in plugins_around(call.fn isa AIFunction ? call.fn.own : Dict{Symbol,Any}())
+                                             if !isempty(get(p.handlers, :step, ()))]
+    Steering(call, String(function_name), max_steps, names, copy(names), lm, ps, StepResult[], Dict{Int,Any}())
+end
+
+function ran!(s::Steering, invocation::Int, name, input, output)
+    push!(s.results, StepResult(invocation, String(name), LMCC.deepcopy_json(input), output))
+    s.given[invocation] = output
+end
+
+"Run the `step` handlers before request `step` (2 or more)."
+function before_step!(s::Steering, step::Int)
+    isempty(s.plugins) && return
+    call = s.call
+    run = call.turn_run
+    conv = call.conversation
+    event = StepEvent(s.function_name, names_path(call), step, s.max_steps, step >= s.max_steps, copy.(s.results), copy(s.offered),
+                      copy(s.all_tools), s.lm, spent_of(call),
+                      conv !== nothing ? conv["id"] : run !== nothing ? run.conv.id : nothing,
+                      conv !== nothing ? conv["turn"] : run !== nothing ? run.turn : nothing, nothing, run)
+    applied = Applied()
+    try
+        run_hook(:step, s.plugins, event, applied, function (c)
+            if c.tools !== nothing
+                names = String[String(x) for x in c.tools]
+                unknown = sort!(setdiff(names, s.all_tools))
+                isempty(unknown) || throw(ArgumentError("$(s.function_name) was not offered tool $(repr(first(unknown))) (offered: " *
+                                                        "$(isempty(s.all_tools) ? "none" : join(s.all_tools, ", ")))"))
+                s.offered = event.tools = [n for n in s.all_tools if n in names]
+            end
+            if c.replace !== nothing
+                c.replace isa Union{AbstractDict,NamedTuple} || throw(ArgumentError("replace is a Dict: invocation => what the model is shown instead"))
+                for (inv, out) in pairs(c.replace)
+                    n = inv isa Integer ? Int(inv) : something(tryparse(Int, string(inv)), -1)
+                    i = findfirst(r -> r.invocation == n, s.results)
+                    i === nothing && throw(ArgumentError("$(s.function_name) has no tool result $(repr(inv)) (it has " *
+                                                         "$(isempty(s.results) ? "none" : join((r.invocation for r in s.results), ", ")))"))
+                    s.results[i].output = check_result(out, "replace[$n]")
+                end
+                event.results = copy.(s.results)
+            end
+            if c.reminder !== nothing
+                (c.reminder isa AbstractString && !isempty(strip(c.reminder))) || throw(ArgumentError("reminder is a text"))
+                isempty(s.results) && throw(ArgumentError("a reminder follows a tool result, and the call has none"))
+                r = last(s.results)
+                r.output = r.output isa AbstractString ? r.output * "\n\n" * c.reminder : Any[r.output..., LMCC.textpart(String(c.reminder))]
+                event.results = copy.(s.results)
+            end
+            c.stop === nothing || stop_here(c.stop, event, :step, applied, s.function_name, call)
+        end)
+    finally
+        append!(call.changes, applied.items)
+    end
+    nothing
+end
+
+"The call's turn as the next request shows it: earlier results as the handlers left them, and only the tools they offer."
+function shown_turn(s::Steering, turn)
+    shown = Dict{Int,Any}(r.invocation => r.output for r in s.results if r.output !== s.given[r.invocation])
+    isempty(shown) && s.offered == s.all_tools && return turn
+    invocations = [r.invocation for r in s.results]
+    k = 0
+    steps = map(turn.steps) do st
+        st isa LMCC.ToolStep || return st
+        k += 1
+        inv = k <= length(invocations) ? invocations[k] : nothing
+        (inv === nothing || !haskey(shown, inv)) && return st
+        out = shown[inv]
+        LMCC.ToolStep(st.id, st.name, out isa AbstractString ? Any[LMCC.textpart(out)] : Any[LMCC.deepcopy_json(p) for p in out], st.children)
+    end
+    inputs = turn.inputs
+    if s.offered != s.all_tools
+        inputs = copy(inputs)
+        inputs["tools"] = Any[t for t in something(get(inputs, "tools", nothing), Any[]) if t["name"] in s.offered]
+    end
+    LMCC.Turn(turn.signature, inputs, LMCC.Step[steps...], turn.outputs, turn.score, turn.meta)
 end
 
 # ------------------------------------------------------------------ asking a person (contract/tools.md, "Who answers a rule")

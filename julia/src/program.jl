@@ -36,6 +36,7 @@ struct AIProgram <: Function
     output_types::Dict{String,Any}  # the declared type of each of several outputs
     answer_from::Union{Nothing,String}  # the AI function whose answer is this program's, as it is written (the outside view)
     remote::Any                     # a program served elsewhere (`remote(url)`): (url, key, timeout, version, kind), or nothing
+    needs::Union{Nothing,JObj}      # what its own code reaches: {"domains", "secrets"} (contract/tools.md, "What a tool needs")
 end
 Base.nameof(p::AIProgram) = Symbol(p.name)
 Base.show(io::IO, p::AIProgram) = print(io, "program ", p.name, "(", join((f["name"] for f in p.interface["inputs"]), ", "), ") (", p.module_name, ")")
@@ -71,6 +72,7 @@ function binding_refusal(p::AIProgram, bound)
 end
 
 interface(p::AIProgram) = p.interface
+declared_notes(p::AIProgram) = (n = get(p.interface, "notes", nothing); n === nothing ? nothing : Any[n...])
 interface_signature(p::AIProgram) = interface_signature(p.interface)
 
 "Every symbol the code names."
@@ -132,6 +134,7 @@ function version(p::AIProgram)
     plain = LMCC.jobj("description" => p.interface["description"],
                       "inputs" => Any[JObj(k => (k == "shape" ? no_defaults(v) : v) for (k, v) in f) for f in p.interface["inputs"]],
                       "outputs" => Any[JObj(k => (k == "shape" ? no_defaults(v) : v) for (k, v) in f) for f in p.interface["outputs"]])
+    haskey(p.interface, "notes") && (plain["notes"] = LMCC.deepcopy_json(p.interface["notes"]))     # its notes are in its interface
     doc = LMCC.jobj("code" => code, "ai" => ai, "interface" => plain)
     defaults = JObj(f["name"] => LMCC.jobj("value" => LMCC.deepcopy_json(f["shape"]["default"]))
                     for f in p.interface["inputs"] if haskey(f["shape"], "default"))
@@ -142,7 +145,7 @@ end
 function program_of(p::AIProgram)
     out = LMCC.jobj("name" => p.name, "kind" => p.remote === nothing ? "module" : "remote", "module" => p.module_name, "version" => version(p),
                     "interface" => interface_signature(p), "answer" => last(p.interface["outputs"])["name"])
-    p.remote === nothing || (out["remote"] = p.remote.url)
+    p.remote === nothing ? known_setup!(out, p) : (out["remote"] = p.remote.url)
     file = p.module_name == "__main__" ? top_level_file(p.file) : p.file
     file === nothing || (out["file"] = file)
     p.line === nothing || (out["line"] = p.line)
@@ -177,6 +180,7 @@ function run_program(p::AIProgram, bound)
     call.saw = module_saw(call, p)          # a module's turn: the conversation so far, as its code reads it (earlier())
     run_call(call) do call
         refusal === nothing || throw(refusal)
+        check_reach(p, s)                    # what it needs, against the wall it runs behind (calls.md, Reach)
         # @program's code takes its own defaults, made anew on each call as Julia makes them; a program
         # from data gets the interface's (a copy each call)
         inputs = p.own_defaults ? OrderedDict{String,Any}(k => v for (k, v) in checked if haskey(bound.given, k)) : checked
@@ -261,7 +265,7 @@ The return type is one output, `result`, or `outputs = (name = T, …)`
 declares several.
 """
 function define_program(name, mod, module_name, code, body, file, line; description, inputs, outputs, returns, positional, run,
-                        answer_from=nothing)
+                        answer_from=nothing, notes=nothing, needs=nothing)
     ins = Any[declared_field(n, T; optional=has_default, default=data) for (n, T, has_default, data) in inputs]
     outs = if outputs !== nothing
         Any[declared_field(n, T) for (n, T) in pairs(outputs)]
@@ -269,13 +273,16 @@ function define_program(name, mod, module_name, code, body, file, line; descript
         Any[declared_field("result", returns)]
     end
     iface = LMCC.jobj("description" => description, "inputs" => ins, "outputs" => outs)
+    declared = notes_of(notes; where="@program $name")
+    declared === nothing || (iface["notes"] = declared)
     check_interface(iface; what="@program $name")
     order = String[positional...]
     binder = (args...; kw...) -> bind_named(order, args, kw)
     types = outputs === nothing ? Dict{String,Any}() : Dict{String,Any}(String(n) => T for (n, T) in pairs(outputs))
     AIProgram(name, mod, module_name, run, binder, code, body, file, line, iface, true, outputs === nothing ? returns : nothing, types,
               answer_from === nothing ? nothing : answer_from isa AbstractString ? String(answer_from) :
-              answer_from isa AIFunction ? answer_from.definition.name : string(nameof(answer_from)), nothing)
+              answer_from isa AIFunction ? answer_from.definition.name : string(nameof(answer_from)), nothing,
+              needs_value(needs; where="@program $name"))
 end
 
 """
@@ -288,7 +295,7 @@ returns the output, or a record of the outputs by name. Called with
 positional arguments in the interface's order, or keywords.
 """
 function AIProgram(name::AbstractString, code; interface::AbstractDict, module_name::AbstractString="__main__", answer_from=nothing,
-                   remote=nothing)
+                   remote=nothing, needs=nothing)
     iface = LMCC.deepcopy_json(interface)
     # a served AI function's interface may carry lmcc's keywords in its shapes (checked as an AI function's)
     check_interface(iface; ai=remote !== nothing && remote.kind == "ai", what="program $name")
@@ -297,7 +304,8 @@ function AIProgram(name::AbstractString, code; interface::AbstractDict, module_n
     run = inputs -> code(; (Symbol(k) => v for (k, v) in inputs)...)
     code_hash = LMCC.sha256_of(LMCC.jobj("program" => String(name), "code" => string(code)))
     AIProgram(String(name), nothing, String(module_name), run, binder, code_hash, nothing, nothing, nothing, iface, false, nothing, Dict{String,Any}(),
-              answer_from === nothing ? nothing : answer_from isa AIFunction ? answer_from.definition.name : String(answer_from), remote)
+              answer_from === nothing ? nothing : answer_from isa AIFunction ? answer_from.definition.name : String(answer_from), remote,
+              needs_value(needs; where="program $name"))
 end
 
 "A value given to a typed argument, as that type: itself, converted, or read from its JSON form."
@@ -319,7 +327,7 @@ end
 
 
 """
-    @program [outputs = (name = T, …)] function name(args...; kw...)::T
+    @program [outputs = (name = T, …)] [answer_from = f] [notes = […]] [needs = (…)] function name(args...; kw...)::T
         "What it does."
         … code that calls AI functions …
     end
@@ -345,6 +353,13 @@ returns (`InterfaceError`, naming the field): a refused call is still a call
 (its events, its record), and its code does not run. The first string of
 the body is its description.
 
+`notes = ["stage" => Note(OneOf(:walking, :writing); latest = true, outside = true),
+"page captured" => Page]` declares the notes its code makes ([`note`](@ref)):
+each is then checked where it is made (`InterfaceError`, code
+`interface-note`), and those marked `outside` are shown to a caller who sees
+only its boundary. `needs = (domains = ["api.example.com"], secrets =
+["EXAMPLE_KEY"])` says what its own code reaches ([`setup`](@ref), *Reach*).
+
 A call made inside it, even on a task it starts, is a step of it: its call
 ends once they all have. Start work meant to outlive it with
 [`FunctAI.detached`](@ref).
@@ -352,13 +367,14 @@ ends once they all have. Start work meant to outlive it with
 macro program(args...)
     isempty(args) && throw(ArgumentError("@program needs a function: @program function name(x::String) … end"))
     fexpr = args[end]
-    outputs = nothing
-    answer_from = nothing
+    opts = Dict{Symbol,Any}(:outputs => nothing, :answer_from => nothing, :notes => nothing, :needs => nothing)
     for opt in args[1:end-1]
-        (opt isa Expr && opt.head === :(=) && opt.args[1] in (:outputs, :answer_from)) ||
-            throw(ArgumentError("@program: the options before `function` are outputs = (name = Type, …) and answer_from = an AI function; not $(opt)"))
-        opt.args[1] === :outputs ? (outputs = opt.args[2]) : (answer_from = opt.args[2])
+        (opt isa Expr && opt.head === :(=) && haskey(opts, opt.args[1])) ||
+            throw(ArgumentError("@program: the options before `function` are outputs = (name = Type, …), answer_from = an AI function, " *
+                                "notes = [\"name\" => Type, …] and needs = (domains = […], secrets = […]); not $(opt)"))
+        opts[opt.args[1]] = opt.args[2]
     end
+    outputs, answer_from = opts[:outputs], opts[:answer_from]
     (fexpr isa Expr && fexpr.head in (:function, :(=)) && length(fexpr.args) == 2) ||
         throw(ArgumentError("@program goes before a function: @program function name(x::String) … end"))
     head = fexpr.args[1]
@@ -410,7 +426,8 @@ macro program(args...)
     file = __source__.file === nothing ? nothing : String(__source__.file)
     esc(:($name = $(define_program)($(String(name)), $__module__, $mname, $code, $body_q, $file, $(__source__.line);
                                     description=$description, inputs=$input_specs, outputs=$outputs, returns=$ret,
-                                    positional=$positional, run=$run, answer_from=$answer_from)))
+                                    positional=$positional, run=$run, answer_from=$answer_from,
+                                    notes=$(opts[:notes]), needs=$(opts[:needs]))))
 end
 
 Base.Broadcast.broadcasted(p::AIProgram, args...) = (t = Base.Broadcast.materialize(Base.Broadcast.broadcasted(tuple, args...));
@@ -432,16 +449,16 @@ things unless `effects = :reads` says otherwise.
 function tool(f::AIFunction; name=nothing, description=nothing, effects=nothing)
     eff = effects === nothing ? effects_of(f) : effects_value(effects)
     run = input -> (p = predict_inputs(f, with_defaults(f, OrderedDict{String,Any}(String(k) => v for (k, v) in input))); p === missing ? missing : p.value)
-    program_tool(interface(f), something(name, f.definition.name), description, run, eff)
+    program_tool(interface(f), something(name, f.definition.name), description, run, eff, f)
 end
 function tool(p::AIProgram; name=nothing, description=nothing, effects=nothing)
     run = input -> p(; (Symbol(k) => v for (k, v) in input)...)
-    program_tool(p.interface, something(name, p.name), description, run, effects_value(effects))
+    program_tool(p.interface, something(name, p.name), description, run, effects_value(effects), p)
 end
-function program_tool(iface, name, description, run, effects)
+function program_tool(iface, name, description, run, effects, program=nothing)
     params = LMCC.jobj("type" => "object", "properties" => JObj(x["name"] => LMCC.deepcopy_json(x["shape"]) for x in iface["inputs"]),
                        "required" => Any[x["name"] for x in iface["inputs"] if get(x, "optional", false) !== true])
     desc = description === nothing ? (isempty(iface["description"]) ? nothing : String(iface["description"])) : String(description)
-    AITool(String(name), desc, params, run, Symbol[], Any[], effects)
+    AITool(String(name), desc, params, run, Symbol[], Any[], effects, nothing, nothing, nothing, program)
 end
 effects_of(f::AIFunction) = all(t -> effects_of(t) == "reads", f.tools) ? "reads" : nothing

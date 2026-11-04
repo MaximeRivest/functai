@@ -10,15 +10,17 @@
 
 EVENT_FORMAT <- 2L
 EVENT_KINDS <- c("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed",
-                 "approval", "approved")
+                 "approval", "approved", "note", "later")
 ENVELOPE <- c("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 KIND_KEYS <- list(
   started = c("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"),
   request = c("request", "model"), text = c("field", "answer", "text"), thinking = "text",
-  tool_call = c("id", "name", "input", "content", "invocation"), tool_result = c("id", "name", "output", "content", "invocation"),
+  tool_call = c("id", "name", "input", "content", "invocation"), tool_result = c("id", "name", "output", "parts", "content", "invocation"),
   retry = c("reason", "wait", "content"), done = c("value", "content"), failed = c("error", "content"),
   approval = c("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
-  approved = c("id", "invocation", "verdict", "by", "reason", "plugin", "content"))
+  approved = c("id", "invocation", "verdict", "by", "reason", "plugin", "content"),
+  # code says something happened (ai_note()); a tool's result comes later (ai_later())
+  note = c("name", "data", "content"), later = c("id", "invocation", "name", "key", "content"))
 
 # ---------------------------------------------------------------- positions
 
@@ -101,6 +103,11 @@ replay_event <- function(s, e) {
   if (is.null(c)) stop(sprintf("event %s: its call's started is not in this form", position_text(event_position(e))), call. = FALSE)
   if (e$kind %in% c("request", "retry")) c$fields <- list()
   else if (e$kind == "text") c$fields[[e$field]] <- paste0(c$fields[[e$field]] %||% "", e$text)
+  else if (e$kind == "note") {                     # its call's notes, in order (data only when the event has it)
+    n <- list(name = e$name)
+    if ("data" %in% names(e)) n["data"] <- list(e$data)
+    c$notes <- c(c$notes, list(n))
+  }
   else if (e$kind %in% c("done", "failed")) { c["ended"] <- list(e$kind); if (identical(e$call, e$tree)) s$finished <- TRUE }
   s$calls[[e$call]] <- c
   s
@@ -108,8 +115,11 @@ replay_event <- function(s, e) {
 
 replay_log <- function(events) Reduce(replay_event, lapply(events, as_event), new_log_state())
 
-state_json <- function(s) list(calls = if (length(s$calls)) lapply(s$calls, function(c) list(ended = c$ended, fields = if (length(c$fields)) c$fields else lmcc::jobj())) else lmcc::jobj(),
-                                finished = s$finished)
+state_json <- function(s) list(calls = if (length(s$calls)) lapply(s$calls, function(c) {
+  out <- list(ended = c$ended, fields = if (length(c$fields)) c$fields else lmcc::jobj())
+  if (!is.null(c$notes)) out$notes <- c$notes
+  out
+}) else lmcc::jobj(), finished = s$finished)
 
 # A store refusing an append, a claim or a read: `code` the contract's,
 # `event` the position of the event refused.
@@ -274,7 +284,9 @@ kept_event <- function(e, keep, program) {
   if (kind == "thinking") return(NULL)
   if (kind %in% c("tool_call", "approval")) { data$input <- NULL; data$question <- NULL }
   else if (kind == "approved") data$reason <- NULL
-  else if (kind == "tool_result") data$output <- NULL
+  else if (kind == "tool_result") { data$output <- NULL; data$parts <- NULL }
+  else if (kind == "note") data$data <- NULL
+  else if (kind == "later") data$key <- NULL
   else if (kind == "retry") data$reason <- NULL
   else if (kind == "done") {
     if (all(vapply(value_holds(keep, program), function(k) isTRUE(keep$outputs[[k]]), NA))) return(out)

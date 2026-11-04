@@ -402,7 +402,11 @@ function complete_once(job::Job, rendered, responses)
     end
 end
 
-"Run one tool call; its result as the model sees it (text), or its error when `tool_errors` is `:report`."
+"""
+Run one tool call: its result as the model is shown it (text, or a list of
+lm15 parts: `result_of`), or its error when `tool_errors` is `:report`. A tool
+whose result comes later returns its [`Later`](@ref) as it is.
+"""
 function run_tool(tools, call, errors::Symbol)
     name = string(get(call, "name", ""))
     i = findfirst(t -> t.name == name, tools)
@@ -420,7 +424,7 @@ function run_tool(tools, call, errors::Symbol)
         err = unwrap(err)
         return "error: $(error_type(err)): $(error_message(err))"
     end
-    out isa AbstractString ? String(out) : LMCC.json_text(logvalue(out))
+    out isa Later ? out : result_of(out)
 end
 
 "An unreadable reply a call kept with no values (functions.md, \"Keeping an unreadable reply\"): its refusal."
@@ -442,8 +446,12 @@ function run_job(job::Job)
     turn = LMCC.new_turn(plan, values)
     responses = Any[]
     steps = max(1, job.settings[:max_steps])
-    for _ in 1:steps
-        rendered = LMCC.render(plan, turn; turns=job.past)
+    # the step hook (contract/plugins.md): the tools offered, reminders, earlier results shown otherwise
+    steering = isempty(job.tools) ? nothing : Steering(job.call, job.name, steps, job.tools, get(job.settings, :lm, nothing))
+    for step in 1:steps
+        step > 1 && steering !== nothing && before_step!(steering, step)
+        shown = steering === nothing ? turn : shown_turn(steering, turn)
+        rendered = LMCC.render(plan, shown; turns=job.past)
         got = try
             complete_once(job, rendered, responses)
         catch err
@@ -458,19 +466,85 @@ function run_job(job::Job)
             return ((;), LMCC.with_meta(turn, meta), responses, Kept(err))
         end
         response, reading, typed = got
-        turn = LMCC.step(rendered, response)
+        # the model's step, added to the turn itself: what the model was shown is the request's, never the turn's
+        turn = LMCC.with_step(turn, last(LMCC.step(rendered, response).steps))
         calls = get(reading.values, "calls", nothing)
         calls === nothing || append!(job.asked, calls)
         if calls === nothing || isempty(calls)
             turn = LMCC.finish(turn)
             return (typed, turn, responses, reading)
         end
-        for c in calls
-            output = one_tool!(job, c)
+        first_invocation = job.call.invocations + 1
+        ran = Any[one_tool!(job, c) for c in calls]
+        any(o -> o isa Pending, ran) && (ran = results_later(job, ran))   # used when delivered, else the turn waits
+        for (i, (c, output)) in enumerate(zip(calls, ran))
             turn = LMCC.tool(turn, string(c["id"]), output)
+            steering === nothing || ran!(steering, first_invocation + i - 1, string(c["name"]), something(get(c, "input", nothing), JObj()), output)
         end
     end
     throw(StepLimit("$(job.name): no answer after $steps model steps", turn))
+end
+
+"A tool call whose result comes later ([`later`](@ref)): kept, and waited for."
+struct Pending
+    key::String
+    approval::Approval
+    input::Any
+    id::String
+    name::String
+end
+
+"""
+A tool returned `later(key)`: kept (it ran; its result comes later) and
+shown (a `later` event). Outside a conversation's turn nothing could wait
+for it: `later-unavailable`.
+"""
+function pending!(job::Job, approval::Approval, input, key::String)
+    call = job.call
+    run = call.turn_run
+    run === nothing && throw(ConversationError("later-unavailable",
+        "$(approval.path) returned later($(repr(key))), and its result can only be waited for in a conversation's turn " *
+        "(conversation(f, id; store)): this call runs in none. Whatever the tool started may be running."))
+    tool_later!(run, call, with_input(approval, input), key)
+    emit!(call, :later, LMCC.jobj("id" => approval.id, "invocation" => approval.invocation, "name" => approval.name, "key" => key))
+    Pending(key, approval, input, approval.id, approval.name)
+end
+
+"A result that came later, as the model is shown it: given to the `tool_result` hooks, then kept as the tool's result."
+function delivered!(call, a::Approval, input, output)
+    frontier!(call.tree)
+    output = plugin_tool_result(call, a, input, output)
+    tool_done!(call.turn_run, call, a, output)
+    output
+end
+
+"""
+The step's results, with those that come later: each already delivered is
+used now; when one is not, the turn stops and waits for them (every other
+tool call of the step ran, and is kept).
+"""
+function results_later(job::Job, ran)
+    call = job.call
+    run = call.turn_run
+    pending = [o for o in ran if o isa Pending]
+    got = deliveries(run, [p.key for p in pending])
+    missing_ = [p for p in pending if !haskey(got, p.key)]
+    isempty(missing_) || throw(TurnWaiting(nothing, Any[LMCC.jobj("site" => call.site, "invocation" => p.approval.invocation, "id" => p.id,
+                                                                  "name" => p.name, "key" => p.key, "path" => p.approval.path) for p in missing_]))
+    map(ran) do o
+        o isa Pending || return o
+        out = delivered!(call, o.approval, o.input, got[o.key])
+        show_result(call, o.id, o.name, out, o.approval.invocation)
+        out
+    end
+end
+
+"The `tool_result` event: `output` the result's text, `parts` the whole result when it holds more than text."
+function show_result(call, id, name, output, invocation)
+    data = LMCC.jobj("id" => id, "name" => name, "output" => result_text(output))
+    output isa AbstractString || (data["parts"] = LMCC.deepcopy_json(Any[output...]))
+    data["invocation"] = invocation
+    emit!(call, :tool_result, data)
 end
 
 """
@@ -499,7 +573,9 @@ function one_tool!(job::Job, c)
     else
         run = call.turn_run
         known = run === nothing ? nothing : recorded_tool(run, call, approval)
-        if known !== nothing
+        if known isa Delivered
+            delivered!(call, approval, tool_input, known.output)   # a turn resumed: a result that came later
+        elseif known !== nothing
             known                                                  # a turn resumed: this tool ran before
         else
             frontier!(call.tree)
@@ -516,12 +592,13 @@ function one_tool!(job::Job, c)
             out = with(TOOL_INVOCATION => n) do
                 run_tool(job.tools, LMCC.jobj("id" => id, "name" => name, "input" => tool_input), Symbol(job.settings[:tool_errors]))
             end
+            out isa Later && return pending!(job, approval, tool_input, out.key)
             # the result as the model is shown it; a turn resumed later reuses it, hooks and all
             out = plugin_tool_result(call, approval, tool_input, out)
             run === nothing || tool_done!(run, call, approval, out)
             out
         end
     end
-    emit!(call, :tool_result, LMCC.jobj("id" => id, "name" => name, "output" => output, "invocation" => n))
+    show_result(call, id, name, output, n)
     output
 end

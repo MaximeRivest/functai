@@ -95,7 +95,7 @@ call_end <- function(call, err = NULL) {
   remember_history(call)
   finish_call(call, err)
   if (unconfirmed) return(end_error(t, status, terminal, if (is.null(err)) list(done = done_value(call)) else list(failed = err)))
-  if (withhold && !is.null(terminal)) deliver(t, terminal)
+  if (withhold && !is.null(terminal)) deliver_event(t, terminal)
   err
 }
 

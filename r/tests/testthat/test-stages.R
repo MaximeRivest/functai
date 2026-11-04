@@ -10,7 +10,7 @@ stage_cases <- function(folder) {
 for (name in names(stage_cases("views"))) {
   test_that(paste("views case", name), {
     c <- stage_cases("views")[[name]]
-    got <- outside_view(c$events, answer_from = c$answer_from)
+    got <- outside_view(c$events, answer_from = c$answer_from, notes = as.character(unlist(c$notes)))
     expect_identical(plain(lapply(got, unclass)), plain(c$expect$events))
   })
 }

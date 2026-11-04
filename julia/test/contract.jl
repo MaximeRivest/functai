@@ -170,6 +170,22 @@ end
 end
 @test length(cases("functions")) >= 10
 
+# ------------------------------------------------------------------ setup/: what an AI function runs on (calls.md, Setups)
+
+@testset "setup case $name" for (name, c) in cases("setup")
+    f = julia_function(c["definition"])
+    builtin(p) = p["builtin"] == "limits" ? limits(; (Symbol(k) => v for (k, v) in p["args"])...) :
+                 keep_pictures(get(p["args"], "last", 3); at_once=get(p["args"], "at_once", 1))
+    settings = Dict{Symbol,Any}(Symbol(k) => v for (k, v) in c["settings"])
+    isempty(c["plugins"]) || (settings[:plugins] = Any[builtin(p) for p in c["plugins"]])
+    with_settings(; settings...) do
+        @test same(setup_document(f), c["expect"]["document"])
+        @test setup(f) == c["expect"]["setup"]
+    end
+end
+@test length(cases("setup")) >= 11
+
+
 # Julia has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that
 # reads files is refused files-unavailable when it is loaded, and nothing is sent.
 @testset "files case $name (Julia reads no files: files-unavailable)" for (name, c) in cases("files")
@@ -311,6 +327,21 @@ end
             else
                 @test !occursin(LMCC.canonical_json(value), msg) && !occursin(string(value), msg)
             end
+        end
+    elseif kind == "notes"
+        # real programs, one inside the other, outermost first; the innermost's code makes the note
+        now = Dict{String,Any}()
+        chain = c["chain"]
+        program = AIProgram("p$(length(chain))", (; kw...) -> (note(now["name"], native(now["data"])); "ok"); interface=chain[end])
+        for (i, iface) in Iterators.reverse(collect(enumerate(chain[1:end-1])))
+            inner, inner_iface = program, chain[i+1]
+            program = AIProgram("p$i", (; kw...) -> inner(; (Symbol(k) => v for (k, v) in valid_inputs(inner_iface))...); interface=iface)
+        end
+        for check in c["checks"]
+            merge!(now, check)
+            err = refusal_of(() -> program(; (Symbol(k) => v for (k, v) in valid_inputs(chain[1]))...))
+            got = err === nothing ? Dict("ok" => true) : err isa InterfaceError ? Dict("refuses" => err.code, "field" => err.field) : err
+            @test same(got, check["expect"])
         end
     elseif kind == "same-data"
         @test [FunctAI.interface_signature(x) for x in c["interfaces"]] == c["expect"]["signatures"]

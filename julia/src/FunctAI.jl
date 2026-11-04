@@ -87,6 +87,7 @@ include("learning.jl")
 include("builtins.jl")
 include("serving.jl")
 include("bake.jl")
+include("setup.jl")
 include("accounts.jl")
 include("datasets.jl")
 include("precompile.jl")
@@ -106,6 +107,8 @@ export approve!, deny!, resume!, abandon!, stop!, wait_turn, MemoryConversations
 export Plugin, Change, on!, load_plugin, compaction, delegate, Approval
 export Waiting, ApprovalError, ConversationError, PluginError, FunctAIError, FilesUnavailable
 export serve, remote, quotes_found, prune_calls, train_test, inspect_history, phistory
+export note, Note, later, deliver!, spend, limits, keep_pictures, Spent, MemoryCalls, answer_so_far
+export setup, setup_document, setup_diff, ReachError
 
 # observers and journal writers work off the calls' tasks: give them a moment when Julia exits
 __init__() = atexit(() -> (drain(2.0); EXITING[] = true; nothing))

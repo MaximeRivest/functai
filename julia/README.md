@@ -301,11 +301,52 @@ FunctAI.configure!(plugins = [guard])
 chat = conversation(tutor, "alex"; plugins = [compaction(keep = 20)])   # a summary instead of the oldest turns
 ```
 
-Seven hooks (`turn_start`, `context`, `before_call`, `request`,
+Eight hooks (`turn_start`, `context`, `before_call`, `step`, `request`,
 `tool_call`, `tool_result`, `turn_end`), whose changes are data, recorded
 in each call's record, so a rated call is asked again as it was.
-`approve`, `compaction` and `delegate` (another program as a tool) are
-plugins written with the same hooks.
+`approve`, `compaction`, `delegate` (another program as a tool), `limits`
+and `keep_pictures` are plugins written with the same hooks.
+
+## Long agents and pipelines
+
+```julia
+"A screenshot of a page."
+look(page::String) = ["page $page", LM15.image(; path = shot(page))]     # a tool answers with a picture
+agent = configure(browse; max_steps = 200,
+                  plugins = [keep_pictures(3), limits(cost = 3.0, seconds = 600, prices)])
+
+@program notes = ["stage" => Note(OneOf(:walking, :writing); latest = true, outside = true)] function walk(url::String)::String
+    note("stage", "walking")                                             # a page shows it; checked against the declaration
+    …
+end
+
+start_harvest(url::String) = later("harvest:$(start_job(url))")          # in a turn: it waits, saved
+deliver!(chat, "harvest:8f2c", report)                                   # from the webhook, any process: it goes on
+FunctAI.configure!(log_calls = MemoryCalls())                            # or any store: push!(store, record), FunctAI.records(store)
+answer_so_far(s)                                                         # a stream's answer so far, read by its shape
+```
+
+The `step` hook steers a long tool loop (the tools offered, a reminder,
+earlier results shown otherwise) with every change recorded, so the call
+stays replayable; `keep_pictures` and `limits` (tokens, cost at the prices
+you give, seconds, and what code reported with `spend`) are built on it.
+Notes a program declares are typed and checked where they are made; those
+declared `outside` are shown to a served program's caller.
+
+## What a program runs on
+
+```julia
+setup(mood)                      # "sha256:…": its version, model, settings, plugins, tools' code, reach
+setup_document(mood)             # the same, as data
+setup_diff("releases/v1", "releases/v2")   # what differs, step by step (a table)
+with_settings(wall = (name = "srt", domains = ["*.browser-use.com"])) do … end   # what programs may reach
+```
+
+A version says what a program is; its setup says what it runs on, so a
+score belongs to exactly one thing that ran. Every call records both, and
+where it ran (`placement`). A tool or program says what its code reaches
+(`needs = (domains = […], secrets = […])`); behind a wall that lets through
+less, it is refused before its first call (`ReachError`).
 
 ## Serving, and long runs
 
@@ -332,9 +373,12 @@ mood = FunctAI.load("saved/mood"; types = (result = Mood,))
 
 A saved folder holds shapes, not Julia types; `types` gives them back.
 `FunctAI.describe("saved/mood")` says what a saved program (a module too,
-from any language) takes and gives, without loading it. A
-function saved in Python, TypeScript or R loads here when it has no code of
-its own; what it cannot run is refused with a reason (`LoadRefused`).
+from any language) takes and gives, without loading it. A program
+(`@program`) is saved with every AI function it reaches, and an agent with
+its tools described as data; each node keeps its setup, and `setup_diff`
+compares two folders. A function saved in Python, TypeScript or R loads
+here when it has no code of its own and no tools; what it cannot run is
+refused with a reason (`LoadRefused`).
 Python, TypeScript and R load what Julia saves (`tools/crosslang.py` checks
 each, both ways).
 

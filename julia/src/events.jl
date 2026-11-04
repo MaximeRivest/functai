@@ -6,16 +6,19 @@
 # (journal.jl) are made of these.
 
 const EVENT_FORMAT = 2
-const EVENT_KINDS = (:started, :request, :text, :thinking, :tool_call, :tool_result, :retry, :done, :failed, :approval, :approved)
+const EVENT_KINDS = (:started, :request, :text, :thinking, :tool_call, :tool_result, :retry, :done, :failed, :approval, :approved,
+                     :note, :later)
 const ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 const KIND_KEYS = Dict{Symbol,Tuple}(
     :started => ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"), :request => ("request", "model"),
     :text => ("field", "answer", "text"), :thinking => ("text",), :tool_call => ("id", "name", "input", "content", "invocation"),
-    :tool_result => ("id", "name", "output", "content", "invocation"), :retry => ("reason", "wait", "content"),
+    :tool_result => ("id", "name", "output", "parts", "content", "invocation"), :retry => ("reason", "wait", "content"),
     :done => ("value", "content"), :failed => ("error", "content"),
     # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
     :approval => ("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
-    :approved => ("id", "invocation", "verdict", "by", "reason", "plugin", "content"))
+    :approved => ("id", "invocation", "verdict", "by", "reason", "plugin", "content"),
+    # code says something happened (note); a tool's result comes later (later)
+    :note => ("name", "data", "content"), :later => ("id", "invocation", "name", "key", "content"))
 
 """
     Position(writer, seq)
@@ -53,7 +56,8 @@ end
 
 One thing that happened in a call tree (contract/streaming.md, format 2):
 its `kind` (`:started`, `:request`, `:text`, `:thinking`, `:tool_call`,
-`:tool_result`, `:retry`, `:done`, `:failed`, or a kind a later stage adds),
+`:tool_result`, `:retry`, `:done`, `:failed`, `:approval`, `:approved`,
+`:note`, `:later`, or a kind a later stage adds),
 where it is in its log (`tree`, `writer`, `seq`, `after`: a
 [`Position`](@ref) or `nothing`), when it was numbered (`at`), the `call` it
 is about and that call's program (`e.function`), and the keys of its kind
@@ -166,11 +170,18 @@ end
 
 # ------------------------------------------------------------------ replaying
 
-"What a watcher of a form was shown of one call: whether it ended (`:done`, `:failed`, or `nothing`) and each field's text so far."
+"""
+What a watcher of a form was shown of one call: whether it ended (`:done`,
+`:failed`, or `nothing`), each field's text so far, and the notes it made,
+in order (`nothing` until it made one): `(name, data)` each, `data` only when
+the event had it.
+"""
 mutable struct CallState
     ended::Union{Nothing,Symbol}
     fields::OrderedDict{String,String}
+    notes::Union{Nothing,Vector{JObj}}
 end
+CallState(ended, fields) = CallState(ended, fields, nothing)
 
 """
     LogState
@@ -185,14 +196,16 @@ mutable struct LogState
     finished::Bool
 end
 LogState() = LogState(nothing, OrderedDict{String,CallState}(), false)
-Base.copy(s::LogState) = LogState(s.tree, OrderedDict(k => CallState(v.ended, copy(v.fields)) for (k, v) in s.calls), s.finished)
+Base.copy(s::LogState) = LogState(s.tree, OrderedDict(k => CallState(v.ended, copy(v.fields), v.notes === nothing ? nothing : LMCC.deepcopy_json.(v.notes))
+                                                     for (k, v) in s.calls), s.finished)
 
 """
     replay!(state, e) -> state
 
 Apply one event (laws 1 to 4): `started` adds its call; `request` and
-`retry` empty the call's fields; `text` adds to its field; `done` and
-`failed` end the call. A kind this reader does not know changes nothing.
+`retry` empty the call's fields; `text` adds to its field; `note` adds to
+its call's notes; `done` and `failed` end the call. A kind this reader does
+not know changes nothing.
 """
 function replay!(s::LogState, e::Event)
     s.tree === nothing && (s.tree = e.tree)
@@ -207,6 +220,9 @@ function replay!(s::LogState, e::Event)
         empty!(c.fields)
     elseif e.kind === :text
         c.fields[e.field] = get(c.fields, e.field, "") * e.text
+    elseif e.kind === :note                  # its call's notes, in order (data only when the event has it)
+        c.notes === nothing && (c.notes = JObj[])
+        push!(c.notes, JObj(k => LMCC.deepcopy_json(datum(e, k)) for k in ("name", "data") if haskey(e, k)))
     elseif e.kind in (:done, :failed)
         c.ended = e.kind
         e.call == e.tree && (s.finished = true)
@@ -221,9 +237,12 @@ What a live watcher of this form of a log saw once it had these events.
 """
 replay(events) = foldl(replay!, (Event(x) for x in events); init=LogState())
 
-state_json(s::LogState) = LMCC.jobj("calls" => JObj(k => LMCC.jobj("ended" => c.ended === nothing ? nothing : String(c.ended),
-                                                                    "fields" => JObj(c.fields)) for (k, c) in s.calls),
-                                    "finished" => s.finished)
+function call_state_json(c::CallState)
+    out = LMCC.jobj("ended" => c.ended === nothing ? nothing : String(c.ended), "fields" => JObj(c.fields))
+    c.notes === nothing || (out["notes"] = Any[LMCC.deepcopy_json(n) for n in c.notes])
+    out
+end
+state_json(s::LogState) = LMCC.jobj("calls" => JObj(k => call_state_json(c) for (k, c) in s.calls), "finished" => s.finished)
 
 """
     StoreRefusal
@@ -460,6 +479,11 @@ function kept_event(e::Event, keep::Keep, program)
         delete!(data, "reason")
     elseif kind === :tool_result
         delete!(data, "output")
+        delete!(data, "parts")
+    elseif kind === :note
+        delete!(data, "data")
+    elseif kind === :later
+        delete!(data, "key")
     elseif kind === :retry
         delete!(data, "reason")
     elseif kind === :done

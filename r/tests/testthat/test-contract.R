@@ -119,6 +119,23 @@ for (name in names(cases("functions"))) {
 
 test_that("the contract has function cases", expect_gte(length(cases("functions")), 10L))
 
+# ---------------------------------------------------------------- setup/: what an AI function runs on (calls.md, Setups)
+
+for (name in names(cases("setup"))) {
+  test_that(paste("setup case", name), {
+    c <- cases("setup")[[name]]
+    fn <- r_function(c$definition)
+    builtin <- function(p) if (p$builtin == "limits") do.call(limits, p$args) else do.call(keep_pictures, p$args)
+    settings <- c$settings
+    if (length(c$plugins)) settings$plugins <- lapply(c$plugins, builtin)
+    got <- rlang::inject(with_ai_config(list(document = ai_setup_document(fn), setup = ai_setup(fn)), !!!settings))
+    expect_identical(plain(got$document), plain(c$expect$document))
+    expect_identical(got$setup, c$expect$setup)
+  })
+}
+test_that("the contract has setup cases", expect_gte(length(cases("setup")), 11L))
+
+
 # ---------------------------------------------------------------- files
 
 # R has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that

@@ -4,7 +4,16 @@
 \alias{ai_tool}
 \title{A tool the model may call}
 \usage{
-ai_tool(.fn, .description = "", ..., .name = NULL, .effects = NULL)
+ai_tool(
+  .fn,
+  .description = "",
+  ...,
+  .name = NULL,
+  .effects = NULL,
+  .needs = NULL,
+  .notes = NULL,
+  .code_id = NULL
+)
 }
 \arguments{
 \item{.fn}{The function. It is called with its arguments by name.}
@@ -22,6 +31,20 @@ search, a lookup) or \code{"changes"} (it writes, sends or pays). Left out, it
 is unknown, which every approval rule treats as \code{"changes"}: forgetting
 to declare is safe. An AI function given as a tool reads, unless one of
 its own tools changes things or declares nothing.}
+
+\item{.needs}{What its code reaches: \code{list(domains = c("api.example.com", "*.example.com"), secrets = "EXAMPLE_API_KEY")}, host names and the
+names of the secrets it uses, never their values. Behind a wall that
+lets through less (the \code{wall} setting), the function that has it is
+refused before its first call (\code{needs-unmet}), and what it may reach
+counts in its setup (\code{\link[=ai_setup]{ai_setup()}}).}
+
+\item{.notes}{The notes its code makes (\code{\link[=ai_note]{ai_note()}}), by name: a type, or
+\code{\link[=note_type]{note_type()}} (\code{list(stage = note_type(choice("walking", "writing"), latest = TRUE))}). Every AI function that has the tool declares them,
+and each note is checked where it is made.}
+
+\item{.code_id}{What identifies its code beyond the function's own text
+(a revision, a bundle's hash): a value a closure captured, or code the
+function calls, is not in its text.}
 }
 \value{
 A tool, for \code{ai(..., .tools = list(...))}.
@@ -30,6 +53,12 @@ A tool, for \code{ai(..., .tools = list(...))}.
 An R function the model can ask for while it answers: FunctAI runs it and
 sends the result back, until the model gives its answer. The tool's
 inputs are the function's arguments; its name is the function's.
+}
+\details{
+A tool returns text, a value (shown to the model as its JSON), a picture,
+a sound, a video or a document (an lm15 part: \code{lm15::image_part(path = "page.png")}), a list holding one (a picture with its caption), or
+\code{\link[=ai_later]{ai_later()}} when its result comes later. A part read from a file is given
+its bytes, so the result is whole wherever it is read again.
 }
 \examples{
 orders <- c("A-1042" = "stuck at the carrier since Monday")

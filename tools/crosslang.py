@@ -30,6 +30,12 @@ between them, on real output of both:
    pictures as pictures; one reading files (Attachments' artifacts) loads in
    TypeScript with the same version and request, both ways, and R and
    Julia refuse it files-unavailable.
+7. Setups and notes: `mood`, written natively in each language, has
+   Python's setup, and so does every call of it in the one log (each
+   language records `program.setup`); a program Python saves with the notes
+   it declares is described in R and Julia with those notes, and an agent
+   Python saves (its tool's effects, needs and notes) is described there and
+   refused when loaded (saved-tools: a tool is code).
 
 R runs with `r/.lib` (r/check installs it) and Rscript on PATH; Julia with
 julia/'s project (julia/check instantiates it), from PATH or nixpkgs.
@@ -62,7 +68,7 @@ from typing import Literal
 import dataclasses
 from attachments import Artifacts
 from lm15.types import ImagePart
-from functai import ai, _ai
+from functai import ai, _ai, module, note, Note, tool
 
 @ai(lm="gpt-4.1-mini", temperature=0)
 def mood(review: str) -> Literal["happy", "unhappy", "mixed"]:
@@ -129,6 +135,24 @@ def brighter(pictures: list[ImagePart], question: str) -> int:
 @ai(lm="gpt-4.1-mini", temperature=0)
 def summarize(report: Artifacts) -> str:
     """The report in three sentences."""
+
+
+@module(notes={"stage": Note(Literal["walking", "writing"], latest=True, outside=True), "pages": int})
+def walk(url: str) -> str:
+    """Walk a site and say how it feels."""
+    note("stage", "walking")
+    return mood(url)
+
+
+@tool(effects="reads", needs={"domains": ["api.example.com"], "secrets": ["EXAMPLE_KEY"]}, notes={"page captured": str})
+def fetch(url: str) -> str:
+    """Fetch a page."""
+    return "a page"
+
+
+@ai(lm="gpt-4.1-mini", tools=[fetch])
+def agent(task: str) -> str:
+    """Do the task, fetching pages."""
 '''
 
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=="
@@ -197,6 +221,13 @@ def main() -> int:
         files[name] = {"version": fn.version, "signature": calllog.signature_id(fn.signature),
                        "request": request_to_dict(fn.render(**SAMPLE[name])), "inputs": SAMPLE[name]}
     (work / "python-files.json").write_text(json.dumps(files))
+    # 7. what each language's mood must run on, and a program and an agent described elsewhere
+    functai.save(shop.walk, work / "saved" / "walk")
+    functai.save(shop.agent, work / "saved" / "agent")
+    for name in ("walk", "agent"):
+        schemas()["saved"].validate(json.loads((work / "saved" / name / "functai.json").read_text()))
+    (work / "python-setup.json").write_text(json.dumps({"mood": shop.mood.setup, "walk": shop.walk.interface,
+                                                         "agent_tool": shop.agent._tools[0].needs}))
 
     # 3a. Python logs two calls of mood and rates one
     router = FakeRouter(responder=lambda req: "<result>\nunhappy\n</result>")
@@ -345,6 +376,15 @@ def main() -> int:
     assert rows[:2] == ts_rows, (rows, ts_rows)                   # TypeScript read it before R did
     print(f"  ok    one log, four languages: {len(calls_)} calls and {len(ratings)} ratings pass the schemas; "
           f"Python's, TypeScript's, R's and Julia's rated give the same rows")
+
+    # 7. one setup for one function, in every language's records
+    moods = [c for c in calls_ if c["program"]["name"] == "mood" and c["program"]["kind"] == "ai"]
+    by_language = {}
+    for c in moods:
+        by_language.setdefault(c["process"]["language"], set()).add(c["program"].get("setup"))
+    assert set(by_language) == {"python", "typescript", "r", "julia"}, by_language
+    assert all(v == {shop.mood.setup} for v in by_language.values()), (shop.mood.setup, by_language)
+    print("  ok    mood's setup is one in four languages: written natively in each, and in every call of it in the one log")
     return 0
 
 

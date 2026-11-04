@@ -14,7 +14,10 @@ ai_change(
   without = NULL,
   inputs = NULL,
   block = NULL,
-  output = NULL
+  output = NULL,
+  reminder = NULL,
+  replace = NULL,
+  stop = NULL
 )
 }
 \arguments{
@@ -37,7 +40,17 @@ a named list by turn id.}
 
 \item{block}{The tool may not run, and why.}
 
-\item{output}{The tool's result as the model is shown it.}
+\item{output}{The tool's result as the model is shown it: text, or a list
+of lm15 parts (a picture with a caption).}
+
+\item{reminder}{Text the model is shown after this step's tool results, in
+this request and the ones after (\code{step}).}
+
+\item{replace}{Earlier tool results, by invocation (\code{list("3" = "(cut)")}),
+shown as this from this request on (\code{step}).}
+
+\item{stop}{The call stops here, and why (\code{before_call}, \code{step}): a
+\code{functai_plugin_stopped} error, the change recorded first.}
 }
 \value{
 A change.

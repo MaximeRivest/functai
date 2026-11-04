@@ -56,6 +56,19 @@ end
 check(version(mood) == python["mood"]["version"], "mood version")
 check(signature_id(mood) == python["mood"]["signature"], "mood signature")
 say("mood written in Julia (an @enum answer) has Python's version and signature")
+setups = LMCC.parse_json(read(joinpath(work, "python-setup.json"), String))
+check(setup(mood) == setups["mood"], "mood setup: $(setup(mood)) != $(setups["mood"])")
+say("mood written in Julia has Python's setup (its model, settings, reach)")
+walk = FunctAI.describe(joinpath(work, "saved", "walk"))
+check(LMCC.canonical_json(walk["notes"]) == LMCC.canonical_json(setups["walk"]["notes"]), "walk notes")
+agent_err = try
+    FunctAI.load(joinpath(work, "saved", "agent"))
+    nothing
+catch e
+    e
+end
+check(agent_err isa LoadRefused && agent_err.code == "saved-tools", "agent: expected saved-tools, got $(repr(agent_err))")
+say("a program Python saved is described here with its declared notes; an agent Python saved is refused (saved-tools)")
 @ai module_name = "shop" lm = "gpt-4.1-mini" base_url = "http://127.0.0.1:8000/v1" on_unreadable = :record function route(message::String,
         channel::OneOf("email" => "written at leisure, often long", "chat" => "short, often several messages"))
     """

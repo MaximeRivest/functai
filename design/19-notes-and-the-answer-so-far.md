@@ -4,8 +4,8 @@
 `setup-and-events`, with the contract (programs.md *Notes*, streaming.md
 *Notes*, *Views*, *Replaying*, *The answer so far*; tools.md *Notes a tool
 makes*; the interface schema) and its cases (`programs/27` to `30`,
-`views/outside-04`, `events/replay-15`, `partial/`). R and Julia do not
-have it yet.*
+`views/outside-04`, `events/replay-15`, `partial/`); in R and Julia on
+2026-11-04 (branch `rj-catch-up`).*
 
 ## Why
 
@@ -68,11 +68,12 @@ text that cannot be the start of JSON gives nothing (Python's
 
 ## Trade-offs, stated
 
-- **R and Julia refuse an interface with `notes`.** The contract's rule: a
-  reader that does not know an interface key fails closed, since a key
-  could narrow what is accepted. A program that declares notes cannot be
-  described in R or Julia until they catch up; one that declares none is
-  unchanged.
+- **R and Julia** declare notes as their own code does: Julia
+  `@program notes = ["stage" => Note(OneOf(...); latest = true)]` (pairs,
+  in order: a `Dict` has none, and is refused), R `ai_program(..., .notes =
+  list(stage = note_type(choice(...), latest = TRUE)))`. R's streams are
+  callbacks, so its answer so far is `answer_so_far(text, fn)`, read from
+  the text a handler collected; Julia's is `answer_so_far(stream)`.
 - **Undeclared notes still work** in a program that declares none: making
   every note declared would break every program that uses `note` today.
 - **`latest` is a hint to readers**, not a rule FunctAI enforces: every

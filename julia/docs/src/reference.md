@@ -24,6 +24,8 @@ AIProgram
 FunctAI.interface
 FunctAI.interface_signature
 InterfaceError
+later
+FunctAI.Later
 ```
 
 ## Calling, and what a call returns
@@ -71,7 +73,25 @@ Event
 FunctAI.event_json
 FunctAI.Position
 FunctAI.text(::AIStream)
+answer_so_far
 Cancelled
+```
+
+## Notes
+
+```@docs
+note
+Note
+```
+
+## What a program runs on
+
+```@docs
+setup
+setup_document
+setup_diff
+spend
+ReachError
 ```
 
 ## Measuring
@@ -114,6 +134,8 @@ predict(::AIModelFit, ::Any)
 rate
 calls
 rated
+MemoryCalls
+FunctAI.records
 LogContentError
 FunctAI.written_record
 FunctAI.saw
@@ -171,6 +193,7 @@ approve!
 deny!
 resume!
 abandon!
+deliver!
 Waiting
 ApprovalError
 ```
@@ -184,6 +207,12 @@ Change
 load_plugin
 compaction
 delegate
+limits
+keep_pictures
+Spent
+FunctAI.cost
+FunctAI.StepEvent
+FunctAI.StepResult
 FunctAI.ask
 FunctAI.entries
 FunctAI.remember!

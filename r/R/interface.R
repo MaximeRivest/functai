@@ -376,7 +376,7 @@ OUTPUT_KEYS <- c("name", "shape", "desc", "type", "opaque")
 # may carry lmcc's other keywords.
 interface_problem <- function(iface, ai = FALSE) {
   top <- list(field = NULL)
-  if (!is_obj(iface) || length(setdiff(names(iface), c("description", "inputs", "outputs"))) ||
+  if (!is_obj(iface) || length(setdiff(names(iface), c("description", "inputs", "outputs", "notes"))) ||
       !is_str(iface$description) || !is_arr(iface$inputs) || !is_arr(iface$outputs) || !length(iface$outputs))
     return(top)
   seen <- character(0)
@@ -400,6 +400,123 @@ interface_problem <- function(iface, ai = FALSE) {
         if (!fits_shape(shape[["default"]], ds, ds)) return(at_fault)
       }
     }
+  }
+  notes_problem(iface)
+}
+
+# ---------------------------------------------------------------- notes (programs.md, "Notes")
+
+NOTE_KEYS <- c("name", "shape", "desc", "latest", "outside")
+is_note_name <- function(x) is_str(x) && grepl("[^ \t\n\r]", x)
+
+# The first note an interface declares that is refused (programs.md,
+# "Notes"), after every field: list(field = its name, or NULL when notes is
+# not a list or a note is not an object; why); NULL when none is. A note's
+# shape is read by the checked vocabulary alone, in every program.
+notes_problem <- function(iface) {
+  if (!has_key(iface, "notes")) return(NULL)
+  notes <- iface$notes
+  refused <- function(name, why) list(field = name, why = if (is.null(name)) paste("its notes are refused:", why) else sprintf("note %s is refused: %s", encodeString(name, quote = "\""), why))
+  if (!is.list(notes) || (length(notes) && !is.null(names(notes)))) return(refused(NULL, "notes is a list"))
+  seen <- character(0)
+  for (n in notes) {
+    if (!is_obj(n)) return(refused(NULL, "each note is a JSON object"))
+    name <- if (is_str(n$name)) n$name else NULL
+    extra <- setdiff(names(n), NOTE_KEYS)
+    if (length(extra)) return(refused(name, sprintf("it has keys a note does not have (%s); a note is {name, shape, desc?, latest?, outside?}", paste(sort_code_points(extra), collapse = ", "))))
+    if (!is_note_name(n$name)) return(refused(name, "a note's name is text with something other than spaces and line breaks"))
+    if (name %in% seen) return(refused(name, "the name is used twice among the notes"))
+    seen <- c(seen, name)
+    if (has_key(n, "desc") && !is_str(n$desc)) return(refused(name, "its desc is text"))
+    for (k in c("latest", "outside")) if (has_key(n, k) && !isTRUE(n[[k]])) return(refused(name, sprintf("%s, when present, is true", k)))
+    if (!has_key(n, "shape") || !(is_obj(n$shape) || (is.list(n$shape) && !length(n$shape)))) return(refused(name, "its shape is a JSON object"))
+    if (!well_formed(n$shape, n$shape) || loops(n$shape))
+      return(refused(name, "its shape uses a keyword the vocabulary does not list, one with a value of the wrong kind, or a reference that does not end"))
+  }
+  NULL
+}
+
+#' Declaring a note
+#'
+#' What a note a program (or a tool) declares holds, and how its readers keep
+#' and see it (contract/programs.md, "Notes"): its type, as a field's
+#' ([choice()], [record()], a sentence, `numeric()`; `NULL`: any JSON value),
+#' words about it, whether only its latest value matters (`latest = TRUE`: a
+#' stage, a count so far), and whether a caller who sees only the program's
+#' boundary may see it (`outside = TRUE`: a served program's caller). In
+#' `ai_program(..., .notes = list(...))` and `ai_tool(..., .notes = list(...))`;
+#' a type alone stands for `note_type(type)`.
+#' @param type What its data holds.
+#' @param desc Words about it.
+#' @param latest Whether only its latest value matters.
+#' @param outside Whether a caller outside the program may see it.
+#' @return A note's declaration.
+#' @examples
+#' note_type(choice("walking", "writing"), latest = TRUE, outside = TRUE)
+#' @export
+note_type <- function(type = NULL, desc = NULL, latest = FALSE, outside = FALSE) {
+  if (!is.null(desc) && !is_str(desc)) cli::cli_abort("a note's {.arg desc} is one string")
+  structure(list(type = type, desc = desc, latest = isTRUE(latest), outside = isTRUE(outside)), class = "functai_note_type")
+}
+
+#' @export
+print.functai_note_type <- function(x, ...) {
+  cat("<note type>", if (is.null(x$type)) "any JSON value" else type_label(as_field(x$type)),
+      if (x$latest) "(latest)" else "", if (x$outside) "(outside)" else "", "\n")
+  invisible(x)
+}
+
+# Notes declared in R (a named list of types or note_type()s, in order; or an
+# interface's own notes, as data) as an interface's `notes`; NULL when none
+# were declared. Refused interface-malformed as programs.md refuses them.
+notes_of <- function(declared, where = "") {
+  if (is.null(declared)) return(NULL)
+  as_data <- is.list(declared) && is.null(names(declared)) && all(vapply(declared, is_obj, NA))
+  if (!as_data && (!is.list(declared) || is.null(names(declared)) || any(!nzchar(names(declared)))))
+    cli::cli_abort("{where}: notes is a named list: {.code list(stage = note_type(choice(\"walking\", \"writing\"), latest = TRUE))}")
+  out <- if (as_data) lapply(declared, json_normal) else unname(Map(function(name, spec) {
+    note <- if (inherits(spec, "functai_note_type")) spec else note_type(spec)
+    entry <- list(name = name)
+    entry["shape"] <- list(if (is.null(note$type)) lmcc::jobj() else described_shape(as_field(note$type)))
+    if (!is.null(note$desc)) entry$desc <- note$desc
+    if (note$latest) entry$latest <- TRUE
+    if (note$outside) entry$outside <- TRUE
+    entry
+  }, names(declared), declared))
+  out <- json_normal(out)
+  problem <- notes_problem(list(notes = out))
+  if (!is.null(problem)) refuse("interface-malformed", c("{where}: {problem$why}"), field = problem$field)
+  out
+}
+
+# The notes of several tools, as one AI function's (programs.md, "How each
+# program has one"): in order, once each; one name declared differently
+# refuses (interface-malformed). NULL when none declares notes.
+merged_notes <- function(lists, program = "") {
+  said <- Filter(Negate(is.null), lists)
+  if (!length(said)) return(NULL)
+  out <- list(); by_name <- list()
+  for (notes in said) for (n in notes) {
+    was <- by_name[[n$name]]
+    if (is.null(was)) { by_name[[n$name]] <- n; out[[length(out) + 1L]] <- n }
+    else if (!same_json(was, n)) refuse("interface-malformed", c("{program}: note {.val {n$name}} is refused: two of its tools declare this note differently"), field = n$name)
+  }
+  out
+}
+
+# Why a note made inside calls whose programs declare `chain` (outermost
+# first; NULL: declares none) is refused (programs.md, "Checking a note"), or
+# NULL. `data` is its JSON form.
+note_refusal <- function(chain, name, data) {
+  own <- if (length(chain)) chain[[length(chain)]] else NULL
+  names_ <- vapply(own %||% list(), function(n) n$name, "")
+  if (!is.null(own) && !name %in% names_)
+    return(sprintf("this program declares its notes, and %s is not one of them (%s)", encodeString(name, quote = "\""),
+                   if (length(names_)) paste(encodeString(names_, quote = "\""), collapse = ", ") else "none"))
+  for (notes in rev(chain)) for (n in notes %||% list()) {
+    if (!identical(n$name, name)) next
+    shape <- data_shape(n$shape)
+    if (!fits_shape(data, shape, shape)) return(sprintf("its data %s does not fit the shape declared for it", short_json(data)))
   }
   NULL
 }
@@ -426,9 +543,21 @@ interface_of <- function(core) {
     if (isTRUE(f$optional)) out$optional <- TRUE     # on an output: refused, in its turn (programs.md)
     out
   }
-  json_normal(list(description = d$description,
-                   inputs = unname(Map(field, names(d$inputs), d$inputs, TRUE)),
-                   outputs = unname(Map(field, names(d$outputs), d$outputs, FALSE))))
+  out <- list(description = d$description,
+              inputs = unname(Map(field, names(d$inputs), d$inputs, TRUE)),
+              outputs = unname(Map(field, names(d$outputs), d$outputs, FALSE)))
+  notes <- declared_notes(core)                       # its tools' (programs.md, "How each program has one")
+  if (!is.null(notes)) out$notes <- notes
+  json_normal(out)
+}
+
+# The notes a program declares (its interface's), or NULL: an AI function's
+# are its tools', in the order of its tools; a program's its own.
+declared_notes <- function(core) {
+  if (is.null(core)) return(NULL)
+  if (!is.null(core$interface)) return(core$interface$notes)
+  if (identical(core$kind, "module")) return(core$notes)
+  merged_notes(lapply(core$tools %||% list(), function(t) t$notes), program = core$definition$name %||% "")
 }
 
 # ---------------------------------------------------------------- refusals
@@ -449,7 +578,7 @@ check_definition <- function(core, call = NULL) {
   problem <- interface_problem(iface, ai = TRUE)
   if (!is.null(problem)) {
     f <- problem$field
-    why <- interface_fault(iface, f)
+    why <- interface_fault(iface, f, problem$why)
     column <- if (!is.null(f)) columns_of(core)[f] else NA
     shown <- if (!is.na(column %||% NA) && !identical(unname(column), f)) sprintf(" (%s, as the formula names it)", column) else ""
     refuse("interface-malformed", c("{.fn {core$definition$name}} cannot be defined: {why}{shown}",
@@ -466,8 +595,9 @@ own_settings <- function(core) {
   core
 }
 
-# The fault programs.md found in a field, in words.
-interface_fault <- function(iface, f) {
+# The fault programs.md found in a field (or a note: `why`), in words.
+interface_fault <- function(iface, f, why = NULL) {
+  if (!is.null(why)) return(why)
   if (is.null(f)) return("its interface is not one programs.md allows")
   field <- NULL
   for (x in c(iface$inputs, iface$outputs)) if (identical(x$name, f)) { field <- x; break }

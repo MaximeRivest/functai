@@ -39,7 +39,13 @@ a server of your own that speaks its API, such as vLLM or Ollama with
 cannot be read once the re-asks are spent ends the call well with no
 answer, \code{NA}, \code{predict()}'s \code{.error} saying why, recorded with no outputs
 and the refusal as its error, and a conversation goes on past it; for
-long runs that must not stop at one bad reply).}
+long runs that must not stop at one bad reply); \code{wall} (the wall the host
+runs programs behind: \code{NULL}, none it says, so what a program may reach
+is open; a name, \code{"srt"}, a wall made from each program's needs; or
+\code{list(name, domains, secrets, limits)}, what it lets through: a program
+that needs what its wall does not let through is refused before its
+first call, \code{needs-unmet}). \code{log_calls} may be a store of one's own
+(\code{\link[=memory_calls]{memory_calls()}}).}
 
 \item{code}{Code to run with these settings.}
 

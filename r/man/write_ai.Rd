@@ -2,12 +2,12 @@
 % Please edit documentation in R/saved.R
 \name{write_ai}
 \alias{write_ai}
-\title{Save an AI function for any language}
+\title{Save an AI function or a program for any language}
 \usage{
 write_ai(fn, path)
 }
 \arguments{
-\item{fn}{An AI function.}
+\item{fn}{An AI function or a program.}
 
 \item{path}{A folder.}
 }
@@ -17,5 +17,10 @@ The file written, invisibly.
 \description{
 Writes \code{functai.json} in \code{path}: the function as data, which Python
 (\code{functai.load}), TypeScript (\code{load()}) and \code{\link[=read_ai]{read_ai()}} run, sending the
-same requests.
+same requests. A program is saved with every AI function and program it
+reaches (its code runs only here: any language describes it, and loads its
+AI functions), and an agent with its tools described as data, with their
+code's hash (any language describes it, and refuses to run it). Each node
+keeps its setup where it was saved (\code{\link[=ai_setup]{ai_setup()}}): \code{\link[=ai_setup_diff]{ai_setup_diff()}}
+compares two folders.
 }

@@ -163,7 +163,7 @@ wants_pieces <- function(call) {
 BARRIER_KINDS <- c("started", "tool_call", "done", "failed")
 
 # Number an event and give it to its readers. `withhold`: a required journal's
-# last event, given to streams and observers only once confirmed (deliver()).
+# last event, given to streams and observers only once confirmed (deliver_event()).
 emit_event <- function(t, kind, call, fn, data, withhold = FALSE, last = FALSE) {
   if (t$replaying) {
     # a resumed turn doing again what it did before: nothing is shown until it does something new
@@ -189,7 +189,7 @@ emit_event <- function(t, kind, call, fn, data, withhold = FALSE, last = FALSE) 
       if (kind %in% BARRIER_KINDS) t$barrier_n[[as.character(e$seq)]] <- n
     }
   }
-  if (!withhold) deliver(t, e)
+  if (!withhold) deliver_event(t, e)
   e
 }
 
@@ -205,7 +205,7 @@ tree_frontier <- function(t) {
 
 # Give an event to the streams watching its call, and the kept form to its
 # call's observers and the tree's sinks.
-deliver <- function(t, e) {
+deliver_event <- function(t, e) {
   for (i in seq_along(t$streams)) stream_offer(t, i, e)
   obs <- t$observers[[e$call]] %||% list()
   if (!length(obs) && !length(t$sinks)) return(invisible())

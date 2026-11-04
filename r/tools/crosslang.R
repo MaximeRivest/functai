@@ -48,6 +48,17 @@ mood <- ai(mood ~ review, "How does the customer feel about what they bought?",
 stopifnot_eq(ai_version(mood), python$mood$version, "version")
 stopifnot_eq(ai_signature_id(mood), python$mood$signature, "signature")
 say("mood written in R has Python's version and signature")
+setups <- read_json(file.path(work, "python-setup.json"))
+stopifnot_eq(ai_setup(mood), setups$mood, "mood setup")
+say("mood written in R has Python's setup (its model, settings, reach)")
+walk <- ai_interface(file.path(work, "saved", "walk"))
+stopifnot_eq(lmcc::canonical_json(unclass(walk)$notes), lmcc::canonical_json(setups$walk$notes), "walk notes")
+agent <- read_json(file.path(work, "saved", "agent", "functai.json"))
+tool <- agent$nodes[[agent$entry]]$ai$tools[[1L]]
+stopifnot_eq(lmcc::canonical_json(tool$needs), lmcc::canonical_json(setups$agent_tool), "agent tool needs")
+err <- tryCatch(read_ai(file.path(work, "saved", "agent")), functai_refusal = function(e) e)
+stopifnot_eq(err$code, "saved-tools", "agent")
+say("a program Python saved is described here with its declared notes; an agent Python saved is refused (saved-tools)")
 route <- ai(urgency + result ~ message + channel, "Which team answers?",
   message = "the customer's words",
   channel = choice(email = "written at leisure, often long", chat = "short, often several messages"),

@@ -290,7 +290,7 @@ refuse_interface <- function(key, iface, ai) {
   problem <- interface_problem(iface, ai = ai)
   if (is.null(problem)) return(invisible())
   f <- problem$field
-  load_refused("interface-malformed", sprintf("%s: its interface is refused: %s", key, interface_fault(iface, f)), field = f)
+  load_refused("interface-malformed", sprintf("%s: its interface is refused: %s", key, interface_fault(iface, f, problem$why)), field = f)
 }
 
 # Describing a node without loading it (saved.md, "Describing without
@@ -384,12 +384,17 @@ from_manifest <- function(m, node = NULL, saved = NULL) {
   make_fn(core)
 }
 
-#' Save an AI function for any language
+#' Save an AI function or a program for any language
 #'
 #' Writes `functai.json` in `path`: the function as data, which Python
 #' (`functai.load`), TypeScript (`load()`) and [read_ai()] run, sending the
-#' same requests.
-#' @param fn An AI function.
+#' same requests. A program is saved with every AI function and program it
+#' reaches (its code runs only here: any language describes it, and loads its
+#' AI functions), and an agent with its tools described as data, with their
+#' code's hash (any language describes it, and refuses to run it). Each node
+#' keeps its setup where it was saved ([ai_setup()]): [ai_setup_diff()]
+#' compares two folders.
+#' @param fn An AI function or a program.
 #' @param path A folder.
 #' @return The file written, invisibly.
 #' @export
@@ -401,10 +406,47 @@ write_ai <- function(fn, path) {
 }
 
 to_manifest <- function(fn) {
-  core <- core_of(fn)
-  if (length(core$tools)) cli::cli_abort("{.fn {core$definition$name}} has tools: a tool is code, and a saved folder carries none from R")
-  s <- core$own
+  nodes <- add_node(list(), fn)
+  core <- program_core_of(fn)
+  list(functai_saved = 1L, language = "r", entry = paste0(core$module, ":", core$definition$name),
+       created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S+00:00", tz = "UTC"),
+       functai = as.character(utils::packageVersion("functai")), nodes = nodes)
+}
+
+# A program's node, and those of the AI functions and programs it reaches (saved.md): each with the setup it had here.
+add_node <- function(nodes, fn) {
+  core <- program_core_of(fn)
   key <- paste0(core$module, ":", core$definition$name)
+  if (!is.null(nodes[[key]])) return(nodes)
+  if (is_program(fn)) {
+    if (!is.null(core$remote)) cli::cli_abort("{core$definition$name} is served elsewhere ({core$remote$url}): save it where it runs")
+    node <- list(kind = "module", module = core$module, name = core$definition$name, interface = program_interface(core),
+                 version = program_version(core))
+    if (!is.null(core$needs)) node$needs <- core$needs
+    node$setup <- ai_setup_document(fn)
+    nodes[[key]] <- node
+    for (v in program_values(core)) nodes <- add_node(nodes, v)
+    return(nodes)
+  }
+  node <- ai_node(fn)
+  node$setup <- ai_setup_document(fn)           # what it ran on where it was saved: a loader never refuses for it
+  nodes[[key]] <- node
+  nodes
+}
+
+# A tool as a saved folder describes it (saved.md, tools): what the model is
+# told, the hash of its code, and what it says of itself.
+saved_tool <- function(t) {
+  entry <- c(list(tool = list(name = t$name, description = t$description %||% "", parameters = t$parameters)), tool_entry(t))
+  if (!is.null(t$effects)) entry$effects <- t$effects
+  if (!is.null(t$needs)) entry$needs <- t$needs
+  if (!is.null(t$notes)) entry$notes <- t$notes
+  entry
+}
+
+ai_node <- function(fn) {
+  core <- core_of(fn)
+  s <- core$own
   settings <- list(module = s$module %||% "predict", include_fn_name_in_instructions = !isFALSE(s$include_fn_name))
   if (is.character(s$lm)) settings$lm <- s$lm
   if (!is.null(s$adapter)) settings$adapter <- if (inherits(s$adapter, "lmcc_adapter")) lmcc::dump_adapter(s$adapter, registry()) else s$adapter
@@ -418,7 +460,7 @@ to_manifest <- function(fn) {
     ins <- if (!is.null(d$signature)) d$inputs else d$inputs
     if (!any(vapply(probes, function(p) identical(lmcc::canonical_json(p), lmcc::canonical_json(ins)), NA))) probes[[length(probes) + 1L]] <- ins
   }
-  ai <- list(settings = settings, config = if (length(cfg)) cfg else lmcc::jobj(), template = s$template, tools = list(),
+  ai <- list(settings = settings, config = if (length(cfg)) cfg else lmcc::jobj(), template = s$template, tools = lapply(core$tools, saved_tool),
              teacher = NULL, state = list(instructions = core$state$instructions, demos = core$state$demos), requires = list(),
              signature = lmcc::signature_to_list(sig), probes = probes,
              fingerprints = list(signature = lmcc::signature_fingerprint(sig), requests = lapply(probes, function(p) request_hash(core, p))),
@@ -428,7 +470,5 @@ to_manifest <- function(fn) {
   code <- Filter(Negate(is.null), lapply(core$definition$inputs, function(f) f$default_code))
   if (length(code)) node$defaults <- lapply(code, function(c) list(code = c))
   node$ai <- ai
-  nodes <- list(); nodes[[key]] <- node
-  list(functai_saved = 1L, language = "r", entry = key, created = format(Sys.time(), "%Y-%m-%dT%H:%M:%S+00:00", tz = "UTC"),
-       functai = as.character(utils::packageVersion("functai")), nodes = nodes)
+  node
 }

@@ -1,5 +1,49 @@
 # functai (development version)
 
+Caught up with Python and TypeScript (design/17, 18, 19): every case of
+`contract/cases/agents`, `setup` and `partial`, `programs/27` to `30`,
+`views/outside-04` and `events/replay-15` passes.
+
+- **Tools answer with pictures** (contract/tools.md, *What a tool
+  returns*): text, a value, an lm15 part (`lm15::image_part(path = )`) or a
+  list holding one; a part read from a file is given its bytes. The
+  `tool_result` event adds `parts`; `tool_result` plugins see and change
+  them; a conversation's tool records keep them.
+- **The `step` hook**: before each request after the first in a tool loop,
+  change the tools offered, add a `reminder`, show earlier results
+  otherwise (`replace`), or `stop`; recorded as data, so the call stays
+  replayable. `before_call` may `stop` too (`functai_plugin_stopped`).
+  Both are given `spent` (`ai_spent()`, `ai_cost()`).
+- **`limits()`** and **`keep_pictures()`**, built-in plugins on the step
+  hook. `ai_plugin(config = )`: a setup counts a plugin's settings.
+- **`ai_note(name, data)`** from plain code, a `note` event; `later`
+  events. **Declared notes**: `ai_program(..., .notes = )`,
+  `ai_tool(..., .notes = )`, `note_type()`; each note is checked where it
+  is made (`interface-note`), declared notes are in the interface (not its
+  signature) and in a program's version, and the outside view shows those
+  declared `outside`. A reader's state keeps each call's notes.
+- **Results that come later**: a tool returns `ai_later(key)`; in a
+  conversation's turn the turn waits (the waiting condition's `$later`,
+  `turn$later`) and `deliver(chat, key, result)` from any process resumes
+  it; a delivery made first is used at once, a second one changes nothing.
+  `later-unavailable` outside a turn. Answering an approval no longer
+  resumes a turn that still waits for a delivery: the delivery does.
+- **A store of one's own for the call log**: `log_calls` takes any object
+  with `$append(record)` and `$read()`; `memory_calls()`. `log_calls` that
+  is neither a folder, a flag nor a store is refused when it is set.
+- **The answer so far**, read by its shape: `answer_so_far(text, fn)` (a
+  choice only once whole).
+- **Setups** (contract/calls.md, *Setups*): `ai_setup()`,
+  `ai_setup_document()`, `ai_setup_diff()`; `program.setup` and `placement`
+  on every record; `.needs` on tools and programs, the `wall` setting and
+  `needs-unmet` before a call's first request; `ai_spend()` and a record's
+  `spent`. A tool's code counts in the setup, read as R deparses it;
+  `ai_tool(..., .code_id = )` says what identifies it beyond that.
+- **Saving**: `write_ai()` saves a program with the AI functions and
+  programs it reaches, and an agent with its tools described as data
+  (loading it refuses `saved-tools`, as in every language); every node keeps
+  its setup.
+
 - **Requires lm15 2.0.0**, whose token counts mean one thing on every
   provider: `input_tokens` includes cached tokens, `output_tokens` includes
   reasoning (contract/calls.md, *Token counts*). With lm15 1, Anthropic's

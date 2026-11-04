@@ -4,13 +4,16 @@
 \alias{outside_view}
 \title{What a caller outside a program sees of its log}
 \usage{
-outside_view(events, answer_from = NULL)
+outside_view(events, answer_from = NULL, notes = character(0))
 }
 \arguments{
 \item{events}{A call tree's events (its whole log, or its kept form).}
 
 \item{answer_from}{The AI function (or its name) whose answer is a
 program's answer, shown as the program's as it is written.}
+
+\item{notes}{The names of the notes the outermost program declares
+\code{outside}: shown, as the outermost program's.}
 }
 \value{
 The events of the view.
