@@ -93,6 +93,10 @@ DEFAULTS: Dict[str, Any] = {
     "plugins": None,           # [functai.Plugin or a file defining one, ...]
     "program_plugins": None,   # False (a host's block or configure): a program's own plugins do not run
 
+    # the wall the host runs programs behind (contract/calls.md, *Reach*): None (none it says) | a name ("srt": made
+    # from each program's needs) | {"name", "domains"?, "secrets"?, "limits"?}: what it lets through, and its limits
+    "wall": None,
+
     # baking (functai.bake): where training happens when bake() is not told:
     # "here", "tinker", "prime", "export", or a list in order of preference
     "bake_where": None,
@@ -159,6 +163,8 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
         if settings.get("plugins") is not None:
             from . import plugins
             settings = {**settings, "plugins": plugins.check_setting(settings["plugins"])}
+        if settings.get("wall") is not None:
+            settings = {**settings, "wall": check_wall(settings["wall"])}
         if settings.get("program_plugins") not in (None, True, False):
             raise TypeError(f"program_plugins is True or False, not {settings['program_plugins']!r}")
         if settings.get("program_observers") not in (None, True, False):
@@ -171,6 +177,30 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise type(exc)(f"{where}: {exc}") from None
     return dict(settings)
+
+
+def check_wall(wall: Any) -> Any:
+    """The ``wall`` setting as data: a name, or ``{"name", "domains"?, "secrets"?, "limits"?}`` (domains in lower
+    case, each list sorted and once each)."""
+    from .tools import needs_of
+    if isinstance(wall, str) and wall.strip():
+        return wall
+    if not isinstance(wall, dict) or not isinstance(wall.get("name"), str) or not wall["name"].strip() \
+            or set(wall) - {"name", "domains", "secrets", "limits"}:
+        raise TypeError("wall is the name of the wall programs run behind (\"srt\"), or {\"name\", \"domains\"?, "
+                        "\"secrets\"?, \"limits\"?}: what it lets through, and its limits")
+    out: Dict[str, Any] = {"name": wall["name"]}
+    lets = needs_of({k: wall[k] for k in ("domains", "secrets") if k in wall}, where="wall")
+    for k in ("domains", "secrets"):
+        if k in wall:
+            out[k] = lets[k]
+    if "limits" in wall:
+        import json
+        if not isinstance(wall["limits"], dict):
+            raise TypeError("wall['limits'] is an object: memory, processor, seconds, as the host says them")
+        json.dumps(wall["limits"], allow_nan=False)
+        out["limits"] = wall["limits"]
+    return out
 
 
 def layers(own: Dict[str, Any] | None = None) -> List[Tuple[str, Dict[str, Any]]]:

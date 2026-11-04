@@ -446,6 +446,9 @@ def notes_of(declared: Any, *, where: str) -> Optional[List[Dict[str, Any]]]:
     a type with no JSON form refuses (``interface-malformed``)."""
     if declared is None:
         return None
+    if isinstance(declared, list):                    # already data (a saved interface's notes): checked, kept
+        _check_notes({"notes": declared}, where)
+        return copy.deepcopy(declared)
     if not isinstance(declared, Mapping):
         raise TypeError(f"{where}: notes is a dict, from a note's name to its type or functai.Note(...)")
     out: List[Dict[str, Any]] = []

@@ -809,9 +809,33 @@ class Analysis:
     # ---- AI functions
 
     def _ai(self, node: Node, fn: FunctAIFunc) -> None:
+        from .tools import Tool
         node.requires = tuple(getattr(fn, "_requires", ()) or ())
         for t in fn._tools:
-            if isinstance(t, FunctAIFunc):
+            if isinstance(t, Tool):
+                # a tool that says what it does (functai.tool): its code, and what it says of itself beside it
+                inner = t._fn
+                meta = {k: v for k, v in (("effects", t.effects), ("needs", t.needs), ("notes", t.notes))
+                        if v is not None}
+                if t.__name__ != getattr(inner, "__name__", None):
+                    meta["name"] = t.__name__
+                if (t.__doc__ or "") != (getattr(inner, "__doc__", None) or ""):
+                    meta["description"] = t.__doc__ or ""
+                if inspect.isfunction(inner) and self.origins.of(inner.__module__) == "local":
+                    k = self.code(inner, where=f"{node.key} tools")
+                    if k:
+                        node.tools.append({"node": k, **meta})
+                        if k not in node.uses:
+                            node.uses.append(k)
+                else:
+                    path = self._import_path(inner) if inspect.isfunction(inner) or inspect.isbuiltin(inner) else None
+                    if path is None:
+                        self.problem("unsaveable-value", node.key, f"the tool {t!r} cannot be imported by name",
+                                     "wrap it in a function of your own")
+                    else:
+                        node.tools.append({"import": f"{path[0]}:{path[1]}", **meta})
+                        self._package(path[0])
+            elif isinstance(t, FunctAIFunc):
                 k = self.code(t, where=f"{node.key} tools")
                 if k:
                     node.tools.append(k)

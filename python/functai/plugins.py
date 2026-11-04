@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import copy
 import dataclasses
+import json
 import importlib.util
 import os
 import re
@@ -161,7 +162,8 @@ class Plugin:
     ```
     '''
 
-    def __init__(self, name: str, *, version: str = "0.0.0", api: int = API, description: str = ""):
+    def __init__(self, name: str, *, version: str = "0.0.0", api: int = API, description: str = "",
+                 config: Any = None):
         if not isinstance(name, str) or not _NAME.fullmatch(name):
             raise PluginError("plugin-name", f"a plugin's name is lower-case letters, digits, '_' or '-' "
                                                    f"(at most 64), starting with a letter; not {name!r}")
@@ -173,6 +175,13 @@ class Plugin:
         self.version = str(version)
         self.api = api
         self.description = description
+        # its settings as JSON (contract/plugins.md, *A plugin*): a program's setup counts them
+        if config is not None:
+            try:
+                json.dumps(config, allow_nan=False)
+            except (TypeError, ValueError):
+                raise TypeError(f"plugin {name}: config is its settings as JSON, not {config!r}") from None
+        self.config = config
         self.handlers: Dict[str, List[Callable[..., Any]]] = {}
 
     def on(self, hook: str, fn: Optional[Callable[..., Any]] = None) -> Any:
@@ -223,8 +232,11 @@ class Plugin:
 
     def describe(self) -> Dict[str, Any]:
         """Its manifest, as data: name, version, api, the hooks it uses."""
-        return {"name": self.name, "version": self.version, "api": self.api, "description": self.description,
-                "hooks": sorted(self.handlers)}
+        out = {"name": self.name, "version": self.version, "api": self.api, "description": self.description,
+               "hooks": sorted(self.handlers)}
+        if self.config is not None:
+            out["config"] = self.config
+        return out
 
     def __repr__(self) -> str:
         return f"<Plugin {self.name} {self.version}: {', '.join(sorted(self.handlers)) or 'no hooks'}>"
@@ -459,12 +471,14 @@ class Spent:
     replies a resumed turn reuses cost nothing now and are not in it.
     ``requests``, ``usage`` (summed: a counter only when every request
     reported it), ``tokens`` (``total_tokens`` summed, or None when a request
-    did not report it), ``seconds`` (since the tree's outermost call started)
-    and ``cost(prices)``."""
+    did not report it), ``seconds`` (since the tree's outermost call started),
+    ``reported`` (dollars code in the tree said it spent: ``functai.spend``)
+    and ``cost(prices)``, which counts both."""
 
-    def __init__(self, exchanges: Sequence[Tuple[str, Mapping[str, int]]], seconds: float):
+    def __init__(self, exchanges: Sequence[Tuple[str, Mapping[str, int]]], seconds: float, reported: float = 0.0):
         self.exchanges = [(m, dict(u)) for m, u in exchanges]
         self.seconds = seconds
+        self.reported = float(reported)
 
     @property
     def requests(self) -> int:
@@ -482,8 +496,9 @@ class Spent:
     def cost(self, prices: Mapping[str, Any]) -> Optional[float]:
         """The list-price cost of the requests, from ``prices`` (a model's
         name, as asked, to an lm15 ``InferencePricing`` or a dict of its
-        fields): exact or None, never a guess (a model without a price, or a
-        request whose counts do not settle its price, makes it None)."""
+        fields), plus what code reported it spent: exact or None, never a
+        guess (a model without a price, or a request whose counts do not
+        settle its price, makes it None)."""
         total = 0.0
         for model, usage in self.exchanges:
             price = pricing(prices, model)
@@ -493,7 +508,7 @@ class Spent:
             if got is None:
                 return None
             total += got
-        return total
+        return total + self.reported
 
     def __repr__(self) -> str:
         return f"<Spent {self.requests} requests, {self.tokens} tokens, {self.seconds:.1f}s>"
@@ -530,7 +545,8 @@ def spent_of(call: Any) -> Spent:
     from .calllog import _id_lock
     with _id_lock:
         exchanges = list(top.spent)
-    return Spent(exchanges, max(0.0, _time.time() - top.started))
+        reported = top.tree_spent
+    return Spent(exchanges, max(0.0, _time.time() - top.started), reported)
 
 
 @dataclasses.dataclass

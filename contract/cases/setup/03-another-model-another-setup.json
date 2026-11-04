@@ -1,0 +1,54 @@
+{
+ "description": "The same function on another model: the same version, another setup.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "anthropic:claude-haiku-4-5"
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "anthropic",
+    "model": "claude-haiku-4-5"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "reach": "open"
+  },
+  "setup": "sha256:dc4beec33f42a06e199ae4c100eb4199e40673b03e8c25d8c27c8f444d9a5e57"
+ }
+}

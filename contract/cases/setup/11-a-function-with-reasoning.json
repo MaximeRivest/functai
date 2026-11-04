@@ -1,0 +1,51 @@
+{
+ "description": "Another function (module cot): its own version in its setup.",
+ "definition": {
+  "name": "solve",
+  "description": "Solve the word problem.",
+  "inputs": [
+   {
+    "name": "problem",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "type": "number"
+    }
+   }
+  ],
+  "settings": {
+   "module": "cot"
+  },
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini"
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:47778665a43c5e31199be834f077194a43d062241db273cef14e47b3c7607b35",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "reach": "open"
+  },
+  "setup": "sha256:7e5ee3c3bac2caa0e01744ab3105d04f49b026ef4efb42fb6e3adfdb6e766987"
+ }
+}

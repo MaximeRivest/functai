@@ -1,0 +1,19 @@
+{
+ "description": "Nothing asked of a model, only what code spent: the cost is what it reported, no price needed.",
+ "kind": "spent",
+ "exchanges": [],
+ "prices": {
+  "claude-sonnet-5": {
+   "input_per_million": 3,
+   "output_per_million": 15,
+   "cache_read_per_million": 0.3,
+   "cache_write_per_million": 3.75
+  }
+ },
+ "reported": 0.0125,
+ "expect": {
+  "tokens": 0,
+  "cost": 0.0125,
+  "usage": {}
+ }
+}

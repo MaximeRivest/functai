@@ -158,6 +158,7 @@ language reads as it is.
 | `program.interface` | every program: its interface's signature ([programs.md](programs.md)): lmcc's fingerprint of the interface's inputs and outputs only, each shape without its `default`. Calls with the same `program.interface` record the same data, even when the instruction or a default changed or reasoning was turned on; `rated` pools them. It does not say which calls a program accepts (compare interfaces for that). For an AI function with neither reasoning nor tools it equals `program.signature`. |
 | `program.answer` | the name of the output that is the answer: the last output of the program's interface (`result` unless the program names it). A rating of right or wrong is about this output. |
 | `program.saved` | present when the program was loaded from a saved folder: `sha256:` of that folder's `functai.json`. |
+| `program.setup` | what the program ran on: its version, each step's model and settings, its plugins, its tools' code, what it may reach (*Setups*). Absent for a remote program and in records written before 2026-11-04. |
 | `program.file`, `.line` | where the code is, when known. For a program defined at its language's top level (`program.module` Python's `__main__`, R's `R_GlobalEnv`, Julia's `Main`, a TypeScript file run directly), `program.file` is the notebook or script the code is in: the notebook itself, never a file a kernel runs its cells from. It then tells two notebooks' programs apart (*Rows with known answers*), and is absent when the language cannot tell (a bare prompt, a kernel that does not give its notebook's path). |
 | `started`, `seconds` | UTC start and wall-clock duration. Every time in the log is RFC 3339 UTC with exactly six fraction digits (`2026-09-26T23:12:03.123456Z`), so times sort as text. |
 | `content` | `true` when every value was recorded; `false` when some or all were not (the `log_content` setting: see *Content*). |
@@ -172,6 +173,8 @@ language reads as it is.
 | `confidence` | the probability the model gave its own answer (the lowest over the outputs it measured), or `null`. Only baked models and providers that return probabilities measure it. |
 | `probabilities` | `{output: {answer: probability}}` when measured, for the outputs recorded. Absent when none is. |
 | `escalated` | `true` when a first model was unsure and another answered; absent otherwise. |
+| `spent` | what the call's own code and tools said they spent beyond its models' tokens (`spend`: *Setups*, *Spending*): `{"usd": <total>}`, the sum of every amount reported while the call ran and not inside a call of its own (a module's code, an AI function's tools). Absent when nothing was reported. Sum a tree's `spent` with its models' cost for what it cost. |
+| `placement` | where the call ran, beside what it ran on: `wall`, the name of the wall the host says it runs behind (`null`: none it was told of), and `base_url`, the server address an AI function's model was asked at, when one was set. Absent when there is neither. Never in `program.setup` (*Setups*). |
 | `exchanges` | each model request of this call, in order, including failed attempts (`error`, kept as the call's `error` is) and replies from the cache (`cached: true`, `seconds: 0`). `model` (as asked), `provider`, `started`, `seconds`, `cached`, `finish`, `usage` are always there. Only when `content` is true: `request` and `response` (lm15's canonical JSON: a request holds every input, a response every output) and `request_hash`, lmcc's hash of the request this exchange sent (kernel §3a, a model step's `request`): `"sha256:"` and the SHA-256 of the canonical JSON of that lmcc request (`system`, `messages`, `config`), whatever made it: a render (the first, or a tool step's); a re-ask, whose request is the one it follows with two more `messages`, the reply's message and the correction as a user message of one text part ([functions.md](functions.md), *When the reply cannot be read*); a resend with a larger budget sends the same lmcc request (the budget is lm15's), and has its hash. It shows a later reader rebuilt the same request; a hash of another request would show nothing (a hash of a short value can be guessed back, so it goes with the values). A request streamed by a watched call ([streaming.md](streaming.md)) has `streamed: true` and `first_delta`, the seconds until its first piece of content (null when none came). |
 | `saw` | the calls this call was given as context, beyond its inputs and its program's state (see *Saw*). `[]` when none. Always there in format 2. A format-1 record has none: what it saw was not recorded, never "none". |
 | `described` | present when some value the record holds had no JSON form and is written as a description (*Values*): `{"inputs": [...], "outputs": [...]}`, their names. Such a value is not data: it cannot be asked again or shown again. |
@@ -638,6 +641,107 @@ hashes (a TypeScript module's `input` and `output`). Versions computed
 before 2026-09-28 have no `"interface"`: every module's version changed
 once then. Versions computed before 2026-09-30 have no `"defaults"`:
 every program with a default got a new version once then.
+
+## Setups
+
+A version says what a program **is**; it leaves out on purpose what it
+runs on (*Versions*). Its **setup** says that: which model answers each
+step, with which settings, with which plugins, with which tool code,
+able to reach what. Two runs of one version on two models have two
+setups, so a score, a comparison or a release can belong to exactly one
+thing that ran ([design/18](../design/18-setup.md)). Ratings still pool
+by interface, as ever.
+
+What a program **is** (the version), what it **runs on** (the setup), and
+**where** and behind which wall it runs (`placement`, recorded on each
+call) are three things. A change of where must not change what the
+program does; a change of what it runs on may, and splits the setup.
+(ProgramIR's rule: identity changes detach scores, placement changes do
+not.)
+
+A setup is `"sha256:"` and the hex SHA-256 of the canonical JSON of a
+document. It is computed where the program runs, from the settings in
+force there (the program's own, the blocks around it, the process's),
+before its first call, without the network. The same function with the
+same model, settings, plugins and reach has one setup in every language;
+a tool or a plugin whose code is another language's makes another setup,
+which is true: another thing runs.
+
+**An AI function's** document:
+
+| key | what it holds |
+|---|---|
+| `version` | its version. |
+| `model` | the model it would ask: `{"provider", "model"}` as lm15 routes its `lm` setting (`"openai:gpt-4.1-mini"` and `"gpt-4.1-mini"` are one model); a baked model `{"baked": B}`, `B` `"sha256:"` of the canonical JSON of its `baked.json`'s `hashes` (its files, weights included); `null` when none can be named (none set, none found). |
+| `config` | the lm15 settings set in any layer (`temperature`, `max_tokens`, `top_p`, `seed`, `stop`, `reasoning`, …), as lm15's canonical JSON. Absent when none is set: a provider's own default is not FunctAI's to know (the record says what it did). |
+| `settings` | FunctAI's settings that change what the model is asked or what comes back, each with its value in force, defaults included: `max_steps` (8), `retries` (1), `tool_errors` (`"report"`), `on_unreadable` (`"raise"`), and `capabilities` when set. |
+| `escalate` | when `escalate_to` is set: `{"to": T, "below": P}`, `T` a model as `model` names one, or `{"setup": S}` for an AI function, `P` the probability (0.9 when not set). |
+| `plugins` | the plugins that run on its calls, in the order they run ([plugins.md](plugins.md), *Order*), each `{"name", "version", "config"?}`: `config` what the plugin says its settings are, as JSON (the built-ins: *Built-in plugins*). Absent when none runs. Every plugin counts: what only watches is an observer, never a plugin. |
+| `tools` | each tool by name: `{"code": {"language", "code"}}` for code of the program's own (`code` `"sha256:"` of its source as the language reads a module's code: Python the code the tool reaches, TypeScript the function's text), `{"setup": S}` for an AI function or a module used as a tool. Absent when it has none. A tool's name, description and parameters are in the version already. |
+| `reach` | what the program may reach where it runs (*Reach*). |
+
+**A module's**: `{"version", "ai", "reach"}`, `ai` the setup of each AI
+function it reaches, by the keys its version uses.
+
+**Not in a setup**, and recorded on each call instead when it matters
+(`placement`, `exchanges`): the server address (`base_url`), keys and
+accounts (`api_key`, `auth`, `client`), network retries and waits
+(`api_retries`, `api_max_wait`), the reply cache (`cache_replies`,
+`replicate`), the call log and what watches (`log_calls`,
+`log_content`, `caller`, `observers`, `journal`), approvals (a person's
+answer, kept with the call), optimizers' settings, and how the wall is
+built. A server address can serve another model under the same name: the
+record of which model answered (`exchanges`) is the guard, and a host
+that sees it change for one setup should say so.
+
+### Reach
+
+A program may say what its code needs to reach, as data: a tool's or a
+module's `needs`, `{"domains": [...], "secrets": [...]}`. A domain is a
+host name (`api.browser-use.com`) or `*.` and a host name, which reaches
+every name under it and not the name itself (`*.browser-use.com`), in
+lower case. A secret is named, never given: the host supplies it (an
+environment variable, a proxy that adds it on the way out). A program's
+needs are its own and its tools'; a module's are also those of every AI
+function it reaches.
+
+The host says what wall the program runs behind with the setting `wall`:
+absent or `null` (none it says), a name (`"srt"`: a wall made from the
+program's needs, nothing else let through), or `{"name", "domains"?,
+"secrets"?, "limits"?}` (a wall that lets through these, and holds these
+limits: memory, processor, seconds, as JSON the host chooses). Then:
+
+- no wall: `reach` is `"open"`. Anything not declared may also work, so a
+  run on a laptop is another setup than the same program behind a wall:
+  an instruction improved where the agent could install what it liked
+  may be wrong where it cannot;
+- a wall: `reach` is `{"domains", "secrets", "limits"?}`, each list
+  sorted and once each: what the wall lets through when it says
+  (`domains`, `secrets`), else the program's needs; `limits` when the
+  wall has them. Everything not declared is refused there, so this is
+  the whole world the program sees.
+
+Behind a wall that says what it lets through, a program that needs a
+domain or a secret it does not let through is refused before its first
+call (`ReachError`, code `needs-unmet`, naming what is missing): it
+would fail later, halfway, for a reason no score would show. A needed
+domain is let through when the wall names it, or names `*.` and a name it
+ends with after a dot. How the wall is built (bubblewrap, a container, a
+machine) is not in the setup: a stronger wall must not change what the
+program does, and the call records its name (`placement.wall`). The
+model's own provider is reached by FunctAI, not by the program's code:
+it is not a need, and a host that walls FunctAI itself lets it through.
+
+### Spending
+
+Code inside a call (a module's body, a tool) says what it spent beyond
+the models' tokens with `spend(usd)` (a browsing service's
+charge, a paid API): the call's record keeps the sum (`spent`), and the
+`limits` plugin counts it in a tree's cost ([plugins.md](plugins.md),
+*What a tree spent*). An amount is a number of dollars, at least 0.
+Outside any call it is nothing.
+
+`cases/setup/` pin setups: documents and their hashes.
 
 ## Token counts
 

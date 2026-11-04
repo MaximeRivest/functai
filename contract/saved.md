@@ -54,7 +54,16 @@ refuses `saved-no-interface`; an AI node's is read from its signature
 "<text>"}}`, the written expression, so a program loaded in any language
 has the version of the one saved (a default that counts by its value is
 the interface's). Absent when none does, and in folders written before
-2026-09-30. An `"ai"` node has `ai`:
+2026-09-30. A `"module"` node has `version`, its version when saved
+(absent in folders written before 2026-11-04), and `needs`, what its own
+code reaches ([tools.md](tools.md), *What a tool needs*), when it says.
+An `"ai"` or `"module"` node has `setup`: the document of its setup when
+saved, where it was saved ([calls.md](calls.md), *Setups*), so two
+folders say what differs between what they ran on, step by step
+(`setup_diff`). Absent in folders written before 2026-11-04. A loader
+never refuses for it (another model is a choice, not a fault): the
+program loaded has the setup of where it runs, and says the one saved.
+An `"ai"` node has `ai`:
 
 | key | what it is |
 |---|---|
@@ -62,7 +71,7 @@ the interface's). Absent when none does, and in folders written before
 | `settings` | the settings that shape the request (`adapter`, `module`, `include_fn_name_in_instructions`, as [functions.md](functions.md) reads them), the model (`lm`) and the rest of the function's own settings. A setting whose value is not JSON is `{"baked": <name in models>}` (a baked model) or `{"node": <key>}` (another AI function). |
 | `config` | lm15 settings the function set (`temperature`, `max_tokens`, …), in lm15's canonical JSON. |
 | `template` | the function's own template (lmcc messages), or null. |
-| `tools` | its tools: a node key (code in this folder), `{"import": "module:name"}`, or `{"tool": {name, description, parameters}}` (a tool described by data). |
+| `tools` | its tools: a node key (code in this folder), `{"import": "module:name"}`, `{"tool": {name, description, parameters}}` (a tool described by data), or either object with what the tool says of itself beside it: `code` (`{"language", "code"}`: its code's hash, when the folder does not carry its code: TypeScript's), `effects`, `needs`, `notes`, and Python's `{"node": key, ...}` for a tool whose code is in the folder and that says something of itself. A loader in another language refuses every tool (step 3); one that only describes reads them all. |
 | `state` | `instructions` (text or null) and `demos` (worked examples, as functions.md reads them). |
 | `probes` | inputs the function was rendered with when saved: the sample input first ([calls.md](calls.md), *Versions*), then up to three demos' inputs, then examples given to `save`. |
 | `fingerprints` | `signature`: lmcc's fingerprint of the signature (host type names included); `requests`: for each probe, `"sha256:"` of the canonical JSON of the request it rendered under the probe facts (or `"refused:<code>"`); `answers`: a baked model's answers to the probes. |

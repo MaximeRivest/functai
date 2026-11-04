@@ -27,7 +27,7 @@ from common import canonical, sha
 OFF = {"0", "false", "no", "off"}
 NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")             # matched whole (fullmatch): nothing after it
 ALWAYS_KEPT = ("functai_call", "id", "parent", "root", "program", "started", "seconds", "sizes", "model", "usage",
-               "confidence", "caller", "process", "saw", "escalated", "truncated", "journal")
+               "confidence", "caller", "process", "saw", "escalated", "truncated", "journal", "spent", "placement")
 DROPPED_FROM_EXCHANGES = ("request", "response", "request_hash")
 ERROR_KEPT = ("type", "code")        # of an error, when content is not whole: never a member this contract does not name
 

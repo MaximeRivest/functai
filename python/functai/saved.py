@@ -43,7 +43,7 @@ import threading
 import types
 import warnings
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Mapping, Optional, Tuple
 
 import lm15
 import lmcc
@@ -425,6 +425,16 @@ def _manifest(report, examples, allowed, models: Optional[Dict[str, str]] = None
             code = _default_code_of(n.obj)
             if code:
                 entry["defaults"] = {name: {"code": text} for name, text in code.items()}
+            if n.kind == "module":
+                entry["version"] = calllog.module_version(n.obj)
+                if getattr(n.obj, "_needs", None) is not None:
+                    entry["needs"] = n.obj._needs
+            try:
+                from .setup import document_of
+                entry["setup"] = document_of(n.obj)          # what it ran on where it was saved (saved.md)
+            except Exception as exc:  # noqa: BLE001 — a setup that cannot be worked out is not written
+                calllog._warn_once(("save-setup", type(exc).__name__), f"the setup of {n.name} is not saved: "
+                                                                     f"{type(exc).__name__}: {exc}")
         if n.kind == "ai":
             fn = n.obj
             settings, config = _settings_json(fn, key, n, models)
@@ -825,9 +835,14 @@ def _rebuild_ai(fn: Any, key: str):
     for t in data.get("tools", []):
         if isinstance(t, str):
             tools.append(_node_object(package, manifest, t))
-        elif "import" in t:
-            mod, _, attr = t["import"].partition(":")
-            tools.append(getattr(importlib.import_module(mod), attr))
+        elif "node" in t or "import" in t:
+            if "node" in t:
+                inner = _node_object(package, manifest, t["node"])
+            else:
+                mod, _, attr = t["import"].partition(":")
+                inner = getattr(importlib.import_module(mod), attr)
+            meta = {k: t[k] for k in ("effects", "needs", "notes", "name", "description") if k in t}
+            tools.append(_said_tool(inner, meta) if meta else inner)
         else:
             from lmcc_std.tools import Tool
             tools.append(Tool(**t["tool"]))
@@ -835,6 +850,17 @@ def _rebuild_ai(fn: Any, key: str):
                           **settings)
     program.load_state(ProgramState.from_dict(data["state"]))
     return program
+
+
+def _said_tool(fn: Any, meta: Mapping[str, Any]) -> Any:
+    """A tool rebuilt with what it said of itself when saved (its notes and needs as data, as saved)."""
+    from .tools import Tool
+    if isinstance(fn, Tool):                          # the saved code applied its decorator again: the function inside
+        fn = fn._fn
+    t = Tool(fn, effects=meta.get("effects"), name=meta.get("name"), description=meta.get("description"))
+    t.notes = copy.deepcopy(meta.get("notes"))
+    t.needs = copy.deepcopy(meta.get("needs"))
+    return t
 
 
 _models_loaded: Dict[Tuple[str, str], Any] = {}
@@ -865,8 +891,9 @@ def _rebuild_module(fn: Any, key: str):
     data = node.get("module_program", {})
     declared = node.get("interface") if data.get("declared") else None
     outputs = node["interface"]["outputs"] if data.get("outputs") and not declared else None
+    notes = node["interface"].get("notes") if not declared and isinstance(node.get("interface"), dict) else None
     m = FunctAIModule(fn, requires=data.get("requires", ()), interface=declared, _output_fields=outputs,
-                      **(data.get("settings") or {}))
+                      notes=notes, needs=node.get("needs"), **(data.get("settings") or {}))
     m._opt_call_defaults = dict(data.get("call_defaults") or {})
     return m
 

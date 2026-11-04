@@ -27,7 +27,9 @@
   "output"}], "last", "at_once", "expect": {"replace": {invocation:
   output}}} (``{}`` when nothing changes).
 - "spent" (../plugins.md, *What a tree spent*): {"exchanges": [[model,
-  usage]], "prices", "expect": {"tokens", "cost", "usage"}}.
+  usage]], "prices", "reported"?: dollars code said it spent (``spend``),
+  "expect": {"tokens", "cost", "usage"}}. A limits case's "spent" may have
+  "reported" too.
 
     python contract/cases/make.py
 """
@@ -306,8 +308,8 @@ def estimate(price: dict, usage: dict):
     return sum(n * r / 1_000_000 for n, r in buckets if n)
 
 
-def spent_of(exchanges: list, prices: dict) -> dict:
-    """plugins.md, *What a tree spent*."""
+def spent_of(exchanges: list, prices: dict, reported: float = 0.0) -> dict:
+    """plugins.md, *What a tree spent*: what code reported (``spend``) is in the cost, and needs no price."""
     usages = [u for _, u in exchanges]
     names = set(usages[0]).intersection(*usages[1:]) if usages else set()
     usage = {k: sum(u[k] for u in usages) for k in sorted(names)}
@@ -320,11 +322,13 @@ def spent_of(exchanges: list, prices: dict) -> dict:
             cost = None
             break
         cost += got
+    if cost is not None:
+        cost += reported
     return {"tokens": tokens, "cost": cost, "usage": usage}
 
 
 def reached(limits: dict, spent: dict) -> list:
-    got = spent_of(spent["exchanges"], limits.get("prices") or {})
+    got = spent_of(spent["exchanges"], limits.get("prices") or {}, spent.get("reported", 0.0))
     out = []
     if limits.get("tokens") is not None:
         if got["tokens"] is None:
@@ -423,6 +427,23 @@ def limits_cases() -> dict:
              "the tokens and the cost are not known.")], 1):
         out[f"spent-{i:02d}"] = {"description": why, "kind": "spent", "exchanges": exchanges, "prices": prices,
                                  "expect": spent_of(exchanges, prices)}
+    for i, (exchanges, reported, why) in enumerate([
+            ([["claude-sonnet-5", u], ["claude-sonnet-5", u]], 0.05,
+             "Two requests and what a tool said it spent (a browsing service's charge): the cost is both."),
+            ([], 0.0125, "Nothing asked of a model, only what code spent: the cost is what it reported, no price "
+                         "needed."),
+            ([["claude-sonnet-5", u], ["no-price", u]], 0.05,
+             "A request whose price is not known: the cost is not known, whatever code reported.")], 4):
+        out[f"spent-{i:02d}"] = {"description": why, "kind": "spent", "exchanges": exchanges, "prices": prices,
+                                 "reported": reported, "expect": spent_of(exchanges, prices, reported)}
+    reported_only = {"exchanges": [], "seconds": 1.0, "reported": 0.6}
+    out["limits-cost-reported-by-code"] = {
+        "description": "A cost limit reached by what code said it spent alone (no model was asked yet): the next "
+                       "call stops before it starts.",
+        "kind": "limits", "limits": {"cost": 0.5, "prices": prices, "then": "answer"}, "spent": reported_only,
+        "at": {"hook": "before_call", "lm": "claude-sonnet-5"},
+        "expect": {"change": limits_change({"cost": 0.5, "prices": prices, "then": "answer"}, reported_only,
+                                           {"hook": "before_call", "lm": "claude-sonnet-5"})}}
     return out
 
 

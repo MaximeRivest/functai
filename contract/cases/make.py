@@ -38,6 +38,7 @@ import content  # noqa: E402
 import events  # noqa: E402
 import files  # noqa: E402
 import partial  # noqa: E402
+import setup  # noqa: E402
 import functions  # noqa: E402
 import plugins  # noqa: E402
 import programs  # noqa: E402
@@ -140,6 +141,9 @@ def write(folder: str, cases: dict) -> int:
         elif folder == "partial":
             for c in written["checks"]:
                 assert partial.so_far(written["shape"], c["text"]) == c["expect"], f"{folder}/{name}: {c}"
+        elif folder == "setup":
+            doc = setup.document(written["definition"], written["settings"], written["plugins"])
+            assert {"document": doc, "setup": setup.sha(doc)} == written["expect"], f"{folder}/{name}"
     return len(cases)
 
 
@@ -154,4 +158,5 @@ if __name__ == "__main__":
     n += write("baked", baked.cases())
     n += write("agents", agents.cases())
     n += write("partial", partial.cases())
+    n += write("setup", setup.cases())
     print(f"{n} cases written")

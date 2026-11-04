@@ -1,0 +1,58 @@
+{
+ "description": "Behind a wall made from the program's needs (here none): reach is what it needs, nothing open.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini",
+  "wall": "srt"
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "reach": {
+    "domains": [],
+    "secrets": []
+   }
+  },
+  "setup": "sha256:7ed187fac60cf4116dcf9cbe795248339f46c1e75df6688cec6de9df4d3415ef"
+ }
+}

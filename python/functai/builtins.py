@@ -10,6 +10,7 @@ anyone can replace them with their own.
 
 from __future__ import annotations
 
+import dataclasses
 import hashlib
 import inspect
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -320,7 +321,12 @@ def limits(*, tokens: Optional[int] = None, cost: Optional[float] = None, second
         raise ValueError("limits needs at least one of tokens, cost, seconds")
     for model in (prices or {}):
         _priced(prices, model)                     # a malformed price is refused now, not mid-run
-    plugin = Plugin(name, version="1.0.0", description="stop a call tree when it used enough tokens, money or time")
+    config: Dict[str, Any] = {k: v for k, v in (("tokens", tokens), ("cost", cost), ("seconds", seconds)) if v is not None}
+    if prices:
+        config["prices"] = {m: _price_json(_priced(prices, m)) for m in prices}
+    config["then"] = then
+    plugin = Plugin(name, version="1.0.0", description="stop a call tree when it used enough tokens, money or time",
+                    config=config)
     limit = dict(tokens=tokens, cost=cost, seconds=seconds, prices=prices)
 
     @plugin.before_call
@@ -368,6 +374,18 @@ def pictures_to_drop(results: List[Any], *, last: int, at_once: int = 1) -> Dict
     return out
 
 
+def _price_json(price: Any) -> Dict[str, Any]:
+    """An lm15 ``InferencePricing`` as JSON (contract/plugins.md, *limits*): its fields by lm15's names, without
+    those at lm15's defaults (an unset rate, currency USD, no tiers), so one price is written one way."""
+    out: Dict[str, Any] = {}
+    for f in dataclasses.fields(price):
+        v = getattr(price, f.name)
+        if v is None or (f.name == "currency" and v == "USD") or (f.name == "tiers" and not v):
+            continue
+        out[f.name] = [dataclasses.asdict(t) if dataclasses.is_dataclass(t) else t for t in v] if f.name == "tiers" else v
+    return out
+
+
 def keep_pictures(last: int = 3, *, at_once: int = 1, name: str = "keep-pictures") -> Plugin:
     '''Show a long tool loop only its newest pictures: before each step, the
     pictures tool results gave earlier than the newest ``last`` are replaced
@@ -392,7 +410,8 @@ def keep_pictures(last: int = 3, *, at_once: int = 1, name: str = "keep-pictures
         raise ValueError("last is how many of the newest pictures stay shown (0 or more)")
     if isinstance(at_once, bool) or not isinstance(at_once, int) or at_once < 1:
         raise ValueError("at_once is 1 or more")
-    plugin = Plugin(name, version="1.0.0", description="show a tool loop only its newest pictures")
+    plugin = Plugin(name, version="1.0.0", description="show a tool loop only its newest pictures",
+                    config={"last": last, "at_once": at_once})
 
     @plugin.step
     def step(s: Any) -> Optional[Change]:

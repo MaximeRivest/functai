@@ -783,6 +783,23 @@ class FunctAIFunc(Generic[P, R]):
         folder names the version it holds."""
         return calllog.ai_version(self)
 
+    @property
+    def setup(self) -> str:
+        """What the function runs on here: ``sha256:`` of its setup document
+        (contract/calls.md, *Setups*): its version, the model it would ask,
+        the settings and plugins in force, its tools' code, what it may reach.
+        The version says what it is; the setup what runs it. Another model,
+        another temperature or a tool rewritten is another setup, the same
+        version. Logged calls carry it (``program.setup``)."""
+        from .setup import setup_of
+        return setup_of(self)
+
+    def setup_document(self) -> Dict[str, Any]:
+        """The document ``setup`` is the hash of, with the settings in force now
+        (``functai.setup_diff`` says what differs between two)."""
+        from .setup import document_of
+        return document_of(self)
+
     def _layout(self, settings: Dict[str, Any]) -> adapters.Layout:
         if self._template is not None:
             return adapters.Layout(template=self._template)

@@ -1,0 +1,30 @@
+{
+ "description": "A cost limit reached by what code said it spent alone (no model was asked yet): the next call stops before it starts.",
+ "kind": "limits",
+ "limits": {
+  "cost": 0.5,
+  "prices": {
+   "claude-sonnet-5": {
+    "input_per_million": 3,
+    "output_per_million": 15,
+    "cache_read_per_million": 0.3,
+    "cache_write_per_million": 3.75
+   }
+  },
+  "then": "answer"
+ },
+ "spent": {
+  "exchanges": [],
+  "seconds": 1.0,
+  "reported": 0.6
+ },
+ "at": {
+  "hook": "before_call",
+  "lm": "claude-sonnet-5"
+ },
+ "expect": {
+  "change": {
+   "stop": "limit reached: cost 0.5"
+  }
+ }
+}

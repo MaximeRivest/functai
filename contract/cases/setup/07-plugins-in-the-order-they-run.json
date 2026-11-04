@@ -1,0 +1,100 @@
+{
+ "description": "The built-in plugins with their config, in the order they run.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini"
+ },
+ "plugins": [
+  {
+   "builtin": "keep_pictures",
+   "args": {
+    "last": 2
+   }
+  },
+  {
+   "builtin": "limits",
+   "args": {
+    "tokens": 100000,
+    "cost": 0.5,
+    "then": "stop",
+    "prices": {
+     "gpt-4.1-mini": {
+      "input_per_million": 0.4,
+      "output_per_million": 1.6
+     }
+    }
+   }
+  }
+ ],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "plugins": [
+    {
+     "name": "keep-pictures",
+     "version": "1.0.0",
+     "config": {
+      "last": 2,
+      "at_once": 1
+     }
+    },
+    {
+     "name": "limits",
+     "version": "1.0.0",
+     "config": {
+      "tokens": 100000,
+      "cost": 0.5,
+      "prices": {
+       "gpt-4.1-mini": {
+        "input_per_million": 0.4,
+        "output_per_million": 1.6
+       }
+      },
+      "then": "stop"
+     }
+    }
+   ],
+   "reach": "open"
+  },
+  "setup": "sha256:00a078f5c301e5179325afa66a35afffc49af30e0d2894c7b74683282e66a9e2"
+ }
+}

@@ -50,6 +50,16 @@ interface's `notes` of every AI function that has the tool, and are
 checked as that function's: a browsing agent's `page captured`, made by
 its screenshot tool, is typed for whoever shows the agent's progress.
 
+## What a tool needs
+
+A tool may say what its code reaches (Python `@functai.tool(needs={...})`,
+TypeScript `tool(name, { needs }, run)`): `{"domains": [...], "secrets":
+[...]}`, host names (`*.` for every name under one) and the names of the
+secrets it uses, never their values. Behind a wall that lets through less,
+the function that has it is refused before its first call; the wall the
+program may reach counts in its setup ([calls.md](calls.md), *Setups*,
+*Reach*). A module says the same of its own code (`needs`).
+
 ## Approval
 
 Approval is a plugin ([plugins.md](plugins.md)): the built-in `approval`
