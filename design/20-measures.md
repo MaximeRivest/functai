@@ -219,18 +219,21 @@ the cases could show.
 ## What every program gets
 
 ```python
-ev = functai.evaluate(prog, rows, repeats=3, reuse=log, criteria=[correct, real_problem])
+ev = functai.evaluate(prog, rows, repeats=3, reuse=log, criteria=[real.with_judge(professor)])
 functai.compare(ev_before, ev_after, margin=0.05)           # shared cases, paired, with outcome and fragility
-functai.rate(pred, "yes", criterion=real_problem, item="/insights/3", blind=True, sample=draw_id)
+functai.rate(pred, "yes", criterion=real, item=3, blind=True, sample="draw-1")
 functai.prefer(pred_a, pred_b, winner=pred_b, blind=True)
-functai.judge(professor, calls, real_problem)               # an AI judge's ratings, kept in the log
-functai.judge_pairs(picker, pairs, preference)              # both orders, kept
-functai.scoreboard(prog, criteria=[...], records=log)       # per setup: each criterion by each source, PPI included
-functai.agreement(log, real_problem, a="people", b=professor)
-functai.rank(log, preference)                               # Bradley–Terry over every version
+functai.judge(professor, calls, real)                       # an AI judge's ratings, kept in the log
+functai.judge_pairs(picker, pairs)                          # both orders, kept
+functai.scoreboard(prog, [real], records=log)               # per setup: people, people drawn, each judge, combined
+functai.compare_setups(prog, old.setup, new.setup, real, source=professor, margin=0.05, records=log)
+functai.agreement(prog, real, "people", professor, records=log)
+functai.positions(picker, records=log)                      # does the judge favour a side?
+functai.rank(prog, records=log)                             # Bradley–Terry over every setup
 functai.draw(call_ids, 20, seed="draw-1")                   # a fair sample to judge
-functai.split_of(row)                                       # held out or not, the same in every language
-functai.disagreements(log, prog, criterion)                 # cases to look at, or to add
+functai.split_of(row, prog)                                 # held out or not, the same in every language
+functai.disagreements(prog, real, source=professor, records=log)   # cases to look at, or to add
+functai.as_case(pred)                                       # a corrected call as a row of the examples
 ```
 
 TypeScript has the same, camel-cased. Quiver uses these and keeps
