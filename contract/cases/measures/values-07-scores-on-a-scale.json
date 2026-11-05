@@ -1,0 +1,176 @@
+{
+ "description": "A score on its scale from 0 to 1, people averaged.",
+ "kind": "values",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926c00-001f-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-001f-7000-8000-000000000000",
+   "program": {
+    "name": "writer",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:01:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "q": "a"
+   },
+   "outputs": {
+    "result": "x"
+   },
+   "sizes": {
+    "inputs": {
+     "q": 3
+    },
+    "outputs": {
+     "result": 3
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0020-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0020-7000-8000-000000000000",
+   "program": {
+    "name": "writer",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:02:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "q": "b"
+   },
+   "outputs": {
+    "result": "y"
+   },
+   "sizes": {
+    "inputs": {
+     "q": 3
+    },
+    "outputs": {
+     "result": 3
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0021-7000-8000-000000000000",
+   "at": "2026-11-05T10:05:00.000000Z",
+   "call": "01926c00-001f-7000-8000-000000000000",
+   "criterion": "quality",
+   "kind": "score",
+   "scale": [
+    1,
+    5
+   ],
+   "value": 4,
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0022-7000-8000-000000000000",
+   "at": "2026-11-05T10:06:00.000000Z",
+   "call": "01926c00-001f-7000-8000-000000000000",
+   "criterion": "quality",
+   "kind": "score",
+   "scale": [
+    1,
+    5
+   ],
+   "value": 2,
+   "by": "ana"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0023-7000-8000-000000000000",
+   "at": "2026-11-05T10:07:00.000000Z",
+   "call": "01926c00-0020-7000-8000-000000000000",
+   "criterion": "quality",
+   "kind": "score",
+   "value": 0.25,
+   "judge": {
+    "name": "quotes_found",
+    "code": "sha256:f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6"
+   }
+  }
+ ],
+ "program": {
+  "name": "writer"
+ },
+ "criterion": {
+  "name": "quality",
+  "kind": "score"
+ },
+ "source": "people",
+ "drawn": false,
+ "by": "setup",
+ "expect": {
+  "results": [
+   {
+    "call": "01926c00-001f-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:675dc919b12d3f6c26cb2e56c4d6fa5b0e0f9d2abda34cb8c3c3603b198bbdcb",
+    "value": 0.5
+   },
+   {
+    "call": "01926c00-0020-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:7dd2cbe679c74b739e4d4a7c62a51b1951d1211ec2098d347e287a60d0bf9ec5",
+    "value": null
+   }
+  ],
+  "cases": [
+   {
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:675dc919b12d3f6c26cb2e56c4d6fa5b0e0f9d2abda34cb8c3c3603b198bbdcb",
+    "value": 0.5
+   }
+  ]
+ }
+}

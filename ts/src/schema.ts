@@ -91,11 +91,13 @@ function valid(v: unknown, s: unknown, root: SchemaName): boolean {
   }
   if (Array.isArray(v)) {
     if (typeof schema["minItems"] === "number" && v.length < schema["minItems"]) return false;
+    if (typeof schema["maxItems"] === "number" && v.length > schema["maxItems"]) return false;
     if (schema["items"] !== undefined && !v.every((x) => valid(x, schema["items"], root))) return false;
     if (schema["uniqueItems"] === true && new Set(v.map((x) => lmcc.canonicalJson(x as lmcc.Json))).size !== v.length) return false;
   }
   if (isObject(v)) {
     if (typeof schema["maxProperties"] === "number" && Object.keys(v).length > schema["maxProperties"]) return false;
+    if (typeof schema["minProperties"] === "number" && Object.keys(v).length < schema["minProperties"]) return false;
     if (Array.isArray(schema["required"]) && !(schema["required"] as string[]).every((k) => Object.hasOwn(v, k))) return false;
     const props = (schema["properties"] ?? {}) as Rec;
     for (const [k, x] of Object.entries(v)) {

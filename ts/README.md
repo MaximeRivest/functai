@@ -477,7 +477,7 @@ journal (`journal-policy`).
 ## How often is it right?
 
 ```ts
-import { evaluate } from "functai";
+import { evaluate, compare } from "functai";
 
 const ev = await evaluate(mood, [
   { review: "Love it.", result: "happy" },
@@ -490,11 +490,55 @@ String(ev);            // "exact_match: 1.00 (95% range 0.34 to 1.00), n=2"
 Columns named like the inputs are the inputs; columns named like the
 outputs are the right answers (or `expected: "category"`). Rows are typed:
 a row missing an input, or an `expected` column the rows lack, is a
-compile error. The range is a
-95% interval (Wilson's for right-or-wrong). `compare(before, after)`
-compares two evaluations of the same rows row by row: the difference, its
-95% interval, and how many rows got better or worse. `evaluate` takes
-modules and served programs (`remote`) too.
+compile error. The range is a 95% interval over cases (Wilson's for
+right-or-wrong). `evaluate` takes modules and served programs (`remote`)
+too.
+
+Each call says which **case** it answered (its record's `case`: the hash of
+the row's inputs), so `compare(before, after, { margin: 0.05 })` pairs two
+evaluations by case, whatever the rows' order, and says what it found:
+`better`, `worse`, `same`, `not_worse`, `not_better` or `unclear`, with
+`fragility`, the fewest cases whose removal would erase the difference.
+For right-or-wrong scores its range is the MOVER-Wilson interval: 30 cases
+right for both versions give a range of ±0.11, where the paired t interval
+said "exactly no difference" (design/20 has the exact coverage of both).
+
+```ts
+await evaluate(mood, rows, { repeats: 3, reuse: log });  // each case three times; what the log has is not asked again
+```
+
+## Measuring anything: cases, ratings, judges
+
+A program with no right answers (a usability study, a writer, an agent) is
+measured by **ratings**: a person's, or a judge's (an AI function, a module,
+or code), of a whole answer, of one item of it, or of two answers side by
+side (contract/measures.md, design/20).
+
+```ts
+import { criterion, rate, prefer, draw, scoreboard, compareSetups, agreement, judgePairs, rank, shownOrder, splitOf } from "functai";
+
+const realProblem = criterion("real_problem", { kind: "label", items: "/insights",
+  answers: { yes: 1, no: 0, unsure: null }, question: "Is this a real problem?" });
+
+await evaluate(study, sites, { criteria: [{ ...realProblem, judge: professor }], reuse: log });   // the judge's ratings kept in the log
+for (const id of draw(callIds, 20, "draw-1"))                                               // a fair sample for people
+  rate(id, "yes", { criterion: realProblem, item: 3, by: "megan", blind: true, sample: "draw-1" });
+const [first, second] = shownOrder(a, b, "queue-1");                                         // blind, sides shuffled
+prefer(first, second, second, { by: "megan", blind: true });
+
+scoreboard(study, [realProblem], { records: log });  // per setup: people, people drawn, each judge, combined (PPI++)
+compareSetups(study, old.setup, next.setup, realProblem, { source: professor, margin: 0.05, records: log });
+agreement(study, realProblem, "people", professor, { records: log });   // can the judge stand in for people?
+await judgePairs(picker, pairs);                     // a judge asked both orders: positions() says if it favours one
+rank(study, undefined, { records: log });            // Bradley–Terry over every setup, with fragility
+splitOf(row, study);                                 // held out or not, the same in every language
+```
+
+Every range is over cases (items of one answer, and repeats, are not
+independent); a failed answer is the worst answer; people's ratings of a
+random draw are told from those people chose to make, and only they are
+combined with a judge. The optimizers refuse rows marked `split:
+"held_out"`.
 
 ## Making it better
 
@@ -526,7 +570,7 @@ its own score flatters.
 ```ts
 configure({ logCalls: true });                  // or FUNCTAI_LOG_CALLS=1
 const p = await mood.predict("Arrived late.");
-rate(p, "wrong", { answer: "mixed" });         // a person's correction
+rate(p, "wrong", { answer: "mixed" });         // a person's correction (blind: true when they did not know the version)
 rated(mood).rows;                              // rows with known answers, for evaluate and the optimizers
 calls(mood);                                   // every call, typed: started, seconds, usage.inputTokens, caller, ...
 ```

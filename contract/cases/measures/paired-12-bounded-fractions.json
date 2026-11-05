@@ -1,0 +1,34 @@
+{
+ "description": "Fractions of a bounded criterion: the t range kept within -1 and 1.",
+ "kind": "paired",
+ "a": [
+  0.5,
+  1,
+  0.25,
+  1,
+  1,
+  0.75
+ ],
+ "b": [
+  1,
+  1,
+  1,
+  1,
+  0.75,
+  1
+ ],
+ "margin": null,
+ "bounded": true,
+ "expect": {
+  "diff": 0.20833333333333334,
+  "low": -0.17791134705074654,
+  "high": 0.5945780137174133,
+  "n": 6,
+  "method": "paired-t",
+  "outcome": "unclear",
+  "better": 3,
+  "worse": 1,
+  "same": 2,
+  "fragility": 2
+ }
+}

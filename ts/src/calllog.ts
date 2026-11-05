@@ -31,6 +31,8 @@ export const FORMAT = 2;
 const CALL_FORMATS = new Set([1, 2]);
 /** The rating record's format. */
 export const RATING_FORMAT = 1;
+/** The rating formats this reads (measures.md: format 2). */
+export const RATING_FORMATS: ReadonlySet<number> = new Set([1, 2]);
 const MAX_LINE = 8 * 1024 * 1024;
 const OFF = new Set(["", "0", "false", "no", "off"]);
 const ON = new Set(["1", "true", "yes", "on"]);
@@ -268,6 +270,8 @@ export class Call {
   }
   /** The value its program gave (an AI function's prediction), once it has one: what a remembered helper's call keeps. */
   value: unknown = undefined;
+  /** `[case key, repeat]`: a call evaluate made on a case (measures.md, *Results*). */
+  caseKey: readonly [string, number] | null = null;
 
   /** The caller's call in another process's log (a served call's `FunctAI-Parent`): its record's `parent`. */
   set remoteParent(id: string) {
@@ -341,6 +345,18 @@ export class Call {
 }
 
 export const current = new Context<Call>();
+
+/** The first call started inside `MARK.run(mark, …)`: told its case (evaluate), its id noted in `mark.call`. */
+export interface Mark { case: string | null; repeat: number | null; call: string | null }
+export const MARK = new Context<Mark>();
+
+/** Whether this call is the first in its mark: then it notes its id, and takes the mark's case. */
+export function takeMark(call: Call): void {
+  const mark = MARK.get();
+  if (!mark || mark.call !== null) return;
+  mark.call = call.id;
+  if (mark.case !== null) call.caseKey = [mark.case, mark.repeat ?? 1];
+}
 
 /**
  * Say that something happened, from code inside a call (a module's body, a
@@ -478,7 +494,7 @@ function exchangeJson(ex: Exchange, content: boolean): Rec {
 }
 
 let processInfo: Rec | null = null;
-function processJson(): Rec {
+export function processJson(): Rec {
   if (!processInfo) {
     const os = builtin("node:os");
     let user: string | null = null;
@@ -553,6 +569,10 @@ export function record(call: Call, ending: Ending): Rec {
   if (call.journal) rec["journal"] = call.journal;
   rec["caller"] = lmcc.copyObject(call.caller);
   rec["process"] = processJson();
+  if (call.caseKey) {
+    rec["case"] = call.caseKey[0];
+    rec["repeat"] = call.caseKey[1];
+  }
   return writtenRecord(rec, call.fields, call.keep);
 }
 
@@ -685,7 +705,7 @@ export function read(folder?: string | CallStore | null, opts: { since?: Date | 
     for (const r of got as readonly Rec[]) {
       if (typeof r !== "object" || r === null || Array.isArray(r)) continue;
       if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
-      else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+      else if (RATING_FORMATS.has(r["functai_rating"] as number) && String(r["at"] ?? "") >= cutoff) ratings.push(r);
     }
     return [latestWriters(calls), ratings];
   }
@@ -697,7 +717,7 @@ export function read(folder?: string | CallStore | null, opts: { since?: Date | 
   for (const file of logFiles(root, cutoff)) {
     for (const r of linesOf(file)) {
       if (CALL_FORMATS.has(r["functai_call"] as number) && String(r["started"] ?? "") >= cutoff) calls.push(r);
-      else if (r["functai_rating"] === RATING_FORMAT && String(r["at"] ?? "") >= cutoff) ratings.push(r);
+      else if (RATING_FORMATS.has(r["functai_rating"] as number) && String(r["at"] ?? "") >= cutoff) ratings.push(r);
     }
   }
   return [latestWriters(calls), ratings];
@@ -859,10 +879,26 @@ function addMeta(row: Rec, meta: Rec): void {
 
 export interface LeftOut { other_signature: number; no_content: number; no_answer: number; no_context?: number }
 
+/**
+ * A rating as format 1 reads it, or null: format 1 as it is; of format 2, a
+ * person's or an account's verdict under `correct` about a whole call
+ * (contract/calls.md, *Rows with known answers*).
+ */
+export function asFormat1(r: Rec): Rec | null {
+  if (r["functai_rating"] === RATING_FORMAT) return r;
+  if (r["functai_rating"] !== 2 || r["criterion"] !== "correct" || r["kind"] !== "verdict" || "item" in r || !("call" in r) || "judge" in r
+    || !(r["by"] || r["account"])) return null;
+  const out: Rec = {};
+  for (const [k, v] of Object.entries(r)) if (!["criterion", "kind", "value", "question", "judge_call"].includes(k)) out[k] = v;
+  out["functai_rating"] = RATING_FORMAT;
+  out["verdict"] = r["value"] ?? null;
+  return out;
+}
+
 /** Rows with known answers from rated calls (contract/calls.md, "Rows with known answers"). */
 export function ratedRows(calls: Iterable<Rec>, ratings: Iterable<Rec>,
   opts: { name: string; module?: string | null; file?: string | null; signature?: string | null; interface?: string | null; by?: string | null }): [Rec[], LeftOut] {
-  const counting = currentRatings([...ratings].filter((r) => r["functai_rating"] === RATING_FORMAT), opts.by);
+  const counting = currentRatings([...ratings].map(asFormat1).filter((r): r is Rec => r !== null), opts.by);
   const left: LeftOut = { other_signature: 0, no_content: 0, no_answer: 0 };
   const rows: Rec[] = [];
   const mine = [...calls].filter((c) => CALL_FORMATS.has(c["functai_call"] as number)).filter((c) => {
@@ -1004,7 +1040,13 @@ export interface RateOptions {
   by?: string;
   origin?: "review" | "edit";
   sample?: string;
+  /** You were not told which version made the answer. */
+  blind?: boolean;
   folder?: string | CallStore;
+  /** Another question than "is it right?" (measures.ts `criterion`): `verdict` is then its answer (a label, a score, a verdict). */
+  criterion?: { readonly name: string; readonly kind: string; readonly items?: string };
+  /** Which item of the criterion's list: its index, or a JSON Pointer. */
+  item?: number | string;
 }
 
 /** A rating record (contract/calls.md, "A rating record"), written to the log when there is a folder. */
@@ -1029,7 +1071,19 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
   if (opts.note) rec["note"] = opts.note;
   rec["origin"] = opts.origin ?? "review";
   if (opts.sample) rec["sample"] = opts.sample;
-  const folder = isStore(opts.folder) ? opts.folder : opts.folder ? expand(opts.folder) : folderOf(settings.logCalls ?? true);
+  if (opts.blind !== undefined) rec["blind"] = Boolean(opts.blind);
+  keepRating(rec, opts.folder, settings);
+  return rec;
+}
+
+/** Keep a rating record in the call log: `folder` (a folder or a store), or the one calls are logged to. A store that answers later is waited for by `flushCalls`. */
+export async function writeRating(rec: Rec, folder: string | CallStore | null | undefined, settings: Settings): Promise<void> {
+  keepRating(rec, folder ?? undefined, settings);
+  await Promise.all([...pendingRatings]);
+}
+
+export function keepRating(rec: Rec, given: string | CallStore | undefined, settings: Settings): void {
+  const folder = isStore(given) ? given : given ? expand(given) : folderOf(settings.logCalls ?? true);
   if (!folder) throw new Error("no log folder: pass folder, or turn the call log on (logCalls, or FUNCTAI_LOG_CALLS)");
   if (isStore(folder)) {
     const kept = folder.append(copyData(rec));
@@ -1039,5 +1093,4 @@ export function rating(callId: string, verdict: Verdict | undefined, opts: RateO
       pendingRatings.add(p);
     }
   } else append(folder, rec);
-  return rec;
 }

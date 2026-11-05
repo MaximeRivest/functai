@@ -110,7 +110,8 @@ def test_the_table_has_the_data_the_predictions_the_metrics_and_the_costs(fake):
     ev = evaluate(make_classifier(), ROWS)
     t = ev.table
     assert t.columns == ["example", "user_query", "result", "lang", "pred_result", "exact_match",
-                         "error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run"]
+                         "error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run",
+                         "case_key", "repeat", "call_id", "reused"]
     rows = t.collect().to_dicts()
     assert rows[0]["pred_result"] == "booking" and rows[0]["input_tokens"] == 3
     assert rows[0]["model"] == "gpt-4.1-mini" and rows[0]["run"] == ev.run
@@ -270,12 +271,17 @@ def test_compare_pairs_the_examples(fake):
     assert (diff["before"], diff["after"], diff["diff"]) == (0.25, 0.75, 0.5)
     assert (diff["better"], diff["worse"], diff["same"]) == (2, 0, 2)
     assert diff["low"] < 0.5 < diff["high"]
-    with pytest.raises(ValueError, match="same examples"):
-        compare(before, evaluate(f, ROWS[:2]))
-    with_rules = [{**r, "rules": "refunds are billing"} for r in ROWS]
-    with pytest.raises(ValueError, match="row 0 differs: column 'rules' only in the second. Evaluate both versions on "
-                                         "the very same table, and put the change in the function"):
-        compare(before, evaluate(f, with_rules))
+    assert diff["method"] == "mover-wilson" and diff["outcome"] == "unclear" and diff["fragility"] == 2
+    # paired by case (the rows' inputs), not by position: a subset compares on what both answered, and says so
+    with pytest.warns(UserWarning, match="2 cases both answered; 2 only before"):
+        part = compare(before, evaluate(f, ROWS[:2])).collect().to_dicts()[0]
+    assert (part["n"], part["only_before"], part["only_after"]) == (2, 2, 0)
+    # a column that is not an input is not part of the case: the program never sees it
+    with_rules = [{**r, "rules": "refunds are billing"} for r in reversed(ROWS)]
+    same = compare(before, evaluate(f, with_rules)).collect().to_dicts()[0]
+    assert (same["n"], same["diff"]) == (4, 0.5)
+    with pytest.raises(ValueError, match="none in common"):
+        compare(before, evaluate(f, [{"user_query": "something else entirely", "result": "booking", "lang": "en"}]))
 
 
 def test_runs_are_logged_as_parquet_and_read_back_as_one_table(fake, tmp_path):

@@ -1,0 +1,20 @@
+{
+ "description": "A row's `split` is its own.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "a",
+   "split": "held_out"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 0.2,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "held_out"
+  ]
+ }
+}

@@ -1,0 +1,24 @@
+{
+ "description": "A row that keeps its conversation's earlier turns: they are part of the case.",
+ "kind": "key-row",
+ "row": {
+  "question": "And tomorrow?",
+  "earlier": [
+   {
+    "inputs": {
+     "question": "Weather today?"
+    },
+    "outputs": {
+     "result": "Sunny."
+    }
+   }
+  ],
+  "conversation": "c-1"
+ },
+ "inputs": [
+  "question"
+ ],
+ "expect": {
+  "key": "sha256:0b8497b1be5af1373bd24bb86aab67d7b1ab6bc9897cabbcfbf363b10bdc6a0b"
+ }
+}

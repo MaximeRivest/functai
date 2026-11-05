@@ -1,0 +1,175 @@
+{
+ "description": "Forty rows, a share of 0.25: each side by the hash of its key.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "question 0"
+  },
+  {
+   "q": "question 1"
+  },
+  {
+   "q": "question 2"
+  },
+  {
+   "q": "question 3"
+  },
+  {
+   "q": "question 4"
+  },
+  {
+   "q": "question 5"
+  },
+  {
+   "q": "question 6"
+  },
+  {
+   "q": "question 7"
+  },
+  {
+   "q": "question 8"
+  },
+  {
+   "q": "question 9"
+  },
+  {
+   "q": "question 10"
+  },
+  {
+   "q": "question 11"
+  },
+  {
+   "q": "question 12"
+  },
+  {
+   "q": "question 13"
+  },
+  {
+   "q": "question 14"
+  },
+  {
+   "q": "question 15"
+  },
+  {
+   "q": "question 16"
+  },
+  {
+   "q": "question 17"
+  },
+  {
+   "q": "question 18"
+  },
+  {
+   "q": "question 19"
+  },
+  {
+   "q": "question 20"
+  },
+  {
+   "q": "question 21"
+  },
+  {
+   "q": "question 22"
+  },
+  {
+   "q": "question 23"
+  },
+  {
+   "q": "question 24"
+  },
+  {
+   "q": "question 25"
+  },
+  {
+   "q": "question 26"
+  },
+  {
+   "q": "question 27"
+  },
+  {
+   "q": "question 28"
+  },
+  {
+   "q": "question 29"
+  },
+  {
+   "q": "question 30"
+  },
+  {
+   "q": "question 31"
+  },
+  {
+   "q": "question 32"
+  },
+  {
+   "q": "question 33"
+  },
+  {
+   "q": "question 34"
+  },
+  {
+   "q": "question 35"
+  },
+  {
+   "q": "question 36"
+  },
+  {
+   "q": "question 37"
+  },
+  {
+   "q": "question 38"
+  },
+  {
+   "q": "question 39"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 0.25,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "held_out",
+   "train"
+  ]
+ }
+}

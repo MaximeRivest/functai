@@ -1,0 +1,19 @@
+{
+ "description": "No case repeated.",
+ "kind": "self",
+ "per_case": {
+  "k1": [
+   1
+  ],
+  "k2": [
+   0
+  ]
+ },
+ "expect": {
+  "cases": 0,
+  "mean": null,
+  "low": null,
+  "high": null,
+  "spread": null
+ }
+}

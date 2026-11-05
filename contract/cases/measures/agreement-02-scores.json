@@ -1,0 +1,28 @@
+{
+ "description": "Scores: mean absolute difference and correlation.",
+ "kind": "agreement",
+ "a": {
+  "a": 0.2,
+  "b": 0.4,
+  "c": 0.6,
+  "d": 0.8,
+  "e": 1.0
+ },
+ "b": {
+  "a": 0.1,
+  "b": 0.5,
+  "c": 0.5,
+  "d": 0.9,
+  "e": 0.8
+ },
+ "choice": false,
+ "expect": {
+  "n": 5,
+  "agree": null,
+  "low": null,
+  "high": null,
+  "kappa": null,
+  "mad": 0.11999999999999997,
+  "r": 0.9091372900969897
+ }
+}

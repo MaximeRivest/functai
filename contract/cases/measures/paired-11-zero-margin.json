@@ -1,0 +1,42 @@
+{
+ "description": "A margin of 0 is no margin.",
+ "kind": "paired",
+ "a": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "b": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1
+ ],
+ "margin": 0,
+ "bounded": false,
+ "expect": {
+  "diff": 0.0,
+  "low": -0.2775328030260579,
+  "high": 0.2775328030260579,
+  "n": 10,
+  "method": "mover-wilson",
+  "outcome": "unclear",
+  "better": 0,
+  "worse": 0,
+  "same": 10,
+  "fragility": 0
+ }
+}

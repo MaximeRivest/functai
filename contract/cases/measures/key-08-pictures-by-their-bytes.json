@@ -1,0 +1,17 @@
+{
+ "description": "A picture is its data, as a record writes it.",
+ "kind": "key-row",
+ "row": {
+  "page": {
+   "type": "image",
+   "media_type": "image/png",
+   "data": "iVBORw0KGgo="
+  }
+ },
+ "inputs": [
+  "page"
+ ],
+ "expect": {
+  "key": "sha256:30e5c87d5fb87b35f68ebc55d57d44e52fda83fdd9eab676ccde86373202b1b6"
+ }
+}

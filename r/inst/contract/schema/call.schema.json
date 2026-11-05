@@ -210,6 +210,14 @@
           "description": "calls.md, Setups: where the call ran, beside what it ran on.",
           "type": "object", "additionalProperties": false, "minProperties": 1,
           "properties": {"wall": {"type": ["string", "null"]}, "base_url": {"type": "string"}}
+        },
+        "case": {
+          "description": "measures.md, Results: the case this call answered, written by evaluate.",
+          "$ref": "#/$defs/sha256"
+        },
+        "repeat": {
+          "description": "measures.md, Results: which time its case was asked (1, 2, ...; absent: 1).",
+          "type": "integer", "minimum": 1
         }
       },
       "allOf": [

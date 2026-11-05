@@ -1,0 +1,20 @@
+{
+ "description": "No target both rated.",
+ "kind": "agreement",
+ "a": {
+  "a": 1
+ },
+ "b": {
+  "b": 1
+ },
+ "choice": false,
+ "expect": {
+  "n": 0,
+  "agree": null,
+  "low": null,
+  "high": null,
+  "kappa": null,
+  "mad": null,
+  "r": null
+ }
+}

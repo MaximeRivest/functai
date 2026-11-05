@@ -1,0 +1,289 @@
+{
+ "description": "A whole-answer verdict: format 1 and format 2 alike; a failed call counts 0 without a rating.",
+ "kind": "values",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926c00-000b-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000b-7000-8000-000000000000",
+   "program": {
+    "name": "mood",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:01:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "review": "Love it."
+   },
+   "outputs": {
+    "result": "happy"
+   },
+   "sizes": {
+    "inputs": {
+     "review": 10
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:13b4cc332a8d2ce2cead7e75fabc7866afe0ef006e36eb4f8623ac09ffb25346"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000c-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000c-7000-8000-000000000000",
+   "program": {
+    "name": "mood",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:02:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "review": "Broke."
+   },
+   "outputs": {
+    "result": "happy"
+   },
+   "sizes": {
+    "inputs": {
+     "review": 8
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:2d75cd051e6c698f6f95a75effa221a0c1aa7f234b6baae2ff382416805211ef"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000d-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000d-7000-8000-000000000000",
+   "program": {
+    "name": "mood",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:03:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "review": "Meh."
+   },
+   "outputs": null,
+   "sizes": {
+    "inputs": {
+     "review": 6
+    },
+    "outputs": {}
+   },
+   "error": {
+    "type": "RateLimitError",
+    "message": "slow down"
+   },
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:1d556c0065cea4b56f7f26256bbb93077822e8104be1325c68bfbdf846a4735d"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000e-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000e-7000-8000-000000000000",
+   "program": {
+    "name": "mood",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:04:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "review": "Ok."
+   },
+   "outputs": {
+    "result": "mixed"
+   },
+   "sizes": {
+    "inputs": {
+     "review": 5
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:f099b1cfe6bb26a03fc131b0fc38123449b0f3ea7644063ef53b010fc2fad4fa"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926c10-0015-7000-8000-000000000000",
+   "call": "01926c00-000b-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "by": "megan",
+   "verdict": "right"
+  },
+  {
+   "functai_rating": 1,
+   "id": "01926c10-0016-7000-8000-000000000000",
+   "call": "01926c00-000c-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "by": "megan",
+   "verdict": "wrong",
+   "answer": "unhappy"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0017-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "call": "01926c00-000e-7000-8000-000000000000",
+   "criterion": "correct",
+   "kind": "verdict",
+   "blind": true,
+   "value": "right",
+   "by": "megan"
+  }
+ ],
+ "program": {
+  "name": "mood"
+ },
+ "criterion": {
+  "name": "correct",
+  "kind": "verdict"
+ },
+ "source": "people",
+ "drawn": false,
+ "by": "setup",
+ "expect": {
+  "results": [
+   {
+    "call": "01926c00-000b-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:13b4cc332a8d2ce2cead7e75fabc7866afe0ef006e36eb4f8623ac09ffb25346",
+    "value": 1.0
+   },
+   {
+    "call": "01926c00-000c-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:2d75cd051e6c698f6f95a75effa221a0c1aa7f234b6baae2ff382416805211ef",
+    "value": 0.0
+   },
+   {
+    "call": "01926c00-000d-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:1d556c0065cea4b56f7f26256bbb93077822e8104be1325c68bfbdf846a4735d",
+    "value": 0.0
+   },
+   {
+    "call": "01926c00-000e-7000-8000-000000000000",
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:f099b1cfe6bb26a03fc131b0fc38123449b0f3ea7644063ef53b010fc2fad4fa",
+    "value": 1.0
+   }
+  ],
+  "cases": [
+   {
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:13b4cc332a8d2ce2cead7e75fabc7866afe0ef006e36eb4f8623ac09ffb25346",
+    "value": 1.0
+   },
+   {
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:2d75cd051e6c698f6f95a75effa221a0c1aa7f234b6baae2ff382416805211ef",
+    "value": 0.0
+   },
+   {
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:1d556c0065cea4b56f7f26256bbb93077822e8104be1325c68bfbdf846a4735d",
+    "value": 0.0
+   },
+   {
+    "group": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+    "case": "sha256:f099b1cfe6bb26a03fc131b0fc38123449b0f3ea7644063ef53b010fc2fad4fa",
+    "value": 1.0
+   }
+  ]
+ }
+}

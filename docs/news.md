@@ -4,6 +4,48 @@
 
 ## Unreleased
 
+### Measures: cases, results, ratings, honest numbers
+
+One model for measuring any program, the same in every language that
+measures (design/20; contract: measures.md, calls.md *Format 2*; cases
+`measures/`, written from the rules in `contract/cases/measure_rules.py`).
+
+- **Cases.** `functai.case_key(program, row)`: the hash of a row's inputs
+  (and a conversation's earlier turns). Every call `evaluate` makes writes
+  `case` and `repeat` in its record (optional fields of format 2), so a
+  live call is a result on the case of its own inputs.
+- **`evaluate(..., repeats=, reuse=, criteria=)`**: each case asked several
+  times (a repeat is another replicate, so a reply cache gives it its own
+  answer); results already in a log reused (same program, setup and case,
+  ended well); criteria with judges become metrics, their ratings kept in
+  the log and reused. Ranges are over cases. The run table gains
+  `case_key`, `repeat`, `call_id`, `reused`.
+- **`compare` pairs by case**, not by row position (a subset, another
+  order, an extra column that is not an input all compare), warns about
+  cases only one side has, and says `method`, `outcome` (with `margin=`)
+  and `fragility`. **Its range changed for right-or-wrong scores**: the
+  MOVER-Wilson interval with the continuity-corrected correlation instead
+  of the paired t interval, whose exact coverage fell to 1 to 3% for some
+  rates and which said "exactly 0" when no case changed (design/20-evidence).
+- **Ratings of format 2** (`functai.rate(p, v, criterion=, item=, blind=)`,
+  `functai.prefer`): labels, scores and verdicts about a whole answer or an
+  item, picks between two answers, by people, accounts, judge programs (by
+  their setup) or code (by its hash), blind or not, part of a random draw or
+  not. A rating format 1 can say is still written as format 1; format 1
+  gains `blind`. `rated` reads format-2 verdicts of people.
+- **Judges**: `functai.judge`, `functai.judge_pairs` (both orders),
+  `functai.positions`, `functai.agreement`.
+- **Statistics over the log**: `functai.scoreboard` (per setup: people,
+  people drawn, each judge, a judge combined with people drawn by PPI++),
+  `compare_setups`, `win_rate`, `rank` (Bradley–Terry with fragility),
+  `self_agreement`, `disagreements`, `measure`; the formulas in
+  `functai.measures` (`paired`, `ppi`, `bradley_terry`, ...).
+- **Fair samples, held-out cases**: `functai.draw` (the same draw in every
+  language), `functai.shown_order` (blind sides), `functai.split_of` (held
+  out by the hash of the case, stable as cases are added, a conversation on
+  one side), `functai.as_case` (a corrected call as a row). The optimizers
+  refuse rows marked `split="held_out"`.
+
 ### What a program runs on: setups
 
 A version says what a program **is**; its **setup** now says what it runs

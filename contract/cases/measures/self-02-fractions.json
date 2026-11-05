@@ -1,0 +1,22 @@
+{
+ "description": "Fractions: one minus the mean difference.",
+ "kind": "self",
+ "per_case": {
+  "k1": [
+   0.5,
+   0.75
+  ],
+  "k2": [
+   1,
+   0.5,
+   0.25
+  ]
+ },
+ "expect": {
+  "cases": 2,
+  "mean": 0.625,
+  "low": 0.0,
+  "high": 1.0,
+  "spread": 0.23753654689565376
+ }
+}

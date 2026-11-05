@@ -1,0 +1,30 @@
+{
+ "description": "Cases with two or more results: pairwise agreement and the spread within cases; a case with one result says nothing.",
+ "kind": "self",
+ "per_case": {
+  "k1": [
+   1,
+   1,
+   1
+  ],
+  "k2": [
+   1,
+   0,
+   1
+  ],
+  "k3": [
+   0,
+   0
+  ],
+  "k4": [
+   1
+  ]
+ },
+ "expect": {
+  "cases": 3,
+  "mean": 0.7777777777777777,
+  "low": 0.0,
+  "high": 1.0,
+  "spread": 0.2721655269759087
+ }
+}

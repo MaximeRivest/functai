@@ -16,6 +16,7 @@ by another; they meet only here.
 | [`functions.md`](functions.md) | an AI function: the signature a definition becomes, its layout ([`layouts/`](layouts/)), what a model can do ([`models.json`](models.json)), worked examples, the request, what happens when a reply cannot be read | `cases/functions/` |
 | [`calls.md`](calls.md) | the call log: every call as one line of JSON, ratings, the rows with known answers they make, versions and setups (what a program runs on, what it may reach, what code spent); which values a record keeps (*Content*); the calls a call was shown as context (*Saw*) | `cases/rated/`, `cases/content/`, `cases/saw/`, `cases/setup/` |
 | [`scores.md`](scores.md) | whether an answer is right, the score and its 95% range | `cases/scores/` |
+| [`measures.md`](measures.md) | measuring programs: case keys, held-out sides, random draws, results, criteria, reading ratings of format 2, values, comparing two setups (and side by side), a judge combined with people, rankings, fragility, a judge's agreement with people, a setup's agreement with itself, scoreboards | `cases/measures/` |
 | [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares, and the notes it may make; its signature; which are refused; checking values and notes against it | `cases/programs/` |
 | [`saved.md`](saved.md) | a saved program's manifest, and loading its AI functions in another language | `cases/saved/` |
 | [`baked.md`](baked.md) | a baked model: what a generative student is trained on and called with (its signature without the inputs left out, its layout, the conversations), the examples table, the folder (`baked.json` format 2) | `cases/baked/` |
@@ -27,7 +28,7 @@ by another; they meet only here.
 | [`plugins.md`](plugins.md) | plugins: hooks over turns, context, calls, requests and tools; changes as data and recorded; order; entries; the built-in approval, compaction and delegation | `cases/plugins/` |
 
 `schema/` holds JSON Schemas (draft 2020-12) for a call record, a rating
-record, a stream event, a program's interface, a saved manifest, a
+record (formats 1 and 2), a stream event, a program's interface, a saved manifest, a
 conversation's record and a baked model's `baked.json`.
 Every record, event and manifest an implementation writes must pass them,
 and every one in the cases does (`make.py` checks each against its schema
@@ -120,6 +121,7 @@ thing it cannot do yet wait for it, and are not failures.
 | `programs/` of kind `notes`, and `programs/27` | notes a program declares, refused and checked where made | every language with modules and streaming |
 | `partial/` | the answer so far, read from its text by its shape | every language that streams |
 | `setup/` | an AI function's setup: its document and its hash, under settings, plugins and walls | every language |
+| `measures/` | case keys, splits, draws, ratings of format 2, values, the statistics, scoreboards, `rated` with format-2 verdicts | every language that measures (Python and TypeScript, 2026-11-05) |
 
 `agents/` (2026-11-02, `../design/17-long-agents.md`), and `setup/`,
 `partial/`, `programs/27` to `30`, `views/outside-04`, `events/replay-15`,
@@ -179,6 +181,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `needs-unmet` | [calls.md](calls.md), *Reach* | a program needs a domain or a secret the wall it runs behind does not let through (`ReachError`), before its first call |
 | `interface-malformed` | [programs.md](programs.md) | an interface refused when its program (a module, or an AI function) is defined, or when it is read from a saved folder |
 | `files-unavailable` | [functions.md](functions.md), *Pictures, sounds, documents and files* | a function with an `Artifacts` input (files) in a language or an install that has no Attachments |
+| `case-split` | [measures.md](measures.md), *Held out* | a row whose `split` is neither `train` nor `held_out`, or a held-out share outside 0 to 1 |
 | `log-content-field` | [calls.md](calls.md) | a `log_content` key that names no field of the program, or is not a name |
 | `saved-malformed`, `saved-format`, `saved-not-ai`, `saved-code`, `saved-tools`, `saved-model`, `saved-differs`, `saved-no-interface` | [saved.md](saved.md) | loading or describing a saved folder |
 | `not-recorded`, `missing-call`, `unknown-key`, `saw-cycle`, `not-kept`, `turn-invalid` (lmcc's word) | [calls.md](calls.md), *Saw* | what a call saw cannot be known, or shown again |
@@ -191,6 +194,12 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `serve-opaque`, `serve-keys` | [serving.md](serving.md) | a program that cannot be served as asked |
 | `plugin-api`, `plugin-hook`, `plugin-name`, `plugin-change`, `plugin-failed`, `plugin-load` | [plugins.md](plugins.md) | a plugin refused, or failed (`PluginError`) |
 | `plugin-stopped` | [plugins.md](plugins.md), *The fields* | a `before_call` or `step` handler stopped the call (`stop`: a limit reached) |
+
+`measures/` (2026-11-05, `../design/20-measures.md`) was built in Python
+and TypeScript; R and Julia read every other folder as before, and every
+rating Python and TypeScript write for them (a right or wrong about a
+whole call is still format 1). `rated/15`'s rating of a format no reader
+knows was format 2 until then; it is format 9 since format 2 exists.
 
 Each rule of "Rows with known answers" was broken on purpose in the
 Python implementation (thirteen breaks: the earliest rating instead of

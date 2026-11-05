@@ -1,0 +1,18 @@
+{
+ "description": "A split that is neither train nor held_out is refused.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "a",
+   "split": "test"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 0.2,
+ "salt": "",
+ "expect": {
+  "refuses": "case-split"
+ }
+}

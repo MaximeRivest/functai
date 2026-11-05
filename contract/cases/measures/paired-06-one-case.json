@@ -1,0 +1,24 @@
+{
+ "description": "One shared case: a difference, no range.",
+ "kind": "paired",
+ "a": [
+  0
+ ],
+ "b": [
+  1
+ ],
+ "margin": null,
+ "bounded": false,
+ "expect": {
+  "diff": 1.0,
+  "low": null,
+  "high": null,
+  "n": 1,
+  "method": null,
+  "outcome": "unclear",
+  "better": 1,
+  "worse": 0,
+  "same": 0,
+  "fragility": 1
+ }
+}

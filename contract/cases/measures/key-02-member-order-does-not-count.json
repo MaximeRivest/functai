@@ -1,0 +1,16 @@
+{
+ "description": "Canonical JSON: the order of an object's members does not count.",
+ "kind": "key-row",
+ "row": {
+  "order": {
+   "b": 2,
+   "a": 1
+  }
+ },
+ "inputs": [
+  "order"
+ ],
+ "expect": {
+  "key": "sha256:46f53de16a29bcbb96b7c92310c01e5dd3b2b36f70e3a2d872cfa3a4c8077d57"
+ }
+}

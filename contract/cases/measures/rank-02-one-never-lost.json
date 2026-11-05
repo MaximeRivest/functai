@@ -1,0 +1,64 @@
+{
+ "description": "A version that never lost stays finite (the virtual tie).",
+ "kind": "rank",
+ "versions": [
+  "a",
+  "b"
+ ],
+ "outcomes": [
+  {
+   "case": "c0",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  },
+  {
+   "case": "c1",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  },
+  {
+   "case": "c2",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  },
+  {
+   "case": "c3",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  },
+  {
+   "case": "c4",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  }
+ ],
+ "expect": {
+  "versions": [
+   {
+    "version": "a",
+    "strength": 0.0,
+    "low": 0.0,
+    "high": 0.0,
+    "vs_reference": 0.5
+   },
+   {
+    "version": "b",
+    "strength": -2.3978952727983707,
+    "low": -5.292953965108174,
+    "high": 0.4971634195114323,
+    "vs_reference": 0.08333333333333334
+   }
+  ],
+  "order": [
+   "a",
+   "b"
+  ],
+  "reference": "a",
+  "fragility": null
+ }
+}

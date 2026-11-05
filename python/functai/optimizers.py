@@ -65,6 +65,20 @@ def _mean_score(program: Any, rows: Sequence[Row], metric: Metric, num_threads: 
 # ------------------------------------------------------------------ optimizers
 
 
+
+def training_rows(data, what: str = "trainset"):
+    """The rows an optimizer may see: refused when any is held out (``split`` ``"held_out"``,
+    contract/measures.md, *Held out*): a case shown to an optimizer no longer measures it."""
+    from .evaluation import rows_of
+    from .measures import held_out
+    rows = rows_of(data)
+    n = held_out(rows)
+    if n:
+        raise ValueError(f"{n} of the {len(rows)} rows of the {what} are held out (split 'held_out'): an optimizer "
+                         "never sees a held-out case, which then measures what it was shown. Pass the training rows: "
+                         "[r for r in rows if r.get('split') != 'held_out']")
+    return rows
+
 class Optimizer:
     """The base class of optimizers: subclass it to write your own.
 
@@ -139,7 +153,7 @@ class LabeledFewShot(Optimizer):
         if not target.single:
             raise TypeError("LabeledFewShot needs labels per AI function; for a @module use BootstrapFewShot")
         fn = target.predictors[0]
-        examples = rows_of(trainset)
+        examples = training_rows(trainset, 'trainset')
         chosen = random.Random(self.seed).sample(examples, min(self.k, len(examples))) if self.sample \
             else examples[: self.k]
         demos = tuple(d for d in (_labeled_demo(fn, target, ex) for ex in chosen) if d)
@@ -227,7 +241,7 @@ class BootstrapFewShot(Optimizer):
 
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
-        examples = rows_of(trainset)
+        examples = training_rows(trainset, 'trainset')
         metric = _metric(self.metric, target, examples, required=False)
         boot, used = self.bootstrap(target, examples, metric)
         states: States = {}
@@ -273,8 +287,8 @@ class BootstrapFewShotWithRandomSearch(Optimizer):
 
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
-        examples = rows_of(trainset)
-        val = rows_of(valset) if valset is not None else examples
+        examples = training_rows(trainset, 'trainset')
+        val = training_rows(valset, 'valset') if valset is not None else examples
         metric = _metric(self.metric, target, examples, required=True)
         base: States = {fn: fn.state() for fn in target.predictors}
         best: Tuple[float, States] = (-1.0, base)
@@ -396,8 +410,8 @@ class InstructionSearch(Optimizer):
     def compile(self, program, *, trainset, valset=None) -> States:
         target = _Target(program)
         rng = random.Random(self.seed)
-        examples = rows_of(trainset)
-        val = rows_of(valset) if valset is not None else examples
+        examples = training_rows(trainset, 'trainset')
+        val = training_rows(valset, 'valset') if valset is not None else examples
         metric = _metric(self.metric, target, examples, required=True)
         fns = target.predictors
         instr = {fn: self._instructions(fn, examples, target.input_names, rng) for fn in fns}
@@ -608,10 +622,10 @@ class GEPA(Optimizer):
                             "by one, or use BootstrapFewShot for the module.")
         fn = target.predictors[0]
         rng = random.Random(self.seed)
-        examples = rows_of(trainset)
+        examples = training_rows(trainset, 'trainset')
         metric = _metric(self.metric, target, examples, required=True)
         if valset is not None:
-            feed_rows, select_rows = examples, rows_of(valset)
+            feed_rows, select_rows = examples, training_rows(valset, 'valset')
         else:
             if len(examples) < 2:
                 raise ValueError("GEPA needs at least 2 rows: some to learn from, some to choose with")
@@ -786,7 +800,7 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
     target = _Target(program, call_defaults=call_defaults)
     if isinstance(program, FunctAIModule) and call_defaults:
         program._opt_call_defaults = dict(call_defaults)
-    examples = rows_of(trainset) if trainset is not None else []
+    examples = training_rows(trainset, 'trainset') if trainset is not None else []
     settings = target.predictors[0]._effective()
     teacher = teacher if teacher is not None else settings.get("teacher")
     teacher_lm = teacher_lm if teacher_lm is not None else settings.get("teacher_lm")
@@ -816,7 +830,7 @@ def optimize(program: Any, *, trainset: Optional[Sequence[Any]] = None, optimize
         warnings.warn(f"[functai] {target.name}: {in_context} of {len(examples)} rows were answered after earlier "
                       f"turns (a conversation): they are asked again with those turns and scored, but never used "
                       f"as worked examples", stacklevel=3)
-    val = rows_of(valset) if valset is not None else None
+    val = training_rows(valset, 'valset') if valset is not None else None
     mapping = expected_columns(target, expected, examples)
     if mapping:                                 # the right answers under the outputs' names
         examples = with_expected(examples, mapping, target)

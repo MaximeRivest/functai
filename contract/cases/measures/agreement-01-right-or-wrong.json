@@ -1,0 +1,38 @@
+{
+ "description": "0 or 1 both sides: agreement and kappa.",
+ "kind": "agreement",
+ "a": {
+  "a": 1,
+  "b": 1,
+  "c": 0,
+  "d": 1,
+  "e": 0,
+  "f": 1,
+  "g": 1,
+  "h": 0,
+  "i": 1,
+  "j": 1
+ },
+ "b": {
+  "a": 1,
+  "b": 1,
+  "c": 0,
+  "d": 0,
+  "e": 0,
+  "f": 1,
+  "g": 1,
+  "h": 1,
+  "i": 1,
+  "j": 1
+ },
+ "choice": false,
+ "expect": {
+  "n": 10,
+  "agree": 0.8,
+  "low": 0.4901624691221323,
+  "high": 0.9433178490622331,
+  "kappa": 0.523809523809524,
+  "mad": null,
+  "r": null
+ }
+}

@@ -95,16 +95,28 @@ after = functai.evaluate(team_v2, tickets, expected="category", num_threads=8)
 
 before.score                                                         # share right
 s = before.summary.to_dicts()[0]                                     # metric, mean, low, high (95%), n, failed
-c = functai.compare(before, after).to_dicts()[0]                     # before, after, diff, low, high (paired 95%),
-                                                                     # better, worse, same, n
-t = before.table.to_dicts()                                          # the rows: your columns, pred_result, exact_match, error
-verdict = "unclear" if c["low"] <= 0 <= c["high"] else ("better" if c["diff"] > 0 else "worse")
+c = functai.compare(before, after, margin=0.05).to_dicts()[0]        # before, after, diff, low, high (paired 95%),
+                                                                     # better, worse, same, n, method, fragility
+t = before.table.to_dicts()                                          # the rows: your columns, pred_result, exact_match, error, call_id
+c["outcome"]                                                         # better, worse, same, not_worse, not_better or unclear
 ```
 
 - **The change goes in the function, never in the data**: `team_v2` is a second
   `@ai` function (the new rules in its docstring) or `team.using(lm=...)`,
-  evaluated on **the same table**. `compare` refuses tables that differ.
-  `evaluate` takes `@ai` functions or `@module`s, not plain wrappers.
+  evaluated on the same cases. `compare` pairs rows by their inputs (a column
+  that is not an input changes nothing) and says how many cases only one side
+  has. `evaluate` takes `@ai` functions or `@module`s, not plain wrappers.
+- Read `outcome`, never the means alone: 30 cases right for both versions is
+  `unclear` (the range is about ±0.11), not "no difference". More cases, or
+  `repeats=3`, narrow it; `reuse=log` asks only what the log lacks.
+- **No right answers?** Rate items: `real = functai.Criterion("real_problem", "label",
+  items="/insights", answers={"yes": 1, "no": 0, "unsure": None})`; people rate
+  a random draw (`functai.draw(ids, 20, seed)`, `rate(id, "yes", criterion=real,
+  item=3, sample=seed, blind=True)`); a judge rates everything
+  (`evaluate(..., criteria=[real.with_judge(judge)])`); `functai.scoreboard(prog,
+  [real])` combines them and `functai.agreement(prog, real, "people", judge)` says
+  whether the judge can be trusted. Hold out with `functai.split_of(row, prog)`;
+  optimizers refuse `split="held_out"` rows.
 - Metrics other than exact match: `functai.evaluate(fn, rows, {"name": metric})`,
   `metric(row, prediction) -> number`; or a judge `@ai` function.
 - Quotes as evidence: `functai.quotes_found(text, quotes)` checks them, free.

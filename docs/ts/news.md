@@ -8,6 +8,28 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### Measures: cases, results, ratings, honest numbers
+
+The same model and numbers as Python's (design/20; contract measures.md;
+cases `measures/`).
+
+- **Cases**: `caseKey(program, row)`; every call `evaluate` makes writes
+  `case` and `repeat`. **`evaluate(fn, rows, { repeats, reuse, criteria })`**:
+  repeats (replicates), reuse of a log's results and judgements, criteria
+  with judges as metrics; ranges over cases; each `RowResult` says its
+  `caseKey`, `repeat`, `example`, `reused`.
+- **`compare(before, after, { margin })` pairs by case**, with `method`,
+  `outcome`, `fragility`, `onlyBefore`, `onlyAfter`; for right-or-wrong
+  scores the MOVER-Wilson interval replaces the paired t interval.
+- **Ratings of format 2**: `rate(p, value, { criterion, item, blind })`,
+  `prefer`; a rating format 1 can say is still format 1 (with `blind`).
+- **Judges and statistics**: `judge`, `judgePairs`, `positions`,
+  `agreement`, `scoreboard`, `compareSetups`, `winRate`, `rank`,
+  `selfAgreement`, `disagreements`, `measure`, `paired`, `ppi`,
+  `bradleyTerry`; `draw`, `shownOrder`, `splitOf`, `asCase`, `criterion`,
+  `correct`, `preferred`. The optimizers refuse rows marked `split:
+  "held_out"`.
+
 ### What a program runs on: setups
 
 A version says what a program **is**; its **setup** says what it runs on

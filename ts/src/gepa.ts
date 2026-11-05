@@ -7,7 +7,7 @@
 
 import { evaluate, exactMatch, type Metric } from "./evaluate.ts";
 import { ai, type AnyAIFunction as AIFunction, type Expected, type Row } from "./fn.ts";
-import { random } from "./optimize.ts";
+import { random, refuseHeldOut } from "./optimize.ts";
 import { newId } from "./calllog.ts";
 import { withSettings, type Settings } from "./settings.ts";
 import { t } from "./shapes.ts";
@@ -122,6 +122,8 @@ const mean = (xs: readonly number[]) => (xs.length ? xs.reduce((a, b) => a + b, 
  * one chosen: measure it with `evaluate` on rows it never saw.
  */
 export async function gepa<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: GepaOptions<F, R> = {}): Promise<GepaResult<F>> {
+  refuseHeldOut(rows, "rows");
+  refuseHeldOut((opts as { valset?: readonly unknown[] }).valset, "valset rows");
   const budget = opts.budget ?? 300;
   const minibatch = Math.max(1, opts.minibatch ?? 4);
   const seed = opts.seed ?? 0;

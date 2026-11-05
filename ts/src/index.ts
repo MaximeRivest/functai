@@ -19,6 +19,7 @@ import { notesOf, readField, type FieldSpec, type NoteSpec, type ValueOf } from 
 import { setOwn } from "./values.ts";
 import { usageRead } from "./usage.ts";
 import { needsOf } from "./settings.ts";
+import { rateItem } from "./measures.ts";
 
 export { ai, type AIFunction, type AnyAIFunction, type CallOptions, type Column, type Definition, type Demo, type Expected, type Input,
   type InputOf, type MapOptions, type OutputOf, type Row, type State } from "./fn.ts";
@@ -53,6 +54,14 @@ export { quotesFound } from "./judges.ts";
 export { bakeExamples, exportExamples, bakeEntry, baked, BakedModel, type BakeEntry, type Example, type ExamplesOptions } from "./bake.ts";
 export { inspectHistory, phistory, type HistoryRecord } from "./history.ts";
 export { compare, type Comparison } from "./compare.ts";
+export {
+  criterion, correct, preferred, caseKey, splitOf, draw, scoreboard, Scoreboard, compareSetups, winRate, rank, agreement, positions,
+  selfAgreement, disagreements, measure, judge, judgePairs, prefer, shownOrder, asCase, MeasureError, paired, winRateOf, ppi, ppiPaired,
+  bradleyTerry, fragility, outcome,
+  type Criterion, type CriterionKind, type Judge, type JudgeArgs, type Judgement, type Paired, type WinRate, type Combined, type Agreement,
+  type Positions, type SelfAgreement, type Ranking, type RankOutcome, type Measure, type BoardGroup, type Disagreement, type Outcome as MeasureOutcome,
+  type RecordsOptions, type ProgramKey,
+} from "./measures.ts";
 export { Stream, PredictionStream, EventUnknown, views, type EventsOptions, type Form, type View } from "./stream.ts";
 export {
   Follower, MemoryStore, Replay, keptLog, replay, resume, settle, receivers, stateOf, positionOf, samePosition,
@@ -126,9 +135,17 @@ function checkedCodeId(id: unknown, name: string): string {
  * (contract/calls.md, "A rating record"). `call` is a Prediction or its
  * `callId`. The rating is written to the call log folder.
  */
-export function rate(call: Prediction | string | { callId: string } | { id: string }, verdict?: calllog.Verdict, opts: calllog.RateOptions = {}): Rec {
+export function rate(call: Prediction | string | { callId: string } | { id: string }, verdict?: calllog.Verdict | string | number, opts: calllog.RateOptions = {}): Rec {
   const id = typeof call === "string" ? call : "callId" in call ? call.callId : call.id;
-  return calllog.rating(id, verdict, opts, effective({}));
+  const c = opts.criterion;
+  if (c && !(c.name === "correct" && opts.item === undefined)) {
+    // another question, or an item: a person's rating of format 2 (format 1 when it can say it)
+    const { criterion, item, folder, ...rest } = opts;
+    return rateItem(id, verdict === undefined && ("answer" in opts || opts.outputs) ? "wrong" : verdict, {
+      ...rest, criterion: criterion as never, ...(item !== undefined ? { item } : {}), ...(folder !== undefined ? { folder } : {}) });
+  }
+  if (opts.item !== undefined) throw new TypeError("an item is judged by a criterion that judges items: rate(p, \"yes\", { criterion, item: 3 })");
+  return calllog.rating(id, verdict as calllog.Verdict | undefined, opts, effective({}));
 }
 
 /** One logged call (contract/calls.md, formats 1 and 2), as TypeScript reads it; `record` is the line as written. */

@@ -156,6 +156,30 @@ def refusals() -> None:
             "call": "01926a8e-0001-7000-8000-000000000000", "at": "2026-09-26T10:05:00.000000Z", "verdict": "right"}
     bad.append(("a rating that names a person and an account", RATING, {**base, "by": "ana", "account": "maxime"}))
     bad.append(("a rating that names neither a person nor an account", RATING, base))
+    # format 2 (measures.md)
+    two = {"functai_rating": 2, "id": "01926a90-0002-7000-8000-000000000000", "at": "2026-11-05T10:05:00.000000Z",
+           "call": "01926a8e-0001-7000-8000-000000000000", "criterion": "real_problem", "kind": "label",
+           "answers": {"yes": 1, "no": 0, "unsure": None}, "value": "yes", "by": "megan"}
+    pair = {"calls": ["01926a8e-0001-7000-8000-000000000000", "01926a8e-0002-7000-8000-000000000000"]}
+    choice = {k: v for k, v in two.items() if k not in ("call", "answers")} | pair | {"kind": "choice", "criterion": "preferred",
+                                                                              "value": pair["calls"][1]}
+    judge = {"name": "professor", "setup": "sha256:" + "d4" * 32}
+    bad += [("a rating of one call and of two", RATING, {**two, **pair}),
+            ("a pick with an item", RATING, {**choice, "item": "/insights/0"}),
+            ("a pick of one call", RATING, {**{k: v for k, v in choice.items() if k != "calls"}, "call": two["call"]}),
+            ("a pick of a third answer", RATING, {**choice, "value": "first"}),
+            ("a label without its answers", RATING, {k: v for k, v in two.items() if k != "answers"}),
+            ("an answer that counts for more than 1", RATING, {**two, "answers": {"yes": 2, "no": 0}}),
+            ("a scale on a label", RATING, {**two, "scale": [0, 10]}),
+            ("a person and a judge", RATING, {**two, "judge": judge}),
+            ("a judge known by neither setup nor code", RATING,
+             {**{k: v for k, v in two.items() if k != "by"}, "judge": {"name": "professor"}}),
+            ("a correction of a right verdict", RATING,
+             {**{k: v for k, v in two.items() if k != "answers"}, "criterion": "correct", "kind": "verdict",
+              "value": "right", "answer": "x"}),
+            ("an item that is not a JSON Pointer", RATING, {**two, "item": "insights/3"}),
+            ("a call with a case that is not a hash", CALL, {**rec, "case": "site 3"}),
+            ("a call asked a zeroth time", CALL, {**rec, "case": "sha256:" + "0" * 64, "repeat": 0})]
 
     for why, v, value in bad:
         assert not v.is_valid(value), f"the schema accepts {why}"
@@ -165,6 +189,15 @@ def refusals() -> None:
     del later["request"], later["model"]
     good = [("a rating made under an account", RATING, {**base, "account": "maxime"}),
             ("a rating by a person", RATING, {**base, "by": "ana"}),
+            ("a blind rating of format 1", RATING, {**base, "by": "ana", "blind": True}),
+            ("a person's label of an item", RATING, {**two, "item": "/insights/3", "blind": True, "sample": "draw-1"}),
+            ("a judge's pick", RATING, {**{k: v for k, v in choice.items() if k != "by"}, "judge": judge}),
+            ("a tie", RATING, {**choice, "value": "tie"}),
+            ("a withdrawn pick", RATING, {**choice, "value": None}),
+            ("code's score on a scale", RATING,
+             {**{k: v for k, v in two.items() if k not in ("by", "answers")}, "kind": "score", "scale": [1, 5], "value": 4,
+              "judge": {"name": "quotes_found", "code": "sha256:" + "f6" * 32}}),
+            ("a call that says its case", CALL, {**rec, "case": "sha256:" + "0" * 64, "repeat": 2}),
             ("a record naming the lmcc and lm15 that made it", CALL,
              {**rec, "process": {**rec["process"], "lmcc": "0.8.5", "lm15": "1.0.1"}}),
             ("a saw entry of a kind a later writer added", SAW_ENTRY, {"summary": "Alex struggles."}),

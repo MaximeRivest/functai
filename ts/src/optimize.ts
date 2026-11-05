@@ -9,6 +9,7 @@
  * here, not equal to Python's run with the same seed.
  */
 
+import { heldOut } from "./measures.ts";
 import { evaluate, exactMatch, type Metric } from "./evaluate.ts";
 import { ai } from "./fn.ts";
 import { t } from "./shapes.ts";
@@ -20,6 +21,20 @@ import { withSettings } from "./settings.ts";
 import { newId } from "./calllog.ts";
 
 type Rec = Record<string, unknown>;
+
+/**
+ * The rows an optimizer may see: refused when any is held out (`split`
+ * `"held_out"`, contract/measures.md, *Held out*): a case shown to an
+ * optimizer no longer measures it.
+ */
+export function refuseHeldOut(rows: readonly unknown[] | undefined, what = "rows"): void {
+  if (!rows) return;
+  const n = heldOut(rows);
+  if (n) {
+    throw new RangeError(`${n} of the ${rows.length} ${what} are held out (split "held_out"): an optimizer never sees a held-out case, which then measures `
+      + "what it was shown. Pass the training rows: rows.filter((r) => r.split !== \"held_out\")");
+  }
+}
 
 export function random(seed: number): () => number {
   let a = seed >>> 0;
@@ -81,6 +96,7 @@ export interface LabeledOptions<F = AIFunction, R = Rec> {
 
 /** An improved copy: up to `k` rows with known answers become worked examples. The function is unchanged. */
 export function labeledFewShot<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: LabeledOptions<F, R> = {}): F {
+  refuseHeldOut(rows, "rows");
   rows = standalone(fn, rows);
   const k = opts.k ?? 16;
   const columns = answerColumns(fn, opts.expected);
@@ -113,6 +129,7 @@ export interface BootstrapOptions<F = AIFunction, R = Rec> {
  * `maxLabeled`. The function is unchanged.
  */
 export async function bootstrapFewShot<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: BootstrapOptions<F, R> = {}): Promise<F> {
+  refuseHeldOut(rows, "rows");
   rows = standalone(fn, rows);
   const maxBoot = opts.maxBootstrapped ?? 4;
   const maxLabeled = opts.maxLabeled ?? 16;
@@ -178,6 +195,8 @@ export interface RandomSearchOptions<F = AIFunction, R = Rec> extends BootstrapO
  * and every candidate (`{ candidate, demos, score }`).
  */
 export async function randomSearch<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: RandomSearchOptions<F, R> = {}): Promise<{ fn: F; candidates: { candidate: string; demos: number; score: number }[] }> {
+  refuseHeldOut(rows, "rows");
+  refuseHeldOut((opts as { valset?: readonly unknown[] }).valset, "valset rows");
   const val = opts.valset ?? rows;
   const seed = opts.seed ?? 0;
   const maxBoot = opts.maxBootstrapped ?? 4;
@@ -257,6 +276,8 @@ export interface InstructionSearchOptions<F = AIFunction, R = Rec> extends Boots
  * with greedy refinement, not Bayesian. Returns the best copy and every trial.
  */
 export async function instructionSearch<F extends AIFunction, R extends Row<F>>(fn: F, rows: readonly R[], opts: InstructionSearchOptions<F, R> = {}): Promise<{ fn: F; trials: Rec[] }> {
+  refuseHeldOut(rows, "rows");
+  refuseHeldOut((opts as { valset?: readonly unknown[] }).valset, "valset rows");
   const seed = opts.seed ?? 0;
   const rng = random(seed);
   const n = Math.max(1, opts.candidates ?? 6);
