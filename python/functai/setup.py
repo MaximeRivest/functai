@@ -260,6 +260,8 @@ def ai_document(fn: Any) -> Dict[str, Any]:
     if fn._tools:
         doc["tools"] = {_tool_name(t): tool_entry(t) for t in fn._tools}
     doc["reach"] = reach_of(fn, s)
+    if s.get("code_id") is not None:
+        doc["code_id"] = s["code_id"]
     return doc
 
 
@@ -268,8 +270,11 @@ def module_document(m: Any) -> Dict[str, Any]:
     from .calllog import _module_graph, module_version
     from .config import effective
     _code, ai = _module_graph(m)
-    return {"version": module_version(m), "ai": {k: setup_of(p) for k, p in sorted(ai.items())},
-            "reach": reach_of(m, effective(getattr(m, "_settings", None) or {}))}
+    s = effective(getattr(m, "_settings", None) or {})
+    doc = {"version": module_version(m), "ai": {k: setup_of(p) for k, p in sorted(ai.items())}, "reach": reach_of(m, s)}
+    if s.get("code_id") is not None:
+        doc["code_id"] = s["code_id"]
+    return doc
 
 
 def document_of(program: Any) -> Dict[str, Any]:

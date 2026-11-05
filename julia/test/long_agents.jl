@@ -389,6 +389,16 @@ la_track_lost(order::String) = "LOST"
         # a program names each step it reaches
         doc = setup_document(la_walk)
         @test collect(keys(doc["ai"])) == ["__main__:la_write"] && doc["reach"] == "open"
+        # code a version cannot read, named by the host: in every setup worked out under it, a program's too
+        @test !haskey(doc, "code_id")
+        @test with_settings(() -> setup_document(la_walk)["code_id"]; code_id="sha256:aaaa") == "sha256:aaaa"
+        @test with_settings(() -> setup_document(a)["code_id"]; code_id="sha256:aaaa") == "sha256:aaaa"
+        @test setup(la_walk) != with_settings(() -> setup(la_walk); code_id="sha256:aaaa")
+        @test with_settings(() -> setup(a); code_id="a") != with_settings(() -> setup(a); code_id="b")
+        @test version(a) == with_settings(() -> version(a); code_id="a")
+    end
+    for bad in ("", "   ", "x"^201, 7)
+        @test_throws ArgumentError with_settings(() -> 1; code_id=bad)
     end
 end
 

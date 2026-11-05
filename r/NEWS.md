@@ -1,5 +1,10 @@
 # functai (development version)
 
+- **`code_id`**, a setting (text, at most 200 characters): what a host says
+  identifies code a program runs that its version cannot read. Every setup
+  worked out under it holds it, a program's too (contract calls.md, *Code
+  the language cannot read*; case `setup/12`).
+
 Caught up with Python and TypeScript (design/17, 18, 19): every case of
 `contract/cases/agents`, `setup` and `partial`, `programs/27` to `30`,
 `views/outside-04` and `events/replay-15` passes.

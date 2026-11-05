@@ -41,6 +41,26 @@ test("another model is another setup of the same version; where it is reached is
   assert.equal(withSettings({ lm: LM, baseUrl: "https://gw.example/v1", cacheReplies: true, apiRetries: 9 }, () => mood.setup), a);
 });
 
+test("code a version cannot read: the host names it (codeId), in every setup worked out under it, a module's too", () => {
+  const both = module("both", { input: { a: t.string() }, output: t.string(), uses: [mood] }, async ({ a }) => mood(a));
+  withSettings({ lm: LM }, () => {
+    const plain = { mood: mood.setup, both: both.setup };
+    assert.equal(mood.setupDocument()["code_id"], undefined);      // nothing said: setups as before
+    withSettings({ codeId: "sha256:aaaa" }, () => {
+      assert.equal(mood.setupDocument()["code_id"], "sha256:aaaa");
+      assert.equal(both.setupDocument()["code_id"], "sha256:aaaa");
+      assert.notEqual(mood.setup, plain.mood);
+      assert.notEqual(both.setup, plain.both);
+      assert.equal(mood.version, withSettings({ codeId: null }, () => mood.version));   // a setting, not the version
+    });
+    assert.notEqual(withSettings({ codeId: "sha256:aaaa" }, () => both.setup), withSettings({ codeId: "sha256:bbbb" }, () => both.setup));
+    assert.equal(withSettings({ codeId: null }, () => mood.setup), plain.mood);
+  });
+  for (const bad of ["", "   ", "x".repeat(201), 7]) assert.throws(() => withSettings({ codeId: bad as never }, () => 0), /codeId/);
+  const own = ai("own", { description: "d", input: { x: t.string() }, output: t.string(), codeId: "rev-12" } as never);
+  assert.equal(withSettings({ lm: LM }, () => own.setupDocument()["code_id"]), "rev-12");
+});
+
 test("rewriting a tool is another setup of the same version; what its text cannot say, codeId says", () => {
   const spec = { description: "Look at a page.", input: { page: t.string() }, effects: "reads" as const };
   const a = stockWith(tool("look", spec, ({ page }) => `page ${page}: in stock`));

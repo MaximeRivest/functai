@@ -195,6 +195,8 @@ function ai_document(f::AIFunction)
     isempty(running) || (doc["plugins"] = Any[plugin_entry(p) for p in running])
     isempty(f.tools) || (doc["tools"] = JObj(t.name => tool_entry(t) for t in f.tools))
     doc["reach"] = reach_of(f, s)
+    code_id = get(s, :code_id, nothing)
+    code_id === nothing || (doc["code_id"] = String(code_id))
     doc
 end
 
@@ -214,9 +216,15 @@ function reached_ai(p::AIProgram)
 end
 
 "A program's setup document: its version, the setup of each AI function it reaches, its reach."
-module_document(p::AIProgram) = LMCC.jobj("version" => version(p),
-                                          "ai" => JObj(k => setup(x) for (k, x) in sort!(collect(reached_ai(p)); by=first)),
-                                          "reach" => reach_of(p, effective(Dict{Symbol,Any}())))
+function module_document(p::AIProgram)
+    s = effective(Dict{Symbol,Any}())
+    doc = LMCC.jobj("version" => version(p),
+                    "ai" => JObj(k => setup(x) for (k, x) in sort!(collect(reached_ai(p)); by=first)),
+                    "reach" => reach_of(p, s))
+    code_id = get(s, :code_id, nothing)
+    code_id === nothing || (doc["code_id"] = String(code_id))
+    doc
+end
 
 """
     setup_document(program) -> Dict

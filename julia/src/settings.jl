@@ -37,6 +37,7 @@ const SETTING_DOCS = (
     escalate_to = "when the model is less sure of its answer than escalate_below, another answers instead: a model name, a baked model, or an AI function (needs a model that measures its confidence)",
     escalate_below = "the confidence under which escalate_to answers (default 0.9)",
     wall = "the wall the host runs programs behind (contract/calls.md, Reach): nothing (none it says: reach is open), a name (\"srt\": made from each program's needs), or (name = …, domains = […], secrets = […], limits = Dict(…)): what it lets through, and its limits. A program that needs what the wall does not let through is refused before its first call (ReachError)",
+    code_id = "text naming code a program runs that its version cannot read (contract/calls.md, Code the language cannot read): a bundle's hash, a revision, at most 200 characters. Every setup worked out under it holds it",
 )
 const SETTING_NAMES = keys(SETTING_DOCS)
 
@@ -104,6 +105,8 @@ function check_setting(name::Symbol, value)
         throw(ArgumentError("escalate_to is a model name, a baked model, or an AI function, not $(repr(value))"))
     name === :escalate_below && !(value isa Real && 0 < value <= 1) && throw(ArgumentError("escalate_below is a probability in (0, 1], not $(repr(value))"))
     name === :wall && wall_setting(value)
+    name === :code_id && !(value isa AbstractString && !isempty(strip(value)) && length(value) <= 200) &&
+        throw(ArgumentError("code_id is text naming code a version cannot read (a bundle's hash), at most 200 characters, not $(repr(value))"))
     nothing
 end
 

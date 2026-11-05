@@ -348,7 +348,7 @@ export function defaultsDocument(iface: Interface, code: Readonly<Record<string,
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "apiMaxWait", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
-  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall"]);
+  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall", "codeId"]);
 
 /** The fields of a call of a function with this signature (calls.md, "Content"): its inputs, and every output, those FunctAI adds included. */
 export function fieldsOf(iface: Interface, signature: lmcc.Signature): CallFields {
@@ -601,6 +601,7 @@ export function make(core: Core): AIFunction {
     if (running.length) doc["plugins"] = running.map(pluginEntry);
     if (core.tools.length) doc["tools"] = Object.fromEntries(core.tools.map((t) => [t.name, toolEntry(t)]));
     doc["reach"] = reachOf(needs(), s);
+    if (typeof s.codeId === "string") doc["code_id"] = s.codeId;
     return doc;
   };
   const setupId = (s: Settings, extra: Settings): string | undefined => {

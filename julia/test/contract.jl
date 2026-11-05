@@ -183,7 +183,7 @@ end
         @test setup(f) == c["expect"]["setup"]
     end
 end
-@test length(cases("setup")) >= 11
+@test length(cases("setup")) >= 12
 
 
 # Julia has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that

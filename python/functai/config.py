@@ -97,6 +97,10 @@ DEFAULTS: Dict[str, Any] = {
     # from each program's needs) | {"name", "domains"?, "secrets"?, "limits"?}: what it lets through, and its limits
     "wall": None,
 
+    # what identifies code a program runs that its version cannot read (contract/calls.md, *Code the language cannot
+    # read*): text a host says (a bundle's hash, a revision), at most 200 characters; in every setup worked out under it
+    "code_id": None,
+
     # baking (functai.bake): where training happens when bake() is not told:
     # "here", "tinker", "prime", "export", or a list in order of preference
     "bake_where": None,
@@ -165,6 +169,10 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
             settings = {**settings, "plugins": plugins.check_setting(settings["plugins"])}
         if settings.get("wall") is not None:
             settings = {**settings, "wall": check_wall(settings["wall"])}
+        code_id = settings.get("code_id")
+        if code_id is not None and (not isinstance(code_id, str) or not code_id.strip() or len(code_id) > 200):
+            raise TypeError(f"code_id is text naming code a version cannot read (a bundle's hash), at most 200 "
+                            f"characters, not {code_id!r}")
         if settings.get("program_plugins") not in (None, True, False):
             raise TypeError(f"program_plugins is True or False, not {settings['program_plugins']!r}")
         if settings.get("program_observers") not in (None, True, False):

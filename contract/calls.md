@@ -726,9 +726,25 @@ which is true: another thing runs.
 | `plugins` | the plugins that run on its calls, in the order they run ([plugins.md](plugins.md), *Order*), each `{"name", "version", "config"?}`: `config` what the plugin says its settings are, as JSON (the built-ins: *Built-in plugins*). Absent when none runs. Every plugin counts: what only watches is an observer, never a plugin. |
 | `tools` | each tool by name: `{"code": {"language", "code", "id"?}}` for code of the program's own (`code` `"sha256:"` of its source as the language reads a module's code: Python the code the tool reaches, TypeScript the function's text; `id` what the tool's author says identifies it beyond that text, a revision or a bundle's hash: a value a closure captured, or code a function imports, is not in its text), `{"setup": S}` for an AI function or a module used as a tool, `{"described": true}` for a tool described by data whose code runs elsewhere. Absent when it has none. A tool's name, description and parameters are in the version already. |
 | `reach` | what the program may reach where it runs (*Reach*). |
+| `code_id` | what the host says identifies code the program runs that its version cannot read (*Code the language cannot read*). Absent when the host says nothing. |
 
 **A module's**: `{"version", "ai", "reach"}`, `ai` the setup of each AI
-function it reaches, by the keys its version uses.
+function it reaches, by the keys its version uses, and `code_id` when the
+host says one.
+
+### Code the language cannot read
+
+A version holds the code a language can read of a program
+(*Versions*): Python follows what a module reaches, TypeScript reads a
+function's own text, not what it imports. A host that knows more (the
+files it bundled the program from, a revision) says so with the setting
+`code_id`, a text (at most 200 characters, not empty): every setup worked
+out under it holds it, so changed code a version cannot see is another
+setup, and its results are measured apart (measures.md, *Results*). It is
+a setting, not part of the version: ratings still pool by interface, and
+the host decides what it covers (code, not the examples it tests with,
+whose change should not split results). Absent or `null`: nothing is
+added, and setups are as before.
 
 **Not in a setup**, and recorded on each call instead when it matters
 (`placement`, `exchanges`): the server address (`base_url`), keys and

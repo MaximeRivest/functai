@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Code a version cannot read: `code_id`
+
+- The setting `code_id` (text, at most 200 characters): what a host says
+  identifies code a program runs that its version cannot read (a bundle's
+  hash, a revision). Every setup worked out under it holds it
+  (`setup_document()["code_id"]`), an AI function's and a module's, so
+  such code changing is another setup, and its results are measured apart.
+  Not part of the version: ratings still pool. Contract: calls.md *Code
+  the language cannot read*, case `setup/12`.
+
 ### Measures: cases, results, ratings, honest numbers
 
 One model for measuring any program, the same in every language that

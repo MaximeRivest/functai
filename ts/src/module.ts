@@ -153,7 +153,7 @@ export type AnyModule = Module<any, any>;
 const SETTING_KEYS = new Set(["lm", "router", "temperature", "maxTokens", "topP", "stop", "seed", "config", "adapter", "template",
   "module", "includeFnName", "capabilities", "retries", "apiRetries", "apiMaxWait", "maxSteps", "toolErrors", "logCalls", "logContent", "caller",
   "cacheReplies", "observers", "journal", "programObservers", "replicate", "approve", "plugins", "programPlugins", "escalateTo",
-  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall"]);
+  "escalateBelow", "apiKey", "baseUrl", "onUnreadable", "wall", "codeId"]);
 
 interface ModuleCore {
   name: string;
@@ -218,11 +218,16 @@ function makeModule(core: ModuleCore): AnyModule {
   /** What its code reaches: its own needs, and every program's it uses. */
   const needs = (): Needs | undefined => mergedNeeds(core.needs,
     ...core.uses.map((u) => (u as { _needs?: () => Needs | undefined })._needs?.()));
-  const setupDocument = (): Rec => ({
-    version: version(),
-    ai: Object.fromEntries(Object.entries(aiReached()).sort(([a], [b]) => byCodePoint(a, b)).map(([k, fn]) => [k, fn.setup])),
-    reach: reachOf(needs(), effective(core.own)),
-  });
+  const setupDocument = (): Rec => {
+    const s = effective(core.own);
+    const doc: Rec = {
+      version: version(),
+      ai: Object.fromEntries(Object.entries(aiReached()).sort(([a], [b]) => byCodePoint(a, b)).map(([k, fn]) => [k, fn.setup])),
+      reach: reachOf(needs(), s),
+    };
+    if (typeof s.codeId === "string") doc["code_id"] = s.codeId;
+    return doc;
+  };
   const setupId = (): string | undefined => {
     if (core.remote) return undefined;
     try {

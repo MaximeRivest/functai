@@ -27,4 +27,4 @@ def test_setup_case(path):
 
 
 def test_the_contract_has_setup_cases():
-    assert len(CASES) >= 11
+    assert len(CASES) >= 12

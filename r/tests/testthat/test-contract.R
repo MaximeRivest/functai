@@ -133,7 +133,7 @@ for (name in names(cases("setup"))) {
     expect_identical(got$setup, c$expect$setup)
   })
 }
-test_that("the contract has setup cases", expect_gte(length(cases("setup")), 11L))
+test_that("the contract has setup cases", expect_gte(length(cases("setup")), 12L))
 
 
 # ---------------------------------------------------------------- files

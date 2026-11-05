@@ -6,6 +6,17 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### Code a version cannot read: `codeId`
+
+- The setting `codeId` (text, at most 200 characters; also a program's own
+  setting): what a host says identifies code a program runs that its
+  version cannot read. A TypeScript version holds a function's own text,
+  not what it imports; a host that knows the files it bundled a program
+  from (Quiver: its sources, packages and Node) sets it, and every setup
+  worked out under it holds it (`code_id`), so a changed helper is another
+  setup and its results are measured apart. Contract: calls.md *Code the
+  language cannot read*, case `setup/12`.
+
 ### Measures: cases, results, ratings, honest numbers
 
 The same model and numbers as Python's (design/20; contract measures.md;
