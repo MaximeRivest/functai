@@ -6,6 +6,15 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### A model that cannot stream answers a watched call whole
+
+- A call something watches (a stream, an observer, a journal) asks its
+  model for a stream. A route lm15 says cannot stream (TypeSafe's System
+  One answers in one piece: `UnsupportedFeatureError` before any piece) is
+  now asked whole and shown whole, one text piece per field, as Python
+  does (`streaming.request`). Before, the call failed. A refusal after the
+  first piece is still the call's. Its exchange records `streamed: false`.
+
 ### Code a version cannot read: `codeId`
 
 - The setting `codeId` (text, at most 200 characters; also a program's own

@@ -11,7 +11,7 @@ import {
   StepLimit, t, tool, toManifest, withSettings, type StreamEvent,
 } from "../src/index.ts";
 import { FakeRouter, whole } from "./fake.ts";
-import { Message, Response } from "@lm15/lm15";
+import { Message, Response, streamDelta, UnsupportedFeatureError } from "@lm15/lm15";
 import * as lmcc from "lmcc";
 
 // the tests read no settings from the environment they run in (an agent's caller, a log folder)
@@ -346,6 +346,30 @@ test("a reply that arrives whole is one text piece per field", async () => {
   for await (const e of s.events()) events.push(e);
   const texts = events.filter((e) => e.kind === "text") as Extract<StreamEvent, { kind: "text" }>[];
   assert.deepEqual(texts.map((e) => [e.field, e.answer, e.text]), [["summary", false, "short"], ["result", true, "long answer"]]);
+});
+
+test("a route that cannot stream (lm15 refuses before any piece) is asked whole and shown whole", async () => {
+  const inner = new FakeRouter(["<summary>\nshort\n</summary>\n<result>\nlong answer\n</result>"]);
+  const router = {
+    resolve: (m: string) => inner.resolve(m),
+    complete: (r: Parameters<FakeRouter["complete"]>[0]) => inner.complete(r),
+    // eslint-disable-next-line require-yield
+    stream: async function* () { throw new UnsupportedFeatureError("typesafe: systemone answers in one piece; there is no stream to wrap"); },
+  };
+  const f = ai("two", { description: "Two.", input: { x: t.string() }, outputs: { summary: t.string(), result: t.string() }, router: router as never });
+  const s = f.stream("x");
+  const events: StreamEvent[] = [];
+  for await (const e of s.events()) events.push(e);
+  const texts = events.filter((e) => e.kind === "text") as Extract<StreamEvent, { kind: "text" }>[];
+  assert.deepEqual(texts.map((e) => [e.field, e.answer, e.text]), [["summary", false, "short"], ["result", true, "long answer"]]);
+  assert.equal(await s.result, "long answer");
+  assert.equal(inner.requests.length, 1);                       // asked once, whole
+  // After its first piece, a refusal is the call's: it is not asked again whole.
+  inner.requests.length = 0;
+  const failing = { ...router, stream: async function* () { yield streamDelta({ type: "text", text: "<summary>" } as never); throw new UnsupportedFeatureError("midway"); } };
+  const g = ai("two", { description: "Two.", input: { x: t.string() }, outputs: { summary: t.string(), result: t.string() }, router: failing as never });
+  await assert.rejects(g.stream("x").result, /midway/);
+  assert.equal(inner.requests.length, 0);
 });
 
 test("a retry voids the text before it; closing a stream cancels the call", async () => {

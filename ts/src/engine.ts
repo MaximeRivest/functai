@@ -16,7 +16,7 @@ import type { Approval } from "./errors.ts";
 import { Cancelled } from "./errors.ts";
 import { sumUsage } from "./usage.ts";
 import * as bridge from "lmcc/lm15";
-import { Delta, Message, RETRYABLE_ERRORS, materializeResponse, responseToEvents, type Config, type Request, type Response,
+import { Delta, Message, RETRYABLE_ERRORS, UnsupportedFeatureError, materializeResponse, responseToEvents, type Config, type Request, type Response,
   type StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
@@ -194,10 +194,14 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
     const t0 = performance.now();
     requested(job);
     const watched = call.node ? call.node.log.wantsPieces(call.node) : false;
+    // A route that cannot stream (TypeSafe's System One answers in one piece;
+    // lm15 says so before anything is sent) is asked whole and shown whole,
+    // as Python does (streaming.request): only before its first piece.
+    let streamed = watched && job.router.stream !== undefined;
     try {
-      let response: Response;
+      let response!: Response;
       let first: number | null = null;
-      if (watched && job.router.stream) {
+      if (streamed) {
         // The view (lmcc's stream reader) never decides the call: a piece it
         // cannot read stops the view, and the whole reply is read below.
         const events: StreamEvent[] = [];
@@ -207,22 +211,27 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
         const show = (batch: readonly { kind: string; field?: string; text?: string }[]) => {
           for (const ev of batch) if (ev.kind === "field_delta" && ev.field !== "calls" && ev.text) text(job, ev.field!, ev.text);
         };
-        for await (const e of job.router.stream(request, signal ? { signal } : undefined)) {
-          stopped(job);
-          events.push(e);
-          if (e.type !== "delta") continue;
-          first ??= (performance.now() - t0) / 1000;
-          const d = e.delta as { type: string; text?: string };
-          if (d.type === "thinking" && !thinkingIsRead && d.text) call.event("thinking", { text: d.text });
-          if (viewing) {
-            try {
-              show(view.feed(Delta.toJSON(e.delta) as Rec) as never);
-            } catch {
-              viewing = false;
+        try {
+          for await (const e of job.router.stream!(request, signal ? { signal } : undefined)) {
+            stopped(job);
+            events.push(e);
+            if (e.type !== "delta") continue;
+            first ??= (performance.now() - t0) / 1000;
+            const d = e.delta as { type: string; text?: string };
+            if (d.type === "thinking" && !thinkingIsRead && d.text) call.event("thinking", { text: d.text });
+            if (viewing) {
+              try {
+                show(view.feed(Delta.toJSON(e.delta) as Rec) as never);
+              } catch {
+                viewing = false;
+              }
             }
           }
+        } catch (err) {
+          if (!(err instanceof UnsupportedFeatureError) || first !== null) throw err;
+          streamed = false;
         }
-        if (viewing) {
+        if (streamed && viewing) {
           const end = events.find((e) => e.type === "end") as { finishReason?: string } | undefined;
           try {
             show(view.finish(end?.finishReason ?? null).events as never);
@@ -230,19 +239,20 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
             viewing = false;
           }
         }
-        response = materializeResponse(events, request);
-      } else {
+        if (streamed) response = materializeResponse(events, request);
+      }
+      if (!streamed) {
         response = await job.router.complete(request, signal ? { signal } : undefined);
         if (call.watched) replay(job, response);
       }
       call.exchange(job.model, request, response, started, (performance.now() - t0) / 1000,
-        { streamed: watched && job.router.stream !== undefined, firstDelta: first, requestHash });
+        { streamed, firstDelta: first, requestHash });
       history.keep({ function: job.function, model: job.model, request, response, cached: false, error: null });
       return response;
     } catch (err) {
       history.keep({ function: job.function, model: job.model, request, response: null, cached: false, error: `${(err as Error)?.name}: ${(err as Error)?.message}` });
       call.exchange(job.model, request, null, started, (performance.now() - t0) / 1000,
-        { error: err, streamed: watched && job.router.stream !== undefined, requestHash });
+        { error: err, streamed, requestHash });
       if (signal?.aborted) throw new Cancelled();
       if (!retryable(err)) throw err;
       const after = (err as { retryAfter?: number }).retryAfter;
