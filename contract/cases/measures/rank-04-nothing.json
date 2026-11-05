@@ -1,0 +1,30 @@
+{
+ "description": "No comparisons.",
+ "kind": "rank",
+ "versions": [
+  "a",
+  "b"
+ ],
+ "outcomes": [],
+ "expect": {
+  "versions": [
+   {
+    "version": "a",
+    "strength": null,
+    "low": null,
+    "high": null,
+    "vs_reference": null
+   },
+   {
+    "version": "b",
+    "strength": null,
+    "low": null,
+    "high": null,
+    "vs_reference": null
+   }
+  ],
+  "order": [],
+  "reference": null,
+  "fragility": null
+ }
+}

@@ -46,6 +46,28 @@ quartodoc:
     - compare
     - runs
     - exact_match
+  - title: Measures
+    desc: Cases, results and ratings, for any program (known answers or none); people's and
+      judges' ratings, combined honestly; every range over cases (contract measures.md).
+    contents:
+    - Criterion
+    - case_key
+    - split_of
+    - draw
+    - shown_order
+    - as_case
+    - prefer
+    - judge
+    - judge_pairs
+    - scoreboard
+    - compare_setups
+    - win_rate
+    - rank
+    - agreement
+    - positions
+    - self_agreement
+    - disagreements
+    - measure
   - title: Optimizers
     desc: Improve the instruction and the worked examples a function sends. Each returns an
       improved copy; the function is unchanged. The classes are for `fn.opt(rows, optimizer=...)`.

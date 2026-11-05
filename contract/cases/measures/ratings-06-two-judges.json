@@ -1,0 +1,204 @@
+{
+ "description": "Two setups of one judge are two judges; a judge's later rating replaces its earlier one.",
+ "kind": "ratings",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926c00-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:01:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "Slow search"
+     },
+     {
+      "title": "Hidden menu"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 49
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0002-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:02:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "Hidden menu"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 25
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0001-7000-8000-000000000000",
+   "at": "2026-11-05T10:05:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0002-7000-8000-000000000000",
+   "at": "2026-11-05T10:06:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0003-7000-8000-000000000000",
+   "at": "2026-11-05T10:07:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"
+   }
+  }
+ ],
+ "criterion": {
+  "name": "real_problem",
+  "kind": "label",
+  "items": "/insights"
+ },
+ "expect": {
+  "counting": [
+   {
+    "id": "01926c10-0002-7000-8000-000000000000",
+    "calls": [
+     "01926c00-0001-7000-8000-000000000000"
+    ],
+    "item": "/insights/0",
+    "value": "yes",
+    "source": [
+     "judge",
+     "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+    ]
+   },
+   {
+    "id": "01926c10-0003-7000-8000-000000000000",
+    "calls": [
+     "01926c00-0001-7000-8000-000000000000"
+    ],
+    "item": "/insights/0",
+    "value": "no",
+    "source": [
+     "judge",
+     "sha256:e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5"
+    ]
+   }
+  ]
+ }
+}

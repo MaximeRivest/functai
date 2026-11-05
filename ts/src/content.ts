@@ -129,6 +129,11 @@ export function writtenRecord(record: Rec, fields: CallFields, keep: Record<stri
     const p = only(record["probabilities"] as Rec);
     if (Object.keys(p).length) out["probabilities"] = p;
   }
+  // the case is a hash of the inputs: kept only when every input is (a hash of a short value can be guessed back)
+  if (record["case"] !== undefined && fields.inputs.every((n) => getOwn(keep, n) === true)) {
+    out["case"] = record["case"];
+    if (record["repeat"] !== undefined) out["repeat"] = record["repeat"];
+  }
   out["error"] = record["error"] ? errorKept(record["error"] as Rec) : null;
   out["exchanges"] = ((record["exchanges"] ?? []) as Rec[]).map((ex) => {
     const kept: Rec = {};

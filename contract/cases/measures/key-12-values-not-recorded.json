@@ -1,0 +1,56 @@
+{
+ "description": "A call whose inputs were not recorded has no key.",
+ "kind": "key-call",
+ "record": {
+  "functai_call": 2,
+  "id": "01926c00-0004-7000-8000-000000000000",
+  "parent": null,
+  "root": "01926c00-0004-7000-8000-000000000000",
+  "program": {
+   "name": "study",
+   "kind": "module",
+   "module": "groups.demo",
+   "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+   "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+   "answer": "result",
+   "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+  },
+  "started": "2026-11-05T10:04:00.000000Z",
+  "seconds": 2.0,
+  "content": false,
+  "omitted": {
+   "inputs": [
+    "text"
+   ],
+   "outputs": [
+    "result"
+   ]
+  },
+  "sizes": {
+   "inputs": {
+    "text": 4
+   },
+   "outputs": {
+    "result": 4
+   }
+  },
+  "error": null,
+  "model": null,
+  "usage": {},
+  "confidence": null,
+  "exchanges": [],
+  "saw": [],
+  "caller": {},
+  "process": {
+   "host": "lambda",
+   "pid": 7,
+   "user": "maxime",
+   "language": "python",
+   "runtime": "3.13.1",
+   "functai": "1.3.0"
+  }
+ },
+ "expect": {
+  "key": null
+ }
+}

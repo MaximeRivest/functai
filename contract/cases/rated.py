@@ -276,7 +276,7 @@ CASES = {
                     "row and is not counted. A later format may mean something else by the same keys.",
         records=[call(1, 1, M1, {"result": "billing"}, fmt=3), call(2, 2, M2, {"result": "shipping"}),
                  rating(1, 1, 5, "maxime", "right"), rating(2, 2, 5, "maxime", "right"),
-                 {**rating(3, 2, 6, "ana", "wrong", answer="billing"), "functai_rating": 2}],
+                 {**rating(3, 2, 6, "ana", "wrong", answer="billing"), "functai_rating": 9}],
         rated=TEAM,
         expect={"rows": [row(M2, {"result": "shipping"}, 2, rating_="right", by="maxime")], "left_out": LEFT}),
     "17-two-notebooks-are-two-programs": dict(

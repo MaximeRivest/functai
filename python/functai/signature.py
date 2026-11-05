@@ -684,6 +684,36 @@ def coerce(ann: Any, value: Any) -> Any:
     return value
 
 
+def from_json(ann: Any, value: Any) -> Any:
+    """A value read back from JSON (a call record's) as the declared Python type, as far as it can be built:
+    dataclasses, pydantic models and Enums from their data, inside lists, dicts and Optionals; anything that
+    does not build is left as data."""
+    ann, _ = unannotate(ann)
+    if value is None or ann is None or ann is typing.Any:
+        return value
+    origin, args = typing.get_origin(ann), typing.get_args(ann)
+    if origin in _UNION_TYPES:
+        real = [a for a in args if a is not type(None)]
+        return from_json(real[0], value) if len(real) == 1 else value
+    try:
+        if isinstance(ann, type):
+            if issubclass(ann, enum.Enum):
+                return ann(value)
+            if dataclasses.is_dataclass(ann) and isinstance(value, dict):
+                hints = typing.get_type_hints(ann)
+                return ann(**{f.name: from_json(hints.get(f.name), value[f.name])
+                              for f in dataclasses.fields(ann) if f.init and f.name in value})
+            if callable(getattr(ann, "model_validate", None)) and isinstance(value, dict):
+                return ann.model_validate(value)
+        if (ann is list or origin in _SEQUENCES) and isinstance(value, list) and args:
+            return [from_json(args[0], v) for v in value]
+        if (ann is dict or origin in _MAPPINGS) and isinstance(value, dict) and len(args) == 2:
+            return {k: from_json(args[1], v) for k, v in value.items()}
+        return coerce(ann, value)
+    except Exception:  # noqa: BLE001 — what does not build stays as data
+        return value
+
+
 def mismatch(ann: Any, value: Any, where: str) -> Optional[str]:
     """Why ``value`` does not fit ``ann``, or None. Checks what reading a reply
     does not: the allowed values of a ``Literal`` and the scalar types

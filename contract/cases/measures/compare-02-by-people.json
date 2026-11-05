@@ -1,0 +1,2547 @@
+{
+ "description": "The same by people's ratings, with a margin.",
+ "kind": "compare",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926c00-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:01:00.000000Z",
+   "seconds": 10.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "A"
+     },
+     {
+      "title": "B"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:84c0a94e38076c5b0ae792395a2c241d7bf76a20ffeb097796c282dbbd4d67d0"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0002-7000-8000-000000000000",
+   "parent": "01926c00-0001-7000-8000-000000000000",
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:02:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site0.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0003-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0003-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:03:00.000000Z",
+   "seconds": 11.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site1.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "C"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:e9b7f739052a88e08a0160db1d1e4ac4a01e6ba8f22b6c4dcf3119c9e7f2afcc"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0004-7000-8000-000000000000",
+   "parent": "01926c00-0003-7000-8000-000000000000",
+   "root": "01926c00-0003-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:04:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site1.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1001,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0005-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0005-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:05:00.000000Z",
+   "seconds": 12.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site2.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "D"
+     },
+     {
+      "title": "E"
+     },
+     {
+      "title": "F"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 43
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:5f00c1b820edb30094784e7953ef0b4422d929c4536c7b969031b5b928e02800"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0006-7000-8000-000000000000",
+   "parent": "01926c00-0005-7000-8000-000000000000",
+   "root": "01926c00-0005-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:06:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site2.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1002,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0007-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0007-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:07:00.000000Z",
+   "seconds": 13.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site3.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "G"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:2bfc4621bb59e93de8f69833f41604322034f2b79b94fc0f777ec9f1d4c0e8c7"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0008-7000-8000-000000000000",
+   "parent": "01926c00-0007-7000-8000-000000000000",
+   "root": "01926c00-0007-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:08:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site3.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1003,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0009-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0009-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:09:00.000000Z",
+   "seconds": 14.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site4.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "H"
+     },
+     {
+      "title": "I"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:c787fb9eea8017a628712d797d5286212be889b977c267bb68b4175ea7b764ca"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000a-7000-8000-000000000000",
+   "parent": "01926c00-0009-7000-8000-000000000000",
+   "root": "01926c00-0009-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:10:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site4.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1004,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000b-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000b-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:11:00.000000Z",
+   "seconds": 15.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site5.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "J"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:a7c76094cbabc085f64ae4e3d5aa4822161668c037f27d119971a229be6db578"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000c-7000-8000-000000000000",
+   "parent": "01926c00-000b-7000-8000-000000000000",
+   "root": "01926c00-000b-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:12:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site5.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1005,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000d-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000d-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:13:00.000000Z",
+   "seconds": 16.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site6.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "K"
+     },
+     {
+      "title": "L"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:020aceb19fc1c9a0a2f7d8c69ed55cba2bb77f1911543418697b0036f7940bd8"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000e-7000-8000-000000000000",
+   "parent": "01926c00-000d-7000-8000-000000000000",
+   "root": "01926c00-000d-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:14:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site6.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1006,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-000f-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-000f-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:15:00.000000Z",
+   "seconds": 17.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site7.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "M"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:12267cd260ce7a4690caf1f9b3748862eb4b1e5c6bc6a6457fd04d4c4ffda59f"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0010-7000-8000-000000000000",
+   "parent": "01926c00-000f-7000-8000-000000000000",
+   "root": "01926c00-000f-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:16:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site7.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1007,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0011-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0011-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:17:00.000000Z",
+   "seconds": 10.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "A"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:84c0a94e38076c5b0ae792395a2c241d7bf76a20ffeb097796c282dbbd4d67d0"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0012-7000-8000-000000000000",
+   "parent": "01926c00-0011-7000-8000-000000000000",
+   "root": "01926c00-0011-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:18:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site0.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1000,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0013-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0013-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:19:00.000000Z",
+   "seconds": 11.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site1.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "C"
+     },
+     {
+      "title": "N"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:e9b7f739052a88e08a0160db1d1e4ac4a01e6ba8f22b6c4dcf3119c9e7f2afcc"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0014-7000-8000-000000000000",
+   "parent": "01926c00-0013-7000-8000-000000000000",
+   "root": "01926c00-0013-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:20:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site1.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1001,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0015-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0015-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:21:00.000000Z",
+   "seconds": 12.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site2.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "D"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:5f00c1b820edb30094784e7953ef0b4422d929c4536c7b969031b5b928e02800"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0016-7000-8000-000000000000",
+   "parent": "01926c00-0015-7000-8000-000000000000",
+   "root": "01926c00-0015-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:22:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site2.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1002,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0017-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0017-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:23:00.000000Z",
+   "seconds": 13.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site3.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "G"
+     },
+     {
+      "title": "O"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:2bfc4621bb59e93de8f69833f41604322034f2b79b94fc0f777ec9f1d4c0e8c7"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0018-7000-8000-000000000000",
+   "parent": "01926c00-0017-7000-8000-000000000000",
+   "root": "01926c00-0017-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:24:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site3.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1003,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0019-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0019-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:25:00.000000Z",
+   "seconds": 14.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site4.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "H"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:c787fb9eea8017a628712d797d5286212be889b977c267bb68b4175ea7b764ca"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001a-7000-8000-000000000000",
+   "parent": "01926c00-0019-7000-8000-000000000000",
+   "root": "01926c00-0019-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:26:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site4.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1004,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001b-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-001b-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:27:00.000000Z",
+   "seconds": 15.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site5.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "J"
+     },
+     {
+      "title": "P"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:a7c76094cbabc085f64ae4e3d5aa4822161668c037f27d119971a229be6db578"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001c-7000-8000-000000000000",
+   "parent": "01926c00-001b-7000-8000-000000000000",
+   "root": "01926c00-001b-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:28:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site5.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1005,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001d-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-001d-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:29:00.000000Z",
+   "seconds": 16.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site6.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "K"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:020aceb19fc1c9a0a2f7d8c69ed55cba2bb77f1911543418697b0036f7940bd8"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001e-7000-8000-000000000000",
+   "parent": "01926c00-001d-7000-8000-000000000000",
+   "root": "01926c00-001d-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:30:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site6.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1006,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-001f-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-001f-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:31:00.000000Z",
+   "seconds": 17.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site7.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "M"
+     },
+     {
+      "title": "Q"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 29
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "spent": {
+    "usd": 0.05
+   },
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:12267cd260ce7a4690caf1f9b3748862eb4b1e5c6bc6a6457fd04d4c4ffda59f"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0020-7000-8000-000000000000",
+   "parent": "01926c00-001f-7000-8000-000000000000",
+   "root": "01926c00-001f-7000-8000-000000000000",
+   "program": {
+    "name": "walker",
+    "kind": "ai",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "signature": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3c3"
+   },
+   "started": "2026-11-05T10:32:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "site": "https://site7.example"
+   },
+   "outputs": {
+    "result": "notes"
+   },
+   "sizes": {
+    "inputs": {
+     "site": 23
+    },
+    "outputs": {
+     "result": 7
+    }
+   },
+   "error": null,
+   "model": "claude-haiku-5-5",
+   "usage": {
+    "input_tokens": 1007,
+    "output_tokens": 50
+   },
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   }
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0021-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0021-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:40:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site8.example"
+   },
+   "outputs": null,
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {}
+   },
+   "error": {
+    "type": "StepLimit",
+    "message": "100 steps"
+   },
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:157ac95be6ab4886e0d97baf104342ef71fa254fac31cff585f7cce85090ac64"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0001-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0002-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0003-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0004-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0005-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0003-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0006-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0007-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0008-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0009-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000a-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/2",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000b-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0005-7000-8000-000000000000",
+   "item": "/insights/2",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000c-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0007-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000d-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0009-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000e-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0009-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-000f-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0009-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0010-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0009-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0011-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-000b-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0012-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-000d-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0013-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-000d-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0014-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-000d-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0015-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-000d-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0016-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-000f-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0017-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0011-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0018-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0011-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0019-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0013-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001a-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0013-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001b-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0015-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001c-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0015-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001d-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0017-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001e-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0017-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-001f-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-0019-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0020-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-0019-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0021-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-001b-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0022-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-001b-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0023-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-001d-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0024-7000-8000-000000000000",
+   "at": "2026-11-05T10:46:00.000000Z",
+   "call": "01926c00-001d-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "blind": true,
+   "sample": "draw-1",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "no",
+   "by": "megan"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0025-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-001f-7000-8000-000000000000",
+   "item": "/insights/0",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0026-7000-8000-000000000000",
+   "at": "2026-11-05T10:45:00.000000Z",
+   "call": "01926c00-001f-7000-8000-000000000000",
+   "item": "/insights/1",
+   "criterion": "real_problem",
+   "kind": "label",
+   "question": "Is this a real problem?",
+   "answers": {
+    "yes": 1,
+    "no": 0,
+    "unsure": null
+   },
+   "value": "yes",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  }
+ ],
+ "program": {
+  "name": "study"
+ },
+ "criterion": {
+  "name": "real_problem",
+  "kind": "label",
+  "items": "/insights"
+ },
+ "source": "people",
+ "drawn": false,
+ "by": "setup",
+ "a": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1",
+ "b": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2",
+ "margin": 0.1,
+ "expect": {
+  "diff": -0.08333333333333333,
+  "low": -0.3485,
+  "high": 0.18183333333333335,
+  "n": 4,
+  "method": "paired-t",
+  "outcome": "unclear",
+  "better": 0,
+  "worse": 1,
+  "same": 3,
+  "fragility": 1,
+  "only_a": 0,
+  "only_b": 0
+ }
+}

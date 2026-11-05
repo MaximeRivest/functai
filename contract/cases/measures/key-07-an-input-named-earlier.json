@@ -1,0 +1,13 @@
+{
+ "description": "An input named like a context key is an input.",
+ "kind": "key-row",
+ "row": {
+  "earlier": "yesterday"
+ },
+ "inputs": [
+  "earlier"
+ ],
+ "expect": {
+  "key": "sha256:a20d80ea3bb03c28dcd7122245e75cb8358e30b5c25da4d0352a7ce974b36003"
+ }
+}

@@ -1,0 +1,13 @@
+{
+ "description": "1 and 1.0 are one number.",
+ "kind": "key-row",
+ "row": {
+  "n": 1.0
+ },
+ "inputs": [
+  "n"
+ ],
+ "expect": {
+  "key": "sha256:623519c945cae2e1132589ec0a58cc94f639cfd1f346077a497f5708fd7ffd38"
+ }
+}

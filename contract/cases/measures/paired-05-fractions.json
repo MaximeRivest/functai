@@ -1,0 +1,34 @@
+{
+ "description": "Values that are not all 0 or 1 (repeats, items): the paired t interval.",
+ "kind": "paired",
+ "a": [
+  0.5,
+  1,
+  0.25,
+  0.75,
+  1,
+  0
+ ],
+ "b": [
+  0.75,
+  1,
+  0.5,
+  0.75,
+  0.5,
+  0.5
+ ],
+ "margin": null,
+ "bounded": false,
+ "expect": {
+  "diff": 0.08333333333333333,
+  "low": -0.27517548803651815,
+  "high": 0.4418421547031848,
+  "n": 6,
+  "method": "paired-t",
+  "outcome": "unclear",
+  "better": 3,
+  "worse": 1,
+  "same": 2,
+  "fragility": 1
+ }
+}

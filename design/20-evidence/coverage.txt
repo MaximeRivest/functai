@@ -1,0 +1,13 @@
+n   method         mean    5th pct  lowest
+10  mover-wilson   0.991   0.968    0.949
+10  newcombe-10    0.919   0.805    0.763
+10  paired-t       0.681   0.088    0.006
+20  mover-wilson   0.979   0.953    0.919
+20  newcombe-10    0.936   0.852    0.756
+20  paired-t       0.795   0.168    0.013
+30  mover-wilson   0.973   0.952    0.938
+30  newcombe-10    0.940   0.881    0.790
+30  paired-t       0.836   0.242    0.019
+50  mover-wilson   0.967   0.949    0.940
+50  newcombe-10    0.947   0.915    0.820
+50  paired-t       0.870   0.369    0.031

@@ -1,0 +1,20 @@
+{
+ "description": "No shared case: nothing.",
+ "kind": "paired",
+ "a": [],
+ "b": [],
+ "margin": null,
+ "bounded": false,
+ "expect": {
+  "diff": null,
+  "low": null,
+  "high": null,
+  "n": 0,
+  "method": null,
+  "outcome": "unclear",
+  "better": 0,
+  "worse": 0,
+  "same": 0,
+  "fragility": 0
+ }
+}

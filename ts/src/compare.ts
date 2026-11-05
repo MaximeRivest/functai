@@ -1,78 +1,62 @@
 /**
- * Comparing two evaluations of the same rows, row by row. Pairing the rows
- * detects a real change with far fewer examples than two separate scores
- * would: a row both versions got right says nothing, a row only one got right
- * says a lot.
+ * Comparing two evaluations case by case (contract/measures.md, *Is B
+ * better than A*). Pairing the cases detects a real change with far fewer
+ * examples than two separate scores would: a case both versions got right
+ * says nothing, a case only one got right says a lot. Cases are paired by
+ * key (their inputs), whatever the rows' order.
  */
 
-import { t975, type Evaluation } from "./evaluate.ts";
-import { writeData } from "./values.ts";
+import type { Evaluation } from "./evaluate.ts";
+import { paired, type Outcome } from "./measures.ts";
 
-/** One metric both evaluations have: the means, the paired difference with its 95% interval, and how many rows changed. */
+/** One metric both evaluations have: the means on shared cases, the paired difference with its 95% interval, and what it says. */
 export interface Comparison {
   readonly metric: string;
   readonly before: number;
   readonly after: number;
-  /** `after - before`, the mean over rows. */
+  /** `after - before`, the mean over shared cases. */
   readonly diff: number;
-  /** Its 95% interval (a paired t interval); null with one row. When it includes 0, the change could be luck. */
+  /** Its 95% interval (MOVER-Wilson for right-or-wrong values, paired t otherwise); null with one case. */
   readonly low: number | null;
   readonly high: number | null;
   readonly better: number;
   readonly worse: number;
   readonly same: number;
   readonly n: number;
+  readonly method: "mover-wilson" | "paired-t" | null;
+  /** `better`, `worse`, and with a margin `same`, `not_worse`, `not_better`; else `unclear`. */
+  readonly outcome: Outcome;
+  /** The fewest cases whose removal would erase the difference. */
+  readonly fragility: number;
+  /** Cases only one evaluation answered. */
+  readonly onlyBefore: number;
+  readonly onlyAfter: number;
 }
 
 /**
- * Compare two evaluations of the same rows (two versions of a prompt, two
- * models), row by row: one line per metric both have.
+ * Compare two evaluations case by case (two versions of a prompt, two
+ * models): one line per metric both have.
  *
  * ```ts
- * compare(await evaluate(category, rows), await evaluate(categoryV2, rows));
- * // [{ metric: "exact_match", before: 0.6, after: 0.8, diff: 0.2, low: -0.05, high: 0.45, better: 2, worse: 0, same: 8, n: 10 }]
+ * compare(await evaluate(category, rows), await evaluate(categoryV2, rows), { margin: 0.05 });
+ * // [{ metric: "exact_match", before: 0.6, after: 0.8, diff: 0.2, low: -0.07, high: 0.43, outcome: "unclear", … }]
  * ```
  */
-/** What differs between two rows: the columns only one has, else the first that differs. */
-function howRowsDiffer(a: unknown, b: unknown): string {
-  if (typeof a !== "object" || a === null || typeof b !== "object" || b === null) return "the rows are not the same";
-  const ka = Object.keys(a), kb = Object.keys(b);
-  const onlyA = ka.filter((k) => !kb.includes(k)), onlyB = kb.filter((k) => !ka.includes(k));
-  const q = (ks: string[]) => ks.map((k) => `'${k}'`).join(", ");
-  if (onlyA.length || onlyB.length) {
-    return [onlyA.length ? `column ${q(onlyA)} only in the first` : "", onlyB.length ? `column ${q(onlyB)} only in the second` : ""]
-      .filter(Boolean).join("; ");
-  }
-  const differ = ka.find((k) => writeData((a as Record<string, unknown>)[k]) !== writeData((b as Record<string, unknown>)[k]));
-  return differ !== undefined ? `column '${differ}' differs` : "the rows are not the same";
-}
-
-export function compare(before: Evaluation, after: Evaluation): Comparison[] {
-  if (before.rows.length !== after.rows.length) throw new RangeError(`compare needs the same examples: ${before.rows.length} rows vs ${after.rows.length}`);
-  before.rows.forEach((a, i) => {
-    if (writeData(a.row) !== writeData(after.rows[i]!.row)) {
-      throw new RangeError(`compare needs the same examples in the same order; row ${i} differs: ${howRowsDiffer(a.row, after.rows[i]!.row)}. Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data.`);
-    }
-  });
+export function compare(before: Evaluation, after: Evaluation, opts: { margin?: number | null } = {}): Comparison[] {
   const shared = before.metrics.filter((m) => after.metrics.includes(m));
   if (!shared.length) throw new RangeError(`no metric in common: ${before.metrics.join(", ")} vs ${after.metrics.join(", ")}`);
   return shared.map((metric) => {
-    const a = before.scores(metric);
-    const b = after.scores(metric);
-    const d = b.map((y, i) => y - a[i]!);
-    const n = d.length;
-    const mean = d.reduce((s, v) => s + v, 0) / n;
-    let low: number | null = null;
-    let high: number | null = null;
-    if (n >= 2) {
-      const sd = Math.sqrt(d.reduce((s, v) => s + (v - mean) ** 2, 0) / (n - 1));
-      const half = t975(n - 1) * sd / Math.sqrt(n);
-      low = mean - half;
-      high = mean + half;
+    const a = before.byCase(metric), b = after.byCase(metric);
+    const keys = [...a.keys()].filter((k) => b.has(k)).sort();
+    if (!keys.length) {
+      throw new RangeError(`compare needs cases both answered; ${metric} has none in common (${a.size} cases before, ${b.size} after, none with the same inputs)`);
     }
+    const xs = keys.map((k) => a.get(k)!), ys = keys.map((k) => b.get(k)!);
+    const p = paired(xs, ys, opts.margin, before.bounded(metric) && after.bounded(metric));
     return {
-      metric, before: a.reduce((s, v) => s + v, 0) / n, after: b.reduce((s, v) => s + v, 0) / n, diff: mean, low, high,
-      better: d.filter((v) => v > 0).length, worse: d.filter((v) => v < 0).length, same: d.filter((v) => v === 0).length, n,
+      metric, before: xs.reduce((s, v) => s + v, 0) / xs.length, after: ys.reduce((s, v) => s + v, 0) / ys.length, diff: p.diff!, low: p.low, high: p.high,
+      better: p.better, worse: p.worse, same: p.same, n: p.n, method: p.method, outcome: p.outcome, fragility: p.fragility,
+      onlyBefore: [...a.keys()].filter((k) => !b.has(k)).length, onlyAfter: [...b.keys()].filter((k) => !a.has(k)).length,
     };
   });
 }

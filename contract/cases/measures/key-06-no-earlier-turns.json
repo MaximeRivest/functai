@@ -1,0 +1,15 @@
+{
+ "description": "An empty `earlier` is a first turn: the same case as a row without it.",
+ "kind": "key-row",
+ "row": {
+  "question": "Weather today?",
+  "earlier": [],
+  "conversation": "c-1"
+ },
+ "inputs": [
+  "question"
+ ],
+ "expect": {
+  "key": "sha256:09cec98bea0931d65a7172e38af4f5e002c9ac6819bd30f53dd04c3773f8bcb0"
+ }
+}

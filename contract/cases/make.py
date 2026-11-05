@@ -17,6 +17,8 @@ implementation's output:
     baked/       ../baked.md, "The examples"                 (baked.py)
     agents/      ../tools.md "What a tool returns", "A result that comes later"; ../streaming.md "The kept
                  form"; ../plugins.md "The step hook", "limits", "keep_pictures"   (agents.py)
+    measures/    ../measures.md: case keys, splits, draws, ratings of format 2, values, the statistics,
+                 scoreboards   (measures.py, from the rules in measure_rules.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -40,6 +42,7 @@ import files  # noqa: E402
 import partial  # noqa: E402
 import setup  # noqa: E402
 import functions  # noqa: E402
+import measures  # noqa: E402
 import plugins  # noqa: E402
 import programs  # noqa: E402
 import rated  # noqa: E402
@@ -50,14 +53,20 @@ import scores  # noqa: E402
 import stages  # noqa: E402
 
 
-KNOWN = {"functai_call": (1, 2), "functai_rating": (1,)}
+KNOWN = {"functai_call": (1, 2), "functai_rating": (1, 2)}
 
 
 def check(folder: str, cases: dict) -> None:
     """Each case's data passes the contract's schemas."""
     for name, case in cases.items():
         where = f"{folder}/{name}"
-        if folder == "rated" or (folder == "saw" and case["kind"] == "read"):
+        if folder == "measures":
+            for i, rec in enumerate(measures.records_of(case)):
+                if any(k in rec and rec[k] not in v for k, v in KNOWN.items()):   # a format no reader knows
+                    assert not schemas.CALL.is_valid(rec) and not schemas.RATING.is_valid(rec), where
+                    continue
+                schemas.record(rec, f"{where} records[{i}]")
+        elif folder == "rated" or (folder == "saw" and case["kind"] == "read"):
             for i, rec in enumerate(case["records"]):
                 if any(k in rec and rec[k] not in v for k, v in KNOWN.items()):   # a format no reader knows
                     assert not schemas.CALL.is_valid(rec) and not schemas.RATING.is_valid(rec), where
@@ -159,4 +168,5 @@ if __name__ == "__main__":
     n += write("agents", agents.cases())
     n += write("partial", partial.cases())
     n += write("setup", setup.cases())
+    n += write("measures", measures.cases())
     print(f"{n} cases written")

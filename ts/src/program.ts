@@ -180,6 +180,7 @@ export async function runCall<R>(spec: CallSpec<R>): Promise<R> {
       remote.id = null;
     }
   } else call.invocation = calllog.INVOCATION.get() ?? null;
+  calllog.takeMark(call);                          // evaluate's case (measures.md, *Results*), and the call's id
   turnRun?.started(call);
   // what the record and the started event hold: the fields' values, as JSON, taken before anything could change them
   const recorded: Record<string, readonly [unknown, number, boolean]> = {};

@@ -1,0 +1,16 @@
+{
+ "description": "A row's key is its values of the program's inputs: other columns (the answer, a tag, the split) do not change it.",
+ "kind": "key-row",
+ "row": {
+  "message": "Charged twice.",
+  "result": "billing",
+  "tag": "x",
+  "split": "train"
+ },
+ "inputs": [
+  "message"
+ ],
+ "expect": {
+  "key": "sha256:e5afe70b5c2dcedc7cc319f5e631e43cafe85c2e6446bda259d88f130a542904"
+ }
+}

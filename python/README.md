@@ -96,6 +96,39 @@ only `append` is sent every event through its `append`. At exit, FunctAI waits a
 seconds for observers and journals to catch up. In a process forked
 inside a call, calls start a tree of their own.
 
+### Measuring anything: cases, ratings, judges
+
+Each call `evaluate` makes says which **case** it answered (the hash of the
+row's inputs), so results are reused (`reuse=log`), repeated
+(`repeats=3`), and compared case by case. `compare(before, after,
+margin=0.05)` says what it found (`better`, `worse`, `same`, `not_worse`,
+`not_better`, `unclear`) and how fragile it is; for right-or-wrong scores
+its range is the MOVER-Wilson interval, which keeps its 95% where the
+paired t interval said "exactly no difference" with nothing changed.
+
+A program with no right answers is measured by **ratings**: a person's or
+a judge's (an AI function, a module, code), of a whole answer, one item of
+it, or two answers side by side (contract/measures.md, design/20):
+
+```python
+real = functai.Criterion("real_problem", "label", items="/insights",
+                         answers={"yes": 1, "no": 0, "unsure": None}, question="Is this a real problem?")
+evaluate(study, sites, criteria=[real.with_judge(professor)], reuse=log)   # the judge's ratings, kept and reused
+for cid in functai.draw(call_ids, 20, seed="draw-1"):                      # a fair sample for people
+    functai.rate(cid, "yes", criterion=real, item=3, by="megan", blind=True, sample="draw-1")
+functai.scoreboard(study, [real], records=log)     # per setup: people, people drawn, each judge, combined (PPI++)
+functai.compare_setups(study, old.setup, new.setup, real, source=professor, margin=0.05, records=log)
+functai.agreement(study, real, "people", professor, records=log)   # can the judge stand in for people?
+functai.judge_pairs(picker, pairs)                 # both orders; functai.positions(picker) says if it favours one
+functai.rank(study, records=log)                   # Bradley–Terry over every setup, with fragility
+functai.split_of(row, study)                       # held out or not, the same in every language
+```
+
+Every range is over cases; a failed answer is the worst answer; people's
+ratings of a random draw are told from those they chose to make, and only
+they are combined with a judge. The optimizers refuse rows marked
+`split="held_out"`.
+
 ### What a program runs on
 
 A version says what a program **is** (its instruction, examples, code);

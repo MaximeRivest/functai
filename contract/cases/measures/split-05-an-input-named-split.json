@@ -1,0 +1,19 @@
+{
+ "description": "An input named `split` is an input, not a side.",
+ "kind": "split",
+ "rows": [
+  {
+   "split": "x"
+  }
+ ],
+ "inputs": [
+  "split"
+ ],
+ "share": 0.5,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "held_out"
+  ]
+ }
+}

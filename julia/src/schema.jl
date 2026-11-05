@@ -11,7 +11,7 @@ const SCHEMA_NAMES = ("call", "event", "interface", "saved", "rating")
 const SCHEMA_KEYWORDS = Set(["\$schema", "\$id", "\$defs", "\$ref", "title", "description",
                              "type", "const", "enum", "pattern", "minLength", "minimum", "maximum",
                              "required", "properties", "additionalProperties", "propertyNames", "maxProperties", "minProperties",
-                             "items", "minItems", "uniqueItems", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"])
+                             "items", "minItems", "maxItems", "uniqueItems", "allOf", "anyOf", "oneOf", "not", "if", "then", "else"])
 
 """
 A schema's pattern as ECMA-262 reads it: its one `\$`, the last anchor, is
@@ -152,6 +152,7 @@ function schema_fault(schema, v, doc::AbstractString, at::AbstractString="")
     end
     if v isa AbstractVector
         haskey(schema, "minItems") && length(v) < schema["minItems"] && return "$(at_text(at)): fewer than $(schema["minItems"]) items"
+        haskey(schema, "maxItems") && length(v) > schema["maxItems"] && return "$(at_text(at)): more than $(schema["maxItems"]) items"
         get(schema, "uniqueItems", false) === true && !allunique(LMCC.canonical_json.(v)) && return "$(at_text(at)): items not unique"
         if haskey(schema, "items")
             for (i, x) in enumerate(v)

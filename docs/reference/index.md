@@ -45,9 +45,34 @@ Run a program on rows with known answers and score it, with an honest interval.
 | --- | --- |
 | [evaluate](evaluate.md#functai.evaluate) | Run a program on rows with known answers, and score it. |
 | [Evaluation](Evaluation.md#functai.Evaluation) | The result of ``evaluate``: a score, its uncertainty, and every answer. |
-| [compare](compare.md#functai.compare) | Compare two evaluations of the same rows, row by row. |
+| [compare](compare.md#functai.compare) | Compare two evaluations case by case: is ``after`` better than ``before``? |
 | [runs](runs.md#functai.runs) | Every evaluation logged in a folder, as one table. |
 | [exact_match](exact_match.md#functai.exact_match) | The default metric: every expected output equals the prediction. |
+
+## Measures
+
+Cases, results and ratings, for any program (known answers or none); people's and judges' ratings, combined honestly; every range over cases (contract measures.md).
+
+| | |
+| --- | --- |
+| [Criterion](Criterion.md#functai.Criterion) | A question an answer is judged by: its name, its kind, and how its values count. |
+| [case_key](case_key.md#functai.case_key) | The key of the case a row is for a program. |
+| [split_of](split_of.md#functai.split_of) | Whether a row is for training or held out, the same in every language. |
+| [draw](draw.md#functai.draw) | A random draw of ``n`` ids, the same in every language. |
+| [shown_order](shown_order.md#functai.shown_order) | Two answers in the order to show them blind: by the hash of the seed and the pair, the same everywhere. |
+| [as_case](as_case.md#functai.as_case) | A logged call as a row to add to a program's examples. |
+| [prefer](prefer.md#functai.prefer) | Say which of two answers to the same case is better. |
+| [judge](judge.md#functai.judge) | Have a judge rate logged calls, and keep its ratings in the log. |
+| [judge_pairs](judge_pairs.md#functai.judge_pairs) | Have a judge pick the better of two answers to the same case, in both orders. |
+| [scoreboard](scoreboard.md#functai.scoreboard) | How good every setup of a program is, by every source of judgement. |
+| [compare_setups](compare_setups.md#functai.compare_setups) | Is setup ``b`` better than ``a``, on the cases both answered. |
+| [win_rate](win_rate.md#functai.win_rate) | How often setup ``b`` wins side by side against ``a`` (ties count half), with its 95% range. |
+| [rank](rank.md#functai.rank) | Rank every setup of a program from side-by-side picks (Bradley–Terry). |
+| [agreement](agreement.md#functai.agreement) | Can a judge stand in for people: two sources on the targets both judged. |
+| [positions](positions.md#functai.positions) | Whether a judge favours a position: of the pairs it was shown both ways, |
+| [self_agreement](self_agreement.md#functai.self_agreement) | How much each setup agrees with itself, over cases it answered two or |
+| [disagreements](disagreements.md#functai.disagreements) | Cases worth a look, or worth adding to the examples: those on which |
+| [measure](measure.md#functai.measure) | Every result's value under a criterion and source, and each group's |
 
 ## Optimizers
 

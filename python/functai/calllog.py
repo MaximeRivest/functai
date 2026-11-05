@@ -55,6 +55,7 @@ from .errors import FunctAIError, InterfaceError, JournalError, LogContentError,
 FORMAT = 2                           # the call records this writes (contract/calls.md)
 READS = (1, 2)                       # the call record formats this reads
 RATING_FORMAT = 1
+RATING_FORMATS = (1, 2)              # the rating formats this reads (measures.md: format 2)
 ENV_FOLDER = "FUNCTAI_LOG_CALLS"
 ENV_CONTENT = "FUNCTAI_LOG_CONTENT"
 ENV_CALLER = "FUNCTAI_CALLER"
@@ -564,7 +565,7 @@ class Call:
                  "keep", "kept", "fields", "info", "requests", "saw", "answer", "answers_for", "delegating",
                  "journal_status", "context", "pid", "path", "names", "invocation", "invocations", "conversation",
                  "writer", "turn_run", "bound", "changes", "replayable", "sections", "top", "spent", "own_spent",
-                 "tree_spent", "placement", "__weakref__")
+                 "tree_spent", "placement", "case", "__weakref__")
 
     def __init__(self, program: Any, parent: Optional["Call"], id: Optional[str] = None):
         self.id = id or new_id()
@@ -622,6 +623,7 @@ class Call:
         self.changes: List[Dict[str, Any]] = []              # what plugins changed (contract/plugins.md)
         self.replayable = True                               # False: a plugin replaced a provider request
         self.sections: List[str] = []                        # text the instruction was given beyond its own
+        self.case: Optional[Tuple[str, int]] = None          # (case key, repeat): a call evaluate made on a case
 
     # ----- what sees it
 
@@ -684,6 +686,25 @@ INVOCATION: ContextVar[Optional[int]] = ContextVar("functai_invocation", default
 REMOTE_PARENT: ContextVar[Optional[List[str]]] = ContextVar("functai_remote_parent", default=None)
 # The stream whose call is started in this context (functai.streaming), or None.
 WATCH: ContextVar[Any] = ContextVar("functai_watch", default=None)
+# the first call started in a `marking` block: it is told its case (evaluate), and its id is noted
+_MARK: ContextVar[Optional[Dict[str, Any]]] = ContextVar("functai_mark", default=None)
+
+
+@contextlib.contextmanager
+def marking(case: Optional[str] = None, repeat: Optional[int] = None) -> Iterator[Dict[str, Any]]:
+    """The first call started in this block (not the calls inside it) answers ``case`` (its record's ``case`` and
+    ``repeat``: measures.md, *Results*); ``mark["call"]`` is its id once it started."""
+    mark: Dict[str, Any] = {"case": case, "repeat": repeat, "call": None}
+    token = _MARK.set(mark)
+    try:
+        yield mark
+    finally:
+        _MARK.reset(token)
+
+
+def capturing() -> Any:
+    """``marking()`` without a case: the id of the first call started in the block."""
+    return marking()
 
 
 def current() -> Optional[Call]:
@@ -786,6 +807,11 @@ def run(program: Any, settings: Mapping[str, Any], inputs: Callable[[], Mapping[
     turn_run = conversations.running(parent)
     call = Call(program, parent, id=turn_run.call_id_for(program, parent) if turn_run is not None else None)
     call.turn_run = turn_run
+    mark = _MARK.get()
+    if mark is not None and mark["call"] is None:
+        mark["call"] = call.id
+        if mark["case"] is not None:
+            call.case = (mark["case"], int(mark["repeat"] or 1))
     if turn_run is not None and call.id == turn_run.turn:
         turn_run.attach(call)
     if parent is None:
@@ -1415,9 +1441,15 @@ def _record(call: Call, *, returned: Any = _NOTHING, error: Optional[BaseExcepti
         rec["journal"] = call.journal_status
     rec["caller"] = dict(target.caller) if target is not None else {}
     rec["process"] = _process_info()
+    if call.case is not None:
+        rec["case"], rec["repeat"] = call.case
     ins, outs, _added = call.fields
     outs = list(outs) + [k for k in (outputs or {}) if k not in outs]       # a name no field has: not kept
-    return restrict(rec, list(ins), outs, call.kept)
+    out = restrict(rec, list(ins), outs, call.kept)
+    if out.get("content") is False and (out.get("omitted") or {}).get("inputs"):
+        out.pop("case", None)                       # a hash of a value not kept can be guessed back
+        out.pop("repeat", None)
+    return out
 
 
 def _steps_of(call: Call) -> Optional[List[Dict[str, Any]]]:
@@ -1587,7 +1619,7 @@ def read(folder: Any = None, *, since: Any = None) -> Tuple[List[Dict[str, Any]]
             rec = dict(rec)
             if rec.get("functai_call") in READS and rec.get("started", "") >= cutoff:
                 calls.append(rec)
-            elif rec.get("functai_rating") == RATING_FORMAT and rec.get("at", "") >= cutoff:
+            elif rec.get("functai_rating") in RATING_FORMATS and rec.get("at", "") >= cutoff:
                 ratings.append(rec)
         return _latest_writers(calls), ratings
     for path in _files(root, start):
@@ -1606,7 +1638,7 @@ def read(folder: Any = None, *, since: Any = None) -> Tuple[List[Dict[str, Any]]
                 continue
             if rec.get("functai_call") in READS and rec.get("started", "") >= cutoff:
                 calls.append(rec)
-            elif rec.get("functai_rating") == RATING_FORMAT and rec.get("at", "") >= cutoff:
+            elif rec.get("functai_rating") in RATING_FORMATS and rec.get("at", "") >= cutoff:
                 ratings.append(rec)
     return _latest_writers(calls), ratings
 
@@ -1722,6 +1754,20 @@ def _order(rec: Dict[str, Any], time_key: str) -> Tuple[str, str]:
     return (rec.get(time_key) or "", rec.get("id") or "")
 
 
+def as_format_1(r: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+    """A rating as format 1 reads it, or None: format 1 as it is; of format 2, a person's or an account's
+    verdict under ``correct`` about a whole call (contract/calls.md, *Rows with known answers*)."""
+    fmt = r.get("functai_rating")
+    if fmt == RATING_FORMAT:
+        return dict(r)
+    if fmt != 2 or r.get("criterion") != "correct" or r.get("kind") != "verdict" or "item" in r or "call" not in r \
+            or "judge" in r or not (r.get("by") or r.get("account")):
+        return None
+    out = {k: v for k, v in r.items() if k not in ("criterion", "kind", "value", "question", "judge_call")}
+    out["functai_rating"], out["verdict"] = RATING_FORMAT, r.get("value")
+    return out
+
+
 def current_ratings(ratings: Iterable[Dict[str, Any]], *, by: Optional[str] = None
                     ) -> Dict[str, List[Dict[str, Any]]]:
     """For each call, the ratings that count: each person's latest, none for
@@ -1731,8 +1777,9 @@ def current_ratings(ratings: Iterable[Dict[str, Any]], *, by: Optional[str] = No
     withdraws nothing (contract/calls.md, rule 2)."""
     latest: Dict[Tuple[Any, ...], Dict[str, Any]] = {}
     for r in ratings:
-        if r.get("functai_rating") != RATING_FORMAT:
-            continue                                   # a format this reader does not know
+        r = as_format_1(r)
+        if r is None:
+            continue                                   # a format this reader does not know, or another judgement
         if by is not None and r.get("by") != by:
             continue
         person = r.get("by")
@@ -2389,7 +2436,8 @@ def _call_id(call: Any) -> str:
 
 def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs: Optional[Mapping[str, Any]] = None,
          note: Optional[str] = None, reasons: Iterable[str] = (), by: Optional[str] = None,
-         origin: Optional[str] = None, sample: Optional[str] = None, folder: Any = None) -> Dict[str, Any]:
+         origin: Optional[str] = None, sample: Optional[str] = None, folder: Any = None,
+         criterion: Any = None, item: Any = None, blind: Optional[bool] = None) -> Dict[str, Any]:
     '''Say whether a call's answer is right, and if not, what it should have been.
 
     "Right" means correct for this input, not "nice". A correction becomes a
@@ -2424,14 +2472,22 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
         (someone changed the output while using it).
     sample : str, optional
         The id of a random draw of calls this rating is part of: only a
-        random draw measures how often a program is right.
+        random draw measures how often a program is right (``functai.draw``).
     folder : str or path, optional
         The log folder. Default: the one calls are logged to here.
+    criterion : functai.Criterion, optional
+        Another question than "is it right?": then ``verdict`` is its answer
+        (a label, a score, a verdict), for the whole answer or one ``item``.
+    item : int or str, optional
+        Which item of the criterion's list (its index, or a JSON Pointer).
+    blind : bool, optional
+        You were not told which version made the answer.
 
     Returns
     -------
     dict
-        The rating, as written.
+        The rating, as written (format 1, or format 2 for what format 1
+        cannot say: contract/calls.md).
 
     See Also
     --------
@@ -2455,6 +2511,17 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
     rating["verdict"]
     ```
     '''
+    if criterion is not None and not (getattr(criterion, "name", criterion) == "correct" and item is None):
+        from .measures import rate_item, _NONE
+        if verdict is _NOTHING:
+            if answer is _NOTHING and not outputs:
+                raise TypeError("rate what? give the criterion's answer: rate(p, 'yes', criterion=...)")
+            verdict = "wrong"
+        return rate_item(call, verdict, criterion=criterion, item=item, by=by, blind=blind, sample=sample,
+                         note=note, reasons=reasons, origin=origin, folder=folder,
+                         answer=_NONE if answer is _NOTHING else answer, outputs=outputs)
+    if item is not None:
+        raise ValueError("an item is judged by a criterion that judges items: rate(p, 'yes', criterion=c, item=3)")
     call_id = _call_id(call)
     corrected = answer is not _NOTHING or bool(outputs)
     if verdict is _NOTHING:
@@ -2494,11 +2561,25 @@ def rate(call: Any, verdict: Any = _NOTHING, *, answer: Any = _NOTHING, outputs:
         rec["origin"] = str(origin)
     if sample:
         rec["sample"] = str(sample)
+    if blind is not None:
+        rec["blind"] = bool(blind)
+    write_rating(rec, root)
+    return rec
+
+
+def write_rating(rec: Mapping[str, Any], folder: Any = None) -> None:
+    """Keep a rating record in the call log: ``folder`` (a folder or a store), or the one calls are logged to."""
+    root = reading_folder(folder) if folder is not None else None
+    if root is None:
+        from .config import effective
+        root = _folder_of(effective().get("log_calls"))
+        if root is None:
+            raise ValueError("ratings are written to the call log, and no call is logged here: "
+                             "functai.configure(log_calls=True), or pass folder=")
     if is_store(root):
         root.append(json.loads(json.dumps(rec, ensure_ascii=False)))
     else:
         _writer(root).write((json.dumps(rec, ensure_ascii=False, separators=(",", ":")) + "\n").encode("utf-8"))
-    return rec
 
 
 __all__ = ["calls", "rated", "rate", "default_folder", "saw", "check_kept", "prune_calls", "MemoryCalls"]

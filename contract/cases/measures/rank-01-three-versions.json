@@ -1,0 +1,231 @@
+{
+ "description": "Three versions, side by side on twelve cases; v4 never met another: no strength.",
+ "kind": "rank",
+ "versions": [
+  "v1",
+  "v2",
+  "v3",
+  "v4"
+ ],
+ "outcomes": [
+  {
+   "case": "case-00",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-00",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-00",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-01",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-01",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-02",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-02",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-02",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-03",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-03",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-04",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-04",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-04",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-05",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-05",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-06",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-06",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-06",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-07",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-07",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-08",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-08",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-08",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-09",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-09",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-10",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-10",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  },
+  {
+   "case": "case-10",
+   "first": "v1",
+   "second": "v3",
+   "first_share": 0.5
+  },
+  {
+   "case": "case-11",
+   "first": "v1",
+   "second": "v2",
+   "first_share": 0.0
+  },
+  {
+   "case": "case-11",
+   "first": "v2",
+   "second": "v3",
+   "first_share": 1.0
+  }
+ ],
+ "expect": {
+  "versions": [
+   {
+    "version": "v1",
+    "strength": 0.0,
+    "low": 0.0,
+    "high": 0.0,
+    "vs_reference": 0.5
+   },
+   {
+    "version": "v2",
+    "strength": 1.1197153219313924,
+    "low": 0.053934344650400146,
+    "high": 2.1854962992123848,
+    "vs_reference": 0.7539359077723439
+   },
+   {
+    "version": "v3",
+    "strength": -0.17252195451872884,
+    "low": -1.326064520959759,
+    "high": 0.9810206119223013,
+    "vs_reference": 0.4569761712797705
+   },
+   {
+    "version": "v4",
+    "strength": null,
+    "low": null,
+    "high": null,
+    "vs_reference": null
+   }
+  ],
+  "order": [
+   "v2",
+   "v1",
+   "v3"
+  ],
+  "reference": "v1",
+  "fragility": 7
+ }
+}

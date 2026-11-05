@@ -290,3 +290,42 @@ cannot show its earlier turns again.
   order, or null); `expect` is the state after them, and `ran`, how many
   handlers ran (a block ends `tool_call`). A harness builds one plugin per
   handler, in order, in one layer.
+
+## `measures/` (measures.py, from measure_rules.py)
+
+Every case has a `kind` (its file name's prefix); numbers are compared
+within 1e-9, everything else exactly. The harness does, by kind:
+
+- `key-row`: the case key of `row` for a program whose inputs are
+  `inputs` → `expect.key`. `key-call`: the case of the call `record` →
+  `expect.key` (null: none).
+- `split`: `split_of` of each of `rows` (inputs `inputs`, `share`,
+  `salt`) → `expect.splits`, in order; or `expect.refuses` (`case-split`)
+  for the first row.
+- `draw`: `draw(ids, n, seed)` → `expect.ids`.
+- `ratings`: the counting judgements of `records` under `criterion` →
+  `expect.counting`, each `{"id", "calls", "item", "value", "source":
+  [kind, who]}` (`kind` `person`, `account` or `judge`; `who` the person,
+  the rating's id, or the judge's setup or code), in order of `at` then
+  `id`.
+- `values`: the values of `program`'s results in `records` under
+  `criterion`, `source` (`people` or a judge's id), `drawn` and `by` →
+  `expect.results` (`{"call", "group", "case", "value"}` per result, in
+  order) and `expect.cases` (`{"group", "case", "value"}`, groups in
+  order of first result, cases in order of first result in the group).
+- `preferences`: side by side, A `a` against B `b` → `expect.cases`
+  (`{"case", "value"}`, B's share, in key order).
+- `paired` (`a`, `b`, `margin`, `bounded`), `winrate` (`values`,
+  `margin`), `fragility` (`values`), `ppi` (`judge`, `people`, `bounded`:
+  objects from case to value; `expect` null: nothing), `ppi-paired`
+  (`judge_a`, `judge_b`, `people_a`, `people_b`, `margin`, `bounded`),
+  `agreement` (`a`, `b`, `choice`), `self` (`per_case`: case to its
+  results' values), `rank` (`versions`, `outcomes`: `{"case", "first",
+  "second", "first_share"}`) → `expect`, every key.
+- `positions`: a judge's (`judge`, its id) picks under `criterion` in
+  `records` → `expect`.
+- `scoreboard`: `program`'s scoreboard over `records` with `criteria`
+  and `by` → `expect`. `compare`: groups `a` and `b` compared under
+  `criterion`, `source`, `drawn`, `margin` → `expect`. `disagreements`
+  → `expect.cases`.
+- `rated`: as `rated/`: `rated(records, **rated)` → `expect`.

@@ -1,0 +1,73 @@
+{
+ "description": "A lead resting on one case.",
+ "kind": "rank",
+ "versions": [
+  "a",
+  "b",
+  "c"
+ ],
+ "outcomes": [
+  {
+   "case": "c1",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  },
+  {
+   "case": "c2",
+   "first": "a",
+   "second": "b",
+   "first_share": 0.0
+  },
+  {
+   "case": "c3",
+   "first": "a",
+   "second": "c",
+   "first_share": 1.0
+  },
+  {
+   "case": "c4",
+   "first": "b",
+   "second": "c",
+   "first_share": 0.5
+  },
+  {
+   "case": "c5",
+   "first": "a",
+   "second": "b",
+   "first_share": 1.0
+  }
+ ],
+ "expect": {
+  "versions": [
+   {
+    "version": "a",
+    "strength": 0.0,
+    "low": 0.0,
+    "high": 0.0,
+    "vs_reference": 0.5
+   },
+   {
+    "version": "b",
+    "strength": -0.6245595181157092,
+    "low": -2.4633216511680573,
+    "high": 1.2142026149366387,
+    "vs_reference": 0.34874517178376563
+   },
+   {
+    "version": "c",
+    "strength": -0.8353754701989806,
+    "low": -3.1104133313172238,
+    "high": 1.4396623909192625,
+    "vs_reference": 0.302509656432654
+   }
+  ],
+  "order": [
+   "a",
+   "b",
+   "c"
+  ],
+  "reference": "a",
+  "fragility": 2
+ }
+}

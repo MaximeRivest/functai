@@ -1,0 +1,19 @@
+{
+ "description": "A share of 0 holds nothing out.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "a"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 0.0,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "train"
+  ]
+ }
+}

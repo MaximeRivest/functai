@@ -1,0 +1,8 @@
+{
+ "description": "The fewest values whose removal takes the mean to 0 or across it.",
+ "kind": "fragility",
+ "values": [],
+ "expect": {
+  "fragility": 0
+ }
+}

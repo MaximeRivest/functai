@@ -20,7 +20,9 @@ format 1 too (*Formats*).
   error. A module's call has the calls it made as children.
 - **Exchange**: one request sent to a model and its reply (or error). A
   call makes zero or more: retries, tool steps, escalation.
-- **Rating**: one person's judgement of one call.
+- **Rating**: a judgement of one call (format 1: a person's right or
+  wrong); of one item of its answer, or of two calls side by side, by a
+  person, an account, a judge program or code (format 2).
 - **Version**: a fingerprint of everything that decides what a program
   sends besides its inputs. Two calls with the same version were made by
   the same program.
@@ -189,6 +191,8 @@ language reads as it is.
 | `sections` | present when the call's conversation's `context` hooks gave it sections (a summary of earlier turns): them, in order. Only when `content` is true. |
 | `replayable` | `false` when a plugin replaced a provider request: that exchange has no `request_hash`. |
 | `writer` | a call continued by a later writer (a resumed turn: [tools.md](tools.md)): that writer's number. A reader that meets several records of one `id` takes the one of the highest `writer` (absent: 1). |
+| `case` | a call made by `evaluate`: the key of the case it answered ([measures.md](measures.md), *Case keys*). Absent otherwise (2026-11-05, optional). |
+| `repeat` | with `case`: which time that case was asked, from 1 (absent: 1). |
 
 **Values.** A value is written as the JSON its type describes (lmcc's
 `to_json`): a dataclass or pydantic model is an object, an enum its
@@ -431,12 +435,55 @@ adds keys to it for a block of code. Conventional keys:
 | `reasons`, `note` | optional: short tags and a sentence. |
 | `origin` | how the judgement was made: `"review"` (someone judged it; the default) or `"edit"` (someone changed the output while using it: renaming a generated title is a correction of the title program). Edits are data too, but noisier: people change things for other reasons. |
 | `sample` | optional: the id of a random draw of calls this rating belongs to. Ratings people chose to make are not a fair sample of the calls; only a random draw measures how often the program is right. |
+| `blind` | optional (2026-11-05): `true` when the person was not told which version made the answer. |
+
+### Format 2
+
+A judgement format 1 cannot say (a question about one item of the
+answer, a score, a pick between two answers, a judge program's or
+code's) is a rating of format 2. A rating format 1 can say is written as
+format 1, so every reader of format 1 keeps reading it.
+
+```json
+{"functai_rating": 2,
+ "id": "01926c10-0001-7000-8000-000000000000",
+ "at": "2026-11-05T10:46:00.000000Z",
+ "call": "01926c00-0001-7000-8000-000000000000",
+ "item": "/insights/3",
+ "criterion": "real_problem", "question": "Is this a real problem?",
+ "kind": "label", "answers": {"yes": 1, "no": 0, "unsure": null},
+ "value": "yes",
+ "by": "megan", "blind": true, "sample": "draw-1"}
+```
+
+| field | meaning |
+|---|---|
+| `functai_rating` | `2`. |
+| `id`, `at` | as format 1. |
+| `call` | the call judged; or `calls`, two calls on the same case, in the order they were shown. |
+| `item` | optional, with `call`: a JSON Pointer (RFC 6901) into the call's outputs, the item judged (`"/insights/3"`). Absent: the whole answer. |
+| `criterion` | the question's name (letters, digits, `_`). Format 1's meaning is `correct`. |
+| `question` | optional: the question's words, as people were asked. |
+| `kind` | how `value` reads: `verdict` (`"right"` or `"wrong"`), `label` (a key of `answers`), `score` (a number, within `scale` when there is one), `choice` (one of `calls`, or `"tie"`). |
+| `answers` | `label` only: each answer and the number it counts for, from 0 to 1, or `null` (it counts for nothing: "unsure"). |
+| `scale` | `score` only, optional: `[lowest, highest]`. |
+| `value` | the judgement; `null` withdraws the rater's earlier one ([measures.md](measures.md), *What counts*). |
+| `by`, `account` | as format 1; or `judge`: `{"name", "setup"}` for a judge program (the setup it ran on: a new prompt or model is another judge), `{"name", "code"}` for code (`"sha256:"` of its text, as a setup counts a tool's code), with `version` when it is known. A rating has exactly one of the three. |
+| `judge_call` | optional: the judge program's own call, which made this rating. |
+| `answer`, `outputs` | with `kind` `verdict` and `value` `"wrong"`: the correction, as format 1. |
+| `reasons`, `note`, `origin`, `sample`, `blind` | as format 1. |
 
 ## Rows with known answers (`rated`)
 
 Ratings become data that `evaluate` and `.opt` read: one row per call,
 with the inputs under their names and the right answer under the output's
 name. Every implementation computes the same rows:
+
+The reader reads ratings of format 1, and those of format 2 that a
+format-1 rating could say: a person's or an account's `verdict` under
+`correct` about a whole call (no `item`, one `call`), read as format 1
+with `verdict` its `value`. A judge's verdict makes no known answer:
+known answers are people's.
 
 The reader is given the program's `name`, and when it knows them its
 `module`, its `file`, its current `signature` and `interface` (the values
@@ -445,7 +492,7 @@ and a person `by`. It is given the `file` when the program is defined at
 its language's top level and its file is known (`program.file`): every
 notebook and script is `__main__` in Python, and two notebooks'
 `summarize(text)` are not one program. A reader told to pool across
-files (a notebook that moved) is not given it. It reads records of the formats it knows (1 and 2), and skips the
+files (a notebook that moved) is not given it. It reads call records of the formats it knows (1 and 2) and ratings as said above, and skips the
 others: a record of another format makes no row and is not counted.
 
 1. Take the calls of the program: `program.name` equal,

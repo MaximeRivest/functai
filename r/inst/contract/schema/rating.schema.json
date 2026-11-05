@@ -1,28 +1,522 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://github.com/maximerivest/functai/contract/schema/rating.schema.json",
-  "title": "A judgement of one call, by a person (by) or under an account (functai call log, format 1)",
+  "title": "A rating: format 1, a person's or an account's right or wrong about one call; format 2, a judgement of one answer, an item of it, or two answers side by side, by a person, an account, a judge program or code (calls.md, measures.md)",
   "type": "object",
-  "required": ["functai_rating", "id", "call", "at", "verdict"],
-  "properties": {
-    "functai_rating": {"const": 1},
-    "id": {"$ref": "call.schema.json#/$defs/uuid"},
-    "call": {"$ref": "call.schema.json#/$defs/uuid"},
-    "at": {"$ref": "call.schema.json#/$defs/time"},
-    "by": {"type": "string", "minLength": 1},
-    "account": {"type": "string", "minLength": 1},
-    "verdict": {"enum": ["right", "wrong", null]},
-    "answer": {},
-    "outputs": {"type": "object"},
-    "reasons": {"type": "array", "items": {"type": "string"}},
-    "note": {"type": "string"},
-    "origin": {"type": "string", "minLength": 1},
-    "sample": {"type": "string", "minLength": 1}
+  "required": [
+    "functai_rating"
+  ],
+  "if": {
+    "properties": {
+      "functai_rating": {
+        "const": 1
+      }
+    }
   },
-  "oneOf": [{"required": ["by"], "not": {"required": ["account"]}},
-            {"required": ["account"], "not": {"required": ["by"]}}],
-  "allOf": [
-    {"if": {"properties": {"verdict": {"not": {"const": "wrong"}}}},
-     "then": {"not": {"anyOf": [{"required": ["answer"]}, {"required": ["outputs"]}]}}}
-  ]
+  "then": {
+    "$ref": "#/$defs/format1"
+  },
+  "else": {
+    "$ref": "#/$defs/format2"
+  },
+  "$defs": {
+    "format1": {
+      "type": "object",
+      "required": [
+        "functai_rating",
+        "id",
+        "call",
+        "at",
+        "verdict"
+      ],
+      "properties": {
+        "functai_rating": {
+          "const": 1
+        },
+        "id": {
+          "$ref": "call.schema.json#/$defs/uuid"
+        },
+        "call": {
+          "$ref": "call.schema.json#/$defs/uuid"
+        },
+        "at": {
+          "$ref": "call.schema.json#/$defs/time"
+        },
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1
+        },
+        "verdict": {
+          "enum": [
+            "right",
+            "wrong",
+            null
+          ]
+        },
+        "answer": {},
+        "outputs": {
+          "type": "object"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sample": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blind": {
+          "type": "boolean",
+          "description": "measures.md: the rater was not told which version made the answer (added 2026-11-05, optional)."
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "by"
+          ],
+          "not": {
+            "required": [
+              "account"
+            ]
+          }
+        },
+        {
+          "required": [
+            "account"
+          ],
+          "not": {
+            "required": [
+              "by"
+            ]
+          }
+        }
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "verdict": {
+                "not": {
+                  "const": "wrong"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "answer"
+                  ]
+                },
+                {
+                  "required": [
+                    "outputs"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "format2": {
+      "type": "object",
+      "required": [
+        "functai_rating",
+        "id",
+        "at",
+        "criterion",
+        "kind",
+        "value"
+      ],
+      "properties": {
+        "functai_rating": {
+          "const": 2
+        },
+        "id": {
+          "$ref": "call.schema.json#/$defs/uuid"
+        },
+        "at": {
+          "$ref": "call.schema.json#/$defs/time"
+        },
+        "call": {
+          "$ref": "call.schema.json#/$defs/uuid"
+        },
+        "calls": {
+          "type": "array",
+          "items": {
+            "$ref": "call.schema.json#/$defs/uuid"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "item": {
+          "type": "string",
+          "pattern": "^(/([^~/]|~[01])*)+$"
+        },
+        "criterion": {
+          "type": "string",
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        },
+        "question": {
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "verdict",
+            "label",
+            "score",
+            "choice"
+          ]
+        },
+        "answers": {
+          "type": "object",
+          "minProperties": 1,
+          "additionalProperties": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0,
+                "maximum": 1
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "scale": {
+          "type": "array",
+          "items": {
+            "type": "number"
+          },
+          "minItems": 2,
+          "maxItems": 2
+        },
+        "value": {},
+        "by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "account": {
+          "type": "string",
+          "minLength": 1
+        },
+        "judge": {
+          "type": "object",
+          "required": [
+            "name"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "setup": {
+              "$ref": "call.schema.json#/$defs/sha256"
+            },
+            "code": {
+              "$ref": "call.schema.json#/$defs/sha256"
+            },
+            "version": {
+              "$ref": "call.schema.json#/$defs/sha256"
+            }
+          },
+          "oneOf": [
+            {
+              "required": [
+                "setup"
+              ],
+              "not": {
+                "required": [
+                  "code"
+                ]
+              }
+            },
+            {
+              "required": [
+                "code"
+              ],
+              "not": {
+                "required": [
+                  "setup"
+                ]
+              }
+            }
+          ]
+        },
+        "judge_call": {
+          "$ref": "call.schema.json#/$defs/uuid"
+        },
+        "answer": {},
+        "outputs": {
+          "type": "object"
+        },
+        "reasons": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "note": {
+          "type": "string"
+        },
+        "origin": {
+          "type": "string",
+          "minLength": 1
+        },
+        "sample": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blind": {
+          "type": "boolean"
+        }
+      },
+      "allOf": [
+        {
+          "oneOf": [
+            {
+              "required": [
+                "call"
+              ],
+              "not": {
+                "required": [
+                  "calls"
+                ]
+              }
+            },
+            {
+              "required": [
+                "calls"
+              ],
+              "not": {
+                "required": [
+                  "call"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "oneOf": [
+            {
+              "required": [
+                "by"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "account"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "judge"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "required": [
+                "account"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "by"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "judge"
+                    ]
+                  }
+                ]
+              }
+            },
+            {
+              "required": [
+                "judge"
+              ],
+              "not": {
+                "anyOf": [
+                  {
+                    "required": [
+                      "by"
+                    ]
+                  },
+                  {
+                    "required": [
+                      "account"
+                    ]
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "choice"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "calls"
+            ],
+            "not": {
+              "required": [
+                "item"
+              ]
+            },
+            "properties": {
+              "value": {
+                "anyOf": [
+                  {
+                    "$ref": "call.schema.json#/$defs/uuid"
+                  },
+                  {
+                    "const": "tie"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "call"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "verdict"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "enum": [
+                  "right",
+                  "wrong",
+                  null
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "label"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "answers"
+            ],
+            "properties": {
+              "value": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "answers"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "score"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "value": {
+                "type": [
+                  "number",
+                  "null"
+                ]
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "required": [
+                "scale"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "value": {
+                "not": {
+                  "const": "wrong"
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "answer"
+                  ]
+                },
+                {
+                  "required": [
+                    "outputs"
+                  ]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  }
 }

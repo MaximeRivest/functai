@@ -11,7 +11,11 @@ API:
 - Accounts:  login("claude"), logins(), logout(...)  (subscriptions, OpenRouter, API keys)
 - Templates: system(...), user(...), assistant(...), developer(...), turns()  → @ai(template=[...])
 - Programs:  @module; fn.opt(...), fn.map(table), and the optimizers
-- Evaluation: evaluate(fn, data, metric) → Evaluation (.score, .summary, .table); compare(a, b); runs(folder)
+- Evaluation: evaluate(fn, data, metric, repeats=, reuse=, criteria=) → Evaluation (.score, .summary, .table);
+  compare(a, b, margin=) paired by case; runs(folder)
+- Measures (contract/measures.md): Criterion, rate(p, v, criterion=, item=, blind=), prefer(a, b, winner), draw,
+  judge, judge_pairs, scoreboard, compare_setups, win_rate, rank, agreement, positions, self_agreement,
+  disagreements, case_key, split_of, as_case
 - Saving:    check(program), save(program, path), verify(path), load(path), file("data.txt")
 - Call log:  configure(log_calls=True, log_content={"transcript": False}); calls(fn), rate(prediction, "right"),
              rated(fn); fn.version; log_calls=store (append, read): a database, a bucket; MemoryCalls
@@ -85,6 +89,11 @@ from . import files as _files
 
 _files.watch()      # an Attachments result as an input: bound when attachments is imported, never imported here
 from .evaluation import Evaluation, compare, evaluate, exact_match, runs
+from . import measures  # noqa: F401  (the statistics: functai.measures.paired, .ppi, .bradley_terry, ...)
+from .measures import (Criterion, MeasureError, Scoreboard, agreement, as_case, case_key, compare_setups, correct,
+                       disagreements, draw, judge, judge_pairs, measure, positions, prefer, preferred, rank, scoreboard,
+                       self_agreement, shown_order, split_of)
+from .measures import win_rate_of_setups as win_rate
 from .graph import Problem, Refused, Report, check
 from .module import FunctAIModule, module
 from .saved import LoadRefused, Verification, describe, file, load, save, verify
@@ -114,6 +123,9 @@ __all__ = [
     "check", "save", "load", "verify", "describe", "file", "Report", "Problem", "Refused", "LoadRefused",
     "Verification",
     "evaluate", "Evaluation", "compare", "runs", "exact_match",
+    "Criterion", "correct", "preferred", "case_key", "split_of", "draw", "scoreboard", "Scoreboard", "compare_setups",
+    "win_rate", "rank", "agreement", "positions", "self_agreement", "disagreements", "measure", "judge",
+    "judge_pairs", "prefer", "shown_order", "as_case", "MeasureError",
     "calls", "rate", "rated", "MemoryCalls",
     "JSON", "InterfaceError", "LogContentError", "JournalError", "EventRefused", "SawError", "FunctAIError", "FilesUnavailable", "Outcome",
     "Stream", "Cancelled", "note", "Note", "answer_so_far", "spend", "setup_diff", "ReachError", "Journal", "MemoryStore", "Store", "Follower", "flush",

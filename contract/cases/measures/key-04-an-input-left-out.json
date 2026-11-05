@@ -1,0 +1,14 @@
+{
+ "description": "An optional input the row leaves out is not in the key (the program's default is the version's, not the case's).",
+ "kind": "key-row",
+ "row": {
+  "text": "hi"
+ },
+ "inputs": [
+  "text",
+  "tone"
+ ],
+ "expect": {
+  "key": "sha256:7008d8816ae6ad239592f46934bf236dabc9f570b783472e430279f9728ada3d"
+ }
+}

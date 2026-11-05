@@ -40,14 +40,15 @@ test("a call sends the layout and returns the typed answer", async () => {
   assert.deepEqual(claude.requests[0]!.config?.stop, ["</result>"]);
 });
 
-test("compare says what differs when the rows are not the same", async () => {
+test("compare pairs by case: a column that is not an input is not part of the case", async () => {
   const router = new FakeRouter([], () => "<result>\nhappy\n</result>");
   const mood = ai("mood", { ...moodDef, router });
   const rows = [{ review: "Love it", mood: "happy" }, { review: "Broke", mood: "unhappy" }];
   const before = await evaluate(mood, rows, { expected: "mood", progress: false });
   const after = await evaluate(mood, rows.map((r) => ({ ...r, rules: "refunds are billing" })), { expected: "mood", progress: false });
-  assert.throws(() => compare(before, after),
-    /row 0 differs: column 'rules' only in the second\. Evaluate both versions on the very same table/);
+  const [c] = compare(before, after);
+  assert.deepEqual([c!.n, c!.diff, c!.onlyBefore, c!.onlyAfter], [2, 0, 0, 0]);
+  assert.throws(() => compare(before, { ...after, byCase: () => new Map([["sha256:other", 1]]), bounded: () => true } as never), /none in common/);
 });
 
 test("a reply the provider stopped is never an answer, and is not asked again", async () => {

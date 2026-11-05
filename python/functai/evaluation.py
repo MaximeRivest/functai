@@ -45,7 +45,8 @@ _DPYR_HINT = 'tables need dpyr: pip install "functai[data]"'
 # columns every run table has besides the data, the predictions and the metrics
 # (lm15 2: on every provider input_tokens includes cached tokens and
 # output_tokens includes reasoning; a count not reported exactly is null)
-_RUN_COLUMNS = ("error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run")
+_RUN_COLUMNS = ("error", "seconds", "input_tokens", "output_tokens", "reasoning_tokens", "total_tokens", "model", "run",
+                "case_key", "repeat", "call_id", "reused")
 
 
 def _dpyr():
@@ -267,37 +268,52 @@ def parallel(fn: Callable, items: Sequence[Any], num_threads: int) -> List[Any]:
 
 @dataclasses.dataclass
 class RowRun:
-    """One row run: the prediction (None when the program raised), the error,
-    and what it cost."""
+    """One row run (one repeat of one case): the prediction (None when the
+    program raised), the error, what it cost, and the call that answered (its
+    id; ``reused`` when it was taken from the log instead of asked)."""
     pred: Optional[Prediction]
     error: Optional[str]
     seconds: float
     trace: List[Tuple[FunctAIFunc, Prediction]]
+    call_id: Optional[str] = None
+    reused: bool = False
+    recorded: Optional[Dict[str, Any]] = None        # the reused call's record
 
     @property
     def usage(self) -> Dict[str, int]:
         """Tokens summed over the row's model calls; a counter one of them did
-        not report is absent (``functai.data.sum_usage``)."""
+        not report is absent (``functai.data.sum_usage``). A reused call's are
+        its record's."""
+        if self.recorded is not None:
+            return {k: v for k, v in (self.recorded.get("usage") or {}).items() if isinstance(v, int)}
         return sum_usage(usage_of(r) for _fn, p in self.trace for r in p.responses)
 
     @property
     def model(self) -> Optional[str]:
+        if self.recorded is not None:
+            return self.recorded.get("model")
         names = sorted({r.model for _fn, p in self.trace for r in p.responses if getattr(r, "model", None)})
         return ", ".join(names) or None
 
 
-def run_row(target: _Target, row: Mapping[str, Any]) -> RowRun:
+def run_row(target: _Target, row: Mapping[str, Any], *, case: Optional[str] = None, repeat: int = 1) -> RowRun:
     """Run the program on one row. A failure is recorded, not raised, except a
-    missing login, which would fail every row the same way."""
+    missing login, which would fail every row the same way. With ``case``,
+    the call says which case it answered, and which repeat; a repeat after
+    the first is another replicate (contract/replies.md), so a reply cache
+    gives it its own answer."""
+    from .config import scoped
     start = time.perf_counter()
-    with tracing() as trace:
+    with tracing() as trace, calllog.marking(case, repeat) as mark, \
+            (scoped(replicate=repeat - 1) if repeat > 1 else contextlib.nullcontext()):
         try:
             pred, error = target.run(row), None
         except LoginRequired:
             raise
         except Exception as exc:  # noqa: BLE001 — recorded in the row's error
             pred, error = None, f"{type(exc).__name__}: {exc}"
-    return RowRun(pred, error, time.perf_counter() - start, list(trace))
+    call_id = getattr(pred, "call_id", None) or mark.get("call")
+    return RowRun(pred, error, time.perf_counter() - start, list(trace), call_id=call_id)
 
 
 # ------------------------------------------------------------------ metrics
@@ -564,7 +580,9 @@ def spread_fields(target: "_Target") -> List[str]:
 
 def _records(target: _Target, rows: Sequence[Mapping[str, Any]], runs: Sequence[RowRun],
              metrics: Sequence[Metric], values: Mapping[str, Sequence[Optional[float]]],
-             run_id: str) -> Tuple[List[str], List[Dict[str, Any]]]:
+             run_id: str, meta: Optional[Sequence[Mapping[str, Any]]] = None) -> Tuple[List[str], List[Dict[str, Any]]]:
+    """The run table's columns and records: one per row run (a row asked several times is several records).
+    ``meta``: each run's ``example`` (its row's position), ``case_key`` and ``repeat``."""
     data_cols = list(dict.fromkeys(k for r in rows for k in r))
     outs = list(target.output_names)
     for run in runs:
@@ -578,17 +596,19 @@ def _records(target: _Target, rows: Sequence[Mapping[str, Any]], runs: Sequence[
     records = []
     for i, (row, run) in enumerate(zip(rows, runs)):
         usage = run.usage
-        rec = {"example": i, **{k: _cell(row.get(k)) for k in data_cols}}
+        m = meta[i] if meta is not None else {"example": i, "case_key": None, "repeat": 1}
+        rec = {"example": m["example"], **{k: _cell(row.get(k)) for k in data_cols}}
         for k in outs:
             if k == main and fields:
                 rec.update({f"pred_{f}": _cell(answer_part(run.pred, f, main)) if run.pred is not None else None
                             for f in fields})
             else:
                 rec[f"pred_{k}"] = _cell(run.pred.get(k)) if run.pred is not None else None
-        rec.update({m.name: values[m.name][i] for m in metrics})
+        rec.update({mt.name: values[mt.name][i] for mt in metrics})
         rec.update(error=run.error, seconds=run.seconds, input_tokens=usage.get("input_tokens"),
                    output_tokens=usage.get("output_tokens"), reasoning_tokens=usage.get("reasoning_tokens"),
-                   total_tokens=usage.get("total_tokens"), model=run.model, run=run_id)
+                   total_tokens=usage.get("total_tokens"), model=run.model, run=run_id,
+                   case_key=m["case_key"], repeat=m["repeat"], call_id=run.call_id, reused=run.reused)
         records.append(rec)
     return names, records
 
@@ -664,39 +684,50 @@ class Evaluation:
     """The result of ``evaluate``: a score, its uncertainty, and every answer.
 
     ``ev.scores(metric)`` gives each row's value for a metric (the first by
-    default); ``ev.write("run.parquet")`` saves the table.
+    default; a row asked several times, the mean of its repeats);
+    ``ev.write("run.parquet")`` saves the table.
 
     Attributes
     ----------
     score : float
-        The first metric's mean, from 0 to 1. A failed row counts 0.
+        The first metric's mean over cases, from 0 to 1. A failed row counts 0.
     summary : dpyr dataframe
-        One row per metric: ``mean``, the 95% interval ``low`` to ``high``,
-        ``n``, and how many rows ``failed``.
+        One row per metric: ``mean``, the 95% interval ``low`` to ``high``
+        (over cases), ``n`` (cases), and how many runs ``failed``.
     table : dpyr dataframe
-        One row per example: the data, ``pred_<output>`` for each output,
-        each metric, ``error``, ``seconds``, ``input_tokens``,
-        ``output_tokens``, ``reasoning_tokens``, ``total_tokens``, ``model`` and ``run``.
+        One row per run (``repeats`` runs per example): the data,
+        ``pred_<output>`` for each output, each metric, ``error``,
+        ``seconds``, ``input_tokens``, ``output_tokens``,
+        ``reasoning_tokens``, ``total_tokens``, ``model``, ``run``,
+        ``case_key``, ``repeat``, ``call_id`` (the call that answered: its
+        trace in the call log) and ``reused`` (taken from the log).
     predictions : list
-        Each row's ``Prediction`` (None where it failed), with its turns,
+        Each run's ``Prediction`` (None where it failed), with its turns,
         tokens and repairs.
     errors : list
-        ``(row number, message)`` for each row that failed.
-
+        ``(row number, message)`` for each run that failed.
+    cases : list of str
+        Each row's case key (``functai.case_key``).
 
     See Also
     --------
     evaluate : what produces it.
-    compare : two of them, paired.
+    compare : two of them, paired by case.
     """
 
     def __init__(self, *, target: _Target, rows: List[Dict[str, Any]], runs: List[RowRun],
-                 metrics: List[Metric], values: Dict[str, List[Optional[float]]], run_id: str):
+                 metrics: List[Metric], values: Dict[str, List[Optional[float]]], run_id: str,
+                 jobs: Optional[List[Tuple[int, int]]] = None, keys: Optional[List[str]] = None,
+                 kinds: Optional[Dict[str, Any]] = None):
         self.program = target.name
         self.run = run_id
         self.metrics = [m.name for m in metrics]
         self.predictions = [r.pred for r in runs]
         self._target, self._rows, self._runs, self._metrics, self._values = target, rows, runs, metrics, values
+        self._jobs = jobs if jobs is not None else [(i, 1) for i in range(len(rows))]
+        self.cases = keys if keys is not None else [None] * len(rows)
+        # how each metric's values count: "legacy" (a failed run is 0), or a criterion's data (none is no value)
+        self._kinds = kinds or {}
         self._table = None
 
     def __len__(self) -> int:
@@ -704,18 +735,53 @@ class Evaluation:
 
     @property
     def errors(self) -> List[Tuple[int, str]]:
-        return [(i, r.error) for i, r in enumerate(self._runs) if r.error]
+        return [(self._jobs[i][0], r.error) for i, r in enumerate(self._runs) if r.error]
+
+    @property
+    def calls(self) -> List[Optional[str]]:
+        """Each run's call id (its trace in the call log), in the table's order."""
+        return [r.call_id for r in self._runs]
+
+    def _per_row(self, name: str) -> List[Optional[float]]:
+        """A metric's value per row: the mean of its runs' (a legacy metric's failed run counts 0; a
+        criterion's run without a value is left out, and a row with none has none)."""
+        legacy = self._kinds.get(name) is None
+        acc: List[List[float]] = [[] for _ in self._rows]
+        for (i, _rep), v in zip(self._jobs, self._values[name]):
+            if v is None and legacy:
+                v = 0.0
+            if v is not None:
+                acc[i].append(v)
+        return [sum(a) / len(a) if a else None for a in acc]
 
     def scores(self, metric: Optional[str] = None) -> List[float]:
-        """One metric's value per row, a failed row counting 0."""
+        """One metric's value per row (a failed row counting 0; the mean of a row's repeats)."""
         if not self.metrics:
             raise ValueError("this evaluation has no metric")
         name = metric or self.metrics[0]
-        return [0.0 if v is None else v for v in self._values[name]]
+        return [0.0 if v is None else v for v in self._per_row(name)]
+
+    def by_case(self, metric: Optional[str] = None) -> Dict[str, float]:
+        """``{case key: value}``: a metric's value per case (rows of one case, and repeats, averaged)."""
+        name = metric or self.metrics[0]
+        acc: Dict[str, List[float]] = {}
+        for k, v in zip(self.cases, self._per_row(name)):
+            if v is not None:
+                acc.setdefault(k, []).append(v)
+        return {k: sum(v) / len(v) for k, v in acc.items()}
+
+    def _bounded(self, name: str) -> bool:
+        kind = self._kinds.get(name)
+        if kind is None:
+            return name == "exact_match" or name.endswith("_match")
+        from .measures import bounded
+        return bounded(kind)
 
     @property
     def score(self) -> Optional[float]:
-        return interval(self.scores())[0] if self.metrics and self._rows else None
+        if not self.metrics or not self._rows:
+            return None
+        return interval(list(self.by_case(self.metrics[0]).values()))[0]
 
     def __float__(self) -> float:
         if self.score is None:
@@ -726,10 +792,12 @@ class Evaluation:
         out = []
         n_err = len(self.errors)
         for name in self.metrics:
-            mean, low, high = interval(self.scores(name))
-            failed = sum(v is None for v in self._values[name])
-            out.append({"metric": name, "mean": mean, "low": low, "high": high, "n": len(self._rows),
-                        "failed": failed})
+            per = self.by_case(name)
+            mean, low, high = interval([per[k] for k in sorted(per)])
+            if low is not None and self._kinds.get(name) is not None and self._bounded(name):
+                low, high = max(0.0, low), min(1.0, high)
+            failed = sum(1 for r, v in zip(self._runs, self._values[name]) if v is None and r.error)
+            out.append({"metric": name, "mean": mean, "low": low, "high": high, "n": len(per), "failed": failed})
         if not out:
             out.append({"metric": None, "mean": None, "low": None, "high": None, "n": len(self._rows),
                         "failed": n_err})
@@ -737,21 +805,24 @@ class Evaluation:
 
     @property
     def summary(self):
-        """One row per metric: mean, 95% interval (low, high), n, and how many
-        rows failed (counted as 0 in the mean)."""
+        """One row per metric: mean, 95% interval (low, high) over cases, n (cases), and how many runs
+        failed (counted as 0 in the mean)."""
         return _dpyr().read(self._summary_records())
 
     @property
     def table(self):
-        """One row per example: ``example`` (the row's position in the data),
-        the data's columns, ``pred_<output>`` for each output, one column per
-        metric (null where the row failed), then ``error``, ``seconds``,
-        ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``, ``model`` and ``run``."""
+        """One row per run: ``example`` (the row's position in the data), the data's columns,
+        ``pred_<output>`` for each output, one column per metric (null where the run failed), then
+        ``error``, ``seconds``, ``input_tokens``, ``output_tokens``, ``reasoning_tokens``, ``total_tokens``,
+        ``model``, ``run``, ``case_key``, ``repeat``, ``call_id`` and ``reused``."""
         if self._table is None:
-            names, records = _records(self._target, self._rows, self._runs, self._metrics, self._values,
-                                      self.run)
+            names, records = _records(self._target, [self._rows[i] for i, _r in self._jobs], self._runs,
+                                      self._metrics, self._values, self.run, self._meta())
             self._table = _dpyr().read(_tabular(names, records))
         return self._table
+
+    def _meta(self) -> List[Dict[str, Any]]:
+        return [{"example": i, "case_key": self.cases[i], "repeat": rep} for i, rep in self._jobs]
 
     def write(self, path: "str | os.PathLike") -> None:
         """Save the table (``.parquet`` keeps every type; also .jsonl, .arrow, ...)."""
@@ -760,6 +831,9 @@ class Evaluation:
     def __repr__(self) -> str:
         n = len(self._rows)
         head = f"Evaluation({self.program}, {n} example{'s' if n != 1 else ''}"
+        reps = len(self._jobs) // n if n and len(self._jobs) % n == 0 else None
+        if reps and reps > 1:
+            head += f" × {reps} repeats"
         parts = []
         for rec in self._summary_records():
             if rec["metric"] is None:
@@ -768,6 +842,9 @@ class Evaluation:
             parts.append(f"{rec['metric']} {_fmt(rec['mean'])}{ci}")
         n_err = len(self.errors)
         tail = f", {n_err} failed" if n_err else ""
+        reused = sum(1 for r in self._runs if r.reused)
+        if reused:
+            tail += f", {reused} reused"
         return head + (": " + "; ".join(parts) if parts else "") + tail + ")"
 
 
@@ -787,15 +864,106 @@ def _check_names(target: _Target, rows: Sequence[Mapping[str, Any]], metrics: Se
         raise ValueError(f"the data has column(s) {clash}, which the run table adds; rename them first")
 
 
+def _reuse_records(reuse: Any) -> Tuple[List[Dict[str, Any]], Any]:
+    """The records to reuse results from, and where this evaluation's calls and ratings then go."""
+    if reuse is True:
+        found, ratings = calllog.read(None)
+        return found + ratings, None
+    if isinstance(reuse, (list, tuple)):
+        return [dict(r) for r in reuse], None
+    if calllog.is_store(reuse):
+        return [dict(r) for r in reuse.read() if isinstance(r, Mapping)], reuse
+    found, ratings = calllog.read(reuse)
+    return found + ratings, reuse
+
+
+def _typed(target: _Target, outputs: Mapping[str, Any]) -> Dict[str, Any]:
+    """A logged call's outputs (JSON) as the program's types, as far as they build."""
+    from .signature import from_json
+    if target.single:
+        spec = target.predictors[0]._spec()
+        return {k: from_json(spec.annotations.get(k), v) for k, v in outputs.items()}
+    from .columns import _return_type
+    try:
+        typ = _return_type(target.program._fn, None)
+    except Exception:  # noqa: BLE001
+        typ = None
+    return {k: from_json(typ, v) if k == "result" else v for k, v in outputs.items()}
+
+
+def _reused_run(target: _Target, rec: Mapping[str, Any]) -> RowRun:
+    pred = Prediction(_typed(target, rec.get("outputs") or {}))
+    object.__setattr__(pred, "call_id", rec["id"])
+    return RowRun(pred, None, float(rec.get("seconds") or 0.0), [], call_id=rec["id"], reused=True, recorded=dict(rec))
+
+
+def _criteria(criteria: Any) -> List[Any]:
+    from .measures import Criterion
+    out = []
+    for c in criteria or ():
+        if not isinstance(c, Criterion):
+            raise TypeError(f"criteria are functai.Criterion, each with a judge; not {type(c).__name__}")
+        if c.kind == "choice":
+            raise ValueError(f"{c.name} is a choice between two answers: functai.judge_pairs")
+        if c.judge is None:
+            raise ValueError(f"{c.name} has no judge: evaluate scores with judges (Criterion(..., judge=...)); "
+                             "people's ratings are read by functai.scoreboard")
+        out.append(c)
+    return out
+
+
+def _judge_run(target: _Target, row: Mapping[str, Any], run: RowRun, crit: Any, expected_cols: Mapping[str, str],
+               known: Mapping[Any, Any], keep: List[Dict[str, Any]]) -> Optional[float]:
+    """A criterion's value for one run: its judge asked (or its rating reused from the log), its ratings kept."""
+    from . import measures
+    data = crit.data()
+    if run.error is not None or run.pred is None:
+        return 0.0 if data.get("items") is None or crit.aggregate == "sum" else None
+    outputs = calllog.to_json(dict(run.pred))[0]
+    inputs = {k: calllog.to_json(row[k])[0] for k in target.input_names if k in row}
+    answer = outputs.get(target.main_output) if isinstance(outputs, Mapping) else None
+    exp = {o: calllog.to_json(row[c])[0] for o, c in expected_cols.items() if c in row} or \
+        {o: calllog.to_json(row[o])[0] for o in target.output_names if o in row}
+    base = {**inputs, "inputs": inputs, "outputs": outputs, "answer": answer,
+            "expected": exp.get(target.main_output) if len(exp) <= 1 else exp}
+    who = {"judge": measures.judge_identity(crit.judge)}
+    jid = who["judge"].get("setup") or who["judge"].get("code")
+    targets = [(None, None)] if data.get("items") is None else [
+        (f"{crit.items}/{i}", it) for i, it in enumerate(measures._item_values(outputs, crit.items))]
+    values = []
+    for item, it in targets:
+        prior = known.get((run.call_id, item or "", jid))
+        if prior is not None:
+            value = prior
+        else:
+            got, jc = measures.ask_judge(crit.judge, {**base, "item": it} if item is not None else base)
+            value = measures.judged_value(data, got)
+            if run.call_id is not None:
+                keep.append(measures.rating_record(run.call_id, data, value, who=who, item=item, origin="judge",
+                                                   judge_call=jc))
+        x = measures.number_of({**data, "value": value, "answers": data.get("answers"), "scale": data.get("scale")})
+        if x is not None:
+            values.append(x)
+    if data.get("items") is None:
+        return values[0] if values else None
+    if not values:
+        return 0.0 if crit.aggregate == "sum" and not targets else None
+    share = sum(values) / len(values)
+    return share * len(targets) if crit.aggregate == "sum" else share
+
+
 def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = None, num_threads: int = 1,
              max_errors: Optional[int] = None, log: "str | os.PathLike | None" = None,
              call_defaults: Optional[Dict[str, Any]] = None, states: Optional[States] = None,
-             threads: Optional[int] = None, progress: Optional[bool] = False) -> Evaluation:
+             threads: Optional[int] = None, progress: Optional[bool] = False, repeats: int = 1,
+             reuse: Any = None, criteria: Optional[Sequence[Any]] = None) -> Evaluation:
     '''Run a program on rows with known answers, and score it.
 
     Every row runs (in parallel with ``num_threads``); a row that fails
-    keeps its error and counts 0. The score comes with a 95% interval, and
-    every answer is kept as a row of a table you can filter and group.
+    keeps its error and counts 0. The score comes with a 95% interval over
+    cases, and every answer is kept as a row of a table you can filter and
+    group. Each call says which case it answered (its record's ``case``), so
+    later evaluations can reuse it and comparisons pair by case.
 
     Parameters
     ----------
@@ -819,6 +987,21 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
         an AI function acting as a judge, or several of these in a list or a
         dict ``{name: metric}``. Default: exact match on the outputs the data
         has columns for (case and spacing ignored).
+    criteria : list of functai.Criterion, optional
+        Questions with a judge (an AI function, a module or a function): each
+        becomes a metric named like it, its ratings are kept in the call log
+        (naming the judge by its setup), and a judgement already there for
+        the same call and judge is reused. An item criterion judges each
+        item of a list in the answer.
+    repeats : int
+        How many times each row is asked. A row's value is the mean of its
+        repeats, and every range stays over cases; a repeat after the first
+        is another replicate, so a reply cache gives it its own answer.
+    reuse : folder, store, list of records, or True
+        Take results already in this log (True: the call log): calls of the
+        same program on the same setup and case that ended without an error,
+        oldest first, count as the first repeats; only the rest are asked.
+        This evaluation's calls and ratings go to the same place.
     num_threads, threads : int
         How many rows run at once (``threads`` is the same, by the name
         ``map`` and ``vectorize`` use).
@@ -826,7 +1009,7 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
         A line on stderr, updated as rows finish (None: when stderr is a
         terminal or in a notebook). Off by default here.
     max_errors : int, optional
-        Stop and raise when more rows than this fail.
+        Stop and raise when more runs than this fail.
     log : folder, optional
         Write the run's table to ``<log>/<run>.parquet``; ``runs(log)`` reads
         every logged run back.
@@ -837,12 +1020,13 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
     -------
     Evaluation
         ``.score`` (the first metric's mean), ``.summary`` (each metric with
-        its interval), ``.table`` (one row per example).
+        its interval), ``.table`` (one row per run).
 
     See Also
     --------
-    compare : two evaluations of the same rows, paired.
+    compare : two evaluations, paired by case.
     Evaluation : what this returns.
+    functai.scoreboard : every setup of a program, from the call log.
 
     Examples
     --------
@@ -866,23 +1050,74 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
     '''
     if threads is not None:
         num_threads = threads
+    if not isinstance(repeats, int) or isinstance(repeats, bool) or repeats < 1:
+        raise ValueError(f"repeats is a whole number of at least 1, not {repeats!r}")
+    if reuse is not None and reuse is not False and states:
+        raise ValueError("reuse takes results of the program's own setup; candidate states run another")
     target = _Target(program, call_defaults=call_defaults)
     rows = rows_of(data)
     target.check(rows)
-    metrics = resolve_metrics(metric, target, rows, expected_columns(target, expected, rows))
-    _check_names(target, rows, metrics)
+    expected_cols = expected_columns(target, expected, rows)
+    crits = _criteria(criteria)
+    metrics = resolve_metrics(metric, target, rows, expected_cols) if (metric is not None or not crits or expected_cols
+                                                                        or any(o in r for r in rows for o in target.output_names)) else []
+    from .measures import row_key, call_key
+    taken = {m.name for m in metrics}
+    for c in crits:
+        if c.name in taken:
+            raise ValueError(f"two metrics are named {c.name}: rename the criterion or the metric")
+        taken.add(c.name)
+    _check_names(target, rows, [*metrics, *(Metric(c.name) for c in crits)])
     if log is not None or any(m.expr is not None for m in metrics):
         _dpyr()                                            # fail now, not after the model calls
     row_metrics = [m for m in metrics if m.fn is not None]
+    keys = [row_key(r, target.input_names) for r in rows]
+
+    # results already in the log: the program's own setup, on the same case, ended well, oldest first
+    reused: Dict[str, List[Dict[str, Any]]] = {}
+    known: Dict[Any, Any] = {}
+    store = None
+    if reuse is not None and reuse is not False:
+        found, store = _reuse_records(reuse)
+        from .measures import counting, program_calls, _program_of, judge_identity
+        setup = getattr(program, "setup", None)
+        mine = [c for c in program_calls(found, _program_of(program))
+                if (c.get("program") or {}).get("setup") == setup and c.get("error") is None
+                and c.get("content") is True and isinstance(c.get("outputs"), Mapping)]
+        for c in mine:
+            k = call_key(c)
+            if k is not None:
+                reused.setdefault(k, []).append(c)
+        ratings = [r for r in found if "functai_rating" in r]
+        for c in crits:
+            ident = judge_identity(c.judge)
+            jid = ident.get("setup") or ident.get("code")
+            for j in counting(ratings, c.data()):
+                if j["source"] == ("judge", jid) and len(j["calls"]) == 1:
+                    known[(j["calls"][0], j["item"], jid)] = j["value"]
+    jobs: List[Tuple[int, int]] = []
+    plan: List[Optional[Dict[str, Any]]] = []
+    for i, k in enumerate(keys):
+        have = reused.get(k, [])
+        for rep in range(1, repeats + 1):
+            jobs.append((i, rep))
+            plan.append(have[rep - 1] if rep - 1 < len(have) else None)
 
     run_id = _new_run_id(target.name)
-    meter = Progress(len(rows), target.name) if show_progress(progress) else None
+    meter = Progress(sum(1 for p in plan if p is None), target.name) if show_progress(progress) else None
+    kept: List[Dict[str, Any]] = []
+    kept_lock = threading.Lock()
 
-    def one(row: Dict[str, Any]) -> Tuple[RowRun, Dict[str, Optional[float]]]:
-        with with_states(states):
-            run = run_row(target, row)
-        if meter is not None:
-            meter.step(run)
+    def one(n: int) -> Tuple[RowRun, Dict[str, Optional[float]]]:
+        i, rep = jobs[n]
+        row = rows[i]
+        if plan[n] is not None:
+            run = _reused_run(target, plan[n])
+        else:
+            with with_states(states):
+                run = run_row(target, row, case=keys[i], repeat=rep)
+            if meter is not None:
+                meter.step(run)
         vals: Dict[str, Optional[float]] = {}
         for m in row_metrics:
             try:
@@ -893,20 +1128,45 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
                 vals[m.name] = None
                 note = f"metric {m.name}: {type(exc).__name__}: {exc}"
                 run.error = f"{run.error}; {note}" if run.error else note
+        for c in crits:
+            mine_kept: List[Dict[str, Any]] = []
+            try:
+                vals[c.name] = _judge_run(target, row, run, c, expected_cols, known, mine_kept)
+            except LoginRequired:
+                raise
+            except Exception as exc:  # noqa: BLE001 — a judge that fails on a row is that row's error
+                vals[c.name] = None
+                note = f"criterion {c.name}: {type(exc).__name__}: {exc}"
+                run.error = f"{run.error}; {note}" if run.error else note
+            with kept_lock:
+                kept.extend(mine_kept)
         return run, vals
 
-    with calllog.part_of("evaluation", run_id):           # logged calls say they answered known questions
-        results = parallel(one, rows, max(1, num_threads))
+    from .config import scoped
+    logging_to = scoped(log_calls=store) if store is not None else contextlib.nullcontext()
+    with logging_to, calllog.part_of("evaluation", run_id):   # logged calls say they answered known questions
+        results = parallel(one, list(range(len(jobs))), max(1, num_threads))
+        if kept:
+            try:
+                for r in kept:
+                    calllog.write_rating(r, store)
+            except ValueError:
+                pass                                       # no call log here: the values stand, unkept
     runs = [r for r, _v in results]
-    values: Dict[str, List[Optional[float]]] = {m.name: [v[m.name] for _r, v in results] for m in row_metrics}
+    names = [m.name for m in row_metrics] + [c.name for c in crits]
+    values: Dict[str, List[Optional[float]]] = {nm: [v.get(nm) for _r, v in results] for nm in names}
     for m in metrics:
         if m.expr is not None:
-            values[m.name] = expr_scores(m, target, rows, runs)
-    values = {m.name: values[m.name] for m in metrics}          # metric order
-    ev = Evaluation(target=target, rows=rows, runs=runs, metrics=metrics, values=values, run_id=run_id)
+            values[m.name] = expr_scores(m, target, [rows[i] for i, _r in jobs], runs)
+    all_metrics = [*metrics, *(Metric(c.name) for c in crits)]
+    values = {m.name: values[m.name] for m in all_metrics}          # metric order
+    kinds = {c.name: c.data() for c in crits}
+    ev = Evaluation(target=target, rows=rows, runs=runs, metrics=all_metrics, values=values, run_id=run_id,
+                    jobs=jobs, keys=keys, kinds=kinds)
     failed = ev.errors
     if max_errors is not None and len(failed) > max_errors:
-        raise RuntimeError(f"evaluation: {len(failed)} rows failed; first (row {failed[0][0]}): {failed[0][1]}")
+        what = "rows" if repeats == 1 else "runs"
+        raise RuntimeError(f"evaluation: {len(failed)} {what} failed; first (row {failed[0][0]}): {failed[0][1]}")
     if log is not None:
         os.makedirs(log, exist_ok=True)
         ev.write(os.path.join(os.fspath(log), f"{ev.run}.parquet"))
@@ -916,42 +1176,41 @@ def evaluate(program: Any, data: Any, metric: Any = None, *, expected: Any = Non
 # ------------------------------------------------------------------ comparing runs
 
 
-def _how_rows_differ(a: Any, b: Any) -> str:
-    """What differs between two rows: the columns only one has, else the first that differs."""
-    if not (isinstance(a, Mapping) and isinstance(b, Mapping)):
-        return "the rows are not the same"
-    only_a, only_b = [k for k in a if k not in b], [k for k in b if k not in a]
-    if only_a or only_b:
-        return "; ".join(x for x in (f"column {', '.join(map(repr, only_a))} only in the first" if only_a else "",
-                                     f"column {', '.join(map(repr, only_b))} only in the second" if only_b else "") if x)
-    differ = [k for k in a if a[k] != b[k]]
-    return f"column {differ[0]!r} differs" if differ else "the rows are not the same"
+def compare(before: Evaluation, after: Evaluation, *, margin: Optional[float] = None):
+    '''Compare two evaluations case by case: is ``after`` better than ``before``?
 
-
-def compare(before: Evaluation, after: Evaluation):
-    '''Compare two evaluations of the same rows, row by row.
-
-    Pairing the rows detects a real change with far fewer examples than two
-    separate scores would: a row both versions got right says nothing, a row
-    only one got right says a lot.
+    The two are paired on the cases both answered (by case key: the rows'
+    inputs, whatever their order), which detects a real change with far
+    fewer cases than two separate scores: a case both versions got right says
+    nothing, a case only one got right says a lot. For right-or-wrong
+    metrics the range is the MOVER-Wilson interval, which keeps its 95%
+    where the paired t interval falls to a few percent (with no case that
+    changed it says "exactly no difference"); otherwise the paired t interval.
 
     Parameters
     ----------
     before, after : Evaluation
-        Two evaluations of the same rows (typically two versions of a
-        prompt, or two models).
+        Two evaluations (typically two versions of a prompt, or two models)
+        on the same cases, or overlapping ones.
+    margin : float, optional
+        How much worse is still acceptable: the outcome may then be
+        ``same``, ``not_worse`` or ``not_better`` as well as ``better``,
+        ``worse`` or ``unclear``.
 
     Returns
     -------
     dpyr dataframe
-        One row per metric both have: ``before`` and ``after`` (the means),
-        ``diff`` with its 95% interval ``low`` to ``high`` (a paired t
-        interval), and how many rows got ``better``, ``worse`` or stayed the
-        ``same``. When the interval includes 0, the change could be luck.
+        One row per metric both have: ``before`` and ``after`` (the means on
+        the shared cases), ``diff`` with its 95% interval ``low`` to
+        ``high``, how many cases got ``better``, ``worse`` or stayed the
+        ``same``, ``n``, ``method``, ``outcome``, ``fragility`` (the fewest
+        cases whose removal would erase the difference), ``only_before`` and
+        ``only_after`` (cases only one has).
 
     See Also
     --------
     evaluate : produces the evaluations.
+    functai.compare_setups : the same from the call log.
 
     Examples
     --------
@@ -980,35 +1239,34 @@ def compare(before: Evaluation, after: Evaluation):
     compare(evaluate(category, rows, num_threads=5), evaluate(category_v2, rows, num_threads=5))
     ```
     '''
-    if len(before) != len(after):
-        raise ValueError(f"compare needs the same examples: {len(before)} rows vs {len(after)}")
-    for i, (a, b) in enumerate(zip(before._rows, after._rows)):
-        if a != b:
-            raise ValueError(f"compare needs the same examples in the same order; row {i} differs: "
-                             f"{_how_rows_differ(a, b)}. Evaluate both versions on the very same table, and put the change in the function (a second AI function, or another model), not in the data.")
+    return _dpyr().read(comparison(before, after, margin=margin))
+
+
+def comparison(before: Evaluation, after: Evaluation, *, margin: Optional[float] = None) -> List[Dict[str, Any]]:
+    """``compare``'s rows, as dicts (no dpyr needed)."""
+    from .measures import paired
     shared = [m for m in before.metrics if m in after.metrics]
     if not shared:
         raise ValueError(f"no metric in common: {before.metrics} vs {after.metrics}")
     records = []
     for name in shared:
-        a, b = before.scores(name), after.scores(name)
-        d = [y - x for x, y in zip(a, b)]
-        diff, low, high = _paired_t(d) if len(d) >= 2 else (d[0], None, None)
-        records.append({"metric": name, "before": sum(a) / len(a), "after": sum(b) / len(b),
-                        "diff": diff, "low": low, "high": high,
-                        "better": sum(v > 0 for v in d), "worse": sum(v < 0 for v in d),
-                        "same": sum(v == 0 for v in d), "n": len(d)})
-    return _dpyr().read(records)
-
-
-def _paired_t(d: Sequence[float]) -> Tuple[float, Optional[float], Optional[float]]:
-    """Mean difference with a paired t interval (differences of 0/1 scores
-    are -1, 0 or 1, so Wilson's interval does not apply)."""
-    n = len(d)
-    mean = sum(d) / n
-    sd = math.sqrt(sum((v - mean) ** 2 for v in d) / (n - 1))
-    half = _t975(n - 1) * sd / math.sqrt(n)
-    return mean, mean - half, mean + half
+        a, b = before.by_case(name), after.by_case(name)
+        keys = sorted(k for k in a if k in b)
+        if not keys:
+            raise ValueError(f"compare needs cases both answered; {name} has none in common "
+                             f"({len(a)} cases before, {len(b)} after, none with the same inputs)")
+        only = (sum(1 for k in a if k not in b), sum(1 for k in b if k not in a))
+        if any(only) and name == shared[0]:
+            warnings.warn(f"[functai] compare: {len(keys)} cases both answered; {only[0]} only before, {only[1]} only "
+                          "after are left out (a case is a row's inputs)", stacklevel=3)
+        xs, ys = [a[k] for k in keys], [b[k] for k in keys]
+        p = paired(xs, ys, margin, before._bounded(name) and after._bounded(name))
+        records.append({"metric": name, "before": sum(xs) / len(xs), "after": sum(ys) / len(ys),
+                        "diff": p["diff"], "low": p["low"], "high": p["high"], "better": p["better"],
+                        "worse": p["worse"], "same": p["same"], "n": p["n"], "method": p["method"],
+                        "outcome": p["outcome"], "fragility": p["fragility"],
+                        "only_before": sum(1 for k in a if k not in b), "only_after": sum(1 for k in b if k not in a)})
+    return records
 
 
 def runs(folder: "str | os.PathLike"):
@@ -1039,4 +1297,4 @@ def runs(folder: "str | os.PathLike"):
     return dpyr.read(arrow)
 
 
-__all__ = ["Evaluation", "evaluate", "compare", "runs", "exact_match", "rows_of", "interval"]
+__all__ = ["Evaluation", "evaluate", "compare", "comparison", "runs", "exact_match", "rows_of", "interval"]

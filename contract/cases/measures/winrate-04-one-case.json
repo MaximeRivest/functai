@@ -1,0 +1,16 @@
+{
+ "description": "One case: a rate, no range.",
+ "kind": "winrate",
+ "values": [
+  1
+ ],
+ "margin": null,
+ "expect": {
+  "rate": 1.0,
+  "low": null,
+  "high": null,
+  "n": 1,
+  "outcome": "unclear",
+  "fragility": 1
+ }
+}

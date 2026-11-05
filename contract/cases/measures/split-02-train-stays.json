@@ -1,0 +1,20 @@
+{
+ "description": "Even when its hash would hold it out.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "a",
+   "split": "train"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 1.0,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "train"
+  ]
+ }
+}

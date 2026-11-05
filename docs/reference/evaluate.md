@@ -21,14 +21,19 @@ evaluate(
     states=None,
     threads=None,
     progress=False,
+    repeats=1,
+    reuse=None,
+    criteria=None,
 )
 ```
 
 Run a program on rows with known answers, and score it.
 
 Every row runs (in parallel with ``num_threads``); a row that fails
-keeps its error and counts 0. The score comes with a 95% interval, and
-every answer is kept as a row of a table you can filter and group.
+keeps its error and counts 0. The score comes with a 95% interval over
+cases, and every answer is kept as a row of a table you can filter and
+group. Each call says which case it answered (its record's ``case``), so
+later evaluations can reuse it and comparisons pair by case.
 
 ## Parameters {.doc-section .doc-section-parameters}
 
@@ -38,23 +43,27 @@ every answer is kept as a row of a table you can filter and group.
 | data          | list of dict, or a table                             | The rows: a list of dicts, or anything ``dpyr.read()`` takes (a parquet or CSV path, a pandas or polars dataframe, a Hugging Face dataset). Columns named like the parameters are the inputs; a column named like an output (``result`` for the return value) is its expected answer, unless ``expected=`` names another; other columns are kept. | _required_ |
 | expected      | str or dict                                          | The column holding the right answers, when it isn't named like the output: ``expected="category"``. A dict names a column per output: ``{"result": "category", "order_id": "order"}``. The default metric is then exact match against these columns.                                                                                              | `None`     |
 | metric        | function, dpyr expression, AI function, list or dict | How to score a row: ``metric(row, prediction)`` returning a number or a bool, a dpyr expression over the table (``col.pred_result == col.result``), an AI function acting as a judge, or several of these in a list or a dict ``{name: metric}``. Default: exact match on the outputs the data has columns for (case and spacing ignored).        | `None`     |
+| criteria      | list of functai.Criterion                            | Questions with a judge (an AI function, a module or a function): each becomes a metric named like it, its ratings are kept in the call log (naming the judge by its setup), and a judgement already there for the same call and judge is reused. An item criterion judges each item of a list in the answer.                                      | `None`     |
+| repeats       | int                                                  | How many times each row is asked. A row's value is the mean of its repeats, and every range stays over cases; a repeat after the first is another replicate, so a reply cache gives it its own answer.                                                                                                                                            | `1`        |
+| reuse         | folder, store, list of records, or True              | Take results already in this log (True: the call log): calls of the same program on the same setup and case that ended without an error, oldest first, count as the first repeats; only the rest are asked. This evaluation's calls and ratings go to the same place.                                                                             | `None`     |
 | num_threads   | int                                                  | How many rows run at once (``threads`` is the same, by the name ``map`` and ``vectorize`` use).                                                                                                                                                                                                                                                   | `1`        |
 | threads       | int                                                  | How many rows run at once (``threads`` is the same, by the name ``map`` and ``vectorize`` use).                                                                                                                                                                                                                                                   | `1`        |
 | progress      | bool                                                 | A line on stderr, updated as rows finish (None: when stderr is a terminal or in a notebook). Off by default here.                                                                                                                                                                                                                                 | `False`    |
-| max_errors    | int                                                  | Stop and raise when more rows than this fail.                                                                                                                                                                                                                                                                                                     | `None`     |
+| max_errors    | int                                                  | Stop and raise when more runs than this fail.                                                                                                                                                                                                                                                                                                     | `None`     |
 | log           | folder                                               | Write the run's table to ``<log>/<run>.parquet``; ``runs(log)`` reads every logged run back.                                                                                                                                                                                                                                                      | `None`     |
 | call_defaults | dict                                                 | Arguments the rows don't have, for every call (a module's options).                                                                                                                                                                                                                                                                               | `None`     |
 
 ## Returns {.doc-section .doc-section-returns}
 
-| Name   | Type       | Description                                                                                                           |
-|--------|------------|-----------------------------------------------------------------------------------------------------------------------|
-|        | Evaluation | ``.score`` (the first metric's mean), ``.summary`` (each metric with its interval), ``.table`` (one row per example). |
+| Name   | Type       | Description                                                                                                       |
+|--------|------------|-------------------------------------------------------------------------------------------------------------------|
+|        | Evaluation | ``.score`` (the first metric's mean), ``.summary`` (each metric with its interval), ``.table`` (one row per run). |
 
 ## See Also {.doc-section .doc-section-see-also}
 
-- [`compare`](compare.md): two evaluations of the same rows, paired.
+- [`compare`](compare.md): two evaluations, paired by case.
 - [`Evaluation`](Evaluation.md): what this returns.
+- `functai.scoreboard`: every setup of a program, from the call log.
 
 ## Examples {.doc-section .doc-section-examples}
 

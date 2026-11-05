@@ -1,0 +1,27 @@
+{
+ "description": "Nine wins, three losses.",
+ "kind": "winrate",
+ "values": [
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  1,
+  0,
+  0,
+  0
+ ],
+ "margin": null,
+ "expect": {
+  "rate": 0.75,
+  "low": 0.4676946629183366,
+  "high": 0.9110583323051143,
+  "n": 12,
+  "outcome": "unclear",
+  "fragility": 6
+ }
+}

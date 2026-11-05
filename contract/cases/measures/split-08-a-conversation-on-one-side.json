@@ -1,0 +1,135 @@
+{
+ "description": "Rows of one conversation are on one side: the hash is of the conversation's id.",
+ "kind": "split",
+ "rows": [
+  {
+   "q": "turn 0",
+   "conversation": "c-0"
+  },
+  {
+   "q": "turn 1",
+   "conversation": "c-0"
+  },
+  {
+   "q": "turn 2",
+   "conversation": "c-0"
+  },
+  {
+   "q": "turn 3",
+   "conversation": "c-0"
+  },
+  {
+   "q": "turn 4",
+   "conversation": "c-1"
+  },
+  {
+   "q": "turn 5",
+   "conversation": "c-1"
+  },
+  {
+   "q": "turn 6",
+   "conversation": "c-1"
+  },
+  {
+   "q": "turn 7",
+   "conversation": "c-1"
+  },
+  {
+   "q": "turn 8",
+   "conversation": "c-2"
+  },
+  {
+   "q": "turn 9",
+   "conversation": "c-2"
+  },
+  {
+   "q": "turn 10",
+   "conversation": "c-2"
+  },
+  {
+   "q": "turn 11",
+   "conversation": "c-2"
+  },
+  {
+   "q": "turn 12",
+   "conversation": "c-3"
+  },
+  {
+   "q": "turn 13",
+   "conversation": "c-3"
+  },
+  {
+   "q": "turn 14",
+   "conversation": "c-3"
+  },
+  {
+   "q": "turn 15",
+   "conversation": "c-3"
+  },
+  {
+   "q": "turn 16",
+   "conversation": "c-4"
+  },
+  {
+   "q": "turn 17",
+   "conversation": "c-4"
+  },
+  {
+   "q": "turn 18",
+   "conversation": "c-4"
+  },
+  {
+   "q": "turn 19",
+   "conversation": "c-4"
+  },
+  {
+   "q": "turn 20",
+   "conversation": "c-5"
+  },
+  {
+   "q": "turn 21",
+   "conversation": "c-5"
+  },
+  {
+   "q": "turn 22",
+   "conversation": "c-5"
+  },
+  {
+   "q": "turn 23",
+   "conversation": "c-5"
+  }
+ ],
+ "inputs": [
+  "q"
+ ],
+ "share": 0.4,
+ "salt": "",
+ "expect": {
+  "splits": [
+   "held_out",
+   "held_out",
+   "held_out",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "train",
+   "held_out",
+   "held_out",
+   "held_out",
+   "held_out",
+   "train",
+   "train",
+   "train",
+   "train"
+  ]
+ }
+}

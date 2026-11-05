@@ -1,0 +1,429 @@
+{
+ "description": "A judge shown each pair both ways: how often it picked the same answer both times, and how often the first shown won.",
+ "kind": "positions",
+ "records": [
+  {
+   "functai_call": 2,
+   "id": "01926c00-0001-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0001-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:01:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "A"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:84c0a94e38076c5b0ae792395a2c241d7bf76a20ffeb097796c282dbbd4d67d0"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0002-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0002-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:02:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site0.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "B"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:84c0a94e38076c5b0ae792395a2c241d7bf76a20ffeb097796c282dbbd4d67d0"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0003-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0003-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:03:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site1.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "C"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:e9b7f739052a88e08a0160db1d1e4ac4a01e6ba8f22b6c4dcf3119c9e7f2afcc"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0004-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0004-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:04:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site1.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "D"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:e9b7f739052a88e08a0160db1d1e4ac4a01e6ba8f22b6c4dcf3119c9e7f2afcc"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0005-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0005-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+   },
+   "started": "2026-11-05T10:05:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site2.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "E"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:5f00c1b820edb30094784e7953ef0b4422d929c4536c7b969031b5b928e02800"
+  },
+  {
+   "functai_call": 2,
+   "id": "01926c00-0006-7000-8000-000000000000",
+   "parent": null,
+   "root": "01926c00-0006-7000-8000-000000000000",
+   "program": {
+    "name": "study",
+    "kind": "module",
+    "module": "groups.demo",
+    "version": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    "interface": "sha256:9999999999999999999999999999999999999999999999999999999999999999",
+    "answer": "result",
+    "setup": "sha256:b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2b2"
+   },
+   "started": "2026-11-05T10:06:00.000000Z",
+   "seconds": 2.0,
+   "content": true,
+   "inputs": {
+    "url": "https://site2.example"
+   },
+   "outputs": {
+    "insights": [
+     {
+      "title": "F"
+     }
+    ]
+   },
+   "sizes": {
+    "inputs": {
+     "url": 23
+    },
+    "outputs": {
+     "insights": 15
+    }
+   },
+   "error": null,
+   "model": null,
+   "usage": {},
+   "confidence": null,
+   "exchanges": [],
+   "saw": [],
+   "caller": {},
+   "process": {
+    "host": "lambda",
+    "pid": 7,
+    "user": "maxime",
+    "language": "python",
+    "runtime": "3.13.1",
+    "functai": "1.3.0"
+   },
+   "case": "sha256:5f00c1b820edb30094784e7953ef0b4422d929c4536c7b969031b5b928e02800"
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0001-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0001-7000-8000-000000000000",
+    "01926c00-0002-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "01926c00-0001-7000-8000-000000000000",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0002-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0002-7000-8000-000000000000",
+    "01926c00-0001-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "01926c00-0002-7000-8000-000000000000",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0003-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0003-7000-8000-000000000000",
+    "01926c00-0004-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "01926c00-0004-7000-8000-000000000000",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0004-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0004-7000-8000-000000000000",
+    "01926c00-0003-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "01926c00-0004-7000-8000-000000000000",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0005-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0005-7000-8000-000000000000",
+    "01926c00-0006-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "tie",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  },
+  {
+   "functai_rating": 2,
+   "id": "01926c10-0006-7000-8000-000000000000",
+   "at": "2026-11-05T10:09:00.000000Z",
+   "calls": [
+    "01926c00-0006-7000-8000-000000000000",
+    "01926c00-0005-7000-8000-000000000000"
+   ],
+   "criterion": "preferred",
+   "kind": "choice",
+   "value": "tie",
+   "judge": {
+    "name": "professor",
+    "setup": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4"
+   }
+  }
+ ],
+ "criterion": {
+  "name": "preferred",
+  "kind": "choice"
+ },
+ "judge": "sha256:d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4d4",
+ "expect": {
+  "pairs": 3,
+  "consistent": 0.6666666666666666,
+  "consistent_low": 0.2076595988078242,
+  "consistent_high": 0.9385080559790691,
+  "picks": 4,
+  "first_wins": 0.75,
+  "first_low": 0.3006418400969081,
+  "first_high": 0.954412739704631
+ }
+}
