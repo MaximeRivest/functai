@@ -17,6 +17,11 @@ Training models stays in Python (*Not here yet* in the README).
   setup and its results are measured apart. Contract: calls.md *Code the
   language cannot read*, case `setup/12`.
 
+- `callKey` (a call's case: its `case`, or the key of its recorded inputs),
+  `judgement` (a rating record read as the contract reads it) and
+  `counting` (the ratings that count under a criterion) are exported, for
+  hosts that keep records in a database of their own.
+
 ### Measures: cases, results, ratings, honest numbers
 
 The same model and numbers as Python's (design/20; contract measures.md;

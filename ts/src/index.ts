@@ -57,7 +57,7 @@ export { compare, type Comparison } from "./compare.ts";
 export {
   criterion, correct, preferred, caseKey, splitOf, draw, scoreboard, Scoreboard, compareSetups, winRate, rank, agreement, positions,
   selfAgreement, disagreements, measure, judge, judgePairs, prefer, shownOrder, asCase, MeasureError, paired, winRateOf, ppi, ppiPaired,
-  bradleyTerry, fragility, outcome,
+  bradleyTerry, fragility, outcome, callKey, judgement, counting,
   type Criterion, type CriterionKind, type Judge, type JudgeArgs, type Judgement, type Paired, type WinRate, type Combined, type Agreement,
   type Positions, type SelfAgreement, type Ranking, type RankOutcome, type Measure, type BoardGroup, type Disagreement, type Outcome as MeasureOutcome,
   type RecordsOptions, type ProgramKey,
