@@ -196,6 +196,33 @@ Only `support` appears: `topic` and `answer` are inside it. Locally,
 `support.stream(...).events(view="outside")` shows exactly what a caller
 gets (see [Watch it being written](streaming.md#what-a-caller-may-see)).
 
+### Showing callers more
+
+When the callers are you, your own page, or a team you trust as yourself,
+choose what they see with `view`:
+
+```{.python .no-run}
+functai.serve(assistant, view="full", keys=[KEY])    # everything you see
+functai.serve(assistant, view="kept", keys=[KEY])    # what your log keeps (log_content)
+functai.serve(assistant, view=functai.views.Custom(  # your own: the answer and the model's thinking
+    shows=lambda e: e if e["kind"] in ("text", "thinking") else None), keys=[KEY])
+```
+
+`"full"` sends every event with its values: the model's thinking, tool
+calls and their results, the helpers' calls, the model's stream as lm15
+sent it (`piece`: citations, why the reply stopped, what it used), and an
+error's message; `/call` also returns the outputs FunctAI adds (a
+`reasoning`). A conversation's events are read back from its store,
+which keeps what your log keeps: there, `"full"` is `"kept"`. From the
+command line: `functai serve saved/ --view full`. `GET /interface` says
+which view callers get.
+
+The default stays `"outside"` because a served program's callers are
+usually not you: a page in a customer's browser shows everything it is
+sent to anyone who opens the browser's developer tools, and the model's
+thinking or a tool's result can quote your instructions or another
+customer's data. Opening up is one setting; a leak cannot be taken back.
+
 ## Conversations
 
 A conversation is addressed by an id; each `POST` is a turn, recorded

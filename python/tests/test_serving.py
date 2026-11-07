@@ -268,3 +268,93 @@ def test_a_served_ai_function_with_lmcc_keywords_is_remote_too(fake):
         assert remote("order B-1") == {"code": "B-1"}
     finally:
         server.shutdown()
+
+
+# ------------------------------------------------------------------ what callers see (serving.md, *What callers see*)
+
+
+@ai
+def mood(review: str) -> str:
+    """How does the customer feel?"""
+
+
+@pytest.fixture
+def thinker(fake):
+    """A model that thinks before it answers (its thinking comes as its own channel, as Claude's does)."""
+    return fake(responder=lambda req: [lm15.ThinkingPart("They sound pleased."), lm15.TextPart(XML.format("happy"))])
+
+
+def kinds(events):
+    return sorted({e["kind"] for _i, e in events})
+
+
+def test_callers_see_the_outside_view_unless_the_owner_chooses_another(thinker):
+    svc = Service(mood)
+    assert json.loads(svc.handle("GET", "/interface", {}).body)["view"] == "outside"
+    events = sse(svc.handle("POST", "/stream", {}, b'{"inputs": {"review": "Lovely."}}').body)
+    assert kinds(events) == ["done", "request", "started", "text"]               # no thinking, no model stream
+    thinker.responder = lambda req: RuntimeError("the key sk-SECRET was refused")
+    r = svc.handle("POST", "/call", {}, b'{"inputs": {"review": "x"}}')
+    assert r.status == 500 and b"SECRET" not in r.body
+
+
+def test_view_full_shows_callers_everything_the_owner_sees(thinker):
+    svc = Service(mood, view="full")
+    assert svc.describe()["view"] == "full"
+    events = [e for _i, e in sse(svc.handle("POST", "/stream", {}, b'{"inputs": {"review": "Lovely."}}').body)]
+    assert sorted({e["kind"] for e in events}) == ["done", "piece", "request", "started", "text", "thinking"]
+    assert "".join(e["text"] for e in events if e["kind"] == "thinking") == "They sound pleased."
+    assert [e["lm15"]["type"] for e in events if e["kind"] == "piece"] == ["start", "end"]
+    assert events[-2]["lm15"]["finish_reason"] == "stop"                     # why the reply stopped, as lm15 said it
+
+    reasoned = mood.using(module="cot")
+    thinker.responder = lambda req: "<reasoning>\nThey say lovely.\n</reasoning>\n" + XML.format("happy")
+    got = json.loads(Service(reasoned, view="full").handle("POST", "/call", {}, b'{"inputs": {"review": "x"}}').body)
+    assert got["outputs"] == {"reasoning": "They say lovely.", "result": "happy"}
+    got = json.loads(Service(reasoned).handle("POST", "/call", {}, b'{"inputs": {"review": "x"}}').body)
+    assert got["outputs"] == {"result": "happy"}                             # outside: the interface's outputs
+
+    thinker.responder = lambda req: RuntimeError("the key sk-SECRET was refused")
+    r = svc.handle("POST", "/call", {}, b'{"inputs": {"review": "x"}}')
+    assert r.status == 500 and "sk-SECRET was refused" in json.loads(r.body)["error"]["message"]
+
+
+def test_view_kept_shows_what_the_owners_log_keeps(thinker):
+    private = mood.using(log_content={"review": False})
+    events = sse(Service(private, view="kept").handle("POST", "/stream", {}, b'{"inputs": {"review": "hunter2"}}').body)
+    assert kinds(events) == ["done", "request", "started", "text"]               # not whole: no thinking, no piece
+    assert "hunter2" not in json.dumps(events)
+    events = sse(Service(mood, view="kept").handle("POST", "/stream", {}, b'{"inputs": {"review": "Lovely."}}').body)
+    assert "thinking" in kinds(events) and "piece" in kinds(events)
+
+
+def test_a_view_of_the_owners_own(thinker):
+    own = views.Custom(calls=lambda s: s["parent"] is None,
+                       shows=lambda e: e if e["kind"] in ("thinking", "text") else None)
+    svc = Service(mood, view=own)
+    assert svc.describe()["view"] == "own"
+    events = [e for _i, e in sse(svc.handle("POST", "/stream", {}, b'{"inputs": {"review": "Lovely."}}').body)]
+    assert sorted({e["kind"] for e in events}) == ["done", "request", "started", "text", "thinking"]
+    assert events[0]["after"] is None and all(b["after"] == {"writer": a["writer"], "seq": a["seq"]}
+                                              for a, b in zip(events, events[1:]))
+    plain = Service(mood, view=lambda e: None if e["kind"] == "piece" else e)        # a function: its shows
+    assert "piece" not in kinds(sse(plain.handle("POST", "/stream", {}, b'{"inputs": {"review": "x"}}').body))
+    for bad in ("everything", 3, views.View):
+        with pytest.raises(TypeError, match="callers see a view"):
+            Service(mood, view=bad if bad is not views.View else object())
+    with pytest.raises(TypeError, match="a function"):
+        views.Custom(shows="thinking")
+
+
+def test_a_turns_events_come_from_the_stores_kept_form(thinker, tmp_path):
+    seen = {}
+    for name, view in [("outside", "outside"), ("full", "full"),
+                       ("own", views.Custom(shows=lambda e: None if e["kind"] == "piece" else e))]:
+        svc = Service(mood, store=tmp_path / name, view=view)
+        turn = json.loads(svc.handle("POST", "/conversations/c1/turns", {}, json.dumps(
+            {"inputs": {"review": "Lovely."}, "wait": True}).encode()).body)
+        assert turn["state"] == "done"
+        seen[name] = kinds(sse(svc.handle("GET", f"/conversations/c1/turns/{turn['turn']}/events", {}).body))
+    assert seen["outside"] == ["done", "request", "started", "text"]
+    assert seen["full"] == ["done", "piece", "request", "started", "text", "thinking"]
+    assert seen["own"] == ["done", "request", "started", "text", "thinking"]

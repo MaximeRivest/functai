@@ -5,10 +5,13 @@
 
     functai serve team/ --lm gpt-4.1-mini --keys keys.txt --port 8080     # the same, from a saved folder
 
-What a caller sees is the program's boundary (the ``outside`` view): its
-answer, its answer's text as it is written, approvals addressed to it, and
-its end; never a helper's answer, a tool's input or output, a thinking, or
-an error's message. The owner watches everything in their own log.
+What a caller sees is, by default, the program's boundary (the ``outside``
+view): its answer, its answer's text as it is written, approvals addressed
+to it, and its end; never a helper's answer, a tool's input or output, a
+thinking, or an error's message. The owner watches everything in their own
+log, and chooses what callers they trust see (``view``)::
+
+    functai.serve(assistant, view="full")    # thinking, tools, the model's stream, error messages
 
 Routes (JSON in, JSON out; ``Authorization: Bearer <key>`` when the service
 has keys):
@@ -16,7 +19,7 @@ has keys):
 - ``GET /interface``: the program, described (``{"functai_interface": 1, …}``);
 - ``GET /openapi.json``: the same as OpenAPI 3.1; ``GET /``: a form;
 - ``POST /call`` ``{"inputs": {…}}``: ``{"call", "outputs", "value"}``;
-- ``POST /stream`` ``{"inputs": {…}}``: Server-Sent Events of the outside view;
+- ``POST /stream`` ``{"inputs": {…}}``: Server-Sent Events of the callers' view;
 - ``POST /conversations/<id>/turns`` ``{"inputs", "request_id"?, "after"?, "wait"?}``:
   a turn, saved before it runs (``{"turn", "parent", "state"}``);
 - ``GET /conversations/<id>/turns``, ``GET /conversations/<id>/turns/<turn>``;
@@ -129,12 +132,21 @@ class Service:
         Who answers a tool call the program's ``approve`` rule asks about:
         the owner (in their own process; the caller sees the turn waiting),
         or the caller, through the approvals route.
+    view : "outside", "kept", "full", or a view of your own
+        What callers see (contract/serving.md, *What callers see*):
+        ``"outside"`` (the default: the program's boundary), ``"kept"``
+        (what your log keeps), ``"full"`` (every event and value: thinking,
+        tool calls and results, helpers, the model's stream, the outputs
+        FunctAI adds, an error's message), or ``views.Custom(calls=...,
+        shows=...)``. Choose more than ``"outside"`` only for callers you
+        trust as yourself: what the model thought, a tool's result or the
+        prompt can hold what others must not see.
     trust : bool
         For a saved folder that runs code: load it (``functai.load(trust=True)``).
     '''
 
     def __init__(self, program: Any, *, keys: Any = None, store: Any = None, lm: Optional[str] = None,
-                 approvals: str = "owner", trust: bool = False):
+                 approvals: str = "owner", view: Any = "outside", trust: bool = False):
         if isinstance(program, (str, os.PathLike)):
             from .saved import load
             program = load(program, trust=trust)
@@ -150,6 +162,12 @@ class Service:
                                              f"{'them' if len(opaque) > 1 else 'it'} a type")
         if approvals not in ("owner", "caller"):
             raise ValueError(f"approvals go to 'owner' or 'caller', not {approvals!r}")
+        from .views import as_view
+        try:
+            self.view = as_view(view)
+        except TypeError:
+            raise TypeError(f"callers see a view: 'outside', 'kept', 'full', a views.Custom or a function; "
+                            f"not {view!r}") from None
         self.program = program if lm is None else _with_lm(program, lm)
         self.keys = _keys(keys)
         self.store = store
@@ -164,7 +182,13 @@ class Service:
         info = calllog.program_info(self.program)
         return {"functai_interface": FORMAT, "name": self.program.__name__, "kind": info["kind"],
                 "version": info["version"], "interface": self.program.interface, "answer": info["answer"],
-                "model": self.lm, "approvals": self.approvals}
+                "model": self.lm, "approvals": self.approvals,
+                "view": self.view if isinstance(self.view, str) else "own"}
+
+    @property
+    def _full(self) -> bool:
+        """Whether callers see everything (``view="full"``): an error's message, the outputs FunctAI adds."""
+        return isinstance(self.view, str) and self.view == "full"
 
     def openapi(self) -> Dict[str, Any]:
         iface = self.program.interface
@@ -239,14 +263,14 @@ class Service:
         except json.JSONDecodeError:
             return _json(400, {"error": {"type": "BadRequest", "message": "the body is not JSON"}})
         except InterfaceError as exc:
-            return _error(422, exc, message=exc.code == "interface-input")
+            return _error(422, exc, message=exc.code == "interface-input" or self._full)
         except ConversationError as exc:
             status = {"turn-unknown": 404, "conversation-id": 400, "conversation-busy": 409}.get(exc.code, 409)
             return _error(status, exc, message=True)
         except FunctAIError as exc:
-            return _error(409, exc)
-        except Exception as exc:  # noqa: BLE001 — the caller sees the type, never the message (outside view)
-            return _error(500, exc)
+            return _error(409, exc, message=self._full)
+        except Exception as exc:  # noqa: BLE001 — the type; the message only to callers who see everything
+            return _error(500, exc, message=self._full)
 
     def _inputs(self, data: Mapping[str, Any]) -> Dict[str, Any]:
         """The request's inputs, checked against the program's interface before
@@ -275,7 +299,8 @@ class Service:
                 p = self.program.predict(**inputs)
                 value = p.get(self.program._spec().main)
                 call_id = p.call_id
-                outputs = {k: v for k, v in p.items() if k in {f["name"] for f in self.program.interface["outputs"]}}
+                names = {f["name"] for f in self.program.interface["outputs"]}
+                outputs = {k: v for k, v in p.items() if self._full or k in names}   # full: reasoning, calls too
             else:
                 holder: List[str] = []
                 value = _run_module(self.program, inputs, holder)
@@ -291,8 +316,10 @@ class Service:
         inputs = self._inputs(data)
         with self._context(parent):
             s = self.program.stream(**inputs)
-        return Response(200, self._events(s.events(view="outside"), s), {"content-type": "text/event-stream",
-                                                                          "cache-control": "no-cache"})
+        # live from this process: the whole form for "full", as the contract's JSON
+        events = (e.to_dict() for e in s.events()) if self._full else s.events(view=self.view)
+        return Response(200, self._events(events, s), {"content-type": "text/event-stream",
+                                                       "cache-control": "no-cache"})
 
     def _events(self, events: Iterable[Mapping[str, Any]], s: Any = None) -> Iterator[bytes]:
         try:
@@ -317,13 +344,13 @@ class Service:
         out: Dict[str, Any] = {"turn": t.id, "parent": t.parent, "state": t.state, "inputs": t.inputs}
         if t.state == "done":
             out["outputs"] = {k: v for k, v in t.outputs.items()
-                              if k in {f["name"] for f in self.program.interface["outputs"]}}
+                              if self._full or k in {f["name"] for f in self.program.interface["outputs"]}}
             out["value"] = calllog.to_json(t.result)[0]
         if t.state == "waiting" and self.approvals == "caller":
             out["waiting"] = [{"invocation": a.invocation, "name": a.name, "input": calllog.to_json(a.input)[0],
                                "path": a.path} for a in t.waiting]
         if t.error:
-            out["error"] = {k: v for k, v in t.error.items() if k in ("type", "code")}
+            out["error"] = {k: v for k, v in t.error.items() if k in ("type", "code") or (self._full and k == "message")}
         return out
 
     def _conversation(self, method: str, cid: str, rest: List[str], data: Mapping[str, Any],
@@ -351,7 +378,7 @@ class Service:
             return _json(200, self._turn_json(turn))
         if method == "GET" and rest[1:] == ["events"]:
             after = parse_position(headers.get("last-event-id"))
-            return Response(200, self._events(turn.events(after, view="outside")),
+            return Response(200, self._events(turn.events(after, view=self.view)),   # from the store: full is kept
                             {"content-type": "text/event-stream", "cache-control": "no-cache"})
         if method == "POST" and rest[1:] == ["stop"]:
             turn.stop()
@@ -564,9 +591,11 @@ def _with_lm(program: Any, lm: str) -> Any:
 
 
 def serve(program: Any, *, host: str = "127.0.0.1", port: int = 8080, keys: Any = None, store: Any = None,
-          lm: Optional[str] = None, approvals: str = "owner", trust: bool = False, block: bool = True) -> Any:
+          lm: Optional[str] = None, approvals: str = "owner", view: Any = "outside", trust: bool = False,
+          block: bool = True) -> Any:
     '''Serve a program over HTTP: its interface, calls, streams and
-    conversations, to callers who see only its boundary.
+    conversations, to callers who see only its boundary (or what ``view``
+    lets them see).
 
     Parameters
     ----------
@@ -579,6 +608,9 @@ def serve(program: Any, *, host: str = "127.0.0.1", port: int = 8080, keys: Any 
     lm : str, optional
         The model every call uses.
     approvals : "owner" or "caller"
+    view : "outside" (default), "kept", "full", or a view of your own
+        What callers see (``Service``). More than ``"outside"`` only for
+        callers you trust as yourself.
     block : bool
         False: serve in a background thread and return the server
         (``server.shutdown()`` stops it).
@@ -592,7 +624,7 @@ def serve(program: Any, *, host: str = "127.0.0.1", port: int = 8080, keys: Any 
     remote : a served program, used like a local one.
     Service : the same, to mount in another app (``Service(...).asgi``).
     '''
-    return Service(program, keys=keys, store=store, lm=lm, approvals=approvals, trust=trust).serve(
+    return Service(program, keys=keys, store=store, lm=lm, approvals=approvals, view=view, trust=trust).serve(
         host, port, block=block)
 
 

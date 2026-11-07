@@ -10,26 +10,29 @@ serve(
     store=None,
     lm=None,
     approvals='owner',
+    view='outside',
     trust=False,
     block=True,
 )
 ```
 
 Serve a program over HTTP: its interface, calls, streams and
-conversations, to callers who see only its boundary.
+conversations, to callers who see only its boundary (or what ``view``
+lets them see).
 
 ## Parameters {.doc-section .doc-section-parameters}
 
-| Name      | Type                                               | Description                                                                                 | Default       |
-|-----------|----------------------------------------------------|---------------------------------------------------------------------------------------------|---------------|
-| program   | AI function, module, or saved folder               |                                                                                             | _required_    |
-| host      | where to listen. Without ``keys``, only 127.0.0.1. |                                                                                             | `'127.0.0.1'` |
-| port      | where to listen. Without ``keys``, only 127.0.0.1. |                                                                                             | `'127.0.0.1'` |
-| keys      | list, str or file of keys                          | Callers send ``Authorization: Bearer <key>``.                                               | `None`        |
-| store     | optional                                           | Where conversations are kept (default: this process's memory).                              | `None`        |
-| lm        | str                                                | The model every call uses.                                                                  | `None`        |
-| approvals | \'owner\' or \'caller\'                            |                                                                                             | `'owner'`     |
-| block     | bool                                               | False: serve in a background thread and return the server (``server.shutdown()`` stops it). | `True`        |
+| Name      | Type                                                             | Description                                                                                     | Default       |
+|-----------|------------------------------------------------------------------|-------------------------------------------------------------------------------------------------|---------------|
+| program   | AI function, module, or saved folder                             |                                                                                                 | _required_    |
+| host      | where to listen. Without ``keys``, only 127.0.0.1.               |                                                                                                 | `'127.0.0.1'` |
+| port      | where to listen. Without ``keys``, only 127.0.0.1.               |                                                                                                 | `'127.0.0.1'` |
+| keys      | list, str or file of keys                                        | Callers send ``Authorization: Bearer <key>``.                                                   | `None`        |
+| store     | optional                                                         | Where conversations are kept (default: this process's memory).                                  | `None`        |
+| lm        | str                                                              | The model every call uses.                                                                      | `None`        |
+| approvals | \'owner\' or \'caller\'                                          |                                                                                                 | `'owner'`     |
+| view      | \"outside\" (default), \"kept\", \"full\", or a view of your own | What callers see (``Service``). More than ``"outside"`` only for callers you trust as yourself. | `'outside'`   |
+| block     | bool                                                             | False: serve in a background thread and return the server (``server.shutdown()`` stops it).     | `True`        |
 
 ## Returns {.doc-section .doc-section-returns}
 

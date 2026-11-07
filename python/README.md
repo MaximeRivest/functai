@@ -250,8 +250,11 @@ browse = agent.using(max_steps=200, plugins=[functai.keep_pictures(3),
 ```
 
 A program is served with `functai serve saved/ --keys keys.txt` (or
-`functai.serve(program)`), to callers who see only its boundary; on
-their side, `functai.remote(url, key=...)` is a program again. Replies
+`functai.serve(program)`), to callers who see only its boundary, unless
+you choose to show them more (`view="full"`: the model's thinking, tools,
+its stream as lm15 sent it, error messages; `view="kept"`; or a
+`functai.views.Custom` of your own); on their side,
+`functai.remote(url, key=...)` is a program again. Replies
 can be kept on disk (`configure(cache_replies="disk")`), so a long
 `fn.map(rows, threads=8)` resumes by being run again. Rated turns become
 rows that keep their earlier turns (`functai.rated`), for `evaluate` and

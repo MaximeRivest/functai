@@ -655,7 +655,7 @@ def test_an_observer_set_by_configure_goes_on_in_a_forked_child(tmp_path):
         if pid == 0:
             n = len(seen)
             echo("child"); functai.flush(5)
-            os._exit(0 if len(seen) - n == 4 else 1)
+            os._exit(0 if len(seen) - n == 6 else 1)    # started, request, its stream's start, text, its end, done
         _, status = os.waitpid(pid, 0)
         sys.exit(os.waitstatus_to_exitcode(status))
         '''))

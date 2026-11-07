@@ -55,11 +55,12 @@ from typing import (Any, Callable, Deque, Dict, Iterable, List, Literal, Optiona
 from .errors import EventRefused, JournalError
 
 FORMAT = 2
-KINDS = ("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed",
+KINDS = ("started", "request", "text", "thinking", "piece", "tool_call", "tool_result", "retry", "done", "failed",
          "approval", "approved", "note", "later")
 ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 KEYS = {"started": ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"),
         "request": ("request", "model"), "text": ("field", "answer", "text"), "thinking": ("text",),
+        "piece": ("lm15",),                           # the model's stream, as lm15 wrote it (streaming.md, *Pieces*)
         "tool_call": ("id", "name", "input", "content", "invocation"),
         "tool_result": ("id", "name", "output", "parts", "content", "invocation"),
         "retry": ("reason", "wait", "content"), "done": ("value", "content"), "failed": ("error", "content"),
@@ -247,7 +248,7 @@ def kept_event(event: Mapping[str, Any], keep: Mapping[str, Mapping[str, bool]],
         return out
     if kind == "text":
         return out if outs.get(event["field"], False) else None
-    if kind == "thinking":
+    if kind in ("thinking", "piece"):
         return None
     if kind in ("tool_call", "approval"):
         out.pop("input", None)
@@ -1132,6 +1133,13 @@ def flush(timeout: Optional[float] = 5.0) -> bool:
     for feed in list(_feeds.values()):
         done = feed.wait(left()) and done
     return done
+
+
+def drained(observer: Any, timeout: Optional[float] = 5.0) -> bool:
+    """Wait (at most ``timeout`` seconds) until ``observer`` has been given
+    every event made so far: ``flush``, for one observer. True when it was."""
+    feed = _feeds.get(id(observer))
+    return True if feed is None or feed.observer is not observer else feed.wait(timeout)
 
 
 def drain(timeout: float = 5.0) -> bool:

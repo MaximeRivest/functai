@@ -7,10 +7,15 @@
  * export default { fetch: service.fetch };                      // Deno, Bun, Cloudflare Workers, Hono, a Next.js route
  * ```
  *
- * What a caller sees is the program's boundary (the `outside` view): its
- * answer, its answer's text as it is written, approvals addressed to it, and
- * its end; never a helper's answer, a tool's input or output, a thinking, or
- * an error's message. The owner watches everything in their own log.
+ * What a caller sees is, by default, the program's boundary (the `outside`
+ * view): its answer, its answer's text as it is written, approvals addressed
+ * to it, and its end; never a helper's answer, a tool's input or output, a
+ * thinking, or an error's message. The owner watches everything in their own
+ * log, and chooses what callers they trust see (`view`):
+ *
+ * ```ts
+ * await serve(assistant, { view: "full" });   // thinking, tools, the model's stream, error messages
+ * ```
  *
  * Routes (JSON in, JSON out; `Authorization: Bearer <key>` when the service
  * has keys): `GET /interface`, `GET /openapi.json`, `GET /` (a form),
@@ -32,8 +37,9 @@ import { withSettings, type Settings } from "./settings.ts";
 import { APPROVALS_TO } from "./tools.ts";
 import { parseData, toJson, writeData } from "./values.ts";
 import type { Conversation, ConversationOptions, Turn, TurnStream } from "./conversations.ts";
-import type { Stream } from "./stream.ts";
+import { isView, type Stream, type View } from "./stream.ts";
 import type { Interface } from "./interface.ts";
+import type { ViewName } from "./views.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -72,13 +78,22 @@ export interface ServeOptions {
   lm?: string | null;
   /** Who answers a tool call the program's `approve` rule asks about: the owner (in their own process), or the caller, through the approvals route. */
   approvals?: "owner" | "caller";
+  /**
+   * What callers see (contract/serving.md, *What callers see*): `"outside"` (the default:
+   * the program's boundary), `"kept"` (what your log keeps), `"full"` (every event and
+   * value: thinking, tool calls and results, helpers, the model's stream, the outputs
+   * FunctAI adds, an error's message), or a view of your own (`{ calls?, shows? }`).
+   * Choose more than `"outside"` only for callers you trust as yourself: what the model
+   * thought, a tool's result or the prompt can hold what others must not see.
+   */
+  view?: ViewName | View;
 }
 
 const enc = new TextEncoder();
 const json = (status: number, data: unknown, headers: Record<string, string> = {}): Response =>
   new Response(writeData(data), { status, headers: { "content-type": "application/json", ...headers } });
 
-function errorResponse(status: number, err: unknown, message = false): Response {
+function errorResponse(status: number, err: unknown, message: boolean): Response {
   const e = err as { name?: string; code?: unknown; field?: unknown; message?: string };
   const out: Rec = { type: e?.name ?? "Error" };
   if (typeof e?.code === "string") out["code"] = e.code;
@@ -150,6 +165,8 @@ export class Service {
   readonly store: ConversationOptions["store"];
   readonly lm: string | null;
   readonly approvals: "owner" | "caller";
+  /** What callers see: a named view, or the owner's own. */
+  readonly view: ViewName | View;
   private readonly conversations = new Map<string, Conversation>();
 
   constructor(servable: Servable, opts: ServeOptions = {}) {
@@ -166,14 +183,22 @@ export class Service {
     this.store = opts.store ?? null;
     this.lm = opts.lm ?? null;
     this.approvals = approvals;
+    const view = opts.view ?? "outside";
+    if (!isView(view)) throw new TypeError(`callers see a view: "outside", "kept", "full" or { calls?, shows? }; not ${JSON.stringify(view)}`);
+    this.view = view;
     this.fetch = this.fetch.bind(this);
   }
 
-  /** The program, described: `{ functai_interface: 1, name, kind, version, interface, answer, model, approvals }`. */
+  /** The program, described: `{ functai_interface: 1, name, kind, version, interface, answer, model, approvals, view }`. */
   describe(): Rec {
     const info = this.program._programInfo();
     return { functai_interface: FORMAT, name: this.program.name, kind: info.kind, version: info.version, interface: this.program.interface,
-      answer: info.answer, model: this.lm, approvals: this.approvals };
+      answer: info.answer, model: this.lm, approvals: this.approvals, view: typeof this.view === "string" ? this.view : "own" };
+  }
+
+  /** Whether callers see everything (`view: "full"`): an error's message, the outputs FunctAI adds. */
+  private get full(): boolean {
+    return this.view === "full";
   }
 
   /** The same, as OpenAPI 3.1. */
@@ -252,13 +277,13 @@ export class Service {
       }
       return json(404, { error: { type: "NotFound" } });
     } catch (err) {
-      if (err instanceof InterfaceError) return errorResponse(422, err, err.code === "interface-input");
+      if (err instanceof InterfaceError) return errorResponse(422, err, err.code === "interface-input" || this.full);
       if (err instanceof ConversationError) {
         const status = ({ "turn-unknown": 404, "conversation-id": 400, "conversation-busy": 409 } as Record<string, number>)[err.code] ?? 409;
         return errorResponse(status, err, true);
       }
-      if (err instanceof FunctAIError) return errorResponse(409, err);
-      return errorResponse(500, err);                        // the type, never the message (outside view)
+      if (err instanceof FunctAIError) return errorResponse(409, err, this.full);
+      return errorResponse(500, err, this.full);             // the type; the message only to callers who see everything
     }
   }
 
@@ -286,7 +311,8 @@ export class Service {
     let outputs: Rec;
     if (prediction) {
       const p = await prediction;
-      outputs = Object.fromEntries(names.filter((n) => Object.hasOwn(p.outputs, n)).map((n) => [n, toJson(p.outputs[n])[0]]));
+      const shown = this.full ? Object.keys(p.outputs) : names.filter((n) => Object.hasOwn(p.outputs, n));   // full: reasoning, calls too
+      outputs = Object.fromEntries(shown.map((n) => [n, toJson(p.outputs[n])[0]]));
     } else outputs = names.length === 1 ? { [names[0]!]: toJson(value)[0] } : Object.fromEntries(names.map((n) => [n, toJson((value as Rec)?.[n])[0]]));
     return json(200, { call: s.callId, outputs, value: toJson(value)[0] });
   }
@@ -295,7 +321,9 @@ export class Service {
     const inputs = this.inputs(data);
     const s = this.scope(parent, () => this.program.stream(inputs, { signal }));
     s.result.catch(() => undefined);
-    return eventStream(s.events({ view: "outside" }) as unknown as AsyncIterable<Rec>, () => s.close());
+    // live from this process: the whole form for "full", the kept form for "kept", a view made from the whole form otherwise
+    const events = this.view === "full" ? s.events() : this.view === "kept" ? s.events({ form: "kept" }) : s.events({ view: this.view });
+    return eventStream(events as unknown as AsyncIterable<Rec>, () => s.close());
   }
 
   /** The conversation of this id (as the program's, in this service's store). */
@@ -313,13 +341,13 @@ export class Service {
     const names = new Set(this.program.interface.outputs.map((f) => f.name));
     const out: Rec = { turn: t.id, parent: t.parent, state: t.state, inputs: t.inputs };
     if (t.state === "done") {
-      out["outputs"] = Object.fromEntries(Object.entries(t.outputs).filter(([k]) => names.has(k)));
+      out["outputs"] = Object.fromEntries(Object.entries(t.outputs).filter(([k]) => this.full || names.has(k)));
       out["value"] = toJson(t.result)[0];
     }
     if (t.state === "waiting" && this.approvals === "caller") {
       out["waiting"] = t.waiting.map((a) => ({ invocation: a.invocation, name: a.name, input: toJson(a.input)[0], path: a.path }));
     }
-    if (t.error) out["error"] = Object.fromEntries(Object.entries(t.error).filter(([k]) => k === "type" || k === "code"));
+    if (t.error) out["error"] = Object.fromEntries(Object.entries(t.error).filter(([k]) => k === "type" || k === "code" || (this.full && k === "message")));
     return out;
   }
 
@@ -345,7 +373,7 @@ export class Service {
     if (method === "GET" && rest.length === 1) return json(200, this.turnJson(turn));
     if (method === "GET" && rest[1] === "events" && rest.length === 2) {
       const after = parsePosition(headers.get("last-event-id"));
-      return eventStream(turn.events({ after, view: "outside" }));
+      return eventStream(turn.events({ after, view: this.view }));     // from the store: "full" gives the kept form
     }
     if (method === "POST" && rest[1] === "stop" && rest.length === 2) {
       await turn.stop();
@@ -430,7 +458,7 @@ export class Service {
 
 /**
  * Serve a program over HTTP: its interface, calls, streams and conversations,
- * to callers who see only its boundary. Resolves to Node's server once it
+ * to callers who see only its boundary (or what `view` lets them see). Resolves to Node's server once it
  * listens (`server.close()` stops it). Without `keys` it listens only on this
  * machine. Elsewhere than Node, mount `new Service(program).fetch`.
  */

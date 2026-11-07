@@ -37,11 +37,11 @@ import { aroundLayers, Applied, ContextHook, runHook, texts, TurnEndHook, TurnSt
 import { droppedFields, TurnWaiting } from "./program.ts";
 import { checkSettings, layersOf, withSettings, type Settings } from "./settings.ts";
 import { follow, isPersistent, storeOf, waitFor, type ConversationStore } from "./stores.ts";
-import type { Stream } from "./stream.ts";
+import { isView, viewer, type Stream, type View as StreamView } from "./stream.ts";
 import { holderName } from "./replies.ts";
 import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
 import { Delivered, resultOf, type ToolOutput } from "./results.ts";
-import { View, outsideNotes } from "./views.ts";
+import { outsideNotes, type ViewName } from "./views.ts";
 import { sumUsage } from "./usage.ts";
 
 type Rec = Record<string, unknown>;
@@ -966,22 +966,26 @@ export class Turn {
 
   /**
    * Its events from its store (the kept form, or a view made from it:
-   * `view: "outside"`), after the event named by `after`: those kept so far,
-   * then each as it is kept, until its last. What another process, a page
-   * after a reload, reads.
+   * `view: "outside"`, or one of your own), after the event named by `after`:
+   * those kept so far, then each as it is kept, until its last. What another
+   * process, a page after a reload, reads. A store has the kept form only, so
+   * `view: "full"` gives the kept form (with content whole, the default, every
+   * event and value).
    */
-  async *events(opts: { after?: Position | null; view?: "kept" | "outside"; timeout?: number; signal?: AbortSignal } = {}): AsyncGenerator<Rec> {
+  async *events(opts: { after?: Position | null; view?: ViewName | StreamView; timeout?: number; signal?: AbortSignal } = {}): AsyncGenerator<Rec> {
     const stop = async () => ["waiting", "interrupted", "abandoned"].includes((await this.refresh())._st.state());
     const follower = { stop, timeout: opts.timeout, signal: opts.signal };
-    if ((opts.view ?? "kept") === "kept") {
+    const view = opts.view ?? "kept";
+    if (!isView(view)) throw new TypeError(`a view is "full", "kept", "outside" or { calls?, shows? }; not ${JSON.stringify(view)}`);
+    if (view === "kept" || view === "full") {
       yield* follow(this._conv.store, this.id, opts.after ?? null, follower);
       return;
     }
     // a view is made from the kept form from its first event; a reader resumes it after a position it holds
-    const v = new View(opts.view!, { answerFrom: this._conv.program._answerFrom ?? null, notes: outsideNotes(this._conv.program as never) });
+    const v = viewer(view, this._conv.program._answerFrom ?? null, outsideNotes(this._conv.program as never));
     let waitingFor = opts.after ?? null;
     for await (const e of follow(this._conv.store, this.id, null, follower)) {
-      const shown = v.apply(e);
+      const shown = v(e);
       if (!shown) continue;
       if (waitingFor) {
         if (shown["writer"] === waitingFor.writer && shown["seq"] === waitingFor.seq) waitingFor = null;
@@ -2086,7 +2090,7 @@ export class TurnStream implements AsyncIterable<string>, PromiseLike<unknown> {
     }
     if (this.turnId) {
       const t = await this.turn.catch(() => null);
-      if (t) yield* t.events({ view: opts.view ? "outside" : "kept" });
+      if (t) yield* t.events({ view: opts.view ?? "kept" });          // from its store: the kept form, or a view made from it
     }
   }
 

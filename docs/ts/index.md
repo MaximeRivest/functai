@@ -403,8 +403,12 @@ and `retry` start a field's text afresh (`s.text` is the answer so far;
 `s.partial` is it as a value, typed `SoFar<A>`: members may be missing, a
 choice shows only once whole, never "med" for "medium").
 `s.events({ form: "kept" })` gives what the log may keep (`logContent`),
-`{ view }` a view of it (`views.boundary(callId)`), and `{ after }`
-resumes after an event you have (`s.read(tree, after)` too).
+`{ view }` a view of it (`views.boundary(callId)`, `"outside"`, or `{ calls,
+shows }` of your own), and `{ after }` resumes after an event you have
+(`s.read(tree, after)` too). A `piece` event is something else the model's
+stream sent, as lm15 sent it (`e.lm15`): its start and end (why it stopped,
+what it used), a citation, a tool call's input as it is written, a picture
+or a sound as it is made; text and thinking come as `text` and `thinking`.
 
 A reader elsewhere (a page, another process) follows a log with
 `Follower`: it drops stale and duplicate events, takes the next, rewinds
@@ -667,7 +671,12 @@ const far = await remote("https://example.org/team", { key });    // a served pr
 The routes are the same as Python's: the interface, calls, streams (Server-Sent
 Events), conversations and approvals. A caller sees only the program's boundary
 (the `outside` view: its answer as it is written, never a helper's answer or a
-tool's input). Without keys it listens on this machine only. A `remote`
+tool's input), unless you choose to show more, for callers you trust as
+yourself: `serve(assistant, { view: "full" })` sends every event and value (the
+model's thinking, tool calls and results, its stream as lm15 sent it, an error's
+message, and from `/call` the outputs FunctAI adds), `view: "kept"` what your
+log keeps, and `view: { calls, shows }` a view of your own. A conversation's
+events come from its store, so there `"full"` is `"kept"`. Without keys it listens on this machine only. A `remote`
 program binds and checks its inputs here, is logged here, and the server's
 record names this call as its parent: one call tree across two logs.
 

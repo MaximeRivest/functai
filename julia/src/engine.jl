@@ -244,6 +244,9 @@ function send(job::Job, request, request_hash; hit=nothing)
                     for e in source
                         cancelled(call) && throw(Cancelled())
                         push!(events, e)
+                        # what no other event shows, as lm15 wrote it (streaming.md, *Pieces*): text and thinking are shown below
+                        shown = e isa LM15.StreamDeltaEvent && (e.delta isa LM15.TextDelta || e.delta isa LM15.ThinkingDelta)
+                        shown || emit!(call, :piece, LMCC.jobj("lm15" => LM15.to_dict(e)))
                         e isa LM15.StreamDeltaEvent || continue
                         first_delta === nothing && (first_delta = elapsed())
                         d = e.delta

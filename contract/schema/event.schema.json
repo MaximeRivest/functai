@@ -23,7 +23,7 @@
       "properties": {
         "functai_event": {"const": 2},
         "kind": {
-          "description": "streaming.md names its kinds (eleven, then note and later); a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
+          "description": "streaming.md names its kinds (eleven, then note, later and piece); a later stage may add others (a reader skips a kind it does not know; a form maker leaves it out).",
           "type": "string",
           "pattern": "^[a-z][a-z0-9_]*$"
         },
@@ -195,6 +195,21 @@
             "if": {"required": ["content"]},
             "then": {"not": {"required": ["key"]}},
             "else": {"required": ["key"]}
+          }
+        },
+        {
+          "if": {"properties": {"kind": {"const": "piece"}}},
+          "then": {
+            "description": "streaming.md, Pieces: an event of the model's stream no other event shows, as lm15 writes it (kept only whole).",
+            "required": ["lm15"],
+            "not": {"required": ["content"]},
+            "properties": {
+              "lm15": {
+                "type": "object",
+                "required": ["type"],
+                "properties": {"type": {"enum": ["start", "delta", "end", "error"]}}
+              }
+            }
           }
         },
         {

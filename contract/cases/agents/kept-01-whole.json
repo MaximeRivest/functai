@@ -1,5 +1,5 @@
 {
- "description": "Content whole: the note, the later and the picture result are kept as they are.",
+ "description": "Content whole: the model's stream (piece), the note, the later and the picture result are kept as they are.",
  "kind": "kept",
  "events": [
   {
@@ -47,7 +47,7 @@
   },
   {
    "functai_event": 2,
-   "kind": "tool_call",
+   "kind": "piece",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
    "seq": 3,
@@ -56,6 +56,94 @@
     "seq": 2
    },
    "at": "2026-11-02T10:00:00.030000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "lm15": {
+    "type": "start",
+    "id": "msg_1",
+    "model": "gpt-4.1-mini"
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "piece",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 4,
+   "after": {
+    "writer": 1,
+    "seq": 3
+   },
+   "at": "2026-11-02T10:00:00.040000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "lm15": {
+    "type": "delta",
+    "delta": {
+     "type": "tool_call",
+     "part_index": 0,
+     "input": "{\"page\": ",
+     "id": "c1",
+     "name": "look"
+    }
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "piece",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 5,
+   "after": {
+    "writer": 1,
+    "seq": 4
+   },
+   "at": "2026-11-02T10:00:00.050000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "lm15": {
+    "type": "delta",
+    "delta": {
+     "type": "tool_call",
+     "part_index": 0,
+     "input": "\"home\"}"
+    }
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "piece",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 6,
+   "after": {
+    "writer": 1,
+    "seq": 5
+   },
+   "at": "2026-11-02T10:00:00.060000Z",
+   "call": "01926c00-0001-7000-8000-000000000000",
+   "function": "browse",
+   "lm15": {
+    "type": "end",
+    "finish_reason": "tool_call",
+    "usage": {
+     "input_tokens": 120,
+     "output_tokens": 9,
+     "total_tokens": 129
+    }
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "tool_call",
+   "tree": "01926c00-0001-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 7,
+   "after": {
+    "writer": 1,
+    "seq": 6
+   },
+   "at": "2026-11-02T10:00:00.070000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "id": "c1",
@@ -70,12 +158,12 @@
    "kind": "note",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 4,
+   "seq": 8,
    "after": {
     "writer": 1,
-    "seq": 3
+    "seq": 7
    },
-   "at": "2026-11-02T10:00:00.040000Z",
+   "at": "2026-11-02T10:00:00.080000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "name": "screen captured",
@@ -89,12 +177,12 @@
    "kind": "tool_result",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 5,
+   "seq": 9,
    "after": {
     "writer": 1,
-    "seq": 4
+    "seq": 8
    },
-   "at": "2026-11-02T10:00:00.050000Z",
+   "at": "2026-11-02T10:00:00.090000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "id": "c1",
@@ -118,12 +206,12 @@
    "kind": "request",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 6,
+   "seq": 10,
    "after": {
     "writer": 1,
-    "seq": 5
+    "seq": 9
    },
-   "at": "2026-11-02T10:00:00.060000Z",
+   "at": "2026-11-02T10:00:00.100000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "request": 2,
@@ -134,12 +222,12 @@
    "kind": "tool_call",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 7,
+   "seq": 11,
    "after": {
     "writer": 1,
-    "seq": 6
+    "seq": 10
    },
-   "at": "2026-11-02T10:00:00.070000Z",
+   "at": "2026-11-02T10:00:00.110000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "id": "c2",
@@ -154,12 +242,12 @@
    "kind": "later",
    "tree": "01926c00-0001-7000-8000-000000000000",
    "writer": 1,
-   "seq": 8,
+   "seq": 12,
    "after": {
     "writer": 1,
-    "seq": 7
+    "seq": 11
    },
-   "at": "2026-11-02T10:00:00.080000Z",
+   "at": "2026-11-02T10:00:00.120000Z",
    "call": "01926c00-0001-7000-8000-000000000000",
    "function": "browse",
    "id": "c2",
@@ -225,7 +313,7 @@
    },
    {
     "functai_event": 2,
-    "kind": "tool_call",
+    "kind": "piece",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
     "seq": 3,
@@ -234,6 +322,94 @@
      "seq": 2
     },
     "at": "2026-11-02T10:00:00.030000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "lm15": {
+     "type": "start",
+     "id": "msg_1",
+     "model": "gpt-4.1-mini"
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "piece",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 4,
+    "after": {
+     "writer": 1,
+     "seq": 3
+    },
+    "at": "2026-11-02T10:00:00.040000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "lm15": {
+     "type": "delta",
+     "delta": {
+      "type": "tool_call",
+      "part_index": 0,
+      "input": "{\"page\": ",
+      "id": "c1",
+      "name": "look"
+     }
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "piece",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 5,
+    "after": {
+     "writer": 1,
+     "seq": 4
+    },
+    "at": "2026-11-02T10:00:00.050000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "lm15": {
+     "type": "delta",
+     "delta": {
+      "type": "tool_call",
+      "part_index": 0,
+      "input": "\"home\"}"
+     }
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "piece",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 6,
+    "after": {
+     "writer": 1,
+     "seq": 5
+    },
+    "at": "2026-11-02T10:00:00.060000Z",
+    "call": "01926c00-0001-7000-8000-000000000000",
+    "function": "browse",
+    "lm15": {
+     "type": "end",
+     "finish_reason": "tool_call",
+     "usage": {
+      "input_tokens": 120,
+      "output_tokens": 9,
+      "total_tokens": 129
+     }
+    }
+   },
+   {
+    "functai_event": 2,
+    "kind": "tool_call",
+    "tree": "01926c00-0001-7000-8000-000000000000",
+    "writer": 1,
+    "seq": 7,
+    "after": {
+     "writer": 1,
+     "seq": 6
+    },
+    "at": "2026-11-02T10:00:00.070000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "id": "c1",
@@ -248,12 +424,12 @@
     "kind": "note",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
-    "seq": 4,
+    "seq": 8,
     "after": {
      "writer": 1,
-     "seq": 3
+     "seq": 7
     },
-    "at": "2026-11-02T10:00:00.040000Z",
+    "at": "2026-11-02T10:00:00.080000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "name": "screen captured",
@@ -267,12 +443,12 @@
     "kind": "tool_result",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
-    "seq": 5,
+    "seq": 9,
     "after": {
      "writer": 1,
-     "seq": 4
+     "seq": 8
     },
-    "at": "2026-11-02T10:00:00.050000Z",
+    "at": "2026-11-02T10:00:00.090000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "id": "c1",
@@ -296,12 +472,12 @@
     "kind": "request",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
-    "seq": 6,
+    "seq": 10,
     "after": {
      "writer": 1,
-     "seq": 5
+     "seq": 9
     },
-    "at": "2026-11-02T10:00:00.060000Z",
+    "at": "2026-11-02T10:00:00.100000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "request": 2,
@@ -312,12 +488,12 @@
     "kind": "tool_call",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
-    "seq": 7,
+    "seq": 11,
     "after": {
      "writer": 1,
-     "seq": 6
+     "seq": 10
     },
-    "at": "2026-11-02T10:00:00.070000Z",
+    "at": "2026-11-02T10:00:00.110000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "id": "c2",
@@ -332,12 +508,12 @@
     "kind": "later",
     "tree": "01926c00-0001-7000-8000-000000000000",
     "writer": 1,
-    "seq": 8,
+    "seq": 12,
     "after": {
      "writer": 1,
-     "seq": 7
+     "seq": 11
     },
-    "at": "2026-11-02T10:00:00.080000Z",
+    "at": "2026-11-02T10:00:00.120000Z",
     "call": "01926c00-0001-7000-8000-000000000000",
     "function": "browse",
     "id": "c2",

@@ -583,7 +583,17 @@ class _TurnRun:
                                        f"{exc}); the turn goes on, and its records are kept")
         keep.__qualname__ = "conversation store"
         keep._passive = True                          # a copy for other processes: it never streams a request
+        self._sink = keep
         return keep
+
+    def drained(self, timeout: float = 5.0) -> None:
+        """The store's copy holds every event of the turn's log made so far
+        (at most ``timeout`` seconds): a reader of a turn that waits or ended
+        then finds its last events (an approval addressed to it) there."""
+        sink = getattr(self, "_sink", None)
+        if sink is not None:
+            from .eventlog import drained
+            drained(sink, timeout)
 
     def call_ended(self, call: Any, value: Any, error: Optional[BaseException]) -> None:
         """A call of this turn ended: its tokens count in the turn's usage; a
@@ -1123,19 +1133,23 @@ class Turn:
                              "state": "abandoned", "attempt": st.attempt}])
         self._st = self._conv._read().turns[self.id]
 
-    def events(self, after: Optional[Mapping[str, Any]] = None, *, view: str = "kept",
+    def events(self, after: Optional[Mapping[str, Any]] = None, *, view: Any = "kept",
                timeout: Optional[float] = None) -> Iterator[Dict[str, Any]]:
         """The turn's events from its store (the kept form, or a view made from
-        it: ``view="outside"``), after the event named by ``after`` (a
-        position), those kept so far and then each as it is kept, until its
-        last. What another process, a page after a reload, reads."""
+        it: ``view="outside"``, or one of your own, ``views.Custom``), after
+        the event named by ``after`` (a position), those kept so far and then
+        each as it is kept, until its last. What another process, a page
+        after a reload, reads. A store has the kept form only, so
+        ``view="full"`` gives the kept form (with content whole, the
+        default, every event and value)."""
         from . import views
+        view = views.as_view(view)
         stop = lambda: self._conv._read().turns[self.id].state() in ("waiting", "interrupted", "abandoned")  # noqa
-        if view == "kept":
+        if view in ("kept", "full"):
             yield from stores.follow(self._conv.store, self.id, after, timeout=timeout, stop=stop)
             return
         # a view is made from the kept form from its first event; a reader resumes it after a position it holds
-        v = views.for_program(view, self._conv.program)
+        v = views.viewer(view, self._conv.program)
         waiting_for = dict(after) if after is not None else None
         for e in stores.follow(self._conv.store, self.id, None, timeout=timeout, stop=stop):
             shown = v.apply(e)
@@ -2169,6 +2183,7 @@ class TurnStream(Stream):
         conv = self._conv
         root = run.root
         saw = list(root.saw) if root is not None else run.context.get("module_saw", [])
+        run.drained()                                    # its events are in the store before its state says it stopped
         base = {"functai_conversation": FORMAT, "at": _iso(), "turn": self.turn_id, "attempt": run.attempt}
         if isinstance(error, TurnWaiting):
             a = error.approval
@@ -2272,7 +2287,7 @@ class StoredStream:
     def turn(self) -> Turn:
         return self._conv.turn(self.turn_id)
 
-    def events(self, after: Optional[Mapping[str, Any]] = None, *, view: str = "kept") -> Iterator[Dict[str, Any]]:
+    def events(self, after: Optional[Mapping[str, Any]] = None, *, view: Any = "kept") -> Iterator[Dict[str, Any]]:
         return self.turn.events(after, view=view)
 
     def __iter__(self) -> Iterator[str]:

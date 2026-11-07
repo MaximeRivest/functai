@@ -183,6 +183,25 @@ class Thinking(Event):
 
 
 @dataclasses.dataclass(frozen=True)
+class Piece(Event):
+    """Something the model's stream sent that no other event shows
+    (contract/streaming.md, *Pieces*): ``lm15``, the lm15 stream event as
+    lm15 writes it as JSON (``{"type": "start" | "delta" | "end" | "error",
+    …}``): a citation, a picture or a sound as it is made, a tool call's
+    input as it is written, why the reply stopped and what it used. Only a
+    streamed request makes them; they are kept only when the call's content
+    is whole."""
+    lm15: Dict[str, Any]
+    kind = "piece"
+
+    def _dropped(self, name, keep, program):
+        return name == "lm15"
+
+    def _json(self, name, value, keep=None):
+        return copy.deepcopy(value)
+
+
+@dataclasses.dataclass(frozen=True)
 class ToolCall(Event):
     """The model asked for a tool (shown once the request is complete).
     ``invocation``: its number among the call's tool calls (1, 2, … across
@@ -326,7 +345,7 @@ class Later(Event):
         return name == "key"
 
 
-_KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, ToolCall, ToolResult, Retry, Done, Failed,
+_KINDS = {c.kind: c for c in (Started, Request, Text, Thinking, Piece, ToolCall, ToolResult, Retry, Done, Failed,
                                Approval, Approved, Note, Later)}
 
 
@@ -412,10 +431,13 @@ def request(call: Any, router: Any, request_: Any, plan: Any) -> tuple:
         try:
             for event in rs.events():
                 call.check()
-                if event.type == "delta":
+                delta = event.delta if event.type == "delta" else None
+                if getattr(delta, "type", None) not in ("text", "thinking"):
+                    show.piece(event)                # what no other event shows (streaming.md, *Pieces*)
+                if delta is not None:
                     if first is None:
                         first = time.perf_counter() - t0
-                    show.feed(event.delta)
+                    show.feed(delta)
             response = rs.response
         finally:
             rs.close()
@@ -481,6 +503,12 @@ class _Projection:
             self._show(self.reader.feed(delta))
         except Exception:  # noqa: BLE001 — a piece lmcc cannot place: stop showing, the reply is read whole
             self.reader = None
+
+    def piece(self, event: Any) -> None:
+        """An event of the model's stream shown as lm15 wrote it: its start and
+        end, an error, and every piece but text and thinking (``feed`` shows those)."""
+        from lm15.serde import stream_event_to_dict
+        self.call.emit("piece", lm15=stream_event_to_dict(event))
 
     def feed(self, delta: Any) -> None:
         kind = getattr(delta, "type", None)
@@ -919,9 +947,10 @@ class Stream:
                             f"Iterate s.events(), or s.text_of(fn) for one AI function's answer")
         return self._cursor(lambda e: e.text if self._is_answer_text(e) else _NOTHING)
 
-    def events(self, view: Optional[str] = None) -> "_Cursor":
+    def events(self, view: Any = None) -> "_Cursor":
         """Every event of the call and of the calls inside it, in order:
-        ``Started``, ``Request``, ``Text``, ``Thinking``, ``ToolCall``,
+        ``Started``, ``Request``, ``Text``, ``Thinking``, ``Piece`` (the
+        model's stream, as lm15 sent it), ``ToolCall``,
         ``ToolResult``, ``Retry``, ``Done``, ``Failed``, ``Approval``,
         ``Approved`` (``functai.streaming``). Works with ``for`` and ``async
         for``; each event has ``.kind``, ``.position`` (its place in its
@@ -929,13 +958,14 @@ class Stream:
 
         ``view``: the events as one kind of reader may see them, as the
         contract's JSON (what a server sends): ``"kept"`` (what
-        ``log_content`` lets be kept) or ``"outside"`` (a caller who sees
+        ``log_content`` lets be kept), ``"outside"`` (a caller who sees
         only the program's boundary: its answer's text, approvals addressed
-        to it, its end). See ``functai.views``."""
+        to it, its end), or a view of your own (``views.Custom``, made from
+        the whole form). See ``functai.views``."""
         if view is None or view == "full":
             return self._cursor(lambda e: e)
         from . import eventlog, views
-        v = views.for_program(view, self.program)
+        v = views.viewer(view, self.program)
 
         def keep(e: Event) -> Any:
             if view == "kept":
@@ -1278,6 +1308,6 @@ def stream(program: Any, args: tuple, kwargs: Dict[str, Any]) -> Stream:
     return Stream(program, args, kwargs)
 
 
-__all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "ToolCall", "ToolResult",
+__all__ = ["Stream", "Cancelled", "Event", "Started", "Request", "Text", "Thinking", "Piece", "ToolCall", "ToolResult",
            "Retry", "Done", "Failed", "Approval", "Approved", "Note", "Later", "note", "partial_json",
            "answer_so_far"]

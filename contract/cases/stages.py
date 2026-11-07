@@ -502,7 +502,9 @@ def view_cases() -> dict:
         E("retry", 5, m, "answer", reason="the reply could not be read (it quoted the SECRET log)", wait=None),
         E("request", 6, m, "answer", request=2, model="gpt-4.1-mini"),
         E("text", 7, m, "answer", field="result", answer=True, text="Hello!"),
-        E("failed", 8, m, "answer", error={"type": "ToolError", "message": "could not read: SECRET", "code": "x-1"})]
+        E("piece", 8, m, "answer", lm15={"type": "delta", "delta": {"type": "citation", "part_index": 0,
+                                                                     "text": "SECRET", "url": "https://a.example/"}}),
+        E("failed", 9, m, "answer", error={"type": "ToolError", "message": "could not read: SECRET", "code": "x-1"})]
     out = {}
     for name, why, evs, af in [
             ("outside-01-a-module", "A module's boundary: its start (the program named without its file), its "
@@ -511,7 +513,8 @@ def view_cases() -> dict:
             ("outside-02-a-module-s-answer-as-it-is-written", "answer_from=answer: that helper's answer text, "
              "re-addressed to the module; each of its requests a request of the module.", events, "answer"),
             ("outside-03-an-ai-function", "An AI function's boundary: its answer's text (not its reasoning), "
-             "requests and retries without their reason, and a failure's type and code, no message.",
+             "requests and retries without their reason, and a failure's type and code, no message. The model's "
+             "stream (piece) is never shown.",
              ai_events, None)]:
         out[name] = {"description": why, "kind": "view", "view": "outside", "answer_from": af, "events": evs,
                      "expect": {"events": outside(evs, af)}}

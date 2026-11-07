@@ -111,6 +111,14 @@ def refusals() -> None:
     e = copy.deepcopy(next(x for x in w.events if x["kind"] == "thinking"))
     e["content"] = False
     bad.append(("thinking marked as not whole (thinking is kept whole or not at all)", EVENT, e))
+    piece = {**{k: v for k, v in e.items() if k not in ("text", "content")}, "kind": "piece",
+             "lm15": {"type": "end", "finish_reason": "stop"}}
+    bad.append(("a piece of the model's stream marked as not whole (kept whole or not at all)", EVENT,
+                {**copy.deepcopy(piece), "content": False}))
+    bad.append(("a piece of the model's stream without its lm15 event", EVENT,
+                {k: v for k, v in copy.deepcopy(piece).items() if k != "lm15"}))
+    bad.append(("a piece whose lm15 event is not a stream event", EVENT,
+                {**copy.deepcopy(piece), "lm15": {"type": "text", "text": "hi"}}))
     e = copy.deepcopy(next(x for x in events.a_tool().events if x["kind"] == "tool_call"))
     e["id"] = None
     bad.append(("a tool call without an id", EVENT, e))

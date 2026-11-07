@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+### What a served program's callers see, and the model's whole stream
+
+contract: serving.md *What callers see*, streaming.md *Pieces* and *Views*;
+cases `agents/kept-*`, `views/outside-03`.
+
+- **`serve(program, view=...)`** (and `Service`, `functai serve --view`):
+  callers still see the program's boundary by default (`"outside"`); the
+  owner may show them `"kept"` (what the log keeps), `"full"` (every event
+  and value: thinking, tool calls and results, helpers, the model's stream,
+  an error's message; `/call` and a turn's `outputs` also give the outputs
+  FunctAI adds, such as `reasoning`), or a view of their own.
+  `GET /interface` says which (`view`). A conversation's events come from
+  its store, which has the kept form: there `"full"` gives it.
+- **`functai.views.Custom(calls=, shows=)`**: a view of your own, for
+  `s.events(view=...)`, `turn.events(view=...)` and a served program
+  (a plain function is taken as `shows`). `functai.views` is imported
+  with `functai`.
+- **The `piece` event** (`functai.streaming.Piece`): what a streamed
+  request's model stream sent that no other event shows, as lm15 wrote it
+  (`e.lm15`): its start and end (why it stopped, what it used), errors,
+  citations, a tool call's input as it is written, pictures and sounds as
+  they are made. Text and thinking stay `text` and `thinking`. Kept only
+  when the call's content is whole; never in the outside view. **Readers
+  that list every kind of event see new ones**: a stream now has a
+  `piece` at each request's start and end.
+- **Fixed: a turn's last events reach its store before the turn says it
+  waits or ended.** A caller reading a waiting turn's events could miss
+  the approval addressed to it (TypeScript already waited).
+
 ### Measures: cases, results, ratings, honest numbers
 
 One model for measuring any program, the same in every language that

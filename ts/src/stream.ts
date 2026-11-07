@@ -15,12 +15,13 @@
 import { Cancelled, type Approval } from "./errors.ts";
 import { answerHere, waitingHere } from "./tools.ts";
 import {
-  keptEvent, known, positionOf, Relink, resume, type KeptFields, type Position, type ReadAnswer, type EventSource,
+  keptEvent, known, knownKind, positionOf, Relink, resume, type KeptFields, type Position, type ReadAnswer, type EventSource,
   type StartedEvent, type StreamEvent,
 } from "./events.ts";
 import { JournalError, type Node, type Watcher } from "./log.ts";
 import { View as NamedView, type ViewName } from "./views.ts";
 import { answerSoFar, type SoFar } from "./partial.ts";
+import { copyData } from "./values.ts";
 
 type Rec = Record<string, unknown>;
 
@@ -29,7 +30,13 @@ type Rec = Record<string, unknown>;
  * shows a call whole or not at all: a shown call's `started`, `request`,
  * `retry`, `done` and `failed` are always shown (a view may leave out the
  * values they hold, never the events), and its other events as `shows`
- * says. It never alters a value it shows.
+ * says. It never alters a value it shows. Given to `s.events({ view })`,
+ * `turn.events({ view })`, or `serve(program, { view })` (what a served
+ * program's callers see):
+ *
+ * ```ts
+ * const thoughts: View = { shows: (e) => e.kind === "thinking" || e.kind === "text" ? e : null };
+ * ```
  */
 export interface View {
   /** Whether a call is shown (default: every call). */
@@ -67,30 +74,55 @@ export class EventUnknown extends Error {
 
 const ALWAYS = new Set(["started", "request", "retry", "done", "failed"]);
 
+/** Whether `view` is one a reader may name: a named view, or one of their own (`calls`, `shows`). */
+export function isView(view: unknown): view is View | ViewName {
+  if (view === "full" || view === "kept" || view === "outside") return true;
+  if (typeof view !== "object" || view === null || Array.isArray(view)) return false;
+  const v = view as Rec;
+  return (v["calls"] === undefined || typeof v["calls"] === "function") && (v["shows"] === undefined || typeof v["shows"] === "function");
+}
+
+/**
+ * @internal A view made event by event from one form of one log (streaming.md, *Views*): each
+ * event of the form in, the event as the view shows it out (relinked), or null. Of a view of
+ * one's own, a call it shows always shows its `started`, `request`, `retry`, `done` and
+ * `failed`, and what `shows` gives is cut to the keys the contract knows.
+ */
+export function viewer(view: View | ViewName, answerFrom: string | null = null, notes: readonly string[] = []): (event: Rec) => Rec | null {
+  if (typeof view === "string") {
+    const named = new NamedView(view, { answerFrom, notes });
+    return (e) => named.apply(e);
+  }
+  const link = new Relink();
+  const shown = new Map<string, boolean>();
+  return (e) => {
+    const kind = e["kind"] as string;
+    const call = e["call"] as string;
+    if (!knownKind(kind)) return null;                 // what it cannot judge, it never passes on
+    if (kind === "started") shown.set(call, view.calls ? view.calls(copyData(e) as unknown as StartedEvent) : true);
+    if (!shown.get(call)) return null;
+    let x: Rec = e;
+    const given = view.shows ? view.shows(copyData(e) as unknown as StreamEvent) : e as unknown as StreamEvent;
+    if (given) x = known(given);
+    else if (!ALWAYS.has(kind)) return null;
+    return link.take(x);
+  };
+}
+
 /** A form made from the whole events, one at a time. */
 class Former {
   private readonly link = new Relink();
-  private readonly shown = new Map<string, boolean>();
   private readonly opts: EventsOptions;
-  private readonly named: NamedView | null;
+  private readonly view: ((event: Rec) => Rec | null) | null;
   constructor(opts: EventsOptions, answerFrom: string | null = null, notes: readonly string[] = []) {
     this.opts = opts;
-    this.named = typeof opts.view === "string" ? new NamedView(opts.view, { answerFrom, notes }) : null;
+    this.view = opts.view === undefined ? null : viewer(opts.view, answerFrom, notes);
   }
 
   take(e: StreamEvent, keep: KeptFields, program: { kind: string; answer: string }): StreamEvent | null {
-    let x: Rec | null = this.opts.form === "kept" ? keptEvent(e, keep, program) : known(e);
+    const x: Rec | null = this.opts.form === "kept" ? keptEvent(e, keep, program) : known(e);
     if (!x) return null;
-    if (this.named) return this.named.apply(x) as unknown as StreamEvent | null;
-    const view = this.opts.view as View | undefined;
-    if (view) {
-      if (e.kind === "started") this.shown.set(e.call, view.calls ? view.calls(x as StartedEvent) : true);
-      if (!this.shown.get(e.call)) return null;
-      const shown = view.shows ? view.shows(x as unknown as StreamEvent) : x as unknown as StreamEvent;
-      if (shown) x = known(shown);
-      else if (!ALWAYS.has(e.kind)) return null;
-    }
-    return this.link.take(x) as unknown as StreamEvent;
+    return (this.view ? this.view(x) : this.link.take(x)) as unknown as StreamEvent | null;
   }
 }
 
