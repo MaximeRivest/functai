@@ -227,6 +227,7 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
                 show(view.feed(Delta.toJSON(delta) as Rec) as never);
               } catch {
                 viewing = false;
+              }
             }
           }
         } catch (err) {
