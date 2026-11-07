@@ -141,6 +141,29 @@ lmcc artifacts; an implementation builds or loads the same artifact
 pack (`lmcc_std`: the `json` format, the reasoning and tool transports,
 the `json_object` reader).
 
+**Reasoning.** The `reasoning` output travels by what the model can do.
+With `native_reasoning`, the request asks for the model's own thinking
+and its summary (`config.reasoning` `{"effort": "medium", "summary":
+"auto"}`) and the output reads the thinking parts (`part:thinking`):
+without `summary`, OpenAI's reasoning models, Gemini, Claude Opus 4.7,
+4.8 and every Claude 5 think and send none of it, so the output would
+be empty (lm15 MAP-7 rule 7; on Claude, lm15 2.2 asks with
+`thinking.display: "summarized"`). Where the provider's account cannot
+have a summary (OpenAI may ask an organization to be verified first), the
+request fails and says so; `capabilities: {"native_reasoning": false}`
+has the model write its reasoning instead. **The function's own
+`reasoning` setting** (lm15 `Config.reasoning`) chooses the effort and
+the thinking budget, and the summary when it names one: the layout's
+`medium` and `auto` apply only where it says nothing (so `reasoning =
+{"effort": "low"}` sends `{"effort": "low", "summary": "auto"}`, never a
+conflict between the two). Effort `off` sends no summary (lm15 refuses
+one with it) and the model's thinking, if any, is not asked for. Without `native_reasoning`, the
+model is told to write it in its own section, before the others
+(`prefix_cot`): Claude 5 models sometimes refuse that (`refusal`, read as
+`parse-filtered`), which is why they are in `reasoning_prefixes`. This
+transport is spelled out in the layouts rather than named, so its
+settings are FunctAI's (a later `lmcc_std` does not change them).
+
 **A template** (`settings.template`, a list of lmcc messages and
 directives) is its own layout: formats `{"*": {"use": "json"}}`, the
 transports of `layouts/xml.json`, reader `derived`. Without a `turns`

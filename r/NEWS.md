@@ -1,5 +1,12 @@
 # functai (development version)
 
+- **A reasoning output reads the model's thinking on every thinking model**
+  (contract functions.md *Reasoning*): the request asks for the summary
+  (`summary = "auto"`), without which OpenAI's reasoning models, Gemini and
+  Claude Opus 4.7+ send none of it; Claude 5 models think natively; and
+  `config = list(reasoning = lm15::reasoning("low"))` chooses the effort of
+  a reasoning output instead of conflicting with the layout's `medium`.
+
 - **The `piece` event** (contract/streaming.md, *Pieces*): what a streamed
   request's model stream sent that no other event shows, as lm15 wrote it
   (`e$lm15`): its start and end, errors, citations, a tool call's input as

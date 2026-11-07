@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+### A reasoning output reads the model's thinking on every thinking model
+
+contract: functions.md *Reasoning* and *Capabilities*; models.json and the
+layouts (every language reads the same data).
+
+- **The request asks for the thinking's summary** (`config.reasoning`
+  `{"effort": "medium", "summary": "auto"}`). Without it, OpenAI's
+  reasoning models, Gemini, and Claude Opus 4.7, 4.8 and every Claude 5
+  think but send none of the text, so `module="cot"` on them gave an empty
+  `reasoning`. On Claude this needs lm15 2.2 (now the least version), which
+  asks Anthropic with `thinking.display: "summarized"`. OpenAI may ask an
+  organization to be verified before it sends summaries: such a call now
+  fails and says so; `capabilities={"native_reasoning": False}` has the
+  model write its reasoning instead.
+- **Claude 5 models think natively** (Opus, Sonnet, Haiku, Fable, Mythos:
+  added to `reasoning_prefixes`). They were asked to write their reasoning
+  in the reply, which they sometimes refuse (`parse-filtered`), and were
+  sent an assistant prefill.
+- **Your own `reasoning` setting chooses the effort** (and the thinking
+  budget, and the summary when it names one) of a reasoning output; the
+  layout's `medium` applies only when you set none. It used to refuse with
+  `ConfigConflict`. `reasoning="low"` and `reasoning={"effort": "low"}` are
+  read as the lm15 `Reasoning` they mean (they used to raise `TypeError`).
+
 ### What a served program's callers see, and the model's whole stream
 
 contract: serving.md *What callers see*, streaming.md *Pieces* and *Views*;

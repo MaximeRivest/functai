@@ -454,7 +454,7 @@ function run_job(job::Job)
     for step in 1:steps
         step > 1 && steering !== nothing && before_step!(steering, step)
         shown = steering === nothing ? turn : shown_turn(steering, turn)
-        rendered = LMCC.render(plan, shown; turns=job.past)
+        rendered = own_reasoning(LMCC.render(plan, shown; turns=job.past), config_of(job.settings))
         got = try
             complete_once(job, rendered, responses)
         catch err

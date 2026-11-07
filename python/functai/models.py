@@ -41,7 +41,8 @@ JUDGMENT_ONLY = {"typesafe"}
 # model-name prefixes with an API-level thinking channel lm15 can request
 _REASONING_PREFIXES = {
     "openai": ("o1", "o3", "o4", "gpt-5", "gpt-6"),
-    "anthropic": ("claude-opus-4", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet"),
+    "anthropic": ("claude-opus-4", "claude-sonnet-4", "claude-haiku-4-5", "claude-3-7-sonnet", "claude-opus-5",
+                  "claude-sonnet-5", "claude-haiku-5", "claude-fable-5", "claude-mythos-5"),
     "gemini": ("gemini-2.5", "gemini-3"),
     "xai": ("grok-3-mini", "grok-4"),
 }

@@ -6,6 +6,18 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### A reasoning output reads the model's thinking on every thinking model
+
+The same as Python's (contract functions.md *Reasoning*; models.json and the layouts).
+
+- **The request asks for the thinking's summary** (`{ effort: "medium", summary: "auto" }`): OpenAI's
+  reasoning models, Gemini, and Claude Opus 4.7+ send none of it otherwise, so a `module: "cot"` function
+  read an empty `reasoning`. Needs `@lm15/lm15` 2.2 (now the least version) on Claude.
+- **Claude 5 models think natively** (added to `reasoning_prefixes`); asked to write their reasoning in the
+  reply, they sometimes refuse.
+- **`config: { reasoning }` chooses the effort** of a reasoning output (and the budget, and the summary when
+  it names one); the layout's `medium` applies only when it says nothing. It used to throw a conflict.
+
 ### What a served program's callers see, and the model's whole stream
 
 The same as Python's (contract: serving.md *What callers see*,
