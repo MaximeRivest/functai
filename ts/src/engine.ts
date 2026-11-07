@@ -16,7 +16,7 @@ import type { Approval } from "./errors.ts";
 import { Cancelled } from "./errors.ts";
 import { sumUsage } from "./usage.ts";
 import * as bridge from "lmcc/lm15";
-import { Delta, Message, RETRYABLE_ERRORS, UnsupportedFeatureError, materializeResponse, responseToEvents, type Config, type Request, type Response,
+import { Delta, Message, RETRYABLE_ERRORS, Reasoning, UnsupportedFeatureError, materializeResponse, responseToEvents, type Config, type Request, type Response,
   StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
@@ -318,6 +318,24 @@ export function lm15Request(rendered: lmcc.RenderResult, model: string, config: 
   return bridge.request(rendered, { model, config });
 }
 
+/**
+ * The rendered request with the function's own `reasoning` setting in the layout's (contract/functions.md,
+ * *Reasoning*): it chooses the effort and the thinking budget, and the summary when it names one; the layout's
+ * `medium` and `auto` stay where it says nothing. Without it, or when the layout asks for no reasoning, the
+ * request is the one rendered.
+ */
+export function ownReasoning(rendered: lmcc.RenderResult, config: Config | undefined): lmcc.RenderResult {
+  const mine = config?.reasoning;
+  const settings = rendered.requestSettings as Rec;
+  const theirs = ((settings["config"] ?? {}) as Rec)["reasoning"];
+  if (!mine || !theirs || typeof theirs !== "object") return rendered;
+  const wanted = Object.fromEntries(Object.entries(Reasoning.toJSON(Reasoning.create(mine)) as Rec).filter(([, v]) => v !== undefined && v !== null));
+  let merged: Rec = { ...(theirs as Rec), ...wanted };
+  if (merged["effort"] === "off") merged = { effort: "off" };       // lm15 refuses a summary or a budget with off (INV-026)
+  return new lmcc.RenderResult(rendered.messages, { ...settings, config: { ...(settings["config"] as Rec), reasoning: merged } },
+    rendered.system, rendered.plan, rendered.turn);
+}
+
 /** The first output value that does not fit its shape, as a parse-value refusal. */
 function checkValues(plan: lmcc.Plan, values: Rec): void {
   for (const f of plan.signature.fields) {
@@ -585,7 +603,7 @@ export async function run(job: Job): Promise<Prediction> {
     : null;
   for (let i = 0; i < steps; i++) {
     if (i > 0 && steering) await steering.before(i + 1);     // the step hook: tools offered, reminders, results shown otherwise
-    const rendered = plan.render(steering ? steering.view(turn) : turn, { turns: [...job.past] });
+    const rendered = ownReasoning(plan.render(steering ? steering.view(turn) : turn, { turns: [...job.past] }), configOf(job.settings));
     let got: [Response, lmcc.Reading];
     try {
       got = await complete(job, rendered, responses);

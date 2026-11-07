@@ -220,6 +220,27 @@ setting(s::AbstractDict{Symbol}, k::Symbol) = get(s, k, nothing)
 
 const CONFIG_KEYS = (:temperature, :max_tokens, :top_p, :stop, :seed)
 
+"""
+The rendered request with the function's own reasoning setting in the layout's (contract/functions.md,
+*Reasoning*): it chooses the effort and the thinking budget, and the summary when it names one; the layout's
+`medium` and `auto` stay where it says nothing. Without it, or when the layout asks for no reasoning, the
+request is the one rendered.
+"""
+function own_reasoning(rendered::LMCC.RenderResult, config)
+    (config === nothing || config.reasoning === nothing) && return rendered
+    cfg = get(rendered.request_settings, "config", nothing)
+    theirs = cfg isa AbstractDict ? get(cfg, "reasoning", nothing) : nothing
+    theirs isa AbstractDict || return rendered
+    merged = LMCC.deepcopy_json(theirs)
+    for (k, v) in LM15.to_dict(config.reasoning)
+        v === nothing || (merged[String(k)] = v)
+    end
+    get(merged, "effort", nothing) == "off" && (merged = LMCC.jobj("effort" => "off"))   # lm15 refuses a summary or budget with off
+    settings = LMCC.deepcopy_json(rendered.request_settings)
+    settings["config"]["reasoning"] = merged
+    LMCC.RenderResult(rendered.messages, settings, rendered.system, rendered.plan, rendered.turn)
+end
+
 "The lm15 `Config` of the settings (and `overrides`), or `nothing` when they set none."
 function config_of(s::AbstractDict{Symbol}; overrides...)
     c = Dict{Symbol,Any}()

@@ -29,7 +29,7 @@ new_job <- function(plan, past, inputs, settings, model, tools, call, core = NUL
 
 render_next <- function(job) {
   shown <- steering_view(job)                          # the turn as the next request shows it: the turn itself keeps every result
-  job$rendered <- lmcc::render(job$plan, shown, if (length(job$past)) job$past else NULL)
+  job$rendered <- own_reasoning(lmcc::render(job$plan, shown, if (length(job$past)) job$past else NULL), config_of(job$settings))
   job$asked <- lmcc::request_of(job$rendered)          # the lmcc request this exchange sends (calls.md, exchanges)
   job$request_hash <- lmcc::sha256_of(job$asked)
   job$request <- lmcc::lm15_request(job$rendered, job$model, config_of(job$settings, job$overrides))

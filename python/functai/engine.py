@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import collections
 import contextvars
+import copy
 import dataclasses
 import datetime as _dt
 import inspect
@@ -379,6 +380,27 @@ def config_of(settings: Dict[str, Any], overrides: Optional[Dict[str, Any]] = No
     return lm15.Config(**fields) if fields else None
 
 
+def own_reasoning(rendered: Any, settings: Dict[str, Any]) -> Any:
+    """The rendered request with the function's own ``reasoning`` setting in
+    the layout's (contract/functions.md, *Reasoning*): it chooses the effort
+    and thinking budget, and the summary when it names one; the layout's
+    ``medium`` and ``auto`` stay where it says nothing. Without it, or when
+    the layout asks for no reasoning, the request is the one rendered."""
+    config = config_of(settings)
+    mine = getattr(config, "reasoning", None)
+    theirs = ((rendered.request_settings or {}).get("config") or {}).get("reasoning")
+    if mine is None or not isinstance(theirs, dict):
+        return rendered
+    from lm15.serde import config_to_dict
+    wanted = {k: v for k, v in config_to_dict(lm15.Config(reasoning=mine))["reasoning"].items() if v is not None}
+    merged = {**theirs, **wanted}
+    if merged.get("effort") == "off":                 # lm15 refuses a summary or a budget with off (INV-026)
+        merged = {"effort": "off"}
+    settings_ = copy.deepcopy(rendered.request_settings)
+    settings_["config"]["reasoning"] = merged
+    return dataclasses.replace(rendered, request_settings=settings_)
+
+
 # ------------------------------------------------------------------ tools
 
 
@@ -695,7 +717,7 @@ def run(*, function: str, plan: lmcc.Plan, spec: Spec, inputs: Dict[str, Any], p
         if step > 1 and steering is not None:
             steering.before(step)                 # the step hook: tools offered, reminders, results shown otherwise
         shown = steering.view(turn) if steering is not None else turn
-        rendered = plan.render(shown, turns=list(past))
+        rendered = own_reasoning(plan.render(shown, turns=list(past)), settings)
         try:
             response, reading = _complete(plan, rendered, router=router, model=model, settings=settings,
                                           function=function, responses=responses, annotations=spec.annotations)

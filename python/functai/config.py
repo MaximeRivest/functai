@@ -173,6 +173,8 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
         if code_id is not None and (not isinstance(code_id, str) or not code_id.strip() or len(code_id) > 200):
             raise TypeError(f"code_id is text naming code a version cannot read (a bundle's hash), at most 200 "
                             f"characters, not {code_id!r}")
+        if isinstance(settings.get("reasoning"), (str, dict)):
+            settings = {**settings, "reasoning": check_reasoning(settings["reasoning"])}
         if settings.get("program_plugins") not in (None, True, False):
             raise TypeError(f"program_plugins is True or False, not {settings['program_plugins']!r}")
         if settings.get("program_observers") not in (None, True, False):
@@ -185,6 +187,20 @@ def check(settings: Dict[str, Any], where: str) -> Dict[str, Any]:
     except (TypeError, ValueError) as exc:
         raise type(exc)(f"{where}: {exc}") from None
     return dict(settings)
+
+
+def check_reasoning(value: Any) -> Any:
+    """``reasoning="low"`` (the effort alone) or ``{"effort": "low", "summary": "auto"}`` (lm15's JSON
+    form) as the lm15 ``Reasoning`` it means; an lm15 ``Reasoning`` as it is."""
+    import lm15
+    if isinstance(value, str):
+        return lm15.Reasoning(effort=value)
+    if isinstance(value, dict):
+        unknown = set(value) - {"effort", "thinking_budget", "summary"}
+        if unknown:
+            raise TypeError(f"reasoning takes effort, thinking_budget and summary, not {sorted(unknown)}")
+        return lm15.Reasoning(**value)
+    return value
 
 
 def check_wall(wall: Any) -> Any:

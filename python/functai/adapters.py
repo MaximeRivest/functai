@@ -79,12 +79,25 @@ REGISTRY.register_reader("functai_reply", ReplyReader, version="1.0.0", exist_ok
 # ------------------------------------------------------------------ transports
 
 
+def _native_reasoning() -> lmcc.Transport:
+    """The model's own thinking, asked for with its summary and read back
+    (contract/functions.md, *Reasoning*): without ``summary`` OpenAI's
+    reasoning models, Gemini and Claude Opus 4.7+ think and send none of it.
+    Spelled out here rather than taken from lmcc_std by name, so its
+    settings are FunctAI's (the contract's layouts spell it the same)."""
+    return lmcc.Transport(
+        requires=["native_reasoning"],
+        request_settings={"config": {"reasoning": {"effort": "medium", "summary": "auto"}}},
+        find=[{"from": "part:thinking", "to": "@purpose"}],
+        in_template=False)
+
+
 def _transports() -> Dict[str, lmcc.Transport]:
     """Reasoning and tools travel by what the model can do: its own thinking
     channel and native tool calls where it has them, text otherwise."""
     return {
         "reasoning": lmcc.Transport(choose=[
-            {"when": {"capability": "native_reasoning"}, "use": REGISTRY.transport("native_reasoning", {})},
+            {"when": {"capability": "native_reasoning"}, "use": _native_reasoning()},
             {"else": REGISTRY.transport("prefix_cot", {})}]),
         "tools": lmcc.Transport(choose=[
             {"when": {"capability": "native_function_calling"}, "use": REGISTRY.transport("native_tools", {})},

@@ -39,7 +39,8 @@
       "request_settings": {
        "config": {
         "reasoning": {
-         "effort": "medium"
+         "effort": "medium",
+         "summary": "auto"
         }
        }
       },

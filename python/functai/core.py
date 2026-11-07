@@ -913,7 +913,7 @@ class FunctAIFunc(Generic[P, R]):
         values = engine.prepare_inputs(spec, inputs)
         if spec.tools:
             values["tools"] = list(specs)
-        rendered = plan.render(plan.turn(values), turns=self._past(plan, spec, s))
+        rendered = engine.own_reasoning(plan.render(plan.turn(values), turns=self._past(plan, spec, s)), s)
         import lmcc_lm15
         return lmcc_lm15.request(rendered, model=model, config=engine.config_of(s))
 
