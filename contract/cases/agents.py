@@ -17,7 +17,7 @@
   go on now (every approval answered, every result delivered).
 - "kept" (../streaming.md, *The kept form*): as in events/: {"events",
   "kept": {call: {"inputs", "outputs"}}, "expect": {"events"}}, with the
-  kinds note and later and a tool_result holding parts.
+  kinds note, later and piece, and a tool_result holding parts.
 - "limits" (../plugins.md, *limits*): {"limits": {"tokens"?, "cost"?,
   "seconds"?, "prices"?, "then"}, "spent": {"exchanges": [[model,
   usage]], "seconds"}, "at": {"hook": "before_call", "lm"} or {"hook":
@@ -213,6 +213,8 @@ def kept_event(e: dict, keep: dict, info: dict):
             del out["key"]
             out["content"] = False
         return out
+    if e["kind"] == "piece":                         # the model's stream: kept as it is, or not at all
+        return {k: copy.deepcopy(v) for k, v in e.items() if k in events.ENVELOPE or k == "lm15"} if whole else None
     if e["kind"] == "tool_call":
         out = {k: copy.deepcopy(v) for k, v in e.items()
                if k in events.ENVELOPE or k in ("id", "name", "input", "invocation")}
@@ -234,7 +236,7 @@ def kept_event(e: dict, keep: dict, info: dict):
 def kept_cases() -> dict:
     tree = events.cid(1)
     prog = events.program("browse")
-    t = "2026-11-02T10:00:00.0{:05d}Z"
+    t = "2026-11-02T10:00:00.{:06d}Z"
 
     def E(seq, kind, **kw):
         return {"functai_event": 2, "kind": kind, "tree": tree, "writer": 1, "seq": seq,
@@ -244,19 +246,27 @@ def kept_cases() -> dict:
     log = [E(1, "started", parent=None, root=tree, program=prog, inputs={"task": "find the price"}, content=True,
              saw=[]),
            E(2, "request", request=1, model=events.MODEL),
-           E(3, "tool_call", id="c1", name="look", input={"page": "home"}, invocation=1),
-           E(4, "note", name="screen captured", data={"screen": 1, "key": "s1.jpg"}),
-           E(5, "tool_result", id="c1", name="look", output="page home", parts=[{"type": "text", "text": "page home"}, PICTURE],
+           E(3, "piece", lm15={"type": "start", "id": "msg_1", "model": events.MODEL}),
+           E(4, "piece", lm15={"type": "delta", "delta": {"type": "tool_call", "part_index": 0, "input": "{\"page\": ",
+                                                          "id": "c1", "name": "look"}}),
+           E(5, "piece", lm15={"type": "delta", "delta": {"type": "tool_call", "part_index": 0, "input": "\"home\"}"}}),
+           E(6, "piece", lm15={"type": "end", "finish_reason": "tool_call",
+                               "usage": {"input_tokens": 120, "output_tokens": 9, "total_tokens": 129}}),
+           E(7, "tool_call", id="c1", name="look", input={"page": "home"}, invocation=1),
+           E(8, "note", name="screen captured", data={"screen": 1, "key": "s1.jpg"}),
+           E(9, "tool_result", id="c1", name="look", output="page home", parts=[{"type": "text", "text": "page home"}, PICTURE],
              invocation=1),
-           E(6, "request", request=2, model=events.MODEL),
-           E(7, "tool_call", id="c2", name="start_harvest", input={"url": "a.com"}, invocation=2),
-           E(8, "later", id="c2", invocation=2, name="start_harvest", key="harvest:1")]
+           E(10, "request", request=2, model=events.MODEL),
+           E(11, "tool_call", id="c2", name="start_harvest", input={"url": "a.com"}, invocation=2),
+           E(12, "later", id="c2", invocation=2, name="start_harvest", key="harvest:1")]
     out = {}
     for name, why, keep in [
-            ("kept-01-whole", "Content whole: the note, the later and the picture result are kept as they are.",
+            ("kept-01-whole", "Content whole: the model's stream (piece), the note, the later and the picture "
+                              "result are kept as they are.",
              {"inputs": {"task": True}, "outputs": {"result": True}}),
-            ("kept-02-not-whole", "Content not whole: a note keeps its name, not its data; a later its tool, not "
-                                  "its key; a result neither its output nor its parts.",
+            ("kept-02-not-whole", "Content not whole: no piece of the model's stream is kept; a note keeps its "
+                                  "name, not its data; a later its tool, not its key; a result neither its output "
+                                  "nor its parts.",
              {"inputs": {"task": False}, "outputs": {"result": True}})]:
         info = {tree: prog}
         kept = events.relink([x for x in (kept_event(e, keep, info) for e in log) if x is not None])

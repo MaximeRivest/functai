@@ -31,7 +31,7 @@ API:
 - Plugins:   Plugin(name, version=...) with hooks (turn_start, context, before_call, step, request, tool_call,
              tool_result, turn_end) returning Change(...); configure(plugins=[...]); compaction(), delegate(),
              limits(tokens=, cost=, seconds=, prices=), keep_pictures(3)
-- Serving:   serve(program), Service; remote(url, key=...)
+- Serving:   serve(program, view=...), Service; remote(url, key=...); views
 - Long runs: configure(cache_replies="disk"), replicate=; fn.map(rows, threads=8) (a progress line; run again to
              resume); quotes_found(text, quotes); prune_calls(older_than="90d"); split(rows, by="conversation")
 - Utils:     phistory(), inspect_history(), clear_cache()
@@ -79,6 +79,7 @@ from .tools import Approval, Tool, later, tool
 from .plugins import Change, Plugin, PluginError, load_plugin
 from .builtins import compaction, delegate, keep_pictures, limits
 from .serving import Service, serve
+from . import views  # noqa: F401  (functai.views.Custom: a view of your own, for a stream or a served program's callers)
 from .remote import RemoteProgram, remote
 from .judges import quotes_found
 from .calllog import prune_calls, split

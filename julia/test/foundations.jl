@@ -172,7 +172,9 @@ end
     p = using_fake(() -> predict(mood, "Broke."), fake(xml(:result => "unhappy")); journal=FunctAI.Journal(store; required=true))
     @test FunctAI.finished(store, p.call)
     log = FunctAI.events_after(store, p.call, nothing)
-    @test [e.kind for e in log] == [:started, :request, :text, :text, :text, :done]      # "unhappy" came in three pieces
+    # "unhappy" came in three pieces, between the start and the end of the model's stream (streaming.md, *Pieces*)
+    @test [e.kind for e in log] == [:started, :request, :piece, :text, :text, :text, :piece, :done]
+    @test [e.lm15["type"] for e in log if e.kind === :piece] == ["start", "end"]
     # the end refused: the outcome stands, the caller is told, the record says so, no reader sees the end
     dir = mktempdir()
     refusing = FailingStore(refused=[:done])

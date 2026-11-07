@@ -96,9 +96,12 @@ conversations.Turn.events(after=None, *, view='kept', timeout=None)
 ```
 
 The turn's events from its store (the kept form, or a view made from
-it: ``view="outside"``), after the event named by ``after`` (a
-position), those kept so far and then each as it is kept, until its
-last. What another process, a page after a reload, reads.
+it: ``view="outside"``, or one of your own, ``views.Custom``), after
+the event named by ``after`` (a position), those kept so far and then
+each as it is kept, until its last. What another process, a page
+after a reload, reads. A store has the kept form only, so
+``view="full"`` gives the kept form (with content whole, the
+default, every event and value).
 
 ### find { #functai.conversations.Turn.find }
 

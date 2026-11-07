@@ -1,5 +1,13 @@
 # functai (development version)
 
+- **The `piece` event** (contract/streaming.md, *Pieces*): what a streamed
+  request's model stream sent that no other event shows, as lm15 wrote it
+  (`e$lm15`): its start and end, errors, citations, a tool call's input as
+  it is written. Kept only when the call's content is whole; never in the
+  outside view. Not here yet: what a served program's callers see
+  (`serve(view = )`, contract/serving.md *What callers see*) is still the
+  outside view only.
+
 Caught up with Python and TypeScript (design/17, 18, 19): every case of
 `contract/cases/agents`, `setup` and `partial`, `programs/27` to `30`,
 `views/outside-04` and `events/replay-15` passes.

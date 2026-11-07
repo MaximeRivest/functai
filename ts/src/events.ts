@@ -88,6 +88,13 @@ export type RequestEvent = Envelope<"request"> & { readonly request: number; rea
 /** A piece of an output's text, exact (law 2). */
 export type TextEvent = Envelope<"text"> & { readonly field: string; readonly answer: boolean; readonly text: string };
 export type ThinkingEvent = Envelope<"thinking"> & { readonly text: string };
+/**
+ * Something the model's stream sent that no other event shows (streaming.md, *Pieces*): the lm15
+ * stream event as lm15 writes it as JSON (`{ type: "start" | "delta" | "end" | "error", … }`): a
+ * citation, a picture or sound being made, a tool call's input as it is written, why the reply
+ * stopped and what it used. Only a streamed request makes them; kept only when the call's content is whole.
+ */
+export type PieceEvent = Envelope<"piece"> & { readonly lm15: Readonly<Rec> & { readonly type: "start" | "delta" | "end" | "error" } };
 export type ToolCallEvent = Envelope<"tool_call"> & { readonly id: string; readonly name: string; readonly input?: unknown; readonly invocation?: number; readonly content?: false };
 /**
  * A tool ran: `output` is the result's text (itself, or its text parts joined by a new line); `parts`, only
@@ -114,18 +121,20 @@ export type DoneEvent = Envelope<"done"> & { readonly value?: unknown; readonly 
 export type FailedEvent = Envelope<"failed"> & { readonly error: ErrorInfo; readonly content?: false };
 
 /** An event of a call tree's log (streaming.md, format 2). */
-export type StreamEvent = StartedEvent | RequestEvent | TextEvent | ThinkingEvent | ToolCallEvent | ToolResultEvent
+export type StreamEvent = StartedEvent | RequestEvent | TextEvent | ThinkingEvent | PieceEvent | ToolCallEvent | ToolResultEvent
   | RetryEvent | DoneEvent | FailedEvent | ApprovalEvent | ApprovedEvent | NoteEvent | LaterEvent;
 
 /** Any object read as an event: a known kind, or one a later writer added (readers skip what they do not know). */
 export type EventLike = Readonly<Rec> & { readonly kind?: unknown };
 
-const KINDS = new Set(["started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed", "approval", "approved",
-  "note", "later"]);
+const KINDS = new Set(["started", "request", "text", "thinking", "piece", "tool_call", "tool_result", "retry", "done", "failed", "approval",
+  "approved", "note", "later"]);
 const ENVELOPE = ["functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function"];
+/** Whether this version knows a kind of event (a later writer may add others: streaming.md, *Formats*). */
+export const knownKind = (kind: unknown): boolean => typeof kind === "string" && KINDS.has(kind);
 const KEYS: Record<string, readonly string[]> = {
   started: ["parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"], request: ["request", "model"],
-  text: ["field", "answer", "text"], thinking: ["text"], tool_call: ["id", "name", "input", "content", "invocation"],
+  text: ["field", "answer", "text"], thinking: ["text"], piece: ["lm15"], tool_call: ["id", "name", "input", "content", "invocation"],
   tool_result: ["id", "name", "output", "parts", "content", "invocation"], retry: ["reason", "wait", "content"], done: ["value", "content"],
   failed: ["error", "content"],
   approval: ["id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"],
@@ -440,6 +449,7 @@ export function keptEvent(e: EventLike, keep: KeptFields, program: { kind: strin
     case "text":
       return getOwn(keep.outputs, e["field"] as string) === true ? out : null;
     case "thinking":
+    case "piece":
       return null;
     case "tool_call":
       delete out["input"];

@@ -57,6 +57,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     s.add_argument("--lm", help="the model every call uses")
     s.add_argument("--store", help="a folder where conversations are kept (default: memory)")
     s.add_argument("--approvals", choices=("owner", "caller"), default="owner")
+    s.add_argument("--view", choices=("outside", "kept", "full"), default="outside",
+                   help="what callers see: the program's boundary (default), what your log keeps, or everything "
+                        "(thinking, tools, the model's stream, error messages: only for callers you trust)")
     s.add_argument("--trust", action="store_true", help="load a saved folder that runs its author's code")
     d = sub.add_parser("describe", help="what a saved program takes and gives, without loading it")
     d.add_argument("folder")
@@ -92,8 +95,10 @@ def main(argv: Optional[List[str]] = None) -> int:
         return 0
     from .serving import Service
     program = _program(args.program, trust=args.trust)
-    service = Service(program, keys=args.keys, store=args.store, lm=args.lm, approvals=args.approvals)
-    print(f"serving {program.__name__} at http://{args.host}:{args.port} (the API at /openapi.json)",
+    service = Service(program, keys=args.keys, store=args.store, lm=args.lm, approvals=args.approvals,
+                      view=args.view)
+    shows = "" if args.view == "outside" else f"; callers see the {args.view} view"
+    print(f"serving {program.__name__} at http://{args.host}:{args.port} (the API at /openapi.json{shows})",
           file=sys.stderr)
     service.serve(args.host, args.port)
     return 0

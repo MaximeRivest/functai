@@ -335,7 +335,12 @@ test("a stream shows the answer as it is written, and ends with the same value",
   assert.equal(kinds[0], "started");
   assert.equal(kinds[1], "request");                            // a request empties the fields (format 2)
   assert.equal(kinds.at(-1), "done");
-  assert.ok(kinds.slice(2, -1).every((k) => k === "text"));
+  assert.equal(kinds[2], "piece");                              // the model's stream began (streaming.md, *Pieces*)
+  assert.equal(kinds.at(-2), "piece");                          // and ended
+  assert.ok(kinds.slice(3, -2).every((k) => k === "text"));
+  const ends = [];
+  for await (const e of s.events()) if (e.kind === "piece") ends.push(e.lm15.type);
+  assert.deepEqual(ends, ["start", "end"]);                     // text pieces are shown as text, never twice
 });
 
 test("a reply that arrives whole is one text piece per field", async () => {

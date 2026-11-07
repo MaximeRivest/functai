@@ -547,6 +547,8 @@ stream_job <- function(job, router, started) {
       if (call_cancelled(call)) stop(cancelled_error())
       events[[length(events) + 1L]] <<- e
       ev <- lmcc::lm15_plain(e)
+      # what no other event shows, as lm15 wrote it (streaming.md, *Pieces*): text and thinking are shown below
+      if (!identical(ev$type, "delta") || !(ev$delta$type %in% c("text", "thinking"))) call_emit(call, "piece", list(lm15 = ev))
       if (identical(ev$type, "end")) reason <<- ev$finish_reason
       if (!identical(ev$type, "delta")) return(invisible())
       if (is.null(first)) first <<- as.numeric(Sys.time()) - started

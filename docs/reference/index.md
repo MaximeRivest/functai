@@ -189,12 +189,13 @@ Tools say what they do to the world; a person can be asked before they run.
 
 ## Serving
 
-Serve a program over HTTP to callers who see only its boundary; use a served program like a local one (`remote`'s page also has `RemoteProgram` and `RemoteError`).
+Serve a program over HTTP to callers who see its boundary, or what you choose to show them (`view`); use a served program like a local one (`remote`'s page also has `RemoteProgram` and `RemoteError`).
 
 | | |
 | --- | --- |
 | [serve](serve.md#functai.serve) | Serve a program over HTTP: its interface, calls, streams and |
 | [Service](Service.md#functai.Service) | A program as an HTTP service, independent of any server: ``handle`` |
+| [views.Custom](views.Custom.md#functai.views.Custom) | A view of your own (contract/streaming.md, *Views*): what a served |
 | [remote](remote.md#functai.remote) | A program served elsewhere, used like a local one (contract/serving.md). |
 | [ServeError](ServeError.md#functai.ServeError) | A program cannot be served as asked (code ``serve-opaque``: an input or |
 

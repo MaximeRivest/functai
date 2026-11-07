@@ -1,5 +1,5 @@
 {
- "description": "An AI function's boundary: its answer's text (not its reasoning), requests and retries without their reason, and a failure's type and code, no message.",
+ "description": "An AI function's boundary: its answer's text (not its reasoning), requests and retries without their reason, and a failure's type and code, no message. The model's stream (piece) is never shown.",
  "kind": "view",
  "view": "outside",
  "answer_from": null,
@@ -132,13 +132,36 @@
   },
   {
    "functai_event": 2,
-   "kind": "failed",
+   "kind": "piece",
    "tree": "01926d00-0064-7000-8000-000000000000",
    "writer": 1,
    "seq": 8,
    "after": {
     "writer": 1,
     "seq": 7
+   },
+   "at": "2026-09-30T10:00:00.000000Z",
+   "call": "01926d00-0064-7000-8000-000000000000",
+   "function": "answer",
+   "lm15": {
+    "type": "delta",
+    "delta": {
+     "type": "citation",
+     "part_index": 0,
+     "text": "SECRET",
+     "url": "https://a.example/"
+    }
+   }
+  },
+  {
+   "functai_event": 2,
+   "kind": "failed",
+   "tree": "01926d00-0064-7000-8000-000000000000",
+   "writer": 1,
+   "seq": 9,
+   "after": {
+    "writer": 1,
+    "seq": 8
    },
    "at": "2026-09-30T10:00:00.000000Z",
    "call": "01926d00-0064-7000-8000-000000000000",
@@ -266,7 +289,7 @@
     "kind": "failed",
     "tree": "01926d00-0064-7000-8000-000000000000",
     "writer": 1,
-    "seq": 8,
+    "seq": 9,
     "after": {
      "writer": 1,
      "seq": 7

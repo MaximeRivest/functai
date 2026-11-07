@@ -9,12 +9,13 @@
 # class `functai_event`: `e$kind`, `e$text`, `e$value`, ... read its keys.
 
 EVENT_FORMAT <- 2L
-EVENT_KINDS <- c("started", "request", "text", "thinking", "tool_call", "tool_result", "retry", "done", "failed",
-                 "approval", "approved", "note", "later")
+EVENT_KINDS <- c("started", "request", "text", "thinking", "piece", "tool_call", "tool_result", "retry", "done",
+                 "failed", "approval", "approved", "note", "later")
 ENVELOPE <- c("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 KIND_KEYS <- list(
   started = c("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"),
   request = c("request", "model"), text = c("field", "answer", "text"), thinking = "text",
+  piece = "lm15",                                   # the model's stream, as lm15 wrote it (streaming.md, *Pieces*)
   tool_call = c("id", "name", "input", "content", "invocation"), tool_result = c("id", "name", "output", "parts", "content", "invocation"),
   retry = c("reason", "wait", "content"), done = c("value", "content"), failed = c("error", "content"),
   approval = c("id", "invocation", "name", "input", "effects", "path", "to", "plugin", "question", "content"),
@@ -281,7 +282,7 @@ kept_event <- function(e, keep, program) {
   }
   if (kind == "request") return(out)
   if (kind == "text") return(if (isTRUE(keep$outputs[[data$field]])) out else NULL)
-  if (kind == "thinking") return(NULL)
+  if (kind %in% c("thinking", "piece")) return(NULL)
   if (kind %in% c("tool_call", "approval")) { data$input <- NULL; data$question <- NULL }
   else if (kind == "approved") data$reason <- NULL
   else if (kind == "tool_result") { data$output <- NULL; data$parts <- NULL }

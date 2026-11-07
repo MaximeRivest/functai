@@ -93,7 +93,9 @@ def test_every_request_is_an_event_and_one_numbering_holds_the_tree(fake, tmp_pa
     events = [e.to_dict() for e in s.events()]
     for e in events:
         assert_valid(EVENT, e)
-    assert [e["kind"] for e in events if e["kind"] != "text"] == ["started", "request", "retry", "request", "done"]
+    assert [e["kind"] for e in events if e["kind"] not in ("text", "piece")] == ["started", "request", "retry",
+                                                                                 "request", "done"]
+    assert [e["lm15"]["type"] for e in events if e["kind"] == "piece"] == ["start", "end", "start", "end"]
     assert [e["seq"] for e in events] == list(range(1, len(events) + 1))
     assert events[0]["after"] is None and all(e["after"] == {"writer": 1, "seq": e["seq"] - 1} for e in events[1:])
     [rec] = records(tmp_path)
