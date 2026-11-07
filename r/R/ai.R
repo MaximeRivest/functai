@@ -775,7 +775,7 @@ ai_render <- function(fn, ...) {
   if (length(core$tools)) values$tools <- tool_specs(core)
   turns <- past_turns(core, plan)
   if (!is.null(r_) && identical(r_$core$definition$name, core$definition$name)) turns <- c(turns, shown_as(plan, core, r_$turns, r_$ids)$shown)
-  plain_lm15(lmcc::lm15_request(lmcc::render(plan, values, if (length(turns)) turns else NULL), r$model, config_of(s)))
+  plain_lm15(lmcc::lm15_request(own_reasoning(lmcc::render(plan, values, if (length(turns)) turns else NULL), config_of(s)), r$model, config_of(s)))
 }
 
 #' Worked examples and instructions

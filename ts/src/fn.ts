@@ -20,7 +20,7 @@ import { pluginEntry, reachOf, setupHash, SETTINGS as SETUP_SETTINGS, toolEntry,
 import type * as calllog from "./calllog.ts";
 import { warnOnce } from "./calllog.ts";
 import type { CallFields } from "./content.ts";
-import { lm15Request, run as runEngine, Prediction, type Router } from "./engine.ts";
+import { lm15Request, ownReasoning, run as runEngine, Prediction, type Router } from "./engine.ts";
 import { Cancelled, PluginError } from "./errors.ts";
 import type { Tool } from "./tools.ts";
 import * as plugins from "./plugins.ts";
@@ -950,12 +950,12 @@ export function make(core: Core): AIFunction {
       if (isBaked(shaped.settings.lm)) {
         const job = bakedJob(fn, shaped.settings.lm, shaped.settings, bound, null, answer);
         const values = sig.prepareInputs(job.plan.signature, job.inputs);
-        return lm15Request(job.plan.render(job.plan.turn(values), { turns: await pastFor(job.plan, null, true) }), job.model, configOf(job.settings));
+        return lm15Request(ownReasoning(job.plan.render(job.plan.turn(values), { turns: await pastFor(job.plan, null, true) }), configOf(job.settings)), job.model, configOf(job.settings));
       }
       const { plan, model, settings } = planFor(shaped.settings, shaped.instruction);
       const values = sig.prepareInputs(plan.signature, bound);
       if (shaped.offered.length) setOwn(values, "tools", shaped.offered.map((t) => ({ name: t.name, description: t.description ?? null, parameters: t.parameters })));
-      return lm15Request(plan.render(plan.turn(values), { turns: await pastFor(plan, null, false) }), model, configOf(settings));
+      return lm15Request(ownReasoning(plan.render(plan.turn(values), { turns: await pastFor(plan, null, false) }), configOf(settings)), model, configOf(settings));
     },
     using: (settings: Settings) => {
       const own = { ...core.own, ...settings };

@@ -24,6 +24,7 @@ delete!(ENV, "FUNCTAI_CALLER")
     include("conversations.jl")
     include("serving.jl")
     include("long_agents.jl")
+    include("native_reasoning.jl")
 end
 
 # the examples in the docstrings (jldoctest), as the manual shows them

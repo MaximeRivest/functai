@@ -773,8 +773,8 @@ function render(f::AIFunction, args...; kw...)
     plan = r.plan
     values = prepare_inputs(plan.signature, bind_inputs(f, args, kw))
     isempty(f.tools) || (values["tools"] = tool_values(f))
-    LMCC.lm15_request(LMCC.render(plan, LMCC.new_turn(plan, values); turns=vcat(past_turns(f, plan), rendering_turns(f, plan)));
-                      model=r.model, config=config_of(r.settings))
+    LMCC.lm15_request(own_reasoning(LMCC.render(plan, LMCC.new_turn(plan, values); turns=vcat(past_turns(f, plan), rendering_turns(f, plan))),
+                                    config_of(r.settings)); model=r.model, config=config_of(r.settings))
 end
 
 """

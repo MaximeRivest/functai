@@ -162,6 +162,23 @@ effective <- function(own = list()) {
 }
 
 # The lm15 config of the settings.
+# The rendered request with the function's own reasoning setting in the
+# layout's (contract/functions.md, "Reasoning"): it chooses the effort and the
+# thinking budget, and the summary when it names one; the layout's medium and
+# auto stay where it says nothing. Without it, or when the layout asks for no
+# reasoning, the request is the one rendered.
+own_reasoning <- function(rendered, config) {
+  if (is.null(config)) return(rendered)
+  mine <- lmcc::lm15_plain(lm15::as_dict(config))[["reasoning"]]
+  theirs <- rendered$request_settings[["config"]][["reasoning"]]
+  if (is.null(mine) || !is.list(theirs)) return(rendered)
+  merged <- theirs
+  for (k in names(mine)) if (!is.null(mine[[k]])) merged[[k]] <- mine[[k]]
+  if (identical(merged[["effort"]], "off")) merged <- merged["effort"]   # lm15 refuses a summary or a budget with off
+  rendered$request_settings[["config"]][["reasoning"]] <- merged
+  rendered
+}
+
 config_of <- function(s, overrides = list()) {
   args <- s$config %||% list()
   for (k in c("temperature", "max_tokens", "top_p", "seed")) if (!is.null(s[[k]])) args[[k]] <- s[[k]]
