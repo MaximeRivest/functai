@@ -1,5 +1,13 @@
 # functai (development version)
 
+- **The `piece` event** (contract/streaming.md, *Pieces*): what a streamed
+  request's model stream sent that no other event shows, as lm15 wrote it
+  (`e$lm15`): its start and end, errors, citations, a tool call's input as
+  it is written. Kept only when the call's content is whole; never in the
+  outside view. Not here yet: what a served program's callers see
+  (`serve(view = )`, contract/serving.md *What callers see*) is still the
+  outside view only.
+
 - **`code_id`**, a setting (text, at most 200 characters): what a host says
   identifies code a program runs that its version cannot read. Every setup
   worked out under it holds it, a program's too (contract calls.md, *Code

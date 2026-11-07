@@ -52,7 +52,8 @@ test("a stream's events are format 2: numbered, chained, schema-valid; a request
   assert.deepEqual(events.map((e) => e.seq), events.map((_, i) => i + 1));                        // dense, one writer
   assert.deepEqual(events.map((e) => e.after), [null, ...events.slice(0, -1).map(at)]);          // each after its predecessor
   assert.ok(events.every((e, i) => i === 0 || e.at >= events[i - 1]!.at));
-  assert.deepEqual(events.map((e) => e.kind).filter((k) => k !== "text"), ["started", "request", "retry", "request", "done"]);
+  assert.deepEqual(events.map((e) => e.kind).filter((k) => k !== "text" && k !== "piece"), ["started", "request", "retry", "request", "done"]);
+  assert.deepEqual(events.flatMap((e) => e.kind === "piece" ? [e.lm15.type] : []), ["start", "end", "start", "end"]);   // each request's stream
   assert.deepEqual(stateOf(events).calls[s.callId!]!.fields, { result: "happy" });                // the retry voided "not tags"
   assert.equal(s.text, "happy");
   const [record] = logged(folder);
@@ -91,7 +92,8 @@ test("forms: the kept form follows logContent; a view shows a boundary; a stream
   assert.equal((kept[0] as Rec).content, false);
   assert.deepEqual((kept[0] as Rec).omitted, { inputs: ["review"], outputs: [] });
   assert.ok(!JSON.stringify(kept).includes("hunter2"));
-  assert.deepEqual(kept.map((e) => e.kind), whole.map((e) => e.kind));                           // the answer is kept: its text too
+  // the answer is kept: its text too; the model's stream is not (the content is not whole)
+  assert.deepEqual(kept.map((e) => e.kind), whole.map((e) => e.kind).filter((k) => k !== "piece"));
   const boundary = await all(s.events({ view: views.boundary(s.callId!) }));
   assert.deepEqual(boundary.map((e) => e.kind), ["started", "request", "done"]);                  // a view keeps requests
   assert.deepEqual(boundary.map((e) => e.after), [null, at(boundary[0]!), at(boundary[1]!)]);

@@ -334,7 +334,7 @@ export class Call {
   }
 
   /** Make one of its events (streaming.md) when anything watches it: its streams, observers, the tree's journal. */
-  event(kind: "request" | "text" | "thinking" | "tool_call" | "tool_result" | "retry" | "approval" | "approved" | "note" | "later", fields: Rec) {
+  event(kind: "request" | "text" | "thinking" | "piece" | "tool_call" | "tool_result" | "retry" | "approval" | "approved" | "note" | "later", fields: Rec) {
     return this.node?.log.emit(this.node, kind, fields) ?? null;
   }
 

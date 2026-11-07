@@ -102,7 +102,7 @@ pieces = {}
 for event in s.events():
     if event.kind == "text":
         pieces.setdefault(event.field, []).append(event.text)
-    else:
+    elif event.kind != "piece":           # the model's stream as lm15 sent it (see the table)
         print(event.kind)
 {field: (len(texts), texts[:6]) for field, texts in pieces.items()}      # how many pieces, the first ones
 ```
@@ -119,6 +119,7 @@ done
 | `started` | a call began (`inputs`) |
 | `text` | a piece of an output (`field`, `text`; `answer` when it is the answer) |
 | `thinking` | a piece of a thinking model's own thinking |
+| `piece` | something else the model's stream sent, as lm15 sent it (`event.lm15`): its start and end (why it stopped, what it used), a citation, a tool call's input as it is written, a picture or a sound as it is made |
 | `tool_call`, `tool_result` | the model used a tool, and what the tool said |
 | `retry` | the model is asked again (`reason`) |
 | `done`, `failed` | a call ended (`value`, or `error`) |
@@ -298,7 +299,11 @@ narrower views are made from them, event by event:
   a customer of a [served program](serving.md), say: the program's answer
   and its text as it is written, approvals addressed to them, and the end.
   Never a helper's answer, a tool call or its result, a model's thinking,
-  why a request was retried, or an error's message.
+  the model's stream, why a request was retried, or an error's message.
+
+A view of your own, `functai.views.Custom(calls=..., shows=...)`, shows
+what you choose (`s.events(view=...)`, or what a served program's callers
+see: [Showing callers more](serving.md#showing-callers-more)).
 
 A module's answer is usually one of its helpers' answers. `answer_from`
 says which, so the outside view shows that text being written, as the
@@ -323,7 +328,7 @@ def support(message: str) -> str:
 
 s = support.stream("Where is my parcel B-2210?")
 s.result
-full = [(e.kind, e.function) for e in s.events() if e.kind != "text"]
+full = [(e.kind, e.function) for e in s.events() if e.kind not in ("text", "piece")]
 outside = [(e["kind"], e["function"]) for e in s.events(view="outside") if e["kind"] != "text"]
 full, outside
 ```

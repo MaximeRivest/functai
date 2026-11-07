@@ -167,4 +167,85 @@ def for_program(name: str, program: Any) -> View:
     return View(name, answer_from=getattr(program, "_answer_from", None), notes=outside_notes(program))
 
 
-__all__ = ["View", "outside", "outside_notes", "for_program", "NAMES"]
+_ALWAYS = frozenset({"started", "request", "retry", "done", "failed"})
+
+
+class Custom:
+    """A view of your own (contract/streaming.md, *Views*): what a served
+    program's callers see (``serve(program, view=...)``), or what you read of
+    a stream (``s.events(view=...)``)::
+
+        thoughts = views.Custom(shows=lambda e: e if e["kind"] in ("thinking", "text") else None)
+
+    ``calls(started)``: whether a call is shown, given its ``started`` event
+    (as JSON); default every call. ``shows(event)``: each event of a shown
+    call as the view shows it: the same, a copy with values left out, or
+    None; default the event. A call it shows always shows its ``started``,
+    ``request``, ``retry``, ``done`` and ``failed`` (with the values
+    ``shows`` leaves them), and what ``shows`` gives is cut to the keys the
+    contract knows. Never alter a value, nor invent one: a reader takes what
+    a view shows as what happened."""
+
+    def __init__(self, *, calls: Optional[Any] = None, shows: Optional[Any] = None):
+        for name, f in (("calls", calls), ("shows", shows)):
+            if f is not None and not callable(f):
+                raise TypeError(f"a view's {name} is a function; not {type(f).__name__}")
+        self.calls = calls
+        self.shows = shows
+
+    def __repr__(self) -> str:
+        return "views.Custom(" + ", ".join(n for n in ("calls", "shows") if getattr(self, n) is not None) + ")"
+
+
+class _Applied:
+    """A view of one's own made event by event, as ``View`` makes a named one."""
+
+    def __init__(self, view: Custom):
+        self.view = view
+        self.shown: Dict[str, bool] = {}
+        self.last: Optional[Dict[str, int]] = None
+
+    def apply(self, event: Mapping[str, Any]) -> Optional[Dict[str, Any]]:
+        from .eventlog import KINDS, known
+        e = copy.deepcopy(dict(event))
+        kind, call = e.get("kind"), e.get("call")
+        if kind not in KINDS:                            # what it cannot judge, it never passes on
+            return None
+        if kind == "started":
+            self.shown[call] = bool(self.view.calls(copy.deepcopy(e))) if self.view.calls is not None else True
+        if not self.shown.get(call):
+            return None
+        given = self.view.shows(copy.deepcopy(e)) if self.view.shows is not None else e
+        if given is not None:
+            e = known(given)
+        elif kind not in _ALWAYS:
+            return None
+        e["after"] = self.last
+        self.last = {"writer": e["writer"], "seq": e["seq"]}
+        return e
+
+
+def as_view(view: Any) -> Any:
+    """``view`` as one a reader may name: a name of ``NAMES``, a ``Custom``, a
+    function (a ``Custom`` with that ``shows``), or any object with ``calls``
+    and ``shows`` (each a function or None). TypeError otherwise."""
+    if isinstance(view, str):
+        if view in NAMES:
+            return view
+    elif isinstance(view, Custom):
+        return view
+    elif callable(view):
+        return Custom(shows=view)
+    elif hasattr(view, "calls") or hasattr(view, "shows"):
+        return Custom(calls=getattr(view, "calls", None), shows=getattr(view, "shows", None))
+    raise TypeError(f"a view is one of {', '.join(NAMES)}, a views.Custom, or a function; not {view!r}")
+
+
+def viewer(view: Any, program: Any) -> Any:
+    """The view ``view`` (``as_view``) of a log of ``program``'s calls, made
+    event by event: ``.apply(event)`` gives the event as it shows it, or None."""
+    view = as_view(view)
+    return for_program(view, program) if isinstance(view, str) else _Applied(view)
+
+
+__all__ = ["View", "Custom", "outside", "outside_notes", "for_program", "as_view", "viewer", "NAMES"]

@@ -8,6 +8,24 @@ The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
 Training models stays in Python (*Not here yet* in the README).
 
+### What a served program's callers see, and the model's whole stream
+
+The same as Python's (contract: serving.md *What callers see*,
+streaming.md *Pieces* and *Views*).
+
+- **`serve(program, { view })`** (and `new Service(program, { view })`):
+  `"outside"` (the default), `"kept"`, `"full"` (thinking, tools, helpers,
+  the model's stream, an error's message, the outputs FunctAI adds from
+  `/call`), or `{ calls, shows }` of your own. `GET /interface` says which.
+- **`turn.events({ view })`** takes `"full"` (the store's kept form) and a
+  view of your own, as `s.events({ view })` does; a finished turn's
+  `TurnStream.events({ view })` keeps the view asked for (it gave the
+  outside view for any view).
+- **The `piece` event** (`PieceEvent`): what a streamed request's model
+  stream sent that no other event shows, as lm15 wrote it (`e.lm15`).
+  Kept only when the call's content is whole; never in the outside view. A
+  stream now has a `piece` at each request's start and end.
+
 ### Measures: cases, results, ratings, honest numbers
 
 The same model and numbers as Python's (design/20; contract measures.md;

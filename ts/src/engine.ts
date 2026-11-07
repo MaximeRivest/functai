@@ -17,7 +17,7 @@ import { Cancelled } from "./errors.ts";
 import { sumUsage } from "./usage.ts";
 import * as bridge from "lmcc/lm15";
 import { Delta, Message, RETRYABLE_ERRORS, UnsupportedFeatureError, materializeResponse, responseToEvents, type Config, type Request, type Response,
-  type StreamEvent } from "@lm15/lm15";
+  StreamEvent } from "@lm15/lm15";
 import type { Call } from "./calllog.ts";
 import { misfit } from "./shapes.ts";
 import { copyData, entriesOf, setOwn } from "./values.ts";
@@ -215,16 +215,18 @@ async function send(job: Job, request: Request, requestHash: string | null, hit:
           for await (const e of job.router.stream!(request, signal ? { signal } : undefined)) {
             stopped(job);
             events.push(e);
-            if (e.type !== "delta") continue;
+            // what no other event shows, as lm15 wrote it (streaming.md, *Pieces*): text and thinking are shown below
+            const delta = e.type === "delta" ? e.delta : null;
+            const d = delta as { type: string; text?: string } | null;
+            if (d?.type !== "text" && d?.type !== "thinking") call.event("piece", { lm15: StreamEvent.toJSON(e) });
+            if (!delta || !d) continue;
             first ??= (performance.now() - t0) / 1000;
-            const d = e.delta as { type: string; text?: string };
             if (d.type === "thinking" && !thinkingIsRead && d.text) call.event("thinking", { text: d.text });
             if (viewing) {
               try {
-                show(view.feed(Delta.toJSON(e.delta) as Rec) as never);
+                show(view.feed(Delta.toJSON(delta) as Rec) as never);
               } catch {
                 viewing = false;
-              }
             }
           }
         } catch (err) {

@@ -159,11 +159,13 @@ quartodoc:
     - Approval
     - ApprovalError
   - title: Serving
-    desc: Serve a program over HTTP to callers who see only its boundary; use a served
-      program like a local one (`remote`'s page also has `RemoteProgram` and `RemoteError`).
+    desc: Serve a program over HTTP to callers who see its boundary, or what you choose
+      to show them (`view`); use a served program like a local one (`remote`'s page also
+      has `RemoteProgram` and `RemoteError`).
     contents:
     - serve
     - Service
+    - views.Custom
     - remote
     - ServeError
   - title: The call log

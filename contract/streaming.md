@@ -68,6 +68,7 @@ call log's id) and that call's program (`function`, the program's name).
 | `request` | the call begins a request to a model | `request` (its number: `1` for the call's first request, one more for each further one), `model` (the model asked, as the call log's exchange names it, or null) |
 | `text` | a piece of an output's text is written | `field`, `answer` (true when the field is the answer), `text` |
 | `thinking` | a piece of the model's own thinking that no output reads | `text` |
+| `piece` | the model's stream sent something no other event shows (*Pieces*) | `lm15` (that stream event, as lm15 writes it as JSON) |
 | `tool_call` | the model asked for a tool, and the request is complete | `id` (the call's id, as lmcc names it: the provider's, or one lmcc assigned), `name`, `input`, `invocation` (its number among the call's tool calls: [tools.md](tools.md)) |
 | `tool_result` | the tool ran (or a person refused it: the refusal is its output) | `id`, `name`, `output` (the result's text: the result itself when it is text, else its text parts joined by a new line, maybe empty), `parts` (only when the result is a list of parts, a picture with it: the whole result as lm15 parts, [tools.md](tools.md), *What a tool returns*), `invocation` |
 | `approval` | a tool call waits for a person's answer ([tools.md](tools.md)) | `id`, `invocation`, `name`, `input`, `effects`, `path`, `to` (`owner` or `caller`), `plugin`, `question`? |
@@ -85,8 +86,8 @@ with what it does not know is in *Formats*.
 Laws:
 
 1. **Order.** A call's events come in the order they happened: `started`,
-   then its `request`, `text`, `thinking`, `tool_call`, `tool_result`,
-   `retry`, `note` and `later` events and the events of the calls inside it, then exactly one
+   then its `request`, `text`, `thinking`, `piece`, `tool_call`,
+   `tool_result`, `retry`, `note` and `later` events and the events of the calls inside it, then exactly one
    `done` or `failed`. A log's first event is its outermost call's
    `started`; its last is that call's `done` or `failed`, and nothing
    follows it. When calls inside run at the same time, their events are
@@ -144,6 +145,24 @@ interface may keep only the latest of a note declared `latest`; one that
 does not reads every note as before. A follower's state holds each
 call's notes, in order (*Replaying*).
 
+**Pieces.** A streamed request's `piece` events are, with its `text` and
+`thinking`, everything the model's stream sent: one for each event lm15
+streams for the request (its start, its end, an error), and for each of
+its pieces but those of text and thinking, which are shown already (as
+`text`, as `thinking`, or as the text of the field that reads the
+thinking). So a reader can show what FunctAI does not read itself: a
+citation, a picture or a sound as it is made, a tool call's input as it
+is written, the provider's continuation data, why the reply stopped and
+what it used. Each is the lm15 stream event as lm15 writes it as JSON
+(`{"type": "start" | "delta" | "end" | "error", …}`: lm15's own
+contract, the same in every language), in the order lm15 gave them. A
+piece is the provider's, not a value of the call: no rule of replay
+reads it, and the call record holds the reply whole. Only a streamed
+request makes pieces: a reply that arrives whole (law 6) has none.
+Pieces are shown as they come, so a tool call's input or a picture may
+make many; they are kept only when the call's content is whole (*The
+kept form*).
+
 ## Replaying
 
 Reading a form's events in order, from its first, and applying laws 1 to
@@ -156,8 +175,8 @@ each field's text so far. `started` adds the call with no fields; `request`
 and `retry` empty every field of their call; `text` appends to its field;
 `done` and `failed` mark the call ended; `note` appends `{name, data}`
 to its call's notes (`data` only when the event has it), which a call has
-once it made one (absent before). `thinking`, `tool_call`, `tool_result`
-and `later` are shown as they come and change no field. An event of a
+once it made one (absent before). `thinking`, `piece`, `tool_call`,
+`tool_result` and `later` are shown as they come and change no field. An event of a
 kind the reader does not know changes nothing. The log is **finished**
 once its outermost call has ended. `cases/events/replay-*.json` pin this.
 
@@ -249,6 +268,7 @@ kept thus:
 | `request` | as is (it holds no value) |
 | `text` | a field that is kept: as is. Any other: not kept at all |
 | `thinking` | not kept |
+| `piece` | not kept |
 | `tool_call` | `id` and `name`, no `input`; `content: false` |
 | `tool_result` | `id` and `name`, no `output` and no `parts`; `content: false` |
 | `retry` | `wait`, no `reason`; `content: false` |
@@ -307,8 +327,8 @@ Three views are named:
   (`content: false`). Of every call: an `approval` addressed to the
   caller (`to: "caller"`) and its `approved`, re-addressed to the
   outermost call (`call`, `function`). Nothing else: no helper's answer,
-  tool call or result, thinking, or reason for a retry (they can quote
-  a helper's reply or a tool's input). One exception, declared: each
+  tool call or result, thinking, piece, or reason for a retry (they can
+  quote a helper's reply or a tool's input). One exception, declared: each
   `note` whose name the outermost program declares `outside`
   ([programs.md](programs.md), *Notes*), made by any call of its tree,
   re-addressed to the outermost call (`call`, `function`), its `name`
@@ -319,6 +339,16 @@ Three views are named:
   Events do not carry a program's interface: whoever makes the view (a
   server, a host) gives it the names, from the program it runs, as it
   gives `answer_from`.
+
+An owner may also make a view of their own: which calls it shows (given
+each call's `started`), and, of a call it shows, each event as it shows
+it (the same, a copy with values left out, or nothing). Its owner keeps
+the rules above (it never alters a value nor invents one); FunctAI keeps
+those it can: a call it shows always shows its `started`, `request`,
+`retry`, `done` and `failed` (with the values the view leaves them), and
+an event it does not know is never passed on. `outside` is what a served
+program's callers see unless its owner chooses another view
+([serving.md](serving.md), *What callers see*).
 
 **A module's answer as it is written.** A module may say which AI function
 it calls answers for it (Python `@module(answer_from=answer)`). The
@@ -697,7 +727,9 @@ wait a person feels). A cancelled call's `error` is `{"type":
 Format 2 (2026-09-28) added `functai_event`, `tree`, `writer`, `seq`,
 `after` (a position), `at`, the `request` kind, `started`'s `root`, `program`,
 `content`, `omitted` and `saw`, the kept form, views, journals and the
-rules a store keeps; a `tool_call`'s `id` is never null. Format 1 events
+rules a store keeps; a `tool_call`'s `id` is never null. The kind
+`piece` (2026-11-06) is one a later stage added, as the next paragraph
+allows: a reader that does not know it skips it. Format 1 events
 (no `functai_event` key) were only ever shown inside the process that
 made them, never kept; the schema still accepts them, so that a reader
 meeting one knows it.

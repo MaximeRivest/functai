@@ -160,10 +160,10 @@ end
     slow = e -> (sleep(0.2); push!(got, e))
     slow(nothing); empty!(got)                                      # compiled before it is timed
     t = @elapsed go(observers=[slow])
-    @test t < 0.5                                                  # given in the call, its 5 events would take 1 s
+    @test t < 0.5                                                  # given in the call, its 7 events would take 1.4 s
     @test FunctAI.drain(10)
     kinds = [e.kind for e in got]
-    @test kinds[1:2] == [:started, :request] && kinds[end] === :done && all(==(:text), kinds[3:end-1])
+    @test kinds[1:3] == [:started, :request, :piece] && kinds[end-1:end] == [:piece, :done] && all(==(:text), kinds[4:end-2])
     # blocked on a gate: the call's code runs and returns meanwhile
     gate, entered = Channel{Nothing}(1), Channel{Nothing}(1)
     blocked = e -> e.kind === :started && (put!(entered, nothing); take!(gate))

@@ -6,12 +6,12 @@
 # (journal.jl) are made of these.
 
 const EVENT_FORMAT = 2
-const EVENT_KINDS = (:started, :request, :text, :thinking, :tool_call, :tool_result, :retry, :done, :failed, :approval, :approved,
-                     :note, :later)
+const EVENT_KINDS = (:started, :request, :text, :thinking, :piece, :tool_call, :tool_result, :retry, :done, :failed, :approval,
+                     :approved, :note, :later)
 const ENVELOPE = ("functai_event", "kind", "tree", "writer", "seq", "after", "at", "call", "function")
 const KIND_KEYS = Dict{Symbol,Tuple}(
     :started => ("parent", "root", "program", "inputs", "content", "omitted", "saw", "invocation"), :request => ("request", "model"),
-    :text => ("field", "answer", "text"), :thinking => ("text",), :tool_call => ("id", "name", "input", "content", "invocation"),
+    :text => ("field", "answer", "text"), :thinking => ("text",), :piece => ("lm15",), :tool_call => ("id", "name", "input", "content", "invocation"),
     :tool_result => ("id", "name", "output", "parts", "content", "invocation"), :retry => ("reason", "wait", "content"),
     :done => ("value", "content"), :failed => ("error", "content"),
     # stage 4 (contract/tools.md): a tool call waits for a person's answer, and the answer
@@ -55,7 +55,7 @@ end
     Event
 
 One thing that happened in a call tree (contract/streaming.md, format 2):
-its `kind` (`:started`, `:request`, `:text`, `:thinking`, `:tool_call`,
+its `kind` (`:started`, `:request`, `:text`, `:thinking`, `:piece`, `:tool_call`,
 `:tool_result`, `:retry`, `:done`, `:failed`, `:approval`, `:approved`,
 `:note`, `:later`, or a kind a later stage adds),
 where it is in its log (`tree`, `writer`, `seq`, `after`: a
@@ -470,7 +470,7 @@ function kept_event(e::Event, keep::Keep, program)
         return out
     elseif kind === :text
         return get(keep.outputs, data["field"], false) ? out : nothing
-    elseif kind === :thinking
+    elseif kind === :thinking || kind === :piece
         return nothing
     elseif kind === :tool_call || kind === :approval
         delete!(data, "input")

@@ -123,7 +123,8 @@ Stream.events(view=None)
 ```
 
 Every event of the call and of the calls inside it, in order:
-``Started``, ``Request``, ``Text``, ``Thinking``, ``ToolCall``,
+``Started``, ``Request``, ``Text``, ``Thinking``, ``Piece`` (the
+model's stream, as lm15 sent it), ``ToolCall``,
 ``ToolResult``, ``Retry``, ``Done``, ``Failed``, ``Approval``,
 ``Approved`` (``functai.streaming``). Works with ``for`` and ``async
 for``; each event has ``.kind``, ``.position`` (its place in its
@@ -131,9 +132,10 @@ tree's log) and ``.to_dict()`` (the contract's JSON, format 2).
 
 ``view``: the events as one kind of reader may see them, as the
 contract's JSON (what a server sends): ``"kept"`` (what
-``log_content`` lets be kept) or ``"outside"`` (a caller who sees
+``log_content`` lets be kept), ``"outside"`` (a caller who sees
 only the program's boundary: its answer's text, approvals addressed
-to it, its end). See ``functai.views``.
+to it, its end), or a view of your own (``views.Custom``, made from
+the whole form). See ``functai.views``.
 
 ### show { #functai.Stream.show }
 

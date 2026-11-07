@@ -69,7 +69,7 @@ export {
   type JournalChoice, type ReceiverLayer,
   type FailedEvent, type FollowResult, type KeptFields, type LogState, type Position, type ProgramInfo, type ReadAnswer,
   type RequestEvent, type RetryEvent, type SawEntry, type StartedEvent, type StoreCode, type StreamEvent, type TextEvent,
-  type ThinkingEvent, type ToolCallEvent, type ToolResultEvent, type ApprovalEvent, type ApprovedEvent, type NoteEvent, type LaterEvent,
+  type ThinkingEvent, type PieceEvent, type ToolCallEvent, type ToolResultEvent, type ApprovalEvent, type ApprovedEvent, type NoteEvent, type LaterEvent,
 } from "./events.ts";
 export { JournalError, flush, type Journal, type JournalCode, type JournalSetting, type Observer, type Outcome } from "./log.ts";
 export { sawOf, keepsSaw, SawUnknown, type SawCode } from "./saw.ts";
