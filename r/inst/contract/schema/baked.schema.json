@@ -40,7 +40,10 @@
     "path": {"type": "string"},
     "adapter": {"type": "string"},
     "service": {"type": "string"},
-    "uri": {"type": "string"}
+    "uri": {"type": "string"},
+    "sampler_uri": {"type": "string"},
+    "state_uri": {"type": "string"},
+    "lora_rank": {"type": ["integer", "null"]}
    },
    "allOf": [
     {"if": {"properties": {"form": {"const": "merged"}}}, "then": {"required": ["path"]}},
@@ -51,10 +54,23 @@
   "template": {
    "type": "object", "required": ["sha256", "kwargs", "end", "stop_token_ids"],
    "properties": {"sha256": {"type": "string"}, "kwargs": {"type": "object"}, "end": {"type": "string"},
-                  "stop_token_ids": {"type": "array", "items": {"type": "integer"}}}
+                  "stop_token_ids": {"type": "array", "items": {"type": "integer"}},
+                  "source": {"enum": ["hf", "files", "tml-renderers"]},
+                  "repo": {"type": "string"}, "tokenizer_sha256": {"type": "string"}, "lead": {"type": "string"},
+                  "picture": {"type": ["object", "null"], "required": ["rule", "placeholder"],
+                              "properties": {"rule": {"enum": ["grid", "qwen"]}, "placeholder": {"type": "string"},
+                                             "patch": {"type": "integer"}, "merge": {"type": "integer"},
+                                             "min_pixels": {"type": "integer"},
+                                             "max_pixels": {"type": "integer"}}}}
   },
   "generation": {"type": "object", "properties": {"max_new_tokens": {"type": "integer", "minimum": 1},
                                                   "max_model_len": {"type": "integer", "minimum": 1}}},
+  "sampling": {"type": "object", "properties": {"temperature": {"type": "number", "minimum": 0}}},
+  "training": {"type": "object",
+               "properties": {"method": {"enum": ["sft", "rl", "prefer", "distill", "decision"]},
+                              "criteria": {"type": "object", "additionalProperties": {"type": ["number", "null"]}},
+                              "trained_on": {"type": "array", "items": {"type": "string"}},
+                              "spent": {"type": "object"}}},
   "head": {"type": "object", "required": ["architecture", "fields", "max_length", "temperatures"]},
   "hashes": {"type": "object", "additionalProperties": {"type": "string", "pattern": "^[0-9a-f]{64}$"}},
   "sizes": {"type": "object", "additionalProperties": {"type": "integer"}}
