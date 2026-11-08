@@ -695,6 +695,65 @@ reads (`exportExamples` as JSON lines), byte for byte what Python writes.
 `functai.bake`, TRL, a service) through an OpenAI-compatible server, laid
 out exactly as it was trained.
 
+## Training a model of your own on Tinker
+
+```ts
+import { bake, rewards, criterion } from "functai";
+
+const plan = await bake(scanpath, rows, { student: "Qwen/Qwen3.5-4B", criteria: [match], heldOutBy: "screen", planOnly: true });
+console.log(String(plan));                                   // cases, tokens, steps, checks, ≈ dollars, what is sent
+const s1 = await bake(scanpath, rows, { student: "Qwen/Qwen3.5-4B", criteria: [match], heldOutBy: "screen" });
+const s2 = await bake(scanpath, rows, { method: "rl", start: s1, reward: match });       // reinforce from s1
+await scanpath.using({ lm: s2 })({ screen, width, height, target });
+```
+
+`bake` trains a student of an AI function on
+[Tinker](https://thinkingmachines.ai/tinker/) (Thinking Machines; set
+`TINKER_API_KEY`). Nothing runs on your machine and nothing needs PyTorch:
+a student's tokens come from its published files (`tokenizer.json`, the chat
+template, its picture settings), read with `@huggingface/tokenizers` and
+`@huggingface/jinja` (`npm install @huggingface/tokenizers
+@huggingface/jinja`, about 1 MB), so the tokens it is trained on are the
+tokens it is called with. Pictures train too (`t.image()` inputs, PNG or
+JPEG), each counted as Tinker counts it.
+
+- **Methods** (`method`): `"sft"` (the default: imitate the rows' answers,
+  or a `teacher`'s for rows without one), `"rl"` (a `reward`: a criterion
+  with a judge, a function of `{ answer, expected, references, … }`, or a
+  group reward such as `rewards.energy(distance)`, which rewards answers for
+  being spread the way people's are), `"prefer"` (`pairs` of a better and a
+  worse answer: DPO), `"distill"` (a `teacher` sharing the student's
+  tokenizer scores every token the student writes), `"decision"` (an answer
+  among a few values: each one's probability from one forward pass).
+- **Checks while it trains**: the held-out cases (`test`, or design 20's
+  split; `heldOutBy` keeps a column's rows on one side) are answered at each
+  of `temperatures` (default 0, 0.7, 1) and scored by the first of
+  `criteria` (else a `metric`, else exact match; `rl`: its reward over a
+  group of answers). The best check and temperature are kept: the model
+  samples at that temperature. Answers alike (self-agreement) is measured
+  on `rl` runs, where a reward can collapse them to one.
+- **The run** is a folder (`folder`; under `~/.cache/functai/bakes`): its
+  plan, `metrics.jsonl`, `run.json`. Run the same bake again: done, it loads;
+  stopped, it resumes from its last saved state. The model keeps the
+  training state of the weights it answers with, so `start` continues from
+  exactly them. Samples are seeded, so a run chooses the same way again.
+- **Money and storage**: the plan prices training, sampling and checks
+  from Tinker's price table; intermediate states expire after a day and are
+  deleted, the best sampler replaces the one before; `baked.json` says what
+  was billed.
+- **A model** (`bakedOnTinker(folder)`) answers on Tinker through
+  `fn.using({ lm })`, rendered with the student's files; it is refused when
+  those files changed since training. The `Tinker` class is the client
+  (Thinking Machines publishes no TypeScript SDK; this one speaks the
+  official Python SDK's protocol).
+
+Students whose files are published: Qwen 3.5, 3.6 and 3.8, Inkling and
+Inkling-Small, and Tinker's others with a chat template. Inkling 2 Small's
+files are announced but not out yet: TypeScript refuses it until then
+(Python can train it now). Not here: reinforcement learning on a module or
+an agent with tools, and training on this machine (Python's
+`functai.bake`).
+
 ## Where TypeScript differs, stated
 
 - **Results of a store are promises.** `chat.turns()`, `chat.head()` and
@@ -725,9 +784,9 @@ out exactly as it was trained.
 
 ## Not here yet
 
-Compared with Python: training models itself (`bakeExamples` writes what
-any trainer reads, and `baked()` runs the result when it writes text; a
-baked classifier, a *head*, runs only in Python), reading tables other
+Compared with Python: training models on this machine (TypeScript trains
+on Tinker: *Training a model of your own on Tinker*; a baked classifier, a
+*head*, runs only in Python), reading tables other
 than arrays of objects, loading programs with code of their own (only AI
 functions travel between languages), Python's `verify`, `check` and
 `runs`, an instruction the model writes and refines as calls come in

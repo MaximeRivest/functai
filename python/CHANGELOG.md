@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+### Training on Tinker: five methods, pictures, checks by your criteria
+
+design/21, contract training.md (its cases pass in both languages).
+
+- **`functai.bake.bake(fn, rows, where="tinker", ...)`** and
+  `method="rl" | "prefer" | "distill" | "decision"` train on Tinker through
+  its official SDK (0.39): `reward=` a `Criterion` with a judge, a function,
+  or `functai.bake.rewards.energy(distance)`; `pairs=` for DPO; `teacher=`
+  for distillation; `criteria=` decide which checkpoint and temperature are
+  kept; `held_out_by=` keeps a column's rows on one side; `start=` continues
+  from an earlier bake; `plan_only=True` prices it first. A run resumes; its
+  samples are seeded.
+- **A student's tokens come from its published files** (`tokens.py`), not
+  from Tinker's renderers: no PyTorch for `functai[tinker]`. Pictures train
+  too (PNG, JPEG), counted as Tinker counts them. Inkling 2 Small, whose
+  files are not out yet, renders through `functai[inkling2]` (tml-renderers,
+  which needs PyTorch) with Inkling-Small's template: 99 of 100 prompts
+  identical to Thinking Machines' renderer, the other its picture-count bug.
+- **Generation stops at the end of the student's turn** (Inkling's
+  `<|content_model_end_sampling|>`), not at its first end-of-message: a
+  thinking part before the answer no longer cut it.
+- **Fixed: `bake` refused functions with a picture input** (their spec was
+  built without the layouts' registry).
+- The plan's own choice of Tinker (`where="auto"` with no GPU) goes the same
+  way; the earlier Tinker trainer, never run against the service, is gone.
+
 ### A reasoning output reads the model's thinking on every thinking model
 
 contract: functions.md *Reasoning* and *Capabilities*; models.json and the

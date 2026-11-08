@@ -638,3 +638,80 @@ const rl = await bake(fn, trainingCases, { method: "rl", start: baked, reward: c
    a cleverer reward. That is data collection for Bigspin, not FunctAI.
    FunctAI's part is design 20's draws and blind ratings, which already
    exist.
+
+## As built (2026-11-08)
+
+Branch `bake-tinker`. Nothing has run against Tinker itself: every test
+runs against `tools/fake_tinker.py`, which the official SDK checks (below).
+The first live run is the integration test, on an account of Maxime's own.
+
+| piece | Python | TypeScript |
+|---|---|---|
+| a student's tokens from its files, pictures, reading replies | `bake/tokens.py` (`tokenizers`, Hugging Face's `render_jinja_template`) | `students.ts` (`@huggingface/tokenizers`, `@huggingface/jinja`, optional peers) |
+| the arithmetic (datums, advantages, KL, energy, DPO, decisions, choosing) | `bake/training.py` | `training.ts` |
+| the client | the official SDK, `tinker` 0.39 | `tinker.ts`, `protowire.ts` (written from the SDK's protocol; protobuf by hand) |
+| plan, run, methods, checks, the model | `bake/service.py` (`bake(..., where="tinker")` and the new methods route there) | `train.ts` (`bake`, `planBake`, `bakedOnTinker`, `rewards`) |
+| the contract | `contract/training.md`, `contract/students.json`, `contract/cases/training/` (19 cases) | |
+
+Differences from the proposal above, each for a reason:
+
+- **Checks of `rl` score the reward over a group of answers per case**, not
+  one answer per case: at temperature 1 one answer is a coin flip, and a
+  lucky one before training became an unbeatable best (found by a test).
+  Explicit `criteria` still decide through `evaluate`.
+- **The model keeps the training state of the weights it answers with**
+  (the best check's), saved when a check becomes the best, so `start`
+  continues from exactly them; a run kept the final state at first, which
+  was not the model's weights when an earlier check won (found by a test).
+- **Samples are seeded** (the bake's seed, the step, the case; a call during
+  a check by its request), so a run chooses the same way again.
+- **A check never reads the reply cache**, and names its deciding metric
+  (rows that know their answers add exact match first, which a first
+  version read instead of the criterion).
+- **Generation stops at the end of the student's turn**, the last special
+  token of what the template writes after a reply (Inkling's
+  `<|content_model_end_sampling|>`), and a reply is read after the last
+  `lead`: a thinking part before the answer does not cut it. Python's earlier
+  rule stopped at the first token after the reply.
+- **Python's Tinker trainer** (never run against the service) is gone;
+  `trainers/tinker.py` keeps the plan's estimate and `download()`.
+- **The heartbeat is never retried** (TypeScript): a retried one kept a
+  process alive forever once the service was unreachable (found as a test
+  file that would not exit).
+- **Not built**: `rl` on modules and agents with tools (stage E); the new
+  methods trained here with TRL (stage F); weight optimization in Quiver
+  (section 8: that repository's work, next).
+
+Proven offline, and how:
+
+- **The official SDK runs against the fake**: training learns, greedy
+  sampling reproduces, prompt log-probabilities, save and load with the
+  optimizer, samplers from paths, an RL step, checkpoints listed, given a
+  TTL and deleted, a picture's token count enforced as Tinker enforces it.
+- **The contract's 19 training cases** pass in both languages.
+- **Real files**: Qwen3.5-4B's and Inkling-Small's give the same tokens in
+  Python and TypeScript (56 conversations each, 29 pictures;
+  `tools/crosslang_training.py`, in `./check`); Inkling-Small's published
+  files give the cookbook's exact training tokens (366 of 366,
+  `21-evidence/`); Inkling 2 Small through `tml-renderers` with
+  Inkling-Small's template gives Thinking Machines' renderer's prompts on 99
+  of 100 conversations, the other being that renderer's picture-count bug.
+- **End to end against the fake** (10 tests per language): the plan prices
+  and spends nothing; sft learns and calls answer on Tinker; criteria decide
+  by name; a failed run resumes from its saved state; `rl` takes a rewarded
+  answer from 4% to 83% of samples; the energy score runs; DPO moves the
+  student to the chosen answer; a decision model answers the likeliest
+  choice with probabilities summing to 1; distillation refuses a teacher
+  with another tokenizer; a picture function trains and is called.
+
+Not proven until the integration test:
+
+- That Tinker accepts this TypeScript client's requests as it accepts the
+  SDK's (written from the SDK and checked against a fake the SDK checks;
+  the protocol is not documented). The first step of the integration test.
+- That Tinker's server computes Qwen's picture token count by the rule the
+  cookbook uses (we follow the cookbook; Inkling's is measured).
+- Learning rates and the number of steps on real models (the fake's
+  learning is a lookup table's: it proves the loops, not the settings).
+- Billing read back: the fake answers the SDK's shape; Tinker's records
+  lag (hour buckets), so `spent.billed` may be partial at the end of a run.

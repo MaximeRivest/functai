@@ -6,7 +6,37 @@
 
 The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
-Training models stays in Python (*Not here yet* in the README).
+
+### Training a model of your own on Tinker
+
+design/21, contract training.md (its cases pass).
+
+- **`bake(fn, rows, { student, method, … })`** trains on Tinker: `sft`,
+  `rl` (criteria, functions, or group rewards: `rewards.energy`), `prefer`
+  (DPO), `distill` (on-policy) and `decision`. `planOnly` prices it first.
+  Checks on held-out cases choose the step and the temperature; a run
+  resumes; `start` continues from an earlier bake.
+- **No PyTorch, no Python**: a student's tokens come from its published
+  files (`Student`, with `@huggingface/tokenizers` and `@huggingface/jinja`,
+  optional peers), pictures included; the same tokens as Python's on Qwen 3.5
+  and Inkling-Small (`tools/crosslang_training.py`).
+- **`Tinker`**: a client for Tinker written from the official Python SDK's
+  protocol (protobuf for training and sampling results); tested against
+  `tools/fake_tinker.py`, which the official SDK checks.
+- **`bakedOnTinker(folder)`**: a model trained there, called through
+  `fn.using({ lm })`.
+
+### A reasoning output reads the model's thinking on every thinking model
+
+The same as Python's (contract functions.md *Reasoning*; models.json and the layouts).
+
+- **The request asks for the thinking's summary** (`{ effort: "medium", summary: "auto" }`): OpenAI's
+  reasoning models, Gemini, and Claude Opus 4.7+ send none of it otherwise, so a `module: "cot"` function
+  read an empty `reasoning`. Needs `@lm15/lm15` 2.2 (now the least version) on Claude.
+- **Claude 5 models think natively** (added to `reasoning_prefixes`); asked to write their reasoning in the
+  reply, they sometimes refuse.
+- **`config: { reasoning }` chooses the effort** of a reasoning output (and the budget, and the summary when
+  it names one); the layout's `medium` applies only when it says nothing. It used to throw a conflict.
 
 ### What a served program's callers see, and the model's whole stream
 
