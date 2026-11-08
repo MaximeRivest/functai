@@ -551,8 +551,22 @@ export class Sampler {
       seq_id: this.#seq++, prompt_logprobs: Boolean(opts.promptLogprobs), topk_prompt_logprobs: 0, topk_sample_logprobs: 0, prompt_alt_tokens_k: 0,
       record_stability_info: false, type: "sample" };
     if (opts.targetPromptLogprobs) {
+      // sparse (CSR), -1 entries left out: what Thinking Machines' own decision recipe sends
       const rows = opts.targetPromptLogprobs;
-      body["target_prompt_logprobs"] = { data: rows.flat(), dtype: "int64", shape: [rows.length, rows[0]?.length ?? 0] };
+      const k = rows[0]?.length ?? 0;
+      const data: number[] = [];
+      const cols: number[] = [];
+      const crow: number[] = [0];
+      for (const row of rows) {
+        row.forEach((t, j) => {
+          if (t >= 0) {
+            data.push(t);
+            cols.push(j);
+          }
+        });
+        crow.push(data.length);
+      }
+      body["target_prompt_logprobs"] = { data, dtype: "int64", shape: [rows.length, k], sparse_crow_indices: crow, sparse_col_indices: cols };
     }
     const fut = await this.tinker.call("POST", "/api/v1/asample", body, { what: "sample" });
     const r = await this.tinker.result(fut, "proto", "sample");

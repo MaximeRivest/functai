@@ -672,8 +672,18 @@ class FakeTinker:
             t = body["target_prompt_logprobs"]
             shape = t.get("shape") or [len(t["data"])]
             k = shape[1] if len(shape) == 2 else 1
-            flat = [x for row in t["data"] for x in row] if t["data"] and isinstance(t["data"][0], list) \
-                else list(t["data"])
+            if t.get("sparse_crow_indices") is not None:          # CSR: the entries left out are -1
+                crow, cols = t["sparse_crow_indices"], t["sparse_col_indices"]
+                flat = [-1] * (shape[0] * k)
+                for i in range(shape[0]):
+                    for at in range(crow[i], crow[i + 1]):
+                        flat[i * k + cols[at]] = t["data"][at]
+            else:
+                flat = [x for row in t["data"] for x in row] if t["data"] and isinstance(t["data"][0], list) \
+                    else list(t["data"])
+            if shape[0] != len(toks) - 1:
+                raise Fail(400, f"target_prompt_logprobs has {shape[0]} rows; the prompt needs len(prompt) - 1 = "
+                                f"{len(toks) - 1}")
             vals = []
             for i in range(shape[0]):
                 for j in range(k):

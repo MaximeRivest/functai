@@ -252,11 +252,13 @@ class TinkerStudent:
         messages, pictures = student_conversation(request)
         prefix, tokens = choice_point(self.student, messages, pictures, self.decision["replies"])
         n = chunks_length(prefix)
-        rows = [list(tokens) if i == n - 1 else [-1] * len(tokens) for i in range(n)]
+        # sparse (CSR), -1 entries left out: what Thinking Machines' own decision recipe sends
         r = self.sampler.sample(prompt=_model_input(prefix + [{"text": [tokens[0]]}], pictures), num_samples=1,
                                 sampling_params=types.SamplingParams(max_tokens=1),
-                                target_prompt_logprobs=types.TensorData.from_numpy(np.asarray(rows, dtype=np.int64))
-                                ).result()
+                                target_prompt_logprobs=types.TensorData(
+                                    data=np.asarray(list(tokens), dtype=np.int64), dtype="int64", shape=[n, len(tokens)],
+                                    sparse_crow_indices=[0] * n + [len(tokens)],
+                                    sparse_col_indices=list(range(len(tokens))))).result()
         lp = r.target_prompt_logprobs.tolist()[n - 1]
         return list(zip(self.decision["choices"], T.softmax(lp)))
 
