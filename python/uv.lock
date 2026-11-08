@@ -1418,6 +1418,9 @@ fast = [
 files = [
     { name = "attachments" },
 ]
+inkling2 = [
+    { name = "tml-renderers" },
+]
 prime = [
     { name = "verifiers" },
 ]
@@ -1468,13 +1471,14 @@ requires-dist = [
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "safetensors", marker = "extra == 'bake'", specifier = ">=0.4" },
     { name = "tinker", marker = "extra == 'tinker'", specifier = ">=0.39,<0.40" },
+    { name = "tml-renderers", marker = "extra == 'inkling2'", specifier = ">=0.4.1,<0.5" },
     { name = "torch", marker = "extra == 'bake'", specifier = ">=2.4" },
     { name = "transformers", marker = "extra == 'bake'", specifier = ">=4.57" },
     { name = "transformers", marker = "extra == 'tinker'", specifier = ">=4.57" },
     { name = "trl", marker = "extra == 'bake'", specifier = ">=1.14,<1.15" },
     { name = "verifiers", marker = "extra == 'prime'", specifier = "==0.3.2.dev136" },
 ]
-provides-extras = ["data", "files", "bake", "tinker", "fast", "prime", "dev"]
+provides-extras = ["data", "files", "bake", "tinker", "inkling2", "fast", "prime", "dev"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -5202,6 +5206,16 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/b3/a5/61141855969a41fd8ad3c2bfc77224d1a7b4dfc1aabc0229ae69fd6e772e/tinker-0.39.0.tar.gz", hash = "sha256:bc882bdacf676177725d920d7f39d57ff8bb6f02ab4cff18054f4b9d877c6bc0", size = 338857, upload-time = "2026-11-07T02:15:08.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/51/97/efbf0734ce67297b64e6f17469e9a2179773a1d7b794047cba98d38c4674/tinker-0.39.0-py3-none-any.whl", hash = "sha256:47c87de4e13ca6eeaecfff55b316bd436344d98685091c3024c44462e946250d", size = 331100, upload-time = "2026-11-07T02:15:06.908Z" },
+]
+
+[[package]]
+name = "tml-renderers"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/0a/a0b64ddd13b0bfe315e74ceb3b3ad3850727175e5438497f037d9eaae1f5/tml_renderers-0.4.1-cp311-abi3-macosx_11_0_arm64.whl", hash = "sha256:3bfaab708bffa466177c3a46a7580dc72b949db6d0f1c4953aa6cbac700f862e", size = 16842184, upload-time = "2026-11-06T21:48:22.649Z" },
+    { url = "https://files.pythonhosted.org/packages/da/f2/db6814324ec609550122f5ee4cfea4816bad5493d1e2e8b4e2ff7cf91aa2/tml_renderers-0.4.1-cp311-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:930f73e4bf0b65ce6856538459fb761f3db2e930df9e42bd88fc0ede12be4168", size = 17032924, upload-time = "2026-11-06T21:48:25.451Z" },
+    { url = "https://files.pythonhosted.org/packages/dd/3b/f6c50eb2c0b132e80877065310a95f724a587f90d3a6a9ca1018e7584590/tml_renderers-0.4.1-cp311-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:cc9d907a74c05c58590f32f7fdef523b9f6f96a41fb1a39c551af62aa36d67d8", size = 17254830, upload-time = "2026-11-06T21:48:28.723Z" },
 ]
 
 [[package]]

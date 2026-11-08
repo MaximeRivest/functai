@@ -81,6 +81,13 @@ tinker = [
     "transformers>=4.57",
     "pyarrow>=15",
 ]
+# Inkling 2 Small's tokens before Thinking Machines publishes its files
+# (contract/training.md §1): its tokenizer, in Thinking Machines' renderer
+# package, which imports PyTorch at load time (only audio uses it; the CPU
+# build is enough). Once the files are out, functai[tinker] alone renders it.
+inkling2 = [
+    "tml-renderers>=0.4.1,<0.5",
+]
 # kernels that make training here faster: packed examples with flash attention
 # (a hub kernel, nothing to compile), linear-attention layers (Qwen3.5) and
 # Liger's fused losses. CUDA only; bake works without them, slower.

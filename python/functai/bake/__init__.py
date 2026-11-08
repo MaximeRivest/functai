@@ -57,6 +57,9 @@ def __getattr__(name: str):
     if name == "Examples":
         from .dataset import Examples
         return Examples
+    if name in ("rewards", "GroupReward", "TinkerPlan", "Student"):
+        from . import service, students
+        return getattr(service, name, None) or getattr(students, name)
     raise AttributeError(name)
 
 
@@ -603,6 +606,12 @@ def bake_head(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m",
 # ------------------------------------------------------------------ the one entry point
 
 
+# what bake(where="tinker") takes beyond bake()'s own arguments (service.py)
+SERVICE_METHODS = ("rl", "prefer", "distill", "decision")
+SERVICE_OPTIONS = {"criteria", "reward", "pairs", "held_out_by", "check_cases", "temperatures", "eval_every", "epochs",
+                   "lr", "lora_rank", "rank", "batch", "group", "loss", "normalize", "kl", "temperature", "beta", "effort",
+                   "max_tokens", "keep_state", "tinker", "student_files", "weight", "start"}
+
 _SFT_ONLY = ("fixed", "derived", "layout", "reasoning", "tags", "weights", "functions", "where")
 
 
@@ -672,6 +681,18 @@ def bake(what: Any, data: Any = None, *, method: str = "auto", student: Optional
     """
     from ..core import FunctAIFunc
     single = isinstance(what, FunctAIFunc)
+    if method in SERVICE_METHODS or where == "tinker":
+        # training on Tinker: tokens from the student's published files, five methods (service.py, design 21)
+        unknown = set(training) - SERVICE_OPTIONS
+        if unknown:
+            raise TypeError(f"bake(where='tinker') does not take {sorted(unknown)}; its settings: "
+                            f"{sorted(SERVICE_OPTIONS)}")
+        from .service import bake as on_tinker
+        return on_tinker(what, data, method="sft" if method in ("auto", "sft") else method, student=student,
+                         teacher=teacher, test=test, metric=metric, plan_only=plan_only, wait=wait, path=path,
+                         run_folder=run_folder, fixed=fixed, derived=derived, layout=layout, reasoning=reasoning,
+                         name=name, seed=seed, log=log, local_files_only=local_files_only,
+                         held_out=holdout, **training)
     # what only a generative student does (asking for a plan is not one: a head has its plan too)
     sft_asked = any(v not in (None, False, "auto") for v in (fixed, derived, layout, tags, weights, functions)) or \
         reasoning or (where not in ("auto", None, "here")) or not wait

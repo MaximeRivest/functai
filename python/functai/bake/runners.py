@@ -369,6 +369,10 @@ def make(baked, where: Any = None, **options) -> Runner:
         return InProcess(baked, **options)
     if where == "vllm":
         return VLLM(baked, **options)
+    if where == "tinker" and (baked.meta.get("template") or {}).get("source") in ("files", "tml-renderers"):
+        # trained by functai.bake.service: its tokens come from the student's published files (training.md)
+        from .service import runner_for
+        return runner_for(baked, **options)
     if where == "tinker":
         return Tinker(baked, **options)
     if isinstance(where, str) and where.startswith(("http://", "https://")):

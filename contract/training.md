@@ -204,10 +204,22 @@ back as cross-entropy weights: `weight = −∂L/∂logprob`.
 
 ## 10. Choosing what to keep
 
+**Held out.** The cases a run is checked on are given, or held out by
+[measures.md](measures.md)'s rule (default share 0.1 for a bake). With a
+column that groups rows (`held_out_by`: every row of one screen on one
+side), the side is that rule's for a row whose only key is the
+conversation id `<column>:<canonical JSON of the row's value>`. Held-out
+cases are never trained on.
+
 A run is checked before its first step, every `eval_every` steps and at
 its end: each check samples the held-out cases at each of the bake's
 `temperatures` (default `[0.0, 0.7, 1.0]`) and scores them with the
-deciding criterion (the first of `criteria`; the reward for `rl`). The
+deciding criterion: the first of `criteria` (each case answered once, as a
+call is), else for `rl` the reward itself, as training sees it (each case
+answered by a group of `group` answers, the mean of their rewards; a group
+reward's own score, negated when lower is better). Samples are seeded from
+the bake's seed, the step and the case (or the request), so a run chooses
+the same way again. A check never reads the reply cache. The
 baked model is the best (check, temperature) pair: the highest mean, the
 earlier check and then the lower temperature on a tie. Its temperature is
 the one calls use (`baked.json` `sampling.temperature`) unless a call

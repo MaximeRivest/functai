@@ -224,7 +224,8 @@ function sideOf(row: Rec, fn: Fn, opts: TrainOptions): "train" | "held_out" {
   const share = opts.heldOut ?? 0.1;
   if (opts.heldOutBy) {
     if (!Object.hasOwn(row, opts.heldOutBy)) throw new BakeError("bake-rows", `heldOutBy: a row has no ${opts.heldOutBy}`);
-    return m.splitOf({ conversation: `${opts.heldOutBy}:${writeData(toJson(row[opts.heldOutBy])[0])}` }, [], { share });
+    // the column's value, as canonical JSON (calls.md), groups the rows (training.md §10)
+    return m.splitOf({ conversation: `${opts.heldOutBy}:${lmcc.canonicalJson(toJson(row[opts.heldOutBy])[0])}` }, [], { share });
   }
   return m.splitOf(row, fn, { share });
 }
@@ -780,11 +781,14 @@ class TrainRun {
     const scores: Record<string, number | null> = {};
     let agreement: number | null = null;
     const reward = p.opts.reward;
-    if (p.method === "rl" && isGroup(reward) && !p.opts.criteria?.length) {
+    if (p.method === "rl" && !p.opts.criteria?.length) {
+      // rl is checked as it trains: the mean reward over a group of answers per case (one answer per case is a coin
+      // flip at temperature 1), a group reward by its own score
+      const up = !isGroup(reward) || reward.higherIsBetter;
       const temps = p.settings["temperatures"] as number[];
       for (const t of temps) {
         const got = await this.groups(sampler, cases, t, Number(p.settings["group"]), step);
-        scores[String(t)] = got.length ? got.reduce((a, g) => a + (reward.higherIsBetter ? g.score : -g.score), 0) / got.length : null;
+        scores[String(t)] = got.length ? got.reduce((a, g) => a + (up ? g.score : -g.score), 0) / got.length : null;
         if (t === temps.at(-1)) agreement = this.agreement(got.map((g) => g.answers));
       }
     } else {
@@ -841,13 +845,16 @@ class TrainRun {
   /** The deciding score of a model on cases at a temperature: the first criterion, else the metric, else exact match. */
   async score(model: BakedModel, cases: readonly Case[], temperature: number): Promise<number | null> {
     const p = this.plan;
-    const fn = p.fn.using({ lm: model as never, temperature } as never);
+    // never the reply cache: a request a check repeats must be answered by these weights, not an earlier check's
+    const fn = p.fn.using({ lm: model as never, temperature, cacheReplies: false } as never);
     const rows = cases.map((c) => c.row);
     const crit = p.opts.criteria?.[0] ?? (p.method === "rl" && p.opts.reward && !isGroup(p.opts.reward) && typeof p.opts.reward !== "function" ? p.opts.reward as m.Criterion : null);
     const ev = crit ? await evaluate(fn as never, rows as never, { criteria: [crit], progress: false, concurrency: 16 })
       : p.opts.metric ? await evaluate(fn as never, rows as never, { metric: p.opts.metric as never, progress: false, concurrency: 16 })
       : await evaluate(fn as never, rows as never, { progress: false, concurrency: 16 });
-    return ev.score;
+    // the deciding metric by its name: rows that know their answers add exact match too, first
+    const name = crit ? crit.name : p.opts.metric ? (p.opts.metric.name || "metric") : ev.metrics[0]!;
+    return ev.summary.find((x) => x.metric === name)?.mean ?? null;
   }
 
   /** Answers to cases, `group` each, read and rewarded (rl's rollouts and checks). */

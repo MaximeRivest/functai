@@ -572,6 +572,19 @@ class Plan:
         from .running import Run
         o = self.opts
         wait = o.get("wait", True) if wait is None else wait
+        if self.where == "tinker":
+            # the plan chose Tinker: trained by service.py (tokens from the student's published files)
+            if self.source.kind != "functions" or len(self.source.pairs) != 1:
+                raise BakeError("bake on Tinker takes one AI function and its rows (not examples, a program, or "
+                                "several functions); bake each function")
+            from .service import bake as on_tinker
+            keep = {k: o[k] for k in ("teacher", "test", "metric", "path", "run_folder", "fixed", "derived", "layout",
+                                      "reasoning", "name", "seed", "log", "local_files_only", "epochs", "lr", "batch",
+                                      "lora_rank", "max_new_tokens") if o.get(k) is not None}
+            if "max_new_tokens" in keep:
+                keep["max_tokens"] = keep.pop("max_new_tokens")
+            fn, rows = self.source.pairs[0]
+            return on_tinker(fn, rows, student=self.student, wait=wait, held_out=o.get("holdout"), **keep)
         folder = self.folder
         existing = folder / "plan.json"
         if existing.exists():

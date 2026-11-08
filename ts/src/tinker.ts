@@ -199,7 +199,7 @@ export class Tinker {
   // ---- HTTP
 
   /** One HTTP request; JSON in and out unless `body` is bytes (protobuf) or `accept` asks for protobuf. */
-  async request(method: string, path: string, opts: { json?: unknown; bytes?: Uint8Array; query?: Record<string, string | number>; accept?: "proto"; what?: string } = {}):
+  async request(method: string, path: string, opts: { json?: unknown; bytes?: Uint8Array; query?: Record<string, string | number>; accept?: "proto"; what?: string; attempts?: number } = {}):
     Promise<{ status: number; json: unknown; bytes: Uint8Array | null }> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, String(v));
@@ -218,13 +218,14 @@ export class Tinker {
     }
     if (opts.accept === "proto") headers["accept"] = "application/x-protobuf";
     let lastErr: unknown = null;
-    for (let attempt = 0; attempt < 6; attempt++) {
+    const attempts = opts.attempts ?? 6;
+    for (let attempt = 0; attempt < attempts; attempt++) {
       let resp: globalThis.Response;
       try {
         resp = await fetch(url, { method, headers, body: body as never, signal: AbortSignal.timeout(this.#timeout) });
       } catch (err) {
         lastErr = err;
-        await sleep(Math.min(30_000, 500 * 2 ** attempt));
+        if (attempt + 1 < attempts) await sleep(Math.min(30_000, 500 * 2 ** attempt));
         continue;
       }
       const ctype = resp.headers.get("content-type") ?? "";
@@ -238,7 +239,7 @@ export class Tinker {
       }
       if (resp.status >= 500 || resp.status === 429) {                // the service's trouble: again, with backoff
         lastErr = new TinkerError(resp.status, detailOf(json), opts.what ?? path);
-        await sleep(Math.min(30_000, 500 * 2 ** attempt));
+        if (attempt + 1 < attempts) await sleep(Math.min(30_000, 500 * 2 ** attempt));
         continue;
       }
       return { status: resp.status, json, bytes: null };
@@ -291,8 +292,12 @@ export class Tinker {
       this.#session = this.call("POST", "/api/v1/create_session", { tags: [], user_metadata: this.#meta, sdk_version: PROTOCOL, type: "create_session" }, { what: "create_session" })
         .then((r) => {
           const id = r["session_id"] as string;
+          if (this.#closed) return id;
+          // one attempt per beat, never retried: a missed beat waits for the next (a retried one would keep a
+          // process alive, its retries' timers outliving the unref'd interval, while the service is unreachable)
           this.#heartbeat = setInterval(() => {
-            this.request("POST", "/api/v1/session_heartbeat", { json: { session_id: id, type: "session_heartbeat" } }).catch(() => {});
+            if (this.#closed) return;
+            this.request("POST", "/api/v1/session_heartbeat", { json: { session_id: id, type: "session_heartbeat" }, attempts: 1 }).catch(() => {});
           }, this.#heartbeatMs);
           (this.#heartbeat as { unref?: () => void }).unref?.();
           return id;
