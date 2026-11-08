@@ -1467,7 +1467,7 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.1.0" },
     { name = "safetensors", marker = "extra == 'bake'", specifier = ">=0.4" },
-    { name = "tinker", marker = "extra == 'tinker'", specifier = ">=0.31,<0.32" },
+    { name = "tinker", marker = "extra == 'tinker'", specifier = ">=0.39,<0.40" },
     { name = "torch", marker = "extra == 'bake'", specifier = ">=2.4" },
     { name = "transformers", marker = "extra == 'bake'", specifier = ">=4.57" },
     { name = "transformers", marker = "extra == 'tinker'", specifier = ">=4.57" },
@@ -5180,7 +5180,7 @@ wheels = [
 
 [[package]]
 name = "tinker"
-version = "0.31.0"
+version = "0.39.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "anyio" },
@@ -5199,9 +5199,9 @@ dependencies = [
     { name = "typing-extensions" },
     { name = "zstandard" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/bc/ca/938340f6fbbdb24bc028604258acb138640ba37d757410ced0983ad10935/tinker-0.31.0.tar.gz", hash = "sha256:df582ffe75b131477cc924dffb7383f6925b5d05ddd4d85be6315603afd58395", size = 293478, upload-time = "2026-09-30T00:24:45.535Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/b3/a5/61141855969a41fd8ad3c2bfc77224d1a7b4dfc1aabc0229ae69fd6e772e/tinker-0.39.0.tar.gz", hash = "sha256:bc882bdacf676177725d920d7f39d57ff8bb6f02ab4cff18054f4b9d877c6bc0", size = 338857, upload-time = "2026-11-07T02:15:08.667Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/91/66/251dea0540d19f1a3bfe52749ec4bd81c32da1e2a70c68d63de32e080b9d/tinker-0.31.0-py3-none-any.whl", hash = "sha256:c5387d6d447f4aa0bba5d6f1303c6309242160f728d4f9031bb81fe02d554e4c", size = 279801, upload-time = "2026-09-30T00:24:43.709Z" },
+    { url = "https://files.pythonhosted.org/packages/51/97/efbf0734ce67297b64e6f17469e9a2179773a1d7b794047cba98d38c4674/tinker-0.39.0-py3-none-any.whl", hash = "sha256:47c87de4e13ca6eeaecfff55b316bd436344d98685091c3024c44462e946250d", size = 331100, upload-time = "2026-11-07T02:15:06.908Z" },
 ]
 
 [[package]]

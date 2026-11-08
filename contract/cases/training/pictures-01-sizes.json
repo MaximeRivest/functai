@@ -1,0 +1,45 @@
+{
+ "description": "A picture's width, height and format from its bytes (PNG IHDR; a JPEG's first frame header, progressive ones too); anything else is not a picture a service takes (null).",
+ "pictures": [
+  {
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAFEAAAAoCAAAAACjyUnjAAAAJklEQVR4nO3MQREAAAwCIKMb3RK7vSAA6bUYjUaj0Wg0Go1G48s4jQRUWz1H1zEAAAAASUVORK5CYII=",
+   "expect": {
+    "width": 81,
+    "height": 40,
+    "format": "png"
+   }
+  },
+  {
+   "data": "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAAAAAA6fptVAAAACklEQVR4nGNoAAAAggCBd81ytgAAAABJRU5ErkJggg==",
+   "expect": {
+    "width": 1,
+    "height": 1,
+    "format": "png"
+   }
+  },
+  {
+   "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wAEAAD/wAALCAMgBQABAREA/9k=",
+   "expect": {
+    "width": 1280,
+    "height": 800,
+    "format": "jpeg"
+   }
+  },
+  {
+   "data": "/9j/4AAQSkZJRgABAQAAAQABAAD/2wAEAAD/wgALCANMAYYBAREA/9k=",
+   "expect": {
+    "width": 390,
+    "height": 844,
+    "format": "jpeg"
+   }
+  },
+  {
+   "data": "R0lGODlhEAAQAA==",
+   "expect": null
+  },
+  {
+   "data": "iVBORw==",
+   "expect": null
+  }
+ ]
+}

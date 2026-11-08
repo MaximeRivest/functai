@@ -77,7 +77,7 @@ bake = [
 # training and running on Tinker (Thinking Machines): its SDK and a tokenizer,
 # no PyTorch, so a laptop without a GPU can bake through it
 tinker = [
-    "tinker>=0.31,<0.32",
+    "tinker>=0.39,<0.40",
     "transformers>=4.57",
     "pyarrow>=15",
 ]

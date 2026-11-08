@@ -977,7 +977,7 @@ class FunctAIFunc(Generic[P, R]):
         s = self._effective()
         return build_spec(self._fn, instructions=self._current_state().instructions,
                           include_fn_name=bool(s.get("include_fn_name_in_instructions")), reasoning=reasoning,
-                          tools=tools)
+                          tools=tools, registry=adapters.REGISTRY)
 
     def _run(self, inputs: Dict[str, Any], spec: Spec) -> Prediction:
         """One call for these inputs (the model, the tool loop, and escalation when

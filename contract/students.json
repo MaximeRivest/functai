@@ -1,0 +1,41 @@
+{
+  "functai_students": 1,
+  "about": "Students a service trains (training.md): which family each belongs to, and the family's picture rule. Everything else (tokens, template, picture numbers) is read from the student's own published files. A student matches a family when its id, up to the first ':', starts with one of the family's prefixes.",
+  "families": [
+    {
+      "name": "inkling",
+      "prefixes": ["thinkingmachines/Inkling"],
+      "picture": {
+        "rule": "grid",
+        "file": "processor_config.json",
+        "patch": "image_processor.size.width",
+        "placeholder": "<|unused_200054|>"
+      },
+      "unpublished": {
+        "thinkingmachines/Inkling-2-Small": "Thinking Machines will publish its weights and files (announced 2026-11-05); until then Python renders it with tml-renderers (h200k tokens) and Inkling-Small's template, which is the same format"
+      }
+    },
+    {
+      "name": "qwen",
+      "prefixes": ["Qwen/Qwen3.5-", "Qwen/Qwen3.6-", "Qwen/Qwen3.8-"],
+      "picture": {
+        "rule": "qwen",
+        "file": "preprocessor_config.json",
+        "patch": "patch_size",
+        "merge": "merge_size",
+        "min_pixels": "size.shortest_edge",
+        "max_pixels": "size.longest_edge",
+        "placeholder": "<|image_pad|>"
+      }
+    }
+  ],
+  "efforts": {
+    "about": "Inkling's thinking-effort presets, as Tinker documents them (cookbook/inkling/thinking-effort); a bake's effort may be a number in [0, 0.99] or one of these names.",
+    "none": 0.0,
+    "minimal": 0.1,
+    "low": 0.2,
+    "medium": 0.7,
+    "high": 0.9,
+    "xhigh": 0.99
+  }
+}

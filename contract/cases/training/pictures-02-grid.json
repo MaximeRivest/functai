@@ -1,0 +1,61 @@
+{
+ "description": "The grid rule (Inkling, 40 px): ceil(w/40)·ceil(h/40), no resizing.",
+ "patch": 40,
+ "sizes": [
+  {
+   "width": 1,
+   "height": 1,
+   "expect": 1
+  },
+  {
+   "width": 39,
+   "height": 39,
+   "expect": 1
+  },
+  {
+   "width": 40,
+   "height": 40,
+   "expect": 1
+  },
+  {
+   "width": 41,
+   "height": 41,
+   "expect": 4
+  },
+  {
+   "width": 80,
+   "height": 80,
+   "expect": 4
+  },
+  {
+   "width": 81,
+   "height": 40,
+   "expect": 3
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "expect": 220
+  },
+  {
+   "width": 1280,
+   "height": 800,
+   "expect": 640
+  },
+  {
+   "width": 1281,
+   "height": 800,
+   "expect": 660
+  },
+  {
+   "width": 4000,
+   "height": 3000,
+   "expect": 7500
+  },
+  {
+   "width": 8000,
+   "height": 8000,
+   "expect": 40000
+  }
+ ]
+}

@@ -1,0 +1,44 @@
+{
+ "description": "DPO as weights: z = β((π_c − ρ_c) − (π_r − ρ_r)); the chosen reply's trained tokens get β·σ(−z)/P, the rejected one's −β·σ(−z)/P; the loss is log(1 + e^(−z)).",
+ "beta": 0.1,
+ "pairs": [
+  {
+   "pi_c": -12.0,
+   "rho_c": -12.5,
+   "pi_r": -9.0,
+   "rho_r": -8.0
+  },
+  {
+   "pi_c": -30.0,
+   "rho_c": -30.0,
+   "pi_r": -31.0,
+   "rho_r": -31.0
+  },
+  {
+   "pi_c": -1.0,
+   "rho_c": -400.0,
+   "pi_r": -400.0,
+   "rho_r": -1.0
+  }
+ ],
+ "expect": [
+  {
+   "z": 0.15000000000000002,
+   "loss": 0.6209570477895321,
+   "chosen_weight": 0.015419005155208351,
+   "rejected_weight": -0.015419005155208351
+  },
+  {
+   "z": 0.0,
+   "loss": 0.6931471805599453,
+   "chosen_weight": 0.016666666666666666,
+   "rejected_weight": -0.016666666666666666
+  },
+  {
+   "z": 79.80000000000001,
+   "loss": 2.2044504631835755e-35,
+   "chosen_weight": 7.348168210611919e-37,
+   "rejected_weight": -7.348168210611919e-37
+  }
+ ]
+}

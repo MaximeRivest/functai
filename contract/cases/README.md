@@ -329,3 +329,29 @@ within 1e-9, everything else exactly. The harness does, by kind:
   `criterion`, `source`, `drawn`, `margin` → `expect`. `disagreements`
   → `expect.cases`.
 - `rated`: as `rated/`: `rated(records, **rated)` → `expect`.
+
+## `training/` (training.py)
+
+Beside the cases: `toy-tokenizer.json` (a byte-level BPE in Hugging Face's
+format) and three chat templates (`inkling-like.jinja`, `qwen-like.jinja`,
+`not-a-prefix.jinja`, shaped like Inkling's and Qwen's real ones). A
+harness loads them as it would a student's published files.
+
+- `tokens-*`: `{tokenizer, template, effort, picture: {rule, patch, …,
+  placeholder}, messages, reply, pictures: [base64 PNG]}`. The harness
+  renders the messages (and the reply) as training.md §3 says, with the
+  picture rule's numbers given here, and compares `expect`: `kwargs`,
+  `lead`, `end`, `stop_token`, `end_head` (§5), `prompt` and `full`
+  (chunks: `{"text": [ids]}`, `{"picture": k, "tokens": n}`),
+  `reply_start`, and `prefix_fallback: true` when the rule of §3.2
+  applied; or `{"refuses": code}`.
+- `pictures-01-sizes`: each picture's bytes give `{width, height,
+  format}`, or `null` (not a PNG or JPEG). `pictures-02-grid`,
+  `pictures-03-qwen`: each size gives its token count (`null`: refused).
+- `reply-01-reading`: for each `generated` token list under `template`
+  (effort 0), the reply text (§5).
+- `datums-*`: from `chunks` and `reply_start` (sft) or `prompt`,
+  `sampled`, `logprobs` and `advantage` (rl), the datum: `model_input`
+  (chunks) and `loss_fn_inputs` (lists).
+- `advantages-*`, `energy-01`, `weights-*`, `choosing-01`: numbers in,
+  numbers out (§7 to §10), compared to 1e-9.

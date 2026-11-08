@@ -19,6 +19,8 @@ implementation's output:
                  form"; ../plugins.md "The step hook", "limits", "keep_pictures"   (agents.py)
     measures/    ../measures.md: case keys, splits, draws, ratings of format 2, values, the statistics,
                  scoreboards   (measures.py, from the rules in measure_rules.py)
+    training/    ../training.md: tokens from a student's files, pictures, reading a reply, training examples,
+                 advantages, the energy score, losses as weights, choosing   (training.py)
 
 Every record, event, manifest and interface a case holds is checked
 against ../schema as it is written, and the schemas are checked to refuse
@@ -51,6 +53,7 @@ import saw  # noqa: E402
 import schemas  # noqa: E402
 import scores  # noqa: E402
 import stages  # noqa: E402
+import training  # noqa: E402
 
 
 KNOWN = {"functai_call": (1, 2), "functai_rating": (1, 2)}
@@ -169,4 +172,5 @@ if __name__ == "__main__":
     n += write("partial", partial.cases())
     n += write("setup", setup.cases())
     n += write("measures", measures.cases())
+    n += training.write()                 # its own folder: a tokenizer and templates beside the cases
     print(f"{n} cases written")

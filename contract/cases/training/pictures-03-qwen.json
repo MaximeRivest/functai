@@ -1,0 +1,64 @@
+{
+ "description": "The qwen rule with Qwen3.5's numbers (patch 16, merge 2, 65,536 to 16,777,216 pixels): sizes rounded to multiples of 32 half to even (1040 × 528 is 32.5 × 16.5 blocks: 32 × 16, where rounding half up would give 33 × 17), scaled into the pixel range (small pictures up to 65,536 pixels); refused (null) past an aspect ratio of 200.",
+ "patch": 16,
+ "merge": 2,
+ "min_pixels": 65536,
+ "max_pixels": 16777216,
+ "sizes": [
+  {
+   "width": 1040,
+   "height": 528,
+   "expect": 512
+  },
+  {
+   "width": 1072,
+   "height": 560,
+   "expect": 612
+  },
+  {
+   "width": 1056,
+   "height": 544,
+   "expect": 561
+  },
+  {
+   "width": 1280,
+   "height": 800,
+   "expect": 1000
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "expect": 312
+  },
+  {
+   "width": 4000,
+   "height": 3000,
+   "expect": 11750
+  },
+  {
+   "width": 20000,
+   "height": 300,
+   "expect": 5625
+  },
+  {
+   "width": 48,
+   "height": 48,
+   "expect": 64
+  },
+  {
+   "width": 10,
+   "height": 10,
+   "expect": 64
+  },
+  {
+   "width": 3000,
+   "height": 14,
+   "expect": null
+  },
+  {
+   "width": 5000,
+   "height": 20,
+   "expect": null
+  }
+ ]
+}

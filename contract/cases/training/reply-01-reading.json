@@ -1,0 +1,98 @@
+{
+ "description": "Reading what a student generated: the stop token left out, special tokens kept; after the lead's last occurrence (so a thinking part before it is dropped); cut at the end's head. A reply cut by the length limit is read as far as it goes.",
+ "tokenizer": "toy-tokenizer.json",
+ "effort": 0.0,
+ "generated": [
+  {
+   "template": "inkling-like.jinja",
+   "generated": [
+    287,
+    27,
+    269,
+    29,
+    198,
+    43,
+    72,
+    76,
+    64,
+    198,
+    262,
+    269,
+    29,
+    290,
+    291
+   ],
+   "expect": "<result>\nLima\n</result>"
+  },
+  {
+   "template": "inkling-like.jinja",
+   "generated": [
+    289,
+    47,
+    260,
+    84,
+    6,
+    82,
+    220,
+    66,
+    64,
+    79,
+    72,
+    83,
+    64,
+    75,
+    13,
+    290,
+    285,
+    287,
+    27,
+    269,
+    29,
+    198,
+    43,
+    72,
+    76,
+    64,
+    198,
+    262,
+    269,
+    29,
+    290,
+    291
+   ],
+   "expect": "<result>\nLima\n</result>"
+  },
+  {
+   "template": "inkling-like.jinja",
+   "generated": [
+    287,
+    27,
+    269,
+    29,
+    198,
+    43,
+    72
+   ],
+   "expect": "<result>\nLi"
+  },
+  {
+   "template": "qwen-like.jinja",
+   "generated": [
+    27,
+    269,
+    29,
+    198,
+    43,
+    72,
+    76,
+    64,
+    198,
+    262,
+    269,
+    29,
+    294
+   ],
+   "expect": "<result>\nLima\n</result>"
+  }
+ ]
+}

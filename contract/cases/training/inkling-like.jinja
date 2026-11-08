@@ -1,0 +1,25 @@
+{%- set role_token = {"user": "<|message_user|>", "assistant": "<|message_model|>", "system": "<|message_system|>"} -%}
+{%- macro effort() -%}
+{%- set eff = reasoning_effort if reasoning_effort is defined and reasoning_effort is not none else 0.9 -%}
+{{- "<|message_system|><|content_text|>Thinking effort level: " -}}{%- if eff == 0.0 -%}0{%- else -%}{{ eff }}{%- endif -%}{{- "<|end_message|>" -}}
+{%- endmacro -%}
+{%- set state = namespace(done=false) -%}
+{%- for message in messages -%}
+{%- if not state.done and message.role != "system" -%}{{- effort() -}}{%- set state.done = true -%}{%- endif -%}
+{%- set rtok = role_token[message.role] -%}
+{%- if message.role == "assistant" and message.reasoning_content is defined and message.reasoning_content -%}
+{{- "<|message_model|><|content_thinking|>" ~ message.reasoning_content ~ "<|end_message|>" -}}
+{%- endif -%}
+{%- if message.content is string -%}
+{{- rtok ~ "<|content_text|>" ~ message.content ~ "<|end_message|>" -}}
+{%- else -%}
+{%- for part in message.content -%}
+{%- if part.type == "text" -%}{{- rtok ~ "<|content_text|>" ~ part.text ~ "<|end_message|>" -}}
+{%- elif part.type == "image" -%}{{- rtok ~ "<|content_image|><|pic|><|end_message|>" -}}
+{%- else -%}{{- raise_exception("Unsupported content part type: " ~ part.type) -}}{%- endif -%}
+{%- endfor -%}
+{%- endif -%}
+{%- if message.role == "assistant" -%}{{- "<|content_model_end_sampling|>" -}}{%- endif -%}
+{%- endfor -%}
+{%- if not state.done -%}{{- effort() -}}{%- endif -%}
+{%- if add_generation_prompt -%}{{- "<|message_model|>" -}}{%- endif -%}

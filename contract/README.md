@@ -20,6 +20,7 @@ by another; they meet only here.
 | [`programs.md`](programs.md) | a program's interface: the inputs and outputs every AI function has and every module declares, and the notes it may make; its signature; which are refused; checking values and notes against it | `cases/programs/` |
 | [`saved.md`](saved.md) | a saved program's manifest, and loading its AI functions in another language | `cases/saved/` |
 | [`baked.md`](baked.md) | a baked model: what a generative student is trained on and called with (its signature without the inputs left out, its layout, the conversations), the examples table, the folder (`baked.json` format 2) | `cases/baked/` |
+| [`training.md`](training.md) | training on a service that takes tokens (Tinker): a student's tokens from its published files ([`students.json`](students.json)), pictures and their token counts, where a reply starts and ends, the training examples each method sends, advantages, the energy score, losses as weights, choosing the checkpoint and temperature, `baked.json`'s keys for it | `cases/training/` |
 | [`streaming.md`](streaming.md) | a stream: the same call, watched; a call tree's log of events, their JSON form, replaying and following them, what of them may be kept, views (`full`, `kept`, `outside`), keeping a log while it is written (observers, journals), continuing a log after its writer stopped, the rules a store keeps; the answer so far | `cases/events/`, `cases/views/`, `cases/partial/` |
 | [`replies.md`](replies.md) | the reply cache: its key, what is kept, one flight per request, its file | `cases/replies/` |
 | [`conversations.md`](conversations.md) | conversations: their records, a turn's state, where a new turn goes, what a turn is shown, helpers' memory, stopping, leases, stores | `cases/conversations/` |
@@ -51,7 +52,9 @@ differ from what it writes. `make.py` reads each `events/` and
 again, as a harness would. One step is borrowed: turning a signature, a
 layout and values into a request is lmcc's rule, pinned byte for byte by
 lmcc's own corpus, so `cases/functions.py` asks lmcc for that step and
-derives everything FunctAI decides itself. The layouts and the model
+derives everything FunctAI decides itself. `cases/training.py` borrows two
+more the same way: a chat template's text is Jinja's (as Hugging Face
+applies it), and text's tokens are the `tokenizers` library's. The layouts and the model
 table are data both implementations must reproduce exactly.
 
 `../check` runs every implementation against the cases of what it can
@@ -194,6 +197,7 @@ lmcc's codes are in lmcc's `contract/spec/errors.md`. FunctAI's own:
 | `serve-opaque`, `serve-keys` | [serving.md](serving.md) | a program that cannot be served as asked |
 | `plugin-api`, `plugin-hook`, `plugin-name`, `plugin-change`, `plugin-failed`, `plugin-load` | [plugins.md](plugins.md) | a plugin refused, or failed (`PluginError`) |
 | `plugin-stopped` | [plugins.md](plugins.md), *The fields* | a `before_call` or `step` handler stopped the call (`stop`: a limit reached) |
+| `training-pictures`, `training-picture-format`, `student-unpublished` | [training.md](training.md) | a conversation whose pictures and the template's placeholders differ in number; a picture a service does not take (not PNG or JPEG); a student whose files are not published |
 
 `measures/` (2026-11-05, `../design/20-measures.md`) was built in Python
 and TypeScript; R and Julia read every other folder as before, and every

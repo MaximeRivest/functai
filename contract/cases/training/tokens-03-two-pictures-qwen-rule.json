@@ -1,0 +1,175 @@
+{
+ "description": "Two pictures, numbered in order, each sized by the qwen rule.",
+ "tokenizer": "toy-tokenizer.json",
+ "template": "qwen-like.jinja",
+ "effort": 0.0,
+ "picture": {
+  "rule": "qwen",
+  "patch": 16,
+  "merge": 2,
+  "min_pixels": 1024,
+  "max_pixels": 16384,
+  "placeholder": "<|image_pad|>"
+ },
+ "messages": [
+  {
+   "role": "user",
+   "content": [
+    {
+     "type": "image"
+    },
+    {
+     "type": "text",
+     "text": "then"
+    },
+    {
+     "type": "image"
+    }
+   ]
+  }
+ ],
+ "reply": "ok",
+ "pictures": [
+  "iVBORw0KGgoAAAANSUhEUgAAAGQAAAAoCAAAAAAtEwCfAAAAKElEQVR4nO3NQREAAAwCIKMb3RK7vaAA6YNIJBKJRCKRSCQSiUQiuTDsoNBqrVtTNAAAAABJRU5ErkJggg==",
+  "iVBORw0KGgoAAAANSUhEUgAAAEAAAABACAAAAACPAi4CAAAAKUlEQVR4nO3MQREAAAwCIKMb3RD77SAA6VEEAoFAIBAIBAKBQCAQfA8G320AeUC9G5AAAAAASUVORK5CYII="
+ ],
+ "expect": {
+  "kwargs": {
+   "enable_thinking": false
+  },
+  "lead": "",
+  "end": "<|im_end|>\n",
+  "stop_token": 294,
+  "end_head": "",
+  "prompt": [
+   {
+    "text": [
+     293,
+     84,
+     82,
+     260,
+     198,
+     295
+    ]
+   },
+   {
+    "picture": 0,
+    "tokens": 3
+   },
+   {
+    "text": [
+     297,
+     83,
+     257,
+     77,
+     295
+    ]
+   },
+   {
+    "picture": 1,
+    "tokens": 4
+   },
+   {
+    "text": [
+     297,
+     294,
+     198,
+     293,
+     64,
+     82,
+     82,
+     72,
+     82,
+     83,
+     64,
+     77,
+     83,
+     198,
+     27,
+     83,
+     71,
+     259,
+     74,
+     29,
+     198,
+     198,
+     262,
+     83,
+     71,
+     259,
+     74,
+     29,
+     264
+    ]
+   }
+  ],
+  "prefix_fallback": true,
+  "full": [
+   {
+    "text": [
+     293,
+     84,
+     82,
+     260,
+     198,
+     295
+    ]
+   },
+   {
+    "picture": 0,
+    "tokens": 3
+   },
+   {
+    "text": [
+     297,
+     83,
+     257,
+     77,
+     295
+    ]
+   },
+   {
+    "picture": 1,
+    "tokens": 4
+   },
+   {
+    "text": [
+     297,
+     294,
+     198,
+     293,
+     64,
+     82,
+     82,
+     72,
+     82,
+     83,
+     64,
+     77,
+     83,
+     198,
+     27,
+     83,
+     71,
+     259,
+     74,
+     29,
+     198,
+     198,
+     262,
+     83,
+     71,
+     259,
+     74,
+     29,
+     264,
+     78,
+     74,
+     294,
+     198
+    ]
+   }
+  ],
+  "reply_start": 47
+ }
+}

@@ -1,0 +1,13 @@
+{%- for message in messages -%}
+{{- "<|im_start|>" ~ message.role ~ "\n" -}}
+{%- if message.role == "assistant" and enable_thinking is defined and enable_thinking is false -%}{{- "<think>\n\n</think>\n\n" -}}{%- endif -%}
+{%- if message.content is string -%}{{- message.content -}}
+{%- else -%}{%- for part in message.content -%}
+{%- if part.type == "image" -%}{{- "<|vision_start|><|image_pad|><|vision_end|>" -}}{%- else -%}{{- part.text -}}{%- endif -%}
+{%- endfor -%}{%- endif -%}
+{{- "<|im_end|>\n" -}}
+{%- endfor -%}
+{%- if add_generation_prompt -%}
+{{- "<|im_start|>assistant\n" -}}
+{%- if enable_thinking is defined and enable_thinking is false -%}{{- "<think>\n\n</think>\n\n" -}}{%- endif -%}
+{%- endif -%}

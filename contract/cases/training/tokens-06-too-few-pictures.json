@@ -1,0 +1,31 @@
+{
+ "description": "A conversation with more pictures than placeholders is refused.",
+ "tokenizer": "toy-tokenizer.json",
+ "template": "qwen-like.jinja",
+ "effort": 0.0,
+ "picture": {
+  "rule": "qwen",
+  "patch": 16,
+  "merge": 2,
+  "min_pixels": 1024,
+  "max_pixels": 16384,
+  "placeholder": "<|image_pad|>"
+ },
+ "messages": [
+  {
+   "role": "system",
+   "content": "Function: capital"
+  },
+  {
+   "role": "user",
+   "content": "<country>\nPeru — Où?\n</country>\n"
+  }
+ ],
+ "reply": "x",
+ "pictures": [
+  "iVBORw0KGgoAAAANSUhEUgAAACgAAAAoCAAAAACpleexAAAAHElEQVR4nGNoIBIwjCocVTiqcFThqMJRhaQrBAAclSAuhwDgOgAAAABJRU5ErkJggg=="
+ ],
+ "expect": {
+  "refuses": "training-pictures"
+ }
+}
