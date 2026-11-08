@@ -13,7 +13,7 @@ from __future__ import annotations
 import math
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Union
 
-from .students import chunks_length
+from .tokens import chunks_length
 
 Chunk = Dict[str, Any]
 Datum = Dict[str, Any]

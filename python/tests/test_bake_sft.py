@@ -184,7 +184,7 @@ def test_packed_batches_restart_positions_and_learn_only_answers():
 
 
 def test_the_schedule_warms_up_holds_and_decays():
-    from functai.bake.trainers.tinker import wsd
+    from functai.bake.recipe import wsd
     lr = [wsd(s, 100, 0.03, 0.2) for s in range(100)]
     assert lr[0] < lr[1] < lr[2] == 1.0 and lr[79] == 1.0 and lr[80] < 1.0 and lr[99] == 0.0
     assert all(a >= b for a, b in zip(lr[80:], lr[81:]))
@@ -419,96 +419,3 @@ def test_format_1_is_refused_with_the_way_forward(tmp_path):
 # ------------------------------------------------------------------ Tinker (a fake service)
 
 
-class _Future:
-    def __init__(self, v):
-        self.v = v
-
-    def result(self):
-        return self.v
-
-
-class _FakeTinker:
-    """Tinker's clients, recording what bake sends."""
-    sent = []
-    saved = []
-
-    def __init__(self, *a, **k):
-        pass
-
-    def create_lora_training_client(self, base_model, rank=32, seed=None, **k):
-        return _FakeTraining(base_model, rank)
-
-    def create_training_client_from_state_with_optimizer(self, path, **k):
-        c = _FakeTraining("resumed", 0)
-        c.resumed_from = path
-        return c
-
-    def create_training_client_from_state(self, path, **k):
-        return _FakeTraining("loaded", 0)
-
-    def create_sampling_client(self, model_path=None, **k):
-        return _FakeSampling(model_path)
-
-
-class _FakeTraining:
-    def __init__(self, base, rank):
-        self.base, self.rank, self.steps = base, rank, 0
-        self.model_id = "run-1"
-
-    def forward_backward(self, data, loss):
-        import tinker
-        _FakeTinker.sent.append(data)
-        outs = [{"logprobs": tinker.types.TensorData(data=[-0.5] * len(d.loss_fn_inputs["weights"].tolist()),
-                                                     dtype="float32")} for d in data]
-        return _Future(type("O", (), {"loss_fn_outputs": outs})())
-
-    def forward(self, data, loss):
-        return self.forward_backward(data, loss)
-
-    def optim_step(self, params):
-        self.steps += 1
-        return _Future(None)
-
-    def save_state(self, name, **k):
-        _FakeTinker.saved.append(name)
-        return _Future(type("S", (), {"path": f"tinker://run-1/weights/{name}"})())
-
-    def save_weights_for_sampler(self, name, **k):
-        return _Future(type("S", (), {"path": f"tinker://run-1/sampler_weights/{name}"})())
-
-
-class _FakeSampling:
-    def __init__(self, path):
-        self.path = path
-
-    def sample(self, prompt, num_samples, sampling_params):
-        from transformers import AutoTokenizer
-        tok = AutoTokenizer.from_pretrained(QWEN, local_files_only=True)
-        ids = tok("<result>\nLima\n</result>", add_special_tokens=False)["input_ids"] + \
-            [tok.convert_tokens_to_ids("<|im_end|>")]
-        seq = type("Q", (), {"tokens": ids, "stop_reason": "stop"})()
-        return _Future(type("R", (), {"sequences": [seq]})())
-
-
-def test_tinker_trains_on_our_tokens_and_runs_there(home, monkeypatch):
-    if not _have("Qwen/Qwen3.5-4B"):
-        pytest.skip("Qwen3.5-4B's config is not in the local cache")
-    import tinker
-    from functai.bake import prices
-    monkeypatch.setenv("TINKER_API_KEY", "tml-test")
-    monkeypatch.setattr(tinker, "ServiceClient", _FakeTinker)
-    monkeypatch.setattr(prices, "tinker_models", lambda: {"Qwen/Qwen3.5-4B": {"train": 0.74, "context": 65536}})
-    _FakeTinker.sent.clear()
-    p = functai.bake.plan(capital, rows(), student="Qwen/Qwen3.5-4B", where="tinker", local_files_only=True,
-                          log=None)
-    assert p.estimate.dollars and "$" in repr(p)
-    # inline: the run in a thread of this process, where the fake client is (its own process would not see it)
-    b = capital.bake(rows(), student="Qwen/Qwen3.5-4B", where="tinker", local_files_only=True, log=None,
-                     report=False, epochs=1, inline=True)
-    d = _FakeTinker.sent[0][0]
-    w = d.loss_fn_inputs["weights"].tolist()
-    assert w[0] == 0.0 and w[-1] == 1.0 and 0 < sum(w) < len(w)              # the reply only
-    assert b.meta["weights"]["form"] == "remote" and b.meta["weights"]["uri"].startswith("tinker://")
-    from contract_support import assert_valid, validator
-    assert_valid(validator("baked"), b.meta, "baked.json")
-    assert capital.using(lm=b)("Peru", "short") == "Lima" and b.runner.name == "tinker"

@@ -9,7 +9,8 @@
 #   5) Julia: the offline tests (the same contract cases), julia/check
 #   6) the languages against each other: saved in Python, loaded in
 #      TypeScript, R and Julia; one call log written and read by all four
-#      (tools/crosslang.py)
+#      (tools/crosslang.py); a student's tokens from its real files, Python
+#      against TypeScript (tools/crosslang_training.py)
 # Each new language adds its step here: its own tests, then the contract's
 # cases through it, then the cross-language check.
 set -euo pipefail
@@ -64,5 +65,9 @@ if command -v Rscript >/dev/null 2>&1 && R_LIBS="$PWD/r/.lib" Rscript -e 'librar
 else
   nix shell --impure -f "$PWD/r/tools/env.nix" -c "$PY" tools/crosslang.py 2>&1 | grep -v "Nix search path"; [ "${PIPESTATUS[0]}" -eq 0 ]
 fi
+
+# a student's tokens from its real published files, Python against TypeScript (contract/training.md);
+# students whose files are not in the Hugging Face cache are skipped
+HF_HUB_OFFLINE=1 "$PY" tools/crosslang_training.py
 
 printf '\nall green\n'

@@ -15,7 +15,7 @@ pytest.importorskip("transformers")
 from contract_support import CONTRACT  # noqa: E402
 from functai.bake import training as T  # noqa: E402
 from functai.bake.examples import BakeError  # noqa: E402
-from functai.bake.students import (PictureRule, Student, grid_tokens, picture, picture_size, qwen_tokens,  # noqa: E402
+from functai.bake.tokens import (PictureRule, Student, grid_tokens, picture, picture_size, qwen_tokens,  # noqa: E402
                                    students_table)
 
 DIR = CONTRACT / "cases" / "training"

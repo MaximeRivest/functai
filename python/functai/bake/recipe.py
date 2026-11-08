@@ -28,6 +28,18 @@ from typing import Any, Dict
 from .students import learning_rate, lora_rank
 
 
+def wsd(step: int, total: int, warmup: float, decay: float) -> float:
+    """The learning-rate multiplier at ``step``: linear warmup, constant, then
+    a "1-sqrt" decay to zero over the last ``decay`` of the steps."""
+    w = max(1, round(total * warmup))
+    d = max(1, round(total * decay))
+    if step < w:
+        return (step + 1) / w
+    if step < total - d:
+        return 1.0
+    return max(0.0, 1.0 - math.sqrt((step - (total - d) + 1) / d))
+
+
 def recipe(job) -> Dict[str, Any]:
     o = job.options
     s = job.stats
@@ -58,4 +70,4 @@ def recipe(job) -> Dict[str, Any]:
     }
 
 
-__all__ = ["recipe"]
+__all__ = ["recipe", "wsd"]

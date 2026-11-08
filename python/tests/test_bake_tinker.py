@@ -4,14 +4,11 @@ and its price, each method, checks choosing the checkpoint and temperature,
 pictures, resuming, and the model called through ``fn.using(lm=...)``. Offline:
 the student is a toy one (contract/cases/training's tokenizer and templates)."""
 
-import base64
-import io
 import json
 import struct
 import sys
 import threading
 import zlib
-from pathlib import Path
 from typing import Literal
 
 import pytest

@@ -101,6 +101,14 @@ test("sft: the student learns the answers; the checks choose the step and the te
   assert.equal((again.meta as Rec)["weights"]["uri"], meta["weights"]["uri"]);
 });
 
+test("criteria decide by their own name, not by exact match on rows that know their answers", { skip }, async () => {
+  const onlyLima = criterion("only_lima", { kind: "verdict", judge: ({ answer }) => answer === "Lima" });
+  const model = await bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, criteria: [onlyLima], folder: join(home, "criteria"), epochs: 2 });
+  const tr = (model.meta as Rec)["training"];
+  assert.ok(Math.abs(tr["best"]["score"] - 0.2) < 1e-9, "one case of five says Lima: the criterion's 0.2, not exact match's 1");
+  assert.deepEqual(Object.keys(tr["criteria"]), ["only_lima"]);
+});
+
 test("a run that fails resumes from its last saved state", { skip }, async () => {
   const folder = join(home, "resume");
   const o = { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder, epochs: 4, evalEvery: 100 };

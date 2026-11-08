@@ -26,19 +26,18 @@ import datetime as dt
 import hashlib
 import json
 import math
-import os
 import random
 import sys
 import time
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
 
 import lm15
 
 from . import training as T
 from .examples import BakeError, row_inputs
 from .functions import Entry, value_hash
-from .students import Picture, Student, chunks_length, effort_of, student_conversation
+from .tokens import Picture, Student, chunks_length, effort_of, student_conversation
 
 METHODS = ("sft", "rl", "prefer", "distill", "decision")
 TINKER_MODELS = "https://tinker-docs.thinkingmachines.ai/tinker/models.json"
@@ -667,18 +666,10 @@ class _Run:
         self.save()
 
     def lr_at(self, step: int) -> float:
+        from .recipe import wsd
         s = self.p.settings
         sched = s["schedule"]
-        if not sched:
-            return s["lr"]
-        total = s["steps"]
-        w = max(1, round(total * sched["warmup"]))
-        d = max(1, round(total * sched["decay"]))
-        if step < w:
-            return s["lr"] * (step + 1) / w
-        if step < total - d:
-            return s["lr"]
-        return s["lr"] * max(0.0, 1 - math.sqrt((step - (total - d) + 1) / d))
+        return s["lr"] * wsd(step, s["steps"], sched["warmup"], sched["decay"]) if sched else s["lr"]
 
     def order(self, n: int, epoch: int) -> List[int]:
         idx = list(range(n))
@@ -997,7 +988,7 @@ class _Run:
                         adv = per_token[gi][i] if per_token is not None else a[i]
                         data.append(_datum(T.rl_datum(g["prompt"], q["tokens"], q["logprobs"], adv), g["pictures"]))
             else:
-                def one(c: Case):
+                def one(c: Case, sampler=sampler, step=step):
                     r = self.rendered(c)
                     res = sampler.sample(prompt=_model_input(r["prompt"], r["pictures"]), num_samples=s["group"],
                                          sampling_params=types.SamplingParams(max_tokens=s["max_tokens"],

@@ -58,8 +58,8 @@ def __getattr__(name: str):
         from .dataset import Examples
         return Examples
     if name in ("rewards", "GroupReward", "TinkerPlan", "Student"):
-        from . import service, students
-        return getattr(service, name, None) or getattr(students, name)
+        from . import service, tokens
+        return getattr(service, name, None) or getattr(tokens, name)
     raise AttributeError(name)
 
 
