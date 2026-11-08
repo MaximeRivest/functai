@@ -348,7 +348,7 @@ export class Student {
 
   /** Tokens' text, special tokens kept. */
   decode(ids: readonly number[]): string {
-    return this.#tok.decode([...ids], { skip_special_tokens: false });
+    return ids.length ? this.#tok.decode([...ids], { skip_special_tokens: false }) : "";
   }
 
   tokenId(text: string): number | undefined {

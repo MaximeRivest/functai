@@ -36,8 +36,9 @@ Run it alone (prints its address; ``TINKER_BASE_URL`` for the SDK):
 
 Control (tests): ``POST /_fake/config`` sets options (``try_again``: how many
 times each future answers "try again" first; ``billing_blocked``: how many
-requests answer 402; ``lr_scale``; ``storage_limit_gb``; ``models``: more
-base models); ``GET /_fake/state`` returns what was asked of it.
+requests answer 402; ``fail``: ``{path: n}``, the next n requests to a path
+answer 400; ``lr_scale``; ``storage_limit_gb``; ``models``: more base
+models); ``GET /_fake/state`` returns what was asked of it.
 """
 
 from __future__ import annotations
@@ -189,7 +190,7 @@ class FakeTinker:
         self.rng = random.Random(seed)
         self.models = {k: dict(v) for k, v in MODELS.items()}
         self.options: Dict[str, Any] = {"try_again": 0, "billing_blocked": 0, "lr_scale": 20_000.0,
-                                        "storage_limit_gb": 100.0, "paid_storage": False}
+                                        "storage_limit_gb": 100.0, "paid_storage": False, "fail": {}}
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.runs: Dict[str, Dict[str, Any]] = {}            # model_id -> {base, rank, table, grad, seq, meta}
         self.samplers: Dict[str, Dict[str, Any]] = {}        # sampling_session_id -> {table, base}
@@ -271,6 +272,10 @@ class FakeTinker:
                         "/api/v1/get_server_capabilities", "/api/v1/create_session", "/api/v1/session_heartbeat"):
                     self.options["billing_blocked"] -= 1
                     raise Fail(402, "Access is blocked due to billing status. Please add payment")
+            fail = self.options.get("fail") or {}
+            if fail.get(path, 0) > 0:                       # a test asked this path to fail (a bad request)
+                fail[path] -= 1
+                raise Fail(400, f"failed on purpose ({path})")
             route = self.route(method, path)
             if route is None:
                 raise Fail(404, f"Not found: {method} {path}")

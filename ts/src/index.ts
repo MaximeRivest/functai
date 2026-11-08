@@ -52,6 +52,9 @@ export { Service, serve, type ServeOptions } from "./serving.ts";
 export { remote, type RemoteProgram } from "./remote.ts";
 export { quotesFound } from "./judges.ts";
 export { bakeExamples, exportExamples, bakeEntry, baked, BakedModel, type BakeEntry, type Example, type ExamplesOptions } from "./bake.ts";
+export { bake, planBake, bakedOnTinker, rewards, tinkerPrices, TinkerRunner, TrainPlan, type GroupReward, type Method, type PreferencePair, type Price as TinkerPrice, type Reward, type TrainOptions } from "./train.ts";
+export { Student, studentConversation, picture, pictureSize, type Chunk, type Picture, type PictureRule, type Rendered, type StudentOptions } from "./students.ts";
+export { Tinker, TinkerError, TrainingRun, Sampler, type TinkerOptions, type Checkpoint, type SampleOptions, type SampleResult } from "./tinker.ts";
 export { inspectHistory, phistory, type HistoryRecord } from "./history.ts";
 export { compare, type Comparison } from "./compare.ts";
 export {

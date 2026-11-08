@@ -74,7 +74,7 @@ export interface BakeEntry {
 
 const leftOut = (e: BakeEntry) => [...Object.keys(e.fixed), ...Object.keys(e.derived)];
 
-function fullSignature(fn: Baking, cot: boolean): lmcc.Signature {
+export function fullSignature(fn: Baking, cot: boolean): lmcc.Signature {
   const s = effective(fn.settings);
   return sig.signature({ ...fn.definition, cot, tools: false, includeName: s.includeFnName !== false }, fn.state().instructions);
 }
@@ -221,7 +221,8 @@ export function entryJson(e: BakeEntry): Rec {
   };
 }
 
-function entryOf(d: Rec): BakeEntry {
+/** @internal An entry read back from `baked.json`. */
+export function entryOf(d: Rec): BakeEntry {
   return {
     name: d["name"] as string, fingerprint: d["fingerprint"] as string, signature: lmcc.signatureFromDict(d["signature"]), layout: d["layout"] as Rec,
     outputs: [...((d["outputs"] ?? []) as string[])], reasoning: d["reasoning"] === true, fixed: (d["fixed"] ?? {}) as Record<string, string>,
@@ -331,7 +332,9 @@ export class BakedModel {
   readonly model: string;
   readonly apiKey: string | null;
   readonly timeout: number;
-  constructor(f: { folder: string; meta: Rec; entries: Map<string, BakeEntry>; url: string; model: string; apiKey: string | null; timeout: number }) {
+  /** Where its weights answer when not at `url` (a service's sampler: Tinker). */
+  readonly runner: Router | null;
+  constructor(f: { folder: string; meta: Rec; entries: Map<string, BakeEntry>; url: string; model: string; apiKey: string | null; timeout: number; runner?: Router | null }) {
     this.folder = f.folder;
     this.meta = f.meta;
     this.entries = f.entries;
@@ -339,10 +342,16 @@ export class BakedModel {
     this.model = f.model;
     this.apiKey = f.apiKey;
     this.timeout = f.timeout;
+    this.runner = f.runner ?? null;
+  }
+
+  /** The router its calls go through. */
+  router(): Router {
+    return this.runner ?? new BakedRouter(this);
   }
 
   toString(): string {
-    return `BakedModel(${JSON.stringify(this.meta["name"] ?? this.folder)} at ${this.url}: ${[...this.entries.keys()].join(", ")})`;
+    return `BakedModel(${writeData(this.meta["name"] ?? this.folder)} at ${this.url || (this.meta["weights"] as Rec | undefined)?.["uri"]}: ${[...this.entries.keys()].join(", ")})`;
   }
 }
 
@@ -380,7 +389,7 @@ export function baked(folder: string, opts: { url: string; model?: string; apiKe
 }
 
 /** The entry a function runs through: by name, or (a model of one function) its only one; refused when the function changed. */
-function entryFor(b: BakedModel, fn: Baking): BakeEntry {
+export function entryFor(b: BakedModel, fn: Baking): BakeEntry {
   const e = b.entries.get(fn.name) ?? (b.entries.size === 1 ? [...b.entries.values()][0] : undefined);
   if (!e) throw new BakeError("baked-changed", `this baked model answers ${[...b.entries.keys()].join(", ")}, not ${fn.name}`);
   const s = effective(fn.settings);
@@ -391,7 +400,7 @@ function entryFor(b: BakedModel, fn: Baking): BakeEntry {
 }
 
 /** The inputs the student reads, after checking fixed inputs have their baked values and derived ones follow their source. */
-function studentInputs(e: BakeEntry, signature: lmcc.Signature, inputs: Rec): Rec {
+export function studentInputs(e: BakeEntry, signature: lmcc.Signature, inputs: Rec): Rec {
   if (!leftOut(e).length) return inputs;
   const p = sig.prepareInputs(signature, inputs);
   for (const [n, h] of Object.entries(e.fixed)) {
@@ -452,7 +461,7 @@ export function bakedJob(fn: unknown, model: BakedModel, settings: Settings, inp
   const s = effective(f.settings);
   return {
     function: f.name, plan: studentPlan(e), inputs: studentInputs(e, fullSignature(f, e.reasoning && s.module === "cot"), inputs),
-    settings: settings as never, router: new BakedRouter(model), model: model.model, tools: [], call: call as Call, answer,
+    settings: settings as never, router: model.router(), model: model.model, tools: [], call: call as Call, answer,
     provider: "functai-baked-lm",
   };
 }
