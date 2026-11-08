@@ -1,0 +1,19 @@
+1x1: renderer 1  (floor(w/40)+1)*ceil(h/40) 1  ceil(w/40)*ceil(h/40) 1  
+39x39: renderer 1  (floor(w/40)+1)*ceil(h/40) 1  ceil(w/40)*ceil(h/40) 1  
+40x40: renderer 2  (floor(w/40)+1)*ceil(h/40) 2  ceil(w/40)*ceil(h/40) 1  differs: Tinker refuses these (width a multiple of 40)
+41x41: renderer 4  (floor(w/40)+1)*ceil(h/40) 4  ceil(w/40)*ceil(h/40) 4  
+79x79: renderer 4  (floor(w/40)+1)*ceil(h/40) 4  ceil(w/40)*ceil(h/40) 4  
+80x80: renderer 6  (floor(w/40)+1)*ceil(h/40) 6  ceil(w/40)*ceil(h/40) 4  differs: Tinker refuses these (width a multiple of 40)
+81x81: renderer 9  (floor(w/40)+1)*ceil(h/40) 9  ceil(w/40)*ceil(h/40) 9  
+119x40: renderer 3  (floor(w/40)+1)*ceil(h/40) 3  ceil(w/40)*ceil(h/40) 3  
+120x40: renderer 4  (floor(w/40)+1)*ceil(h/40) 4  ceil(w/40)*ceil(h/40) 3  differs: Tinker refuses these (width a multiple of 40)
+121x40: renderer 4  (floor(w/40)+1)*ceil(h/40) 4  ceil(w/40)*ceil(h/40) 4  
+40x119: renderer 6  (floor(w/40)+1)*ceil(h/40) 6  ceil(w/40)*ceil(h/40) 3  differs: Tinker refuses these (width a multiple of 40)
+40x120: renderer 6  (floor(w/40)+1)*ceil(h/40) 6  ceil(w/40)*ceil(h/40) 3  differs: Tinker refuses these (width a multiple of 40)
+40x121: renderer 8  (floor(w/40)+1)*ceil(h/40) 8  ceil(w/40)*ceil(h/40) 4  differs: Tinker refuses these (width a multiple of 40)
+390x844: renderer 220  (floor(w/40)+1)*ceil(h/40) 220  ceil(w/40)*ceil(h/40) 220  
+1279x800: renderer 640  (floor(w/40)+1)*ceil(h/40) 640  ceil(w/40)*ceil(h/40) 640  
+1280x800: renderer 660  (floor(w/40)+1)*ceil(h/40) 660  ceil(w/40)*ceil(h/40) 640  differs: Tinker refuses these (width a multiple of 40)
+1281x800: renderer 660  (floor(w/40)+1)*ceil(h/40) 660  ceil(w/40)*ceil(h/40) 660  
+4000x3000: renderer 7575  (floor(w/40)+1)*ceil(h/40) 7575  ceil(w/40)*ceil(h/40) 7500  differs: Tinker refuses these (width a multiple of 40)
+8000x8000: renderer 40200  (floor(w/40)+1)*ceil(h/40) 40200  ceil(w/40)*ceil(h/40) 40000  differs: Tinker refuses these (width a multiple of 40)

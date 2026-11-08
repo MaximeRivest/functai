@@ -1,0 +1,14 @@
+tinker requires:
+Requires-Dist: transformers
+tinker_cookbook requires:
+Requires-Dist: torch>=2.10
+Requires-Dist: transformers!=5.3.0,!=5.4.*,!=5.5.0,!=5.5.1,!=5.5.2,!=5.5.3,!=5.6.*,>=4.57.6
+tml_renderers imports torch in:
+.venv/lib/python3.12/site-packages/tml_renderers/chat.py
+and uses it for:
+8:import torch
+51:    def dmel(self) -> torch.Tensor: ...
+53:    def dmel(self, value: torch.Tensor) -> None: ...
+59:    def __new__(cls, dmel: torch.Tensor, target_audio_token: builtins.int) -> DmelTokenSpan: ...
+62:        dmel: torch.Tensor | types.EllipsisType = Ellipsis,
+5.7G	.venv

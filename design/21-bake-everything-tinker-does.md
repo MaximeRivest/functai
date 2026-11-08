@@ -8,6 +8,13 @@ in `~/Projects/gaze-models/tinker/` (1,112 lines), Tinker's documentation
 read on 2026-11-08 (SDK 0.39, tinker-cookbook 0.6.1, tml-renderers
 0.4.1), and `python/functai/bake/` on master (29a450f).*
 
+*Revised the same day after studying what needs PyTorch and how
+TypeScript can use Tinker (section 0, evidence in `21-evidence/`). Three
+decisions of the first draft were reversed: FunctAI renders tokens from
+the models' published files instead of Tinker's renderers, writes its
+own training loops instead of borrowing the cookbook's, and builds
+TypeScript first, for Quiver. Neither language needs PyTorch.*
+
 ## Why
 
 An agent working for Bigspin used Tinker to teach Inkling 2 Small to
@@ -67,12 +74,102 @@ million trained; Qwen3.5-4B $0.33 / $1.005 / $0.737. Throughput measured
 by the agent: 15 to 20 requests a second from 32 at once upwards, none
 refused at 256.
 
+## 0. No PyTorch, and Tinker from TypeScript
+
+Nothing runs locally on Tinker, so why would anything need PyTorch?
+Measured (`21-evidence/`):
+
+| Piece | Needs PyTorch? | Why |
+|---|---|---|
+| `tinker`, the SDK | **no** (optional: used only if installed) | it sends JSON and token numbers over HTTP |
+| `tml-renderers`, Inkling's renderer | **yes, to import it** | only audio uses it (sound becomes feature tensors, "DMEL"), but `chat.py` imports it on its first line and the compiled part looks for PyTorch's library in memory at load time |
+| `tinker-cookbook` | **yes**, a declared dependency | its renderers, its custom losses (autograd), weight conversion |
+
+The agent's environment was **5.7 GB**, 4 GB of it NVIDIA libraries for a
+GPU it never used. With CPU-only PyTorch the same environment is
+**0.84 GB**. Without the cookbook and `tml-renderers` it is the SDK and
+its dependencies alone.
+
+What a client really has to do, beyond HTTP:
+
+1. **Turn a request into the model's tokens.** Text: the model's
+   tokenizer and chat template. Pictures: Tinker's servers do all the
+   picture processing. The client sends the PNG or JPEG bytes (base64 in
+   JSON) with the number of tokens the picture will take, which is
+   arithmetic: `ceil(w/40) × ceil(h/40)` for Inkling, with no resizing
+   (an 8000×8000 picture is 40,000 tokens); Qwen's resize rule from its
+   published `preprocessor_config.json`. The 40-px bug the agent hit is
+   the Python client's arithmetic (`floor(w/40)+1`), not the server's.
+2. **Losses that are not built in** (DPO, a Brier loss on decision
+   probabilities): Tinker computes the model's log-probabilities, the
+   client computes the loss's derivative with respect to them, Tinker
+   does the rest. The cookbook uses PyTorch autograd for that derivative;
+   for the losses bake needs, it is a short closed formula.
+
+**The decisive test.** Inkling-Small (first generation) publishes its
+`tokenizer.json`, `chat_template.jinja` and picture settings on Hugging
+Face. Rendered in **Node**, with `@huggingface/tokenizers` and
+`@huggingface/jinja` (about 1 MB together, no Python), they give the
+cookbook's **exact** training tokens, prompt tokens and trained-token mask
+on **366 of 366** conversations (code, Chinese, Cyrillic, emoji, tabs;
+three thinking efforts; 0.6 seconds). The only difference from the
+cookbook's prompt is by design: its prompt stops before
+`<|message_model|>`, which the model writes itself.
+
+**Inkling 2 Small is the exception, for now.** Its tokenizer (h200k)
+is not published. Its vocabulary can be read back from `tml-renderers`,
+but its merge rule cannot: the best rebuild tokenizes 93 of 2,334 texts
+differently (runs of punctuation). Not exact, so not usable. Thinking
+Machines said on 5 November that the weights come out "next week" under
+Apache 2.0, which publishes these files; the first generation shows
+they reproduce the renderer exactly. Until then:
+
+- Python renders Inkling 2 with `tml-renderers` on CPU-only PyTorch
+  (`functai[tinker-inkling2]`, 0.84 GB), the only place PyTorch remains;
+- TypeScript trains on every other Tinker model (Qwen3.5 4B/9B,
+  Qwen3.6-35B-A3B, Inkling-Small, and the rest with public files), and
+  on Inkling 2 once the files are out. A bridge (TypeScript asking a
+  small Python helper for Inkling 2's tokens) would be throwaway work
+  for about a week.
+
+**Talking to Tinker from TypeScript.** There is no JavaScript SDK (none
+on npm, none in the thinking-machines-lab organisation). The Python SDK
+is open source (Apache 2.0) and generated from an OpenAPI description
+that is not public. The protocol is plain HTTPS:
+
+- about 15 endpoints in use (`create_session`, `session_heartbeat` every
+  10 seconds, `create_model`, `forward_backward`, `optim_step`,
+  `asample`, `save_weights`, `save_weights_for_sampler`, `load_weights`,
+  `retrieve_future(s)`, checkpoints, billing), JSON both ways;
+- work is asynchronous: a request returns a future, collected by
+  polling; "not yet" is HTTP 408 with the queue's state;
+- `forward_backward` is sent as protobuf (zstd-compressed) by the Python
+  SDK, a speed choice. The `.proto` is recoverable from the SDK (23
+  messages). The server read a JSON `forward_backward` too (a probe with
+  no session answered "Invalid session", past the format check): very
+  likely accepted, to confirm with one real call (a fraction of a cent);
+- the server sends feature flags (`client/config`); none forces an SDK
+  version today.
+
+So FunctAI TypeScript gets its own small Tinker client (about 700
+lines). The cost is ours to carry: the protocol is not documented and
+can change under flags. The mitigation is three things: recorded
+requests and replies of the Python SDK as test fixtures, a live smoke
+test that runs one cent of work, and asking Thinking Machines for a
+TypeScript SDK or the OpenAPI file (their generator, Stainless, writes
+TypeScript SDKs).
+
+**One protocol detail worth using.** A training example can point at
+tokens the server already sampled (`sampled_tokens` provenance) instead
+of sending them again. For reinforcement learning on screenshots, this
+avoids uploading every picture twice.
+
 ## The design in one picture
 
 ```
             what is learned (method)                    where (trainer)
   rows ─┐   sft       imitate known answers           here   TRL (sft today; dpo, grpo, gkd later)
-ratings ┼─► rl        a reward from a criterion   ──► tinker the SDK; the cookbook's RL loop
+ratings ┼─► rl        a reward from a criterion   ──► tinker its API; FunctAI's loops (TypeScript, Python)
   pairs ┤   prefer    pairs people preferred          prime  verifiers environments (exists)
 teacher ┘   distill   a teacher's own probabilities   export files for any trainer
             decision  a probability per choice
@@ -139,21 +236,30 @@ bake does, and shows in the plan before spending anything.
 
 ## 1. Pictures, and how a prompt becomes tokens
 
-**Rendering.** Today a student's tokens come from its Hugging Face chat
-template (`bake/template.py`: `Template` holds the template's hash and
-its keyword arguments). Tinker's models are rendered by the cookbook's
-renderers, and Inkling's *only* by `tml-renderers`. `Template` becomes
-one of two kinds:
+**Rendering.** A student's tokens come from its published files, as
+Python's bake already does (`bake/template.py`): the tokenizer, the chat
+template and its keyword arguments, now with a **picture rule** (how
+many tokens a picture takes, and what replaces the template's picture
+placeholder). `Template` records the hashes of the tokenizer and the
+template, the keyword arguments (`{"reasoning_effort": 0.0}` for
+Inkling, `{"enable_thinking": false}` for Qwen) and the picture rule's
+name (`inkling-40px`, `qwen-smart-resize`). Python renders with
+`tokenizers` and `jinja2`, TypeScript with `@huggingface/tokenizers` and
+`@huggingface/jinja`. A contract case set (`contract/cases/tokens/`:
+messages and pictures → tokens, for each model family's files) holds
+the two languages to the same tokens. The cookbook's renderers are not
+the reference. The model's own published template is, and for Inkling
+they agree exactly. For Qwen they differ in two known details (a
+line break, an empty thinking block), which matters only if training and
+calling used different ones, and FunctAI does both. The one exception
+is Inkling 2 until its files are published (section 0).
 
-- `{"kind": "hf", "sha256": …, "kwargs": {"enable_thinking": false}}`, as
-  now;
-- `{"kind": "tinker", "renderer": "tml_v0", "kwargs": {"effort": 0.0},
-  "versions": {"tinker-cookbook": "0.6.1", "tml-renderers": "0.4.1"}}`.
+The cookbook's prompt for Inkling stops before `<|message_model|>`; the
+published template adds it. FunctAI follows the template on both sides.
 
-Training and calling go through the same renderer with the same keyword
-arguments, so the promise holds. The default for a student on Tinker is
-the renderer Tinker recommends for it
-(`model_info.get_recommended_renderer_name`).
+**Pictures are sent as they are.** PNG stays PNG. The cookbook
+re-encodes every picture as JPEG, which blurs text and thin lines,
+exactly what screenshots are made of.
 
 **Thinking effort.** A function's own reasoning setting chooses it,
 through the presets Tinker documents (none 0.0, minimal 0.1, low 0.2,
@@ -174,9 +280,11 @@ cases. Training here on pictures (TRL with a processor) comes later
 
 **Tinker's picture bug.** tml-renderers 0.4.1 counts one token column
 too many when a picture's width is a multiple of 40 px, and the server
-refuses the request. Bake pads such pictures with one black column on
-the right (no coordinate moves). The fix lives in one function, a test
-pins it, and it goes once a fixed release is out. Report it upstream.
+refuses the request. FunctAI computes the count itself
+(`ceil(w/40) × ceil(h/40)`), so it never sends the wrong number and
+needs no padding; a contract case pins it. Python's fallback through
+`tml-renderers` (Inkling 2, until its files are out) pads with one black
+column on the right instead (no coordinate moves). Report it upstream.
 
 ## 2. Judged by its criteria while it trains (design 14, item 18)
 
@@ -236,19 +344,31 @@ data, energy-score training did *not* beat stage 1. The careful
 measurement showed stage 1 was already within noise of real people,
 with 1 to 5 people per screen. The helper is a tool, not a promise.
 
-**The loop is Tinker's cookbook's**, not ours (`tinker_cookbook.rl.train`):
-it already handles groups, advantages centred per group, dropping
-groups whose answers all scored the same (no signal; an option bake
-turns on), the KL penalty, the six losses, async sampling, retries and
-its own checkpoints. Bake
-supplies two pieces and nothing else:
+**The loop is FunctAI's, in the contract.** The first draft borrowed
+the cookbook's loop. That made PyTorch a dependency and left TypeScript
+without one, and the parts that looked subtle turn out to be Tinker's
+job, not the client's: the off-policy correction is the server's loss
+(`importance_sampling`, `ppo`, `cispo`, `stable_reinforce` take the
+sampler's log-probabilities), and a KL penalty is a reference model's
+log-probabilities (`compute_logprobs`) folded into the reward. What is
+left is short and written down once, in `contract/training.md`, with
+cases every language reproduces:
 
-- an **environment per case** (`MessageEnv`): its first observation is
-  the function's layout rendered for that case; `step` parses the reply
-  with the layout into typed outputs (an unreadable reply scores the
-  worst value, as a failed call does in design 20) and returns the
-  reward;
-- an **evaluator** that runs section 2's checks.
+1. a step's cases: `group` answers each, from a sampler of the current
+   weights (`num_samples`, so the prompt is billed once);
+2. each answer parsed with the function's layout into typed outputs (an
+   unreadable reply scores the worst value, as a failed call does in
+   design 20), then rewarded;
+3. advantages: reward minus the group's mean (divided by its standard
+   deviation when `normalize=True`, as GRPO does); groups where every
+   answer scored the same are dropped, since they teach nothing;
+4. one `forward_backward` with the chosen loss, the next step's
+   requests sent before this one is awaited (Tinker's clock cycles);
+5. section 2's checks every `eval_every`.
+
+The cases fix numbers, not code: given these rewards, these advantages;
+given these tokens and advantages, this request. Python's and
+TypeScript's loops are each about 250 lines.
 
 **What the report adds, always.** Design 20's *self-agreement* (how alike
 a setup's answers to the same case are), before and after, on the
@@ -307,8 +427,12 @@ give the distribution), fitted with the Brier score. A call returns the
 answer, and the probabilities in its record, as `head` does.
 
 **Any loss**: `loss=` takes Tinker's names for `rl`, or a function
-`(data, logprobs) -> (loss, metrics)` for `forward_backward_custom`, as
-the way out for research.
+`(data, logprobs) -> (loss, gradient with respect to logprobs, metrics)`,
+as the way out for research. FunctAI then asks Tinker for the
+log-probabilities and sends the gradient back as per-token weights,
+which is what the SDK's `forward_backward_custom` does after running
+PyTorch's autograd. DPO's and the Brier score's gradients are written
+out in the contract, so neither language needs autograd.
 
 ## 5. The plan, money and storage
 
@@ -367,10 +491,10 @@ tokens. The other routes, honestly:
 
 | From | How | Same tokens as training? |
 |---|---|---|
-| Python | native sampler | yes |
-| TypeScript, R, Julia | `functai serve` the function in Python and call it (serving exists) | yes |
-| TypeScript, R, Julia, any tool | Tinker's OpenAI-compatible endpoint | only if Tinker's default chat template renders the layout as the renderer did: **unverified for Inkling**; bake checks on the examples and says which |
-| here, after download | `save_weights_external` and its signed URLs (replacing the cookbook converter for models that support it), then `baked.on("vllm")` | the same check as `adopt` (design 12) |
+| Python, TypeScript | native sampler, each language's own client | yes |
+| R, Julia | `functai serve` the function in Python or TypeScript and call it (serving exists) | yes |
+| any tool | Tinker's OpenAI-compatible endpoint (beta; Tinker says testing, with a waitlist for production) | the endpoint renders with the model's default template, which for Inkling is the published one (section 0); text only is proven |
+| here, after download | `save_weights_external` and its signed URLs (plain HTTPS: TypeScript can fetch them), then `baked.on("vllm")` | the same check as `adopt` (design 12) |
 
 A student that cannot leave Tinker (Inkling today, and anything too big
 to run anywhere else) is lock-in, and FunctAI's principle is no lock-in.
@@ -383,27 +507,85 @@ Each stage ships alone and is accepted by **reproducing the agent's
 measured results with FunctAI**: same data, same test, and scores within
 the agent's sampling ranges.
 
+TypeScript comes first: it is what Quiver runs. Python follows each
+stage with the same contract cases (it has the official SDK, so it
+needs no client of its own).
+
 | Stage | What | Accepted when | Live cost |
 |---|---|---|---|
-| A | Tinker trainer made real: SDK 0.39 (async), renderer templates, Inkling and effort, pictures in examples (contract, all languages write them), the picture workaround, checks by criteria while training, best checkpoint, temperature chosen, state always kept, storage and billing, `held_out_by` | `scanpath.bake(rows, …)` (5 passes) scores ScanMatch 0.315–0.334 on the 250 test cases (agent: 0.323) | ≈ $12 |
-| B | `method="rl"` through the cookbook loop; rewards as criteria with `references` and `answers`; `rewards.energy`; self-agreement in the report | stage 2 from A scores 0.375–0.385 (agent: 0.380), and the report shows self-agreement collapsing without being asked | ≈ $20 |
+| A0 | the contract: picture parts in the examples, `contract/cases/tokens/` (Inkling-Small, Qwen3.5, pictures), `contract/training.md` with its cases; TypeScript's Tinker client, tested on recorded Python SDK traffic and by one live call (JSON `forward_backward` confirmed or not) | both languages write the same tokens for every case; the live call trains one step | < $0.10 |
+| A | supervised training on Tinker from TypeScript: rendering from published files, picture rules, checks by criteria while training, best checkpoint, temperature chosen, state always kept, storage and billing, `held_out_by`; Python's trainer moved to the same rendering | `scanpath` (5 passes) on Qwen3.5-4B and on Inkling 2 Small once its files are out, ScanMatch 0.315–0.334 on the 250 test cases for Inkling 2 (agent: 0.323) | ≈ $15 |
+| B | `method="rl"` with FunctAI's loop; rewards as criteria with `references` and `answers`; `rewards.energy`; self-agreement in the report | stage 2 from A scores 0.375–0.385 (agent: 0.380), and the report shows self-agreement collapsing without being asked | ≈ $20 |
+| Q | Quiver: weight optimization beside GEPA (section 8) | a Poser AI function improved on Tinker, its draft measured on held-out cases and deployed by the existing rule | Quiver's |
 | C | `decision` and `prefer` | a finite-output function with pictures, against `head` and against the untrained model, with ranges | ≈ $5 |
 | D | `distill`: on-policy (same tokenizer), off-policy from a Tinker teacher, `teacher="self"` with `fixed=` | Inkling 2 Small → Qwen3.5-4B, run here, against the 4B trained alone | ≈ $15 |
 | E | `rl` on modules and agents with tools | a two-step module and a tool-using agent improve on held-out cases | ≈ $20 |
 | F | the same methods `where="here"` (TRL: DPO, GRPO, GKD), pictures here | the stage C and D tasks on lambda's GPUs | free |
 
+## 8. In Quiver: weight optimization beside GEPA
+
+Quiver already has the frame (its README, *Improving*): an optimizer
+proposes a **draft** version, Quiver measures it, and a person decides
+what goes live. GEPA is the one optimizer today, and it rewrites an AI
+function's instruction. Quiver also already names **weights** ("a
+fine-tuned or custom model a version uses… stored on its own, by
+fingerprint; a version only points to it"). Weight optimization is a
+second optimizer in that frame, not a new frame:
+
+```ts
+// what Quiver's worker runs (FunctAI TypeScript)
+const plan = await bake(fn, trainingCases, {
+  student: "Qwen/Qwen3.5-4B", where: "tinker", criteria, heldOutBy: "site", planOnly: true,
+});                                   // cost, storage, data sent: shown on the page first
+const baked = await plan.run();       // an hour or more; metrics stream to the run's page
+const rl = await bake(fn, trainingCases, { method: "rl", start: baked, reward: criteria[0] });
+```
+
+- **The same data rule as GEPA.** Only training cases are sent; held-out
+  cases never are, and they decide the deploy. Cases with a known answer
+  train by imitation (`sft`). Cases with only a judge train by reward
+  (`rl`, the judge program as the criterion). That is the item Quiver
+  lists as "not yet: improving against a judge program", which Poser's
+  programs need.
+- **The draft** is a board whose `program.json` points at the weights
+  (`weights:<sha256>`), and the weights record is `baked.json`: the
+  `tinker://` path, the template and picture rule, the chosen
+  temperature, the criteria it was trained on. Tinker's price table
+  gives the model its price, because Quiver offers no model without one.
+  Its setup differs from the parent's, so its answers are measured apart.
+- **The deploy rule is unchanged**: the draft must not be worse on
+  held-out cases, compared case by case.
+- **GEPA, then weights.** GEPA is cheap and fast, so it runs first. Bake
+  starts from GEPA's instruction, and with `fixed=` (design 12) the long
+  instruction can be left out of the student's prompt entirely, so
+  every call is shorter.
+- **What Quiver adds**: the Tinker key as a provider key (whose
+  account pays), Tinker's host in the worker's reach, a run that
+  outlives a worker restart (the run folder and Tinker's saved state let
+  it resume), and the plan's lines on the page before anything is spent,
+  including "your data is sent to Thinking Machines".
+- **Where the weights answer** in production is open question 6.
+
 ## Trade-offs taken
 
-- **The RL loop is borrowed from tinker-cookbook**, pinned to a tested
-  version. It is a research codebase that changes fast (0.6.1 today), and
-  we follow its changes. The alternative, our own ~200-line loop, is what
-  the agent wrote, and the subtle parts (off-policy corrections, KL,
-  retries, async) are exactly where a small team gets it wrong. The
-  supervised loop stays ours: it is 40 lines with nothing subtle, and it
-  already exists.
-- **`functai[tinker]` now needs PyTorch.** Design 12 promised it would
-  not. Inkling's renderer and the cookbook require PyTorch ≥ 2.10. A
-  laptop can still train on Tinker. It just installs more.
+- **FunctAI writes its own training loops**, in both languages, written
+  down in the contract. We give up the cookbook's recipes and its future
+  improvements, and we carry about 250 lines per language and per
+  method. We gain: no PyTorch, TypeScript at all, one behaviour in every
+  language, and loops that call functions through their layouts. The
+  agent's one real bug (the spread weight) is in a reward, which we ship
+  with a test either way.
+- **TypeScript speaks an undocumented protocol.** Thinking Machines may
+  change it; our client then breaks until we follow. Recorded fixtures
+  and a one-cent live test catch it the same day; an official SDK or the
+  OpenAPI file would remove the risk, and we ask for them.
+- **Inkling 2 Small waits for its published files in TypeScript** (said
+  to be days away). Python can train it today through `tml-renderers`
+  with CPU-only PyTorch (0.84 GB, not 5.7). If the files are late, a
+  Python helper that only renders tokens for TypeScript is the stopgap.
+- **No PyTorch anywhere else.** `functai[tinker]` is the SDK, `tokenizers`
+  and `jinja2` in Python; two packages of about 1 MB in TypeScript. Audio
+  (which Inkling reads) waits: its features need tensor maths.
 - **Training on the criterion you report** inflates the report unless
   the cases are held out. Bake enforces the held-out side and labels
   trained-on criteria. It cannot know if the criterion itself can be
@@ -439,13 +621,20 @@ the agent's sampling ranges.
 3. `references` and `answers`: the right names? (Design 20's judge
    already gets `expected`, `answer`, `outputs`, `item`, `first`,
    `second`.)
-4. Does the OpenAI-compatible endpoint render Inkling prompts exactly as
-   tml-renderers does? If yes, the other languages can call Tinker
-   students directly. To check in stage A, on the examples.
-5. Does the cookbook's RL loop take picture observations from a
-   `MessageEnv` as its sampling examples do? Likely, since both use the
-   same renderer, but it is unverified. To check first in stage B.
-6. The agent's last finding: variety needs many people per screen, not
+4. Does Tinker accept a JSON `forward_backward` all the way (the probe
+   got past the format check, not to a trained step)? One call in stage
+   A0. If not, TypeScript sends protobuf from the recovered `.proto`
+   (one more dependency, `@bufbuild/protobuf`).
+5. Ask Thinking Machines: a TypeScript SDK or the OpenAPI file; Inkling
+   2 Small's tokenizer files before the weights, if the weights slip;
+   the 40-px count bug; and making PyTorch an import only audio needs.
+6. Production serving. Tinker calls its OpenAI-compatible endpoint a
+   testing service, with a waitlist for production, and the agent
+   measured 15 to 20 requests a second. A Poser study at Bigspin's
+   volume on a Tinker-only model (Inkling 2) depends on that waitlist;
+   open models (Qwen) can be downloaded and served on lambda or the
+   Spark instead.
+7. The agent's last finding: variety needs many people per screen, not
    a cleverer reward. That is data collection for Bigspin, not FunctAI.
    FunctAI's part is design 20's draws and blind ratings, which already
    exist.
