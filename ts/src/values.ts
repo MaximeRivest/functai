@@ -205,6 +205,16 @@ export function parseData(text: string): unknown {
 }
 
 /**
+ * A file another program wrote (a model's tokenizer.json, its configuration),
+ * read as plain data: nothing FunctAI writes back or hashes depends on its
+ * members' order or its numbers' spelling, and such files run to tens of
+ * megabytes, which the platform's parser reads far faster.
+ */
+export function parseForeign(text: string): unknown {
+  return JSON.parse(text);
+}
+
+/**
  * JSON text of a value, members in the value's order (`JSON.stringify` lists
  * integer-like names first): what `JSON.stringify(value, null, indent)`
  * writes otherwise (a `toJSON` is used; a boxed primitive is its value; an

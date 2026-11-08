@@ -50,10 +50,18 @@
     "lmcc": "^0.8.8"
   },
   "peerDependencies": {
-    "attachments-dev": ">=0.1.0 <2"
+    "attachments-dev": ">=0.1.0 <2",
+    "@huggingface/jinja": ">=0.5.11 <0.6",
+    "@huggingface/tokenizers": ">=0.2.0 <0.3"
   },
   "peerDependenciesMeta": {
     "attachments-dev": {
+      "optional": true
+    },
+    "@huggingface/jinja": {
+      "optional": true
+    },
+    "@huggingface/tokenizers": {
       "optional": true
     }
   },
@@ -62,6 +70,8 @@
     "attachments-dev": ">=0.1.0 <2",
     "typedoc": "^0.28.20",
     "typescript": "^5.9",
-    "zod": "^4.6.5"
+    "zod": "^4.6.5",
+    "@huggingface/jinja": "^0.5.11",
+    "@huggingface/tokenizers": "^0.2.0"
   }
 }

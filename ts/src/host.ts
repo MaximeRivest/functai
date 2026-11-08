@@ -11,6 +11,8 @@ type Builtins = {
   "node:path": typeof import("node:path");
   "node:url": typeof import("node:url");
   "node:async_hooks": typeof import("node:async_hooks");
+  "node:crypto": typeof import("node:crypto");
+  "node:zlib": typeof import("node:zlib");
 };
 
 const proc = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown; env?: Record<string, string | undefined>; pid?: number; version?: string; platform?: string } }).process;
