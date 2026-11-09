@@ -157,6 +157,12 @@ export interface TrainOptions extends BakeOptions {
   studentFiles?: StudentOptions | ((id: string) => StudentOptions);
   /** A line of progress (default: stderr; false: silent). */
   log?: ((line: string) => void) | false;
+  /**
+   * Stop at the end of the step under way: the training state is saved (kept a day, as intermediate states are), and
+   * the bake ends with `BakeError` code `bake-stopped`. Baking again with the same options and folder goes on from
+   * that step. A host that must stop a long run (a server restarting) loses no step.
+   */
+  signal?: AbortSignal;
 }
 
 // ------------------------------------------------------------------ prices
@@ -644,7 +650,7 @@ function decisionPoint(student: Student, entry: BakeEntry, answerName: string, c
 // ------------------------------------------------------------------ the run
 
 interface RunState {
-  state: "running" | "done" | "failed";
+  state: "running" | "done" | "failed" | "stopped";
   step: number;
   model_id?: string;
   states: { step: number; path: string }[];
@@ -717,7 +723,7 @@ class TrainRun {
       this.save();
       return model;
     } catch (err) {
-      this.st.state = "failed";
+      this.st.state = (err as { code?: unknown }).code === "bake-stopped" ? "stopped" : "failed";
       this.st.error = `${(err as Error).name}: ${(err as Error).message}`;
       this.save();
       throw err;
@@ -791,13 +797,15 @@ class TrainRun {
     this.st.step = step;
     if (step % Number(s["eval_every"]) === 0 || step === Number(s["steps"])) await this.check(step);
     const every = Math.max(1, Math.round(Number(s["steps"]) / 4));
-    if (step % every === 0 && step < Number(s["steps"])) {
+    const stop = this.plan.opts.signal?.aborted === true && step < Number(s["steps"]);
+    if ((step % every === 0 || stop) && step < Number(s["steps"]) && this.st.states.at(-1)?.step !== step) {
       const path = await this.run.saveState(`step-${String(step).padStart(6, "0")}`, { ttlSeconds: 86_400 });
       const previous = this.st.states.at(-1);
       this.st.states.push({ step, path });
       if (previous) await this.tinker.deleteCheckpoint(previous.path).catch(() => {});
     }
     this.save();
+    if (stop) throw new BakeError("bake-stopped", `stopped after step ${step} of ${s["steps"]}: its state is saved (kept a day); bake again with the same options and folder to go on from there`);
   }
 
   // ---- checks

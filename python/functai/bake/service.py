@@ -413,6 +413,17 @@ def choice_point(student: Student, messages, pictures, replies: Sequence[str]):
 # ------------------------------------------------------------------ the plan
 
 
+class BakeStopped(BakeError):
+    """A bake stopped when asked (``stop=``): its state is saved at the step it stopped after; baking again with the
+    same options and folder goes on from there."""
+
+
+def _stop_asked(stop: Any) -> bool:
+    """``stop=``: an object with ``is_set()`` (``threading.Event``), or a function answering whether to stop."""
+    if stop is None:
+        return False
+    return bool(stop.is_set() if hasattr(stop, "is_set") else stop())
+
 def _say(log: Any) -> Callable[[str], None]:
     if log is None or log is False:
         return lambda s: None
@@ -685,7 +696,7 @@ class _Run:
             self.save()
             return baked
         except BaseException as err:
-            self.st["state"] = "failed"
+            self.st["state"] = "stopped" if isinstance(err, BakeStopped) else "failed"
             self.st["error"] = f"{type(err).__name__}: {err}"
             self.save()
             raise
@@ -761,13 +772,18 @@ class _Run:
         if step % s["eval_every"] == 0 or step == s["steps"]:
             self.check(step)
         every = max(1, round(s["steps"] / 4))
-        if step % every == 0 and step < s["steps"]:
+        stop = _stop_asked(self.p.o.get("stop")) and step < s["steps"]
+        last = self.st["states"][-1]["step"] if self.st["states"] else None
+        if (step % every == 0 or stop) and step < s["steps"] and last != step:
             path = self.tc.save_state(f"step-{step:06d}", ttl_seconds=86_400).result().path
             previous = self.st["states"][-1] if self.st["states"] else None
             self.st["states"].append({"step": step, "path": path})
             if previous:
                 self._delete(previous["path"])
         self.save()
+        if stop:
+            raise BakeStopped(f"stopped after step {step} of {s['steps']}: its state is saved (kept a day); bake again "
+                              f"with the same options and folder to go on from there")
 
     def _delete(self, path: Optional[str]) -> None:
         if not path:

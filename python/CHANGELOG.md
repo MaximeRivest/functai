@@ -13,7 +13,10 @@ design/21, contract training.md (its cases pass in both languages).
   for distillation; `criteria=` decide which checkpoint and temperature are
   kept; `held_out_by=` keeps a column's rows on one side; `start=` continues
   from an earlier bake; `plan_only=True` prices it first. A run resumes; its
-  samples are seeded.
+  samples are seeded. `stop=` (a `threading.Event`, or a function) stops it
+  at the end of the step under way, its state saved there, so baking again
+  goes on from that step (`BakeStopped`); before, a run stopped from outside
+  lost every step since its last quarterly state.
 - **A student's tokens come from its published files** (`tokens.py`), not
   from Tinker's renderers: no PyTorch for `functai[tinker]`. Pictures train
   too (PNG, JPEG), counted as Tinker counts them. Inkling 2 Small, whose

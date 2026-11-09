@@ -678,6 +678,11 @@ Differences from the proposal above, each for a reason:
 - **The heartbeat is never retried** (TypeScript): a retried one kept a
   process alive forever once the service was unreachable (found as a test
   file that would not exit).
+- **A run stops when asked** (`signal` in TypeScript, `stop` in Python) at the end of
+  the step under way, its training state saved at that step: a host that must stop a
+  long run (a server restarting) loses no step. Intermediate states are kept a day: a
+  run left stopped longer than that cannot load its state any more, and is baked anew
+  (a new folder).
 - **Not built**: `rl` on modules and agents with tools (stage E); the new
   methods trained here with TRL (stage F); weight optimization in Quiver
   (section 8: that repository's work, next).

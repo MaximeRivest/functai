@@ -13,7 +13,12 @@ design/21, contract training.md (its cases pass).
   `rl` (criteria, functions, or group rewards: `rewards.energy`), `prefer`
   (DPO), `distill` (on-policy) and `decision`. `planOnly` prices it first.
   Checks on held-out cases choose the step and the temperature; a run
-  resumes; `start` continues from an earlier bake.
+  resumes; `start` continues from an earlier bake. `signal` (an
+  `AbortSignal`) stops it at the end of the step under way, its state saved
+  there, so baking again goes on from that step (`BakeError` code
+  `bake-stopped`).
+- **`bakedId(meta)`** exported: a baked model's id, as setups name it, for
+  hosts that keep baked models by it.
 - **No PyTorch, no Python**: a student's tokens come from its published
   files (`Student`, with `@huggingface/tokenizers` and `@huggingface/jinja`,
   optional peers), pictures included; the same tokens as Python's on Qwen 3.5

@@ -610,7 +610,7 @@ def bake_head(fn, data: Any, *, student: str = "jhu-clsp/ettin-encoder-17m",
 SERVICE_METHODS = ("rl", "prefer", "distill", "decision")
 SERVICE_OPTIONS = {"criteria", "reward", "pairs", "held_out_by", "check_cases", "temperatures", "eval_every", "epochs",
                    "lr", "lora_rank", "rank", "batch", "group", "loss", "normalize", "kl", "temperature", "beta", "effort",
-                   "max_tokens", "keep_state", "tinker", "student_files", "weight", "start"}
+                   "max_tokens", "keep_state", "tinker", "student_files", "weight", "start", "stop"}
 
 _SFT_ONLY = ("fixed", "derived", "layout", "reasoning", "tags", "weights", "functions", "where")
 

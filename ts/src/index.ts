@@ -37,7 +37,7 @@ export { answerSoFar, partialJson, type SoFar } from "./partial.ts";
 export { Prediction, StepLimit } from "./engine.ts";
 export { Cancelled, FunctAIError, FilesUnavailable, ConversationError, Waiting, ApprovalError, PluginError, ServeError, RemoteError,
   BakeError, ReachError, type Approval } from "./errors.ts";
-export { setupDiff, type SetupDifference, type SetupDocument } from "./setup.ts";
+export { bakedId, setupDiff, type SetupDifference, type SetupDocument } from "./setup.ts";
 export type { Needs, Wall } from "./settings.ts";
 export { type Tool, type Effects, type ApproveFunction, type ApproveSetting, asks, denial } from "./tools.ts";
 export { Plugin, APPROVAL, type Change, type Hook, type ShownTurn, type ConversationLike, TurnStartHook, ContextHook, BeforeCallHook, RequestHook, ToolCallHook,

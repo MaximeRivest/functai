@@ -206,6 +206,35 @@ def test_a_run_that_fails_resumes_from_its_last_saved_state(env):
     assert any("/weights/step-" in (r.get("loaded_from") or "") for r in fake.runs.values())
 
 
+
+def test_a_run_asked_to_stop_saves_its_state_at_that_step_and_goes_on_from_it(env):
+    from functai.bake.service import BakeStopped
+    folder = env["home"] / "stop"
+    o = opts(env, student="toy/Toy-1", test=TEST5, run_folder=folder, epochs=4, eval_every=100, batch=8)
+    fake = env["fake"]
+    earlier = set(fake.runs)
+    stop, done = threading.Event(), threading.Event()
+
+    def watch():
+        while not done.is_set():
+            if any(k not in earlier and r["opt"].get("steps", 0) >= 2 for k, r in fake.runs.items()):
+                stop.set()
+                return
+            done.wait(0.002)
+    t = threading.Thread(target=watch, daemon=True)
+    t.start()
+    with pytest.raises(BakeStopped, match=r"stopped after step \d of 8"):
+        functai.bake.bake(capital, rows(), stop=stop, **o)
+    done.set()
+    run = json.loads((folder / "run.json").read_text())
+    assert run["state"] == "stopped"
+    assert run["states"][-1]["step"] == run["step"] < 8, "the state of the very step it stopped after is saved"
+    b = functai.bake.bake(capital, rows(), **o)
+    assert json.loads((folder / "run.json").read_text())["state"] == "done"
+    assert b.meta["training"]["steps"] == 8
+    losses = [json.loads(x) for x in (folder / "metrics.jsonl").read_text().splitlines()]
+    assert [x["step"] for x in losses if "loss" in x] == list(range(1, 9)), "each step once"
+
 def _share(env, student, uri):
     import tinker
     from functai.bake.functions import Entry

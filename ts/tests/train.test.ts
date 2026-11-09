@@ -140,6 +140,31 @@ test("a run that fails resumes from its last saved state", { skip }, async () =>
   assert.ok(Object.values(st["runs"]).some((r: any) => /weights\/step-/.test(r["loaded_from"] ?? "")), "the second run loaded the saved state");
 });
 
+test("a run asked to stop saves its state at the end of the step and goes on from that step when baked again", { skip }, async () => {
+  const folder = join(home, "stop");
+  const o = { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder, epochs: 4, evalEvery: 100, batch: 8 };
+  // 8 steps, a state every 2: asked to stop during step 3, it saves step 3 (not only step 2) and stops there
+  const stop = new AbortController();
+  const earlier = new Set(Object.keys((await fake.state())["runs"]));
+  const watch = setInterval(async () => {
+    const run = Object.entries((await fake.state())["runs"]).find(([id, r]: [string, any]) => !earlier.has(id) && r["steps"] >= 2) as [string, Rec] | undefined;
+    if (run) { clearInterval(watch); stop.abort(); }
+  }, 5);
+  await assert.rejects(bake(capital, rows(), { ...o, signal: stop.signal }), (e: any) => e.code === "bake-stopped" && /stopped after step \d of 8/.test(e.message));
+  clearInterval(watch);
+  const run = JSON.parse(readFileSync(join(folder, "run.json"), "utf8"));
+  assert.equal(run["state"], "stopped");
+  assert.equal(run["states"].at(-1)["step"], run["step"], "the state of the very step it stopped after is saved");
+  assert.ok(run["step"] < 8);
+  const stoppedAt = run["step"];
+  const model = await bake(capital, rows(), o);
+  assert.equal(JSON.parse(readFileSync(join(folder, "run.json"), "utf8"))["state"], "done");
+  assert.equal((model.meta as Rec)["training"]["steps"], 8);
+  const lines = readFileSync(join(folder, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((x) => x["loss"] !== undefined);
+  assert.deepEqual(lines.map((x) => x["step"]), [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => n <= stoppedAt || n > stoppedAt), "no step trained twice");
+  assert.equal(lines.length, 8, "each step once");
+});
+
 test("spent: what Tinker billed this run's sessions, not the account's other work; none while its records are not in", { skip }, async () => {
   const folder = join(home, "billed");
   const model = await bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder, epochs: 1 });
