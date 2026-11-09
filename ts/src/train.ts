@@ -293,16 +293,28 @@ export class TinkerRunner implements Router {
   /** Every call that failed here (Tinker refused or could not be reached; never a reply the function cannot read):
    * a check stops on one instead of scoring the case 0. */
   readonly failures: unknown[] = [];
-  #sampler: Promise<Sampler>;
+  readonly #make: () => Promise<Sampler>;
+  #ready: Promise<Sampler> | null = null;
 
-  constructor(f: { student: Student; tinker: Tinker; sampler: Promise<Sampler> | Sampler; temperature: number; maxTokens: number; decision?: { choices: readonly unknown[]; replies: readonly string[] } | null; seed?: number | null }) {
+  /**
+   * `sampler`: the weights' sampler, or a function opening it. A function is called at the first call (a model that is
+   * loaded and never called reaches nothing: a program built, read, or measured on other models), and again after
+   * a failure to open it (the next call tries again).
+   */
+  constructor(f: { student: Student; tinker: Tinker; sampler: Promise<Sampler> | Sampler | (() => Promise<Sampler>); temperature: number; maxTokens: number; decision?: { choices: readonly unknown[]; replies: readonly string[] } | null; seed?: number | null }) {
     this.student = f.student;
     this.tinker = f.tinker;
     this.temperature = f.temperature;
     this.maxTokens = f.maxTokens;
     this.decision = f.decision ?? null;
     this.seed = f.seed ?? null;
-    this.#sampler = Promise.resolve(f.sampler);
+    const given = f.sampler;
+    this.#make = typeof given === "function" ? given : () => Promise.resolve(given);
+  }
+
+  /** The sampler, opened at the first call. */
+  #sampler(): Promise<Sampler> {
+    return (this.#ready ??= this.#make().catch((err: unknown) => { this.#ready = null; throw err; }));
   }
 
   /** A decision model's probability for each choice, for a request (one sampling request, nothing generated). */
@@ -313,7 +325,7 @@ export class TinkerRunner implements Router {
     const { messages, pictures } = studentConversation(Req.toJSON(request) as Rec);
     const point = choicePoint(this.student, messages, pictures, d.replies);
     const rows = Array.from({ length: chunksLength(point.prefix) }, (_, i) => (i === chunksLength(point.prefix) - 1 ? point.tokens : point.tokens.map(() => -1)));
-    const r = await (await this.#sampler).sample(wireChunks([...point.prefix, { text: [point.tokens[0]!] }], pictures), { maxTokens: 1, targetPromptLogprobs: rows });
+    const r = await (await this.#sampler()).sample(wireChunks([...point.prefix, { text: [point.tokens[0]!] }], pictures), { maxTokens: 1, targetPromptLogprobs: rows });
     const p = T.softmax(r.targetPromptLogprobs!.at(-1)!);
     return d.choices.map((choice, i) => ({ choice, probability: p[i]! }));
   }
@@ -340,7 +352,7 @@ export class TinkerRunner implements Router {
     const { Request: Req } = await import("@lm15/lm15");
     const { messages, pictures } = studentConversation(Req.toJSON(request) as Rec);
     const { prompt } = this.student.render(messages, pictures);
-    const sampler = await this.#sampler;
+    const sampler = await this.#sampler();
     const limit = request.config?.maxTokens ?? this.maxTokens;
     const temperature = request.config?.temperature ?? this.temperature;
     const seed = this.seed === null ? undefined : parseInt(lmcc.sha256Hex(`${this.seed}:${temperature}:${writeData(Req.toJSON(request))}`).slice(0, 8), 16);
@@ -401,7 +413,8 @@ export async function bakedOnTinker(folder: string, opts: { tinker?: Tinker | Ti
   }
   const tinker = tinkerOf(opts.tinker, { functai: "call", baked: String(meta["name"]) });
   const decision = ((meta["training"] as Rec | undefined)?.["decision"] ?? null) as { choices: unknown[]; replies: string[] } | null;
-  const runner = new TinkerRunner({ student, tinker, sampler: tinker.sampler({ path: w["uri"] as string }), temperature: Number((meta["sampling"] as Rec | undefined)?.["temperature"] ?? 0),
+  // its sampler opened at its first call: loading a model reaches nothing
+  const runner = new TinkerRunner({ student, tinker, sampler: () => tinker.sampler({ path: w["uri"] as string }), temperature: Number((meta["sampling"] as Rec | undefined)?.["temperature"] ?? 0),
     maxTokens: Number((meta["generation"] as Rec | undefined)?.["max_new_tokens"] ?? 1024), decision });
   return new BakedModel({ folder: path.resolve(folder), meta, entries: new Map(((meta["functions"] ?? []) as Rec[]).map((d) => [d["name"] as string, entryOf(d)])),
     url: "", model: String(meta["name"]), apiKey: null, timeout: 600_000, runner });

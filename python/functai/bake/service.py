@@ -28,6 +28,7 @@ import json
 import math
 import random
 import sys
+import threading
 import time
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Mapping, Optional, Sequence, Tuple
@@ -262,7 +263,11 @@ class TinkerStudent:
     def __init__(self, student: Student, sampler: Any, *, temperature: float = 0.0, max_tokens: int = 1024,
                  decision: Optional[Dict[str, Any]] = None, seed: Optional[int] = None, model: str = "student"):
         self.student = student
-        self.sampler = sampler
+        # the weights' sampler, or a function opening it: called at the first call (a model loaded and never called
+        # reaches nothing), and again after a failure to open it
+        self._sampler = sampler if hasattr(sampler, "sample") else None
+        self._make = None if self._sampler is not None else sampler
+        self._opening = threading.Lock()
         self.temperature = temperature
         self.max_tokens = max_tokens
         self.decision = decision
@@ -271,6 +276,15 @@ class TinkerStudent:
         # every call that failed here (Tinker refused or could not be reached; never a reply the function
         # cannot read): a check stops on one instead of scoring the case 0
         self.failures: List[BaseException] = []
+
+    @property
+    def sampler(self) -> Any:
+        """The sampler, opened at the first call."""
+        if self._sampler is None:
+            with self._opening:
+                if self._sampler is None:
+                    self._sampler = self._make()
+        return self._sampler
 
     def _sample(self, prompt, pictures, **kw):
         types = _sdk().types
@@ -353,9 +367,12 @@ def runner_for(baked, *, tinker: Optional[Mapping[str, Any]] = None, student: Op
                                                     and student.tokenizer_sha256 != tpl["tokenizer_sha256"]):
         raise BakeError(f"{meta['student']}'s published files changed since this model was trained (its template or "
                         f"tokenizer): calls would not send the tokens it learned")
-    sc = _service({"tinker": tinker}, {"functai": "call", "baked": str(meta["name"])})
-    sampler = _ready(sc.create_sampling_client(model_path=meta["weights"]["uri"]))
-    return TinkerStudent(student, sampler, temperature=float((meta.get("sampling") or {}).get("temperature", 0.0)),
+
+    def open_sampler():
+        sc = _service({"tinker": tinker}, {"functai": "call", "baked": str(meta["name"])})
+        return _ready(sc.create_sampling_client(model_path=meta["weights"]["uri"]))
+    # opened at its first call: loading a model reaches nothing
+    return TinkerStudent(student, open_sampler, temperature=float((meta.get("sampling") or {}).get("temperature", 0.0)),
                          max_tokens=int((meta.get("generation") or {}).get("max_new_tokens") or 1024),
                          decision=(meta.get("training") or {}).get("decision"), model=meta["name"])
 

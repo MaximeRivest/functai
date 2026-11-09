@@ -36,6 +36,9 @@ design/21, contract training.md (its cases pass in both languages).
   stops the bake instead of scoring 0; `spent.billed` is the run's own
   sessions, `None` until Tinker's records come in (it was the account's
   whole usage, and the text "None").
+- **Loading a model trained on Tinker reaches nothing**: its sampling
+  client opens at its first call (loading one failed when Tinker could not be
+  reached, even when nothing was to be asked of it).
 - **Records name a model trained on Tinker by its weights' URI too**
   (calls.md *Setups*): every one had the same name, its `hashes` being empty.
 

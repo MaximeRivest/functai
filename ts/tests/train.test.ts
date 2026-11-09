@@ -14,7 +14,7 @@ import { after, before, test } from "node:test";
 import { ai, t } from "../src/index.ts";
 import { bakeEntry, studentPlan } from "../src/bake.ts";
 import { studentConversation } from "../src/students.ts";
-import { bake, planBake, rewards, TinkerRunner } from "../src/train.ts";
+import { bake, bakedOnTinker, planBake, rewards, TinkerRunner } from "../src/train.ts";
 import { Tinker } from "../src/tinker.ts";
 import { criterion } from "../src/measures.ts";
 import { passes } from "../src/schema.ts";
@@ -163,6 +163,21 @@ test("a run asked to stop saves its state at the end of the step and goes on fro
   const lines = readFileSync(join(folder, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l)).filter((x) => x["loss"] !== undefined);
   assert.deepEqual(lines.map((x) => x["step"]), [1, 2, 3, 4, 5, 6, 7, 8].filter((n) => n <= stoppedAt || n > stoppedAt), "no step trained twice");
   assert.equal(lines.length, 8, "each step once");
+});
+
+test("a model trained on Tinker reaches nothing when it is loaded: its first call opens its session", { skip }, async () => {
+  const folder = join(home, "lazy");
+  await bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder, epochs: 1 });
+  const count = async () => Object.keys((await fake.state())["sessions"]).length;
+  const before = await count();
+  const model = await bakedOnTinker(join(folder, "baked"), { tinker: opts().tinker, studentFiles: { dir: files } });
+  await new Promise((r) => setTimeout(r, 200));
+  assert.equal(await count(), before, "loading it opened no session (a program built, read, or measured on other models reaches nothing)");
+  assert.equal(await capital.using({ lm: model as never })({ country: "Japan" }), "Tokyo");
+  assert.equal(await count(), before + 1, "its first call opened one");
+  assert.equal(await capital.using({ lm: model as never })({ country: "Peru" }), "Lima");
+  assert.equal(await count(), before + 1, "and the next calls use it");
+  (model.runner as TinkerRunner).tinker.close();
 });
 
 test("spent: what Tinker billed this run's sessions, not the account's other work; none while its records are not in", { skip }, async () => {

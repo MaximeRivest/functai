@@ -27,7 +27,9 @@ design/21, contract training.md (its cases pass).
   protocol (protobuf for training and sampling results); tested against
   `tools/fake_tinker.py`, which the official SDK checks.
 - **`bakedOnTinker(folder)`**: a model trained there, called through
-  `fn.using({ lm })`.
+  `fn.using({ lm })`. Loading it reaches nothing: its session opens at its
+  first call (a host that loads programs to build or read them, with no
+  network, is not left with a failing connection).
 - **Checked against Tinker itself** (sft, rl, decision): sampling asks
   for backpressure and waits out a busy service without limit; sparse
   answers are read; a check whose calls fail stops the bake instead of

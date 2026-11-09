@@ -136,6 +136,18 @@ def test_sft_learns_checks_choose_and_calls_run_on_tinker(env):
     assert capital.using(lm=loaded)("Japan") == "Tokyo"
 
 
+
+def test_a_model_trained_on_tinker_reaches_nothing_when_it_is_loaded(env):
+    b = functai.bake.bake(capital, rows(), **opts(env, student="toy/Toy-1", test=TEST5, run_folder=env["home"] / "lazy", epochs=1))
+    before = dict(env["fake"].sessions)
+    loaded = functai.bake.load(b.path)
+    loaded.on("tinker", tinker={"api_key": "tml-test", "base_url": env["url"]}, files=str(env["files"]))
+    assert env["fake"].sessions == before, "loading it opened no session"
+    assert capital.using(lm=loaded)("Japan") == "Tokyo"
+    assert len(env["fake"].sessions) == len(before) + 1, "its first call opened one"
+    assert capital.using(lm=loaded)("Peru") == "Lima"
+    assert len(env["fake"].sessions) == len(before) + 1, "and the next calls use it"
+
 def test_criteria_decide_by_their_name_not_by_exact_match(env):
     only_lima = functai.Criterion("only_lima", "verdict", judge=lambda answer: answer == "Lima")
     b = functai.bake.bake(capital, rows(), **opts(env, student="toy/Toy-1", test=TEST5, criteria=[only_lima],
