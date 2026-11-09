@@ -234,7 +234,7 @@ A student trained on a service adds to `baked.json` ([baked.md](baked.md)):
 | `weights` | `{"form": "remote", "service": "tinker", "uri": <the sampler checkpoint>, "state_uri": <the training state, to continue>, "base", "lora_rank"}` |
 | `template` | as before (`sha256` of the template, `kwargs`, `end`, `stop_token_ids`), and `source` (`"files"` or `"tml-renderers"`), `repo`, `tokenizer_sha256`, `lead`, `picture` (the family's rule and its numbers) |
 | `sampling` | `{"temperature"}`, chosen by the checks |
-| `training` | as before, and `method`, `criteria` (`{name: held-out score}`), `trained_on` (the criteria used as rewards), `spent` (`{"estimated", "billed"}` dollars) |
+| `training` | as before, and `method`, `criteria` (`{name: held-out score}`), `trained_on` (the criteria used as rewards), `spent` (`{"estimated", "billed", "billed_through"}`: the plan's estimate in dollars; what Tinker billed the run's own sessions, `null` until its records come in (hours later); the end of the last hour billed, `YYYY-MM-DDTHH:00:00Z`, or `null`) |
 
 A call on such a model renders its request with the template's rules
 above, samples with `sampling.temperature` (unless the call sets one)

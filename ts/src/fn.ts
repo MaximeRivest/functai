@@ -16,7 +16,7 @@
 
 import * as lmcc from "lmcc";
 import { Config, stringifyJson, type Request } from "@lm15/lm15";
-import { pluginEntry, reachOf, setupHash, SETTINGS as SETUP_SETTINGS, toolEntry, toolNeeds, type HasSetup } from "./setup.ts";
+import { bakedId, pluginEntry, reachOf, setupHash, SETTINGS as SETUP_SETTINGS, toolEntry, toolNeeds, type HasSetup } from "./setup.ts";
 import type * as calllog from "./calllog.ts";
 import { warnOnce } from "./calllog.ts";
 import type { CallFields } from "./content.ts";
@@ -565,8 +565,9 @@ export function make(core: Core): AIFunction {
   /** What its tools' code reaches (tools.md, *What a tool needs*). */
   const needs = () => mergedNeeds(...core.tools.map(toolNeeds));
   /** The model a setup names: as lm15 routes it; null when none can be named; a name lm15 cannot route, unrouted. */
-  const modelOf = (s: Settings, lm: string | null | undefined = s.lm): Rec | null => {
-    const name = lm ?? (s.router ? null : defaultModel(env()));
+  const modelOf = (s: Settings, lm: unknown = s.lm): Rec | null => {
+    if (isBaked(lm)) return { baked: bakedId(lm.meta as Rec) };
+    const name = (lm as string | null | undefined) ?? (s.router ? null : defaultModel(env()));
     if (!name) return null;
     try {
       const r = route({ ...s, lm: name });

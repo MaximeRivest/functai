@@ -719,7 +719,7 @@ which is true: another thing runs.
 | key | what it holds |
 |---|---|
 | `version` | its version. |
-| `model` | the model it would ask: `{"provider", "model"}` as lm15 routes its `lm` setting (`"openai:gpt-4.1-mini"` and `"gpt-4.1-mini"` are one model); a baked model `{"baked": B}`, `B` `"sha256:"` of the canonical JSON of its `baked.json`'s `hashes` (its files, weights included); `null` when none can be named (none set, none found). |
+| `model` | the model it would ask: `{"provider", "model"}` as lm15 routes its `lm` setting (`"openai:gpt-4.1-mini"` and `"gpt-4.1-mini"` are one model); a baked model `{"baked": B}`, `B` `"sha256:"` of the canonical JSON of its `baked.json`'s `hashes` (its files, weights included), or, for weights on a service (`weights.form` `"remote"`, whose files are not in the folder), of `{"hashes": <hashes>, "uri": <weights.uri>}`; `null` when none can be named (none set, none found). |
 | `config` | the lm15 settings set in any layer (`temperature`, `max_tokens`, `top_p`, `seed`, `stop`, `reasoning`, …), as lm15's canonical JSON. Absent when none is set: a provider's own default is not FunctAI's to know (the record says what it did). |
 | `settings` | FunctAI's settings that change what the model is asked or what comes back, each with its value in force, defaults included: `max_steps` (8), `retries` (1), `tool_errors` (`"report"`), `on_unreadable` (`"raise"`), and `capabilities` when set. |
 | `escalate` | when `escalate_to` is set: `{"to": T, "below": P}`, `T` a model as `model` names one, or `{"setup": S}` for an AI function, `P` the probability (0.9 when not set). |

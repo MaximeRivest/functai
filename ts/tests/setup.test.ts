@@ -7,6 +7,7 @@ import assert from "node:assert/strict";
 import { test } from "node:test";
 import { keepPictures, limits, withSettings, type Settings } from "../src/index.ts";
 import { cases, tsFunction, type Rec } from "./cases.ts";
+import { bakedId } from "../src/setup.ts";
 
 /** The contract's setting names, as TypeScript spells them. */
 const NAMES: Record<string, string> = {
@@ -34,3 +35,11 @@ for (const [name, c] of setupCases) {
 }
 
 test("the contract has setup cases", () => assert.ok(setupCases.length >= 11));
+
+test("a baked model is named by its files; weights on a service by their URI too (calls.md, Setups)", () => {
+  // sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand
+  assert.equal(bakedId({ hashes: { "model/a.safetensors": "ab" }, weights: { form: "merged", path: "model" } }), "sha256:1a84d571669514bafda4965197c2a4fd2f5a3740b380564d5681927ce738902d");
+  const remote = { hashes: {}, weights: { form: "remote", service: "tinker", uri: "tinker://run-1:train:0/sampler_weights/best-step-000004" } };
+  assert.equal(bakedId(remote), "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea");
+  assert.notEqual(bakedId({ ...remote, weights: { ...remote.weights, uri: "tinker://run-2:train:0/sampler_weights/best-step-000004" } }), "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea");
+});

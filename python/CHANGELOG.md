@@ -27,6 +27,14 @@ design/21, contract training.md (its cases pass in both languages).
   built without the layouts' registry).
 - The plan's own choice of Tinker (`where="auto"` with no GPU) goes the same
   way; the earlier Tinker trainer, never run against the service, is gone.
+- **Checked against Tinker itself** (sft, rl, decision): a decision model's
+  probabilities are read without PyTorch (Tinker answers them sparse, and
+  the SDK makes those dense only through PyTorch); a check whose calls fail
+  stops the bake instead of scoring 0; `spent.billed` is the run's own
+  sessions, `None` until Tinker's records come in (it was the account's
+  whole usage, and the text "None").
+- **Records name a model trained on Tinker by its weights' URI too**
+  (calls.md *Setups*): every one had the same name, its `hashes` being empty.
 
 ### A reasoning output reads the model's thinking on every thinking model
 

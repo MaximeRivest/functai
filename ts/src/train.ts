@@ -284,6 +284,9 @@ export class TinkerRunner implements Router {
   readonly decision: { readonly choices: readonly unknown[]; readonly replies: readonly string[] } | null;
   /** When set, each request samples with a seed made from it and the request (the same request, the same answer): checks are reproducible. */
   readonly seed: number | null;
+  /** Every call that failed here (Tinker refused or could not be reached; never a reply the function cannot read):
+   * a check stops on one instead of scoring the case 0. */
+  readonly failures: unknown[] = [];
   #sampler: Promise<Sampler>;
 
   constructor(f: { student: Student; tinker: Tinker; sampler: Promise<Sampler> | Sampler; temperature: number; maxTokens: number; decision?: { choices: readonly unknown[]; replies: readonly string[] } | null; seed?: number | null }) {
@@ -314,6 +317,15 @@ export class TinkerRunner implements Router {
   }
 
   async complete(request: Request): Promise<Response> {
+    try {
+      return await this.#answer(request);
+    } catch (err) {
+      this.failures.push(err);
+      throw err;
+    }
+  }
+
+  async #answer(request: Request): Promise<Response> {
     if (this.decision) {
       const probs = await this.probabilities(request);
       const best = probs.reduce((a, b, i) => (b.probability > probs[a]!.probability ? i : a), 0);
@@ -335,6 +347,21 @@ export class TinkerRunner implements Router {
       finish_reason: seq.stopReason === "stop" ? "stop" : "length", usage: { input_tokens: chunksLength(prompt), output_tokens: seq.tokens.length },
     } as never);
   }
+}
+
+/**
+ * What a run spent: the plan's estimate, and what Tinker billed this run's sessions (other work on the account
+ * in the same hours is not counted). Tinker's records come hours later: `billed` is null while there are none,
+ * and `billed_through` the end of the last hour billed so far (later hours may still come).
+ */
+export function spentOf(estimated: unknown, b: { events: readonly Rec[] }, sessions: readonly string[]): Rec {
+  const mine = new Set(sessions);
+  const events = b.events.filter((e) => mine.has(String(e["session_id"] ?? "")));
+  if (!events.length) return { estimated, billed: null, billed_through: null };
+  const billed = events.reduce((sum, e) => sum + Number(e["estimated_cost_usd"] ?? 0), 0);
+  const ends = events.map((e) => String(e["bucket_end"] ?? "")).filter((x) => !Number.isNaN(Date.parse(x)));
+  const through = ends.length ? ends.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) : null;
+  return { estimated, billed, billed_through: through && new Date(through).toISOString().replace(/\.\d{3}Z$/, "Z") };
 }
 
 /** The files option for one model. */
@@ -625,6 +652,8 @@ interface RunState {
   checks: { step: number; scores: Record<string, number | null>; agreement?: number | null }[];
   spent: number;
   started: string;
+  /** The Tinker sessions that worked on it (one per process; a resumed run has several): its bill is theirs. */
+  sessions?: string[];
   error?: string;
 }
 
@@ -676,6 +705,8 @@ class TrainRun {
     }
     this.tinker = tinkerOf(p.opts.tinker, { functai: "bake", bake: p.name, fingerprint: p.fingerprint });
     try {
+      this.st.sessions = [...new Set([...(this.st.sessions ?? []), await this.tinker.session()])];
+      this.save();
       await this.open();
       if (p.method === "sft") await this.sft();
       else if (p.method === "rl" || p.method === "distill") await this.rollouts();
@@ -853,6 +884,9 @@ class TrainRun {
       : p.opts.metric ? await evaluate(fn as never, rows as never, { metric: p.opts.metric as never, progress: false, concurrency: 16 })
       : await evaluate(fn as never, rows as never, { progress: false, concurrency: 16 });
     // the deciding metric by its name: rows that know their answers add exact match too, first
+    // a call that failed in Tinker or on the way says nothing of the weights: stop (the run resumes), never score it 0
+    const failed = (model.runner as TinkerRunner | null)?.failures ?? [];
+    if (failed.length) throw failed[0];
     const name = crit ? crit.name : p.opts.metric ? (p.opts.metric.name || "metric") : ev.metrics[0]!;
     return ev.summary.find((x) => x.metric === name)?.mean ?? null;
   }
@@ -1154,8 +1188,7 @@ class TrainRun {
     const weights = { form: "remote", service: "tinker", uri: sampler, sampler_uri: sampler, ...(state ? { state_uri: state } : {}), base: p.student.id, lora_rank: Number(p.settings["rank"]) };
     const meta = this.meta(weights);
     try {
-      const b = await this.tinker.billed(new Date(this.st.started));
-      (meta["training"] as Rec)["spent"] = { estimated: p.dollars["total"] ?? null, billed_through: b.through, billed: b.total };
+      (meta["training"] as Rec)["spent"] = spentOf(p.dollars["total"] ?? null, await this.tinker.billed(new Date(this.st.started)), this.st.sessions ?? []);
     } catch {
       /* billing records come later; the estimate stands */
     }

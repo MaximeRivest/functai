@@ -120,6 +120,20 @@ export interface TinkerOptions {
   heartbeatMs?: number;
   /** How long to wait before asking again after a 402 (default 5 s, as the SDK). */
   billingRetryMs?: number;
+  /** How long every sampler waits after Tinker says sampling is busy (429) before sending again:
+   * default 1 s, 5 s for prompts over 128 KB, as the SDK. Busy is waited out without limit. */
+  busyRetryMs?: number;
+}
+
+/** Sent with every sample request. Tinker refuses samples without it ("SDK is outdated"):
+ * the client promises to wait out a 429 itself instead of the server queuing the request. */
+const BACKPRESSURE = { "X-Tinker-Sampling-Backpressure": "1" } as const;
+
+/** A prompt's size as the SDK estimates it: 10 bytes a token, a picture's bytes. */
+function promptBytes(chunks: readonly WireChunk[]): number {
+  let n = 0;
+  for (const c of chunks) n += "tokens" in c ? c.tokens.length * 10 : c.image.length;
+  return n;
 }
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -171,6 +185,10 @@ export class Tinker {
   readonly #heartbeatMs: number;
   /** @internal */
   readonly billingRetryMs: number;
+  /** @internal */
+  readonly busyRetryMs: number | null;
+  /** @internal Until when every sampler holds back after a 429 (epoch ms): one shared backoff, as the SDK. */
+  sampleBackoffUntil = 0;
   #session: Promise<string> | null = null;
   #heartbeat: ReturnType<typeof setInterval> | null = null;
   #modelSeq = 0;
@@ -189,6 +207,7 @@ export class Tinker {
     this.#meta = { ...(opts.userMetadata ?? {}) };
     this.#heartbeatMs = opts.heartbeatMs ?? 10_000;
     this.billingRetryMs = opts.billingRetryMs ?? 5_000;
+    this.busyRetryMs = opts.busyRetryMs ?? null;
   }
 
   /** @internal How long a 402 is waited out. */
@@ -199,11 +218,12 @@ export class Tinker {
   // ---- HTTP
 
   /** One HTTP request; JSON in and out unless `body` is bytes (protobuf) or `accept` asks for protobuf. */
-  async request(method: string, path: string, opts: { json?: unknown; bytes?: Uint8Array; query?: Record<string, string | number>; accept?: "proto"; what?: string; attempts?: number } = {}):
+  async request(method: string, path: string, opts: { json?: unknown; bytes?: Uint8Array; query?: Record<string, string | number>; accept?: "proto"; what?: string; attempts?: number;
+    headers?: Readonly<Record<string, string>>; busy?: boolean } = {}):
     Promise<{ status: number; json: unknown; bytes: Uint8Array | null }> {
     const url = new URL(this.baseUrl + path);
     for (const [k, v] of Object.entries(opts.query ?? {})) url.searchParams.set(k, String(v));
-    const headers: Record<string, string> = { "x-api-key": this.#apiKey, "user-agent": `functai-ts (tinker protocol ${PROTOCOL})` };
+    const headers: Record<string, string> = { ...(opts.headers ?? {}), "x-api-key": this.#apiKey, "user-agent": `functai-ts (tinker protocol ${PROTOCOL})` };
     let body: string | Uint8Array | undefined;
     if (opts.bytes) {
       headers["content-type"] = "application/x-protobuf";
@@ -237,6 +257,7 @@ export class Tinker {
       } catch {
         json = text;
       }
+      if (resp.status === 429 && opts.busy) return { status: 429, json, bytes: null };   // the caller waits busy out
       if (resp.status >= 500 || resp.status === 429) {                // the service's trouble: again, with backoff
         lastErr = new TinkerError(resp.status, detailOf(json), opts.what ?? path);
         if (attempt + 1 < attempts) await sleep(Math.min(30_000, 500 * 2 ** attempt));
@@ -248,10 +269,17 @@ export class Tinker {
   }
 
   /** A JSON request that must succeed (2xx), its JSON. A 402 in the first minutes after paying is waited out. */
-  async call(method: string, path: string, json?: unknown, opts: { query?: Record<string, string | number>; what?: string } = {}): Promise<Rec> {
+  async call(method: string, path: string, json?: unknown,
+    opts: { query?: Record<string, string | number>; what?: string; headers?: Readonly<Record<string, string>>; busyMs?: number } = {}): Promise<Rec> {
     const started = Date.now();
+    const busy = opts.busyMs !== undefined;
     for (;;) {
-      const r = await this.request(method, path, { json, query: opts.query, what: opts.what });
+      if (busy) for (let w = this.sampleBackoffUntil - Date.now(); w > 0; w = this.sampleBackoffUntil - Date.now()) await sleep(w);
+      const r = await this.request(method, path, { json, query: opts.query, what: opts.what, headers: opts.headers, busy });
+      if (r.status === 429 && busy) {                                 // sampling is busy: everyone holds back, then again
+        this.sampleBackoffUntil = Math.max(this.sampleBackoffUntil, Date.now() + opts.busyMs!);
+        continue;
+      }
       if (r.status === 402 && Date.now() - started < this.#billingPause) {
         await sleep(this.billingRetryMs);
         continue;
@@ -568,7 +596,8 @@ export class Sampler {
       }
       body["target_prompt_logprobs"] = { data, dtype: "int64", shape: [rows.length, k], sparse_crow_indices: crow, sparse_col_indices: cols };
     }
-    const fut = await this.tinker.call("POST", "/api/v1/asample", body, { what: "sample" });
+    const busyMs = this.tinker.busyRetryMs ?? (promptBytes(prompt) <= 128 * 1024 ? 1_000 : 5_000);
+    const fut = await this.tinker.call("POST", "/api/v1/asample", body, { what: "sample", headers: BACKPRESSURE, busyMs });
     const r = await this.tinker.result(fut, "proto", "sample");
     const s = readSampleResponse(r.bytes!);
     let target: number[][] | null = null;

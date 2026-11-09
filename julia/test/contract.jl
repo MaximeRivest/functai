@@ -185,6 +185,16 @@ end
 end
 @test length(cases("setup")) >= 11
 
+@testset "a baked model is named by its files; weights on a service by their URI too (calls.md, Setups)" begin
+    # sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand
+    local_ = LMCC.jobj("hashes" => LMCC.jobj("model/a.safetensors" => "ab"), "weights" => LMCC.jobj("form" => "merged", "path" => "model"))
+    @test FunctAI.baked_id(local_) == "sha256:1a84d571669514bafda4965197c2a4fd2f5a3740b380564d5681927ce738902d"
+    remote = LMCC.jobj("hashes" => LMCC.jobj(), "weights" => LMCC.jobj("form" => "remote", "service" => "tinker", "uri" => "tinker://run-1:train:0/sampler_weights/best-step-000004"))
+    @test FunctAI.baked_id(remote) == "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea"
+    remote["weights"]["uri"] = "tinker://run-2:train:0/sampler_weights/best-step-000004"
+    @test FunctAI.baked_id(remote) != "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea"
+end
+
 
 # Julia has no Attachments (contract/README.md, "Which cases each language passes"): a function saved elsewhere that
 # reads files is refused files-unavailable when it is loaded, and nothing is sent.

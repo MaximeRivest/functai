@@ -18,6 +18,7 @@ import { bake, planBake, rewards, TinkerRunner } from "../src/train.ts";
 import { Tinker } from "../src/tinker.ts";
 import { criterion } from "../src/measures.ts";
 import { passes } from "../src/schema.ts";
+import { bakedId } from "../src/setup.ts";
 import { CONTRACT } from "../tools/generate.ts";
 import { fakeMissing, startFake, type Fake } from "./fake-tinker.ts";
 
@@ -89,6 +90,9 @@ test("sft: the student learns the answers; the checks choose the step and the te
   assert.equal(checks[0]["step"], 0);
   assert.ok(checks[0]["scores"]["0"] < 1, "untrained, it does not know");
   assert.equal(await capital.using({ lm: model as never })({ country: "Peru" }), "Lima");
+  // records name it by its weights on Tinker (calls.md, Setups): two bakes, two names
+  assert.deepEqual(capital.using({ lm: model as never }).setupDocument()["model"], { baked: bakedId(meta) });
+  assert.notEqual(bakedId(meta), bakedId({ ...meta, weights: { ...meta["weights"], uri: meta["weights"]["uri"] + "x" } }));
   const metrics = readFileSync(join(folder, "metrics.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
   const losses = metrics.filter((r) => r["loss"] !== undefined).map((r) => r["loss"]);
   assert.ok(losses.at(-1) < losses[0] / 3, `${losses}`);
@@ -134,6 +138,42 @@ test("a run that fails resumes from its last saved state", { skip }, async () =>
   assert.equal((model.meta as Rec)["training"]["steps"], 8);
   const st = await fake.state();
   assert.ok(Object.values(st["runs"]).some((r: any) => /weights\/step-/.test(r["loaded_from"] ?? "")), "the second run loaded the saved state");
+});
+
+test("spent: what Tinker billed this run's sessions, not the account's other work; none while its records are not in", { skip }, async () => {
+  const folder = join(home, "billed");
+  const model = await bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder, epochs: 1 });
+  const spent = (model.meta as Rec)["training"]["spent"];
+  const sessions: string[] = JSON.parse(readFileSync(join(folder, "run.json"), "utf8"))["sessions"];
+  assert.equal(sessions.length, 1);
+  const usage: Rec[] = (await fake.state())["usage"];
+  const ours = usage.filter((u) => sessions.includes(u["session_id"])).reduce((a, u) => a + u["estimated_cost_usd"], 0);
+  const all = usage.reduce((a, u) => a + u["estimated_cost_usd"], 0);
+  assert.ok(ours > 0 && ours < all, "earlier tests' bakes spent on the same account");
+  assert.ok(Math.abs(spent["billed"] - ours) < 1e-12, `${spent["billed"]} vs ${ours}`);
+  assert.match(spent["billed_through"], /^\d{4}-\d\d-\d\dT\d\d:00:00Z$/);
+  await fake.config({ billing_lag: true });
+  try {
+    const later = await bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder: join(home, "billed-later"), epochs: 1 });
+    const s2 = (later.meta as Rec)["training"]["spent"];
+    assert.equal(s2["billed"], null, "not billed yet is not $0");
+    assert.equal(s2["billed_through"], null);
+    assert.ok(s2["estimated"] > 0);
+  } finally {
+    await fake.config({ billing_lag: false });
+  }
+});
+
+test("a check whose calls fail in Tinker stops the bake with Tinker's error: a failure is not a score of 0", { skip }, async () => {
+  const folder = join(home, "check-fails");
+  await fake.config({ fail: { "/api/v1/asample": 1 } });             // the first check's first call
+  try {
+    await assert.rejects(bake(capital, rows(), { ...opts(), student: "toy/Toy-1", studentFiles: { dir: files }, test: test5, folder }),
+      (err: Error) => err.name === "TinkerError" && /failed on purpose/.test(err.message));
+  } finally {
+    await fake.config({ fail: {} });
+  }
+  assert.equal(JSON.parse(readFileSync(join(folder, "run.json"), "utf8"))["state"], "failed");
 });
 
 test("rl: a reward moves the student towards rewarded answers; groups that teach nothing are skipped", { skip }, async () => {

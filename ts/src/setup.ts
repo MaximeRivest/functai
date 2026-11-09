@@ -41,6 +41,14 @@ export const SETTINGS: readonly (readonly [string, keyof Settings, unknown])[] =
 /** `"sha256:"` of the canonical JSON of a document. */
 export const setupHash = (doc: SetupDocument): string => lmcc.sha256(doc as lmcc.Json);
 
+/** A baked model by its files (weights included): `"sha256:"` of its `baked.json`'s hashes; weights on a
+ * service (not in the folder) by their URI too (calls.md, *Setups*). */
+export function bakedId(meta: Readonly<Record<string, unknown>>): string {
+  const hashes = (meta["hashes"] ?? {}) as lmcc.Json;
+  const w = (meta["weights"] ?? {}) as Record<string, unknown>;
+  return lmcc.sha256((w["form"] === "remote" ? { hashes, uri: (w["uri"] ?? null) as lmcc.Json } : hashes) as lmcc.Json);
+}
+
 /** A plugin as a setup counts it: its name, version, and settings when it says them. */
 export function pluginEntry(p: Plugin): Rec {
   return { name: p.name, version: p.version, ...(p.config !== undefined ? { config: copyData(p.config) } : {}) };

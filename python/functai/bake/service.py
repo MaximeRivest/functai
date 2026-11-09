@@ -195,6 +195,37 @@ def read_outputs(entry: Entry, text: str, cut: bool) -> Optional[Dict[str, Any]]
 # ------------------------------------------------------------------ the student on Tinker, called
 
 
+def spent_of(estimated: Any, events: Sequence[Any], sessions: Sequence[str]) -> Dict[str, Any]:
+    """What a run spent: the plan's estimate, and what Tinker billed this run's sessions (other work on
+    the account in the same hours is not counted). Tinker's records come hours later: ``billed`` is None
+    while there are none, ``billed_through`` the end of the last hour billed so far (later hours may come)."""
+    mine = set(sessions)
+    ours = [e for e in events if (e.session_id or "") in mine]
+    if not ours:
+        return {"estimated": estimated, "billed": None, "billed_through": None}
+    end = max(e.bucket_end for e in ours)
+    return {"estimated": estimated, "billed": sum(e.estimated_cost_usd or 0.0 for e in ours),
+            "billed_through": end.astimezone(dt.timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")}
+
+
+def _tensor_row(t: Any, row: int) -> List[float]:
+    """One row of a 2-D ``TensorData``, NaN where a sparse (CSR) one lists no value.
+
+    Tinker answers a sparse ``target_prompt_logprobs`` request with a sparse tensor;
+    the SDK makes those dense only through PyTorch, which FunctAI does not need."""
+    cols = int(t.shape[1]) if t.shape and len(t.shape) == 2 else 1
+    data = list(t.data)
+    if t.sparse_crow_indices is None:
+        return [float(x) for x in data[row * cols:(row + 1) * cols]]
+    crow, col = t.sparse_crow_indices, t.sparse_col_indices
+    if len(crow) != int(t.shape[0]) + 1 or len(col) != len(data) or crow[-1] != len(data):
+        raise BakeError(f"Tinker answered a sparse tensor that does not fit its shape {list(t.shape)}")
+    out = [float("nan")] * cols
+    for at in range(crow[row], crow[row + 1]):
+        out[col[at]] = float(data[at])
+    return out
+
+
 def _model_input(chunks: Sequence[Dict[str, Any]], pictures: Sequence[Picture]):
     types = _sdk().types
     out = []
@@ -237,6 +268,9 @@ class TinkerStudent:
         self.decision = decision
         self.seed = seed
         self.model = model
+        # every call that failed here (Tinker refused or could not be reached; never a reply the function
+        # cannot read): a check stops on one instead of scoring the case 0
+        self.failures: List[BaseException] = []
 
     def _sample(self, prompt, pictures, **kw):
         types = _sdk().types
@@ -259,10 +293,17 @@ class TinkerStudent:
                                     data=np.asarray(list(tokens), dtype=np.int64), dtype="int64", shape=[n, len(tokens)],
                                     sparse_crow_indices=[0] * n + [len(tokens)],
                                     sparse_col_indices=list(range(len(tokens))))).result()
-        lp = r.target_prompt_logprobs.tolist()[n - 1]
+        lp = _tensor_row(r.target_prompt_logprobs, n - 1)
         return list(zip(self.decision["choices"], T.softmax(lp)))
 
     def complete(self, request: Any) -> Any:
+        try:
+            return self._answer(request)
+        except Exception as err:
+            self.failures.append(err)
+            raise
+
+    def _answer(self, request: Any) -> Any:
         if not isinstance(request, dict):
             request = lm15.serde.request_to_dict(request)
         if self.decision:
@@ -632,6 +673,10 @@ class _Run:
                                       base_url=t.get("base_url") if isinstance(t, Mapping) else None)
         self.pool = cf.ThreadPoolExecutor(16)
         try:
+            # the Tinker sessions that worked on it (one per process; a resumed run has several): its bill is theirs
+            sid = self.sc.holder.get_session_id()
+            self.st["sessions"] = list(dict.fromkeys([*self.st.get("sessions", []), sid]))
+            self.save()
             self.open()
             getattr(self, {"sft": "sft", "rl": "rollouts", "distill": "rollouts", "prefer": "prefer",
                            "decision": "decision"}[p.method])()
@@ -834,6 +879,9 @@ class _Run:
         else:
             ev = evaluate(fn, rows, num_threads=16)
             name = ev.metrics[0]
+        # a call that failed in Tinker or on the way says nothing of the weights: stop (the run resumes), never score it 0
+        if model._runner.failures:
+            raise model._runner.failures[0]
         per = ev.by_case(name)          # the deciding metric by its name: rows with answers add exact match too
         return sum(per.values()) / len(per) if per else None
 
@@ -1179,9 +1227,7 @@ class _Run:
             start = dt.datetime.fromisoformat(self.st["started"]).replace(minute=0, second=0, microsecond=0)
             end = (dt.datetime.now(dt.timezone.utc) + dt.timedelta(hours=1)).replace(minute=0, second=0, microsecond=0)
             usage = admin.get_billing_usage(start, end).result()
-            billed = sum(e.estimated_cost_usd or 0.0 for e in usage.data)
-            meta["training"]["spent"] = {"estimated": p.dollars.get("total"), "billed": billed,
-                                         "billed_through": str(usage.cost_data_through)}
+            meta["training"]["spent"] = spent_of(p.dollars.get("total"), usage.data, self.st.get("sessions", []))
         except Exception:  # noqa: BLE001 — billing records come later; the estimate stands
             pass
         p.output.mkdir(parents=True, exist_ok=True)

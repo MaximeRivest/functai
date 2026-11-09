@@ -91,6 +91,31 @@ test("a supervised loop learns, its steps sent in order without waiting between 
   await fake.config({ try_again: 0 });
 });
 
+test("sampling asks for backpressure, and a busy Tinker (429) is waited out, however long, with one backoff for every sampler", { skip: missing ?? false }, async () => {
+  // Tinker refuses a sample request without the backpressure header (seen live, 2026-11-08)
+  const bare = await fetch(fake.url + "/api/v1/asample", { method: "POST", headers: { "content-type": "application/json", "x-api-key": "tml-test" },
+    body: JSON.stringify({ base_model: "Qwen/Qwen3-8B", prompt: { chunks: [] }, num_samples: 1, sampling_params: {} }) });
+  assert.equal(bare.status, 400);
+  assert.match(await bare.text(), /outdated/);
+  const quick = new Tinker({ apiKey: "tml-test", baseUrl: fake.url, busyRetryMs: 30, heartbeatMs: 200 });
+  try {
+    const sampler = await quick.sampler({ base: "Qwen/Qwen3-8B" });
+    const asked = (await fake.state())["paths"].filter((p: string) => p === "/api/v1/asample").length;
+    await fake.config({ busy: 8 });                                  // more than the 6 attempts other errors get
+    const started = Date.now();
+    const [a, b] = await Promise.all([sampler.sample([{ tokens: PROMPT }], { maxTokens: 2 }), sampler.sample([{ tokens: PROMPT }], { maxTokens: 2 })]);
+    assert.equal(a.sequences.length, 1);
+    assert.equal(b.sequences.length, 1);
+    const st = await fake.state();
+    assert.equal(st["options"]["busy"], 0);
+    assert.equal(st["paths"].filter((p: string) => p === "/api/v1/asample").length - asked, 10);
+    assert.ok(Date.now() - started >= 30 * 4, "the samplers held back between busy answers");
+  } finally {
+    quick.close();
+    await fake.config({ busy: 0 });
+  }
+});
+
 test("a reinforcement step: sampled answers with their log-probabilities and advantages", { skip: missing ?? false }, async () => {
   const run = await tk.createModel("Qwen/Qwen3-8B", { rank: 8 });
   const sampler = await run.sampler();

@@ -12,7 +12,15 @@ SETUP_SETTINGS <- list(max_steps = 8L, retries = 1L, tool_errors = "report", on_
 # ---------------------------------------------------------------- the model
 
 # A baked model by its files (weights included): sha256 of its baked.json's hashes.
-baked_id <- function(b) lmcc::sha256_of(b$meta$hashes %||% lmcc::jobj())
+baked_id <- function(b) baked_id_of(b$meta)
+
+baked_id_of <- function(meta) {
+  hashes <- meta$hashes %||% lmcc::jobj()
+  w <- meta$weights
+  # weights on a service (not in the folder): named by their URI too (calls.md, Setups)
+  if (identical(w$form, "remote")) return(lmcc::sha256_of(lmcc::jobj(hashes = hashes, uri = w$uri)))
+  lmcc::sha256_of(hashes)
+}
 
 # A model as a setup names it: list(provider, model) as lm15 routes it (a bare
 # name and the name with its provider are one model), list(baked = id),

@@ -25,6 +25,17 @@ design/21, contract training.md (its cases pass).
   `tools/fake_tinker.py`, which the official SDK checks.
 - **`bakedOnTinker(folder)`**: a model trained there, called through
   `fn.using({ lm })`.
+- **Checked against Tinker itself** (sft, rl, decision): sampling asks
+  for backpressure and waits out a busy service without limit; sparse
+  answers are read; a check whose calls fail stops the bake instead of
+  scoring 0; `spent.billed` is the run's own sessions, `null` until
+  Tinker's records come in.
+
+### Records name a baked model
+
+A function on a baked model named no model in its setup (a warning, "the
+setup … could not be worked out"); it is now `{"baked": id}` as calls.md
+says, weights on a service named by their URI too.
 
 ### A reasoning output reads the model's thinking on every thinking model
 

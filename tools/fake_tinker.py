@@ -37,7 +37,9 @@ Run it alone (prints its address; ``TINKER_BASE_URL`` for the SDK):
 Control (tests): ``POST /_fake/config`` sets options (``try_again``: how many
 times each future answers "try again" first; ``billing_blocked``: how many
 requests answer 402; ``fail``: ``{path: n}``, the next n requests to a path
-answer 400; ``lr_scale``; ``storage_limit_gb``; ``models``: more base
+answer 400; ``billing_lag``: the billing records are not in yet (none);
+``busy``: how many ``asample`` requests answer 429 (the server is
+busy: the client waits and sends again); ``lr_scale``; ``storage_limit_gb``; ``models``: more base
 models); ``GET /_fake/state`` returns what was asked of it.
 """
 
@@ -190,7 +192,7 @@ class FakeTinker:
         self.rng = random.Random(seed)
         self.models = {k: dict(v) for k, v in MODELS.items()}
         self.options: Dict[str, Any] = {"try_again": 0, "billing_blocked": 0, "lr_scale": 20_000.0,
-                                        "storage_limit_gb": 100.0, "paid_storage": False, "fail": {}}
+                                        "storage_limit_gb": 100.0, "paid_storage": False, "fail": {}, "busy": 0}
         self.sessions: Dict[str, Dict[str, Any]] = {}
         self.runs: Dict[str, Dict[str, Any]] = {}            # model_id -> {base, rank, table, grad, seq, meta}
         self.samplers: Dict[str, Dict[str, Any]] = {}        # sampling_session_id -> {table, base}
@@ -624,7 +626,14 @@ class FakeTinker:
 
     # ---- sampling
 
-    def asample(self, body, **_):
+    def asample(self, body, headers, **_):
+        # Tinker refuses a sample request that does not ask for backpressure (a 429 when busy,
+        # instead of a queue): seen live on 2026-11-08 with exactly this message.
+        if headers.get("x-tinker-sampling-backpressure") != "1":
+            raise Fail(400, "Tinker SDK is outdated. Please update to the latest version.")
+        if self.options.get("busy", 0) > 0:
+            self.options["busy"] -= 1
+            raise Fail(429, "Sampling is busy, retry later")
         if body.get("sampling_session_id"):
             s = self.samplers.get(body["sampling_session_id"])
             if s is None:
@@ -690,6 +699,11 @@ class FakeTinker:
                     y = int(flat[i * k + j])            # -1: a padded entry (Tinker's recipes pad with -1)
                     vals.append(table.logprob(hashes[i + 1], y) if y >= 0 else float("nan"))
             result["target_prompt_logprobs"] = {"data": vals, "shape": [shape[0], k] if k > 1 else [shape[0]]}
+            if t.get("sparse_crow_indices") is not None:          # asked sparse, answered sparse (as Tinker does, live)
+                crow, cols = t["sparse_crow_indices"], t["sparse_col_indices"]
+                result["target_prompt_logprobs"] = {
+                    "data": [vals[i * k + cols[at]] for i in range(shape[0]) for at in range(crow[i], crow[i + 1])],
+                    "shape": [shape[0], k], "crow": list(crow), "col": list(cols)}
         ids = [f"seq-{uuid.uuid4().hex[:12]}" for _ in seqs]
         for sid_, q in zip(ids, seqs):
             q["sequence_id"] = sid_
@@ -755,6 +769,8 @@ class FakeTinker:
             t = r["target_prompt_logprobs"]
             out["target_prompt_logprobs"] = {"data": [None if x != x else x for x in t["data"]], "dtype": "float32",
                                              "shape": t["shape"]}
+            if "crow" in t:
+                out["target_prompt_logprobs"].update(sparse_crow_indices=t["crow"], sparse_col_indices=t["col"])
         return out
 
     @staticmethod
@@ -772,7 +788,13 @@ class FakeTinker:
             t = r["target_prompt_logprobs"]
             msg.target_prompt_logprobs.dtype = pb.DTYPE_FLOAT32
             msg.target_prompt_logprobs.shape.extend(t["shape"])
-            msg.target_prompt_logprobs.dense = struct.pack(f"<{len(t['data'])}f", *t["data"])
+            if "crow" in t:
+                csr = msg.target_prompt_logprobs.sparse_csr
+                csr.values = struct.pack(f"<{len(t['data'])}f", *t["data"])
+                csr.crow_indices = struct.pack(f"<{len(t['crow'])}q", *t["crow"])
+                csr.col_indices = struct.pack(f"<{len(t['col'])}q", *t["col"])
+            else:
+                msg.target_prompt_logprobs.dense = struct.pack(f"<{len(t['data'])}f", *t["data"])
         return msg.SerializeToString()
 
     # ---- checkpoints, billing
@@ -827,6 +849,8 @@ class FakeTinker:
                  "event_info": {"type": u["type"], "token_count": u["token_count"],
                                 **({"cached": bool(u.get("cached"))} if u["type"] == "sampling_prefill" else {})}}
                 for u in self.usage]
+        if self.options.get("billing_lag"):      # Tinker's records come hours later: none yet (seen live)
+            return 200, {"data": [], "sessions": {}, "cost_data_through": None}, "json"
         sessions = {sid: {"user_metadata": s["user_metadata"]} for sid, s in self.sessions.items()}
         return 200, {"data": data, "sessions": sessions, "cost_data_through": now.isoformat()}, "json"
 

@@ -19,7 +19,17 @@ const SETUP_WORKING = ScopedValue{Tuple}(())
 # ------------------------------------------------------------------ the model
 
 "A baked model by its files (weights included): `sha256:` of its `baked.json`'s hashes."
-baked_id(b::BakedModel) = LMCC.sha256_of(something(get(b.meta, "hashes", nothing), JObj()))
+baked_id(b::BakedModel) = baked_id(b.meta)
+
+function baked_id(meta::AbstractDict)
+    hashes = something(get(meta, "hashes", nothing), JObj())
+    w = get(meta, "weights", nothing)
+    # weights on a service (not in the folder): named by their URI too (calls.md, Setups)
+    if w isa AbstractDict && get(w, "form", nothing) == "remote"
+        return LMCC.sha256_of(LMCC.jobj("hashes" => hashes, "uri" => get(w, "uri", nothing)))
+    end
+    LMCC.sha256_of(hashes)
+end
 
 """
 A model as a setup names it: `{"provider", "model"}` as lm15 routes it (a

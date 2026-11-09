@@ -245,3 +245,15 @@ def test_what_the_code_a_setup_reads_cannot_say_code_id_says():
         assert agent(made("in stock")).setup == agent(made("sold out")).setup        # one text, two behaviours
         assert agent(made("in stock", "a")).setup != agent(made("sold out", "b")).setup
         assert agent(made("x", "v3")).setup_document()["tools"]["look"]["code"]["id"] == "v3"
+
+
+def test_a_baked_model_is_named_by_its_files_and_remote_weights_by_their_uri_too():
+    from types import SimpleNamespace
+    from functai.setup import baked_id
+    # sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand
+    local = SimpleNamespace(meta={"hashes": {"model/a.safetensors": "ab"}, "weights": {"form": "merged", "path": "model"}})
+    assert baked_id(local) == "sha256:1a84d571669514bafda4965197c2a4fd2f5a3740b380564d5681927ce738902d"
+    remote = {"hashes": {}, "weights": {"form": "remote", "service": "tinker", "uri": "tinker://run-1:train:0/sampler_weights/best-step-000004"}}
+    assert baked_id(SimpleNamespace(meta=remote)) == "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea"
+    remote["weights"]["uri"] = "tinker://run-2:train:0/sampler_weights/best-step-000004"
+    assert baked_id(SimpleNamespace(meta=remote)) != "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea"

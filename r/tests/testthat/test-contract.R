@@ -135,6 +135,16 @@ for (name in names(cases("setup"))) {
 }
 test_that("the contract has setup cases", expect_gte(length(cases("setup")), 11L))
 
+test_that("a baked model is named by its files; weights on a service by their URI too (calls.md, Setups)", {
+  ns <- asNamespace("functai")
+  # sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand
+  expect_identical(ns$baked_id_of(list(hashes = list(`model/a.safetensors` = "ab"), weights = list(form = "merged", path = "model"))), "sha256:1a84d571669514bafda4965197c2a4fd2f5a3740b380564d5681927ce738902d")
+  remote <- list(hashes = lmcc::jobj(), weights = list(form = "remote", service = "tinker", uri = "tinker://run-1:train:0/sampler_weights/best-step-000004"))
+  expect_identical(ns$baked_id_of(remote), "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea")
+  remote$weights$uri <- "tinker://run-2:train:0/sampler_weights/best-step-000004"
+  expect_false(identical(ns$baked_id_of(remote), "sha256:5de301cc192f33bcbf9cefe4c2f64d1b20499863787fe9ffb43a0220e1f382ea"))
+})
+
 
 # ---------------------------------------------------------------- files
 

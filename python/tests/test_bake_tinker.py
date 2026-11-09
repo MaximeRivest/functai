@@ -55,6 +55,19 @@ def rows(n=4):
 TEST5 = [{"country": c, "result": r} for c, r in PAIRS]
 
 
+@pytest.fixture(scope="module", autouse=True)
+def no_pytorch():
+    """Training on Tinker needs no PyTorch: these tests run as if it were not installed (the
+    environment has it, for local training). The SDK decides at import whether it has PyTorch,
+    so its flag is set too: a sparse tensor made dense through PyTorch failed live this way."""
+    from tinker.types import tensor_data
+    mp = pytest.MonkeyPatch()
+    mp.setitem(sys.modules, "torch", None)
+    mp.setattr(tensor_data, "_HAVE_TORCH", False)
+    yield
+    mp.undo()
+
+
 @pytest.fixture(scope="module")
 def env(tmp_path_factory):
     home = tmp_path_factory.mktemp("bake-tinker")
@@ -130,6 +143,40 @@ def test_criteria_decide_by_their_name_not_by_exact_match(env):
     best = b.meta["training"]["best"]
     assert best["score"] == pytest.approx(0.2), "one case of five says Lima: the criterion's 0.2, not exact match's 1"
     assert b.meta["training"]["criteria"] == {"only_lima": pytest.approx(0.2)}
+
+
+def test_spent_is_what_tinker_billed_this_runs_sessions_and_none_while_its_records_are_not_in(env):
+    import re
+    folder = env["home"] / "billed"
+    b = functai.bake.bake(capital, rows(), **opts(env, student="toy/Toy-1", test=TEST5, run_folder=folder, epochs=1))
+    spent = b.meta["training"]["spent"]
+    sessions = json.loads((folder / "run.json").read_text())["sessions"]
+    assert len(sessions) == 1
+    usage = env["fake"].usage
+    ours = sum(u["estimated_cost_usd"] for u in usage if u["session_id"] in sessions)
+    assert 0 < ours < sum(u["estimated_cost_usd"] for u in usage), "earlier tests' bakes spent on the same account"
+    assert spent["billed"] == pytest.approx(ours, abs=1e-12)
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:00:00Z", spent["billed_through"])
+    env["fake"].options["billing_lag"] = True
+    try:
+        later = functai.bake.bake(capital, rows(), **opts(env, student="toy/Toy-1", test=TEST5,
+                                                          run_folder=env["home"] / "billed-later", epochs=1))
+    finally:
+        env["fake"].options["billing_lag"] = False
+    s2 = later.meta["training"]["spent"]
+    assert s2["billed"] is None and s2["billed_through"] is None, "not billed yet is not $0"
+    assert s2["estimated"] > 0
+
+
+def test_a_check_whose_calls_fail_stops_the_bake_a_failure_is_not_a_score_of_0(env):
+    folder = env["home"] / "check-fails"
+    env["fake"].options["fail"] = {"/api/v1/asample": 1}     # the first check's first call
+    try:
+        with pytest.raises(Exception, match="failed on purpose"):
+            functai.bake.bake(capital, rows(), **opts(env, student="toy/Toy-1", test=TEST5, run_folder=folder))
+    finally:
+        env["fake"].options["fail"] = {}
+    assert json.loads((folder / "run.json").read_text())["state"] == "failed"
 
 
 def test_a_run_that_fails_resumes_from_its_last_saved_state(env):

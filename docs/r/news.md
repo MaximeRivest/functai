@@ -4,6 +4,11 @@
 
 ## functai (development version)
 
+- **A baked model whose weights are on a service (`weights$form` `"remote"`,
+  e.g. trained on Tinker) is named in setups by their URI too** (contract
+  calls.md *Setups*): its `hashes` are empty, so every such model had the
+  same name.
+
 - **A reasoning output reads the model's thinking on every thinking model**
   (contract functions.md *Reasoning*): the request asks for the summary
   (`summary = "auto"`), without which OpenAI's reasoning models, Gemini and

@@ -641,9 +641,9 @@ const rl = await bake(fn, trainingCases, { method: "rl", start: baked, reward: c
 
 ## As built (2026-11-08)
 
-Branch `bake-tinker`. Nothing has run against Tinker itself: every test
-runs against `tools/fake_tinker.py`, which the official SDK checks (below).
-The first live run is the integration test, on an account of Maxime's own.
+Branch `bake-tinker`. Every test runs against `tools/fake_tinker.py`,
+which the official SDK checks (below); the integration test against
+Tinker itself is at the end of this section.
 
 | piece | Python | TypeScript |
 |---|---|---|
@@ -704,14 +704,58 @@ Proven offline, and how:
   choice with probabilities summing to 1; distillation refuses a teacher
   with another tokenizer; a picture function trains and is called.
 
-Not proven until the integration test:
+### The integration test (2026-11-08, Maxime's own account)
 
-- That Tinker accepts this TypeScript client's requests as it accepts the
-  SDK's (written from the SDK and checked against a fake the SDK checks;
-  the protocol is not documented). The first step of the integration test.
+`ts/tools/tinker-live.ts` and `python/tests/tinker_live.py` against the
+real service, Qwen/Qwen3.5-4B: the client alone (a training step, a
+sample), then `sft`, `rl` from it, and `decision`, each called through
+`fn.using`, then every checkpoint deleted. Both pass. A few cents in all;
+Tinker's billing records were not in hours later, so the exact amount is
+not known yet.
+
+What the live service showed that the fake did not, each now fixed and
+made part of the fake, so the offline tests hold it:
+
+- **Sampling needs `X-Tinker-Sampling-Backpressure: 1`**: without it every
+  sample is refused, "Tinker SDK is outdated" (400). Asking for it is a
+  promise: a busy server answers 429 and the client waits (1 s, 5 s for a
+  prompt over 128 KB, one backoff for every sampler) and sends again, with
+  no limit, as the SDK does. The TypeScript client had given up after six
+  tries. The fake refuses a sample without the header and can answer busy
+  (`busy`).
+- **A sparse request is answered sparse**: `target_prompt_logprobs` asked
+  in CSR (decisions) comes back in CSR. TypeScript refused it; Python's SDK
+  makes it dense only through PyTorch, so a decision model failed in
+  Python without PyTorch too. Both now read CSR themselves (NaN where no
+  value is listed); the Python Tinker tests run as if PyTorch were absent.
+- **A check whose calls failed scored those cases 0** (an error in a call
+  counts 0 in `evaluate`) and training went on, blind: a decision run
+  checked 0.000 at every step. A call that fails in Tinker or on the way
+  now stops the bake with its error (the run resumes); a reply the
+  function cannot read still counts 0, as before.
+- **The bill**: `spent.billed` summed the whole account's usage in the
+  run's hours, and wrote 0 (and, in Python, the text "None") before
+  Tinker's records came in. It is now the run's own sessions (kept in
+  `run.json`, one per process), `null` until records come, and
+  `billed_through` the end of the last hour billed. Tinker's
+  `cost_data_through` is not that: it separates invoice prices from list
+  prices.
+- **Records named no model** for a model trained on Tinker (TypeScript
+  named no baked model at all), and every Tinker model's name would have
+  been the same (`hashes` is empty when the weights are not in the
+  folder). calls.md now names weights on a service by their URI too; four
+  languages.
+
+Not proven yet:
+
+- Learning on real models: the live tasks (capitals, a two-way mood) are
+  ones Qwen3.5-4B already gets right, so the best check was the untrained
+  step 0 in every run. The test proves the plumbing, not that training
+  improves a model; that takes a task the base model fails (cents to a few
+  dollars).
 - That Tinker's server computes Qwen's picture token count by the rule the
-  cookbook uses (we follow the cookbook; Inkling's is measured).
-- Learning rates and the number of steps on real models (the fake's
-  learning is a lookup table's: it proves the loops, not the settings).
-- Billing read back: the fake answers the SDK's shape; Tinker's records
-  lag (hour buckets), so `spent.billed` may be partial at the end of a run.
+  cookbook uses (we follow the cookbook; Inkling's is measured). No picture
+  was sent live.
+- Inkling models live (Inkling 2 Small from TypeScript waits for its files).
+- The billed amount read back: the code is tested against the fake's
+  records, the real ones had not come in.

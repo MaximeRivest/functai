@@ -42,8 +42,13 @@ def _canonical(value: Any) -> str:
 
 
 def baked_id(baked: Any) -> str:
-    """A baked model by its files (weights included): ``sha256:`` of its ``baked.json``'s hashes."""
-    return _sha(_canonical(baked.meta.get("hashes", {})))
+    """A baked model by its files (weights included): ``sha256:`` of its ``baked.json``'s hashes;
+    weights on a service (not in the folder) by their URI too."""
+    hashes = baked.meta.get("hashes", {})
+    weights = baked.meta.get("weights") or {}
+    if weights.get("form") == "remote":
+        return _sha(_canonical({"hashes": hashes, "uri": weights.get("uri")}))
+    return _sha(_canonical(hashes))
 
 
 def model_of(lm: Any, settings: Mapping[str, Any]) -> Optional[Dict[str, Any]]:

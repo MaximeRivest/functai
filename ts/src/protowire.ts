@@ -271,15 +271,24 @@ function decodeArray(dtype: number, b: Uint8Array): number[] {
   throw new Error(`protobuf: tensor dtype ${dtype} is not read here`);
 }
 
-/** A `Tensor` (dense only): its values and shape. */
+/** A `Tensor`: its values (row-major) and shape. A sparse one (CSR: Tinker answers a sparse
+ * `target_prompt_logprobs` request with one) is made dense, NaN where no value is listed. */
 export function readTensor(b: Uint8Array): { data: number[]; shape: number[] } {
   let dense: Uint8Array | null = null;
+  const sparse: { csr: { values: Uint8Array; crow: number[]; col: number[] } | null } = { csr: null };
   let dtype = 1;
   const shape: number[] = [];
   fields(b, (f, wire, r) => {
     if (f === 1) dense = r.bytes();
-    else if (f === 2) throw new Error("protobuf: a sparse tensor is not read here");
-    else if (f === 3) dtype = Number(r.varint());
+    else if (f === 2) {
+      const c: { values: Uint8Array; crow: number[]; col: number[] } = { values: new Uint8Array(), crow: [], col: [] };
+      fields(r.bytes(), (g, _w, s) => {
+        if (g === 1) c.values = s.bytes();
+        else if (g === 2) c.crow = i64(s.bytes());
+        else if (g === 3) c.col = i64(s.bytes());
+      });
+      sparse.csr = c;
+    } else if (f === 3) dtype = Number(r.varint());
     else if (f === 4) {
       if (wire === 2) {
         const inner = new Reader(r.bytes());
@@ -287,8 +296,25 @@ export function readTensor(b: Uint8Array): { data: number[]; shape: number[] } {
       } else shape.push(Number(r.varint()));
     }
   });
+  const csr = sparse.csr;
+  if (csr) return { data: densify(decodeArray(dtype, csr.values), csr, shape), shape };
   const data = dense ? decodeArray(dtype, dense) : [];
   return { data, shape: shape.length ? shape : [data.length] };
+}
+
+/** A CSR matrix's values in a dense row-major array of `shape` ([rows, columns]), NaN elsewhere. */
+export function densify(values: readonly number[], csr: { crow: readonly number[]; col: readonly number[] }, shape: readonly number[]): number[] {
+  const [rows, cols] = [shape[0] ?? 0, shape[1] ?? 1];
+  if (shape.length !== 2 || csr.crow.length !== rows + 1 || csr.col.length !== values.length || csr.crow[rows] !== values.length)
+    throw new Error(`protobuf: a sparse tensor that does not fit its shape [${shape}] (${csr.crow.length} row pointers, ${values.length} values)`);
+  const out = new Array<number>(rows * cols).fill(NaN);
+  for (let i = 0; i < rows; i++)
+    for (let j = csr.crow[i]!; j < csr.crow[i + 1]!; j++) {
+      const c = csr.col[j]!;
+      if (c < 0 || c >= cols) throw new Error(`protobuf: a sparse tensor's column ${c} is outside its ${cols} columns`);
+      out[i * cols + c] = values[j]!;
+    }
+  return out;
 }
 
 /** A sampled sequence. */
