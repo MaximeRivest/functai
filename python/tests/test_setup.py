@@ -62,6 +62,33 @@ def test_another_model_is_another_setup_of_the_same_version():
         assert mood.setup == a                                    # where and how it is reached: not in it
 
 
+@functai.module
+def both(a: str) -> str:
+    return mood(a)
+
+
+def test_code_a_version_cannot_read_is_named_by_the_host():
+    """calls.md, *Code the language cannot read*: code_id is in every setup worked out under it, a module's too."""
+    with functai.configure(lm="openai:gpt-4.1-mini"):
+        plain = (mood.setup, both.setup)
+        assert "code_id" not in mood.setup_document()             # nothing said: setups as before
+        with functai.configure(code_id="sha256:aaaa"):
+            assert mood.setup_document()["code_id"] == "sha256:aaaa"
+            assert both.setup_document()["code_id"] == "sha256:aaaa"
+            assert mood.setup != plain[0] and both.setup != plain[1]
+            version = mood.version
+        assert mood.version == version                            # a setting, not the version
+        with functai.configure(code_id="sha256:bbbb"):
+            other = both.setup
+        with functai.configure(code_id="sha256:aaaa"):
+            assert both.setup != other
+        assert (mood.setup, both.setup) == plain
+    for bad in ["", "   ", "x" * 201, 7]:
+        with pytest.raises(TypeError, match="code_id"):
+            with functai.configure(code_id=bad):
+                pass
+
+
 def test_rewriting_a_tool_is_another_setup_of_the_same_version():
     a, b = agent(here), agent(elsewhere)
     assert a.version == b.version                                 # what the model is told is the same

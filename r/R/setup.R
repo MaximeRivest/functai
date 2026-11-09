@@ -158,6 +158,7 @@ ai_document <- function(fn) {
   if (length(running)) doc$plugins <- lapply(running, plugin_entry)
   if (length(core$tools)) doc$tools <- stats::setNames(lapply(core$tools, tool_entry), vapply(core$tools, function(t) t$name, ""))
   doc$reach <- reach_of(fn, s)
+  if (!is.null(s$code_id)) doc$code_id <- s$code_id
   doc
 }
 
@@ -192,7 +193,10 @@ module_document <- function(p) {
   core <- program_core(p)
   ai <- reached_ai(p)
   ai <- ai[sort_code_points(names(ai))]
-  list(version = program_version(core), ai = if (length(ai)) lapply(ai, ai_setup) else lmcc::jobj(), reach = reach_of(p, effective(core$own)))
+  s <- effective(core$own)
+  doc <- list(version = program_version(core), ai = if (length(ai)) lapply(ai, ai_setup) else lmcc::jobj(), reach = reach_of(p, s))
+  if (!is.null(s$code_id)) doc$code_id <- s$code_id
+  doc
 }
 
 #' What a program runs on

@@ -84,6 +84,8 @@ def document(d: dict, settings: dict, plugins: list) -> dict:
     if plugins:
         doc["plugins"] = [plugin_of(p) for p in plugins]
     doc["reach"] = reach_of(settings.get("wall"))
+    if settings.get("code_id") is not None:
+        doc["code_id"] = settings["code_id"]
     return doc
 
 
@@ -144,6 +146,10 @@ def cases() -> dict:
                                                              "domains": list(reversed(WALL["domains"]))}}),
         "11-a-function-with-reasoning": case(
             "Another function (module cot): its own version in its setup.", "07-reasoning-first", {"lm": LM}),
+        "12-code-the-language-cannot-read": case(
+            "The host names code the version cannot read (the files it bundled the program from): it is in the "
+            "setup, which is another than 01's.",
+            "01-an-answer-from-a-list", {"lm": LM, "code_id": "sha256:4f1c0de5b0a7e2d9c3a1f6e8b2d4c6a8e0f2b4d6c8a0e2f4b6d8c0a2e4f6b8d0"}),
     }
     s = {k: v["expect"]["setup"] for k, v in out.items()}
     assert s["01-a-model-and-defaults"] == s["02-a-bare-name-is-its-route"] == s["05-what-is-not-in-a-setup"]

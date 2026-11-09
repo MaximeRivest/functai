@@ -13,7 +13,7 @@ import { bakedId } from "../src/setup.ts";
 const NAMES: Record<string, string> = {
   max_tokens: "maxTokens", top_p: "topP", max_steps: "maxSteps", tool_errors: "toolErrors", on_unreadable: "onUnreadable",
   base_url: "baseUrl", api_retries: "apiRetries", api_max_wait: "apiMaxWait", cache_replies: "cacheReplies",
-  log_content: "logContent", escalate_to: "escalateTo", escalate_below: "escalateBelow",
+  log_content: "logContent", escalate_to: "escalateTo", escalate_below: "escalateBelow", code_id: "codeId",
 };
 
 const builtin = (p: Rec) => p.builtin === "limits"
@@ -34,7 +34,7 @@ for (const [name, c] of setupCases) {
   });
 }
 
-test("the contract has setup cases", () => assert.ok(setupCases.length >= 11));
+test("the contract has setup cases", () => assert.ok(setupCases.length >= 12));
 
 test("a baked model is named by its files; weights on a service by their URI too (calls.md, Setups)", () => {
   // sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand

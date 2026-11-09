@@ -85,6 +85,15 @@ export interface Settings {
    * not let through is refused before its code runs (`ReachError`).
    */
   wall?: Wall | null;
+  /**
+   * What identifies code a program runs that its version cannot read
+   * (calls.md, *Code the language cannot read*): a TypeScript version holds a
+   * function's own text, not what it imports. A host that knows the files it
+   * bundled a program from says so here (a bundle's hash, a revision): every
+   * setup worked out under it holds it, so changed code there is another setup.
+   * Text, at most 200 characters.
+   */
+  codeId?: string | null;
   /** Re-sends after a transient provider error (default 3). */
   apiRetries?: number;
   /** The longest a provider may ask to wait before a re-send, in seconds (default 60). A longer
@@ -201,6 +210,10 @@ export function checkSettings(settings: Settings | null | undefined, where: stri
     throw new TypeError(`${where}: apiMaxWait is a number of seconds, at least 0`);
   }
   if (settings.wall !== undefined && settings.wall !== null) wallOf(settings.wall, where);
+  const code = settings.codeId;
+  if (code !== undefined && code !== null && (typeof code !== "string" || !code.trim() || [...code].length > 200)) {
+    throw new TypeError(`${where}: codeId is text naming code a version cannot read (a bundle's hash), at most 200 characters, not ${JSON.stringify(code)}`);
+  }
 }
 
 /** A domain a program needs (calls.md, *Reach*): a host name, or `*.` and one (every name under it). */

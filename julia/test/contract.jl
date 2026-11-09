@@ -183,7 +183,7 @@ end
         @test setup(f) == c["expect"]["setup"]
     end
 end
-@test length(cases("setup")) >= 11
+@test length(cases("setup")) >= 12
 
 @testset "a baked model is named by its files; weights on a service by their URI too (calls.md, Setups)" begin
     # sha256 of {"model/a.safetensors":"ab"} and of {"hashes":{},"uri":"tinker://run-1:train:0/sampler_weights/best-step-000004"}, written by hand

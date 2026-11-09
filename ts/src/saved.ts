@@ -43,7 +43,7 @@ const refuse = (code: string, message: string): never => {
 
 const SNAKE: Record<string, keyof Settings> = {
   retries: "retries", api_retries: "apiRetries", api_max_wait: "apiMaxWait", max_steps: "maxSteps", tool_errors: "toolErrors",
-  capabilities: "capabilities", log_content: "logContent", base_url: "baseUrl", on_unreadable: "onUnreadable",
+  capabilities: "capabilities", log_content: "logContent", base_url: "baseUrl", on_unreadable: "onUnreadable", code_id: "codeId",
 };
 
 /** A manifest's format, then its form (contract/schema/saved.schema.json, with interface.schema.json for every node's interface). */

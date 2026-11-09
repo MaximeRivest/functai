@@ -325,7 +325,15 @@ test_that("a setup: what a program runs on, beside what it is", {
     doc <- ai_setup_document(walk)
     expect_identical(names(doc$ai), "__main__:write_up")
     expect_identical(doc$reach, "open")
+    # code a version cannot read, named by the host: in every setup worked out under it, a program's too
+    expect_null(doc$code_id)
+    expect_identical(with_ai_config(ai_setup_document(walk)$code_id, code_id = "sha256:aaaa"), "sha256:aaaa")
+    expect_identical(with_ai_config(ai_setup_document(a)$code_id, code_id = "sha256:aaaa"), "sha256:aaaa")
+    expect_false(identical(ai_setup(walk), with_ai_config(ai_setup(walk), code_id = "sha256:aaaa")))
+    expect_false(identical(with_ai_config(ai_setup(a), code_id = "a"), with_ai_config(ai_setup(a), code_id = "b")))
+    expect_identical(ai_version(a), with_ai_config(ai_version(a), code_id = "a"))
   })
+  for (bad in list("", "   ", strrep("x", 201), 7)) expect_error(with_ai_config(1, code_id = bad), "code_id")
 })
 
 test_that("reach: open, or behind a wall; a wall that lets through less refuses before any request", {

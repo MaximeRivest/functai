@@ -8,7 +8,7 @@ SETTINGS <- c("lm", "router", "temperature", "max_tokens", "top_p", "stop", "see
               "module", "include_fn_name", "capabilities", "retries", "api_retries", "api_max_wait", "max_steps", "tool_errors",
               "log_calls", "log_content", "caller", "concurrency", "on_error", "observers", "journal", "program_observers",
               "cache_replies", "replicate", "progress", "plugins", "program_plugins", "approve", "escalate_to", "escalate_below",
-              "api_key", "base_url", "on_unreadable", "wall")
+              "api_key", "base_url", "on_unreadable", "wall", "code_id")
 
 check_settings <- function(s, call = rlang::caller_env()) {
   twice <- unique(names(s)[duplicated(names(s))])
@@ -37,6 +37,8 @@ check_settings <- function(s, call = rlang::caller_env()) {
     if (!is.null(s[[k]]) && !(rlang::is_string(s[[k]]) && nzchar(s[[k]]))) cli::cli_abort("{.arg {k}} is one string", call = call)
   if ("plugins" %in% names(s)) s["plugins"] <- list(check_plugins(s$plugins, call = call))
   if ("wall" %in% names(s)) s["wall"] <- list(check_wall(s$wall, call = call))
+  if ("code_id" %in% names(s) && !is.null(s$code_id) && !(rlang::is_string(s$code_id) && nzchar(trimws(s$code_id)) && nchar(s$code_id, type = "chars") <= 200))
+    cli::cli_abort("{.arg code_id} is text naming code a version cannot read (a bundle's hash), at most 200 characters", call = call)
   if ("log_calls" %in% names(s) && !is.null(s$log_calls) && !rlang::is_bool(s$log_calls) && !is_str(s$log_calls) && !is_call_store(s$log_calls))
     cli::cli_abort("{.arg log_calls} is a folder, TRUE, FALSE, or a store of one's own ({.fn memory_calls}: an object with {.code $append(record)} and {.code $read()})", call = call)
   if ("approve" %in% names(s)) s["approve"] <- list(check_approve(s$approve, call = call))
@@ -98,7 +100,9 @@ check_settings <- function(s, call = rlang::caller_env()) {
 #'   is open; a name, `"srt"`, a wall made from each program's needs; or
 #'   `list(name, domains, secrets, limits)`, what it lets through: a program
 #'   that needs what its wall does not let through is refused before its
-#'   first call, `needs-unmet`). `log_calls` may be a store of one's own
+#'   first call, `needs-unmet`); `code_id` (text, at most 200 characters, naming
+#'   code a program runs that its version cannot read, such as a bundle's hash:
+#'   every setup worked out under it holds it). `log_calls` may be a store of one's own
 #'   ([memory_calls()]).
 #' @return The settings in force, invisibly (`ai_config()`), or the value of
 #'   `code` (`with_ai_config()`).

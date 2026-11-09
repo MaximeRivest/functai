@@ -1,0 +1,56 @@
+{
+ "description": "The host names code the version cannot read (the files it bundled the program from): it is in the setup, which is another than 01's.",
+ "definition": {
+  "name": "mood",
+  "description": "How does the customer feel about what they bought?",
+  "inputs": [
+   {
+    "name": "review",
+    "shape": {
+     "type": "string"
+    }
+   }
+  ],
+  "outputs": [
+   {
+    "name": "result",
+    "shape": {
+     "enum": [
+      "happy",
+      "unhappy",
+      "mixed"
+     ],
+     "type": "string"
+    }
+   }
+  ],
+  "settings": {},
+  "state": {
+   "instructions": null,
+   "demos": []
+  }
+ },
+ "settings": {
+  "lm": "openai:gpt-4.1-mini",
+  "code_id": "sha256:4f1c0de5b0a7e2d9c3a1f6e8b2d4c6a8e0f2b4d6c8a0e2f4b6d8c0a2e4f6b8d0"
+ },
+ "plugins": [],
+ "expect": {
+  "document": {
+   "version": "sha256:62731010423e55d6348111a5bfcb32d4938af2c0ed8aac831c0a9a46d7925206",
+   "model": {
+    "provider": "openai",
+    "model": "gpt-4.1-mini"
+   },
+   "settings": {
+    "max_steps": 8,
+    "retries": 1,
+    "tool_errors": "report",
+    "on_unreadable": "raise"
+   },
+   "reach": "open",
+   "code_id": "sha256:4f1c0de5b0a7e2d9c3a1f6e8b2d4c6a8e0f2b4d6c8a0e2f4b6d8c0a2e4f6b8d0"
+  },
+  "setup": "sha256:ee592eaf699aa5a219874aa560613890542c21b33ee78935452cd88f610f13b6"
+ }
+}

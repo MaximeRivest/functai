@@ -44,7 +44,9 @@ runs programs behind: \code{NULL}, none it says, so what a program may reach
 is open; a name, \code{"srt"}, a wall made from each program's needs; or
 \code{list(name, domains, secrets, limits)}, what it lets through: a program
 that needs what its wall does not let through is refused before its
-first call, \code{needs-unmet}). \code{log_calls} may be a store of one's own
+first call, \code{needs-unmet}); \code{code_id} (text, at most 200 characters, naming
+code a program runs that its version cannot read, such as a bundle's hash:
+every setup worked out under it holds it). \code{log_calls} may be a store of one's own
 (\code{\link[=memory_calls]{memory_calls()}}).}
 
 \item{code}{Code to run with these settings.}

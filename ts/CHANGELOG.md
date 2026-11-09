@@ -65,6 +65,31 @@ streaming.md *Pieces* and *Views*).
   Kept only when the call's content is whole; never in the outside view. A
   stream now has a `piece` at each request's start and end.
 
+### A model that cannot stream answers a watched call whole
+
+- A call something watches (a stream, an observer, a journal) asks its
+  model for a stream. A route lm15 says cannot stream (TypeSafe's System
+  One answers in one piece: `UnsupportedFeatureError` before any piece) is
+  now asked whole and shown whole, one text piece per field, as Python
+  does (`streaming.request`). Before, the call failed. A refusal after the
+  first piece is still the call's. Its exchange records `streamed: false`.
+
+### Code a version cannot read: `codeId`
+
+- The setting `codeId` (text, at most 200 characters; also a program's own
+  setting): what a host says identifies code a program runs that its
+  version cannot read. A TypeScript version holds a function's own text,
+  not what it imports; a host that knows the files it bundled a program
+  from (Quiver: its sources, packages and Node) sets it, and every setup
+  worked out under it holds it (`code_id`), so a changed helper is another
+  setup and its results are measured apart. Contract: calls.md *Code the
+  language cannot read*, case `setup/12`.
+
+- `callKey` (a call's case: its `case`, or the key of its recorded inputs),
+  `judgement` (a rating record read as the contract reads it) and
+  `counting` (the ratings that count under a criterion) are exported, for
+  hosts that keep records in a database of their own.
+
 ### Measures: cases, results, ratings, honest numbers
 
 The same model and numbers as Python's (design/20; contract measures.md;
