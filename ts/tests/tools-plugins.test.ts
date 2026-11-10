@@ -5,7 +5,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { ai, ApprovalError, calls, compaction, configure, delegate, earlier, FolderStore, module, Plugin, PluginError, remember, t, tool, Waiting,
+import { ai, ApprovalError, calls, compaction, configure, delegate, earlier, FolderStore, MemoryConversations, module, Plugin, PluginError, remember, t, tool, Waiting,
   withSettings } from "../src/index.ts";
 import { FakeRouter } from "./fake.ts";
 import { clock } from "../src/conversations.ts";
@@ -130,6 +130,83 @@ test("a tool that changes things is recorded before it runs: after its process s
     clock.now = before;
   }
   await assert.rejects(first.result);                                        // the first process was taken over: it stops
+});
+
+/** A store that takes a moment to append, as a database does; `down` makes it refuse `tool` records. */
+class SlowStore extends MemoryConversations {
+  readonly seen: string[];
+  down = false;
+  constructor(seen: string[]) {
+    super();
+    this.seen = seen;
+  }
+  override append(conversation: string, records: readonly Rec[], opts: { expect?: number } = {}): never {
+    return (async () => {
+      await new Promise((r) => setTimeout(r, 5));
+      if (this.down && records.some((r) => r["kind"] === "tool")) throw new Error("the store is down");
+      for (const r of records) if (r["kind"] === "tool") this.seen.push(`kept ${r["state"]}`);
+      return super.append(conversation, records, opts);
+    })() as never;
+  }
+}
+
+test("a tool that changes things runs only once its `started` record is in the store, however slow the store", async () => {
+  const seen: string[] = [];
+  const router = new FakeRouter([{ calls: [{ id: "c1", name: "send_email", input: { to: "ana" } }] }, "<result>\nsent\n</result>"]);
+  const send = tool("send_email", { input: { to: t.string() }, effects: "changes" }, () => {
+    seen.push("ran");
+    return "sent";
+  });
+  const f = ai("mailer", { input: { request: t.string() }, output: t.string(), tools: [send], router: router as never, lm: "gpt-4.1-mini" });
+  assert.equal(await f.conversation("mail", { store: new SlowStore(seen) })("Email Ana"), "sent");
+  assert.deepEqual(seen, ["kept started", "ran", "kept done"]);
+});
+
+test("a store that cannot keep a tool's `started` record fails the turn, and the tool does not run", async () => {
+  const seen: string[] = [];
+  const router = new FakeRouter([{ calls: [{ id: "c1", name: "send_email", input: { to: "ana" } }] }, "<result>\nsent\n</result>"]);
+  const send = tool("send_email", { input: { to: t.string() }, effects: "changes" }, () => {
+    seen.push("ran");
+    return "sent";
+  });
+  const f = ai("mailer", { input: { request: t.string() }, output: t.string(), tools: [send], router: router as never, lm: "gpt-4.1-mini" });
+  const store = new SlowStore(seen);
+  store.down = true;
+  const unhandled: unknown[] = [];
+  const note = (e: unknown) => { unhandled.push(e); };
+  process.on("unhandledRejection", note);
+  try {
+    await assert.rejects(f.conversation("mail", { store })("Email Ana"), /the store is down/);
+    await new Promise((r) => setTimeout(r, 30));                             // a rejection nobody awaited would surface by now
+  } finally {
+    process.off("unhandledRejection", note);
+  }
+  assert.deepEqual(seen, []);                                               // nothing kept, so nothing ran
+  assert.deepEqual(unhandled, []);                                          // and nothing left to crash the process
+});
+
+test("a store that cannot keep a turn's `waiting` record fails the turn for whoever awaits it", async () => {
+  class Down extends MemoryConversations {
+    override append(conversation: string, records: readonly Rec[], opts: { expect?: number } = {}): never {
+      return (async () => {
+        if (records.some((r) => r["kind"] === "waiting")) throw new Error("the store is down");
+        return super.append(conversation, records, opts);
+      })() as never;
+    }
+  }
+  const { status, refund, ran } = refunds();
+  const f = ai("support", { input: { message: t.string() }, output: t.string(), tools: [status, refund], router: script() as never, lm: "gpt-4.1-mini", approve: "changes" });
+  const unhandled: unknown[] = [];
+  const note = (e: unknown) => { unhandled.push(e); };
+  process.on("unhandledRejection", note);
+  try {
+    await assert.rejects(f.conversation("c1", { store: new Down() })("Refund B-2210"), /the store is down/);
+    await new Promise((r) => setTimeout(r, 30));
+  } finally {
+    process.off("unhandledRejection", note);
+  }
+  assert.deepEqual(ran, []);                                                // the refund waited for a person: it did not run
+  assert.deepEqual(unhandled, []);
 });
 
 test("plugins: before_call sections reach the instruction and are recorded; a tool_call block stops the tool; a request replaced is not replayable", async () => {

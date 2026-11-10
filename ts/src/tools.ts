@@ -208,6 +208,6 @@ export async function askPerson(call: Call, approval: Approval, decide?: Approve
       + "Give approve a function, stream the call and answer with s.approve(), or use a conversation, where the turn waits.", approval);
   }
   call.event("approved", { id: approval.id, invocation: approval.invocation, plugin: approval.plugin, verdict: allowed! ? "yes" : "no", by: by!, reason: reason! });
-  run?.noteApproval(call, approval, allowed!, reason!, by!);
+  await run?.noteApproval(call, approval, allowed!, reason!, by!);
   return [allowed!, reason!, by!];
 }

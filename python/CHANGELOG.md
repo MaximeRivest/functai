@@ -42,6 +42,15 @@ design/21, contract training.md (its cases pass in both languages).
 - **Records name a model trained on Tinker by its weights' URI too**
   (calls.md *Setups*): every one had the same name, its `hashes` being empty.
 
+### A store that fails as a turn stops to wait
+
+A conversation's store that failed while a turn recorded `waiting` (it
+stops to ask a person, or for a result that comes later) gave whoever
+called the signal the turn stopped with, `TurnWaiting` (a `BaseException`
+of FunctAI's own, which `except Exception` does not catch), and left the
+store's error as a traceback from a thread. The caller now gets the
+store's error.
+
 ### Text files are UTF-8 on every platform
 
 `fn.save(path)` and `fn.load(path)` (a function's or a module's

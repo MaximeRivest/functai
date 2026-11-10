@@ -36,6 +36,21 @@ design/21, contract training.md (its cases pass).
   scoring 0; `spent.billed` is the run's own sessions, `null` until
   Tinker's records come in.
 
+### A tool that changes things waits for its `started` record
+
+In a conversation, a tool that changes things ran before its `started`
+record reached the store (the record was queued, not awaited: with a
+store that takes time, a database, the tool had run first), and a store
+that failed on a tool's or an approval's record left a rejection nobody
+handled, which stops a Node process. Now, as tools.md says (*Keeping what
+may have happened*) and as Python does: `started` is in the store before
+the tool runs; a store that cannot keep it fails the turn, and the tool
+does not run; `done` and an approval's answer are awaited too. A reply or
+a remembered helper's call that cannot be kept is said once
+(`console.warn`), and the turn goes on. A store that cannot keep a turn's
+`waiting` record (a turn stopping to ask a person) fails the turn for
+whoever awaits it; it too was a rejection nobody handled.
+
 ### Records name a baked model
 
 A function on a baked model named no model in its setup (a warning, "the

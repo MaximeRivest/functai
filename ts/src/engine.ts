@@ -506,7 +506,7 @@ async function delivered(job: Job, approval: Approval, input: unknown, output: T
   const current = job.call;
   current.node?.log.frontier();
   const shown = await plugins.toolResult(job.plugins, current, approval, input, output);
-  current.turnRun?.toolDone(current, approval, shown);
+  await current.turnRun?.toolDone(current, approval, shown);
   return shown;
 }
 
@@ -568,7 +568,8 @@ async function oneTool(job: Job, asked: { id: string; name: string; input?: unkn
       if (effects !== "reads") {
         // a required journal keeps the request before a tool that changes things runs (at most its timeout)
         if (await current.node?.log.barrier(made, current.signal) === "cancelled") throw new Cancelled();
-        run?.toolStarted(current, { ...approval, input });
+        // a stored turn keeps `started` before the tool runs: a turn resumed after a crash never runs it again on its own
+        await run?.toolStarted(current, { ...approval, input });
       }
       stopped(job);
       const got = await INVOCATION.run(n, () => runTool(job.tools, { name: asked.name, input }, job.settings.toolErrors, current.signal));
@@ -582,7 +583,7 @@ async function oneTool(job: Job, asked: { id: string; name: string; input?: unkn
       }
       // the result as the model is shown it; a turn resumed later reuses it, hooks and all
       output = await plugins.toolResult(job.plugins, current, approval, input, got);
-      run?.toolDone(current, approval, output);
+      await run?.toolDone(current, approval, output);
     }
   }
   showResult(current, asked.id, asked.name, output, n);

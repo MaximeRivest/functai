@@ -484,11 +484,20 @@ class TurnRun implements TurnRunLike {
     return this.conv;
   }
 
-  /** Append records, in order with this turn's other writes; a store that fails is said once, and the turn goes on. */
+  /** Append records, in order with this turn's other writes. Rejects when the store fails: what must be kept awaits it. */
   private append(records: Rec[]): Promise<unknown> {
     const p = this.writes.then(() => this.conv.append(records));
     this.writes = p.catch(() => undefined);
     return p;
+  }
+
+  /**
+   * Append what a turn can go on without (a reply kept so that resuming pays for none twice, a helper's
+   * call the conversation remembers): a store that fails is said once, and the turn goes on.
+   */
+  private keep(what: string, records: Rec[]): void {
+    this.append(records).catch((err: unknown) => calllog.warnOnce(`${what}:${(err as Error)?.name}`,
+      `${what} could not be kept in the conversation (${(err as Error)?.name}: ${(err as Error)?.message})`));
   }
 
   /** Every record this run asked to append has been written (or failed). */
@@ -573,7 +582,7 @@ class TurnRun implements TurnRunLike {
       return;
     }
     this.helperCalls.push(rec);
-    void this.append([rec]);
+    this.keep("a helper's call", [rec]);
   }
 
   // ----- what calls are shown
@@ -612,7 +621,7 @@ class TurnRun implements TurnRunLike {
 
   noteReply(key: string, response: Response): void {
     if (!this.durable) return;
-    void this.append([record("reply", { turn: this.turn, attempt: this.attempt, key, response: json(Response.toJSON(response)) })]);
+    this.keep("a reply", [record("reply", { turn: this.turn, attempt: this.attempt, key, response: json(Response.toJSON(response)) })]);
   }
 
   recordedTool(call: Call, approval: Approval): ToolOutput | Delivered | null {
@@ -1887,7 +1896,12 @@ export class TurnStream implements AsyncIterable<string>, PromiseLike<unknown> {
 
   /** @internal */
   begin(begun: Promise<Begun>): void {
-    void this.run(begun);
+    // what fails here that nothing below caught (a store that cannot keep the turn's `waiting` record, a
+    // turn_end hook that throws) is the turn's failure, given to whoever awaits it: never a rejection nobody handles
+    this.run(begun).catch((err: unknown) => {
+      this.rejectTurn(err);
+      this.fail(err);
+    });
   }
 
   private async run(begun: Promise<Begun>): Promise<void> {

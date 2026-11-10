@@ -2168,6 +2168,12 @@ class TurnStream(Stream):
             error = exc
         try:
             error = self._conclude(value, error)
+        except Exception as exc:  # noqa: BLE001 — its last record could not be written or read back (a store that failed)
+            if error is None or isinstance(error, TurnWaiting):
+                error = exc                              # the reader is told so, not given the signal the turn stopped with
+            else:
+                calllog._warn_once(("conclude", type(exc).__name__), f"a turn's end could not be kept in its store "
+                                                                    f"({type(exc).__name__}: {exc})")
         finally:
             with _RUNNING_LOCK:
                 _RUNNING.pop(self.turn_id, None)

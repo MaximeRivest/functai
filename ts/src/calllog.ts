@@ -417,17 +417,23 @@ export interface TurnHooks {
    * `toolResult` hooks have not seen); throws `turn-unfinished` for one that may have run.
    */
   recordedTool(call: Call, approval: Approval): ToolOutput | Delivered | null;
-  toolStarted(call: Call, approval: Approval): void;
-  toolDone(call: Call, approval: Approval, output: ToolOutput): void;
-  /** A tool returned `later(key)`: it ran, and its result comes later. */
-  toolLater(call: Call, approval: Approval, key: string): void;
+  /**
+   * A tool that changes things is about to run: kept before it does (contract/tools.md, *Keeping what
+   * may have happened*). Awaited; a store that cannot keep it fails the turn, and the tool does not run.
+   */
+  toolStarted(call: Call, approval: Approval): void | Promise<void>;
+  /** A tool ran: its result, kept. Awaited; a store that cannot keep it fails the turn (the tool stays `started`). */
+  toolDone(call: Call, approval: Approval, output: ToolOutput): void | Promise<void>;
+  /** A tool returned `later(key)`: it ran, and its result comes later. Awaited. */
+  toolLater(call: Call, approval: Approval, key: string): void | Promise<void>;
   /** The results already delivered for these keys (read now). */
   deliveries(keys: readonly string[]): Promise<Map<string, ToolOutput>>;
   /** Stop the turn to wait for results that come later (throws). */
   waitLater(later: readonly Rec[]): never;
   /** `[allowed, reason, by, fresh]`: an answer recorded for this question (`fresh`: given while the turn waited). */
   recordedApproval(call: Call, approval: Approval): [boolean, string | null, string | null, boolean] | null;
-  noteApproval(call: Call, approval: Approval, allowed: boolean, reason: string | null, by: string | null): void;
+  /** An answer given now, kept. Awaited; a store that cannot keep it fails the turn. */
+  noteApproval(call: Call, approval: Approval, allowed: boolean, reason: string | null, by: string | null): void | Promise<void>;
   /** Stop the turn to wait for a person (throws). */
   pause(call: Call, approval: Approval): never;
   /** A call of this turn starts: the turn's own (attach it), or one inside. */

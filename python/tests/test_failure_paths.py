@@ -1358,3 +1358,40 @@ def test_files_functai_writes_are_utf8_whatever_the_platform_s_encoding_is(tmp_p
     if "not in (" in out.stderr and "AssertionError" in out.stderr and "utf" in out.stderr.lower().split("assertionerror")[-1]:
         pytest.skip("this platform has no non-UTF-8 default encoding to run under")
     assert out.returncode == 0 and "OK" in out.stdout, out.stdout + out.stderr
+
+
+def test_a_store_that_cannot_keep_a_turn_s_waiting_record_fails_the_turn_with_its_error():
+    """The turn stops to ask a person, and its store fails as it says so: whoever called gets the store's error,
+    not the signal the turn stopped with (a BaseException of FunctAI's own), and no thread ends with an
+    exception nobody saw."""
+    from functai import tool
+    from functai.conversations import TurnWaiting
+
+    class Down(functai.MemoryConversations):
+        def append(self, conversation, records, *, expect=None):
+            if any(r.get("kind") == "waiting" for r in records):
+                raise ConnectionError("the store is down")
+            return super().append(conversation, records, expect=expect)
+
+    ran = []
+
+    @tool(effects="changes")
+    def refund(order: str) -> str:
+        ran.append(order)
+        return "refunded"
+
+    router = FakeRouter([lm15.ToolCallPart(id="c1", name="refund", input={"order": "B-1"})], XML.format("done"))
+
+    @ai(lm="gpt-4.1-mini", client=router, tools=[refund], approve="changes")
+    def support(message: str) -> str: ...
+
+    died = []
+    before = threading.excepthook
+    threading.excepthook = lambda args: died.append(args.exc_value)
+    try:
+        with pytest.raises(ConnectionError, match="the store is down") as err:
+            str(support.conversation("c1", store=Down())("Refund B-1"))
+    finally:
+        threading.excepthook = before
+    assert not isinstance(err.value, TurnWaiting)
+    assert ran == [] and died == []
