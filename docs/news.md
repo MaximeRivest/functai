@@ -15,7 +15,10 @@ design/21, contract training.md (its cases pass in both languages).
   for distillation; `criteria=` decide which checkpoint and temperature are
   kept; `held_out_by=` keeps a column's rows on one side; `start=` continues
   from an earlier bake; `plan_only=True` prices it first. A run resumes; its
-  samples are seeded.
+  samples are seeded. `stop=` (a `threading.Event`, or a function) stops it
+  at the end of the step under way, its state saved there, so baking again
+  goes on from that step (`BakeStopped`); before, a run stopped from outside
+  lost every step since its last quarterly state.
 - **A student's tokens come from its published files** (`tokens.py`), not
   from Tinker's renderers: no PyTorch for `functai[tinker]`. Pictures train
   too (PNG, JPEG), counted as Tinker counts them. Inkling 2 Small, whose
@@ -35,8 +38,33 @@ design/21, contract training.md (its cases pass in both languages).
   stops the bake instead of scoring 0; `spent.billed` is the run's own
   sessions, `None` until Tinker's records come in (it was the account's
   whole usage, and the text "None").
+- **Loading a model trained on Tinker reaches nothing**: its sampling
+  client opens at its first call (loading one failed when Tinker could not be
+  reached, even when nothing was to be asked of it).
 - **Records name a model trained on Tinker by its weights' URI too**
   (calls.md *Setups*): every one had the same name, its `hashes` being empty.
+
+### A store that fails as a turn stops to wait
+
+A conversation's store that failed while a turn recorded `waiting` (it
+stops to ask a person, or for a result that comes later) gave whoever
+called the signal the turn stopped with, `TurnWaiting` (a `BaseException`
+of FunctAI's own, which `except Exception` does not catch), and left the
+store's error as a traceback from a thread. The caller now gets the
+store's error.
+
+### Text files are UTF-8 on every platform
+
+`fn.save(path)` and `fn.load(path)` (a function's or a module's
+instruction and demos), an exported `examples.jsonl` and its
+`.meta.json`, a run's `metrics.jsonl`, a teacher's kept answers, a
+student's chat template and picture rules read from its published files,
+and the rows and traces `functai_rows` and `functai_verifiers` read were
+opened with the platform's own encoding: UTF-8 on Linux and macOS, a code
+page on Windows before Python 3.15, where an instruction with a character
+outside it failed to save, and a chat template's special tokens were read
+as other characters (other tokens trained on, silently). They are UTF-8
+everywhere now, as the rest of FunctAI's files already were.
 
 ### A reasoning output reads the model's thinking on every thinking model
 
@@ -90,6 +118,16 @@ cases `agents/kept-*`, `views/outside-03`.
 - **Fixed: a turn's last events reach its store before the turn says it
   waits or ended.** A caller reading a waiting turn's events could miss
   the approval addressed to it (TypeScript already waited).
+
+### Code a version cannot read: `code_id`
+
+- The setting `code_id` (text, at most 200 characters): what a host says
+  identifies code a program runs that its version cannot read (a bundle's
+  hash, a revision). Every setup worked out under it holds it
+  (`setup_document()["code_id"]`), an AI function's and a module's, so
+  such code changing is another setup, and its results are measured apart.
+  Not part of the version: ratings still pool. Contract: calls.md *Code
+  the language cannot read*, case `setup/12`.
 
 ### Measures: cases, results, ratings, honest numbers
 
