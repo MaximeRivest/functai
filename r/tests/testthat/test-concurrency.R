@@ -41,7 +41,8 @@ test_that("a column's calls are in flight together, and each answer goes to its 
   lines <- log_lines(log)
   expect_length(lines, 12L)
   own <- vapply(lines, function(l) l$seconds - l$exchanges[[1L]]$seconds, 0)
-  expect_true(all(abs(own) < 0.05), info = paste(round(own, 3), collapse = " "))
+  # (a wave is half a second: a quarter of one tells the two apart, and a busy machine's 50 ms do not fail it)
+  expect_true(all(abs(own) < 0.25), info = paste(round(own, 3), collapse = " "))
 })
 
 test_that("a turn running here stops within about a second when another process asks", {
