@@ -25,7 +25,7 @@ contract](https://github.com/MaximeRivest/functai/tree/master/contract), like th
 [Python](https://maximerivest.github.io/functai/python.html), [R](https://maximerivest.github.io/functai/r/index.html) and
 [Julia](https://maximerivest.github.io/functai/julia/index.html) packages.
 
-**Status: 1.0.0, ready; not on npm yet** (it waits for lmcc 0.8.7 and
+**Status: 1.0.0, ready; not on npm yet** (it waits for lmcc 0.8.8 and
 attachments-dev to be published there). The [API reference](https://maximerivest.github.io/functai/ts/api/index.html)
 lists every export with its types.
 
@@ -798,10 +798,10 @@ is the plan.
 
 ## Developing
 
-lmcc and lm15 come from npm (`lmcc` 0.8.7 or later, which keeps member
-order and sends every picture of a list as a picture: functai refuses to
-start on an older one; `@lm15/lm15` 2, whose token counts mean the same
-on every provider). From `functai/ts`:
+lmcc and lm15 come from npm (`lmcc` 0.8.8 or later, the lmcc made for
+lm15 2; it keeps member order and sends every picture of a list as a
+picture, and functai refuses to start on one before 0.8.7; `@lm15/lm15`
+2.2 or later, whose token counts mean the same on every provider). From `functai/ts`:
 
 ```bash
 npm ci

@@ -113,7 +113,7 @@ build-backend = "hatchling.build"
 
 # Development runs on lmcc's and attachments' checkouts beside this repository
 # (../../lmcc, as ts/ does; ../../attachments). A built wheel ignores this
-# table: it requires lmcc>=0.8.7 from PyPI (a reply the provider stopped
+# table: it requires lmcc>=0.8.8 from PyPI (the lmcc made for lm15 2; a reply the provider stopped
 # refuses parse-filtered; a type's JSON form on its binding; lm15's media
 # parts as types; lists of pictures sent as pictures, D-64: on PyPI since
 # 2026-10-09), and attachments>=1.0.0b2 with the `files` extra.

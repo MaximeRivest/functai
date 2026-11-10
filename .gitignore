@@ -47,7 +47,7 @@ prompt.md
 
 python/examples/custom_adapters/
 
-# docs website: site/ is built from docs/ (python docs/build.py site)
+# docs website: site/ is built from docs/ (python tools/docs.py site)
 site/
 support_router/
 docs/support_router/

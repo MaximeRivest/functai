@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.0 (unreleased: published once lmcc 0.8.7 and attachments-dev are on npm)
+## 1.0.0 (unreleased: published once lmcc 0.8.8 and attachments-dev are on npm)
 
 The first stable version: what it does is what the contract says, checked
 case by case, and against Python, R and Julia (`tools/crosslang.py`).
