@@ -83,7 +83,7 @@ def _read(name: str, filename: str, local_files_only: bool) -> Optional[Dict[str
         raise ImportError('bake reads student models from the Hugging Face Hub: pip install "functai[bake]" '
                           '(or "functai[tinker]")') from err
     try:
-        return json.loads(Path(hf_hub_download(name, filename, local_files_only=local_files_only)).read_text())
+        return json.loads(Path(hf_hub_download(name, filename, local_files_only=local_files_only)).read_text(encoding="utf-8"))
     except EntryNotFoundError:
         return None
     except Exception as exc:  # noqa: BLE001 — not found, offline, gated: said once, plainly

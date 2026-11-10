@@ -683,13 +683,13 @@ class FunctAIFunc(Generic[P, R]):
     def save(self, path: "str | Path") -> None:
         """Write the instruction and demos to a JSON file (``load`` reads it back)."""
         data = {"functai": 1, "function": self.__name__, **self._state.to_dict()}
-        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str))
+        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
     def load(self, path: "str | Path") -> "FunctAIFunc":
         """Read an instruction and demos written by ``fn.save(path)`` and use them, in place.
         Returns the function. (To save a whole program with everything it depends on:
         ``functai.save``.)"""
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         if data.get("functai") != 1:
             raise ValueError(f"{path}: not a functai program file")
         return self.load_state(ProgramState.from_dict(data))

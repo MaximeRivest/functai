@@ -200,7 +200,7 @@ class Run:
     def log_metric(self, **fields: Any) -> None:
         """Append one line to metrics.jsonl (what trainers call)."""
         fields.setdefault("time", _now())
-        with open(self.folder / "metrics.jsonl", "a") as f:
+        with open(self.folder / "metrics.jsonl", "a", encoding="utf-8") as f:
             f.write(json.dumps(fields, default=float) + "\n")
 
     def progress(self) -> Dict[str, Any]:
@@ -288,7 +288,7 @@ class Run:
                                             name="functai-bake-run")
             self._thread.start()
             return self
-        log = open(self.folder / "log.txt", "a")
+        log = open(self.folder / "log.txt", "a", encoding="utf-8")
         log.write(f"\n==== {_now()} attempt {attempts}\n")
         log.flush()
         proc = subprocess.Popen([sys.executable, "-m", "functai.bake", "supervise", str(self.folder)],

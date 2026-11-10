@@ -61,9 +61,9 @@ def _rows(data: str) -> list[dict]:
         return [dict(r) for r in load_dataset(name, split=split)]
     p = Path(data)
     if p.suffix == ".jsonl":
-        return [json.loads(line) for line in p.read_text().splitlines() if line.strip()]
+        return [json.loads(line) for line in p.read_text(encoding="utf-8").splitlines() if line.strip()]
     if p.suffix == ".json":
-        return list(json.loads(p.read_text()))
+        return list(json.loads(p.read_text(encoding="utf-8")))
     from functai.evaluation import rows_of
     return rows_of(str(p))
 

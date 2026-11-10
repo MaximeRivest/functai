@@ -42,6 +42,19 @@ design/21, contract training.md (its cases pass in both languages).
 - **Records name a model trained on Tinker by its weights' URI too**
   (calls.md *Setups*): every one had the same name, its `hashes` being empty.
 
+### Text files are UTF-8 on every platform
+
+`fn.save(path)` and `fn.load(path)` (a function's or a module's
+instruction and demos), an exported `examples.jsonl` and its
+`.meta.json`, a run's `metrics.jsonl`, a teacher's kept answers, a
+student's chat template and picture rules read from its published files,
+and the rows and traces `functai_rows` and `functai_verifiers` read were
+opened with the platform's own encoding: UTF-8 on Linux and macOS, a code
+page on Windows before Python 3.15, where an instruction with a character
+outside it failed to save, and a chat template's special tokens were read
+as other characters (other tokens trained on, silently). They are UTF-8
+everywhere now, as the rest of FunctAI's files already were.
+
 ### A reasoning output reads the model's thinking on every thinking model
 
 contract: functions.md *Reasoning* and *Capabilities*; models.json and the

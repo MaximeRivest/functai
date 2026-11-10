@@ -41,7 +41,7 @@ class Export(Trainer):
         if (out / "examples.parquet").resolve() != (run.folder / "examples.parquet").resolve():
             shutil.copy2(run.folder / "examples.parquet", out / "examples.parquet")
         table = pq.read_table(out / "examples.parquet", columns=["function", "messages", "weight", "split"])
-        with open(out / "examples.jsonl", "w") as f:
+        with open(out / "examples.jsonl", "w", encoding="utf-8") as f:
             for r in table.to_pylist():
                 f.write(json.dumps(r, ensure_ascii=False) + "\n")
         kwargs = (plan.get("template") or {}).get("kwargs") or {}

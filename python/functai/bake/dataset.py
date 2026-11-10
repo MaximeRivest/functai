@@ -245,7 +245,7 @@ class Examples:
             with opener(path, "wt", encoding="utf-8") as f:
                 for r in recs:
                     f.write(json.dumps(r, ensure_ascii=False, default=str) + "\n")
-            Path(str(path).removesuffix(".gz").removesuffix(".jsonl") + ".meta.json").write_text(meta)
+            Path(str(path).removesuffix(".gz").removesuffix(".jsonl") + ".meta.json").write_text(meta, encoding="utf-8")
         else:
             raise BakeError(f"examples are saved as .parquet, .jsonl or .jsonl.gz, not {path.suffix!r}")
         return path
@@ -268,7 +268,7 @@ class Examples:
                 recs = [json.loads(line) for line in f if line.strip()]
             side = Path(str(path).removesuffix(".gz").removesuffix(".jsonl") + ".meta.json")
             if side.exists():
-                meta = json.loads(side.read_text())
+                meta = json.loads(side.read_text(encoding="utf-8"))
         return cls.from_records(recs, meta)
 
     @classmethod

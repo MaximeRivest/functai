@@ -357,7 +357,7 @@ class Student:
                 return p.read_text() if p.exists() else None
             from huggingface_hub import hf_hub_download
             try:
-                return Path(hf_hub_download(repo, name, local_files_only=local_files_only)).read_text()
+                return Path(hf_hub_download(repo, name, local_files_only=local_files_only)).read_text(encoding="utf-8")
             except Exception:  # noqa: BLE001 — absent, gated, offline: None, said by the caller
                 return None
         tok_text = get("tokenizer.json")
@@ -387,9 +387,9 @@ class Student:
         from huggingface_hub import hf_hub_download
         base = "thinkingmachines/Inkling-Small"
         try:
-            template = Path(hf_hub_download(base, "chat_template.jinja", local_files_only=local_files_only)).read_text()
+            template = Path(hf_hub_download(base, "chat_template.jinja", local_files_only=local_files_only)).read_text(encoding="utf-8")
             cfg = json.loads(Path(hf_hub_download(base, family["picture"]["file"],
-                                                  local_files_only=local_files_only)).read_text())
+                                                  local_files_only=local_files_only)).read_text(encoding="utf-8"))
         except Exception as err:  # noqa: BLE001
             raise BakeError(f"{student} renders with {base}'s template until its own files are out, and that cannot "
                             f"be read here ({type(err).__name__})") from err

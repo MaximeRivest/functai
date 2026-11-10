@@ -295,14 +295,14 @@ def start_vllm(baked, *, python=None, port=None, gpu_memory=None, device=None, t
     if "VLLM_USE_FLASHINFER_SAMPLER" not in env and shutil.which("nvcc") is None and \
             not Path(env.get("CUDA_HOME", "/usr/local/cuda")).exists():
         env["VLLM_USE_FLASHINFER_SAMPLER"] = "0"     # FlashInfer's sampler compiles with nvcc at startup
-    proc = subprocess.Popen(cmd, stdout=open(log_path, "w"), stderr=subprocess.STDOUT, env=env,
+    proc = subprocess.Popen(cmd, stdout=open(log_path, "w", encoding="utf-8"), stderr=subprocess.STDOUT, env=env,
                             start_new_session=True)
     endpoint = f"http://127.0.0.1:{port}/v1"
     t0 = time.time()
     while time.time() - t0 < timeout:
         if proc.poll() is not None:
             raise RuntimeError(f"vLLM exited ({proc.returncode}); its log: {log_path}\n"
-                               + Path(log_path).read_text()[-2000:])
+                               + Path(log_path).read_text(encoding="utf-8", errors="replace")[-2000:])
         try:
             urllib.request.urlopen(f"{endpoint}/models", timeout=2).read()
             return endpoint, proc

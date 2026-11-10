@@ -436,14 +436,14 @@ class FunctAIModule(Generic[P, R]):
         from pathlib import Path
         data = {"functai": 1, "module": self.__name__,
                 "functions": {name: st.to_dict() for name, st in self.state().items()}}
-        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str))
+        Path(path).write_text(json.dumps(data, ensure_ascii=False, indent=1, default=str), encoding="utf-8")
 
     def load(self, path) -> "FunctAIModule[P, R]":
         """A copy running with the states a ``save`` wrote."""
         import json
         from pathlib import Path
         from .core import ProgramState
-        data = json.loads(Path(path).read_text())
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
         fns = self.named_ai_functions()
         return self._with_states({fns[name]: ProgramState.from_dict(state)
                                   for name, state in (data.get("functions") or {}).items() if name in fns})

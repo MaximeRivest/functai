@@ -266,7 +266,7 @@ class Here(Trainer):
                    f"--master_port={port}", "-m", "functai.bake", "worker", str(run.folder)]
         else:
             cmd = [sys.executable, "-m", "functai.bake", "worker", str(run.folder)]
-        log = open(run.folder / "log.txt", "a")
+        log = open(run.folder / "log.txt", "a", encoding="utf-8")
         proc = subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, env=env,
                                 cwd=str(run.folder))
         run.update(worker_pid=proc.pid)

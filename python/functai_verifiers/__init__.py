@@ -125,7 +125,7 @@ def _adapter_of(fn: FunctAIFunc, spec: str | None, program: str) -> lmcc.Adapter
             return adapters.template_adapter(fn._template)
         return adapters.resolve_adapter(fn._effective().get("adapter") or "xml")
     if spec.endswith(".json"):
-        return lmcc.load(json.loads(Path(spec).read_text()), registry=adapters.REGISTRY)
+        return lmcc.load(json.loads(Path(spec).read_text(encoding="utf-8")), registry=adapters.REGISTRY)
     if ":" in spec:
         return adapters.resolve_adapter(_load_object(spec))
     module = importlib.import_module(program.rpartition(":")[0])
@@ -364,7 +364,7 @@ def sft_rows(traces_jsonl: str | Path, *, min_reward: float | None = None, reada
     rollouts scored below it."""
     from verifiers.v1.trace import Trace as _Trace
     rows: list[dict] = []
-    for line in Path(traces_jsonl).read_text().splitlines():
+    for line in Path(traces_jsonl).read_text(encoding="utf-8").splitlines():
         record = json.loads(line)
         for data in record.get("traces", [record]):
             if min_reward is not None:

@@ -1315,3 +1315,46 @@ def test_a_program_naming_its_host_s_journal_again_waits_as_the_host_says(fake):
         return calllog.current().log.journal.timeout
 
     assert effect() == 0.5
+
+
+def test_files_functai_writes_are_utf8_whatever_the_platform_s_encoding_is(tmp_path):
+    """Where text files default to another encoding (Windows before Python 3.15; here a C locale with
+    UTF-8 mode off), an instruction with a character outside it is saved and read back as it was."""
+    script = tmp_path / "script.py"
+    script.write_text(textwrap.dedent('''
+        import json, locale, sys
+        from pathlib import Path
+        from typing import Literal
+        from functai import ai, module
+
+        assert locale.getpreferredencoding(False).lower().replace("-", "") not in ("utf8", "utf8sig"), locale.getpreferredencoding(False)
+
+        def make():
+            @ai(lm="gpt-4.1-mini")
+            def mood(text: str) -> Literal["joie", "colère"]:
+                """The mood of the text."""
+                ...
+            return mood
+
+        folder = Path(sys.argv[1])
+        mood = make()
+        mood.instructions = "L'humeur du texte : « joie » ou « colère » → 日本語も"
+        mood.save(folder / "mood.json")
+        assert make().load(folder / "mood.json").instructions == mood.instructions
+        assert "« joie »" in json.loads((folder / "mood.json").read_bytes().decode("utf-8"))["instructions"]
+
+        @module
+        def both(text: str) -> str:
+            return str(mood(text))
+
+        both.save(folder / "both.json")
+        both.load(folder / "both.json")
+        assert "日本語" in (folder / "both.json").read_bytes().decode("utf-8")
+        print("OK")
+        '''), encoding="utf-8")
+    env = {**__import__("os").environ, "LC_ALL": "C", "LANG": "C", "PYTHONUTF8": "0", "PYTHONCOERCECLOCALE": "0"}
+    out = subprocess.run([sys.executable, "-W", "ignore", str(script), str(tmp_path)], capture_output=True, text=True,
+                         timeout=120, env=env, encoding="utf-8", errors="replace")
+    if "not in (" in out.stderr and "AssertionError" in out.stderr and "utf" in out.stderr.lower().split("assertionerror")[-1]:
+        pytest.skip("this platform has no non-UTF-8 default encoding to run under")
+    assert out.returncode == 0 and "OK" in out.stdout, out.stdout + out.stderr

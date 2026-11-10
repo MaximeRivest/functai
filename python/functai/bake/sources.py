@@ -184,7 +184,7 @@ def label(items: List[Item], teacher: Any, *, num_threads: int = 16, log: Callab
             log(f"teacher: {reused:,} answers kept from before")
     if not todo:
         return {"rows": reused, "reused": reused}
-    out_file = open(keep_path, "a") if keep_path is not None else None
+    out_file = open(keep_path, "a", encoding="utf-8") if keep_path is not None else None
     lock = threading.Lock()
     exchanges: List[Dict[str, int]] = []       # the token counts of each teacher call
     failures: List[str] = []

@@ -174,7 +174,7 @@ def config(program: Any, *, env: str, model: str, loss: str = "rl", teacher: Opt
               "[[env]]", f"taskset = {_toml_value(taskset)}", f"harness = {_toml_value(harness)}", ""]
     text = "\n".join(lines)
     if path is not None:
-        Path(path).write_text(text)
+        Path(path).write_text(text, encoding="utf-8")
     return text
 
 
