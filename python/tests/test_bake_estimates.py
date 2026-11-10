@@ -7,7 +7,7 @@ import types
 import pytest
 
 from functai.bake import hardware
-from functai.bake.hardware import GB, Device
+from functai.bake.hardware import Device
 from functai.bake.students import StudentInfo
 
 # Qwen3.5-4B as its config.json says (24 of its 32 layers are linear attention)

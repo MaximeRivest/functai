@@ -88,38 +88,6 @@ def threshold_for(conf: Sequence[float], correct: Sequence[bool], target: float,
     return best
 
 
-def fit_temperature(logits: Sequence[Sequence[float]], targets: Sequence[Sequence[float]]) -> float:
-    """The temperature T minimizing cross-entropy of softmax(logits / T) against the
-    targets (hard or soft), found by golden-section search on log T."""
-    if not logits:
-        return 1.0
-
-    def loss(log_t: float) -> float:
-        t = math.exp(log_t)
-        total = 0.0
-        for z, q in zip(logits, targets):
-            zs = [v / t for v in z]
-            m = max(zs)
-            lse = m + math.log(sum(math.exp(v - m) for v in zs))
-            total -= sum(qi * (zi - lse) for zi, qi in zip(zs, q) if qi)
-        return total / len(logits)
-
-    lo, hi = math.log(0.05), math.log(20.0)
-    g = (math.sqrt(5) - 1) / 2
-    a, b = hi - g * (hi - lo), lo + g * (hi - lo)
-    fa, fb = loss(a), loss(b)
-    for _ in range(60):
-        if fa < fb:
-            hi, b, fb = b, a, fa
-            a = hi - g * (hi - lo)
-            fa = loss(a)
-        else:
-            lo, a, fa = a, b, fb
-            b = lo + g * (hi - lo)
-            fb = loss(b)
-    return math.exp((lo + hi) / 2)
-
-
 def softmax(z: Sequence[float], t: float = 1.0) -> List[float]:
     zs = [v / t for v in z]
     m = max(zs)

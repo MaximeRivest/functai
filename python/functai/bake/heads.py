@@ -369,15 +369,6 @@ def logits(model, tokenizer, ids: Sequence[List[int]], device: str, batch_size: 
     return [[row[f] for row in out] for f in range(n_fields)]   # type: ignore[index]
 
 
-def evaluate_loss(model, tokenizer, ids, targets, device) -> float:
-    torch = _torch()
-    zs = logits(model, tokenizer, ids, device)
-    total = 0.0
-    for z, q in zip(zs, targets):
-        total += float(torch.nn.functional.cross_entropy(torch.tensor(z), torch.tensor(q)))
-    return total
-
-
 def calibrated_loss(model, tokenizer, ids, targets, device) -> float:
     """Held-out cross-entropy after refitting the temperature: how well the model
     ranks the answers, not how confident it has become. Plain validation loss

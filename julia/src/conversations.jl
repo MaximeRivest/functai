@@ -250,8 +250,6 @@ program_key(f::AIFunction) = (f.definition.name, f.module_name)
 program_key(p::AIProgram) = (p.name, p.module_name)
 program_name(f::AIFunction) = f.definition.name
 program_name(p::AIProgram) = p.name
-program_version(f::AIFunction) = version(f)
-program_version(p::AIProgram) = version(p)
 
 "A program's fields as data (names, directions, purposes, shapes without type names or defaults): what decides whether an earlier turn can be shown whole."
 function program_fields_data(f::AIFunction)

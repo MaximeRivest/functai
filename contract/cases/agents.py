@@ -37,7 +37,7 @@
 import copy
 
 import events
-from stages import NOW, FUTURE, PAST, R, V1, a_conversation, state_of, uid
+from stages import NOW, FUTURE, R, V1, a_conversation, state_of, uid
 
 PNG = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="
 PICTURE = {"type": "image", "media_type": "image/png", "data": PNG}

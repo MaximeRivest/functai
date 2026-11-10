@@ -4,7 +4,7 @@
  * about the model come from the contract's table, never from guessing.
  */
 
-import { LMRouter, type Config } from "@lm15/lm15";
+import type { Config } from "@lm15/lm15";
 import { MODELS } from "./generated/contract.ts";
 
 export type Capabilities = Record<string, boolean>;
@@ -122,10 +122,3 @@ export function defaultModel(env: Record<string, string | undefined>): string | 
   return null;
 }
 
-let shared: LMRouter | null = null;
-
-/** The router calls go through unless a function or `configure` gives one. */
-export function defaultRouter(): LMRouter {
-  shared ??= new LMRouter();
-  return shared;
-}

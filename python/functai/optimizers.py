@@ -29,7 +29,7 @@ from . import calllog
 from .config import forced
 from .core import P, R, FunctAIFunc, ProgramState
 from .evaluation import (Metric, _Target, evaluate, expected_columns, expected_metrics, parallel,
-                         resolve_metrics, rows_of, run_row, with_expected)
+                         resolve_metrics, run_row, with_expected)
 
 States = Dict[FunctAIFunc, ProgramState]
 Row = Dict[str, Any]

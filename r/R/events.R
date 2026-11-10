@@ -59,7 +59,6 @@ print.functai_event <- function(x, ...) {
 event_data <- function(e) unclass(e)[setdiff(names(e), ENVELOPE)]
 with_data <- function(e, data) new_event(e$kind, e$tree, e$writer, e$seq, e$after, e$at, e$call, e[["function"]], data)
 relinked <- function(e, after) { e["after"] <- list(after); e }
-event_json <- function(e) unclass(e)
 
 # Why a JSON object is not an event of format 2 (the contract's schema), or NULL.
 event_fault <- function(d) {
@@ -359,8 +358,6 @@ store_refuse <- function(code, message = "", event = NULL) stop(store_refusal(co
 is_event_store <- function(x) (is.environment(x) || is.list(x)) && is.function(x$append) && is.function(x$read)
 
 store_read <- function(store, tree, after = NULL) lapply(store$read(tree, after), as_event)
-store_trees <- function(store) if (is.function(store$trees)) store$trees() else character(0)
-store_finished <- function(store, tree) if (is.function(store$finished)) store$finished(tree) else is_log_end(store_read(store, tree), tree)
 
 is_log_end <- function(log, tree) length(log) > 0L && identical(log[[length(log)]]$call, tree) && log[[length(log)]]$kind %in% c("done", "failed")
 

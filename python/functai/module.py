@@ -66,7 +66,6 @@ class FunctAIModule(Generic[P, R]):
         self.__name__ = getattr(fn, "__name__", "module")
         self.__doc__ = fn.__doc__
         self.__wrapped__ = fn
-        self._globals = getattr(fn, "__globals__", {})
         # the AI function whose answer, as it is written, is this module's (contract/streaming.md, *Views*)
         if answer_from is not None and not isinstance(answer_from, FunctAIFunc):
             raise TypeError(f"@module on {self.__name__}: answer_from is an AI function it calls")

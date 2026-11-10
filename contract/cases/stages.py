@@ -14,7 +14,7 @@ must answer (cases/README.md).
 
 import copy
 
-from common import canonical, sha
+from common import sha
 
 T0 = "2026-09-30T10:00:00.000000Z"
 NOW = "2026-09-30T10:10:00.000000Z"

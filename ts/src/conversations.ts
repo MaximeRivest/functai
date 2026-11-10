@@ -39,7 +39,7 @@ import { checkSettings, layersOf, withSettings, type Settings } from "./settings
 import { follow, isPersistent, storeOf, waitFor, type ConversationStore } from "./stores.ts";
 import { isView, viewer, type Stream, type View as StreamView } from "./stream.ts";
 import { holderName } from "./replies.ts";
-import { copyData, entriesOf, getOwn, recordOf, setOwn, toJson } from "./values.ts";
+import { copyData, entriesOf, getOwn, recordOf, toJson } from "./values.ts";
 import { Delivered, resultOf, type ToolOutput } from "./results.ts";
 import { outsideNotes, type ViewName } from "./views.ts";
 import { sumUsage } from "./usage.ts";

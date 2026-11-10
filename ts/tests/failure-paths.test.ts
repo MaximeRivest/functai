@@ -20,7 +20,7 @@ import { test } from "node:test";
 import { RateLimitError, responseToEvents, streamDelta, type Request, type StreamEvent as LmEvent } from "@lm15/lm15";
 import * as z from "zod";
 import {
-  ai, Cancelled, checkInterface, configure, describe, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, LoadRefused, MemoryStore, module, Prediction, replay,
+  ai, Cancelled, checkInterface, configure, describe, evaluate, flush, Follower, fromManifest, InterfaceError, JournalError, load, MemoryStore, module, Prediction, replay,
   save, SettingError, settle as settleLog, t, toManifest, tool, withSettings, type AppendAnswer, type StandardSchemaLike, type EventStore, type Position, type ReadAnswer, type StreamEvent,
 } from "../src/index.ts";
 import { duration } from "../src/engine.ts";

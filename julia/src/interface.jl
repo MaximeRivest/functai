@@ -725,13 +725,3 @@ function check_returned(iface::AbstractDict, value; dropped=())
     end
     out
 end
-
-"Why a value does not fit a field, without the value: its kind and size, and the field's shape."
-function describe_misfit(v, f)
-    data = json_form(v)
-    data === NOJSON && return "a $(typeof(v)) has no JSON form, and the field is not opaque"
-    "$(json_kind_text(data)) does not fit $(first(LMCC.json_text(data_shape(f["shape"])), 300))"
-end
-json_kind_text(d) = d === nothing ? "null" : d isa Bool ? "a boolean" : d isa Real ? (isinteger(d) ? "an integer" : "a number") :
-                    d isa AbstractString ? "a text of $(length(d)) characters" : d isa AbstractVector ? "a list of $(length(d)) items" :
-                    d isa AbstractDict ? "an object of $(length(d)) members" : "a value"

@@ -13,10 +13,6 @@ const WHITE = new Set<number>([
   0x2028, 0x2029, 0x202f, 0x205f, 0x3000,
 ]);
 
-export function isWhite(codePoint: number): boolean {
-  return WHITE.has(codePoint);
-}
-
 /** The pieces of `text` between runs of white space. */
 export function splitWhite(text: string): string[] {
   const out: string[] = [];

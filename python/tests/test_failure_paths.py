@@ -805,9 +805,11 @@ def test_a_writer_sends_what_waits_as_one_batch(fake):
 
 
 def test_the_package_carries_the_contract_s_schemas():
-    for name in schemas.NAMES:
-        mine = json.loads((schemas.FOLDER / f"{name}.schema.json").read_text())
-        theirs = json.loads((CONTRACT / "schema" / f"{name}.schema.json").read_text())
+    carried = sorted(p.name.removesuffix(".schema.json") for p in schemas.FOLDER.glob("*.schema.json"))
+    assert set(schemas.NAMES) <= set(carried)
+    for name in carried:                  # every copy it ships, the ones it does not check at run time too
+        mine = json.loads((schemas.FOLDER / f"{name}.schema.json").read_text(encoding="utf-8"))
+        theirs = json.loads((CONTRACT / "schema" / f"{name}.schema.json").read_text(encoding="utf-8"))
         assert mine == theirs, name
 
 

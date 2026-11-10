@@ -3,7 +3,6 @@ $BENCH_RECORD (a .jsonl file). The same record for every library: what was sent
 (the request body as JSON) and what it cost (the response's usage)."""
 import json
 import os
-import time
 
 OUT = os.environ["BENCH_RECORD"]
 

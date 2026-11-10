@@ -38,7 +38,6 @@ const OFF = new Set(["", "0", "false", "no", "off"]);
 const ON = new Set(["1", "true", "yes", "on"]);
 export const VERSION = "1.0.0";
 
-type Json = unknown;
 type Rec = Record<string, unknown>;
 
 // ------------------------------------------------------------------ ids and times

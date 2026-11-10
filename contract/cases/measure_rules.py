@@ -6,7 +6,7 @@ an implementation. Every function is the section of measures.md it names.
 import hashlib
 import math
 
-from common import canonical, sha
+from common import sha
 from scores import Z, interval, t975
 
 CONTEXT = ("earlier", "sections", "helpers")

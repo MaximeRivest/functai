@@ -176,13 +176,6 @@ def _gold(row: Dict[str, Any], fields: Sequence[HeadField]) -> Optional[List[Lis
     return out
 
 
-def _gold_values(row: Dict[str, Any], outputs: Sequence[str]) -> Optional[Dict[str, Any]]:
-    """A row's own values for every output, or None when one is missing."""
-    if any(row.get(n) is None for n in outputs):
-        return None
-    return {n: row[n] for n in outputs}
-
-
 class HeadPlan(str):
     """What ``bake(fn, rows)`` will do for a function whose every output has a
     fixed set of answers: printed, it says so; nothing has run."""

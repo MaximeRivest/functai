@@ -539,8 +539,6 @@ function row_inputs(f::AIFunction, row::AbstractDict)
     with_defaults(f, OrderedDict{String,Any}(n => row[n] for n in names if haskey(row, n)))
 end
 
-has_missing(inputs) = any(v -> v === missing, values(inputs))
-
 "The typed outputs of a reading's values: each declared output read as its type (a misfit is `parse-value`)."
 function typed_outputs(f::AIFunction, values::AbstractDict)
     names = Symbol[]

@@ -305,7 +305,6 @@ class _Log:
         self.programs: Dict[str, Dict[str, Any]] = {}
         self.entries: List[Dict[str, Any]] = []
         self.delivered: Dict[str, Dict[str, Any]] = {}  # a later result's key -> the first delivery of it
-        self.stops_seen = 0
 
     def apply(self, records: Sequence[Dict[str, Any]]) -> None:
         for r in records:
@@ -2101,7 +2100,6 @@ class TurnStream(Stream):
         self._run = run
         self._passive = passive                       # read for its result only: replies are not streamed
         self.turn_id = run.turn
-        self._stop_seen = False
         with _RUNNING_LOCK:
             _RUNNING[run.turn] = (run, self)
         self._t_start = time.perf_counter()
@@ -2143,7 +2141,6 @@ class TurnStream(Stream):
                 seen += len(recs)
                 mine = [r for r in recs if r.get("turn") == self.turn_id]
                 if any(r.get("kind") == "stop" for r in mine):
-                    self._stop_seen = True
                     self.close()
                 if any(r.get("kind") == "lease" and int(r.get("attempt") or 1) > self._run.attempt for r in mine):
                     calllog._warn_once(("lease-lost", self.turn_id), f"turn {self.turn_id} was taken over by another "

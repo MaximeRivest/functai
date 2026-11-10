@@ -4,8 +4,6 @@
  * defines").
  */
 
-type Rec = Record<string, unknown>;
-
 /** A stream was closed, a signal aborted, or a turn was stopped: the call ended without an answer. */
 export class Cancelled extends Error {
   constructor(message = "the stream was closed") {
@@ -153,11 +151,3 @@ export class RemoteError extends FunctAIError {
  */
 export class BakeError extends FunctAIError {}
 
-/** An error as plain data, for records: its type, its code, its message. */
-export function errorInfo(err: unknown): Rec {
-  const e = err as { name?: string; code?: unknown; message?: string } | null | undefined;
-  const out: Rec = { type: typeof e?.name === "string" ? e.name : "Error" };
-  if (typeof e?.code === "string") out["code"] = e.code;
-  out["message"] = typeof e?.message === "string" ? e.message : String(err);
-  return out;
-}

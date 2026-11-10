@@ -11,7 +11,6 @@ cache are skipped (offline), unless ``--download``.
 import base64
 import glob
 import json
-import os
 import random
 import struct
 import subprocess

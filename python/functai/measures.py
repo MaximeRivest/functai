@@ -23,9 +23,8 @@ import dataclasses
 import hashlib
 import inspect
 import math
-import random as _random
 from collections.abc import Mapping
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from .calllog import canonical
 

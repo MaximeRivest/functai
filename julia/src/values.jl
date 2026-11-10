@@ -70,8 +70,6 @@ is_user_struct(T) = T isa DataType && isstructtype(T) && isconcretetype(T) && fi
                     !(T <: Number) && !(T <: AbstractString) && parentmodule(T) ∉ (Core, Base) &&
                     !(T <: Function) && nameof(parentmodule(T)) !== :Dates
 
-strip_missing(T) = T isa Union ? Base.typesplit(T, Missing) : T
-
 """
     shape_of(T)
 
